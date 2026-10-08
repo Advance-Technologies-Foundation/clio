@@ -50,7 +50,7 @@ clio create-entity-schema -e dev --package Custom --name UsrExternalVehicle --ti
 --package <VALUE>
 Target package name. Required.
 --name <VALUE>
-Schema name. Required.
+Schema name. Required. `--schema-name` is accepted as a hidden alias (not shown in `--help`).
 --title <VALUE>
 Schema title. Required.
 --parent <VALUE>
@@ -139,6 +139,10 @@ cliogate must be installed on the target Creatio environment.
 
 ## Notes
 
+- `--schema-name` is a hidden alias of `--name`, matching the spelling of the other entity-schema
+  commands. Supplying both with different values fails with an error naming both values; equal values
+  (ignoring case) are accepted. A call with neither fails before anything is sent to the server and
+  names both flags.
 - `default-value-config` is recommended for non-constant sources.
 - When `--parent` is omitted the schema defaults to `BaseEntity`; pass `--parent` explicitly to inherit from a different schema. A parentless root schema (reachable only when a parent is forced empty in a direct API call) uses its first Guid column as the primary column and adds a generated, prefixed Guid column when none is supplied, which makes it unusable over OData — hence the default.
 - A schema with a parent preserves the parent's primary column; custom Guid columns remain ordinary columns.
@@ -147,6 +151,7 @@ cliogate must be installed on the target Creatio environment.
 - For `default-value-config.source = Settings`, `value-source` can be code, name, or id; clio persists canonical setting code.
 - For `default-value-config.source = Sequence` (text columns only), the static prefix comes from `sequence-prefix` (e.g. `LN-`) or from a `value` mask whose single `{0}` placeholder is at the end (e.g. `LN-{0}` produces `LN-00001`); setting both is rejected. Masks with static text after `{0}` (a suffix) are not supported and fail with a validation error instead of being silently dropped.
 - **Caption language validation.** Every `title-localizations` / `description-localizations` value must be written in the language of its culture key. The mandatory `en-US` value must be English; a value written in a script that does not match a Latin-script culture key (for example Cyrillic text under `en-US`) is rejected with an actionable error. Put localized text under its own culture key (e.g. `uk-UA`). This guarantees generated captions match the connected user's profile language.
+- **Culture must exist in the environment.** Every culture a caption or description is written in (each `title-localizations` / `description-localizations` key and the effective `--caption-culture`) must be a culture of the Languages section (System Designer → Languages). Creatio silently drops a value in a culture it does not have and still reports success, so clio checks the cultures before saving and fails with `Culture '<c>' is not available in this environment. Add it in the Languages section (System Designer → Languages) first. Available: …`. A culture that exists but is inactive is saved, and a warning is printed.
 
 ## See also
 

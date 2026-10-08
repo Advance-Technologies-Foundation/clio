@@ -41,6 +41,42 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Over the real stdio server, the text of a tool result is written with the relaxed encoder: an apostrophe and a quote in a contract arrive as themselves, not as six-character \\u escapes the agent pays for (ENG-99970).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract result text is not HTML-escaped")]
+	public async Task GetToolContracts_Should_WriteTheResultText_WithoutHtmlEscaping() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				// A named lookup returns the short contract since ENG-100154, which keeps neither the apostrophe nor a
+				// quote inside a string; "full" keeps this test reading the text it was written against.
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { CreateBusinessProcessTool.CreateBusinessProcessToolName },
+					["detail"] = "full"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		AllureApi.Step("Assert the apostrophe arrives as itself", () =>
+			text.Should().Contain("descriptor's packageName",
+				because: "the process-build tool's package-name field says so, and an apostrophe needs no escaping"));
+		AllureApi.Step("Assert no HTML escape survives", () => {
+			text.Should().NotContain("\\u0027",
+				because: "the default encoder wrote an apostrophe as six characters; a JSON-RPC reader needs none of them");
+			text.Should().NotContain("\\u0022",
+				because: "the default encoder wrote a quote inside a string as six characters, not the two JSON needs");
+			text.Should().Contain("\\\"",
+				because: "anti-vacuity: the contract carries quotes inside strings, so the short escape must be there");
+		});
+	}
+
+	[Test]
 	[TestCase(false)]
 	[TestCase(true)]
 	[Description("Returns valid contracts and individual misses through the real MCP server in either request order.")]
@@ -125,6 +161,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					CreateEntitySchemaTool.CreateEntitySchemaToolName,
 					SchemaSyncTool.ToolName,
@@ -189,6 +226,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					ApplicationGetListTool.ApplicationGetListToolName,
 					PageListTool.ToolName,
@@ -842,6 +880,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
 				}
@@ -1246,6 +1285,59 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract serves compile-creatio's process-name argument")]
+	[Description("compile-creatio is long-tail, so an agent learns its arguments from the served contract: the process-name mode - the compile a script task saved by create/modify-business-process needs - must be in it, with an example.")]
+	public async Task ToolContractGet_Should_Serve_CompileCreatio_ProcessName() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		ToolContractDefinition contract = response.Tools!.Single();
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "process-name",
+			because: "the served contract is where an agent finds the process compile");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "an example keeps an agent from reaching for package-name instead");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises that a package compile fails on a C# compile error")]
+	[AllureDescription("Issues #1632/#1633: the real MCP server must serve the compile-creatio contract saying that a package compile waits for the finished build and fails with the CSxxxx compiler diagnostics, so an agent does not treat a package compile's success as unverified any more - and does not treat a failure as a transport glitch to retry.")]
+	[Description("The served compile-creatio contract says a package compile waits for the finished build and fails with CSxxxx diagnostics on a compile error.")]
+	public async Task ToolContractGet_Should_Advertise_PackageCompile_Fails_On_Compile_Error() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { CompileCreatioTool.CompileCreatioToolName }
+			});
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "the compile-creatio contract must be discoverable through the executable clio MCP catalog");
+		response.Tools!.Single().InputSchema.Properties.Should().Contain(field =>
+				field.Name == "package-name"
+				&& field.Description.Contains("waits for the finished build", StringComparison.Ordinal)
+				&& field.Description.Contains("CSxxxx", StringComparison.Ordinal),
+			because: "the live contract must tell the agent that a package compile's result is the finished build's verdict, with compiler diagnostics on failure");
+	}
+
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises that a business process's NeedInstall is not a compile trigger")]
 	[Description("ENG-95706: the real MCP server must serve the compile-creatio contract with a create-business-process anti-pattern (a process is interpreted; NeedInstall=true is not a compile trigger; compile only for a Script Task) and a matching Script-Task carve-out precondition, so the steering that stops an agent forcing a full compile off a process's NeedInstall flag is verified end to end, not only in unit tests.")]
 	public async Task ToolContractGet_Should_Advertise_ProcessNeedInstall_Is_Not_A_Compile_Trigger() {
@@ -1485,6 +1577,183 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert a body-file example is included", () =>
 			contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("body-file"),
 				because: "the live contract should demonstrate the file handoff"));
+	}
+
+	[Test]
+	[Description("Over the real stdio server, the DEFAULT lookup of create-business-process - a 34 KB contract in full - comes back in its short form, inside the inline reply budget, marked short and sized, and detail=full still returns it complete (ENG-100154).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract fits a large contract inline and keeps the full form one flag away")]
+	public async Task GetToolContracts_ShouldReturnTheShortForm_ByDefault_AndTheFullFormOnRequest() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		const string toolName = "create-business-process";
+
+		// Act
+		CallToolResult shortResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = new[] { toolName } }
+			},
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse full = await CallAsync(context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["tool-names"] = new[] { toolName },
+				["detail"] = ToolContractShortForm.FullDetail
+			});
+		string shortText = string.Concat((shortResult.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+		ToolContractDefinition shortContract =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(shortResult).Tools!.Single();
+		ToolContractDefinition fullContract = full.Tools!.Single();
+
+		// Assert
+		AllureApi.Step("Assert the default reply fits inline", () =>
+			System.Text.Encoding.UTF8.GetByteCount(shortText).Should().BeLessThanOrEqualTo(
+				ToolContractShortForm.InlineReplyBudgetBytes,
+				because: "the reply the agent receives is what an agent CLI decides to show inline or spill to a file"));
+		AllureApi.Step("Assert the default contract is marked short", () =>
+			shortContract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+				because: "a short contract must say so over the wire, or its omissions read as absences"));
+		AllureApi.Step("Assert the short form keeps the call-time contract", () =>
+			shortContract.InputSchema.Required.Should().Contain("descriptor",
+				because: "the required list survives shortening"));
+		AllureApi.Step("Assert the full form is one flag away", () =>
+			fullContract.Detail.Should().BeNull(because: "detail=full returns the complete contract, unmarked"));
+		AllureApi.Step("Assert the full description is the one the short form stands in for", () =>
+			fullContract.Description.Length.Should().BeGreaterThan(shortContract.Description.Length * 5,
+				because: "the short form leaves out the reference detail of the description"));
+		AllureApi.Step("Assert the advertised size is the real one", () =>
+			shortContract.FullContractBytes.Should().Be(ToolContractShortForm.MeasureBytes(fullContract),
+				because: "full-contract-bytes tells the caller what detail=full will cost before it asks, so it must "
+					+ "be the size of the contract detail=full actually returns"));
+		AllureApi.Step("Assert the short form keeps the confirmation duty", () =>
+			shortContract.Description.Should().Contain("get an explicit yes",
+				because: "the short form over the wire must carry the duty the full form states"));
+	}
+
+	[Test]
+	[Description("Over the real stdio server, the request measured in the CAADT transcripts - seven process-designer contracts in one call - is answered inside the inline reply budget with every requested contract present (ENG-100154).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract fits seven process-designer contracts in one inline reply")]
+	public async Task GetToolContracts_ShouldFitSevenProcessDesignerContracts_InOneInlineReply() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string[] processTools = [
+			"create-business-process", "modify-business-process", "describe-business-process",
+			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
+			"set-active-business-process-version"
+		];
+
+		// Act
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["tool-names"] = processTools }
+			},
+			context.CancellationTokenSource.Token);
+		string text = string.Concat((result.Content ?? []).OfType<TextContentBlock>().Select(block => block.Text));
+		ToolContractGetResponse response = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(result);
+
+		// Assert
+		AllureApi.Step("Assert every requested contract is returned", () =>
+			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(processTools,
+				because: "fitting shortens contracts, it never drops one"));
+		AllureApi.Step("Assert the reply fits inline", () =>
+			System.Text.Encoding.UTF8.GetByteCount(text).Should().BeLessThanOrEqualTo(
+				ToolContractShortForm.InlineReplyBudgetBytes,
+				because: "this request answered with well over 100 KB before ENG-100154"));
+	}
+
+	[Test]
+	[Description("Serves the curated contracts of the four *-to-file tools through the real MCP server, and each of them requires output-file.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(ExecuteEsqToFileTool.ToolName)]
+	[AllureTag(ComponentInfoToFileTool.ToolName)]
+	[AllureTag(RequestInfoToFileTool.ToolName)]
+	[AllureTag(ListEntityClientSchemasToFileTool.ToolName)]
+	[AllureName("get-tool-contract serves the *-to-file contracts with output-file required")]
+	[AllureDescription("Requests the contracts of execute-esq-to-file, get-component-info-to-file, get-request-info-to-file and list-entity-client-schemas-to-file in one call and verifies all four are returned and each lists output-file among its required inputs.")]
+	public async Task ToolContractGet_ShouldRequireOutputFile_ForToFileTools() {
+		// Arrange
+		string[] toFileTools = [
+			ExecuteEsqToFileTool.ToolName,
+			ComponentInfoToFileTool.ToolName,
+			RequestInfoToFileTool.ToolName,
+			ListEntityClientSchemasToFileTool.ToolName
+		];
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the four *-to-file contracts",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = toFileTools
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "every *-to-file tool has a curated contract and must resolve"));
+		AllureApi.Step("Assert all four contracts are returned", () =>
+			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(toFileTools,
+				because: "one contract is returned per requested tool"));
+		foreach (ToolContractDefinition contract in response.Tools!) {
+			AllureApi.Step($"Assert {contract.Name} requires output-file", () =>
+				(contract.InputSchema.Required ?? []).Should().Contain("output-file",
+					because: $"{contract.Name} writes its result to a caller-named file, so the file path is mandatory"));
+		}
+	}
+
+	[Test]
+	[Description("Serves update-page and get-page contracts that advertise the optional boolean include-operations input, with update-page stating that it applies only with verify=true.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(PageUpdateTool.ToolName)]
+	[AllureTag(PageGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises include-operations on update-page and get-page")]
+	[AllureDescription("Requests the update-page and get-page contracts over a real stdio MCP session and verifies each lists include-operations as an optional boolean field that swaps the operation list for per-type counts, and that the update-page field is tied to verify=true.")]
+	public async Task ToolContractGet_ShouldAdvertiseIncludeOperations_ForUpdatePageAndGetPage() {
+		// Arrange
+		const string includeOperations = "include-operations";
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await AllureApi.Step(
+			"Request the update-page and get-page contracts",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				new Dictionary<string, object?> {
+					["tool-names"] = new[] { PageUpdateTool.ToolName, PageGetTool.ToolName },
+					// update-page is over the inline budget alone, so its default read is short and cuts field text.
+					["detail"] = ToolContractShortForm.FullDetail
+				}));
+
+		// Assert
+		AllureApi.Step("Assert contract lookup succeeded", () => response.Success.Should().BeTrue(
+			because: "update-page and get-page have curated contracts and must resolve"));
+		foreach (string toolName in new[] { PageUpdateTool.ToolName, PageGetTool.ToolName }) {
+			ToolContractDefinition contract = AllureApi.Step($"Assert the {toolName} contract is returned", () =>
+				response.Tools.Should().ContainSingle(definition => definition.Name == toolName,
+					because: "one contract is returned per requested tool").Which);
+			ToolContractField field = AllureApi.Step($"Assert {toolName} advertises include-operations", () =>
+				contract.InputSchema.Properties.Should().ContainSingle(item => item.Name == includeOperations,
+					because: "callers plan the argument from the served contract").Which);
+			AllureApi.Step($"Assert {toolName} include-operations is boolean", () =>
+				field.Type.Should().Be("boolean",
+					because: "include-operations switches between the operation list and the per-type counts"));
+			AllureApi.Step($"Assert {toolName} include-operations is optional", () =>
+				(contract.InputSchema.Required ?? []).Should().NotContain(includeOperations,
+					because: "the argument defaults to true, so omitting it keeps the full operation list"));
+			AllureApi.Step($"Assert {toolName} include-operations names the counts field", () =>
+				field.Description.Should().Contain("viewConfigDiffOpCounts",
+					because: "the caller must be told what replaces the operation list"));
+		}
+		AllureApi.Step("Assert update-page ties include-operations to verify", () =>
+			response.Tools!.Single(definition => definition.Name == PageUpdateTool.ToolName)
+				.InputSchema.Properties.Single(item => item.Name == includeOperations)
+				.Description.Should().Contain("verify=true",
+					because: "update-page returns a page summary only in the verify read-back, so the argument has no effect without it"));
 	}
 
 	private static async Task<ToolContractGetResponse> CallAsync(

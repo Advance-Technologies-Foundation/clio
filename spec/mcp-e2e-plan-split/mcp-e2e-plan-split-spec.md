@@ -107,8 +107,11 @@ Edges, all of them widening rather than narrowing:
   `Schema`.
 - **qualified reference** - `Clio.Common.Foo` and `global::Clio.Common.Foo`. The dot in front of
   `Foo` hides it from the rule above, and 1247 references in this tree are written that way. Only
-  chains rooted in a namespace this repository declares are followed, plus the aliases of such a
-  namespace (`using Contracts = Clio.Common;`); an alias of `System.*` adds nothing.
+  chains starting at a segment of a namespace this repository declares are followed - any segment,
+  because `Common.McpWorker.IWorker...` inside `namespace Clio.Command.McpServer` resolves against the
+  enclosing `Clio` - plus the aliases of such a namespace (`using Contracts = Clio.Common;`); an alias
+  of `System.*` adds nothing. A segment that is also a type or member name (`Command.X`) can add a
+  reference the compiler would not see, which only widens.
 - **implementation to interface** - a consumer injects `IFoo` and never spells `Foo` out. Restricted
   to base types declared as `interface`: a base *class* here (`Command`, `BaseTool`) is a
   template-method host whose hundreds of subclasses are not interchangeable, and following it merges
@@ -129,9 +132,32 @@ contain quotes, verbatim and interpolated-verbatim strings in either `$@` or `@$
 strings, char literals, line comments and block comments - replacing each character with a space and
 keeping the line breaks. Declarations, base lists and the
 parentheses of a registration call are parsed on that text, so a bracket, a quote, a semicolon or a
-whole class written inside a comment or a literal cannot be read as syntax. *References* are still
-read from the raw text: a type named only in a comment adds an edge, which widens the selection and
-is the safe direction.
+whole class written inside a comment or a literal cannot be read as syntax. *References* are read
+from the text with comments removed and literals kept: a type named in a string can be a runtime
+lookup, a type named in a comment is not a dependency any code path follows. Reading comments too was
+meant as the safe direction, but in this tree it joined unrelated types into one component
+(`McpToolExecutionLock`'s summary names `PageBaselineGuard`, so every page-update change reached every
+tool) and made most product changes a full run. Every map keyed by a type name is ordinal: a
+PowerShell `@{}` folds case, which turned each local named `command` into a reference to `Command`.
+
+The closure does not walk through a concrete MCP tool type except into another tool type or into
+a type that calls a member of it (`ComponentInfoCommand` -> `ComponentInfoTool.CreateDetailResponse(...)`).
+The other types that name a tool are registries and prompts (`ToolContractCatalog`,
+`McpCoreToolProfile`, `*Prompt`) naming dozens of tools each; a tool that uses another tool
+(`PageUpdateTool` -> `PageSyncTool`) is a real execution path and is kept. A tool type is a
+non-abstract type carrying `[McpServerToolType]` or an `[McpServerTool]` method - most tools inherit
+the class attribute from the abstract `BaseTool<T>`, which is walked through like any base class.
+This is the one rule that can narrow a selection: code that reaches a tool only through a registry,
+by name - `clio-run` dispatch - is not followed, and is covered by the fixtures that name that tool.
+
+A base list is read after a primary constructor as well (`class Foo(IBar bar) : IFoo`, possibly over
+several lines), a qualified name may start at any segment of a declared namespace
+(`Common.McpWorker.IWorker...` inside `namespace Clio.Command.McpServer`), and a type registered in the
+composition root for a service type the repository does not declare
+(`AddTransient<IDataProvider>(sp => new ClassifyingDataProvider(...))`) is consumed by every type
+whose code names that service, as an implementation of an interface declared here is. Only the
+types the factory constructs (`new X`) count as the implementation. When no type names the service,
+the implementation - and every change that reaches it - forces a full run.
 
 The guard asserts the invariant that makes this checkable: after blanking, no quote and no comment
 marker is left anywhere under `clio/`. A literal form the lexer does not know leaves one behind, so
@@ -159,6 +185,23 @@ registration file whose diff contains anything other than registration statement
 A subset whose fixtures are all positively `McpE2E.NoEnvironment` also becomes mode **none**: the
 NoEnvironment tier already ran on GitHub. This is checked *before* the size cap, so a large
 NoEnvironment-only selection skips the build instead of becoming a full run.
+The tier is read per fixture: the text from the end of the previous top-level type to the end of
+the fixture's own body, so a file that declares a NoEnvironment fixture next to a Creatio one
+(`EmailTemplateToolE2ETests.cs`) still sends the Creatio fixture to TeamCity. Only `Category(...)`
+attributes count, with comments removed first. A fixture is NoEnvironment-only when its class carries
+`McpE2E.NoEnvironment`, or every test method carries it or a category `baseFilter` excludes (and at
+least one carries it); `McpE2E.Sandbox` anywhere keeps it on TeamCity. `-Inventory` prints the
+verdicts as `noEnvironmentOnly`, and `McpE2eSelectionCoverageTests` checks every `true` against the
+compiled categories.
+
+A subset in which no test survives the pull-request TeamCity filter is mode **none** as well, also
+checked before the size cap. That is wider than NoEnvironment-only: a fixture whose tests are all
+`McpE2E.ProcessDesigner` or `McpE2E.Manual` runs on no pull-request lane, and before this rule a
+change reaching only such fixtures (`ProcessPageFactsChecker.cs` selects 14 of them) queued a build
+that deployed a Creatio for ~45 minutes and executed zero tests. The verdict is `survivesTeamCity` in
+`-Inventory`: false only when the class, or every visible test method, carries an excluded category;
+a fixture with no visible test counts as surviving. `McpE2eSelectionCoverageTests` checks every
+`false` against the compiled categories.
 
 The subset filter is composed as
 `(FullyQualifiedName~Clio.Mcp.E2E.A|FullyQualifiedName~Clio.Mcp.E2E.B)&TestCategory!=McpE2E.NoEnvironment&<baseFilter>`.

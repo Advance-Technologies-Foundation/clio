@@ -1,0 +1,506 @@
+{
+  "$comment": "Issue routing map: component -> label + owners. Read by .github/workflows/issue-routing.yml. See .github/ISSUE_ROUTING.md before editing.",
+  "fieldLabel": "Component",
+  "componentLabelPrefix": "component:",
+  "ownerNotification": "assign",
+  "triageLabel": {
+    "name": "needs-triage",
+    "color": "d4c5f9",
+    "description": "No component was selected or it could not be routed to an owner"
+  },
+  "components": [
+    {
+      "id": "pages",
+      "option": "Freedom UI pages (create/update/get/sync/validate-page, page templates, client unit schemas, component registry)",
+      "label": "component:pages",
+      "color": "c5def5",
+      "description": "Freedom UI page tools and commands",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk",
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/Page*",
+        "clio/Command/McpServer/Tools/Page*",
+        "clio/Command/McpServer/Tools/ClientUnitSchema*",
+        "clio/Command/McpServer/Tools/ComponentInfoTool.cs",
+        "clio/Command/RelatedPages/",
+        "clio/Command/McpServer/Tools/CreateRelatedPageAddonTool.cs",
+        "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
+        "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
+        "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs",
+        "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
+        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
+        "clio/Command/McpServer/Tools/LocalizePageTool.cs"
+      ]
+    },
+    {
+      "id": "custom-logic",
+      "option": "Freedom UI page custom logic (handlers, converters, validators, helper modules, code kept by a Designer save)",
+      "label": "component:custom-logic",
+      "color": "c5def5",
+      "description": "Custom client logic in Freedom UI pages and its page lint",
+      "owners": [
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
+        "clio/Command/SchemaHandlerValidationService.cs"
+      ]
+    },
+    {
+      "id": "mobile-page-conversion",
+      "option": "Mobile page conversion (web to mobile Freedom UI pages, get-mobile-page-conversion-guide)",
+      "label": "component:mobile-page-conversion",
+      "color": "c5def5",
+      "description": "Web to mobile Freedom UI page conversion",
+      "owners": [
+        "OleksandrTyshchyk",
+        "dkorotin1"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/MobilePageConverter/",
+        "clio/Command/McpServer/Tools/MobilePageValidation.cs",
+        "clio/Command/McpServer/Data/WebToMobilePageConversionRules.json"
+      ]
+    },
+    {
+      "id": "business-rules",
+      "option": "Business rules (page and entity business rules)",
+      "label": "component:business-rules",
+      "color": "c5def5",
+      "description": "Page and entity business rules",
+      "owners": [
+        "d-baranovskyi-creatio",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/BusinessRules/",
+        "clio/Command/McpServer/Tools/BusinessRuleTool.cs"
+      ]
+    },
+    {
+      "id": "application",
+      "option": "Applications and sections (create-app, app sections, install-application)",
+      "label": "component:application",
+      "color": "c5def5",
+      "description": "Application and section commands",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk",
+        "b-horodyskyi"
+      ],
+      "paths": [
+        "clio/Command/ApplicationCommand/",
+        "clio/Command/McpServer/Tools/ApplicationTool.cs",
+        "clio/Command/McpServer/Tools/ApplicationDeleteTool.cs",
+        "clio/Command/McpServer/Tools/FindAppTool.cs",
+        "clio/Command/McpServer/Tools/InstallApplicationTool.cs"
+      ]
+    },
+    {
+      "id": "entity",
+      "option": "Entities and lookups (create and edit objects, columns and their properties, lookups, sync-schemas)",
+      "label": "component:entity",
+      "color": "c5def5",
+      "description": "Creating and editing objects, columns and lookups",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/EntitySchemaDesigner/",
+        "clio/Command/*EntitySchema*Command.cs",
+        "clio/Common/EntitySchema/",
+        "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs",
+        "clio/Command/McpServer/Tools/SchemaSyncTool.cs"
+      ]
+    },
+    {
+      "id": "schemas",
+      "option": "Source code and SQL schemas (C# source code schemas, SQL schemas)",
+      "label": "component:schemas",
+      "color": "c5def5",
+      "description": "Source code and SQL schema tools",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/Schema*",
+        "clio/Command/McpServer/Tools/SqlSchema*",
+        "clio/ModelBuilder/",
+        "clio/Command/McpServer/Tools/AddItemModelTool.cs",
+        "clio/Command/McpServer/Tools/DeleteSchemaTool.cs",
+        "clio/Command/McpServer/Tools/ExportSchemaTool.cs",
+        "clio/Command/McpServer/Tools/GenerateSourceCodeTool.cs",
+        "clio/Command/McpServer/Tools/GetSchemaTool.cs",
+        "clio/Command/McpServer/Tools/ImportSchemaTool.cs"
+      ]
+    },
+    {
+      "id": "data",
+      "option": "ESQ and SQL (ESQ queries, run SQL scripts, DataForge)",
+      "label": "component:data",
+      "color": "c5def5",
+      "description": "ESQ queries, SQL scripts and DataForge",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/ExecuteEsqTool.cs",
+        "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
+        "clio/Command/McpServer/Tools/DataForge*",
+        "clio/Query/",
+        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs"
+      ]
+    },
+    {
+      "id": "data-bindings",
+      "option": "Data bindings (package data bindings, seed data)",
+      "label": "component:data-bindings",
+      "color": "c5def5",
+      "description": "Package data bindings",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/DataBinding*"
+      ]
+    },
+    {
+      "id": "sys-settings",
+      "option": "System settings (create, read and set system settings)",
+      "label": "component:sys-settings",
+      "color": "c5def5",
+      "description": "System settings tools",
+      "owners": [
+        "ylypnytskyi-eng",
+        "a-trofimchuk"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/*SysSetting*"
+      ]
+    },
+    {
+      "id": "odata",
+      "option": "OData tools (odata-read, odata-create, odata-update, odata-delete)",
+      "label": "component:odata",
+      "color": "c5def5",
+      "description": "OData read and write tools",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk",
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/OData*"
+      ]
+    },
+    {
+      "id": "process-builder",
+      "option": "Business processes and user tasks (process model, user tasks, CrtProcessBuilder)",
+      "label": "component:process-builder",
+      "color": "c5def5",
+      "description": "Business process model, user tasks, CrtProcessBuilder package",
+      "owners": [
+        "d-krestov",
+        "b-horodyskyi",
+        "m-strukov"
+      ],
+      "paths": [
+        "clio/Command/ProcessModel/",
+        "clio/CrtProcessBuilder/",
+        "clio/Command/McpServer/Tools/UserTaskTool.cs",
+        "clio/Command/McpServer/Tools/CreateUserTaskPageTool.cs",
+        "clio/Command/McpServer/Tools/GenerateProcessModelTool.cs",
+        "clio/Command/McpServer/Tools/InstallProcessBuilderTool.cs",
+        "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
+        "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
+        "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
+        "clio/Command/McpServer/Tools/ProcessDesigner/"
+      ]
+    },
+    {
+      "id": "theming",
+      "option": "Themes and branding (themes, palette, logo, background image)",
+      "label": "component:theming",
+      "color": "c5def5",
+      "description": "Theme, palette and branding tools",
+      "owners": [
+        "dnagayko",
+        "m-strukov",
+        "r-krupin"
+      ],
+      "paths": [
+        "clio/Command/Theming/",
+        "clio/Command/Branding/",
+        "clio/Theming/",
+        "clio/Command/McpServer/Tools/*Theme*",
+        "clio/Command/McpServer/Tools/CheckThemingAccessTool.cs",
+        "clio/Command/McpServer/Tools/SetBackgroundImageTool.cs",
+        "clio/Command/McpServer/Tools/SetLogoTool.cs",
+        "clio/Command/McpServer/Tools/UploadImageTool.cs"
+      ]
+    },
+    {
+      "id": "marketing",
+      "option": "Marketing (sequences, email templates, printables)",
+      "label": "component:marketing",
+      "color": "c5def5",
+      "description": "Marketing sequences, email templates and printables",
+      "owners": [],
+      "paths": [
+        "clio/Command/McpServer/Tools/SequenceContextTool.cs",
+        "clio/Command/McpServer/Tools/SequenceEnrollmentTool.cs",
+        "clio/Command/McpServer/Tools/EmailTemplateTool.cs",
+        "clio/Command/McpServer/Tools/ListPrintablesTool.cs"
+      ]
+    },
+    {
+      "id": "dashboards",
+      "option": "Dashboards (dashboards and the dashboards migrator)",
+      "label": "component:dashboards",
+      "color": "c5def5",
+      "description": "Dashboards and the dashboards migrator",
+      "owners": [
+        "bfedoronchuk"
+      ],
+      "paths": [
+        "clio/Command/InstallDashboardsMigratorCommand.cs",
+        "clio/Command/McpServer/Tools/InstallDashboardsMigratorTool.cs",
+        "clio/CrtDashboardsMigratorApp/"
+      ]
+    },
+    {
+      "id": "package",
+      "option": "Packages and compilation (push-pkg, compress, lock/unlock, dependencies, compile)",
+      "label": "component:package",
+      "color": "c5def5",
+      "description": "Package management and compilation",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Package/",
+        "clio/Command/PackageCommand/",
+        "clio/Command/McpServer/Tools/CompileCreatioTool.cs",
+        "clio/Command/McpServer/Tools/AddPackageDependencyTool.cs",
+        "clio/Command/McpServer/Tools/CompileStatusTool.cs",
+        "clio/Command/McpServer/Tools/DownloadConfigurationTool.cs",
+        "clio/Command/McpServer/Tools/FsmModeTool.cs",
+        "clio/Command/McpServer/Tools/GetPkgListTool.cs",
+        "clio/Command/McpServer/Tools/GetTargetPackageTool.cs",
+        "clio/Command/McpServer/Tools/LastCompilationLogTool.cs",
+        "clio/Command/McpServer/Tools/LinkFromRepositoryTool.cs",
+        "clio/Command/McpServer/Tools/LoadPackagesTool.cs",
+        "clio/Command/McpServer/Tools/PackageFileTool.cs",
+        "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
+        "clio/Command/McpServer/Tools/RemovePackageDependencyTool.cs",
+        "clio/Command/McpServer/Tools/WatchCompilationTool.cs"
+      ]
+    },
+    {
+      "id": "workspace",
+      "option": "Workspaces (create/push/restore-workspace, workspace templates)",
+      "label": "component:workspace",
+      "color": "c5def5",
+      "description": "Workspace commands and templates",
+      "owners": [
+        "kirillkrylov",
+        "vladimir-nikonov"
+      ],
+      "paths": [
+        "clio/Workspace/",
+        "clio/Workspaces/",
+        "clio/tpl/",
+        "clio/Command/McpServer/Tools/CreateWorkspaceTool.cs",
+        "clio/Command/McpServer/Tools/WorkspacePackageTool.cs",
+        "clio/Command/McpServer/Tools/WorkspaceSyncTool.cs"
+      ]
+    },
+    {
+      "id": "install",
+      "option": "Creatio installation and local environments (deploy-creatio, start/stop, restart, restore-db)",
+      "label": "component:install",
+      "color": "c5def5",
+      "description": "deploy-creatio, local infrastructure, environment setup",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/CreatioInstallCommand/",
+        "clio/Command/McpServer/Tools/InstallerCommandTool.cs",
+        "clio/Command/McpServer/Tools/RestartTool.cs",
+        "clio/Command/McpServer/Tools/AddCustomLoggingTool.cs",
+        "clio/Command/McpServer/Tools/AssertInfrastructureTool.cs",
+        "clio/Command/McpServer/Tools/ClearRedisTool.cs",
+        "clio/Command/McpServer/Tools/DbTemplatePruneTool.cs",
+        "clio/Command/McpServer/Tools/FindEmptyIisPortTool.cs",
+        "clio/Command/McpServer/Tools/GetCreatioInfoTool.cs",
+        "clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs",
+        "clio/Command/McpServer/Tools/RegWebAppTool.cs",
+        "clio/Command/McpServer/Tools/RestartStatusTool.cs",
+        "clio/Command/McpServer/Tools/RestoreDbTool.cs",
+        "clio/Command/McpServer/Tools/SettingsHealthTool.cs",
+        "clio/Command/McpServer/Tools/ShowPassingInfrastructureTool.cs",
+        "clio/Command/McpServer/Tools/ShowWebAppListTool.cs",
+        "clio/Command/McpServer/Tools/StartTool.cs",
+        "clio/Command/McpServer/Tools/StopTool.cs",
+        "clio/Command/McpServer/Tools/UninstallCreatioTool.cs"
+      ]
+    },
+    {
+      "id": "security",
+      "option": "Users, roles, licenses, record rights, OAuth and Identity Service",
+      "label": "component:security",
+      "color": "c5def5",
+      "description": "Administration, record rights, OAuth and identity",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "clio/Command/Administration/",
+        "clio/Command/RecordRights/",
+        "clio/Command/OAuthAppConfiguration/",
+        "clio/Command/IdentityServiceDeployment/",
+        "clio/Command/McpServer/Tools/ClearBrowserSessionTool.cs",
+        "clio/Command/McpServer/Tools/CreateOAuthTechnicalUserTool.cs",
+        "clio/Command/McpServer/Tools/CreateServerToServerOAuthAppTool.cs",
+        "clio/Command/McpServer/Tools/DeployIdentityTool.cs",
+        "clio/Command/McpServer/Tools/GetBrowserSessionTool.cs",
+        "clio/Command/McpServer/Tools/GetIdentityServiceConfigTool.cs",
+        "clio/Command/McpServer/Tools/GetRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
+        "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
+        "clio/Command/McpServer/Tools/ManageAccessTool.cs",
+        "clio/Command/McpServer/Tools/ManageLicenseTool.cs",
+        "clio/Command/McpServer/Tools/ManageRoleTool.cs",
+        "clio/Command/McpServer/Tools/ManageUserTool.cs",
+        "clio/Command/McpServer/Tools/ResolveOAuthSystemUserTool.cs",
+        "clio/Command/McpServer/Tools/SetRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/UninstallIdentityTool.cs",
+        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs"
+      ]
+    },
+    {
+      "id": "mcp-server",
+      "option": "MCP server core (clio-run, tool contracts, discovery, MCP telemetry consent)",
+      "label": "component:mcp-server",
+      "color": "c5def5",
+      "description": "clio MCP server core",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/",
+        "clio/Command/McpServer/Tools/ClioRunTool.cs",
+        "clio/Command/McpServer/Tools/ToolContractGetTool.cs",
+        "clio.mcp.e2e/",
+        "clio/Command/McpServer/Tools/ExperimentalTool.cs",
+        "clio/Command/McpServer/Tools/GetTelemetryConsentTool.cs",
+        "clio/Command/McpServer/Tools/McpToolInvokerRegistry.cs",
+        "clio/Command/McpServer/Tools/RequestInfoTool.cs",
+        "clio/Command/McpServer/Tools/SendTelemetryTool.cs",
+        "clio/Command/McpServer/Tools/SkillManagementTool.cs",
+        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs"
+      ]
+    },
+    {
+      "id": "guidance",
+      "option": "MCP guidance and knowledge (get-guidance, knowledge sources)",
+      "label": "component:guidance",
+      "color": "c5def5",
+      "description": "Agent guidance published from clio-knowledge",
+      "owners": [
+        "kirillkrylov",
+        "d-krestov"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Knowledge/",
+        "clio/Command/McpServer/Tools/GuidanceGetTool.cs",
+        "clio/Command/McpServer/Tools/KnowledgeFeedbackPolicyTools.cs",
+        "clio/Command/McpServer/Tools/KnowledgeManagementTools.cs"
+      ]
+    },
+    {
+      "id": "cliogate",
+      "option": "cliogate package",
+      "label": "component:cliogate",
+      "color": "c5def5",
+      "description": "ClioGate Creatio package",
+      "owners": [
+        "kirillkrylov",
+        "Alexandr-Kravchuk"
+      ],
+      "paths": [
+        "cliogate/",
+        "clio/cliogate/",
+        "clio/Command/McpServer/Tools/InstallGateTool.cs"
+      ]
+    },
+    {
+      "id": "clio-ring",
+      "option": "ClioRing desktop companion",
+      "label": "component:clio-ring",
+      "color": "c5def5",
+      "description": "ClioRing internal preview",
+      "owners": [
+        "kirillkrylov"
+      ],
+      "paths": [
+        "clio-ring/"
+      ]
+    },
+    {
+      "id": "cli-core",
+      "option": "CLI core (clio environment settings, authentication, command parsing)",
+      "label": "component:cli-core",
+      "color": "c5def5",
+      "description": "Environment settings, auth, parser, DI",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "kirillkrylov"
+      ],
+      "ownerNotification": "mention",
+      "paths": [
+        "clio/Common/",
+        "clio/Environment/",
+        "clio/Program.cs",
+        "clio/BindingsModule.cs"
+      ]
+    },
+    {
+      "id": "docs",
+      "option": "Documentation and command help",
+      "label": "component:docs",
+      "color": "c5def5",
+      "description": "Commands.md, help/en, docs/commands",
+      "owners": [
+        "Alexandr-Kravchuk",
+        "kirillkrylov"
+      ],
+      "ownerNotification": "mention",
+      "paths": [
+        "clio/Commands.md",
+        "clio/help/",
+        "clio/docs/"
+      ]
+    },
+    {
+      "id": "other",
+      "option": "Other / not sure",
+      "triage": true
+    }
+  ]
+}

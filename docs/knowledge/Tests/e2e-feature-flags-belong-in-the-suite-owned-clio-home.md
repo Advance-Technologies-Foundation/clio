@@ -1,10 +1,10 @@
 ---
-description: a feature-gated MCP tool is advertised only when the clio home has the flag on, and an e2e fixture must set it in the suite-owned shared home - building its own home from the machine's appsettings silently loses the corrected sandbox URL, the sanitised knowledge root and the credential hardening
+description: the e2e suite's feature surface is decided in the suite-owned shared home and nowhere else - it is CLEARED there, so a gated fixture gates itself and skips; a fixture that builds its own home from the machine's appsettings silently loses the corrected sandbox URL, the sanitised knowledge root and the credential hardening
 applies-to:
   - clio.mcp.e2e/McpSharedHomeSetUpFixture.cs
   - clio.mcp.e2e/MobilePageConversionGuideSandboxE2ETests.cs
   - clio.mcp.e2e/Support/Configuration/TemporaryClioSettingsOverride.cs
-ticket: gh-1382
+ticket: gh-1382, ENG-94638
 date: 2026-09-04
 ---
 
@@ -13,8 +13,16 @@ flag is off, and flags live in `appsettings.json` in the clio home. An e2e fixtu
 server read the machine's home therefore inherits whatever the last person or job to run clio there left
 behind. The place to decide it is `McpSharedHomeSetUpFixture`, which already builds the one home the whole
 suite runs against; `TestConfiguration.Load()` hands that home to every fixture through
-`ProcessEnvironmentVariables["CLIO_HOME"]`. A fixture needing a flag adds it there, not in its own
+`ProcessEnvironmentVariables["CLIO_HOME"]`. A fixture decides it there, not in its own
 `ConfigureMcpServerSettings`.
+
+Since ENG-94638 that fixture CLEARS the inherited map rather than adding to it, and it folds every casing
+of the `features` key before writing the canonical one - clio binds the map case-insensitively into a
+dictionary its constructor pre-initialises, so assigning the lowercase key alone would leave a `Features`
+sibling's flags in force. No fixture sets a flag today: the tools clio still gates gate THEMSELVES and skip
+(`WatchCompilationE2EGate`, `McpWorkerModeE2ETests`), which is what makes an empty map the deterministic
+input they are written against. A fixture that needs a gated tool advertised must add it here - and must
+fold the casings - not build its own home.
 
 **Why it is this way** — the suite-owned copy is not merely "a home": it is repaired. `reg-web-app` in
 `ClioCliCommandRunner.ReRegisterSandboxEnvironmentAsync` corrects the sandbox environment's stale URL

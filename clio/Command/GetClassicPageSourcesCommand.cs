@@ -3,6 +3,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -295,8 +296,9 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				? options.Entity
 				: InferEntity(ctx, schemas, seed);
 
-			// 5. Merged localizable strings -> resources (best-effort; the merge folds localization, not the view).
-			JObject resources = BuildResources(ctx, topLayerUId, options.SchemaName);
+			// 5. Merged localizable strings -> resources (en-US text) and resourceStrings (every culture), best-effort;
+			//    the merge folds localization, not the view.
+			(JObject resources, JObject resourceStrings) = BuildResources(ctx, topLayerUId, options.SchemaName);
 
 			// 6. Entity columns + titles from the merged entity schema (best-effort).
 			(JObject entityColumns, JObject columnTitles) = BuildEntityColumns(ctx, entity);
@@ -344,6 +346,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			AddBlock(manifest, "entityColumns", entityColumns);
 			AddBlock(manifest, "columnTitles", columnTitles);
 			AddBlock(manifest, "resources", resources);
+			AddBlock(manifest, "resourceStrings", resourceStrings);
 			AddBlock(manifest, "detailSchemas", detailSchemas);
 			AddBlock(manifest, "section", section);
 			AddBlock(manifest, "childPageSchemas", childPageSchemas);
@@ -626,19 +629,33 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		JObject topSchema = null;
 		string topUId = null;
 		foreach (SchemaLayer layer in layers) {
-			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+			(JObject item, JObject layerSchema, string loadError) = LoadLayerItem(ctx, layer, schemaName);
 			if (loadError != null) {
-				return (null, null, null, $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError}");
+				return (null, null, null, loadError);
 			}
-			schemas.Add(new JObject {
-				["pkg"] = layer.PackageName,
-				["body"] = layerSchema["body"]?.ToString() ?? string.Empty
-			});
+			schemas.Add(item);
 			topSchema = layerSchema;
 			topUId = layer.UId;
 		}
 		return (schemas, topSchema, topUId, null);
 	}
+
+	// Loads one layer's own schema as the engine-facing {pkg, body} item; the error names the layer.
+	private (JObject item, JObject schema, string error) LoadLayerItem(
+		PageSourcesRunContext ctx, SchemaLayer layer, string schemaName) {
+		(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+		if (loadError != null || layerSchema == null) {
+			return (null, null, LayerLoadError(layer, loadError ?? NoSchemaReturned));
+		}
+		var item = new JObject {
+			["pkg"] = layer.PackageName,
+			["body"] = layerSchema["body"]?.ToString() ?? string.Empty
+		};
+		return (item, layerSchema, null);
+	}
+
+	private static string LayerLoadError(SchemaLayer layer, string reason) =>
+		$"Failed to load layer '{layer.PackageName}' ({layer.UId}): {reason}";
 
 	private JArray BuildSeed(PageSourcesRunContext ctx, JObject topSchema) {
 		// Walk `parent` from the top layer up to the base template. At EACH template level, enumerate every
@@ -842,37 +859,93 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		}
 	}
 
-	private JObject BuildResources(PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
-		var resources = new JObject();
+	private (JObject resources, JObject resourceStrings) BuildResources(
+		PageSourcesRunContext ctx, string topLayerUId, string schemaName) {
+		IReadOnlyList<MergedLocalizableString> strings = LoadMergedStrings(ctx, topLayerUId, schemaName,
+			$"Could not gather merged localizable strings (resources) of '{schemaName}'",
+			"Its manifest carries no resources, so localized captions will be missing from the folded page.");
+		JObject resourceStrings = BuildResourceStrings(strings);
+		return (BuildFlatResources(strings), resourceStrings);
+	}
+
+	private JObject BuildChildResourceStrings(PageSourcesRunContext ctx, string topLayerUId, string childPageName) =>
+		BuildResourceStrings(LoadMergedStrings(ctx, topLayerUId, childPageName,
+			$"Could not gather merged localizable strings (resourceStrings) of child page '{childPageName}'",
+			"Its nested manifest carries no resourceStrings, so the child page's localized captions will be missing."));
+
+	// Merged localizable strings from the full-hierarchy load; empty, with a response warning, when the load fails.
+	private IReadOnlyList<MergedLocalizableString> LoadMergedStrings(PageSourcesRunContext ctx, string topLayerUId,
+		string schemaName, string failurePrefix, string missingNote) {
 		try {
 			(JObject schema, string error) = LoadSchemaCached(ctx, topLayerUId, schemaName, useFullHierarchy: true);
-			if (error != null || schema == null) {
-				// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
-				// engine then folds captions it has no translation for. Same channel as the catch below.
-				string warning = $"Could not gather merged localizable strings (resources): {error ?? NoSchemaReturned}. " +
-					"The manifest carries no resources, so localized captions will be missing from the folded page.";
-				_logger.WriteWarning(warning);
-				AddWarning(ctx, warning);
-				return resources;
+			if (error == null && schema != null) {
+				return SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema);
 			}
-			foreach (MergedLocalizableString localizableString in SchemaDesignerHelper.ExtractMergedLocalizableStrings(schema)) {
-				if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
-					continue;
-				}
-				string value = localizableString.Values
-						.FirstOrDefault(v => string.Equals(v.CultureName, DefaultCulture, StringComparison.OrdinalIgnoreCase))?.Value
-					?? localizableString.Values[0].Value;
-				if (!string.IsNullOrEmpty(value) && resources[localizableString.Name] == null) {
-					resources[localizableString.Name] = value;
-				}
-			}
-		}
-		catch (Exception ex) {
-			string warning = $"Could not gather merged localizable strings (resources): {ex.Message}";
+			// resourceCount:0 cannot be told apart from a page that declares no localizable strings, and the
+			// engine then folds captions it has no translation for. Same channel as the catch below.
+			string warning = $"{failurePrefix}: {error ?? NoSchemaReturned}. {missingNote}";
 			_logger.WriteWarning(warning);
 			AddWarning(ctx, warning);
 		}
+		catch (Exception ex) {
+			string warning = $"{failurePrefix}: {ex.Message}";
+			_logger.WriteWarning(warning);
+			AddWarning(ctx, warning);
+		}
+		return [];
+	}
+
+	// One text per key: the first entry whose en-US text (else, without en-US, its first culture's text) is non-empty.
+	private static JObject BuildFlatResources(IReadOnlyList<MergedLocalizableString> strings) {
+		var resources = new JObject();
+		foreach (MergedLocalizableString localizableString in strings) {
+			if (string.IsNullOrWhiteSpace(localizableString.Name) || localizableString.Values.Count == 0) {
+				continue;
+			}
+			string value = localizableString.Values
+					.FirstOrDefault(v => string.Equals(v.CultureName, DefaultCulture, StringComparison.OrdinalIgnoreCase))?.Value
+				?? localizableString.Values[0].Value;
+			if (!string.IsNullOrEmpty(value) && resources[localizableString.Name] == null) {
+				resources[localizableString.Name] = value;
+			}
+		}
 		return resources;
+	}
+
+	// Merged localizable strings in get-page's bundle.resources.strings shape: { "Key": { "en-US": "…", "fr-FR": "…" } }.
+	// Culture names are canonicalized (en-us -> en-US); entries without a key, culture or text are skipped; across
+	// duplicate entries of a key the first non-empty text per culture wins.
+	private static JObject BuildResourceStrings(IReadOnlyList<MergedLocalizableString> strings) {
+		var resourceStrings = new JObject();
+		foreach (MergedLocalizableString localizableString in strings) {
+			if (string.IsNullOrWhiteSpace(localizableString.Name)) {
+				continue;
+			}
+			var cultures = resourceStrings[localizableString.Name] as JObject ?? new JObject();
+			foreach (MergedLocalizableStringValue value in localizableString.Values) {
+				if (string.IsNullOrWhiteSpace(value.CultureName) || string.IsNullOrEmpty(value.Value)) {
+					continue;
+				}
+				string cultureName = NormalizeCultureName(value.CultureName);
+				if (cultures[cultureName] == null) {
+					cultures[cultureName] = value.Value;
+				}
+			}
+			if (cultures.HasValues) {
+				resourceStrings[localizableString.Name] = cultures;
+			}
+		}
+		return resourceStrings;
+	}
+
+	private static string NormalizeCultureName(string cultureName) {
+		string trimmed = cultureName.Trim();
+		try {
+			return CultureInfo.GetCultureInfo(trimmed, predefinedOnly: true).Name;
+		}
+		catch (CultureNotFoundException) {
+			return trimmed;
+		}
 	}
 
 	private (JObject entityColumns, JObject columnTitles) BuildEntityColumns(PageSourcesRunContext ctx, string entity) {
@@ -982,20 +1055,11 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				if (layers.Count == 0) {
 					continue; // omit: an unresolved detail is left for the engine to flag, never fabricated
 				}
-				string topUId = layers[layers.Count - 1].UId;
-				(JObject detailSchema, string loadError) = LoadSchemaCached(ctx, topUId, detailName);
-				if (loadError != null || detailSchema == null) {
-					string warning = $"Could not gather detail schema '{detailName}': {loadError ?? NoSchemaReturned}";
-					_logger.WriteWarning(warning);
-					AddWarning(ctx, warning);
-					continue;
+				JObject detailEntry = BuildDetailEntry(ctx, layers[layers.Count - 1].UId, detailName);
+				if (detailEntry.HasValues) {
+					AddDetailBodies(ctx, detailEntry, layers, detailName);
+					detailSchemas[detailName] = detailEntry;
 				}
-				var detailEntry = new JObject { ["body"] = detailSchema["body"]?.ToString() ?? string.Empty };
-				string title = SchemaDesignerHelper.ExtractCaption(detailSchema);
-				if (!string.IsNullOrWhiteSpace(title)) {
-					detailEntry["title"] = title;
-				}
-				detailSchemas[detailName] = detailEntry;
 			}
 			catch (Exception ex) {
 				string warning = $"Could not gather detail schema '{detailName}': {ex.Message}";
@@ -1004,6 +1068,75 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		return detailSchemas;
+	}
+
+	// Body, title and merged resourceStrings from the full-hierarchy load. When that load fails, body and title come
+	// from the own-layer load and the entry carries no resourceStrings; empty when neither load returns the schema.
+	private JObject BuildDetailEntry(PageSourcesRunContext ctx, string topUId, string detailName) {
+		(JObject detailSchema, string mergedError) = LoadSchemaCached(ctx, topUId, detailName, useFullHierarchy: true);
+		bool merged = mergedError == null && detailSchema != null;
+		if (!merged) {
+			(detailSchema, string ownError) = LoadSchemaCached(ctx, topUId, detailName);
+			if (ownError != null || detailSchema == null) {
+				WarnDetail(ctx, $"Could not gather detail schema '{detailName}': {ownError ?? NoSchemaReturned}");
+				return new JObject();
+			}
+			WarnDetail(ctx, $"Could not gather merged localizable strings (resourceStrings) of detail '{detailName}': "
+				+ $"{mergedError ?? NoSchemaReturned}. Its entry carries no resourceStrings.");
+		}
+		var detailEntry = new JObject { ["body"] = detailSchema["body"]?.ToString() ?? string.Empty };
+		string title = SchemaDesignerHelper.ExtractCaption(detailSchema);
+		if (!string.IsNullOrWhiteSpace(title)) {
+			detailEntry["title"] = title;
+		}
+		if (merged) {
+			JObject detailStrings = BuildDetailResourceStrings(ctx, detailSchema, detailName);
+			if (detailStrings.HasValues) {
+				detailEntry["resourceStrings"] = detailStrings;
+			}
+		}
+		return detailEntry;
+	}
+
+	// bodies: every replacing layer of the detail base->top as {pkg, body}, each with its own-layer body. When any
+	// layer fails to load the entry carries no bodies, since a partial chain would hide that layer's content.
+	private void AddDetailBodies(
+		PageSourcesRunContext ctx, JObject detailEntry, IReadOnlyList<SchemaLayer> layers, string detailName) {
+		var bodies = new JArray();
+		foreach (SchemaLayer layer in layers) {
+			JObject item;
+			string loadError;
+			try {
+				(item, _, loadError) = LoadLayerItem(ctx, layer, detailName);
+			}
+			catch (Exception ex) {
+				(item, loadError) = (null, LayerLoadError(layer, ex.Message ?? ex.GetType().Name));
+			}
+			if (loadError != null) {
+				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': {loadError}. "
+					+ "Its entry carries no bodies; body is the top layer only.");
+				return;
+			}
+			bodies.Add(item);
+		}
+		detailEntry["bodies"] = bodies;
+	}
+
+	// An extraction failure omits only the detail's resourceStrings.
+	private JObject BuildDetailResourceStrings(PageSourcesRunContext ctx, JObject detailSchema, string detailName) {
+		try {
+			return BuildResourceStrings(SchemaDesignerHelper.ExtractMergedLocalizableStrings(detailSchema));
+		}
+		catch (Exception ex) {
+			WarnDetail(ctx, $"Could not gather merged localizable strings (resourceStrings) of detail '{detailName}': "
+				+ $"{ex.Message}. Its entry carries no resourceStrings.");
+			return new JObject();
+		}
+	}
+
+	private void WarnDetail(PageSourcesRunContext ctx, string warning) {
+		_logger.WriteWarning(warning);
+		AddWarning(ctx, warning);
 	}
 
 	// Section candidates in priority order: the schema names SysModule metadata binds to the entity first, then the
@@ -1397,7 +1530,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		// per-template-level BuildSeed fan-out this ran per child page (the dominant round-trip cost when a page
 		// carries many child edit pages, each itself deeply layered). LoadChainAndSeed degrades to that exact
 		// legacy fan-out on any hierarchy failure, so a child manifest is never worse than before.
-		(JArray schemas, JArray seed, _, string chainError) = LoadChainAndSeed(ctx, editPageName);
+		(JArray schemas, JArray seed, string topLayerUId, string chainError) = LoadChainAndSeed(ctx, editPageName);
 		if (chainError != null) {
 			return (null, chainError);
 		}
@@ -1409,6 +1542,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		if (seed.Count > 0) {
 			manifest["seed"] = seed;
 		}
+		// Child manifests carry resourceStrings only: flat resources would change what an older engine folds.
+		AddBlock(manifest, "resourceStrings", BuildChildResourceStrings(ctx, topLayerUId, editPageName));
 		return (manifest, null);
 	}
 

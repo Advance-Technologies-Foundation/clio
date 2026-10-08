@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -86,9 +87,9 @@ public sealed class ToolContractGetTool {
 	// Before ENG-95885 the flat call bound `args` to null, fell through to the no-tool-names branch, and
 	// handed the agent the entire index back as a plausible success.
 	[McpRecoversUnknownArguments]
-	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for full contracts (schemas, defaults, examples, workflows). Mixed batches retain valid contracts and report misses with suggestions in not-found. Pass detail=full without tool-names for every full contract.")]
+	[Description("Returns clio MCP tool contracts. Omit tool-names for a compact index of ALL tools (names, purpose, safety flags); pass tool-names for their contracts, fitted to one reply: the largest come back short unless detail=full. Mixed batches retain valid contracts and report misses with suggestions in not-found.")]
 	public ToolContractGetResponse GetToolContracts(
-		[Description("Parameters: tool-names (optional array of tool names) and detail (optional 'index' | 'full'). Omit entirely for a compact index of all tools; pass tool-names for full contracts; pass detail=full to expand all full contracts.")]
+		[Description("Parameters: tool-names (optional array) and detail (optional: index, full or short). Omit entirely for a compact index of all tools; pass tool-names for their contracts; detail=full expands every contract in full.")]
 		ToolContractGetArgs? args = null,
 		RequestContext<CallToolRequestParams>? requestContext = null) {
 		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
@@ -315,10 +316,10 @@ public sealed class ToolContractGetTool {
 
 public sealed record ToolContractGetArgs(
 	[property: JsonPropertyName("tool-names")]
-	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their full contracts.")]
+	[property: Description("Optional array of tool names. Omit to return a compact index of all clio MCP tools (names + one-line purpose); pass names to expand their contracts.")]
 	IReadOnlyList<string>? ToolNames = null,
 	[property: JsonPropertyName("detail")]
-	[property: Description("Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index of all tools; 'full' returns the full contracts of all tools (legacy behavior).")]
+	[property: Description("Optional. Without tool-names: index (default) or full (every full contract). With tool-names: omitted fits one reply by shortening the largest; full returns all in full, short all short.")]
 	string? Detail = null
 ) {
 	[JsonExtensionData]
@@ -395,7 +396,13 @@ public sealed record ToolContractDefinition(
 	[property: JsonPropertyName("fallback-flow")] IReadOnlyList<ToolFlowHint> FallbackFlow,
 	[property: JsonPropertyName("deprecations")] IReadOnlyList<ToolDeprecation> Deprecations,
 	[property: JsonPropertyName("anti-patterns")] IReadOnlyList<ToolAntiPattern>? AntiPatterns = null,
-	[property: JsonPropertyName("preconditions")] IReadOnlyList<string>? Preconditions = null
+	[property: JsonPropertyName("preconditions")] IReadOnlyList<string>? Preconditions = null,
+	// ENG-100154: set only on a SHORT contract (see ToolContractShortForm); a full contract omits both, so
+	// the wire shape of every full contract is unchanged.
+	[property: JsonPropertyName("detail"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? Detail = null,
+	[property: JsonPropertyName("full-contract-bytes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	int? FullContractBytes = null
 );
 
 public sealed record ToolInputSchemaContract(
@@ -418,8 +425,15 @@ public sealed record ToolOutputContract(
 	[property: JsonPropertyName("fields")] IReadOnlyList<ToolContractField> Fields
 );
 
+/// <param name="Codes">The error codes; empty when <paramref name="SameAs"/> names the contract carrying them.</param>
+/// <param name="SameAs">
+/// ENG-100154: in a fitted reply, the name of an earlier contract in the same reply whose error codes are identical,
+/// so the reply carries them once.
+/// </param>
 public sealed record ToolErrorContract(
-	[property: JsonPropertyName("codes")] IReadOnlyList<ToolErrorCodeContract> Codes
+	[property: JsonPropertyName("codes")] IReadOnlyList<ToolErrorCodeContract> Codes,
+	[property: JsonPropertyName("same-as"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? SameAs = null
 );
 
 public sealed record ToolErrorCodeContract(
@@ -501,6 +515,9 @@ internal static class ToolContractCatalog {
 	private const string CountFieldName = "count";
 	private const string OrderByFieldName = "order-by";
 	private const string OutputFileFieldName = "output-file";
+	private const string EntityNameFieldName = "entity-name";
+	private const string OutputFileTwinPrecondition =
+		"output-file must not already exist and must resolve inside the workspace or the OS temp directory.";
 	private const string ConstDefaultValueSourceName = nameof(Terrasoft.Core.Entities.EntitySchemaColumnDefSource.Const);
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
@@ -630,9 +647,11 @@ internal static class ToolContractCatalog {
 	private const string NumberType = "number";
 	private const string ObjectType = "object";
 	private const string ComponentTypeFieldName = "component-type";
+	private const string CompositeFieldName = "composite";
 	private const string OperationsFieldName = "operations";
 	private const string OffsetFieldName = "offset";
 	private const string PackageNameFieldName = "package-name";
+	private const string CompileProcessNameFieldName = "process-name";
 	private const string PackagesFieldName = "packages";
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
@@ -683,6 +702,7 @@ internal static class ToolContractCatalog {
 	private const string RuleFieldName = "rule";
 	private const string RulesFieldName = "rules";
 	private const string SectionCodeFieldName = "section-code";
+	private const string SectionsFieldName = "sections";
 	private const string DeleteEntitySchemaFieldName = "delete-entity-schema";
 	private const string SearchPatternFieldName = "search-pattern";
 	private const string EventNameFieldName = "event_name";
@@ -703,6 +723,7 @@ internal static class ToolContractCatalog {
 	private const string ValueFieldName = "value";
 	private const string ValuesFieldName = "values";
 	private const string VerifyFieldName = "verify";
+	private const string IncludeOperationsFieldName = "include-operations";
 	private const string BindingNameDescription = "Binding name.";
 	private const string WorkspacePathDescription = "Absolute local workspace path. Network-share paths are not supported.";
 	private const string DataBindingWorkspacePathDescription = "Absolute local workspace root containing .clio/workspaceSettings.json, not the package directory. The package is resolved under packages/<package-name> beneath that root. Network-share paths are not supported.";
@@ -713,6 +734,28 @@ internal static class ToolContractCatalog {
 
 	/// <summary>Response member every odata-* tool stamps, on success and on failure alike.</summary>
 	private const string CorrelationIdFieldName = "correlation-id";
+	private const string CaptionCultureFieldName = "caption-culture";
+	private const string WarningsFieldName = "warnings";
+	private const string NextStepFieldName = "next-step";
+
+	private const string NavigationCacheContractNote =
+		"After the change it clears the menu cache of clio's own Creatio session; a failed clear is a `warnings` " +
+		"entry, not a failure. Other sessions keep the old menu: an open browser tab refreshes only if its " +
+		"websocket was connected at the moment of the change, so a success returns `next-step` with the call to " +
+		"run inside a tab that still shows the old menu after a reload. Never clear Redis for this; it logs out " +
+		"every user.";
+
+	private const string NavigationCacheWarningsDescription =
+		"Non-fatal findings, for example a menu cache of clio's session that could not be cleared.";
+
+	private const string NavigationCacheNextStepDescription =
+		"Present on success: how to refresh an open browser tab that still shows the old menu after a reload " +
+		"(a fetch to ConfigurationDataService/GetData with body true, run in that tab, then a reload).";
+	private const string ExampleOrdersSectionCode = "UsrOrders";
+	private const string ExampleTaskAppFormPageSchemaName = "UsrTaskApp_FormPage";
+	private const string CultureFieldName = "culture";
+	private const string CamelCasePackageNameFieldName = "packageName";
+	private const string ExampleSpanishCultureName = "es-ES";
 
 	/// <summary>
 	/// The odata-read variant. Only this tool withholds the server's wording from <c>error</c> and routes
@@ -733,6 +776,21 @@ internal static class ToolContractCatalog {
 		"Identifier for this call, present on success and on failure, matching this response to clio's own "
 		+ "log lines. Unlike odata-read, this tool's 'error' MAY carry Creatio's own message (with URIs, "
 		+ "paths and tokens removed) and there is no separate debug line to look the id up in.";
+
+	/// <summary>
+	/// What <c>CreatioResponseError.AppendStructuredODataWriteError</c> adds to a write tool's error
+	/// (GH-1699). Shared by odata-create, odata-update and odata-delete, which all append it.
+	/// </summary>
+	private const string ODataWriteForeignKeyHintDescription =
+		"When the database rejected the write for a foreign key, the error also carries a clio-authored hint "
+		+ "(validated identifiers only) naming the constraint and any table or column present in the response. "
+		+ "For a missing referenced record, the hint explicitly says when the foreign-key column or referenced "
+		+ "table is unknown. Inspect lookup metadata with get-entity-schema-properties and verify supplied IDs; "
+		+ "if unresolved, ask an administrator to map the constraint instead of guessing replacement IDs. "
+		+ "This error alone does not prove an OData mapping defect or identify which submitted field is wrong; "
+		+ "it can originate in an entity event handler. For a delete or key update, the record is still "
+		+ "referenced by the named table. The hint does not change record-created, side-effect or "
+		+ "retry-guidance.";
 
 	private const string DataWriteDiagnosticFieldName = "diagnostic";
 	private const string DataWriteDiagnosticDescription = "Optional bounded context: operation, entity, item-index, write-attempted, transport-outcome, side-effect, retry-advice and sanitized message. No inferred HTTP status or offending field.";
@@ -777,6 +835,7 @@ internal static class ToolContractCatalog {
 			[CreatioArtifactMergeTool.ToolName] = BuildCreatioArtifactMerge(),
 			[GuidanceGetTool.ToolName] = BuildGuidanceGet(),
 			[ExecuteEsqTool.ToolName] = BuildExecuteEsq(),
+			[ExecuteEsqToFileTool.ToolName] = BuildExecuteEsqToFile(),
 			[SettingsHealthTool.ToolName] = BuildSettingsHealth(),
 			[GetTelemetryConsentTool.ToolName] = BuildGetTelemetryConsent(),
 			[SendTelemetryTool.ToolName] = BuildSendTelemetry(),
@@ -822,8 +881,13 @@ internal static class ToolContractCatalog {
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
 			[ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName] = BuildModifyEntitySchemaColumn(),
 			[ComponentInfoTool.ToolName] = BuildComponentInfo(),
+			[ComponentInfoToFileTool.ToolName] = BuildComponentInfoToFile(),
 			[RequestInfoTool.ToolName] = BuildRequestInfo(),
+			[RequestInfoToFileTool.ToolName] = BuildRequestInfoToFile(),
+			[ListEntityClientSchemasTool.ToolName] = BuildListEntityClientSchemas(),
+			[ListEntityClientSchemasToFileTool.ToolName] = BuildListEntityClientSchemasToFile(),
 			[PageUpdateTool.ToolName] = BuildPageUpdate(),
+			[LocalizePageTool.ToolName] = BuildLocalizePage(),
 			[PageValidateTool.ToolName] = BuildPageValidate(),
 			[ApplicationDeleteTool.ToolName] = BuildApplicationDelete(),
 			[CreateEntityBusinessRuleTool.BusinessRuleCreateToolName] = BuildEntityBusinessRuleCreate(),
@@ -852,13 +916,15 @@ internal static class ToolContractCatalog {
 			[UninstallIdentityTool.ToolName] = BuildUninstallIdentity(),
 			[RestoreWorkspaceTool.RestoreWorkspaceToolName] = BuildRestoreWorkspace(),
 			[PushWorkspaceTool.PushWorkspaceToolName] = BuildPushWorkspace(),
-			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds()
+			[ListCreatioBuildsTool.ListCreatioBuildsToolName] = BuildListCreatioBuilds(),
+			[MobilePageConversionGuideTool.ToolName] = BuildMobilePageConversionGuide()
 		};
 
 	private static readonly string[] CanonicalToolNames = [
 		GuidanceGetTool.ToolName,
 		CreatioArtifactMergeTool.ToolName,
 		ExecuteEsqTool.ToolName,
+		ExecuteEsqToFileTool.ToolName,
 		SettingsHealthTool.ToolName,
 		GetTelemetryConsentTool.ToolName,
 		SendTelemetryTool.ToolName,
@@ -907,9 +973,15 @@ internal static class ToolContractCatalog {
 		GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName,
 		ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 		ComponentInfoTool.ToolName,
+		ComponentInfoToFileTool.ToolName,
 		RequestInfoTool.ToolName,
+		RequestInfoToFileTool.ToolName,
+		ListEntityClientSchemasTool.ToolName,
+		ListEntityClientSchemasToFileTool.ToolName,
 		PageUpdateTool.ToolName,
+		LocalizePageTool.ToolName,
 		PageValidateTool.ToolName,
+		MobilePageConversionGuideTool.ToolName,
 		ApplicationDeleteTool.ToolName,
 		SchemaNamePrefixTool.GetSchemaNamePrefixToolName,
 		CompileCreatioTool.CompileCreatioToolName,
@@ -920,15 +992,12 @@ internal static class ToolContractCatalog {
 		SysSettingUpdateTool.UpdateSysSettingToolName
 	];
 
-	/// <summary>The <c>detail</c> value that opts into the legacy full-contract dump for a no-names request.</summary>
-	private const string FullDetail = "full";
-
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
 	private const int MaxPurposeLength = 120;
 
 	/// <summary>
 	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
-	/// sentence break to <see cref="FindFirstSentenceEnd"/>. Membership is decided by ONE property: the
+	/// sentence break to <see cref="FindSentenceEnd"/>. Membership is decided by ONE property: the
 	/// abbreviation is never sentence-FINAL in English, so skipping its period can only ever be right.
 	/// An ambiguous one must stay out — a wrong skip merges two sentences and pulls the next one (often
 	/// a safety warning) into the one-liner, which is the same truncated-thought symptom ENG-96389 set
@@ -994,7 +1063,7 @@ internal static class ToolContractCatalog {
 		bool legacyNoNamesFullShape = false) {
 		return toolNames is null || toolNames.Count == 0
 			? ResolveNoNamesContracts(toolInvokerRegistry, detail, legacyNoNamesFullShape)
-			: ResolveNamedContracts(toolNames, toolInvokerRegistry);
+			: ResolveNamedContracts(toolNames, toolInvokerRegistry, detail);
 	}
 
 	/// <summary>
@@ -1007,7 +1076,9 @@ internal static class ToolContractCatalog {
 		IMcpToolInvokerRegistry? toolInvokerRegistry,
 		string? detail,
 		bool legacyNoNamesFullShape) {
-		if (string.Equals(detail, FullDetail, StringComparison.OrdinalIgnoreCase)) {
+		// The same value that returns a named contract complete (ENG-100154) opts a no-names request into the
+		// legacy full-contract dump.
+		if (ToolContractShortForm.IsDetail(detail, ToolContractShortForm.FullDetail)) {
 			return new ToolContractGetResponse(
 				true,
 				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
@@ -1047,7 +1118,8 @@ internal static class ToolContractCatalog {
 	/// </summary>
 	private static ToolContractGetResponse ResolveNamedContracts(
 		IReadOnlyList<string> toolNames,
-		IMcpToolInvokerRegistry? toolInvokerRegistry) {
+		IMcpToolInvokerRegistry? toolInvokerRegistry,
+		string? detail) {
 		List<string> normalizedNames = [];
 		for (int index = 0; index < toolNames.Count; index++) {
 			string? name = toolNames[index];
@@ -1078,11 +1150,17 @@ internal static class ToolContractCatalog {
 					$"Tool '{normalizedName}' is not registered by clio MCP. {ToolContractGetTool.DiscoveryHint}",
 					BuildSuggestions(normalizedName, toolInvokerRegistry))));
 		}
+		IReadOnlyList<ToolContractNotFound>? misses = notFound.Count > 0 ? notFound : null;
+		IReadOnlyList<ToolContractDefinition> tools = ToolContractShortForm.Apply(results, detail,
+			candidate => ToolContractShortForm.MeasureBytes(
+				new ToolContractGetResponse(true, Tools: candidate, NotFound: misses)),
+			// Fails closed: a tool whose destructiveness is unknown keeps the longer lead, and its warning.
+			name => ResolveDestructive(toolInvokerRegistry, name) ?? true);
 		return new ToolContractGetResponse(
 			results.Count > 0,
-			Tools: results.Count > 0 ? results : null,
+			Tools: results.Count > 0 ? tools : null,
 			Error: results.Count == 0 ? notFound[0].Error : null,
-			NotFound: notFound.Count > 0 ? notFound : null);
+			NotFound: misses);
 	}
 
 	/// <summary>
@@ -1261,7 +1339,7 @@ internal static class ToolContractCatalog {
 		if (normalized.Length == 0) {
 			return string.Empty;
 		}
-		int sentenceEnd = FindFirstSentenceEnd(normalized);
+		int sentenceEnd = FindSentenceEnd(normalized, 0);
 		string firstSentence = sentenceEnd >= 0 ? normalized[..(sentenceEnd + 1)] : normalized;
 		if (firstSentence.Length <= MaxPurposeLength) {
 			return firstSentence;
@@ -1270,15 +1348,16 @@ internal static class ToolContractCatalog {
 	}
 
 	/// <summary>
-	/// Returns the index of the first sentence-terminating period (a '.' followed by whitespace or the end
-	/// of the text), or <c>-1</c> when the text has no sentence break. Abbreviation periods mid-word (for
+	/// Returns the index of the first sentence-terminating period at or after <paramref name="startIndex"/>
+	/// (a '.' followed by whitespace or the end of the text), or <c>-1</c> when there is no sentence break. Abbreviation periods mid-word (for
 	/// example <c>en-US</c> or version numbers) are kept because they are not followed by whitespace;
 	/// the abbreviations in <see cref="SentenceSafeAbbreviations"/> are kept explicitly, because their
 	/// final period IS followed by whitespace and the mid-word rule cannot see them.
 	/// </summary>
-	/// <param name="text">The whitespace-normalized description.</param>
-	private static int FindFirstSentenceEnd(string text) {
-		for (int index = 0; index < text.Length; index++) {
+	/// <param name="text">The description.</param>
+	/// <param name="startIndex">Where to start looking; the short form walks sentences with it (ENG-100154).</param>
+	internal static int FindSentenceEnd(string text, int startIndex) {
+		for (int index = Math.Max(0, startIndex); index < text.Length; index++) {
 			if (text[index] != '.') {
 				continue;
 			}
@@ -1332,12 +1411,15 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' full executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract.",
+			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
+			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
+			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
+			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
 				[],
 				[
-					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their full contracts."),
-					Field("detail", StringType, "Optional detail level used only when tool-names is omitted: 'index' (default) returns the compact index; 'full' returns every tool's full contract.")
+					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
+					Field("detail", StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1345,7 +1427,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
-				Field("tools", ArrayType, "Full tool contract definitions; populated when tool-names are passed or detail=full."),
+				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither. In a reply fitted below the inline budget, an error-contract may be {codes: [], same-as: <tool>}: the same codes as that earlier contract in the reply."),
 				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
 				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
@@ -1356,13 +1438,17 @@ internal static class ToolContractCatalog {
 			[
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
-					["detail"] = "full"
+					["detail"] = ToolContractShortForm.FullDetail
 				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
+				}),
+				Example("Return one short contract's complete form, examples included", new Dictionary<string, object?> {
+					["tool-names"] = new[] { "create-business-process" },
+					["detail"] = ToolContractShortForm.FullDetail
 				})
 			],
-			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for full schemas before execution."),
+			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for their contracts before execution (detail=full when a short form is not enough)."),
 			[],
 			[]);
 	}
@@ -1725,7 +1811,11 @@ internal static class ToolContractCatalog {
 					ExecuteEsqTool.ToolName
 				],
 				"Read the 'esq' and 'esq-filters' guidance with get-guidance before composing a SelectQuery, then run it with execute-esq."),
-			[],
+			[
+				Flow(
+					[ExecuteEsqTool.ToolName, ExecuteEsqToFileTool.ToolName],
+					"When the rows are too many to read inline, run the same query with execute-esq-to-file, which writes them to a local file.")
+			],
 			[],
 			null,
 			[
@@ -1736,7 +1826,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationCreate() {
 		return new ToolContractDefinition(
 			ApplicationCreateTool.ApplicationCreateToolName,
-			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics.",
+			"Creates a Creatio application and returns installed application identity plus the created application context envelope and Data Forge enrichment diagnostics. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				["name", "code", TemplateCodeFieldName],
 				[
@@ -1785,7 +1876,9 @@ internal static class ToolContractCatalog {
 				Field(PagesFieldName, ArrayType, "Primary-package Freedom UI pages using list-pages item shape (`schema-name`, `uId`, `packageName`, `parentSchemaName`)."),
 				Field("schema-name-prefix", StringType, "Active SchemaNamePrefix resolved from the environment. Use as the prefix for all subsequent custom schema codes (lookups, columns, supporting entities). Empty string means no prefix is configured."),
 				Field("dataforge", ObjectType, "Optional Data Forge enrichment diagnostics including health/status/coverage, warnings, and a compact context-summary."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1839,7 +1932,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionCreate() {
 		return new ToolContractDefinition(
 			ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data.",
+			"Creates a section inside an existing installed application and returns structured section, entity, and page readback data. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, CaptionFieldName],
 				[
@@ -1886,7 +1980,9 @@ internal static class ToolContractCatalog {
 				Field(ErrorFieldName, StringType, FailureMessageDescription),
 				Field("error-class", StringType, "Failure classification, present on classified errors only: 'transport' (request never reached Creatio — retry is safe), 'creatio-timeout' (no response within the budget — side effects unknown, verify with list-app-sections before retrying), 'contention' (insert aborted without a detailed reason — may be parallel creation in one app OR a server-side rejection unrelated to concurrency; no section created (verified); run list-app-sections, create sections one at a time if you were creating them concurrently (clio serializes and auto-retries once), and if a single sequential create still fails treat it as server-side), 'server-error' (Creatio rejected the operation with a real, detailed reason — fix inputs or server state first)."),
 				Field("section-created", StringType, "Side-effect verification outcome on classified errors: 'true', 'false', 'unknown', or 'in-progress'. 'in-progress' is not a verification outcome — it means the section is still being created server-side after the MCP response deadline returned early; do NOT retry create-app-section, poll list-app-sections / get-app-info until the section appears."),
-				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries.")
+				Field("retry-guidance", StringType, "Actionable next step for the classified failure. Follow it instead of blind retries."),
+				Field(WarningsFieldName, ArrayType, NavigationCacheWarningsDescription),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1935,7 +2031,8 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildApplicationSectionUpdate() {
 		return new ToolContractDefinition(
 			ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName,
-			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update.",
+			"Updates metadata of an existing installed application section and returns structured section readback data before and after the update. " +
+			NavigationCacheContractNote,
 			new ToolInputSchemaContract(
 				[ApplicationCodeFieldName, SectionCodeFieldName],
 				[
@@ -1946,7 +2043,8 @@ internal static class ToolContractCatalog {
 					Field(CaptionFieldName, StringType, "Optional updated section caption."),
 					Field(DescriptionFieldName, StringType, "Optional updated section description."),
 					Field(IconIdFieldName, StringType, "Optional updated icon GUID."),
-					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format.")
+					Field(IconBackgroundFieldName, StringType, "Optional updated icon background color in #RRGGBB format."),
+					Field(CaptionCultureFieldName, StringType, "Optional culture the caption is written in (e.g. 'es-ES'); requires caption. Precedence: caption-culture > detected profile culture > en-US. Other languages of the section title are kept. The culture must exist in the Languages section: an unknown culture fails before any write, an inactive one is written with a warning.")
 				],
 				Validators: [
 					new ToolContractValidator(
@@ -1962,7 +2060,7 @@ internal static class ToolContractCatalog {
 							"captionLocalizations",
 							"nameLocalizations"
 						],
-						Context: "update-app-section stays scalar-only; localized captions belong to follow-up schema tools.")
+						Context: "update-app-section stays scalar-only: send one language per call with caption + caption-culture instead of a localization map.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1977,8 +2075,13 @@ internal static class ToolContractCatalog {
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
 				Field("previous-section", ObjectType, "Section metadata before the update."),
-				Field("section", ObjectType, "Section metadata after the update."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)
+				Field("section", ObjectType, "Section metadata after the update (caption in the connected user's profile culture)."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(CaptionCultureFieldName, StringType, "Culture the caption was written in; absent when no caption was sent."),
+				Field("caption-culture-value", StringType, "The stored section caption in caption-culture."),
+				Field("preserved-cultures", ArrayType, "Non-default cultures whose other stored section values (title, description) were kept; can include the target culture when its description was kept."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings, for example an inactive culture, a package data binding that could not be refreshed, or a menu cache of clio's session that could not be cleared."),
+				Field(NextStepFieldName, StringType, NavigationCacheNextStepDescription)
 			),
 			CommonErrorContract,
 			[
@@ -1993,13 +2096,20 @@ internal static class ToolContractCatalog {
 				Example("Update a broken section heading with a plain-text caption", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
 					[CaptionFieldName] = "Orders"
+				}),
+				Example("Add the Spanish section title and keep the other languages", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[ApplicationCodeFieldName] = ExamplePackageName,
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
+					[CaptionFieldName] = "Pedidos",
+					[CaptionCultureFieldName] = ExampleSpanishCultureName
 				}),
 				Example("Update section description and icon metadata", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders",
+					[SectionCodeFieldName] = ExampleOrdersSectionCode,
 					[DescriptionFieldName] = "Order processing workspace",
 					[IconIdFieldName] = "11111111-1111-1111-1111-111111111111",
 					[IconBackgroundFieldName] = "#1F5F8B"
@@ -2063,7 +2173,7 @@ internal static class ToolContractCatalog {
 				Example("Delete a section from an existing app", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[ApplicationCodeFieldName] = ExamplePackageName,
-					[SectionCodeFieldName] = "UsrOrders"
+					[SectionCodeFieldName] = ExampleOrdersSectionCode
 				})
 			],
 			Flow(
@@ -2112,7 +2222,7 @@ internal static class ToolContractCatalog {
 				Field(ApplicationNameFieldName, StringType, InstalledApplicationDisplayNameDescription),
 				Field(ApplicationCodeFieldName, StringType, InstalledApplicationCodeDescription),
 				Field(ApplicationVersionFieldName, StringType, InstalledApplicationVersionDescription),
-				Field("sections", ArrayType, "List of section metadata objects in the application."),
+				Field(SectionsFieldName, ArrayType, "List of section metadata objects in the application."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -2727,7 +2837,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the updated record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -2776,7 +2886,7 @@ internal static class ToolContractCatalog {
 				SuccessFieldName,
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the deleted record."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
@@ -2841,7 +2951,7 @@ internal static class ToolContractCatalog {
 			Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 			Field("source", StringType, "Response source identifier."),
 			Field(CorrelationIdFieldName, StringType, correlationDescription),
-			Field("warnings", ArrayType, "Non-fatal warnings."),
+			Field(WarningsFieldName, ArrayType, "Non-fatal warnings."),
 			..bodyFields,
 			Field(ErrorFieldName, ObjectType, "Structured Data Forge error payload.")
 		];
@@ -4234,7 +4344,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). Each culture must exist in the environment's Languages section (SysCulture); an absent culture fails before any save, an inactive one is written with a warning. " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4394,7 +4504,7 @@ internal static class ToolContractCatalog {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PagesFieldName] = new object[] {
 						new Dictionary<string, object?> {
-							[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+							[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 							["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 							[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}"
 						}
@@ -4563,7 +4673,8 @@ internal static class ToolContractCatalog {
 				[SchemaNameFieldName],
 				EnvironmentOrExplicitConnectionFields(
 					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
-					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root.")),
+					Field("output-directory", StringType, "Optional. Directory to anchor the `.clio-pages` output under (typically your project root). An explicit value is honored VERBATIM and is NOT confined to the workspace: `<output-directory>/.clio-pages/{schema-name}/` is REPLACED on every call \u2014 the existing directory is moved aside and then deleted recursively \u2014 so never point it at a directory holding anything but clio page output. Confinement of an explicit anchor is not implemented yet (issue #1185 review); until it is, the caller owns that choice. Omitted, the anchor resolves in THREE steps: the nearest ancestor of the current working directory containing `.clio/workspaceSettings.json`; else the current working directory itself; else \u2014 only when that is the bare home directory \u2014 the managed clio home root. In a plain checkout with no workspace marker the output therefore lands under the CURRENT DIRECTORY, not a workspace root."),
+					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. false leaves `page.ownBodySummary.viewConfigDiffOps` out of the response and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type, e.g. {\"insert\": 12, \"merge\": 3}) in its place; every other field is unchanged and `meta.json` still carries the full list. Use false when only the size of the own body matters, not which components it names.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -4571,7 +4682,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed."),
+				Field("page", ObjectType, "Current hierarchy leaf: schemaName, schemaUId, packageName (also currentLeafPackageName), packageUId, parentSchemaName. The leaf may be read-only. Default writes resolve designPackageUId; designPackageName names that stored or virtual package when metadata is available. willCreateReplacingInDesignPackage means a new replacing schema is needed, not necessarily a new package. A failed design-package read can fall back to the leaf; update-page resolves its destination independently and fails closed. `ownBodySummary` counts the operations of the schema's own body and lists them in `viewConfigDiffOps`, or, with include-operations=false, counts them per operation type in `viewConfigDiffOpCounts` instead."),
 				Field("files", ObjectType, "Paths of the files written to disk: `bodyFile` (body.js \u2014 the editable JavaScript source to read, edit and send back), `bundleFile` (bundle.json \u2014 the full merged view; minified JSON, parse it with a JSON tool rather than grep), `metaFile` (meta.json) and `fetchedAt`. The body and the bundle are NOT inlined in this envelope. These are paths on the MCP SERVER host: a client that does not share that filesystem (a remote mcp-http caller) cannot read them. The whole `.clio-pages/{schema-name}/` directory is deleted and rewritten on every get-page of that schema, so do not keep in-progress edits there."),
 				Field("editable", ObjectType, "OPTIONAL \u2014 omitted when the best-effort SysSchema checksum query returned no row or failed; treat its ABSENCE as 'baseline unavailable', never as 'no editable schema'. When present: editable (own) schema state captured at fetch time \u2014 `editableSchemaExists` plus the identity and change signal used as the conflict-detection baseline for a later update-page / sync-pages call."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
@@ -4581,10 +4692,12 @@ internal static class ToolContractCatalog {
 				SchemaNameParameterAlias(),
 				EnvironmentNameParameterAlias()
 			],
-			[],
+			[
+				Default(IncludeOperationsFieldName, "true", "The response lists every own-body operation by default; pass false for counts per operation type.")
+			],
 			[
 				Example("Read an existing FormPage body", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 					[EnvironmentNameFieldName] = ExampleEnvironmentName
 				})
 			],
@@ -5142,7 +5255,7 @@ internal static class ToolContractCatalog {
 					Field("simple-lookup", BooleanType, "Optional simple-lookup flag. Lookup columns only."),
 					Field("cascade", BooleanType, "Optional cascade-connection flag. Lookup columns only."),
 					Field("do-not-control-integrity", BooleanType, "Optional do-not-control-integrity flag. Lookup columns only."),
-					Field("caption-culture", StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
+					Field(CaptionCultureFieldName, StringType, "Optional culture override for the written column caption/description (e.g. 'en-US', 'uk-UA'). Precedence: caption-culture > detected profile culture > en-US; supplying it skips the profile-culture lookup."),
 					Field("default-value-source", StringType, "Legacy optional default source shorthand. Supports only Const or None."),
 					Field("default-value", StringType, "Legacy optional default value shorthand for Const."),
 					Field(DefaultValueConfigFieldName, ObjectType, "Structured default value metadata with source None, Const, Settings, SystemValue, or Sequence. Settings value-source accepts code/name/id and resolves to code. SystemValue value-source accepts GUID/alias/caption and resolves to GUID. For a lookup column, a Const value is the referenced record GUID and is validated to exist in the referenced schema before save (an unknown GUID is rejected). For Sequence (text columns only), set the static prefix via sequence-prefix (e.g. LN-) or a value mask ending with {0} (e.g. LN-{0} produces LN-00001), not both; a mask with static text after {0} is rejected with a validation error."),
@@ -5226,7 +5339,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field(ComponentTypeFieldName, StringType, "Freedom UI component type, e.g. 'crt.TabContainer'. Omit or use 'list' to return the catalog (list mode); a known type returns that one component's full contract (detail mode); an unknown type returns a bounded suggestion shortlist. Mutually exclusive with 'composite'."),
-					Field("composite", StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
+					Field(CompositeFieldName, StringType, "Composite Designer element caption, for example 'Expanded list' or 'Next steps'. Returns the composite's assembly docs — a composite is a pre-built combination of several components with NO componentType of its own. Discover available captions via list mode (composites section). Mutually exclusive with 'component-type'."),
 					Field("search", StringType, "Optional keyword filter applied in list mode and to not-found suggestions, e.g. 'tab'."),
 					Field("schema-type", StringType, "Component registry to query: 'web' (default) or 'mobile'. The mobile registry is separate (crt.Toggle, crt.BarcodeScanner, crt.Sort, ...) and excludes web-only types."),
 					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered environment name; scopes the catalog to its real platform version. Mutually exclusive with 'version'."),
@@ -5239,7 +5352,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"mutually-exclusive",
 						InvalidWorkflowShapeCode,
-						Fields: [ComponentTypeFieldName, "composite"],
+						Fields: [ComponentTypeFieldName, CompositeFieldName],
 						Context: "'component-type' and 'composite' are mutually exclusive — pass one or the other, not both.")
 				]),
 			EnvelopeOutput(
@@ -5283,14 +5396,18 @@ internal static class ToolContractCatalog {
 					["schema-type"] = "mobile"
 				}),
 				Example("Get the assembly recipe for a composite Designer element", new Dictionary<string, object?> {
-					["composite"] = "Expanded list"
+					[CompositeFieldName] = "Expanded list"
 				})
 			],
 			Flow([ComponentInfoTool.ToolName],
 				"Use after get-page when bundle.viewConfig contains unfamiliar crt.* component types. "
 				+ "Use with composite=\"<caption>\" (not component-type) to get the authoritative assembly recipe for a composite Designer element "
 				+ "(e.g. 'Expanded list', 'Attachments', 'Next steps') — composites have no componentType and must be fetched by caption."),
-			[],
+			[
+				Flow(
+					[ComponentInfoTool.ToolName, ComponentInfoToFileTool.ToolName],
+					"When only part of a long documentation is needed, call get-component-info-to-file with the same arguments: it writes the documentation to a local file and returns its section headings.")
+			],
 			[],
 			[
 				new ToolAntiPattern(
@@ -5377,7 +5494,11 @@ internal static class ToolContractCatalog {
 				+ "then fetch its detail and author the binding's params ONLY from 'parameters'. "
 				+ "Read get-guidance name=when-to-use-requests for the decision rules; a parameter carrying a "
 				+ "valueSource annotation is resolved through the named probe tool, never invented."),
-			[],
+			[
+				Flow(
+					[RequestInfoTool.ToolName, RequestInfoToFileTool.ToolName],
+					"When only part of a long documentation is needed, call get-request-info-to-file with the same arguments: it writes the documentation to a local file and returns its section headings.")
+			],
 			[],
 			[
 				new ToolAntiPattern(
@@ -5389,6 +5510,198 @@ internal static class ToolContractCatalog {
 					"A parameter with a valueSource annotation is filled ONLY from the named probe tool's result "
 					+ "(list-printables, get-process-signature). A made-up value passes save and fails silently at runtime.")
 			]);
+	}
+
+	/// <summary>
+	/// Builds the contract of a <c>*-to-file</c> twin from the contract of its inline tool, so the two cannot drift
+	/// on the arguments they share: the twin takes every inline argument plus a required <c>output-file</c>.
+	/// </summary>
+	private static ToolContractDefinition FileTwinOf(
+		ToolContractDefinition inline,
+		string twinName,
+		string description,
+		string outputFileDescription,
+		ToolOutputContract output,
+		IReadOnlyList<ToolContractExample> examples,
+		string preferredFlowNotes) =>
+		inline with {
+			Name = twinName,
+			Description = description,
+			InputSchema = inline.InputSchema with {
+				Required = [.. inline.InputSchema.Required, OutputFileFieldName],
+				Properties = [.. inline.InputSchema.Properties, Field(OutputFileFieldName, StringType, outputFileDescription)],
+				Validators = [
+					.. inline.InputSchema.Validators ?? [],
+					new ToolContractValidator("output-file-required", "invalid-output-file", OutputFileFieldName,
+						Context: $"output-file is required. Use {inline.Name} when the result should be returned inline.")
+				]
+			},
+			OutputContract = output,
+			Examples = examples,
+			PreferredFlow = Flow([twinName], preferredFlowNotes),
+			FallbackFlow = [
+				Flow([inline.Name, twinName],
+					$"Call {inline.Name} for an ordinary read; switch to {twinName} with the same arguments when the result is too large to read inline.")
+			],
+			Preconditions = [.. inline.Preconditions ?? [], OutputFileTwinPrecondition]
+		};
+
+	private static ToolContractDefinition BuildExecuteEsqToFile() {
+		ToolContractDefinition inline = BuildExecuteEsq();
+		return FileTwinOf(
+			inline,
+			ExecuteEsqToFileTool.ToolName,
+			"Writes the rows of a raw EntitySchemaQuery (ESQ) SelectQuery to a local JSON file and returns the path and the row count instead of the rows. " +
+			"Takes the same query, environment-name and timeout as execute-esq and validates, runs and parses the query the same way, so a query that fails on execute-esq fails here with the same error and no file. " +
+			"The file holds exactly the rows array execute-esq returns inline, or the whole response body when it has no rows array (count is then absent). " +
+			$"The inline {ExecuteEsqTool.MaxResponseSizeBytes}-byte budget does not apply; the response is capped at {ExecuteEsqToFileTool.MaxResponseSizeBytes} bytes instead.",
+			"Required path for the JSON rows file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the query succeeded and the rows were written."),
+				Field(CountFieldName, NumberType, "Number of rows written to output-file."),
+				Field(OutputFileFieldName, StringType, "Absolute path of the JSON file holding the rows array."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("hint", StringType, "Recovery hint on a failure caused by the query shape, pointing to the ESQ guidance."),
+				Field("error-class", StringType, $"Stable failure classification. result-too-large means the DataService response exceeded {ExecuteEsqToFileTool.MaxResponseSizeBytes} UTF-8 bytes.")),
+			[
+				.. inline.Examples.Select(example => example with {
+					Summary = example.Summary + " and keep the rows on disk",
+					Arguments = new Dictionary<string, object?>(example.Arguments) { [OutputFileFieldName] = "contacts.json" }
+				})
+			],
+			"Use when the rows of an ESQ SelectQuery are too many to read inline and should be kept on disk for a follow-up pass.");
+	}
+
+	private static ToolContractDefinition BuildComponentInfoToFile() {
+		ToolContractDefinition inline = BuildComponentInfo();
+		return FileTwinOf(
+			inline,
+			ComponentInfoToFileTool.ToolName,
+			"Writes the documentation markdown of a get-component-info response to a local file and returns every other field of that response plus the file path and the section headings. " +
+			"Takes the same arguments as get-component-info and resolves the same catalog version; only `documentation` is replaced. " +
+			"When the response carries no documentation (list mode, or a component without docs), nothing is written and the response is exactly the get-component-info response.",
+			"Required path for the documentation markdown file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			DocumentationTwinOutput(inline.OutputContract),
+			[
+				Example("Keep a composite assembly recipe on disk", new Dictionary<string, object?> {
+					[CompositeFieldName] = "Expanded list",
+					[OutputFileFieldName] = "expanded-list.md"
+				})
+			],
+			"Use when a detail or composite response carries long documentation and only some of its sections are needed: read the headings, then read those sections from the file.");
+	}
+
+	private static ToolContractDefinition BuildRequestInfoToFile() {
+		ToolContractDefinition inline = BuildRequestInfo();
+		return FileTwinOf(
+			inline,
+			RequestInfoToFileTool.ToolName,
+			"Writes the documentation markdown of a get-request-info response to a local file and returns every other field of that response plus the file path and the section headings. " +
+			"Takes the same arguments as get-request-info and resolves the same catalog version; only `documentation` is replaced. " +
+			"When the response carries no documentation (list mode, or a request without docs), nothing is written and the response is exactly the get-request-info response.",
+			"Required path for the documentation markdown file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			DocumentationTwinOutput(inline.OutputContract),
+			[
+				Example("Keep a request authoring recipe on disk", new Dictionary<string, object?> {
+					["request-type"] = "crt.PrintablesRequest",
+					[OutputFileFieldName] = "printables-request.md"
+				})
+			],
+			"Use when a detail response carries long documentation and only some of its sections are needed: read the headings, then read those sections from the file.");
+	}
+
+	// The inline output fields, with documentation replaced by the two fields the twin returns in its place.
+	private static ToolOutputContract DocumentationTwinOutput(ToolOutputContract inline) =>
+		inline with {
+			Fields = [
+				.. inline.Fields.Where(field => field.Name != DocumentationFileProjection.DocumentationFieldName),
+				Field(DocumentationFileProjection.DocumentationFileFieldName, StringType,
+					"Absolute path of the file holding the documentation markdown. Absent when the response carried no documentation, in which case no file was written."),
+				Field(DocumentationFileProjection.DocumentationSectionsFieldName, ArrayType,
+					"The markdown headings of the file in document order, each with its '#' prefix (for example '## Pitfalls'), so a caller can read only the sections it needs.")
+			]
+		};
+
+	private static ToolContractDefinition BuildListEntityClientSchemas() {
+		return new ToolContractDefinition(
+			ListEntityClientSchemasTool.ToolName,
+			"Resolves the page-role graph of an entity for a Classic to Freedom UI migration: its Classic sections, edit pages (including per-type pages) and add mini pages, each classified classic, freedom or unknown. " +
+			"One level only: call it per detail entity to recurse.",
+			new ToolInputSchemaContract(
+				[EntityNameFieldName],
+				EnvironmentOrExplicitConnectionFields(
+					Field(EntityNameFieldName, StringType, "Entity schema name, e.g. 'Contract' or 'SupportUnit'.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("entity", StringType, "The resolved entity schema name."),
+				Field("entityUId", StringType, "UId of the entity's base schema."),
+				Field(SectionsFieldName, ArrayType, "Classic sections bound to the entity, each with caption, code, sectionSchema, cardSchema, cardSchemaUId, template, kind (classic, freedom or unknown) and isTyped."),
+				Field("editPages", ArrayType, "Edit pages bound to the entity, each with typeColumnValue and typeColumnDisplayValue (per-type pages), cardSchema, cardSchemaUId, template, kind, and the add mini page fields miniPageSchema, miniPageSchemaUId, miniPageTemplate, miniPageKind and miniPageModes."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal warnings, e.g. a lookup that hit its row cap; the result may then be partial."),
+				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				EnvironmentNameParameterAlias()
+			],
+			[],
+			[
+				Example("Resolve the page roles of an entity", new Dictionary<string, object?> {
+					[EntityNameFieldName] = "Contract",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow([ListEntityClientSchemasTool.ToolName],
+				"Use at the start of a Classic to Freedom UI migration to find which pages of the entity are Classic and must be migrated."),
+			[
+				Flow(
+					[ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToFileTool.ToolName],
+					"When the entity has many edit pages and only the counts are needed in context, call list-entity-client-schemas-to-file with the same arguments.")
+			],
+			[]);
+	}
+
+	private static ToolContractDefinition BuildListEntityClientSchemasToFile() {
+		ToolContractDefinition inline = BuildListEntityClientSchemas();
+		return FileTwinOf(
+			inline,
+			ListEntityClientSchemasToFileTool.ToolName,
+			"Writes the page-role graph of an entity to a local JSON file and returns the path and the number of classic, freedom and unknown sections and edit pages instead of the lists. " +
+			"Takes the same arguments as list-entity-client-schemas; the file holds exactly the response that tool returns inline.",
+			"Required path for the JSON file, confined to the workspace or the OS temp directory. The file must not already exist, so a retry must use a different path.",
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "Whether the graph was resolved and written."),
+				Field("entity", StringType, "The resolved entity schema name."),
+				Field("entityUId", StringType, "UId of the entity's base schema."),
+				Field(OutputFileFieldName, StringType, "Absolute path of the file holding the full list-entity-client-schemas response."),
+				Field(SectionsFieldName, ObjectType, "Number of Classic sections in the file: total, classic, freedom and unknown."),
+				Field("editPages", ObjectType, "Number of edit pages in the file: total, classic, freedom and unknown."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal warnings of the lookup, the same as in the file; the result may then be partial."),
+				Field("note", StringType, "Advisory note on the scope of the result and how to read an empty one, the same as in the file."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			[
+				Example("Keep the page roles of an entity on disk", new Dictionary<string, object?> {
+					[EntityNameFieldName] = "Contract",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[OutputFileFieldName] = "contract-pages.json"
+				})
+			],
+			"Use when an entity has many sections or edit pages and only the classic/freedom counts are needed in context; read the file for the pages themselves.");
 	}
 
 	private static ToolContractDefinition BuildPageUpdate() {
@@ -5412,7 +5725,8 @@ internal static class ToolContractCatalog {
 					Field("target-schema-uid", StringType, "Explicit schema UId to save into directly. Bypasses hierarchy resolution entirely \u2014 the UId is used as given, with no name resolution or existence check. With `mode: append` this is also the body a `dry-run` fetches and projects against, so an unintended UId is read, not just written to."),
 					Field("checksum", StringType, "Conflict baseline: the `editable.checksum` returned by the get-page call this edit is based on. When supplied it is the authoritative baseline, so the save is compared against the body you actually fetched rather than the on-disk .clio-pages baseline, which can be stale or anchored elsewhere."),
 					Field("force", BooleanType, "Skip the external-modification (checksum) conflict check and deliberately overwrite out-of-band changes. Set true ONLY after the user explicitly confirms overwriting changes made outside this session. A target-package-uid / target-schema-uid redirect skips only the on-disk baseline; an explicit checksum is still compared with the resolved target and a mismatch remains a conflict."),
-					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved.")),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` conflict-baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. Used only for baseline discovery; it does NOT change where the page is saved."),
+					Field(IncludeOperationsFieldName, BooleanType, "Optional, default true. Applies only with verify=true: false leaves `page.ownBodySummary.viewConfigDiffOps` out of the read-back page and puts `page.ownBodySummary.viewConfigDiffOpCounts` (number of operations per operation type) in its place.")),
 				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -5425,7 +5739,7 @@ internal static class ToolContractCatalog {
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("appendProjection", ObjectType, "What the append merge did — or, on a dry run, WOULD do — to the page's viewConfigDiff. Present for `mode: append` whenever a merge ran; absent for `replace` (writes verbatim) and absent when the stored body is empty (nothing to merge into). Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount` (compare this against the count you expect), `addedOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix — do not read any one of them as the whole story: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives — the likeliest one to hit, reported here as data and deliberately NOT warned about because the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards — use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: the sibling `*_DIFF` arrays append unconditionally and cannot lose an entry, but handlers are NOT covered — they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
-				Field("warnings", ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), page-body lint findings, and the best-effort Designer Presence push."),
+				Field(WarningsFieldName, ArrayType, "Advisory non-fatal warnings; omitted when there are none. The save already succeeded — never retry on a warning. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), page-body lint findings, and the best-effort Designer Presence push."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription)
 			),
 			CommonErrorContract,
@@ -5438,11 +5752,12 @@ internal static class ToolContractCatalog {
 				Default(DryRunFieldName, BooleanFalseLiteral, "Saves by default; pass true to validate without writing."),
 				Default(ValidateFieldName, "true", "Runs client-side content validation by default; set false only for a pre-existing defect."),
 				Default(VerifyFieldName, BooleanFalseLiteral, "Read-back verification is optional and disabled by default."),
+				Default(IncludeOperationsFieldName, "true", "The verify read-back lists every own-body operation by default; pass false for counts per operation type."),
 				Default("mode", "replace", "Body is written verbatim by default; pass 'append' to merge with the existing body.")
 			],
 			[
 				Example("Dry-run validate one page body read from the get-page files.bodyFile", new Dictionary<string, object?> {
-					[SchemaNameFieldName] = "UsrTaskApp_FormPage",
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
 					["body"] = "/* contents of the body.js written by get-page (files.bodyFile) */ define(...)",
 					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Details\"}",
 					[DryRunFieldName] = true,
@@ -5483,6 +5798,77 @@ internal static class ToolContractCatalog {
 			]);
 	}
 
+	private static ToolContractDefinition BuildLocalizePage() {
+		return new ToolContractDefinition(
+			LocalizePageTool.ToolName,
+			"Translates the captions of ONE Freedom UI page into ONE additional culture without changing en-US or any other culture. " +
+			"Writes the supplied `resources` values and the page title `caption` in `culture` only; with both omitted the call is report-only and saves nothing. " +
+			"A value that already equals the stored one is reported in `unchanged`, and a call that changes nothing does not save (`saved: false`), so a re-run is safe. " +
+			"Keys are the page's resource keys as get-page shows them, inherited ones included; an unknown key fails the whole call before saving - register new keys with update-page first. " +
+			"The culture must exist in the environment's Languages section (SysCulture): an absent culture fails before any write, an inactive one is written with a warning. " +
+			"The default culture en-US is refused - change en-US values with update-page `resources`. " +
+			"A value carrying a character Creatio cannot store in a schema resource (a control character other than tab/LF/CR, U+FFFE, U+FFFF, a lone surrogate), an empty or whitespace-only value, or a whitespace-only caption fails the call before saving. " +
+			"Data-source-bound field labels are entity column captions - translate them with title-localizations on the entity tools. " +
+			"Read get-guidance name=page-schema-translation before translating a page.",
+			new ToolInputSchemaContract(
+				[SchemaNameFieldName, CultureFieldName],
+				EnvironmentOrExplicitConnectionFields(
+					Field(SchemaNameFieldName, StringType, "Freedom UI page schema name."),
+					Field(CultureFieldName, StringType, "Target culture, for example 'es-ES'. Matched case-insensitively against the environment's SysCulture names."),
+					Field(ResourcesFieldName, StringType, "Optional JSON object string mapping existing resource keys to their value in `culture`. Omit together with `caption` for a report-only call."),
+					Field("caption", StringType, "Optional page title in `culture`."),
+					Field("output-directory", StringType, "Optional. Directory that anchors the `.clio-pages` baseline lookup \u2014 pass the same value that was passed to get-page when it differs from the auto-detected workspace root. After a save the baseline is refreshed only when it still matches the page as it was before the save; a stale baseline is left unchanged with a warning, so the next update-page reports the conflict. Does NOT change where the page is saved.")),
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, "True when every supplied value is stored (verified by reading the schema back) or, for a report-only call, when coverage was read."),
+				Field("schemaName", StringType, "Page schema name."),
+				Field("schemaUId", StringType, "UId of the edited schema (the page's schema in its design package)."),
+				Field(CamelCasePackageNameFieldName, StringType, "Package of the edited schema."),
+				Field(CultureFieldName, StringType, "Target culture in the SysCulture spelling."),
+				Field("cultureActive", BooleanType, "Whether the target culture is active; false means users cannot select it yet."),
+				Field("saved", BooleanType, "Whether the schema was saved; false for a report-only call and for a call whose values were already stored."),
+				Field("written", ArrayType, "Keys whose value in `culture` was written."),
+				Field("unchanged", ArrayType, "Supplied keys whose value in `culture` already equalled the supplied one."),
+				Field("captionOutcome", StringType, "`written` or `unchanged` when `caption` was supplied; absent otherwise."),
+				Field("coverage", ObjectType, "Coverage in `culture` after the call: `keys` (all resource keys of the page hierarchy, the get-page count), `translated`, `missing` (keys with no value in `culture`), `sameAsDefault` (keys whose value equals en-US - review, may be untranslated), `captionSameAsDefault`, `captionInherited` (the title in `culture` is the parent template's title, not the page's own - untranslated) and `captionValue` (the current title in `culture`)."),
+				Field(WarningsFieldName, ArrayType, "Non-fatal findings: an inactive culture, the workspace-capture reminder after a server save, a stale or unrefreshable .clio-pages baseline."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription)
+			),
+			CommonErrorContract,
+			[
+				SchemaNameParameterAlias(),
+				EnvironmentNameParameterAlias()
+			],
+			[],
+			[
+				Example("Read coverage of a page in es-ES (report-only)", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
+					[CultureFieldName] = ExampleSpanishCultureName,
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				}),
+				Example("Translate one key and the page title into es-ES", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = ExampleTaskAppFormPageSchemaName,
+					[CultureFieldName] = ExampleSpanishCultureName,
+					[ResourcesFieldName] = "{\"UsrDetailsTab_caption\":\"Detalles\"}",
+					["caption"] = "Tarea",
+					[EnvironmentNameFieldName] = ExampleEnvironmentName
+				})
+			],
+			Flow(
+				[
+					LocalizePageTool.ToolName,
+					LocalizePageTool.ToolName,
+					PageGetTool.ToolName
+				],
+				"Call report-only first, translate the `missing` keys and review `sameAsDefault`, translate the page title when `captionInherited` is true, write them, then read the page back with get-page."),
+			[],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildPageValidate() {
 		return new ToolContractDefinition(
 			PageValidateTool.ToolName,
@@ -5509,7 +5895,7 @@ internal static class ToolContractCatalog {
 					"valid == false"
 				],
 				Field("valid", BooleanType, "Whether the page body passed all validations."),
-				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings.")
+				Field("validation", ObjectType, "Structured validation result with markers-ok, js-syntax-ok, content-ok, errors, and warnings. Captions of inserted widgets bound to localizable keys that will not be registered are reported as ONE warning: the rule text once, then one line per binding in the form `- '<node>', '<property>', '<key>'`.")
 			),
 			CommonErrorContract,
 			[],
@@ -5657,7 +6043,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractAlias PackageNameParameterAlias() {
-		return Alias(ParameterScope, PackageNameFieldName, "packageName", RejectedStatus,
+		return Alias(ParameterScope, PackageNameFieldName, CamelCasePackageNameFieldName, RejectedStatus,
 			$"Use '{PackageNameFieldName}' instead of 'packageName'.");
 	}
 
@@ -5912,12 +6298,13 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildCompileCreatio() {
 		return new ToolContractDefinition(
 			CompileCreatioTool.CompileCreatioToolName,
-			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, and schema-missing runtime errors. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
+			"Recompiles a registered Creatio environment and forces a runtime reload. Long-running (often several minutes). Reserved for C# schema changes, FSM-mode transitions, schema-missing runtime errors, and a culture just activated in the Languages section. Freedom UI page-body edits (validators, handlers, converters) do NOT require compilation — those changes are AMD modules served at runtime.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted, runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package. Comma-separated lists are not supported.")
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
+					Field(CompileProcessNameFieldName, StringType, "Optional business process code. Compiles the package that process is in through CrtProcessBuilder 1.6.6.33+ and answers with the compiler errors, the process's own first - the compile a Script Task or process methods saved by create/modify-business-process need: on Creatio 10.x a package-name compile does not pick such a save up, and a full one takes about 20 minutes. An interpreted process without C# is answered without a compile. Exclusive with package-name.")
 				]),
 			CommandExecutionOutput(),
 			CommonErrorContract,
@@ -5930,6 +6317,10 @@ internal static class ToolContractCatalog {
 				Example("Recompile a single package after a C# schema change", new Dictionary<string, object?> {
 					[EnvironmentNameFieldName] = ExampleEnvironmentName,
 					[PackageNameFieldName] = ExamplePackageName
+				}),
+				Example("Compile a business process's package after its save warned it cannot run until compiled", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[CompileProcessNameFieldName] = "UsrCalculateDiscount"
 				})
 			],
 			Flow(
@@ -5937,10 +6328,13 @@ internal static class ToolContractCatalog {
 					FsmModeTool.SetFsmModeToolName,
 					CompileCreatioTool.CompileCreatioToolName
 				],
-				"Call only after C# schema work, after `set-fsm-mode`, or in response to a runtime schema-missing error. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
+				"Call only after C# schema work - a business-process save or activation that warns the process cannot run \"until the configuration is compiled\" included, and then with `process-name` - after `set-fsm-mode`, in response to a runtime schema-missing error, or after a culture was activated in the Languages section. Skip this tool entirely when the work touches only Freedom UI page bodies or DDL changes routed through `update-entity-schema`."),
 			[],
 			[],
 			AntiPatterns: [
+				new ToolAntiPattern(
+					$"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}",
+					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, `last-compilation-log` reads the latest FINISHED compile and carries no time, so while this compile still runs it shows an earlier one's verdict."),
 				new ToolAntiPattern(
 					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
 					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),
@@ -5963,10 +6357,11 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The user was warned that compilation is a heavy operation forcing a runtime reload that affects every connected user, and explicitly confirmed to compile now rather than postpone. Ask every time (not once per session) — a repeated or explicit compile request is not itself the confirmation and a prior in-session warning/answer is not standing consent; if the user postpones, do NOT call this tool.",
 				"`set-fsm-mode` was just toggled (full compilation only).",
-				"C# schemas were added or modified in the targeted package.",
+				"C# schemas were added or modified in the targeted package, or a business-process call answered that the process cannot run \"until the configuration is compiled\" (then pass `process-name`).",
 				"The runtime reported a missing-in-runtime or schema-not-found error that maps to a compilation gap.",
+				"A culture was activated in the Languages section and no full compilation has run since (full compilation only): until then the UI does not load in that culture.",
 				"Caller must NOT call this tool after `create-app`, `update-page`, `sync-pages`, `update-entity-schema`, `create-page`, `create-entity-business-rules`, or `create-page-business-rules`.",
-				"After `create-business-process`/`modify-business-process`, compile ONLY when the process carries C# you authored — a Script Task, or a user task with an after-activity-save script (the `C# schemas were added or modified` case above). Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
+				"After `create-business-process`, `modify-business-process`, `modify-business-process-as-new-version` or `set-active-business-process-version`, compile ONLY when the response warns that the process cannot run \"until the configuration is compiled\" — which it does for C# you authored (a Script Task, process methods, a user task with an after-activity-save script, or a changed using such code compiles under) and for a new or activated version that carries such C# — and then pass `process-name` (the NEW version's name for a version) rather than `package-name`. That warning, and the `compile-creatio not required` note, speak for that call only: a compile an earlier save made owed is still owed. Otherwise the process runs with no compile. A raw process read (e.g. `VwSysProcess`) shows `NeedInstall`, `NeedUpdateSourceCode` and `NeedUpdateStructure` all true on a fresh process; none is a compile trigger — read status with `describe-business-process`, not a raw process read. (A CUSTOM user-task SCHEMA is separate: creating/changing one needs a compile.)"
 			]);
 	}
 
@@ -6081,13 +6476,13 @@ internal static class ToolContractCatalog {
 			CreateUiProjectTool.CreateUiProjectToolName,
 			"Scaffolds a Freedom UI Angular remote-module project inside an existing clio workspace. Writes under <workspaceDirectory>/projects/<projectName> and <workspaceDirectory>/packages/<packageName>. It DOES read the environment once: a SysPackage lookup runs unconditionally to check whether the package already exists (UiProjectCreator.Create), so the tool needs a reachable environment even though it changes nothing on it. The MCP wrapper pins the process working directory to workspaceDirectory and runs the underlying CLI in silent mode, so the interactive 'download package?' prompt is auto-answered 'no'.",
 			new ToolInputSchemaContract(
-				[WorkspaceDirectoryFieldName, ProjectNameFieldName, "packageName", VendorPrefixFieldName],
+				[WorkspaceDirectoryFieldName, ProjectNameFieldName, CamelCasePackageNameFieldName, VendorPrefixFieldName],
 				[
 					Field(WorkspaceDirectoryFieldName, StringType,
 						"Absolute path to an existing clio workspace directory. MUST contain '.clio/workspaceSettings.json'. Relative paths, network-share paths, and non-workspace directories are rejected. Call 'create-workspace' first when the target directory is not yet a workspace."),
 					Field(ProjectNameFieldName, StringType,
 						"Angular project name in snake_case. MUST match '^[0-9a-z_]+$' (lowercase letters, digits, underscores). Examples: 'rss_reader', 'task_board'. Translate any PascalCase/camelCase/kebab-case user input into snake_case before sending."),
-					Field("packageName", StringType,
+					Field(CamelCasePackageNameFieldName, StringType,
 						"Clio package name that will host the project. MUST be a simple identifier matching '^[A-Za-z0-9_]+$' — path separators, '..', and absolute paths are rejected so scaffolding cannot escape the workspace. Conventionally PascalCase (e.g., 'UsrRssReader', 'RssReader'). Created if missing; reused if it already exists."),
 					Field(VendorPrefixFieldName, StringType,
 						"Vendor prefix; 1-50 lowercase letters only ('^[a-z]{1,50}$'). Examples: 'usr', 'crt', 'acme'. Uppercase and digits are rejected by the options validator."),
@@ -6112,7 +6507,7 @@ internal static class ToolContractCatalog {
 					new ToolContractValidator(
 						"regex",
 						"invalid-package-name",
-						Field: "packageName",
+						Field: CamelCasePackageNameFieldName,
 						Context: "packageName must match ^[A-Za-z0-9_]+$ (simple identifier). Path separators, '..', and absolute paths are rejected so scaffolding stays inside the workspace.",
 						Required: true),
 					new ToolContractValidator(
@@ -6133,13 +6528,13 @@ internal static class ToolContractCatalog {
 				Example("Scaffold a default RSS reader remote module", new Dictionary<string, object?> {
 					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\newModule",
 					[ProjectNameFieldName] = "rss_reader",
-					["packageName"] = "RssReader",
+					[CamelCasePackageNameFieldName] = "RssReader",
 					[VendorPrefixFieldName] = "usr"
 				}),
 				Example("Scaffold an empty-template project for a specific Creatio version", new Dictionary<string, object?> {
 					[WorkspaceDirectoryFieldName] = @"C:\Projects\Workspaces\son",
 					[ProjectNameFieldName] = "kpi_widget",
-					["packageName"] = "UsrKpiWidgets",
+					[CamelCasePackageNameFieldName] = "UsrKpiWidgets",
 					[VendorPrefixFieldName] = "usr",
 					[EmptyFieldName] = true,
 					[CreatioVersionFieldName] = "8.1.2"
@@ -6208,7 +6603,7 @@ internal static class ToolContractCatalog {
 				Field(StatusFieldName, StringType, "Overall infrastructure assertion status: pass, partial, or fail."),
 				Field("exit-code", NumberType, "Overall infrastructure assertion exit code."),
 				Field("summary", StringType, "Human-readable summary of the assertion sweep."),
-				Field("sections", ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
+				Field(SectionsFieldName, ObjectType, "Per-scope assertion results (k8, local, filesystem)."),
 				Field("database-candidates", ArrayType, "Normalized database candidates discovered across passing sections.")),
 			CommonErrorContract,
 			[],
@@ -6423,7 +6818,10 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildPushWorkspace() {
 		return new ToolContractDefinition(
 			PushWorkspaceTool.PushWorkspaceToolName,
-			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer.",
+			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer. " +
+			"A package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead. " +
+			"Before installing, it emits one non-blocking warning message per Freedom UI page schema (web or mobile) whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it. " +
+			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources).",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[
@@ -6452,6 +6850,71 @@ internal static class ToolContractCatalog {
 			Preconditions: [
 				"The environment is registered (see list-environments / reg-web-app).",
 				"workspace-path is a local absolute path to an existing workspace directory (network-share paths are not supported)."
+			]);
+	}
+
+	private static ToolContractDefinition BuildMobilePageConversionGuide() {
+		return new ToolContractDefinition(
+			MobilePageConversionGuideTool.ToolName,
+			"Advisory: returns a guide for converting a Freedom UI WEB page into a mobile page; it writes nothing. The guide carries the recommended mobile template, container correspondence, the source component structure, per-type component suggestions and inline mobile component contracts - YOU build the body from it with create-page (mobile template) + update-page and prove it with validate-page. Candidate names are reported without classification: classify each one yourself before presenting a plan.",
+			new ToolInputSchemaContract(
+				[SchemaNameFieldName],
+				[
+					Field(SchemaNameFieldName, StringType, "Source page schema name, e.g. 'UsrMyApp_FormPage'. Only Freedom UI WEB pages are supported; a Classic UI page is detected and reported as not yet supported."),
+					Field("target-schema-name", StringType, "Optional suggested target mobile page schema name. Defaults to the source name with a mobile suffix (UsrMyApp_FormPage -> UsrMyApp_MobileFormPage)."),
+					Field("version", StringType, "Optional Creatio/registry version used to resolve the mobile and web component registries. A 3-part semver, e.g. '8.3.3', or 'latest'; anything else is rejected. Defaults to PROBING the target environment - an explicit value OVERRIDES that probe, so naming a version other than the target's own measures the conversion against a different mobile runtime."),
+					Field(EnvironmentNameFieldName, StringType, "PREFERRED. Registered clio environment name, e.g. 'local'."),
+					Field("uri", StringType, "Emergency fallback only: direct Creatio URL. Prefer 'environment-name'."),
+					Field(LoginFieldName, StringType, "Emergency fallback only: login paired with 'uri'."),
+					Field(PasswordFieldName, StringType, "Emergency fallback only: password paired with 'uri'.")
+				],
+				AnyOf: EnvironmentOrExplicitConnectionRequirements()),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[
+					SuccessFalseSignal
+				],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field("sourceSchemaName", StringType, "The source page the read was attempted against."),
+				Field("sourceType", StringType, "Detected source page type - an unsupported Classic UI page is how you learn it must be migrated to Freedom UI web first. Absent when the page could not be read at all."),
+				Field("guide", ObjectType, "The advisory guide: recommended template, containerMap, componentSuggestions, mobileContracts, sectionRegistration and more. adaptiveLayout carries per-breakpoint placement - small (phone) is the supported canvas; medium/large (tablet/desktop) are baked in but stay EXPERIMENTAL and are outside the converter's supported scope. What the caller must resolve: componentSuggestions[].category == RequiresManualDecision, and requestConversions.droppedRequests / flaggedRequests / unresolvedTargetRequests / missingTargetPages."),
+				Field("resolvedTargetVersion", StringType, "The component-registry / rules version the guide was built against: a concrete version or 'latest'."),
+				Field("resolvedFrom", StringType, "How the version was resolved: environment, environment-superset or latest-fallback."),
+				Field("versionWarning", StringType, "Caveat when the catalog is approximate or the target version is unknown; absent when the version is exact."),
+				Field("requiresVersionConfirmation", BooleanType, "True only on latest-fallback: the target version is unknown, so confirm with the user before acting on the guide."),
+				Field("resolvedFromReason", StringType, "Stable kebab-case reason on latest-fallback, e.g. no-active-environment or probe-error."),
+				Field("rulesWarning", StringType, "READ THIS WHEN PRESENT: the rules file maps a web request onto a mobile request type the registry does not publish, so the action cannot dispatch - it does nothing and fails SILENTLY on the page. Review every affected action before shipping."),
+				Field("requestRegistryWarning", StringType, "The mobile request registry could not be resolved exactly, so request conversions are advisory-only."),
+				Field(ErrorFieldName, StringType, "Actionable diagnostic when success is false.")),
+			CommonErrorContract,
+			// No rejected-parameter aliases. The sibling page contracts publish them because they are
+			// RESIDENT and something above them classifies the payload; per Command/McpServer/AGENTS.md the
+			// flat-args normalization and argument-shape refusal are resident-only. This tool is
+			// deliberately non-resident and its args record carries no [JsonExtensionData] bag, so a caller
+			// sending 'schemaName' has the key dropped by System.Text.Json and gets "Could not read source
+			// page ''" - not the rename hint an alias entry would promise. Publishing one would advertise a
+			// refusal the tool cannot give.
+			[],
+			[],
+			[
+				Example("Get the conversion guide for a Freedom UI web form page", new Dictionary<string, object?> {
+					[SchemaNameFieldName] = "UsrMyApp_FormPage",
+					[EnvironmentNameFieldName] = "local"
+				})
+			],
+			Flow(
+				[
+					MobilePageConversionGuideTool.ToolName,
+					PageCreateTool.ToolName,
+					PageUpdateTool.ToolName,
+					PageValidateTool.ToolName
+				],
+				"Read the guide, then build the mobile page body yourself with create-page + update-page and prove it with validate-page. The guide writes nothing, so a caller that waits for a built page waits forever. Read get-guidance name=freedom-page-web-to-mobile-conversion before acting on it, and name=freedom-page-mobile-reason-codes to resolve a reason code it reports."),
+			[],
+			[],
+			Preconditions: [
+				"The environment is registered (see list-environments / reg-web-app), or an explicit uri + login + password is supplied.",
+				"The source page must be a Freedom UI WEB page. A Classic UI page must be migrated to Freedom UI web first, and an already-mobile page is rejected."
 			]);
 	}
 
@@ -6511,7 +6974,7 @@ internal static class ToolContractCatalog {
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
 				Field("results", ArrayType, resultsDescription),
-				Field("error", StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
+				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
 
@@ -6534,8 +6997,8 @@ internal static class ToolContractCatalog {
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
-					+ "duplicates it."),
-				Field("error", StringType, "Request-level error that prevented any row from being attempted."),
+					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
+				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);

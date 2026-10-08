@@ -46,7 +46,9 @@ internal static class ApplicationToolResultMapper {
 					ParentSchemaName = page.ParentSchemaName
 				})
 				.ToList(),
-			result.SchemaNamePrefix);
+			result.SchemaNamePrefix,
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionContextResponse Map(ApplicationSectionCreateResult result) {
@@ -92,7 +94,9 @@ internal static class ApplicationToolResultMapper {
 					PackageName = page.PackageName,
 					ParentSchemaName = page.ParentSchemaName
 				})
-				.ToList());
+				.ToList(),
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionUpdateContextResponse Map(ApplicationSectionUpdateResult result) {
@@ -125,7 +129,12 @@ internal static class ApplicationToolResultMapper {
 				result.Section.SectionSchemaUId,
 				result.Section.IconId,
 				result.Section.IconBackground,
-				result.Section.ClientTypeId));
+				result.Section.ClientTypeId),
+			CaptionCulture: result.CaptionCulture,
+			CaptionCultureValue: result.CaptionCultureValue,
+			PreservedCultures: result.PreservedCultures,
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionDeleteContextResponse Map(ApplicationSectionDeleteResult result) {

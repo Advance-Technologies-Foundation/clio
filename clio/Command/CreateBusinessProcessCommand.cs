@@ -222,10 +222,32 @@ namespace Clio.Command;
 // The dotted path fails differently and just as quietly: an older server resolves `elementParameter` flat
 // only, finds no parameter of that name and refuses - loudly, but naming a parameter rather than the
 // package. 1.6.6.14 is the archive cut from crt-process-builder 13bd2a2.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.14",
+// Raised to 1.6.6.30 by ENG-92711: the Script task (`type:"scriptTask"` + its `scriptTask` block), the
+// process-level `usings[]` and `methods`, and the `addUsing` / `removeUsing` / `setMethods` operations. The
+// same silent-discard shape once more: the scriptTask TYPE and the three operations are refused loudly by
+// an older server, but a build's top-level `usings[]` and `methods` - and a `scriptTask` block riding a
+// setElement beside another field - are dropped by
+// its serializer while the call answers success, and the process then fails its compile on a namespace
+// nobody knows was lost.
+// Raised to 1.6.6.40 by ENG-91844: `sourceColumn` (mappings, changeData/addData/openEditPage values,
+// openEditPage recordId), a filter's `elementParameter.column` and the `[#Element.Parameter.Column#]` name in a
+// condition or formula body - ONE column of a record another element returned. Same failure shape as the
+// multi-instance raise: an older server's serializer DISCARDS both fields and answers success, so the source
+// silently widens to the WHOLE record - a mapping is then refused for incompatible types naming a parameter
+// rather than the package, and a filter compares its column against the record reference with no refusal at
+// all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
+// expected". 1.6.6.40 is the first archive with sourceColumn.
+// Raised to 1.6.6.77 by ENG-102114: a condition written BY NAME on the modify path (`addFlow` / `setFlow` /
+// `setFlowCondition`) and the check of every hand-written `[#...#]` meta path - spelled as the platform writes it,
+// prefix optional, and a column the read loads. A 1.6.6.40-1.6.6.76 server stores a modify-path `[#Name#]`
+// verbatim, which the platform's gate then refuses as "Expression expected", and saves a correctly spelled meta
+// path on a column the read does not load green, reading EMPTY at run time - the defect this raise closes.
+// Convergence refuses everything below the bundled archive anyway; this floor is the gate in its degraded modes
+// (an unreadable archive, a pre-release version). 1.6.6.77 is the first archive with both.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.77",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
-	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[]).</summary>
+	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
 	public string DescriptorJson { get; set; } = string.Empty;
 
 	/// <summary>Overrides the target package from the descriptor (the package the process is created in).</summary>

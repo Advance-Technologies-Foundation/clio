@@ -634,6 +634,35 @@ public sealed class ODataUpdateToolTests {
 		second.Success.Should().BeTrue(because: "a valid single-record JSON body is a successful OData write");
 	}
 
+	[TestCase(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.PostgresInsertForeignKeyBody,
+		"foreign key constraint 'FK6R22cV5NWM2CfAp2GAV4B2R2GfY' on table 'DocListInFinApp'",
+		TestName = "Update_Should_Add_The_Foreign_Key_Hint_For_Postgres")]
+	[TestCase(Clio.Tests.Common.CreatioResponseErrorStructuredDetailTests.SqlServerUpdateForeignKeyBody,
+		"referenced table 'Account'",
+		TestName = "Update_Should_Add_The_Foreign_Key_Hint_For_SqlServer")]
+	[Category("Unit")]
+	[Description("GH-1699: a PATCH that sets a lookup to an Id missing from its referenced table adds the same FK hint as odata-create.")]
+	public void Update_Should_Add_The_Foreign_Key_Hint(string body, string expectedIdentifiers) {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a write the database refused is not a successful update");
+		response.Error!.Should().StartWith("An error has occurred. From the error payload (validated identifiers only): ",
+			because: "the hint is appended to today's message rather than replacing it");
+		response.Error.Should().Contain(expectedIdentifiers,
+			because: "the validated identifiers are what the caller needs to find the lookup at fault");
+		response.Error.Should().Contain("a referenced record is missing",
+			because: "odata-update shares the keyed write path, so it states the same cause as odata-create");
+		response.Diagnostic!.SideEffect.Should().Be("unknown",
+			because: "the side-effect reporting of a server-reported failure is unchanged");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Returns a clean failure when the PATCH itself throws, without leaking internals.")]

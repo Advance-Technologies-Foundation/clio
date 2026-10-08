@@ -34,7 +34,24 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
-	[Description("Reports not-found (not an error) when no compile-creatio operation has ever run for the environment.")]
+	[Description("A process-name compile is reported with its process-name, so a null package-name does not read as a full compilation.")]
+	public void GetStatus_Should_ReportTheProcessName_ForAProcessCompile() {
+		// Arrange
+		CompileOperationRegistry registry = new();
+		registry.Begin("tenant-a", "sandbox", packageName: null, processName: "UsrProc");
+		CompileStatusTool tool = new(registry, CreateResolver("tenant-a"));
+
+		// Act
+		CompileStatusResponse response = tool.GetStatus(new CompileStatusArgs("sandbox", null));
+
+		// Assert
+		response.Status.Should().Be("running", because: "the operation has not finished");
+		response.ProcessName.Should().Be("UsrProc", because: "the process the compile is for is surfaced");
+		response.PackageName.Should().BeNull(because: "the package is only known once the server answers");
+	}
+
+	[Test]
+	[Description("Reports not-found (not an error) when no compile-creatio operation has ever run for the environment, and the note does not read as 'nothing ran': it names last-compilation-log and warns that its undated verdict can be an earlier compile's (ENG-102333).")]
 	public void GetStatus_Should_ReturnNotFound_WhenNoOperationTrackedForEnvironment() {
 		// Arrange
 		CompileOperationRegistry registry = new();
@@ -47,6 +64,29 @@ public sealed class CompileStatusToolTests {
 		response.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
 		response.Status.Should().Be("not-found", because: "no operation was ever tracked for this environment");
 		response.EnvironmentName.Should().Be("sandbox", because: "the response must echo the queried environment name");
+		response.Note.Should().Contain("does not mean no compile ran",
+			because: "a not-found that reads as 'nothing ran' sends an agent to compile again - a second runtime reload for every user");
+		response.Note.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "the environment still holds its latest compile verdict, and last-compilation-log reads it without compiling");
+		response.Note.Should().Contain("carries no time",
+			because: "that verdict belongs to the latest FINISHED build, so read while a compile runs it is an earlier one's");
+	}
+
+	[Test]
+	[Description("ENG-102333: compile-status's own description tells an agent to poll it after its client stopped waiting for compile-creatio, and to fall back to last-compilation-log on not-found.")]
+	public void GetStatus_Description_Should_CoverAClientSideTimeoutAndTheNotFoundFallback() {
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileStatusTool).GetMethod(nameof(CompileStatusTool.GetStatus))!;
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)System.Attribute.GetCustomAttribute(
+			method, typeof(System.ComponentModel.DescriptionAttribute))!).Description;
+
+		// Assert
+		description.Should().Contain("Request timed out",
+			because: "an agent whose client gave up must know the compile keeps running and is tracked here");
+		description.Should().Contain(LastCompilationLogTool.ToolName,
+			because: "the description must name the fallback for a session that holds no record");
 	}
 
 	[Test]

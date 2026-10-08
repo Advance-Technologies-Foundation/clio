@@ -4323,7 +4323,7 @@ public sealed class SchemaSyncToolTests {
 		private readonly IReadOnlyList<string> _messages;
 		public UpdateEntitySchemaOptions CapturedOptions { get; private set; }
 		public FakeUpdateEntitySchemaCommand(ILogger logger = null, int exitCode = 0, IReadOnlyList<string> messages = null)
-			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>()) {
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger ?? Substitute.For<ILogger>(), Substitute.For<Clio.Common.IOptionSuggestionService>(), Substitute.For<Clio.Common.IFileSystem>()) {
 			_logger = logger ?? Substitute.For<ILogger>();
 			_exitCode = exitCode;
 			_messages = messages ?? [];
@@ -4392,7 +4392,7 @@ public sealed class SchemaSyncToolTests {
 		private readonly Queue<AttemptOutcome> _outcomes;
 		public int Invocations { get; private set; }
 		public ScriptedUpdateEntitySchemaCommand(ILogger logger, params AttemptOutcome[] outcomes)
-			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger) {
+			: base(Substitute.For<IRemoteEntitySchemaColumnManager>(), logger, Substitute.For<Clio.Common.IOptionSuggestionService>(), Substitute.For<Clio.Common.IFileSystem>()) {
 			_logger = logger;
 			_outcomes = new Queue<AttemptOutcome>(outcomes);
 		}

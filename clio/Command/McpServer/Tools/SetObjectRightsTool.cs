@@ -1,0 +1,148 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Clio.Command.ObjectRights;
+using Clio.Common;
+using ModelContextProtocol.Server;
+
+namespace Clio.Command.McpServer.Tools;
+
+/// <summary>
+/// MCP surface of <c>set-object-rights</c>: grants or revokes one role's operation permissions on ONE object, or turns
+/// the object's operation permissions on or off. Destructive: the call applies the change, and the host's approval of
+/// the call is the confirmation — the arguments name every access-changing transition, so the approval shows
+/// everything the call can do. <c>preview</c> is a dry run that writes nothing.
+/// </summary>
+[McpServerToolType]
+public sealed class SetObjectRightsTool(
+	SetObjectRightsCommand command,
+	ILogger logger,
+	IToolCommandResolver commandResolver)
+	: BaseTool<SetObjectRightsOptions>(command, logger, commandResolver) {
+
+	internal const string ToolName = "set-object-rights";
+
+	internal const string ValidArguments =
+		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, enable-operation-permissions, "
+		+ "disable-operation-permissions, preview.";
+
+	// The worker is killed at its budget (120 s by default, McpWorkerCallDispatcher.DefaultBudget), and a call makes up
+	// to five requests in sequence: the grantee lookup, the SysSchema lookup, the read, the save and the read-back. So
+	// each request gets one attempt of at most 25 s, all of them share a 100 s limit, and the save is sent only while
+	// 50 s are left for it and the read-back. A save that gets no answer is then still read back and reported as
+	// "may still be applied" before the kill, instead of being lost to it.
+	internal const int McpRequestTimeoutMilliseconds = 25_000;
+
+	internal static readonly TimeSpan McpCallBudget = TimeSpan.FromSeconds(100);
+
+	[McpToolExecution(
+		Location = McpToolExecutionLocation.Worker,
+		Lifetime = McpToolExecutionLifetime.PerCall,
+		OperationFamily = McpToolOperationFamily.None,
+		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
+		RequiresClientRequests = McpToolClientRequests.None,
+		SharedFileResource = McpToolSharedFileResource.None)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
+	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
+		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
+		"entity-schema-name is the object's CODE, not its title: the developer's word can be another object's title, so a title is refused with the code it belongs to, and the output shows the title next to the code ('Creatio functionality' (Feature)) — before a write, name the object to the developer by both. " +
+		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +
+		"A grant or revoke needs grantee and operations (read,create,edit,delete): nothing is granted by default. revoke=true clears the named operations on the role's row while KEEPING the row (rows are never removed or moved). " +
+		"The rows are a priority list: a user in several roles gets the highest matching row, and a row with an operation cleared denies it to users for whom it is that row. A new row goes at the lowest priority; the result names the rows above the grantee's row. " +
+		"The switch changes only through its flags, or the call is refused: enable-operation-permissions turns the object's operation permissions ON, with a grant or alone (from then on its rows decide who can reach it; when the object has rows but none for All employees, an All employees row with every operation is added below them); disable-operation-permissions ALONE (no grantee, operations or revoke) turns them OFF and keeps every row (the object becomes available to ALL internal users). A revoke never turns them off; one that would leave no granting row is refused. " +
+		"preview=true is a dry run: it writes nothing and shows what the call would change. Read the result back with get-object-rights. Does NOT change column or record permissions. " +
+		"Unknown or misspelled argument names are REFUSED before any read or write.")]
+	public ObjectRightsToolResponse SetObjectRights(
+		[Description("Parameters: environment-name, entity-schema-name (required); grantee and operations (required for a grant or revoke); revoke, enable-operation-permissions, disable-operation-permissions, preview (optional).")]
+		[Required]
+		SetObjectRightsArgs args) {
+		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
+		// and the serializer silently DROPS unknown keys. On a destructive tool that turns a typo into the opposite
+		// change ({"revok":true} binds Revoke=false and GRANTS), so refuse before any read or write.
+		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
+			args.ExtensionData, McpToolArgumentSupport.EnvironmentNameAliases, ".", ValidArguments);
+		if (!string.IsNullOrWhiteSpace(aliasError)) {
+			return ObjectRightsToolResponse.FromValidationError(aliasError);
+		}
+		try {
+			return ObjectRightsToolResponse.From(InternalExecute<SetObjectRightsCommand>(BuildOptions(args)));
+		} catch (Exception ex) {
+			return ObjectRightsToolResponse.FromError(ex);
+		}
+	}
+
+	/// <summary>The command options an MCP call runs with.</summary>
+	/// <param name="args">The call's arguments.</param>
+	/// <returns>The options, with the MCP request limits.</returns>
+	internal static SetObjectRightsOptions BuildOptions(SetObjectRightsArgs args) {
+		bool preview = args.Preview ?? false;
+		return new SetObjectRightsOptions {
+			Environment = args.EnvironmentName,
+			EntitySchemaName = args.EntitySchemaName,
+			Grantee = args.Grantee,
+			Operations = args.Operations,
+			Revoke = args.Revoke ?? false,
+			EnableOperationPermissions = args.EnableOperationPermissions ?? false,
+			DisableOperationPermissions = args.DisableOperationPermissions ?? false,
+			Preview = preview,
+			// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
+			// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
+			Confirm = !preview,
+			TimeOut = McpRequestTimeoutMilliseconds,
+			MaxAttempts = 1,
+			CallBudget = McpCallBudget
+		};
+	}
+}
+
+/// <summary>Arguments of the <c>set-object-rights</c> MCP tool.</summary>
+/// <param name="EnvironmentName">The registered environment.</param>
+/// <param name="EntitySchemaName">The one object whose operation permissions change.</param>
+/// <param name="Grantee">The SysAdminUnit id of the role or user; required for a grant or revoke.</param>
+/// <param name="Operations">Comma-separated operations to grant or revoke; required for a grant or revoke.</param>
+/// <param name="Revoke">Revoke instead of grant.</param>
+/// <param name="EnableOperationPermissions">Turn operation permissions on: with a grant, or alone.</param>
+/// <param name="DisableOperationPermissions">Turn operation permissions off, alone: no row changes.</param>
+/// <param name="Preview">Write nothing; show what the call would change.</param>
+public sealed record SetObjectRightsArgs(
+	[property: JsonPropertyName("environment-name")]
+	[property: Description(McpToolDescriptions.EnvironmentName)]
+	[property: Required]
+	string EnvironmentName,
+
+	[property: JsonPropertyName("entity-schema-name")]
+	[property: Description("The one object whose operation permissions are changed, by its CODE (entity schema name). A title is refused, naming the code it belongs to.")]
+	[property: Required]
+	string EntitySchemaName,
+
+	[property: JsonPropertyName("grantee")]
+	[property: Description("SysAdminUnit id (role or user) to grant/revoke. Names are not unique — pass the id. Required for a grant or revoke; not given when the call only turns operation permissions on or off.")]
+	string? Grantee = null,
+
+	[property: JsonPropertyName("operations")]
+	[property: Description("Comma-separated operations to grant or revoke: read,create,edit,delete. Required for a grant or revoke: nothing is granted by default. An empty value is refused.")]
+	string? Operations = null,
+
+	[property: JsonPropertyName("revoke")]
+	[property: Description("Revoke the operations named in operations instead of granting them (default false). The role's row is kept, with those operations cleared.")]
+	bool? Revoke = null,
+
+	[property: JsonPropertyName("enable-operation-permissions")]
+	[property: Description("Turn the object's operation permissions ON (default false, which refuses a grant on an object that does not use them yet): with grantee and operations it lets the grant turn them on; alone it turns them on with the stored rows as they are. From then on the object's rows decide who can reach it.")]
+	bool? EnableOperationPermissions = null,
+
+	[property: JsonPropertyName("disable-operation-permissions")]
+	[property: Description("Turn the object's operation permissions OFF, keeping every row as it is (default false): the object becomes available to ALL internal users, and external users have no access while it is off. A call of its own: not with grantee, operations or revoke.")]
+	bool? DisableOperationPermissions = null,
+
+	[property: JsonPropertyName("preview")]
+	[property: Description("Dry run (default false): write nothing and show what the call would change, the rows it affects, and whether it would be refused.")]
+	bool? Preview = null
+) {
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call before any read or write.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}

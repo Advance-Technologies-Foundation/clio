@@ -439,6 +439,78 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "a dry run must never reach TrySaveSchema; a unit test can only assert this against a substitute, so the wire path needs its own proof");
 	}
 
+	[Test]
+	[Description("ENG-101592: with verify=true, include-operations=false makes the update-page read-back carry page.ownBodySummary.viewConfigDiffOpCounts instead of viewConfigDiffOps, and omitting the argument keeps the full operation list.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page verify read-back honours include-operations")]
+	[AllureDescription("Submits the same one-operation append fragment to the seeded page ClioMcp_BlankPageToSave twice through update-page with dry-run=true and verify=true: once with include-operations=false, once without the argument. Reads the wire JSON of each response and verifies the first read-back summary has viewConfigDiffOpCounts and no viewConfigDiffOps, and the second keeps viewConfigDiffOps. Non-destructive: a dry run never reaches TrySaveSchema, and the verify read-back runs on every successful update-page call.")]
+	public async Task PageUpdateTool_Should_Honour_IncludeOperations_In_The_Verify_ReadBack() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string fragment = BuildAppendFragment(savePage);
+
+		// Act
+		JsonElement countsSummary = await ReadVerifiedOwnBodySummaryAsync(
+			arrangeContext, environmentName, savePage, fragment, includeOperations: false);
+		JsonElement listSummary = await ReadVerifiedOwnBodySummaryAsync(
+			arrangeContext, environmentName, savePage, fragment, includeOperations: null);
+
+		// Assert
+		countsSummary.TryGetProperty("viewConfigDiffOps", out _).Should().BeFalse(
+			because: "include-operations=false leaves the per-operation list out of the verify read-back");
+		countsSummary.TryGetProperty("viewConfigDiffOpCounts", out JsonElement counts).Should().BeTrue(
+			because: "include-operations=false puts the number of operations per operation type in place of the list");
+		counts.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "the counts map each operation type to its number of operations");
+		listSummary.TryGetProperty("viewConfigDiffOps", out _).Should().BeTrue(
+			because: "without include-operations the read-back must stay byte-for-byte what update-page returned before ENG-101592");
+		listSummary.TryGetProperty("viewConfigDiffOpCounts", out _).Should().BeFalse(
+			because: "the counts are added only when the caller opts out of the operation list");
+	}
+
+	/// <summary>
+	/// Reads the page, runs an append dry run with verify=true and returns <c>page.ownBodySummary</c> of the wire response,
+	/// read from JSON because the typed summary defaults the operation list to empty and cannot show absence.
+	/// </summary>
+	private static async Task<JsonElement> ReadVerifiedOwnBodySummaryAsync(
+			ArrangeContext arrangeContext, string environmentName, string schemaName, string fragment,
+			bool? includeOperations) {
+		// Read the page first, as the append-projection test does: get-page re-arms this session's checksum
+		// baseline, and an earlier test in the fixture that saved the page out of band would otherwise make
+		// update-page refuse the call as an external modification.
+		await ReadRawBodyAsync(arrangeContext, environmentName, schemaName);
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = schemaName,
+			["body"] = fragment,
+			["mode"] = "append",
+			["dry-run"] = true,
+			["verify"] = true,
+			["environment-name"] = environmentName
+		};
+		if (includeOperations is not null) {
+			args["include-operations"] = includeOperations;
+		}
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> { ["args"] = args },
+			arrangeContext.CancellationTokenSource.Token);
+		result.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured result, not a transport error");
+		PageUpdateResponse response = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+		response.Success.Should().BeTrue(
+			because: $"the fragment is a valid append against '{schemaName}'. Error: {response.Error}");
+		JsonElement raw = EntitySchemaStructuredResultParser.Extract<JsonElement>(result);
+		raw.TryGetProperty("page", out JsonElement page).Should().BeTrue(
+			because: "verify=true must attach the read-back page to a successful update-page response");
+		page.TryGetProperty("ownBodySummary", out JsonElement summary).Should().BeTrue(
+			because: "include-operations changes the content of the summary, not whether it is returned");
+		return summary.Clone();
+	}
+
 	/// <summary>Reads a page's raw stored body through <c>get-page</c> and returns its text.</summary>
 	private static async Task<string> ReadRawBodyAsync(
 			ArrangeContext arrangeContext, string environmentName, string schemaName) {
@@ -534,12 +606,13 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the operator must know the body did not reach the server without inspecting logs, mirroring the syntax-gate tail");
 	}
 
-	[Test]
-	[Description("A NON-dry-run update-page of a body whose handler calls a conditionally declared helper fails at the lint gate and leaves the page on the stand byte-identical — dry-run scenarios make 'nothing was persisted' trivially true, so the real save path is what proves the gate actually blocks the write.")]
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A NON-dry-run update-page of a body whose handler calls an uninitialized or Designer-discarded helper fails at the lint gate and leaves the page on the stand byte-identical — dry-run scenarios make 'nothing was persisted' trivially true, so the real save path is what proves the gate actually blocks the write.")]
 	[AllureTag(ToolName)]
-	[AllureName("update-page blocks a non-dry-run save on undefined-section-call and leaves the page unchanged")]
-	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper declared only inside an `if (false)` block through the real save path (no dry-run), asserts the lint gate rejects it, then re-reads the page and asserts the stored body is unchanged.")]
-	public async Task PageUpdateTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsConditionallyDeclared() {
+	[AllureName("update-page blocks a non-dry-run save on unsafe helper calls and leaves the page unchanged")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: captures the body with get-page, submits a marker-complete body whose returned handler calls a helper either declared inside an `if (false)` block or discarded by Designer through the real save path (no dry-run), asserts the lint gate rejects it, then re-reads the page and asserts the stored body is unchanged.")]
+	public async Task PageUpdateTool_Should_Block_Real_Save_And_Leave_Page_Unchanged_When_HelperIsUnsafe(bool designerDiscarded) {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -563,7 +636,7 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			PageUpdateResponse response = await UpdatePageAsync(
 				arrangeContext,
 				savePage,
-				PageLintProbeBodies.ConditionallyDeclaredHelper(savePage),
+				(designerDiscarded ? PageLintProbeBodies.DesignerDiscardedHelper(savePage) : PageLintProbeBodies.ConditionallyDeclaredHelper(savePage)),
 				environmentName,
 				baselineDir);
 			PageGetResponse readback = await GetPageAsync(arrangeContext, savePage, environmentName, readbackDir);
@@ -574,10 +647,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 
 			// Assert
 			response.Success.Should().BeFalse(
-				because: "the handler calls a helper whose only declaration sits in a branch that never runs, so the page would throw a TypeError on open");
+				because: "the helper is either uninitialized now or removed by the next Designer save");
 			response.Error.Should().Contain("Page body lint failed",
 				because: "the canonical lint prefix is what tells the agent this was a lint rejection rather than a syntax or transport failure");
-			response.Error.Should().Contain("undefined-section-call",
+			response.Error.Should().Contain(designerDiscarded ? "designer-unsafe-section-call" : "undefined-section-call",
 				because: "the rule id must reach the wire so the agent can map the refusal back to the authoring rule");
 			readback.Success.Should().BeTrue(
 				because: $"the page must still be readable after the refused write. Error: {readback.Error}");

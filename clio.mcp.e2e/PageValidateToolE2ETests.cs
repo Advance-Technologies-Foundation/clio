@@ -39,6 +39,61 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
 		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("The real MCP transport warns about factory declarations and rejects section calls to helpers Designer removes")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page detects Designer-discarded factory code")]
+	[AllureDescription("Unused factory helpers produce a warning; calling one from a preserved handler produces a blocking error with client-module repair advice.")]
+	public async Task PageValidateTool_ShouldReportDesignerLoss_WhenFactoryContainsHelper(bool callHelper) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace("{ return {", "{ function helper() { return 1; } return {");
+		if (callHelper) {
+			body = body.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:()=>helper()}]/**SCHEMA_HANDLERS*/");
+		}
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate factory helper through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify validity reflects whether a section depends on discarded code", () =>
+			response.Valid.Should().Be(!callHelper, because: "unused statements warn, while unsafe section calls block"));
+		AllureApi.Step("Verify the factory statement warning reaches the client", () =>
+			response.Validation.Warnings.Should().Contain(w => w.Contains("designer-unsafe-factory-statement"),
+				because: "factory declarations must no longer pass silently"));
+		if (callHelper) {
+			AllureApi.Step("Verify the actionable section-call error", () =>
+				response.Validation.Errors.Should().Contain(e => e.Contains("designer-unsafe-section-call")
+					&& e.Contains("SCHEMA_DEPS") && e.Contains("shared-client-logic"),
+					because: "the repair must direct callers to code that survives Designer saves"));
+		}
+	}
+
+	[Test]
+	[Description("A page that calls an imported client module from its handler remains valid through real MCP")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page accepts Designer-safe module helpers")]
+	[AllureDescription("AMD dependency and argument markers preserve the module while the handler calls its exported helper.")]
+	public async Task PageValidateTool_ShouldAcceptModuleHelper_WhenDeclaredAsDependency() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = ValidPageBody.Replace("/**SCHEMA_DEPS*/[]", "/**SCHEMA_DEPS*/[\"UsrLogic\"]")
+			.Replace("/**SCHEMA_ARGS*/()", "/**SCHEMA_ARGS*/(Logic)")
+			.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:()=>Logic.helper()}]/**SCHEMA_HANDLERS*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate imported helper through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the module pattern is accepted", () =>
+			response.Valid.Should().BeTrue(because: "dependency arguments survive Designer saves; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? [])));
+		AllureApi.Step("Verify no Designer-loss warning is emitted", () =>
+			(response.Validation.Warnings ?? []).Should().NotContain(w => w.Contains("designer-unsafe"),
+				because: "the factory contains only the returned schema"));
+	}
+
 	[Test]
 	[Description("Advertises validate-page MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]
@@ -597,6 +652,70 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation.Warnings!.Should().Contain(
 			e => e.Contains("IndicatorWidget_CriticalRequests") && e.Contains("IndicatorWidget_CriticalRequests_title") && e.Contains("render raw"),
 			because: "the advisory must name the widget, the unresolved key, and the raw-render failure");
+	}
+
+	[Test]
+	[Description("Reports every unregistered inserted-widget caption binding of a body in ONE advisory warning that states the rule once and lists each binding as node, property and key, so a page with many unregistered captions does not repeat the rule per caption.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page groups unregistered inserted-widget captions into one warning")]
+	[AllureDescription("Sends a page body with three inserted widgets whose title/caption bind unregistered localizable keys and verifies validate-page returns exactly one caption warning with the plural count, the rule text once, and one line per node, property and key, while keeping valid=true.")]
+	public async Task PageValidateTool_Should_Group_Unregistered_Inserted_Captions_Into_One_Warning() {
+		// Arrange - keys without the Usr prefix on non-field widgets, so none of them is auto-provided or derived.
+		string bodyWithUnregisteredCaptions = ValidPageBody.Replace(
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_OpenCases\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+				"\"title\":\"#ResourceString(IndicatorWidget_OpenCases_title)#\"," +
+				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}," +
+				"{\"operation\":\"insert\",\"name\":\"SummaryLabel\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.Label\",\"caption\":\"#ResourceString(SummaryLabel_caption)#\"}}," +
+				"{\"operation\":\"insert\",\"name\":\"RefreshButton\",\"parentName\":\"Main\",\"values\":{" +
+				"\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings.RefreshButton_caption\"}}" +
+				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		string[] expectedBindingLines = [
+			"\n- 'IndicatorWidget_OpenCases', 'title', 'IndicatorWidget_OpenCases_title'",
+			"\n- 'SummaryLabel', 'caption', 'SummaryLabel_caption'",
+			"\n- 'RefreshButton', 'caption', 'RefreshButton_caption'"
+		];
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		PageValidateResponse response = await AllureApi.Step(
+			"Act by validating a body with three unregistered inserted captions",
+			async () => await CallAsync(
+				context.Session,
+				context.CancellationTokenSource.Token,
+				bodyWithUnregisteredCaptions));
+
+		// Assert
+		AllureApi.Step("Assert the body stays valid", () =>
+			response.Valid.Should().BeTrue(
+				because: "the body-only caption check is advisory on validate-page, so it warns rather than failing validation"));
+		AllureApi.Step("Assert validation details are present", () =>
+			response.Validation.Should().NotBeNull(
+				because: "validation details are always included in the response"));
+		string warning = AllureApi.Step("Assert exactly one caption warning", () =>
+			response.Validation!.Warnings.Should().ContainSingle(
+				item => item.Contains("view-node binding"),
+				because: "every unregistered caption binding of the body is reported in one warning").Which);
+		AllureApi.Step("Assert the plural count opens the warning", () =>
+			warning.Should().StartWith(
+				"3 view-node bindings of user-visible text properties use localizable keys that will not be registered, so each binding will render raw",
+				because: "the warning must say how many bindings will render raw"));
+		string rule = Clio.Command.SchemaValidationService.InsertedWidgetCaptionClause;
+		AllureApi.Step("Assert the rule is stated", () =>
+			warning.Should().Contain(rule,
+				because: "the warning must state the rule the bindings break"));
+		AllureApi.Step("Assert the rule is stated once", () =>
+			warning.IndexOf(rule, StringComparison.Ordinal).Should().Be(
+				warning.LastIndexOf(rule, StringComparison.Ordinal),
+				because: "the rule text is stated once for all bindings, not once per binding"));
+		foreach (string bindingLine in expectedBindingLines) {
+			AllureApi.Step($"Assert the warning lists {bindingLine.Trim()}", () =>
+				warning.Should().Contain(bindingLine,
+					because: "each unresolved binding is listed as node, property and key on its own line"));
+		}
 	}
 
 	[Test]

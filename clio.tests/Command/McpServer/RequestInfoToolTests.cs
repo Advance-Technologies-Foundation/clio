@@ -255,6 +255,148 @@ public sealed class RequestInfoToolTests {
 	}
 
 	[Test]
+	[Description("The default detail response of get-request-info, documentation included, serializes to the pinned wire JSON; the file-mode twin must not change it.")]
+	public async Task GetRequestInfo_DetailResponse_ShouldMatchPinnedWireJson() {
+		// Arrange
+		FakeDocsClient docsClient = new();
+		docsClient.Seed("latest", CloseDocPath, "# How to Wire the Close Page Request\n\n## Steps\n\nDo it.");
+		RequestInfoTool tool = CreateTool(docsClient);
+
+		// Act
+		RequestInfoResponse response = await tool.GetRequestInfo(new RequestInfoArgs("crt.ClosePageRequest"));
+
+		// Assert
+		McpResponseBaseline.Serialize(response).Should().Be(PinnedDetailWireJson,
+			because: "the inline response is the default and stays byte-for-byte unchanged");
+	}
+
+	private const string PinnedDetailWireJson = """{"success":true,"mode":"detail","count":1,"requestType":"crt.ClosePageRequest","description":"Closes the currently open page.","parameters":{},"baseParameters":{"$context":{"type":"ViewModelContext","description":"Platform-injected view-model context."},"scopes":{"type":"array","items":{"type":"string"},"description":"Platform-populated scope chain."},"type":{"type":"string","description":"Request type discriminator."},"$initialEvent":{"type":"unknown","description":"The original UI event.","deprecated":true,"deprecationReason":"use event binding expression instead."}},"references":{"typeDefinitions":{"RequestBindingConfig":{"fields":{"params":{"type":"Record","keyType":"string","valueType":"string | boolean | number"},"request":{"type":"string","required":true}}}}},"documentation":"# How to Wire the Close Page Request\n\n## Steps\n\nDo it.","documentationSource":"cdn","resolvedTargetVersion":"latest","resolvedFrom":"latest-fallback","versionWarning":"Catalog was loaded from 'latest' (a superset of all GA versions). A component listed here may not exist in the target environment's actual platform version, so a page built against it can fail to render at runtime. The target platform version could not be determined: do NOT silently assume this component set. Before generating an implementation plan, tell the user the version is unknown and request explicit confirmation before proceeding against 'latest'. To scope results to a real version, pass an explicit version or target a registered environment so clio can resolve its platform version (no cliogate required — resolved via ApplicationInfoService, with the cliogate GetSysInfo probe as fallback).","requiresVersionConfirmation":true,"resolvedFromReason":"no-active-environment"}""";
+
+	private static (RequestInfoToFileTool tool, System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem, string outputFile)
+		BuildToFileTool(RequestInfoTool infoTool, System.IO.Abstractions.TestingHelpers.MockFileSystem? fileSystem = null) {
+		System.IO.Abstractions.TestingHelpers.MockFileSystem fs = fileSystem ?? new();
+		string outputFile = fs.Path.Combine(fs.Path.GetTempPath(), $"request-docs-{Guid.NewGuid():N}.md");
+		return (new RequestInfoToFileTool(infoTool, new McpOutputFileWriter(fs, new MockConfinedFileAccess(fs))), fs, outputFile);
+	}
+
+	[Test]
+	[Description("get-request-info-to-file writes the documentation markdown to output-file and returns every other get-request-info field unchanged, plus the path and the section headings.")]
+	public async Task GetRequestInfoToFile_ShouldWriteDocumentation_AndKeepEveryOtherField() {
+		// Arrange
+		FakeDocsClient docsClient = new();
+		docsClient.Seed("latest", CloseDocPath, "# How to Wire the Close Page Request\n\n## Steps\n\nDo it.");
+		(RequestInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(CreateTool(docsClient));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetRequestInfoToFile(
+			new RequestInfoToFileArgs { RequestType = "crt.ClosePageRequest", OutputFile = outputFile });
+
+		// Assert
+		fileSystem.File.ReadAllText(outputFile).Should().Be("# How to Wire the Close Page Request\n\n## Steps\n\nDo it.",
+			because: "the file holds the documentation markdown unchanged");
+		System.Text.Json.Nodes.JsonObject expected = System.Text.Json.Nodes.JsonNode.Parse(PinnedDetailWireJson)!.AsObject();
+		expected.Remove("documentation");
+		expected["documentationFile"] = fileSystem.Path.GetFullPath(outputFile);
+		expected["documentationSections"] = new System.Text.Json.Nodes.JsonArray("# How to Wire the Close Page Request", "## Steps");
+		response.ToJsonString().Should().Be(expected.ToJsonString(),
+			because: "only documentation is replaced; every other field is what get-request-info returns");
+	}
+
+	[Test]
+	[Description("get-request-info-to-file refuses an existing output-file before any documentation fetch.")]
+	public async Task GetRequestInfoToFile_ShouldRejectExistingOutputFile_BeforeFetching() {
+		// Arrange
+		FakeDocsClient docsClient = new();
+		docsClient.Seed("latest", CloseDocPath, "# Doc");
+		System.IO.Abstractions.TestingHelpers.MockFileSystem fileSystem = new();
+		(RequestInfoToFileTool tool, _, string outputFile) = BuildToFileTool(CreateTool(docsClient), fileSystem);
+		fileSystem.AddFile(outputFile, new System.IO.Abstractions.TestingHelpers.MockFileData("keep"));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetRequestInfoToFile(
+			new RequestInfoToFileArgs { RequestType = "crt.ClosePageRequest", OutputFile = outputFile });
+
+		// Assert
+		response["success"]!.GetValue<bool>().Should().BeFalse(because: "an existing file is never overwritten");
+		response["error"]!.GetValue<string>().Should().Contain("already exists", because: "the caller has to choose another path");
+		docsClient.Requests.Should().BeEmpty(because: "a refused path must not cost a documentation fetch");
+		fileSystem.File.ReadAllText(outputFile).Should().Be("keep", because: "the existing file is left untouched");
+	}
+
+	[Test]
+	[Description("get-request-info-to-file refuses an output-file outside the workspace and the OS temp directory.")]
+	public async Task GetRequestInfoToFile_ShouldRejectOutputFile_OutsideAllowedLocations() {
+		// Arrange
+		(RequestInfoToFileTool tool, var fileSystem, _) = BuildToFileTool(CreateTool());
+		string outsidePath = Path.Combine(
+			Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+			$"clio-request-docs-probe-{Guid.NewGuid():N}.md");
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetRequestInfoToFile(
+			new RequestInfoToFileArgs { RequestType = "crt.ClosePageRequest", OutputFile = outsidePath });
+
+		// Assert
+		response["success"]!.GetValue<bool>().Should().BeFalse(because: "a path outside the allowed locations is never written");
+		response["error"]!.GetValue<string>().Should().Contain("allowed locations", because: "confinement refused the path");
+		fileSystem.File.Exists(outsidePath).Should().BeFalse(because: "nothing is created on the file system the tool writes to");
+	}
+
+	[Test]
+	[Description("get-request-info-to-file advertises a stable name and the write-capable annotations a local file write needs.")]
+	public void GetRequestInfoToFile_ShouldAdvertiseStableName_AndWriteCapableAnnotations() {
+		// Arrange
+
+		// Act
+		ModelContextProtocol.Server.McpServerToolAttribute attribute = (ModelContextProtocol.Server.McpServerToolAttribute)
+			typeof(RequestInfoToFileTool).GetMethod(nameof(RequestInfoToFileTool.GetRequestInfoToFile))!
+				.GetCustomAttributes(typeof(ModelContextProtocol.Server.McpServerToolAttribute), false)[0];
+
+		// Assert
+		attribute.Name.Should().Be("get-request-info-to-file", because: "the name is part of the MCP contract");
+		attribute.ReadOnly.Should().BeFalse(because: "the tool creates a local file");
+		attribute.Idempotent.Should().BeFalse(because: "a second call to the same path is refused");
+		attribute.Destructive.Should().BeFalse(because: "the tool only adds a local file");
+	}
+
+	[Test]
+	[Description("get-request-info-to-file writes nothing and returns the inline response as is when the request has no documentation.")]
+	public async Task GetRequestInfoToFile_ShouldNotWrite_WhenThereIsNoDocumentation() {
+		// Arrange
+		RequestInfoTool infoTool = CreateTool();
+		(RequestInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(infoTool);
+		RequestInfoResponse inline = await infoTool.GetRequestInfo(new RequestInfoArgs());
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetRequestInfoToFile(
+			new RequestInfoToFileArgs { OutputFile = outputFile });
+
+		// Assert
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a list response has no documentation to write");
+		McpResponseBaseline.Serialize(response).Should().Be(McpResponseBaseline.Serialize(inline),
+			because: "without documentation the twin returns exactly what get-request-info returns");
+	}
+
+	[Test]
+	[Description("A failure of the inline get-request-info passes through the twin unchanged and writes nothing.")]
+	public async Task GetRequestInfoToFile_ShouldPassInlineFailureThrough() {
+		// Arrange
+		RequestInfoTool infoTool = CreateTool();
+		(RequestInfoToFileTool tool, var fileSystem, string outputFile) = BuildToFileTool(infoTool);
+		RequestInfoResponse inline = await infoTool.GetRequestInfo(new RequestInfoArgs("crt.NoSuchRequest"));
+
+		// Act
+		System.Text.Json.Nodes.JsonObject response = await tool.GetRequestInfoToFile(
+			new RequestInfoToFileArgs { RequestType = "crt.NoSuchRequest", OutputFile = outputFile });
+
+		// Assert
+		inline.Success.Should().BeFalse(because: "the fixture request type is not in the catalog");
+		McpResponseBaseline.Serialize(response).Should().Be(McpResponseBaseline.Serialize(inline),
+			because: "the twin must not reword or drop anything from the inline failure");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a failed lookup leaves no file");
+	}
+
+	[Test]
 	[Description("Documentation is fetched through the shared docs pipeline using the resolved catalog version and the raw registry path, then surfaced on the detail response.")]
 	public async Task GetRequestInfo_ShouldLoadDocumentation_WhenEntryDeclaresDocs() {
 		// Arrange

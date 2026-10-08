@@ -250,7 +250,8 @@ public class BindingsModule {
 		services.AddTransient(sp => new EntitySchemaColumnResolvers(
 			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
 			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
-			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>()));
+			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>(),
+			sp.GetRequiredService<Clio.Command.Localization.ICultureAvailabilityGuard>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
@@ -410,6 +411,9 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.IConnectedObjectsResolver, Clio.Command.ObjectRights.ConnectedObjectsResolver>();
 		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
@@ -469,6 +473,9 @@ public class BindingsModule {
 		services.AddTransient<IApplicationSectionCreateService, ApplicationSectionCreateService>();
 		services.AddTransient<CreateAppSectionCommand>();
 		services.AddTransient<IApplicationSectionUpdateService, ApplicationSectionUpdateService>();
+		services.AddTransient<IApplicationSectionLocalizationClient, ApplicationSectionLocalizationClient>();
+		services.AddTransient<ISectionLocalizationPlanner, SectionLocalizationPlanner>();
+		services.AddTransient<Clio.Command.Localization.ICreatioCultureCatalogFactory, Clio.Command.Localization.CreatioCultureCatalogFactory>();
 		services.AddTransient<UpdateAppSectionCommand>();
 		services.AddTransient<IAddonSchemaDesignerClient, AddonSchemaDesignerClient>();
 		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
@@ -507,6 +514,8 @@ public class BindingsModule {
 		services.AddTransient<ModifyProcessAsNewVersionCommand>();
 		services.AddTransient<ISetActiveProcessVersionService, SetActiveProcessVersionService>();
 		services.AddTransient<SetActiveProcessVersionCommand>();
+		services.AddTransient<ICompileBusinessProcessService, CompileBusinessProcessService>();
+		services.AddTransient<CompileBusinessProcessCommand>();
 		services.AddTransient<IApplicationSectionGetListService, ApplicationSectionGetListService>();
 		services.AddTransient<GetAppSectionsCommand>();
 		services.AddTransient<IdentityProviderListCommand>();
@@ -525,6 +534,9 @@ public class BindingsModule {
 		services.AddTransient<ProcessPageFactsCommand>();
 		services.AddTransient<GetPageHierarchyCommand>();
 		services.AddTransient<PageUpdateCommand>();
+		services.AddTransient<LocalizePageCommand>();
+		services.AddTransient<ILocalizePageService, LocalizePageCommand>();
+		services.AddTransient<Clio.Command.Localization.ICreatioCultureCatalog, Clio.Command.Localization.CreatioCultureCatalog>();
 		// Shared page conflict-baseline + file-output services consumed by both the CLI verbs
 		// (get-page / update-page) and the MCP tools (get-page / update-page / sync-pages).
 		services.AddTransient<IPageBaselineGuard, PageBaselineGuard>();
@@ -694,6 +706,7 @@ public class BindingsModule {
 		services.AddTransient<WithdrawTelemetryConsentTool>();
 		services.AddTransient<PageGetTool>();
 		services.AddTransient<PageUpdateTool>();
+		services.AddTransient<LocalizePageTool>();
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<CreateRelatedPageAddonTool>();
 		services.AddTransient<GetRelatedPageAddonTool>();
@@ -709,6 +722,7 @@ public class BindingsModule {
 		services.AddTransient<GetClientUnitSchemaTool>();
 		services.AddTransient<GetClassicPageSourcesTool>();
 		services.AddTransient<ListEntityClientSchemasTool>();
+		services.AddTransient<ListEntityClientSchemasToFileTool>();
 		services.AddTransient<SqlSchemaCreateTool>();
 		services.AddTransient<RegisterProcessElementTool>();
 		services.AddTransient<SqlSchemaGetTool>();
@@ -783,8 +797,10 @@ public class BindingsModule {
 		services.AddTransient<ListKnowledgeSourcesCommand>();
 		services.AddTransient<ListKnowledgeExamplesCommand>();
 		services.AddTransient<ComponentInfoTool>();
+		services.AddTransient<ComponentInfoToFileTool>();
 		services.AddTransient<ExportComponentRegistryTool>();
 		services.AddTransient<RequestInfoTool>();
+		services.AddTransient<RequestInfoToFileTool>();
 		services.AddTransient<BuildThemeTool>();
 		services.AddTransient<AdviseThemePaletteTool>();
 		services.AddTransient<ClearThemesCacheTool>();
@@ -809,6 +825,7 @@ public class BindingsModule {
 		services.AddTransient<AddPackageDependencyTool>();
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
+		services.AddTransient<CreatePackageTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -882,6 +899,7 @@ public class BindingsModule {
 		services.AddTransient<IDataForgeContextService, DataForgeContextService>();
 		services.AddTransient<IConfinedFileAccess, ConfinedFileAccess>();
 		services.AddTransient<IODataFileContract, ODataFileContract>();
+		services.AddTransient<IMcpOutputFileWriter, McpOutputFileWriter>();
 		services.AddTransient<ODataReadTool>();
 		services.AddTransient<ODataReadToFileTool>();
 		services.AddTransient<ODataCreateTool>();
@@ -949,6 +967,7 @@ public class BindingsModule {
 		services.AddTransient<GetTargetPackageCommand>();
 		services.AddTransient<IWorkspaceMerger, WorkspaceMerger>();
 		services.AddTransient<IWorkspacePackageFilter, WorkspacePackageFilter>();
+		services.AddTransient<IWorkspacePageTextInspector, WorkspacePageTextInspector>();
 		services.AddTransient<MergeWorkspacesCommand>();
 		services.AddTransient<LoadPackagesToFileSystemCommand>();
 		services.AddTransient<LoadPackagesToDbCommand>();
@@ -1012,6 +1031,11 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
 		services.AddTransient<SetFsmConfigCommand>();
@@ -1116,6 +1140,7 @@ public class BindingsModule {
 		services.AddTransient<PackageEditableMutator>();
 		services.AddTransient<AddPackageDependencyCommand>();
 		services.AddTransient<RemovePackageDependencyCommand>();
+		services.AddTransient<CreatePackageCommand>();
 		services.AddTransient<PackageDependencyManager>();
 		services.AddTransient<SaveSettingsToManifestCommand>();
 		services.AddTransient<ShowDiffEnvironmentsCommand>();
@@ -1151,6 +1176,7 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<IProcessRunLogReader, ProcessRunLogReader>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
@@ -1280,6 +1306,7 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
+		services.AddSingleton<IOptionSuggestionService, OptionSuggestionService>();
 		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
 		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
 		// committed docs never depend on local feature flags. It is therefore not DI-resolved.
@@ -1595,14 +1622,24 @@ public class BindingsModule {
 	}
 
 	/// <summary>
-	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization and for the
+	/// text a tool's return value is serialized into.
 	/// Enables out-of-order metadata properties so that the
 	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
 	/// LLMs do not guarantee JSON property ordering.
 	/// </summary>
+	/// <remarks>
+	/// <see cref="Clio.Command.McpServer.McpResultJsonEncoder"/> (ENG-99970): the default encoder escapes for
+	/// embedding in HTML, writing a quote inside a string as <c>\u0022</c> and an apostrophe, backtick, dash or
+	/// any non-ASCII character as a six-character sequence. A tool result is read by an agent over JSON-RPC and
+	/// never embedded in a page, so that escaping only costs: guidance articles came back ~10% larger, and
+	/// describe-business-process's graph, carried as a string, paid six characters for every quote. The encoder
+	/// is relaxed except for invisible Format characters (bidi, zero-width), which stay escaped.
+	/// </remarks>
 	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
 		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
 		options.AllowOutOfOrderMetadataProperties = true;
+		options.Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance;
 		return options;
 	}
 

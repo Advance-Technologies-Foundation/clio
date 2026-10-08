@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using FluentAssertions;
@@ -21,6 +22,48 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Property("Module", "McpServer")]
 public sealed class ToolContractGetToolTests {
+
+	[TestCase(ApplicationCreateTool.ApplicationCreateToolName)]
+	[TestCase(ApplicationSectionCreateTool.ApplicationSectionCreateToolName)]
+	[TestCase(ApplicationSectionUpdateTool.ApplicationSectionUpdateToolName)]
+	[Category("Unit")]
+	[Description("Tells agents in the curated contracts of the menu-changing tools that only clio's session is cleared and that next-step carries the in-tab call for a stale browser tab.")]
+	public void MenuChangingToolContracts_ShouldAnnounceNextStepForStaleBrowserTabs(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.Description.Should().Contain("clio's own Creatio session",
+			because: "the agent must know which session the tool refreshes");
+		contract.Description.Should().Contain("websocket",
+			because: "the agent must know why an open browser tab can keep the old menu");
+		contract.Description.Should().Contain("Never clear Redis",
+			because: "clearing Redis logs out every user and is not the fix for a stale menu");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["warnings", "next-step"],
+			because: "both fields are returned by the tool and the curated contract is the only one agents read");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Tells agents in the curated push-workspace contract that a newly pushed package comes out locked and points them to create-package.")]
+	public void PushWorkspaceContract_ShouldWarnThatNewPackagesComeOutLocked() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PushWorkspaceTool.PushWorkspaceToolName]));
+
+		// Assert
+		string description = result.Tools!.Single().Description;
+		description.Should().Contain("InstallType 1", because: "the agent must know the package will not be editable");
+		description.Should().Contain("create-package", because: "the agent needs the tool that creates an editable package");
+	}
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test, Category("Unit")]
@@ -400,6 +443,101 @@ public sealed class ToolContractGetToolTests {
 			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale arguments");
 		contract.InputSchema.Required.Should().Contain("output-file",
 			because: "the file destination is what separates this tool from odata-read");
+	}
+
+	[TestCase(ExecuteEsqToFileTool.ToolName, typeof(ExecuteEsqToFileArgs))]
+	[TestCase(ComponentInfoToFileTool.ToolName, typeof(ComponentInfoToFileArgs))]
+	[TestCase(RequestInfoToFileTool.ToolName, typeof(RequestInfoToFileArgs))]
+	[TestCase(ListEntityClientSchemasToFileTool.ToolName, typeof(ListEntityClientSchemasToFileArgs))]
+	[TestCase(ListEntityClientSchemasTool.ToolName, typeof(ListEntityClientSchemasArgs))]
+	[Category("Unit")]
+	[Description("Keeps each curated *-to-file contract, and the list-entity-client-schemas contract it is built from, set-equal with the JSON members its arguments bind, so the curated literal cannot advertise an argument the binder drops.")]
+	public void ToolContractGet_Should_Keep_FileTwin_Input_Contract_In_Sync_With_Args(string toolName, Type argsType) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] boundArgumentNames = argsType
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		boundArgumentNames.Should().NotBeEmpty(because: "an empty reflected set would make the comparison pass vacuously");
+		contract.Name.Should().Be(toolName, because: "the curated contract, not the reflection fallback, must be served");
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArgumentNames,
+			because: "the curated contract must advertise every argument the real stdio binder accepts and no stale ones");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The output contracts of execute-esq-to-file, list-entity-client-schemas-to-file and the curated list-entity-client-schemas describe every field their success responses carry on the wire, so a renamed response member cannot leave the contract naming a field that no longer exists.")]
+	public void ToolContractGet_Should_Describe_Every_Wire_Field_Of_The_Typed_File_Twins() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		(string ToolName, string WireJson)[] samples = [
+			(ExecuteEsqToFileTool.ToolName,
+				McpResponseBaseline.Serialize(new ExecuteEsqResponse(true, null, 2, null, OutputFile: "/tmp/rows.json"))),
+			(ListEntityClientSchemasToFileTool.ToolName, McpResponseBaseline.Serialize(new ListEntityClientSchemasToFileResponse(
+				true, "Contract", "uid", "/tmp/pages.json", new PageKindCounts(1, 1, 0, 0), new PageKindCounts(2, 1, 1, 0),
+				["warning"], "note", null))),
+			(ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToolTests.PinnedWireJson)
+		];
+
+		foreach ((string toolName, string wireJson) in samples) {
+			// Act
+			ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+			string[] wireFields = JsonDocument.Parse(wireJson).RootElement
+				.EnumerateObject().Select(property => property.Name).ToArray();
+
+			// Assert
+			wireFields.Should().BeSubsetOf(contract.OutputContract.Fields.Select(field => field.Name),
+				because: $"every field {toolName} returns must be described by its contract");
+		}
+	}
+
+	[TestCase(ComponentInfoToFileTool.ToolName)]
+	[TestCase(RequestInfoToFileTool.ToolName)]
+	[Category("Unit")]
+	[Description("The info file twins describe documentationFile and documentationSections, the names the projection writes, and no longer describe documentation.")]
+	public void ToolContractGet_Should_Describe_The_Documentation_Projection_Fields(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		string[] fields = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single()
+			.OutputContract.Fields.Select(field => field.Name).ToArray();
+
+		// Assert
+		fields.Should().Contain([DocumentationFileProjection.DocumentationFileFieldName, DocumentationFileProjection.DocumentationSectionsFieldName],
+			because: "the contract must name the fields the twin returns in place of documentation");
+		fields.Should().NotContain(DocumentationFileProjection.DocumentationFieldName,
+			because: "the twin never returns documentation inline");
+	}
+
+	[TestCase(ExecuteEsqTool.ToolName, ExecuteEsqToFileTool.ToolName)]
+	[TestCase(ComponentInfoTool.ToolName, ComponentInfoToFileTool.ToolName)]
+	[TestCase(RequestInfoTool.ToolName, RequestInfoToFileTool.ToolName)]
+	[TestCase(ListEntityClientSchemasTool.ToolName, ListEntityClientSchemasToFileTool.ToolName)]
+	[Category("Unit")]
+	[Description("Each inline read tool keeps output-file off its contract and names its *-to-file twin, and the twin requires output-file.")]
+	public void ToolContractGet_Should_Point_Inline_Read_At_Its_File_Twin(string inlineName, string twinName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractDefinition inline = tool.GetToolContracts(new ToolContractGetArgs([inlineName])).Tools!.Single();
+		ToolContractDefinition twin = tool.GetToolContracts(new ToolContractGetArgs([twinName])).Tools!.Single();
+
+		// Assert
+		inline.InputSchema.Properties.Should().NotContain(property => property.Name == "output-file",
+			because: "the read-only tool does not take a file destination");
+		inline.FallbackFlow.SelectMany(flow => flow.Tools).Should().Contain(twinName,
+			because: "a caller with a large result must be pointed at the tool that writes it to a file");
+		twin.InputSchema.Required.Should().Contain("output-file",
+			because: "the file destination is what separates the twin from the inline tool");
 	}
 
 	[Test]
@@ -920,6 +1058,31 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Every argument compile-creatio binds is in its contract: the tool is long-tail, so an agent learns its arguments from get-tool-contract, and a field missing there is a mode nobody can find - process-name was missed that way once.")]
+	public void ToolContractGet_CompileCreatio_Should_ListEveryArgumentTheToolBinds() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] boundNames = typeof(CompileCreatioArgs).GetConstructors().Single().GetParameters()
+			.Select(parameter => typeof(CompileCreatioArgs).GetProperty(parameter.Name!)!
+				.GetCustomAttributes(typeof(System.Text.Json.Serialization.JsonPropertyNameAttribute), false)
+				.Cast<System.Text.Json.Serialization.JsonPropertyNameAttribute>().Single().Name)
+			.ToArray();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName])).Tools!.Single();
+
+		// Assert
+		contract.InputSchema.Properties.Select(field => field.Name).Should().BeEquivalentTo(boundNames,
+			because: "the contract and the arguments the tool binds must list the same fields");
+		contract.Examples.Should().Contain(example => example.Arguments.ContainsKey("process-name"),
+			because: "the process mode needs an example, or an agent keeps reaching for package-name");
+		contract.Preconditions!.Should().Contain(precondition => precondition.Contains("pass `process-name`", StringComparison.Ordinal),
+			because: "the business-process precondition says which argument a process compile takes");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The create-app contract requires the navigation placement and audience decision BEFORE the call, because the tool itself places the section in the administrators-only My applications workplace.")]
 	public void ToolContractGet_Should_Require_NavigationPlacement_Before_ApplicationCreate() {
 		// Arrange
@@ -1123,7 +1286,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1356,7 +1519,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1609,6 +1772,59 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("TC-U-25: the localize-page contract advertises exactly the arguments LocalizePageArgs binds, requires only schema-name and culture, and describes exactly the fields LocalizePageResponse serializes.")]
+	public void GetToolContract_ShouldDescribeLocalizePage_WhenRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] boundArguments = typeof(LocalizePageArgs)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Where(property => property.GetCustomAttribute<JsonExtensionDataAttribute>() is null)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+		string[] responseFields = typeof(LocalizePageResponse)
+			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name)
+			.ToArray();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([LocalizePageTool.ToolName]));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "localize-page has a curated contract");
+		ToolContractDefinition contract = result.Tools!.Single();
+		boundArguments.Should().HaveCount(9, because: "an empty or partial reflected set would make the equivalence below vacuous");
+		contract.InputSchema.Properties.Select(property => property.Name).Should().BeEquivalentTo(boundArguments,
+			because: "the contract must advertise every argument the binder accepts and no other");
+		contract.InputSchema.Required.Should().BeEquivalentTo(["schema-name", "culture"],
+			because: "resources and caption are optional; omitting both is the report-only call");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().BeEquivalentTo(responseFields,
+			because: "the contract must describe exactly the envelope the command returns, so CLI and MCP agree");
+		contract.Description.Should().Contain("get-guidance name=page-schema-translation",
+			because: "the contract carries the same guidance trigger as the tool description");
+		contract.Description.Should().Contain("Languages section",
+			because: "the absent-culture failure mode must be stated in the contract");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The sync-schemas contract states the SysCulture rule for localization maps: an absent culture fails before any save, an inactive one is written with a warning.")]
+	public void GetToolContract_ShouldStateCultureRule_WhenSyncSchemasRequested() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([SchemaSyncTool.ToolName])).Tools!.Single();
+		string operations = contract.InputSchema.Properties.Single(property => property.Name == "operations").Description;
+
+		// Assert
+		operations.Should().Contain("Languages section (SysCulture)",
+			because: "an agent must know that a culture has to exist before it is sent in title-localizations");
+		operations.Should().Contain("an inactive one is written with a warning",
+			because: "an inactive culture is accepted, which the agent must not read as a failure");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A successful get-page envelope whose best-effort checksum probe returned nothing omits the `editable` key entirely, and the contract says so - an agent must read its absence as 'baseline unavailable', not as 'no editable schema exists' (PR #1351 review).")]
 	public void ToolContractGet_Should_Document_GetPage_Editable_As_Optional() {
 		// Arrange
@@ -1695,7 +1911,7 @@ public sealed class ToolContractGetToolTests {
 			PageSyncTool.ToolName,
 			PageUpdateTool.ToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1918,6 +2134,10 @@ public sealed class ToolContractGetToolTests {
 			because: "section-update should advertise icon-id as an optional mutable field");
 		contract.InputSchema.Properties.Should().Contain(field => field.Name == "icon-background",
 			because: "section-update should advertise icon-background as an optional mutable field");
+		contract.InputSchema.Properties.Should().Contain(field => field.Name == "caption-culture",
+			because: "TC-U-50: section-update should advertise caption-culture for writing the title in another language (ENG-90576 D11)");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "caption-culture-value",
+			because: "TC-U-50: section-update should return the stored caption in the requested culture");
 		contract.InputSchema.Validators.Should().Contain(validator =>
 				validator.Name == "forbid-fields" &&
 				validator.Fields!.Contains("title-localizations"),
@@ -2005,7 +2225,7 @@ public sealed class ToolContractGetToolTests {
 		];
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools, ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -4186,5 +4406,77 @@ public sealed class ToolContractGetToolTests {
 			because: "the compact index enumerates every tool this guard has to cover");
 		entries.Select(entry => entry.Purpose).Should().OnlyHaveUniqueItems(
 			because: "two tools sharing a byte-identical one-liner are indistinguishable in the index - which is what happened when create-business-process and modify-business-process both opened with the same accessRights warning, so a description must lead with what its tool DOES");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide appears in the compact discovery index as a non-resident, non-destructive tool - after GA (ENG-94638) it is ungated but deliberately still long-tail, so the index is the only place a caller learns it exists.")]
+	public void GetContracts_ShouldIndexMobilePageConversionGuide_AsNonResidentNonDestructiveTool() {
+		// Arrange
+		// Over the DEFAULT surface, not a bare tool: the index's destructive hint is derived from the
+		// invoker registry, so a registry-less tool reports null for every tool and would prove nothing.
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		IServiceProvider provider = Substitute.For<IServiceProvider>();
+		IFeatureToggleService featureToggle = Substitute.For<IFeatureToggleService>();
+		featureToggle.IsEnabled(Arg.Any<Type>())
+			.Returns(call => McpProfileGatingTests.DefaultSurfaceEnabled(call.Arg<Type>()));
+		McpToolInvokerRegistry registry = new(
+			provider,
+			typeof(MobilePageConversionGuideTool).Assembly,
+			featureToggle,
+			JsonSerializerOptions.Default);
+		ToolContractGetTool tool = new(registry);
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs());
+
+		// Assert
+		ToolContractIndexEntry entry = response.Index.SingleOrDefault(item =>
+			string.Equals(item.Name, toolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "an ungated converter that never sits in tools/list is discoverable only through the get-tool-contract index");
+		entry!.Resident.Should().BeFalse(
+			because: "MobilePageConversionGuideTool is deliberately absent from McpCoreToolProfile.CoreToolTypes - a single-skill niche path must not cost every session context");
+		entry.ContractAvailable.Should().BeTrue(
+			because: "a curated contract exists, so the index must tell a caller the full shape can be fetched");
+		entry.Destructive.Should().BeFalse(
+			because: "THIS is the GA guard, and the only assertion here that is one. Name, Resident and ContractAvailable all resolve from static tables and survive a re-gate; the destructive hint is resolved from the FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its index entry but reports destructive=true. Do not relax this to NotBeTrue()");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("get-mobile-page-conversion-guide resolves to a CURATED contract that states the advisory-only semantics and the Freedom-UI-web-only precondition, so a caller does not mistake the guide tool for a page builder and skip create-page/validate-page.")]
+	public void GetContracts_ShouldReturnCuratedContract_ForMobilePageConversionGuide() {
+		// Arrange
+		string toolName = MobilePageConversionGuideTool.ToolName;
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs([toolName]));
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: "a curated tool name must resolve on the first step of the curated -> registry -> reflection cascade");
+		response.Tools.Should().ContainSingle(
+			because: "exactly one contract was requested");
+		ToolContractDefinition contract = response.Tools![0];
+		contract.Description.Should().Contain("writes nothing",
+			because: "the advisory semantics are the whole point of this tool - a caller that misses them will wait for a page the tool never builds");
+		// Against the EMITTED schema, not a hand-copied literal. The repo's curated-vs-emitted guard
+		// (EmittedSchemaRequiredContractTests) is scoped to RESIDENT tools on purpose, and this tool is
+		// deliberately non-resident - so it is the first curated contract that guard does not cover, and
+		// without this the curated Required set could drift from the tool silently.
+		using JsonDocument emitted = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		string[] emittedRequired = [.. EmittedSchemaProbe
+			.RequiredNames(EmittedSchemaProbe.EffectiveArgumentSchema(emitted.RootElement))
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		string[] curatedRequired = [.. (contract.InputSchema.Required ?? [])
+			.OrderBy(name => name, StringComparer.Ordinal)];
+		curatedRequired.Should().Equal(emittedRequired,
+			because: "a curated contract that demands a different argument set from the one clio-run actually dispatches against sends the agent to build a payload the tool rejects");
+		contract.InputSchema.AnyOf.Should().NotBeNullOrEmpty(
+			because: "this tool takes environment-name OR an explicit uri+login+password, and McpToolRegistrySchemaContract names it as a genuine connection fallback - the registry-derived contract published that alternative, so the curated one must not drop it");
+		contract.Preconditions.Should().NotBeNullOrEmpty(
+			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}
 }

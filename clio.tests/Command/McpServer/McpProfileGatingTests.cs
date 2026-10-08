@@ -59,7 +59,10 @@ public sealed class McpProfileGatingTests
 	// SDK's per-method DI-factory registration (WithTools(IEnumerable<Type>) exposes no
 	// SchemaCreateOptions); see
 	// docs/knowledge/McpServer/relaxing-a-record-parameter-costs-default-null-in-tools-list.md.
-	private const int MaxLazyToolsSerializedBytes = (32 * 1024) + 256;
+	// ENG-101592 re-pinned it to 32*1024 + 512 = 33280: get-page's new resident `include-operations` argument,
+	// merged with master's own growth, measured 33093 bytes - 69 over the previous ceiling after its
+	// description had already dropped the redundant "Optional, default true." prefix.
+	private const int MaxLazyToolsSerializedBytes = (32 * 1024) + 512;
 
 	private static Assembly ClioAssembly => typeof(McpFeatureToggleFilter).Assembly;
 

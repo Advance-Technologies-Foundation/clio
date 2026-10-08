@@ -75,6 +75,11 @@ public sealed class PageDesignerHierarchySchema {
 	public JArray LocalizableStrings { get; init; } = new();
 
 	/// <summary>
+	/// Gets or sets the schema title as <c>{cultureName, value}</c> entries.
+	/// </summary>
+	public JArray Caption { get; init; } = new();
+
+	/// <summary>
 	/// Gets or sets the optional properties.
 	/// </summary>
 	public JArray OptionalProperties { get; init; } = new();

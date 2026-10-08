@@ -710,6 +710,41 @@ http.createServer((request, response) => {
         });
         return;
       }
+      // Issue #1550: the operand-type mismatch (a date, and a GUID on UId, sent as a string literal) and
+      // the null 'property' argument of a binary column in $select, captured on a real .NET Framework
+      // stand with HTTP 400 and HTTP 500. The literals CreatedOn, UId and MetaData are the fixture
+      // filters and select in ODataReadRoutingErrorE2ETests; change them together with that fixture.
+      if (url.indexOf("CreatedOn") >= 0 || url.indexOf("UId") >= 0) {
+        const operandTypes = url.indexOf("CreatedOn") >= 0
+          ? "Found operand types 'Edm.DateTimeOffset' and 'Edm.String' for operator kind 'GreaterThan'."
+          : "Found operand types 'Edm.Guid' and 'Edm.String' for operator kind 'Equal'.";
+        sendJson(response, 400, {
+          error: {
+            code: "",
+            message: "The query specified in the URI is not valid. A binary operator with incompatible types was detected. " + operandTypes,
+            innererror: {
+              message: "A binary operator with incompatible types was detected. " + operandTypes,
+              type: "",
+              stacktrace: ""
+            }
+          }
+        });
+        return;
+      }
+      if (url.indexOf("MetaData") >= 0) {
+        sendJson(response, 500, {
+          error: {
+            code: "",
+            message: "An error has occurred.",
+            innererror: {
+              message: "Value cannot be null.\r\nParameter name: property",
+              type: "",
+              stacktrace: ""
+            }
+          }
+        });
+        return;
+      }
       sendJson(response, 200, {
         error: {
           code: "",

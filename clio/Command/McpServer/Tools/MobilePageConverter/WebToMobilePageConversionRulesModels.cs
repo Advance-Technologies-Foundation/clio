@@ -1,6 +1,8 @@
 ﻿namespace Clio.Command.McpServer.Tools.MobilePageConverter;
 
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -164,6 +166,39 @@ public sealed class WebToMobilePageConversionRules {
 	/// </summary>
 	[JsonPropertyName("nonConvertingScopeContainers")]
 	public IReadOnlyList<string> NonConvertingScopeContainers { get; init; } = [];
+
+	/// <summary>
+	/// Group: components that must be REMOVED when their filter tree matches the MERGED state of the
+	/// properties it names — a control left with nothing to do. Distinct from
+	/// <see cref="ExcludedComponents"/>, which bans a type by POSITION regardless of what it holds, and from
+	/// <see cref="EmptyContainerRemoval"/>, which owns one hardcoded predicate over a type allowlist: this one
+	/// carries its condition in data. Absent or empty falls back to the BUNDLED section rather than switching
+	/// the pass off — see <c>WebToMobileAnalysisService.ComponentRemovalsOf</c> for why this one section has
+	/// the opposite polarity to its siblings.
+	/// </summary>
+	/// <remarks>
+	/// "Merged state" is what makes the section expressible at all: a button's <c>menuItems</c> live in
+	/// SEPARATE operations addressing it by <c>parentName</c>, never inside its own values, so a filter reading
+	/// the raw value alone would call every healthy menu button empty. See
+	/// <c>WebToMobileAnalysisService.IsEmptyExpression</c>.
+	/// </remarks>
+	[JsonPropertyName("componentRemovals")]
+	public IReadOnlyList<ComponentRemovalRule> ComponentRemovals { get; init; } = [];
+
+	/// <summary>
+	/// Group: the component types that exist ONLY to fire an action (<c>crt.Button</c>, <c>crt.MenuItem</c>),
+	/// and the properties that carry it. Such a type is DROPPED when its request cannot convert; every other
+	/// type keeps its binding and is flagged instead, because another component may legitimately use a system
+	/// or custom request and losing the whole component over it would lose valid UI.
+	/// </summary>
+	/// <remarks>
+	/// Absent or empty falls back to the bundled list rather than matching nothing — the opposite polarity to
+	/// this file's other sections, deliberately. The others switch a feature OFF when absent, which is safe;
+	/// switching this one off would make every unsupported action SHIP instead, turning a rules file that
+	/// failed to load into a silent behaviour change on the page.
+	/// </remarks>
+	[JsonPropertyName("actionComponents")]
+	public IReadOnlyList<ActionComponentRule> ActionComponents { get; init; } = [];
 
 	/// <summary>Any future producer field not yet mapped to a typed group.</summary>
 	[JsonExtensionData]
@@ -566,9 +601,46 @@ public sealed class ExcludedComponentFilterRule {
 	/// cover a case no rule has would buy a hypothetical at the cost of the coupling the whole pass avoids.
 	/// A future rule that needs both sides should ship as two filter entries, one per name.
 	/// </para>
+	/// <para>
+	/// Optional: a filter with no type and a non-empty <see cref="ExceptTypes"/> is an allow-list — it removes
+	/// every type except those. An allow-list must name <see cref="PropertiesContainerName"/>; without one it is
+	/// skipped. A clio that predates allow-lists skips such a filter as typeless, so a rules document can pair it
+	/// with the concrete filters those versions still need.
+	/// </para>
 	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; init; }
+
+	/// <summary>
+	/// Allow-list filters only (no <see cref="Type"/>): the component types the filter keeps. Containers the kept
+	/// components sit in must be listed too — they are types like any other here — and the empty-container pass
+	/// then removes the ones the exclusion emptied. Ignored for a filter that names a type.
+	/// </summary>
+	[JsonPropertyName("exceptTypes")]
+	public IReadOnlyList<string> ExceptTypes { get; init; } = [];
+
+	/// <summary>
+	/// Optional: the properties a verbatim-carried component keeps its child components in (e.g. <c>items</c>,
+	/// <c>menuItems</c>). When set, the verbatim strip descends only into these, so a typed object elsewhere in a
+	/// kept component's configuration (a request parameter, a chart series) is never taken for a component.
+	/// Absent, it descends into every property. An allow-list should always set it.
+	/// </summary>
+	[JsonPropertyName("childSlots")]
+	public IReadOnlyList<string> ChildSlots { get; init; } = [];
+
+	/// <summary>Whether this filter keeps listed types instead of removing a named one.</summary>
+	public bool IsAllowList => string.IsNullOrWhiteSpace(Type) && ExceptTypes is { Count: > 0 };
+
+	/// <summary>Whether a component of <paramref name="componentType"/> is one this filter removes.</summary>
+	public bool MatchesType(string componentType) {
+		if (string.IsNullOrEmpty(componentType)) {
+			return false;
+		}
+		if (IsAllowList) {
+			return !ExceptTypes.Contains(componentType, StringComparer.OrdinalIgnoreCase);
+		}
+		return string.Equals(componentType, Type, StringComparison.OrdinalIgnoreCase);
+	}
 
 	/// <summary>
 	/// Mobile type of the HOST element the search is confined to (e.g. <c>"crt.ExpansionPanel"</c>). The
@@ -616,9 +688,12 @@ public sealed class ExcludedComponentFilterRule {
 /// component's event binding (<c>clicked</c> / <c>valueChange</c> / <c>updated</c>) as
 /// <c>{ "request": "crt.X", "params": { ... } }</c>. An empty/null <see cref="Mobile"/> means the
 /// request is NOT supported on mobile. A request absent from this map falls back to the mobile request
-/// registry; one absent from BOTH is unknown/custom. Support decides handling by component type: a
-/// <c>crt.Button</c> whose clicked request is unsupported or unknown is DROPPED (a dead button), while
-/// any other component type keeps the binding verbatim and flags it for manual review.
+/// registry; one absent from BOTH is unknown/custom. Support decides handling by component type: an
+/// ACTION-ONLY component — one the rules' <c>actionComponents</c> section declares, today a
+/// <c>crt.Button</c> or a <c>crt.MenuItem</c>, which exist only to fire an action — whose request is
+/// unsupported or unknown is DROPPED, while any other component type keeps the binding verbatim and flags
+/// it for manual review, because it has a purpose beyond the action and dropping it would lose valid UI.
+/// A control left with no action of its own and no menu item under it then goes too (ENG-96178).
 /// </summary>
 public sealed class RequestMappingRule {
 	/// <summary>Web request type, e.g. "crt.SaveRecordRequest".</summary>
@@ -851,5 +926,6 @@ public sealed class ViewConfigTemplateRule {
 	[JsonPropertyName("preserveSourceProperties")]
 	public bool PreserveSourceProperties { get; init; }
 }
+
 
 

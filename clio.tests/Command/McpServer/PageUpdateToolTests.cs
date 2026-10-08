@@ -59,7 +59,9 @@ public sealed class PageUpdateToolTests {
 		ILogger logger = Substitute.For<ILogger>();
 		serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetClientUnitDesignerSchema).Returns(GetSchemaUrl);
 		serviceUrlBuilder.Build("/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema").Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema).Returns(SaveSchemaUrl);
 		applicationClient.ExecutePostRequest(
 				SelectQueryUrl,
 				Arg.Is<string>(body => !body.Contains("byUId")),
@@ -127,6 +129,100 @@ public sealed class PageUpdateToolTests {
 		_applicationClient.DidNotReceive().ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
+
+	private const string VerifiedPageBody =
+		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
+		"{\"operation\":\"insert\",\"name\":\"Field1\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{\"type\":\"crt.Input\"}}," +
+		"{\"operation\":\"merge\",\"name\":\"Main\",\"values\":{\"visible\":true}}" +
+		"]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	// Wires the read-back that verify=true performs, over a page whose own body carries operations.
+	private void ArrangeVerifyReadBack() {
+		const string readBackQueryUrl = "http://verify/DataService/json/SyncReply/SelectQuery";
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>()).Returns(readBackQueryUrl);
+		_applicationClient.ExecutePostRequest(
+				readBackQueryUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success": true, "rows": [{"Name": "{{SchemaName}}", "UId": "{{SchemaUId}}", "PackageName": "TestPkg", "PackageUId": "test-pkg-uid", "ParentSchemaName": "BasePage"}]}""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId(Arg.Any<string>()).Returns("test-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns([
+			new PageDesignerHierarchySchema {
+				UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid", PackageName = "TestPkg",
+				SchemaVersion = 1, Body = VerifiedPageBody
+			}
+		]);
+		IPageFileWriter passthroughWriter = Substitute.For<IPageFileWriter>();
+		passthroughWriter.WritePageFiles(
+				Arg.Any<PageGetResponse>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.Arg<PageGetResponse>());
+		PageGetCommand getCommand = new(
+			_applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), hierarchyClient,
+			new PageSchemaBodyParser(),
+			new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
+			passthroughWriter);
+		_commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>()).Returns(getCommand);
+	}
+
+	[Test]
+	[Description("The default update-page response with verify=true serializes its read-back page to the pinned wire JSON; include-operations must not change it when omitted.")]
+	public async Task UpdatePage_VerifiedResponse_ShouldMatchPinnedWireJson() {
+		// Arrange
+		ArrangeVerifyReadBack();
+		PageUpdateArgs args = new(SchemaName, ValidBody, Verify: true) { EnvironmentName = "sandbox" };
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the fixture save succeeds");
+		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedVerifiedPageWireJson,
+			because: "the verified page block is the default and stays byte-for-byte unchanged");
+	}
+
+	[Test]
+	[Description("update-page with verify=true and include-operations=false returns the read-back page with operation counts instead of the operation list.")]
+	public async Task UpdatePage_VerifiedWithoutOperations_ShouldReturnOperationCounts() {
+		// Arrange
+		ArrangeVerifyReadBack();
+		PageUpdateArgs args = new(SchemaName, ValidBody, Verify: true, IncludeOperations: false) {
+			EnvironmentName = "sandbox"
+		};
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+
+		// Assert
+		response.Page.OwnBodySummary.ViewConfigDiffOps.Should().BeNull(
+			because: "include-operations=false drops the operation list from the read-back");
+		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedVerifiedPageWireJson.Replace(
+				"\"viewConfigDiffOps\":[{\"operation\":\"insert\",\"name\":\"Field1\",\"type\":\"crt.Input\",\"parentName\":\"Main\"},{\"operation\":\"merge\",\"name\":\"Main\"}]",
+				"\"viewConfigDiffOpCounts\":{\"insert\":1,\"merge\":1}"),
+			because: "only the operation list is replaced; every other page field stays as in the default response");
+	}
+
+	[Test]
+	[Description("update-page without verify ignores include-operations: no read-back happens, so there is no page to trim.")]
+	public async Task UpdatePage_WithoutVerify_ShouldIgnoreIncludeOperations() {
+		// Arrange
+		ArrangeVerifyReadBack();
+		PageUpdateArgs args = new(SchemaName, ValidBody, IncludeOperations: false) { EnvironmentName = "sandbox" };
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the fixture save succeeds");
+		response.Page.Should().BeNull(because: "the page block is filled only by the verify read-back");
+	}
+
+	private const string PinnedVerifiedPageWireJson = """{"schemaName":"Test_FormPage","schemaUId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","packageName":"TestPkg","currentLeafPackageName":"TestPkg","packageUId":"test-pkg-uid","parentSchemaName":"BasePage","ownBodySummary":{"viewConfigDiffOperations":2,"viewModelConfigDiffOperations":0,"modelConfigDiffOperations":0,"handlerEntries":0,"bodyLength":714,"viewConfigDiffOps":[{"operation":"insert","name":"Field1","type":"crt.Input","parentName":"Main"},{"operation":"merge","name":"Main"}],"handlerRequests":[]},"designPackageUId":"test-pkg-uid","designPackageName":"Test_FormPage","willCreateReplacingInDesignPackage":false,"rootSchemaUId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","schema-type":"unknown"}""";
 
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
 		new(SchemaName, ValidBody) { EnvironmentName = environmentName };

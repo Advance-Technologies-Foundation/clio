@@ -62,6 +62,14 @@ clio migration-unit-resolve --entity-name SupportUnit -e dev
 # Same using the alias
 ```
 
+## MCP
+
+The MCP `list-entity-client-schemas` tool returns the same response. Its twin
+`list-entity-client-schemas-to-file` takes the same arguments plus `output-file`, writes that
+response to the file, and returns the path with the number of classic, freedom and unknown sections
+and edit pages instead of the lists. The file is confined to the workspace or the OS temp directory
+and must not exist yet.
+
 ## Reporting Bugs
 
     https://github.com/Advance-Technologies-Foundation/clio

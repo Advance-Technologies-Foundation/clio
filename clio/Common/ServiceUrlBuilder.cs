@@ -341,7 +341,45 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read the database engine and runtime without ClioGate.</summary>
 		GetSystemEnvironmentInfo = 99,
 		/// <summary>OpenID Connect discovery document.</summary>
-		OpenIdConfiguration = 100
+		OpenIdConfiguration = 100,
+		/// <summary>Read a Freedom UI / client unit schema DTO from the page designer service.</summary>
+		GetClientUnitDesignerSchema = 101,
+		/// <summary>Save a Freedom UI / client unit schema DTO through the page designer service.</summary>
+		SaveClientUnitDesignerSchema = 102,
+		/// <summary>Invalidate the workplace script cache after a client unit schema save.</summary>
+		ResetScriptCache = 103,
+		/// <summary>Read the per-culture values of an entity's localizable columns (DataService SelectLocalizationQuery).</summary>
+		SelectLocalizationQuery = 104,
+		/// <summary>Write per-culture values of an entity's localizable columns (DataService UpdateLocalizationQuery).</summary>
+		UpdateLocalizationQuery = 105,
+		/// <summary>Read a package data binding design item (SchemaDataDesignerService GetSchema).</summary>
+		GetSchemaDataDesignItem = 106,
+		/// <summary>Create a new client unit schema DTO in a package through the page designer service.</summary>
+		CreateNewClientUnitDesignerSchema = 107,
+		/// <summary>Read the parent (full hierarchy) schemas of a Freedom UI page from the page designer service.</summary>
+		GetClientUnitDesignerParentSchemas = 108,
+
+		/// <summary>
+		///     Compiles the package a business process lives in via the ProcessDesignService package.
+		/// </summary>
+		CompileProcess = 109,
+
+		/// <summary>Creates a standalone package (PackageService CreatePackage).</summary>
+		CreatePackage = 110,
+
+		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
+		CreatePackageInApp = 111,
+
+		/// <summary>
+		///     Reads the configuration data (ConfigurationDataService GetData). Called with <c>forceGet = true</c>
+		///     it clears the calling session's cached module structure and workplace/section caches.
+		/// </summary>
+		GetConfigurationData = 112,
+
+		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
+		GetAdministratedObject = 113,
+		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
+		SaveAdministratedObject = 114
 
 	}
 
@@ -443,6 +481,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.ModifyProcess, "/rest/ProcessDesignService/ModifyProcess"},
 		{KnownRoute.ModifyProcessAsNewVersion, "/rest/ProcessDesignService/ModifyProcessAsNewVersion"},
 		{KnownRoute.SetActiveProcessVersion, "/rest/ProcessDesignService/SetActiveProcessVersion"},
+		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
+		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
+		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
+		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
@@ -455,6 +497,16 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
+		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
+		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},
+		{KnownRoute.ResetScriptCache, "/rest/WorkplaceService/ResetScriptCache"},
+		{KnownRoute.SelectLocalizationQuery, "DataService/json/SyncReply/SelectLocalizationQuery"},
+		{KnownRoute.UpdateLocalizationQuery, "DataService/json/SyncReply/UpdateLocalizationQuery"},
+		{KnownRoute.GetSchemaDataDesignItem, "ServiceModel/SchemaDataDesignerService.svc/GetSchema"},
+		{KnownRoute.CreateNewClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema"},
+		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
+		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
+		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

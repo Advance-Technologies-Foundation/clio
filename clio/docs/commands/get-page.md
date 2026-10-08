@@ -38,6 +38,11 @@ there is no need to copy vendor bodies or override the target package.
 > disk instead, at the paths reported in `files.bodyFile` / `files.bundleFile`. MCP callers
 > read `files.bodyFile`; there is no `raw` property in the MCP response.
 >
+> **`include-operations` (MCP only, default `true`).** With `false` the MCP response leaves
+> `page.ownBodySummary.viewConfigDiffOps` out and returns `page.ownBodySummary.viewConfigDiffOpCounts`
+> (number of operations per operation type) in its place. `meta.json` is written first and keeps the
+> full list either way.
+>
 > **`editable` is optional.** The capture is best-effort: when the `SysSchema` checksum row
 > is missing or the query fails, the successful envelope carries no `editable` key at all.
 > Treat its absence as *baseline unavailable*, never as *no editable schema exists* — the

@@ -203,15 +203,23 @@ internal static partial class CreatioResponseError {
 	/// The fixed, locally authored diagnostic for a read whose body IS JSON and reports an error.
 	/// </summary>
 	/// <remarks>
-	/// The extracted detail is deliberately not part of it. <c>TryDetect</c> pulls
+	/// The extracted free-form detail is deliberately not part of it; only the validated identifiers
+	/// <see cref="DescribeStructuredODataError"/> composes may be appended (issue #1550). <c>TryDetect</c> pulls
 	/// <c>error.message</c>, <c>ExceptionMessage</c> or <c>MessageDetail</c> - all server-controlled -
 	/// and <c>SensitiveErrorTextRedactor</c> removes known secret shapes only: it cannot remove forged
 	/// instructions, opaque tokens, tenant data or embedded line breaks. This text lands in an MCP
 	/// transcript that a model reads as trusted content, so no server prose is copied into it.
 	/// </remarks>
+	/// <param name="kind">The classification <see cref="TryClassify(JsonElement, CreatioResponseContext, out ODataErrorKind, out string)"/> chose.</param>
+	/// <param name="callerInputDetail">A restatement of the caller's own request members, if any.</param>
+	/// <param name="structuredDetail">
+	/// The output of <see cref="DescribeStructuredODataError"/>: validated identifiers from the error
+	/// payload inside clio's own sentence, never free-form server text.
+	/// </param>
 	internal static string DescribeServerReportedReadError(
 			ODataErrorKind kind = ODataErrorKind.ServerError,
-			string callerInputDetail = null) {
+			string callerInputDetail = null,
+			string structuredDetail = null) {
 		const string genericClassification =
 			"Creatio reported an error for this OData read. The server's own wording is not reproduced "
 			+ "here, because a service or proxy response is not trusted text in an MCP transcript; check "
@@ -232,10 +240,14 @@ internal static partial class CreatioResponseError {
 		string classification = kind == ODataErrorKind.InvalidQuery
 			? invalidQueryClassification
 			: genericClassification;
-		//Both additions are locally authored - the fixed hint, and a restatement of the CALLER's own
-		//inputs - so they are the only detail that may be added to the sentence.
+		//Every addition is locally authored - the fixed hint, the validated identifiers of the error
+		//payload inside clio's own sentence, and a restatement of the CALLER's own inputs - so they are the
+		//only detail that may be added to the sentence.
 		if (kind == ODataErrorKind.UnregisteredEntity) {
 			classification = $"{classification} {UnregisteredEntityHint}";
+		}
+		if (!string.IsNullOrWhiteSpace(structuredDetail)) {
+			classification = $"{classification} {structuredDetail}";
 		}
 		return string.IsNullOrWhiteSpace(callerInputDetail)
 			? classification
