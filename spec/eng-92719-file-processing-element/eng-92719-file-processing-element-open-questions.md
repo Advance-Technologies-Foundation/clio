@@ -5,7 +5,7 @@ type (Task) and ENG-92719 File processing element (Story), with its sub-tasks EN
 attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 19 owner questions (Q1-Q19). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
-Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, and Q19 (`process-files`) on 2026-10-08. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
 queries. Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -67,7 +67,7 @@ the owner row of the sibling documents.
 | Q16 | Record scope shape and empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving and Word elements with no selecting filter | PK-OA | D16; decisions row 10 |
 | Q17 | Storage policy details | do not read the designer flag for behaviour; no `linkColumn: "none"`; no SysFile override | PK-OA | D15; decisions row 9 |
 | Q18 | FastReport printables | refused in this work | PK-RP | D17; decisions row 11 |
-| Q19 | Name of the new guide | `process-files` | KB-PT | D25; decisions row 15 |
+| Q19 | Name of the new guide | `process-files` **Agreed 2026-10-08.** | KB-PT | D25; decisions row 15 |
 
 ### A.1 Jira and delivery (answer before any PR opens)
 
@@ -380,7 +380,7 @@ connection that is not the process's, or fail (basis=source, a hypothesis). DevE
 
 **What changes:** refusal F-R1. M15 can reopen the question only if FastReport packages and printables turn up.
 
-#### Q19. Name of the new guide
+#### Q19. Name of the new guide (agreed 2026-10-08: `process-files`)
 
 The existing articles are nearly full: process-modeling and activity-connections 99.9%, parameters 98.8%,
 element-catalog 97.7% (measured on a replica of the budget check, 2026-10-01; the full table is in decisions D25).

@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 7 decisions wait for the owner (section 1, Q13-Q19): D2, D3 (Variable), D5, D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
+| Status | Proposed, 2026-10-01. 6 decisions wait for the owner (section 1, Q13-Q18): D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
 | Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -120,7 +120,7 @@ named decision and nothing else unless stated.
 | 12 | D22 | Downstream consumer patterns | Send email -> ENG-95985 Send email attachments; Creatio.ai call out of scope **Agreed 2026-10-07.** | Keep both in ENG-92719 File processing element (needs dynamic attachment slots the builder cannot create) |
 | 13 | D23 | Jira links | L1-L5: ENG-95984 File process parameter type relates to ENG-96505 Element readiness and object attachments mode and blocks ENG-96506 Generated report + process parameter modes; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments **Agreed 2026-10-07.** | Keep link 560203 "PT blocks OA" if the team uses "blocks" for sequencing (it then claims a functional dependency that does not exist) |
 | 14 | D24 | Acceptance criteria | Replace as in Part D **Agreed 2026-10-07.** | Keep as written (the "Binary / File" and "ResultActionType = 1" criteria cannot pass) |
-| 15 | D25, D27 | Guide name; PR split | One new guide `process-files`; one PR per Jira issue per repository (14 PRs, including the docs-only clio PRs CL-PT-DOC and CL-DOC). **The PR split (D27) was agreed on 2026-10-07; the guide name (D25, Q19) is open.** | `process-file` or a guide per ticket; one PR per repository for everything |
+| 15 | D25, D27 | Guide name; PR split | One new guide `process-files`; one PR per Jira issue per repository (14 PRs, including the docs-only clio PRs CL-PT-DOC and CL-DOC). **The PR split (D27) was agreed on 2026-10-07 and the guide name (D25, Q19) on 2026-10-08.** | `process-file` or a guide per ticket; one PR per repository for everything |
 
 Delivery-process decisions that do not change the contract are owner items O1-O8 in
 [pr-split](eng-92719-file-processing-element-pr-split.md) section 13: the slot order of RP and SF (O3, RP first
@@ -158,7 +158,7 @@ same questions, with their options, are Q1-Q19 in
 | D22 | Downstream consumers | FE | agreed 2026-10-07 | - |
 | D23 | Jira dependencies | all | agreed 2026-10-07 | - |
 | D24 | Acceptance-criteria corrections (text in Part D) | all | agreed 2026-10-07 | - |
-| D25 | Guidance placement and tool-description budget | all | **yes** (guide name) | - |
+| D25 | Guidance placement and tool-description budget | all | agreed 2026-10-08 (`process-files`) | - |
 | D26 | `[RequiresPackage]` floors and version numbers | all | no | - |
 | D27 | PR split per repository | all | agreed 2026-10-07 | - |
 | D28 | Test strategy and C# mocking | all | no | - |

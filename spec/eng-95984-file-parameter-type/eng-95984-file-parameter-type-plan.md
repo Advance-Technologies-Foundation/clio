@@ -600,7 +600,7 @@ remote), clio, knowledge.
 | O-3 | D5: P3 resets a stale parent with a notice, or keeps designer parity (leave it) | reset with notice **Agreed 2026-10-07.** |
 | O-4 | D5: P2 scope | file-consuming targets only (not every collection) **Agreed 2026-10-07.** |
 | O-5 | D9: if M3 confirms H-1, fix in this PR or in its own Sub-task first | moot: M3 refuted H-1 on 2026-10-02; binding the items is one parity commit in this PR (X4) |
-| O-6 | D25: guide name | `process-files` |
+| O-6 | D25: guide name | `process-files` **Agreed 2026-10-08.** |
 | O-7 | D24: replace A1-A4 with AC-1..AC-10 of section 1.4 as the ONE replacement text. It supersedes the shorter block that stood in decisions D-1, which dropped six rules and moved the `ReportFiles` verification into a sub-task that cannot configure that variant. Decisions D-1, README Q1 and open-questions Q1 point here | yes **Agreed 2026-10-07.** |
 | O-8 | D23: ENG-95984 File process parameter type blocks ENG-96506 Generated report + process parameter modes and relates to ENG-96505 Element readiness and object attachments mode (today it blocks ENG-96505 Element readiness and object attachments mode, link 560203) | yes **Agreed 2026-10-07.** |
 | O-9 | A merge window agreed with the owners of the in-flight rebundling branches (section 4.4) | yes **Agreed 2026-10-07.** |
