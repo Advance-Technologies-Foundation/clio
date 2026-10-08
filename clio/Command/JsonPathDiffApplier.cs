@@ -50,7 +50,8 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		} else if (pathArr is not null) {
 			List<object> parts = PathSegments(pathArr);
 			itemInfo = new ItemInfo { Item = GetByPath(_sourceObject, parts) };
-			if (itemInfo.Item is null) {
+			// The client tests `!itemInfo.item` here too, so a falsy value falls back like a missing one.
+			if (IsFalsy(itemInfo.Item)) {
 				string rootName = parts.Count > 0 ? parts[0]?.ToString() : null;
 				if (parts.Count > 0) {
 					parts.RemoveAt(0);
@@ -116,8 +117,7 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		}
 		JToken configValues = config["values"];
 		if (configValues is null || configValues.Type is JTokenType.Null or JTokenType.Undefined) {
-			throw new JsonDiffApplierException(string.Format(CultureInfo.InvariantCulture,
-				JsonDiffApplierResources.MergeValuesMissing, MergeTargetText(config)));
+			throw MergeException(JsonDiffApplierResources.MergeValuesMissing, config, JsonDiffApplierMergeFailure.ValuesMissing);
 		}
 		JObject keyedValues = ObjectKeysView(configValues);
 		var values = new JObject();
@@ -135,14 +135,23 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 					OperationsOptions?.ArrayTargetMerges?.Add(config);
 				}
 				return true;
+			case null:
+			case { Type: JTokenType.Null or JTokenType.Undefined }:
+				// deepmerge reads Object.keys of the target, which throws for undefined or null even with empty values.
+				throw MergeException(JsonDiffApplierResources.MergeTargetUnresolved, config, JsonDiffApplierMergeFailure.TargetUnresolved);
+			case { Type: JTokenType.String } text when text.Value<string>().Length > 0:
+				// deepmerge takes the string's indexes as keys, and writing them back to the string throws.
+				throw MergeException(JsonDiffApplierResources.MergeTargetNotObject, config, JsonDiffApplierMergeFailure.TargetNotObject);
 			default:
 				if (values.Count > 0) {
-					throw new JsonDiffApplierException(string.Format(CultureInfo.InvariantCulture,
-						JsonDiffApplierResources.MergeTargetNotObject, MergeTargetText(config)));
+					throw MergeException(JsonDiffApplierResources.MergeTargetNotObject, config, JsonDiffApplierMergeFailure.TargetNotObject);
 				}
 				return true;
 		}
 	}
+
+	private static JsonDiffApplierException MergeException(string template, JObject config, JsonDiffApplierMergeFailure failure) =>
+		new(string.Format(CultureInfo.InvariantCulture, template, MergeTargetText(config)), failure);
 
 	private static string MergeTargetText(JObject config) =>
 		(config["path"] as JArray)?.ToString(Formatting.None) ?? config.Value<string>("name");
@@ -159,7 +168,7 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 				keyed[index.ToString(CultureInfo.InvariantCulture)] = array[index];
 			}
 		} else if (values.Type == JTokenType.String) {
-			string text = values.Value<string>()!;
+			string text = values.Value<string>();
 			for (int index = 0; index < text.Length; index++) {
 				keyed[index.ToString(CultureInfo.InvariantCulture)] = text[index].ToString();
 			}

@@ -342,6 +342,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the save already succeeded; an agent that reads an advisory finding as a failure will re-save and can trip conflict detection");
 		warningsField.Description.Should().Contain("`merge` whose `path` does not exist",
 			because: "GH-1753: a config merge into a missing path is saved but skipped by the differ, and the contract must name that warning so the agent acts on it");
+		warningsField.Description.Should().Contain("breaks the page",
+			because: "GH-1753: on a dry run a merge the runtime throws on is a warning, and the contract must say the real save is rejected");
 	}
 
 	[Test]
@@ -594,6 +596,57 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		response.Warnings.Should().Contain(
 			warning => warning.StartsWith("modelConfigDiff merge at path [\"dataSources\",\"UsrClioE2EMissingDS\",\"config\"]"),
 			because: "no schema in the page's chain defines that data source, so the differ skips the merge and the caller must be told");
+		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		bodyAfter.Should().Be(bodyBefore, because: "a dry run must not write the page");
+	}
+
+	[Test]
+	[Description("GitHub #1753: a modelConfigDiff merge into a single value makes the Creatio runtime throw, so update-page rejects the real save. On a dry run the same merge must be listed in `warnings` as breaking the page, over the real MCP transport.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page dry run warns about a config merge that breaks the page")]
+	[AllureDescription("Reads the seeded page ClioMcp_BlankPageToSave, submits an append fragment whose modelConfigDiff merges into the single value dataSources.PageParameters.type (the runtime seeds that data source on every page), with dry-run=true, and verifies the structured response is successful and carries a warning saying the merge breaks the page. Then re-reads the page and asserts the stored body is unchanged. The real-save rejection is covered by unit tests: running it here would write a broken merge to the shared seeded page if the rejection regressed.")]
+	public async Task PageUpdateTool_Should_Warn_On_Dry_Run_When_A_Config_Merge_Breaks_The_Page() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(3));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string bodyBefore = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
+		string fragment = "define(\"" + savePage + "\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[\"dataSources\",\"PageParameters\",\"type\"]," +
+			"\"values\":{\"x\":1}}]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+		// Act
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = savePage,
+					["body"] = fragment,
+					["mode"] = "append",
+					["dry-run"] = true,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse response =
+			EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an append dry run against a seeded diff-form page is a structured read, not a transport error");
+		response.Success.Should().BeTrue(
+			because: $"a dry run reports what the save would do instead of refusing. Error: {response.Error}");
+		response.Warnings.Should().Contain(
+			warning => warning.StartsWith("modelConfigDiff merge at path [\"dataSources\",\"PageParameters\",\"type\"]")
+				&& warning.Contains("breaks the page"),
+			because: "the runtime throws when it sets keys on a single value, so the real save would be rejected and the caller must be told");
 		string bodyAfter = await ReadRawBodyAsync(arrangeContext, environmentName, savePage);
 		bodyAfter.Should().Be(bodyBefore, because: "a dry run must not write the page");
 	}

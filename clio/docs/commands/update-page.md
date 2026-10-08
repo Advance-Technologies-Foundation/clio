@@ -246,8 +246,12 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return `warnings`. Every entry is informational only — the
-schema save already succeeded, so never retry on a warning. Today they cover the live
+Successful saves may also return `warnings`. When `success` is true every entry is
+informational only — the schema save already succeeded, so never retry on a warning. A
+rejected save (`success: false`) can carry `warnings` too; nothing was written. On a
+`--dry-run`, a config merge the runtime throws on is listed as a warning that says it
+"breaks the page", and the real save of the same body is rejected (see "Config merges into
+a missing path"). Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
 `merge`/`move`/`remove`, an operation the differ will drop because another operation
 for the same component name cancels it (see "Write modes"), a `viewModelConfigDiff` /
@@ -394,16 +398,21 @@ Typical shapes:
 
 `update-page` resolves the page's real parent schemas and applies the body's config diffs to that
 config the way the platform does. For every merge that would be skipped, the response gets an advisory
-`warnings` entry naming the section and the path. The save still succeeds, on `--dry-run` as well. To
+`warnings` entry naming the section and the path, and the save still succeeds. To
 add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
 with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
 always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
 them is safe. A merge whose path ends on an array, or whose `values` is an array, a string, a number
-or a boolean, is reported the same way, with its own reason. A merge the runtime throws on makes the
-page fail to build, so it rejects the save (a `--dry-run` lists it as a warning): a path that ends on a
-single value, such as `isCollection`, and a merge with no `values` or `values: null` on a target that
-exists. If the parent schemas cannot be read for this check, the response says the check did not run,
-and the save is not blocked.
+or a boolean, is reported the same way, with its own reason.
+
+A merge the runtime throws on makes the page fail to build, so it rejects the save: `success` is
+false, nothing is written, `error` names each such merge on its own line, and the other warnings
+for the body are still returned. A `--dry-run` lists the same merges as warnings that say the merge
+"breaks the page". The cases are a path that ends on a single value, such as `isCollection`; a path
+whose first segment matches an element `_id` but whose rest does not exist under it; and a merge
+with no `values` or `values: null` on a target that exists. If the parent schemas cannot be read for
+this check, the response says the check did not run, and the save is not blocked. If an operation
+that is not a merge makes the differ throw, the merges are still checked and one warning says so.
 
 ### What a `--dry-run` tells you about an append
 

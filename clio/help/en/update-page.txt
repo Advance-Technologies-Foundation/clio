@@ -254,8 +254,11 @@ DESCRIPTION
       --dry-run; the save still succeeds.
     - Rejected: a viewModelConfigDiff or modelConfigDiff merge the runtime
       throws on, so the page fails to build: a path that ends on a single value
-      (for example "isCollection"), or no "values" (or "values": null) on a
-      target that exists. --dry-run reports it as a warning.
+      (for example "isCollection"), a path whose first segment matches an
+      element _id but whose rest does not exist under it, or no "values" (or
+      "values": null) on a target that exists. The save fails, nothing is
+      written, and the error names each such merge. --dry-run reports it as a
+      warning that says the merge "breaks the page".
 
     APPEND DRY RUN:
     In append mode --dry-run resolves the current server body, computes the

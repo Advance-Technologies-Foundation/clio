@@ -500,6 +500,46 @@ public sealed class PageBundleBuilderTests {
 				because: "an unexpected config token must surface as the handled exception type naming the expected shape");
 	}
 
+	[TestCase("A", "[1]", false)]
+	[TestCase("N", "null", false)]
+	[TestCase("S", "\"text\"", true)]
+	[Description("GH-1753: get-page builds the bundle with the same path applier, so a child merge into an array is a no-op, a merge into a null value is skipped, and a merge into a single value throws the JsonDiffApplierException get-page reports as a resolution error (before GH-1753 all three threw InvalidCastException).")]
+	public void Build_WhenChildMergesIntoNonObject_FollowsTheRuntime(string key, string value, bool shouldThrow) {
+		// Arrange
+		IPageBundleBuilder builder = CreateBuilder();
+		List<PageSchemaBundlePart> parts = [
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "child-uid", Name = "UsrPage", PackageUId = "p", PackageName = "UsrPkg", SchemaVersion = 1, Body = "child"
+				},
+				new PageParsedSchemaBody {
+					ModelConfigDiff = JArray.Parse("[{ \"operation\": \"merge\", \"path\": [\"dataSources\", \"" + key
+						+ "\"], \"values\": { \"x\": 1 } }]")
+				}),
+			new(
+				new PageDesignerHierarchySchema {
+					UId = "base-uid", Name = "BasePage", PackageUId = "b", PackageName = "CrtBase", SchemaVersion = 1, Body = "base"
+				},
+				new PageParsedSchemaBody {
+					ModelConfigDiff = JArray.Parse("[{ \"operation\": \"merge\", \"path\": [], \"values\": { \"dataSources\": { \""
+						+ key + "\": " + value + " } } }]")
+				})
+		];
+
+		// Act
+		Func<PageBundleInfo> act = () => builder.Build(parts);
+
+		// Assert
+		if (shouldThrow) {
+			act.Should().Throw<JsonDiffApplierException>(
+				because: "the runtime throws when it sets keys on a single value, and get-page catches this type");
+			return;
+		}
+		PageBundleInfo result = act.Should().NotThrow(because: "the runtime does not throw on this merge").Subject;
+		(result.ModelConfig["dataSources"]![key]?.ToJsonString() ?? "null").Should().Be(value,
+			because: "the merge changes nothing, as at runtime");
+	}
+
 	private static IPageBundleBuilder CreateBuilder() {
 		return new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier());
 	}

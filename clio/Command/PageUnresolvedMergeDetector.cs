@@ -33,9 +33,11 @@ public interface IPageUnresolvedMergeDetector {
 	/// and only when the body has a merge that can fail to apply (any merge except one with <c>path: []</c>, which
 	/// targets the always-present root, and object <c>values</c>), so a body without one costs no read. Its
 	/// exceptions propagate.</param>
-	/// <returns>The errors and the warnings; both empty when every merge resolves or there is nothing to check.</returns>
-	/// <exception cref="JsonDiffApplierException">An operation that is not a merge makes the differ throw, so the
-	/// merges cannot be checked.</exception>
+	/// <returns>The errors and the warnings; both empty when every merge resolves or there is nothing to check. When
+	/// an operation that is not a merge makes the differ throw, the merges of that section are still reported and
+	/// one warning says the rest of the section could not be checked.</returns>
+	/// <exception cref="JsonDiffApplierException">A parent schema's diff, or a merge for a reason this check does not
+	/// recognise, makes the differ throw, so the merges cannot be checked.</exception>
 	PageConfigMergeReport Detect(string body, Func<IEnumerable<PageDesignerHierarchySchema>> readInheritedSchemas);
 
 }
@@ -66,6 +68,7 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		TargetIsArray,
 		ValuesNotObject,
 		TargetNotObject,
+		TargetUnresolved,
 		ValuesMissing
 
 	}
@@ -73,7 +76,7 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 	private readonly record struct SkippedMerge(string Section, JObject Operation, SkipReason Reason) {
 
 		/// <summary>The runtime throws on this merge, so the page fails to build.</summary>
-		public bool IsError => Reason is SkipReason.TargetNotObject or SkipReason.ValuesMissing;
+		public bool IsError => Reason is SkipReason.TargetNotObject or SkipReason.TargetUnresolved or SkipReason.ValuesMissing;
 
 	}
 
@@ -126,11 +129,15 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 			modelConfig = ApplyLayer(modelApplier, modelConfig, layer.ModelConfigDiff, layer.ModelConfig);
 		}
 		var skipped = new List<SkippedMerge>();
-		skipped.AddRange(FindSkippedMerges(viewModelApplier, viewModelConfig, candidate.ViewModelConfigDiff, ViewModelConfigDiffSection));
-		skipped.AddRange(FindSkippedMerges(modelApplier, modelConfig, candidate.ModelConfigDiff, ModelConfigDiffSection));
-		return new PageConfigMergeReport(
-			Describe(skipped.Where(merge => merge.IsError)),
-			Describe(skipped.Where(merge => !merge.IsError)));
+		var uncheckedSections = new List<string>();
+		// Each section on its own: an operation that throws in one must not stop the check of the other.
+		skipped.AddRange(FindSkippedMerges(viewModelApplier, viewModelConfig, candidate.ViewModelConfigDiff,
+			ViewModelConfigDiffSection, uncheckedSections));
+		skipped.AddRange(FindSkippedMerges(modelApplier, modelConfig, candidate.ModelConfigDiff,
+			ModelConfigDiffSection, uncheckedSections));
+		List<string> warnings = Describe(skipped.Where(merge => !merge.IsError));
+		warnings.AddRange(uncheckedSections);
+		return new PageConfigMergeReport(Describe(skipped.Where(merge => merge.IsError)), warnings);
 	}
 
 	// The runtime starts every config chain from these two objects before the first schema is applied (client
@@ -157,7 +164,7 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 		PageBundleMergeHelpers.ApplyConfigLayer(applier, current, diff, config);
 
 	private static List<SkippedMerge> FindSkippedMerges(
-		IJsonPathDiffApplier applier, JObject current, JToken diff, string section) {
+		IJsonPathDiffApplier applier, JObject current, JToken diff, string section, List<string> uncheckedSections) {
 		if (diff is not JArray { Count: > 0 } operations) {
 			return [];
 		}
@@ -170,14 +177,14 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 				new JsonApplierOperationsOptions { UnresolvedMerges = unresolved, ArrayTargetMerges = arrayTargets });
 			skipped.AddRange(unresolved.Select(operation => new SkippedMerge(section, operation, SkipReason.PathNotFound)));
 			skipped.AddRange(arrayTargets.Select(operation => new SkippedMerge(section, operation, SkipReason.TargetIsArray)));
-		} catch (JsonDiffApplierException) {
+		} catch (JsonDiffApplierException ex) {
 			// The runtime throws on this diff too. Replay the merges one by one to name the merge that throws and
 			// still check the others; merges run first and in array order, so the other operations in the diff
 			// cannot change the outcome. When no merge throws, an insert, move, remove or set is the cause, which
-			// this check does not cover: rethrow, so the caller says the check did not run.
+			// this check does not cover: keep the merge findings and say the rest of the section was not checked.
 			List<SkippedMerge> oneByOne = FindSkippedMergesOneByOne(applier, current, operations, section);
 			if (!oneByOne.Exists(merge => merge.IsError)) {
-				throw;
+				uncheckedSections.Add(DescribeUncheckedSection(section, ex.Message));
 			}
 			skipped.AddRange(oneByOne);
 		}
@@ -208,11 +215,14 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 				config = applier.Apply(config, new JArray(operation),
 					new JsonApplierOperationsOptions { UnresolvedMerges = unresolved, ArrayTargetMerges = arrayTargets })
 					as JObject ?? config;
-			} catch (JsonDiffApplierException) {
-				SkipReason reason = operation["values"] is null or { Type: JTokenType.Null or JTokenType.Undefined }
-					? SkipReason.ValuesMissing
-					: SkipReason.TargetNotObject;
-				skipped.Add(new SkippedMerge(section, operation, reason));
+			} catch (JsonDiffApplierException ex) when (ex.MergeFailure != JsonDiffApplierMergeFailure.None) {
+				// The applier says why it threw; any other throw propagates, so the caller says the check did not run
+				// instead of naming a cause it guessed.
+				skipped.Add(new SkippedMerge(section, operation, ex.MergeFailure switch {
+					JsonDiffApplierMergeFailure.ValuesMissing => SkipReason.ValuesMissing,
+					JsonDiffApplierMergeFailure.TargetUnresolved => SkipReason.TargetUnresolved,
+					_ => SkipReason.TargetNotObject
+				}));
 				continue;
 			}
 			skipped.AddRange(unresolved.Select(merge => new SkippedMerge(section, merge, SkipReason.PathNotFound)));
@@ -256,6 +266,10 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 			SkipReason.TargetNotObject => $"{target} breaks the page: the value at that path is a single value, not an "
 				+ "object, and the Creatio runtime throws when it sets the merged keys on it, so the page fails to "
 				+ "build. Merge into the object that holds it instead, with the new value inside \"values\".",
+			SkipReason.TargetUnresolved => $"{target} breaks the page: its first path segment matches an element by "
+				+ "its _id, but the rest of the path does not exist under that element, and the Creatio runtime throws "
+				+ "when it merges into the missing value, so the page fails to build. Fix the path, or merge into an "
+				+ "existing parent with the new key inside \"values\".",
 			SkipReason.ValuesMissing => $"{target} breaks the page: it has no \"values\" object, and the Creatio "
 				+ "runtime throws when it reads the keys of a missing or null \"values\", so the page fails to build. "
 				+ "Give the merge a \"values\" object, or remove the operation.",
@@ -281,6 +295,11 @@ internal sealed class PageUnresolvedMergeDetector : IPageUnresolvedMergeDetector
 			+ "Creatio differ has nothing to merge into. Use path [] to merge at the config root, or the path of an "
 			+ "existing parent.";
 	}
+
+	private static string DescribeUncheckedSection(string section, string differMessage) =>
+		$"{section}: an operation that is not a merge makes the Creatio differ throw ({Shorten(differMessage)}), so "
+		+ "the page may fail to build. This check covers merges only and does not name that operation; the merges "
+		+ "in this section were still checked.";
 
 	// Echoes caller-authored text, so bound it: one finding must not grow with a pathological path.
 	private static string Shorten(string text) =>

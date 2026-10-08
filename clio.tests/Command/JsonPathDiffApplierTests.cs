@@ -265,4 +265,35 @@ public sealed class JsonPathDiffApplierTests {
 		// Assert
 		act.Should().Throw<JsonDiffApplierException>(because: "the client throws a TypeError for this merge");
 	}
+
+	[TestCase("""{ "attributes": { "A": 5 } }""", """{ "operation": "merge", "path": ["attributes", "A"], "values": { "x": 1 } }""", JsonDiffApplierMergeFailure.TargetNotObject)]
+	[TestCase("""{ "attributes": { "A": {} } }""", """{ "operation": "merge", "path": ["attributes", "A"], "values": null }""", JsonDiffApplierMergeFailure.ValuesMissing)]
+	[TestCase("""{ "attributes": { "A": { "_id": "Root" } } }""", """{ "operation": "merge", "path": ["Root", "missing"], "values": { "x": 1 } }""", JsonDiffApplierMergeFailure.TargetUnresolved)]
+	[TestCase("""{ "attributes": { "A": { "_id": "Root" } } }""", """{ "operation": "merge", "path": ["Root", "missing"], "values": {} }""", JsonDiffApplierMergeFailure.TargetUnresolved)]
+	[TestCase("""{ "attributes": { "A": "s" } }""", """{ "operation": "merge", "path": ["attributes", "A"], "values": {} }""", JsonDiffApplierMergeFailure.TargetNotObject)]
+	[Description("GH-1753: a merge the client throws on carries the cause, so a caller reports it instead of guessing it from the operation; an undefined target and a non-empty string target throw even with empty values, as deepmerge does.")]
+	public void Merge_ShouldReportWhyItThrows(string source, string merge, JsonDiffApplierMergeFailure expected) {
+		// Act
+		System.Action act = () => new JsonPathDiffApplier().Apply(JToken.Parse(source), (JArray)JToken.Parse($"[{merge}]"));
+
+		// Assert
+		act.Should().Throw<JsonDiffApplierException>(because: "the client throws a TypeError for this merge")
+			.Which.MergeFailure.Should().Be(expected, because: "the caller names the cause from this value");
+	}
+
+	[TestCase("""{ "attributes": { "A": 5 } }""", """["attributes", "A"]""")]
+	[TestCase("""{ "attributes": { "A": true } }""", """["attributes", "A"]""")]
+	[TestCase("""{ "attributes": { "A": { "_id": "Root", "inner": "" } } }""", """["Root", "inner"]""")]
+	[Description("GH-1753: with empty values, a merge into a number, a boolean or an empty string changes nothing and does not throw, as on the client.")]
+	public void Merge_ShouldBeNoOp_WhenValuesAreEmptyAndTargetIsSingleValue(string source, string path) {
+		// Arrange
+		JToken sourceToken = JToken.Parse(source);
+
+		// Act
+		JToken result = new JsonPathDiffApplier().Apply(sourceToken.DeepClone(),
+			(JArray)JToken.Parse("[{ \"operation\": \"merge\", \"path\": " + path + ", \"values\": {} }]"));
+
+		// Assert
+		JToken.DeepEquals(result, sourceToken).Should().BeTrue(because: "deepmerge has no key to write back");
+	}
 }

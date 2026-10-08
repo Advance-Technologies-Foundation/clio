@@ -119,6 +119,28 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("A rejected save keeps the other warnings computed for the same body (here an inert merge beside an insert), so the caller sees every finding at once.")]
+	public void TryUpdatePage_ShouldKeepOtherWarnings_WhenConfigMergeRejectsTheSave() {
+		// Arrange
+		string body = Body(ThrowingMerge).Replace(
+			"viewConfigDiff:/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"viewConfigDiff:/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"UsrName\",\"values\":{\"type\":\"crt.Input\"}},"
+			+ "{\"operation\":\"merge\",\"name\":\"UsrName\",\"values\":{\"label\":\"X\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", Body = body };
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeFalse(because: "the config merge breaks the page");
+		response.Error.Should().Contain("breaks the page", because: "the error names the throwing merge");
+		response.Warnings.Should().Contain(w => w.Contains("UsrName") && w.Contains("'merge'"),
+			because: "the inert-operation finding for the same body must not be dropped by the rejection");
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
 	[TestCase("replace")]
 	[TestCase("append")]
 	[Description("On a dry run the same merge is reported as a warning, like the caption gate: a dry run says what would happen instead of refusing.")]

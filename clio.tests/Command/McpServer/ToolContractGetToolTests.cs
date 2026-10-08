@@ -4217,6 +4217,13 @@ public sealed class ToolContractGetToolTests {
 			.OutputContract.Fields.Single(field => field.Name == "warnings");
 		warningsField.Description.Should().Contain("never retry on a warning",
 			because: "these findings are advisory and the save already succeeded; an agent that reads a warning as a failure will re-save and can trip conflict detection");
+		warningsField.Description.Should().Contain("When `success` is true the save already succeeded",
+			because: "GH-1753: a rejected save can carry warnings too, so the contract must not promise a save whenever warnings exist");
+		warningsField.Description.Should().Contain("breaks the page",
+			because: "GH-1753: on a dry run a merge the runtime throws on is only a warning, and the agent must learn the real save is rejected");
+		result.Tools!.Single(contract => contract.Name == PageUpdateTool.ToolName)
+			.OutputContract.Fields.Single(field => field.Name == "error").Description.Should().Contain("rejects a save",
+				because: "GH-1753: the error field must name the config-merge rejection cause");
 	}
 
 	// The sync-pages contract is curated too, and its per-page members live in the PROSE of the `pages`

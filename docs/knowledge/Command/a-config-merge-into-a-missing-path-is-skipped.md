@@ -55,9 +55,17 @@ single value (`5`, `"s"`, `true`) throws `TypeError` when the merged keys are se
 The same happens when the first path segment matches an element `_id` and the rest of the path does
 not resolve, because the target is then `undefined`. The page fails to build. Missing or `null`
 `values` on a target that resolves throws in `Object.keys`. On a target that does not resolve, the
-merge is skipped before `values` is read. The clone throws `JsonDiffApplierException` in all of these
-cases. The detector replays the merges one at a time to name the merge, and reports it as an error,
-which rejects the save; a dry run lists it as a warning. A path that ends on an array is different:
+merge is skipped before `values` is read. Even with empty `values` (`{}`, or alias exclusion that
+removes every key), an `undefined`/`null` target throws (`deepmerge` reads `Object.keys` of it) and a
+non-empty string target throws (the index keys cannot be written back); `5`, `true` and `""` with
+empty `values` are no-ops. The clone throws `JsonDiffApplierException` in all of these cases and
+carries the cause in `MergeFailure` (`ValuesMissing`, `TargetNotObject`, `TargetUnresolved`). The
+detector replays the merges one at a time to name the merge, takes the reason from `MergeFailure`
+instead of guessing it from the operation's shape, and reports it as an error, which rejects the save
+(the response still carries the body's other warnings); a dry run lists it as a warning. A throw
+without a `MergeFailure` is not a merge cause this check knows, so it becomes "could not check". When
+an operation that is not a merge throws, the merge findings of that section are still reported, plus
+one warning that the section has a throwing operation; each section is checked on its own. A path that ends on an array is different:
 the client sets the keys on the array, where they are lost, and still returns `true`. So the merge is
 not in `UnresolvedMerges`. The clone reports it through the `ArrayTargetMerges` sink, and it is an
 advisory warning. A merge whose `values` is an array or a string is applied with index keys (`"0"`,

@@ -467,10 +467,13 @@
 				out PreparedWrite prepared, out response)) return false;
 			if (prepared.CaptionGateFailure != null) { response = prepared.CaptionGateFailure; return false; }
 			if (prepared.ConfigMergeReport.Errors.Count > 0) {
+				// Nothing is written, but the other findings for this body still hold: keep them beside the error.
 				response = new PageUpdateResponse {
 					Success = false,
 					Error = string.Join(Environment.NewLine, prepared.ConfigMergeReport.Errors),
-					Warnings = prepared.ConfigMergeReport.Warnings.Count > 0 ? [.. prepared.ConfigMergeReport.Warnings] : null
+					Warnings = CombineWarnings(
+						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+						prepared.ConfigMergeReport.Warnings)
 				};
 				return false;
 			}

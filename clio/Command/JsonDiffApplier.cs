@@ -853,6 +853,35 @@ public sealed class JsonApplierOperationsOptions {
 /// <summary>Error thrown by <see cref="JsonDiffApplier"/>, mirroring the client <c>new Error(...)</c> throws.</summary>
 public sealed class JsonDiffApplierException : Exception {
 	public JsonDiffApplierException(string message) : base(message) { }
+
+	/// <summary>Creates the exception for a path-addressed <c>merge</c> the client throws on.</summary>
+	/// <param name="message">The differ message.</param>
+	/// <param name="mergeFailure">Why the merge throws.</param>
+	public JsonDiffApplierException(string message, JsonDiffApplierMergeFailure mergeFailure) : base(message) {
+		MergeFailure = mergeFailure;
+	}
+
+	/// <summary>Why a <c>merge</c> threw; <see cref="JsonDiffApplierMergeFailure.None"/> for every other throw.</summary>
+	public JsonDiffApplierMergeFailure MergeFailure { get; }
+}
+
+/// <summary>Why the path-addressed differ throws on a <c>merge</c>, mirroring the client's strict-mode
+/// <c>TypeError</c>s. Lets a caller report the real cause instead of guessing it from the operation's shape.</summary>
+public enum JsonDiffApplierMergeFailure {
+
+	/// <summary>Not a merge failure.</summary>
+	None,
+
+	/// <summary>The target resolves, but <c>values</c> is missing or <c>null</c> (<c>Object.keys</c> throws).</summary>
+	ValuesMissing,
+
+	/// <summary>The target is a single value, so setting the merged keys on it throws.</summary>
+	TargetNotObject,
+
+	/// <summary>The first path segment matched an element <c>_id</c>, but the rest of the path does not resolve,
+	/// so the client merges into <c>undefined</c> and throws.</summary>
+	TargetUnresolved
+
 }
 
 /// <summary>Shared wording for a strict page-bundle resolution failure so every entry point (get-page,
@@ -874,4 +903,5 @@ public static class JsonDiffApplierResources {
 	public const string ItemNameAlreadyExists = "Item with value \"{0}\" of the \"name\" parameter already exists";
 	public const string MergeValuesMissing = "Merge into \"{0}\" has no \"values\": cannot convert undefined or null to object";
 	public const string MergeTargetNotObject = "Merge into \"{0}\" cannot set properties: the value at that path is not an object";
+	public const string MergeTargetUnresolved = "Merge into \"{0}\" cannot read its target: the path after the element matched by its first segment does not resolve";
 }

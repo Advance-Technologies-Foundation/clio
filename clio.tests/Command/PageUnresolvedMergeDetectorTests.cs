@@ -245,6 +245,52 @@ public sealed class PageUnresolvedMergeDetectorTests {
 			.And.Contain("is an array", because: "the warning must say why the merge has no effect");
 	}
 
+	[Test]
+	[Description("A merge whose first path segment matches an element _id but whose rest does not resolve makes the runtime throw; the applier reports that cause, so the error names the unresolved path instead of a single value.")]
+	public void Detect_ShouldReportUnresolvedIdFallbackAsError_WithItsOwnReason() {
+		// Arrange
+		string body = Body(viewModelConfigDiff: """
+			[
+				{ "operation": "merge", "path": ["attributes"], "values": { "UsrRoot": { "_id": "UsrRootId", "inner": {} } } },
+				{ "operation": "merge", "path": ["UsrRootId", "missing"], "values": { "x": 1 } }
+			]
+			""");
+
+		// Act
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		report.Errors.Should().ContainSingle(because: "the runtime throws on the merge into the missing remainder");
+		report.Errors[0].Should().Contain("matches an element by its _id", because: "the error must state the real cause")
+			.And.NotContain("single value", because: "the value at that path does not exist, so it is not a single value");
+	}
+
+	[Test]
+	[Description("When an operation that is not a merge makes the differ throw, the merges of that section are still reported, one warning says the section has a throwing operation, and the other section is still checked.")]
+	public void Detect_ShouldKeepMergeFindings_WhenANonMergeOperationThrows() {
+		// Arrange
+		string body = Body(
+			viewModelConfigDiff: """
+				[
+					{ "operation": "merge", "path": ["attributes", "UsrMissing"], "values": { "x": 1 } },
+					{ "operation": "insert", "name": "UsrX", "path": ["attributes", "AttachmentList", "modelConfig", "path"], "values": {} }
+				]
+				""",
+			modelConfigDiff: """[{ "operation": "merge", "path": ["dataSources", "UsrNewDS"], "values": { "x": 1 } }]""");
+
+		// Act
+		PageConfigMergeReport report = Detector.Detect(body, TemplateParent);
+
+		// Assert
+		report.Errors.Should().BeEmpty(because: "no merge throws");
+		report.Warnings.Should().Contain(w => w.Contains("[\"attributes\",\"UsrMissing\"]"),
+			because: "the merge in the section with the throwing operation is still checked");
+		report.Warnings.Should().Contain(w => w.StartsWith("viewModelConfigDiff: an operation that is not a merge"),
+			because: "the caller must learn that the section has an operation the differ throws on");
+		report.Warnings.Should().Contain(w => w.Contains("[\"dataSources\",\"UsrNewDS\"]"),
+			because: "the other section is checked on its own");
+	}
+
 	[TestCase("""{ "operation": "merge", "path": ["attributes", "AttachmentList"] }""")]
 	[TestCase("""{ "operation": "merge", "path": ["attributes", "AttachmentList"], "values": null }""")]
 	[Description("A merge with missing or null values on a target that resolves makes the runtime throw (Object.keys of undefined or null), so it is an error.")]
