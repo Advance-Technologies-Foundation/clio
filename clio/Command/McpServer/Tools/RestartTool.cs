@@ -183,7 +183,11 @@ public class RestartTool(
 			return InternalExecute<RestartCommand>(options);
 		}
 
-		// Phase 1: restart request only, under the per-tenant execution lock (released on return).
+		// Phase 1: restart request only, under the per-tenant execution lock (released on return). It is NOT inside the
+		// deadline race: it is a synchronous login plus request, and a request that alone outlasts the 60 s after which
+		// Claude Code desktop gives up still answers late (ENG-102333). Racing it would need an in-progress answer for
+		// "the restart has not been confirmed as requested", which has no poll route; until that exists, the deadline
+		// counts the request's time (RemainingResponseDeadline) so it is at least not added on top.
 		Stopwatch sinceCall = Stopwatch.StartNew();
 		CommandExecutionResult requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
 		if (requestResult.ExitCode != 0) {
