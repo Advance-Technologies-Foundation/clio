@@ -151,7 +151,7 @@ TIMEOUT AND FAILURE DIAGNOSTICS
 
     MCP only: when a client enforces a hard per-request ceiling that progress
     notifications do not reset, the MCP tool bounds its response by a wall-clock
-    deadline (default 150s, override with CLIO_MCP_RESPONSE_DEADLINE_SECONDS,
+    deadline (default 45s, override with CLIO_MCP_RESPONSE_DEADLINE_SECONDS,
     0 < n <= 600). If the work outlives the deadline the tool returns
     error-class=creatio-timeout with section-created=in-progress before the
     client gives up, and the section keeps being created in the background. That

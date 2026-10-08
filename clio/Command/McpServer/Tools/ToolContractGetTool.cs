@@ -4614,7 +4614,8 @@ internal static class ToolContractCatalog {
 		return new ToolContractDefinition(
 			GetPkgListTool.GetPkgListToolName,
 			"Lists packages installed in a registered Creatio environment as bounded, name-ordered pages. " +
-			"The response always reports the full filtered total and whether more matches remain after the returned page.",
+			"The response always reports the full filtered total and whether more matches remain after the returned page. " +
+			GetPkgListTool.WriteTargetNote,
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName],
 				[
@@ -6333,7 +6334,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, `last-compilation-log` reads the latest FINISHED compile and carries no time, so while this compile still runs it shows an earlier one's verdict."),
+					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: " + CompileStatusTool.HistoryRuleSummary),
 				new ToolAntiPattern(
 					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
 					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),
