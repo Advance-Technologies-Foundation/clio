@@ -4,12 +4,13 @@ applies-to:
   - clio/docs/commands/
   - clio/help/en/
   - clio/HelpSystem/CommandHelpRenderer.cs
+  - clio.tests/CommandHelpRendererTests.cs
 date: 2026-09-21
 ---
 
 **What is true** — `RenderGeneratedMarkdownDoc`/`RenderManualMarkdownDoc` build every prose section
 (`Description`, `Requirements`, `Notes`, custom sections, …) with `WriteMarkdownRawSection`
-(`clio/HelpSystem/CommandHelpRenderer.cs:266`), which appends each `.txt` line to the `StringBuilder`
+(`clio/HelpSystem/CommandHelpRenderer.cs`), which appends each `.txt` line to the `StringBuilder`
 verbatim — there is no Markdown-syntax layer at all. Any `**bold**`, inline `` `code` ``, or
 `> blockquote`` that ends up in a committed `clio/docs/commands/*.md` file got there because someone
 edited the `.md` output directly, not because the generator produced it. Confirmed examples found by
@@ -30,5 +31,8 @@ regeneration of that specific file (for example, editing `clio/help/en/<command>
 reason and re-running the exporter for that command). At that point the bold text, inline code, and
 blockquotes silently revert to plain prose with no error, no test failure, and no diff review signal
 beyond an ordinary-looking markdown diff — `HelpArtifactConsistencyTests` only checks that the files
-exist, never that their content matches what the generator would produce. Put any wording you want
-preserved into the `.txt` source, not the `.md` output.
+exist, never that their content matches what the generator would produce. The exception is the four
+commands pinned by `CommandHelpRendererTests.RenderMarkdownDoc_ForPinnedManualHelpCommand_MatchesCommittedDoc`
+(`create-entity-schema`, `update-entity-schema`, `modify-entity-schema-column`, `assert`), whose
+committed `.md` must equal the exporter output, so a hand edit there fails the build. Put any wording
+you want preserved into the `.txt` source, not the `.md` output.

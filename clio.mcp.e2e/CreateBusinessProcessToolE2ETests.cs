@@ -12,6 +12,7 @@ using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -183,7 +184,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain("descriptor must be a JSON object, or a string holding one",
 			because: "an array is not a descriptor, and the refusal must name both forms the tool accepts");
-		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+		ToolText(callResult)
 			.Should().Contain("\"exit-code\":1",
 				because: "a descriptor of the wrong kind is a caller error, exit code 1 over the real server too - not -1, "
 					+ "which means clio itself broke");
@@ -205,7 +206,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Assert
 		JsonSerializer.Serialize(callResult).Should().Contain("descriptor is required and cannot be empty",
 			because: "an absent descriptor must reach the tool body and get its own refusal, not a binder error");
-		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+		ToolText(callResult)
 			.Should().Contain("\"exit-code\":1",
 				because: "a missing descriptor is a caller error fixed by sending one, exit code 1 over the real server "
 					+ "too - not -1, which tells the caller that clio broke and a retry will not help");
@@ -342,6 +343,59 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				+ "this rationale claimed the text is quoted AS WRITTEN, which the same measurement disproves: a "
 				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, a generic userTask naming PreconfiguredPageUserTask is refused BY THE SERVER and the process is not created (ENG-102112). That route can never carry the preconfiguredPage block, and before CrtProcessBuilder 1.6.6.88 it built green with no page, which failed at run time with an ItemNotFoundException. Needs CrtProcessBuilder 1.6.6.88 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a generic userTask Pre-configured page")]
+	public async Task CreateBusinessProcess_Should_RefuseAGenericUserTaskPreconfiguredPage() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGenericPrePageE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGenericPreconfiguredPageDescriptor(processName)
+		});
+		// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
+		string text = ToolText(callResult);
+		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.88");
+
+		try {
+			// Assert
+			string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+			describeJson.Should().Contain("was not found",
+				because: "the refusal must leave nothing behind - a saved process with an unconfigured page element is "
+					+ "exactly the defect, so the message alone would not prove the fix");
+			text.Should().Contain("PrePage1",
+				because: "the refusal names the element the caller has to change");
+			text.Should().Contain("type 'preconfiguredPage'",
+				because: "the refusal names the only route that carries the page, its buttons and data sources");
+			text.Should().Contain("get-process-page-facts",
+				because: "the buttons and data sources are facts of the page, and the refusal says where to read them");
+		} finally {
+			// Only a regression leaves the page-less process behind; remove it then, and skip the slow remote
+			// delete when the refusal held.
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, processName);
+			}
+		}
+	}
+
+	/// <summary>The tool's text content, unescaped - the serialized result escapes the quotes messages use.</summary>
+	private static string ToolText(CallToolResult callResult) =>
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+	private static string BuildGenericPreconfiguredPageDescriptor(string processName) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Generic Pre-configured Page E2E\","
+		+ "\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"PrePage1\",\"type\":\"userTask\",\"userTaskName\":\"PreconfiguredPageUserTask\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"PrePage1\"},"
+		+ "{\"source\":\"PrePage1\",\"target\":\"EndEvent1\"}]}";
 
 	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>
 		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Formula E2E\",\"packageName\":\"Custom\","
