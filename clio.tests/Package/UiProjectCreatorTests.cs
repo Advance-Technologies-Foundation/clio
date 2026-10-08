@@ -630,8 +630,8 @@ public class UiProjectCreatorTests {
 		act.Should().NotThrow(because: "the template report is informational and must not fail a created project");
 		_solutionCreator.Received(1).AddProjectToSolution(
 			Path.Combine(RootPath, "MainSolution.slnx"), Arg.Any<IEnumerable<SolutionProject>>());
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message =>
-			message.EndsWith("@creatio-devkit/common: unknown.", StringComparison.Ordinal)));
+		LoggedInfoMessages().Should().ContainSingle().Which.Should().EndWith("@creatio-devkit/common: unknown.",
+			because: "an unreadable package.json must be reported as an unknown SDK range");
 	}
 
 	[Test]
@@ -646,7 +646,8 @@ public class UiProjectCreatorTests {
 		// Assert
 		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); "
-			+ "requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.");
+			+ "requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.",
+			because: "a version of 8.3.4 or later must select and report the current template with its SDK range");
 	}
 
 	[Test]
@@ -662,7 +663,8 @@ public class UiProjectCreatorTests {
 		// Assert
 		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui/8.0.10/ui-project-Empty (legacy template for Creatio 8.0.10); "
-			+ "requested Creatio version: 8.2.0; @creatio-devkit/common: ^0.808.0.");
+			+ "requested Creatio version: 8.2.0; @creatio-devkit/common: ^0.808.0.",
+			because: "a legacy snapshot must be reported so an older SDK line is never selected silently");
 	}
 
 	[Test]
@@ -679,7 +681,8 @@ public class UiProjectCreatorTests {
 		// Assert
 		LoggedInfoMessages().Should().ContainSingle().Which.Should().Be(
 			"UI project template: ui-project (current template, targets Creatio 8.3.4 and later); "
-			+ "requested Creatio version: not specified; @creatio-devkit/common: unknown.");
+			+ "requested Creatio version: not specified; @creatio-devkit/common: unknown.",
+			because: "a malformed package.json must be reported as an unknown SDK range instead of failing");
 	}
 
 	#endregion
