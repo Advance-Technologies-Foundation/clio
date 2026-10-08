@@ -57,8 +57,7 @@ public sealed class PageValidateTool(
 		// insert) to the caller for analysis — no heuristic body normalization.
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
-			// No templateBaseContext: validate-page has no schema/environment identity, so the apply-oracle seeds
-			// its own base. cancellationToken is now named (it moved past templateBaseContext, CA1068).
+			// No base: validate-page has no schema/environment identity, so the apply-oracle seeds its own base.
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
 				body, mobileComponentCatalog, webComponentCatalog, dataSourceValidator, mobileResources,
 				cancellationToken: cancellationToken).ConfigureAwait(false);

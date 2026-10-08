@@ -36,6 +36,7 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 
 	private const string ModelConfig = "modelConfig";
 	private const string DataSources = "dataSources";
+	private const string Values = "values";
 	private const string DataSourceName = "dataSourceName";
 	private const string PrimaryDataSourceName = "primaryDataSourceName";
 	private const int MaxReferrersPerError = 3;
@@ -106,7 +107,7 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		}
 		if (parsed.ModelConfigDiff is JArray { Count: > 0 } modelOperations) {
 			foreach (JObject operation in modelOperations.OfType<JObject>()) {
-				if (IsRootOperation(operation) && operation["values"] is JObject values) {
+				if (IsRootOperation(operation) && operation[Values] is JObject values) {
 					AddPrimaryDataSourceReference(values, references);
 				}
 			}
@@ -119,7 +120,7 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 	private static void CollectViewModelOperationReferences(
 		JObject operation, Dictionary<string, List<string>> references) {
 		List<string> path = PathOf(operation);
-		JToken values = operation["values"];
+		JToken values = operation[Values];
 		if (path.Count >= 2 && path[^1] == ModelConfig && values is JObject modelConfig) {
 			AddPathReference(modelConfig, path[^2], references);
 			return;
@@ -203,32 +204,45 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 			return declared;
 		}
 		List<JObject> ops = operations.OfType<JObject>().ToList();
-		bool dataSourcesExist = baseDataSources is not null;
+		bool dataSourcesExist = ApplyMerges(ops, declared, baseDataSources is not null);
+		ApplyRemoves(ops, declared);
+		ApplyInserts(ops, declared, dataSourcesExist);
+		return declared;
+	}
+
+	/// <returns>Whether a <c>dataSources</c> object exists once the merges have run.</returns>
+	private static bool ApplyMerges(List<JObject> ops, HashSet<string> declared, bool dataSourcesExist) {
 		foreach (JObject operation in ops.Where(op => KindOf(op) == "merge")) {
-			if (IsRootOperation(operation) && (operation["values"] as JObject)?[DataSources] is JObject rootSources) {
+			if (IsRootOperation(operation) && (operation[Values] as JObject)?[DataSources] is JObject rootSources) {
 				AddKeys(rootSources, declared);
 				dataSourcesExist = true;
-			} else if (PathOf(operation) is [DataSources] && dataSourcesExist && operation["values"] is JObject sources) {
+			} else if (dataSourcesExist && PathOf(operation) is [DataSources] && operation[Values] is JObject sources) {
 				AddKeys(sources, declared);
 			}
 		}
+		return dataSourcesExist;
+	}
+
+	private static void ApplyRemoves(List<JObject> ops, HashSet<string> declared) {
 		foreach (JObject operation in ops.Where(op => KindOf(op) == "remove")) {
 			List<string> path = PathOf(operation);
 			if (path.Count == 2 && path[0] == DataSources && path[1] is { } removedName) {
 				declared.Remove(removedName);
 			} else if (path is [DataSources] && operation["properties"] is JArray properties) {
-				foreach (string removedProperty in properties.Select(StringValue).Where(name => name is not null)) {
-					declared.Remove(removedProperty);
-				}
+				declared.ExceptWith(properties.Select(StringValue).Where(name => name is not null));
 			}
 		}
-		foreach (JObject operation in ops.Where(op => KindOf(op) == "insert")) {
-			if (PathOf(operation) is [DataSources] && dataSourcesExist
-				&& StringValue(operation["propertyName"]) is { } insertedName && operation["values"] is JObject) {
+	}
+
+	private static void ApplyInserts(List<JObject> ops, HashSet<string> declared, bool dataSourcesExist) {
+		if (!dataSourcesExist) {
+			return;
+		}
+		foreach (JObject operation in ops.Where(op => KindOf(op) == "insert" && PathOf(op) is [DataSources])) {
+			if (StringValue(operation["propertyName"]) is { } insertedName && operation[Values] is JObject) {
 				declared.Add(insertedName);
 			}
 		}
-		return declared;
 	}
 
 	private static string KindOf(JObject operation) => StringValue(operation["operation"])?.ToLowerInvariant();

@@ -457,15 +457,14 @@ public sealed class PageUpdateTool(
 			// PageUpdate → ValidateBody chain to async is out of scope for this PR.
 			SchemaValidationService.TryParseResources(options.Resources,
 				out Dictionary<string, string>? mobileResources, out _);
+			// The write mode decides the validation base: replace (default) validates against the base WITHOUT the
+			// page's own body (it gets overwritten); append validates against the full merged config (the own body
+			// survives the merge). update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
+			var baseContext = new PageMergedConfigContext(_commandResolver, options.SchemaName,
+				options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode, Logger: _logger);
 			PageSyncValidationResult mobileResult = MobilePageValidation
 				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, dataSourceValidator, mobileResources,
-					templateBaseContext: new PageMergedConfigContext(_commandResolver, options.SchemaName,
-						// The write mode decides the validation base: replace (default) validates against the base
-						// WITHOUT the page's own body (it gets overwritten); append validates against the full merged
-						// config (the own body survives the merge).
-						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
-						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-						Logger: _logger))
+					resolveTemplateBase: () => PageMergedConfigResolver.ResolveMergedConfig(baseContext))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {

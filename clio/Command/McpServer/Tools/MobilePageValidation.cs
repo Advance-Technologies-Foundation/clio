@@ -22,7 +22,6 @@ internal static class MobilePageValidation {
 		IComponentInfoCatalog webCatalog,
 		IPageDataSourceReferenceValidator dataSourceValidator,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
-		PageMergedConfigContext? templateBaseContext = null,
 		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
 		CancellationToken cancellationToken = default) {
 		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
@@ -52,17 +51,11 @@ internal static class MobilePageValidation {
 			// an array the mobile template owns, and the data-source check, to see data sources the template declares.
 			// Both share one lazy resolver, so the base is read at most once, and only when one of them needs it: a
 			// non-empty path diff without an own base object, or a binding to a data source the body does not
-			// declare. A caller may supply resolveTemplateBase directly (sync-pages pre-resolves the base OFF its
-			// per-tenant lock and hands it in as a no-network delegate); otherwise it is derived from the context. A
-			// null context (validate-page, which has no schema/environment) resolves to no base: the oracle seeds its
-			// own and the data-source check passes with a "were not checked" warning.
-			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
-				resolveTemplateBase
-				?? (templateBaseContext is null
-					? null
-					: () => PageMergedConfigResolver.ResolveMergedConfig(templateBaseContext));
+			// declare. sync-pages hands in a base pre-resolved OFF its per-tenant lock; update-page a delegate over
+			// PageMergedConfigResolver. A null delegate (validate-page, which has no schema/environment) means no base:
+			// the oracle seeds its own and the data-source check passes with a "were not checked" warning.
 			Lazy<(string ViewModelConfigJson, string ModelConfigJson)>? sharedBase =
-				resolveBase is null ? null : new(resolveBase);
+				resolveTemplateBase is null ? null : new(resolveTemplateBase);
 			SchemaValidationResult applyResult = MobileDiffApplyValidator.Validate(
 				body, sharedBase is null ? null : () => sharedBase.Value);
 			if (!applyResult.IsValid) {
