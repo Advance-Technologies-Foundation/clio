@@ -425,7 +425,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// every path that reached here, also when the selector named the resolved package and the real
 		// cause was a missing baseline, which leaves the same save unchecked without the selector too.
 		string cause = DescribeWhyNoBaselineApplies(
-			options, metaFilePath, readWarning, baseline, baselineMatchesEnvironment, recordedDesignPackageUId);
+			metaFilePath, readWarning, baseline, baselineMatchesEnvironment, recordedDesignPackageUId);
 		if (callerPinnedChecksum) {
 			// The pin stays and still governs the save: TryCheckForExternalModification gates on
 			// ExpectedChecksum alone. Nothing local corroborates it, which is what the trace says.
@@ -435,11 +435,18 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				+ "came from another schema, the save is refused. " + PinnedChecksumMergeAdvice);
 			return (null, false, JoinWarnings(selectorWarnings));
 		}
+		// The arming advice depends on the cause. A recorded design package reaches this point only on the
+		// target-schema-uid path, and there get-page cannot help: it writes the same absent-schema baseline
+		// again, and no editable schema exists to supply an editable.checksum.
+		string armingAdvice = recordedDesignPackageUId is not null
+			? "To have it checked, save without target-schema-uid, or with target-package-uid set to the "
+				+ $"design package {recordedDesignPackageUId} instead."
+			: "To have it checked, run get-page for this page first (same environment and output-directory), "
+				+ "or pass the editable.checksum from that get-page as the checksum (MCP checksum, CLI "
+				+ "--expected-checksum).";
 		AddWarning(selectorWarnings,
 			$"External-modification detection did not run for this save of '{options.SchemaName}': {cause}. "
-				+ "The write proceeds unchecked. To have it checked, run get-page for this page first (same "
-				+ "environment and output-directory), or pass the editable.checksum from that get-page as the "
-				+ "checksum (MCP checksum, CLI --expected-checksum).");
+				+ "The write proceeds unchecked. " + armingAdvice);
 		return (metaFilePath, false, JoinWarnings(selectorWarnings));
 	}
 
@@ -452,7 +459,6 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// says so for them, because that is what tells the caller the selector is not the cause.
 	/// </remarks>
 	private static string DescribeWhyNoBaselineApplies(
-		PageUpdateOptions options,
 		string metaFilePath,
 		string readWarning,
 		PageBaselineInfo baseline,

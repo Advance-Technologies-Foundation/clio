@@ -466,6 +466,26 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
+	[Description("Issue #1741: on the target-schema-uid path the resolved context carries no design package, so an absent-schema baseline carried by design package must never be promoted there. Promoting it would refuse a real target-schema-uid redirect to an existing schema as schema-created-externally.")]
+	public void TryUpdatePage_ShouldNotPromoteTheDesignPackageBaseline_WhenTargetSchemaUidIsSupplied() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.TargetSchemaUId = SchemaUId;
+		options.ConditionalBaselineDesignPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaAbsent = true;
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "target-schema-uid bypasses package resolution, so the package baseline cannot apply");
+		response.Conflict.Should().BeFalse(because: "refusing here would be a false conflict on a genuine redirect");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "the package baseline must not be promoted");
+		options.ConditionalBaselineApplied.Should().BeFalse(because: "nothing was promoted, so nothing may be refreshed");
+	}
+
+	[Test]
 	[Description("TryUpdatePage must return a schema-created-externally conflict when the baseline says absent but a replacing schema now exists.")]
 	public void TryUpdatePage_ShouldReturnConflict_WhenBaselineSaysAbsentButReplacingSchemaExists() {
 		// Arrange

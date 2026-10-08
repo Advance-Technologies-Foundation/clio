@@ -500,6 +500,48 @@ public sealed class PageBaselineGuardTests {
 			because: "nothing on disk can be matched to this target, so the save really is unchecked");
 		warning.Should().Contain("recorded no editable schema",
 			because: "the trace has to name the actual cause, which is a baseline the target cannot be matched to");
+		warning.Should().NotContain("get-page for this page first",
+			because: "get-page would write the same absent-schema baseline again, so that advice cannot arm the check");
+		warning.Should().Contain("save without target-schema-uid",
+			because: "the trace must name the only way this save can be checked");
+	}
+
+	[Test]
+	[Description("Issue #1741: a pinned selector save with no baseline on disk keeps the pin, and the trace says the pin could not be corroborated locally and why, instead of claiming a redirect.")]
+	public void TryArm_ShouldSayThePinCouldNotBeCorroborated_WhenAPinnedSelectorSaveHasNoBaseline() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum", because: "the pin keeps governing the save");
+		warning.Should().Contain("could not be corroborated locally",
+			because: "nothing on disk backs the pin, and the caller must learn that");
+		warning.Should().Contain("no .clio-pages baseline", because: "a missing baseline is the actual cause");
+		warning.Should().NotContain("redirect the write", because: "nothing proves a redirect here");
+	}
+
+	[Test]
+	[Description("Issue #1741: a pinned selector save whose absent-schema baseline was captured for another environment keeps the pin, and the trace names the environment as the cause.")]
+	public void TryArm_ShouldNameTheOtherEnvironment_WhenAPinnedSelectorSaveHasABaselineFromAnotherEnvironment() {
+		// Arrange
+		const string designPackageUId = "99999999-8888-7777-6666-555555555555";
+		AddMetaWithBaseline("other-env", checksum: null, editableExists: false, designPackageUId: designPackageUId);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = designPackageUId;
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ExpectedChecksum.Should().Be("caller-pinned-checksum", because: "the pin keeps governing the save");
+		warning.Should().Contain("could not be corroborated locally", because: "nothing on disk backs the pin");
+		warning.Should().Contain("another environment", because: "the trace has to name the actual cause");
 	}
 
 	[Test]
