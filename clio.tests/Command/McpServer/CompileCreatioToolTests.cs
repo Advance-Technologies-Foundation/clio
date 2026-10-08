@@ -816,8 +816,10 @@ public sealed class CompileCreatioToolTests
 				because: "when compile-status holds no record, it lists the environment's own compilation history rather than leaving the agent to compile again");
 			text.Should().Contain("written since your call",
 				because: "the finish time is what ties a history row to this compile");
-			text.Should().Contain("over five minutes old",
+			text.Should().Contain("over seven minutes old",
 				because: "one row is not a finished compile: rows arrive as each project ends");
+			text.Should().Contain(CompileStatusTool.HistoryRuleSummary,
+				because: "every surface that summarizes the history rule uses the one short form, with both of its exits - the user before a restart on rows alone, and a stop with the user when no row ever comes");
 		}
 	}
 

@@ -82,8 +82,8 @@ internal static class McpProgressHeartbeat {
 	/// The cost is more polling: an operation that finished between 45 s and 150 s used to return its
 	/// result and now returns the in-progress envelope. The parent's bound on one sticky call moves with
 	/// this value (<c>McpWorkerCallDispatcher.DefaultStickyCallBudget</c>). It is measured from the start
-	/// of the race, so a tool with work before the race (the restart request) subtracts that work from
-	/// it; the parent's queueing and the worker's spawn are not counted. run-process does not use it
+	/// of the race, which is why the restart tools race their restart request too, not only the readiness
+	/// wait; the parent's queueing and the worker's spawn are not counted. run-process does not use it
 	/// (<c>RunProcessTool.RunProcessResponseDeadline</c>).
 	/// </para>
 	/// </remarks>

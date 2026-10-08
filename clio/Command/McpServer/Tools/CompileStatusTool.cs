@@ -93,9 +93,10 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// <para>
 	/// <b>One row is not a finished compile.</b> A compile writes a row as each project's build ends, up to about
 	/// half a minute apart, and the runtime reload lands about two minutes after the last row (see
-	/// <c>CompilationCompletionDecider</c>). "Finished" is "the newest row is more than five minutes old": the quiet
-	/// window <c>CompileConfigurationCommand.QuietFallback</c> uses when it sees no reload, so an agent reading the
-	/// history waits exactly as long as clio's own compile would.
+	/// <c>CompilationCompletionDecider</c>). "Finished" is "the newest row is more than seven minutes old": the
+	/// five-minute quiet window <c>CompileConfigurationCommand.QuietFallback</c> uses when it sees no reload, plus two
+	/// minutes for a slower reload and for skew between this host's clock, which stamps <c>checked-utc</c>, and the
+	/// environment's, which stamped the rows.
 	/// </para>
 	/// <para>
 	/// <b>The rows cannot prove whose they are.</b> Other compiles and schema publishes write rows too, and
@@ -114,12 +115,26 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		+ "compile-creatio - at least as long ago as your client's timeout error says it waited, plus the time since - "
 		+ "can be your compile's; other compiles and schema publishes write rows too, so match by time. Any of them with "
 		+ "succeeded=false and errors means a build failed. Treat your compile as finished only when its newest row is "
-		+ "more than five minutes old: until then more rows can follow, and the application reloads about two minutes "
+		+ "more than seven minutes old: until then more rows can follow, and the application reloads about two minutes "
 		+ "after the last one. These rows cannot prove which compile wrote them, so ask the user before a restart that "
 		+ "rests on them alone. If no row was written since your call, the compile is still running: call compile-status "
 		+ "again in a minute or two. If a package or process-name compile has had a few minutes, or a full one about 20, "
 		+ "and still no row was written since your call, read " + LastCompilationLogTool.ToolName
 		+ " (through clio-run) and ask the user before compiling again.";
+
+	/// <summary>
+	/// The short form of the history rule, the one every tool surface that summarizes it reuses.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="HistoryNote"/>, which every not-found answer carries, is the full rule. The summary keeps both of its
+	/// exits - the user's confirmation before a restart that rests on rows alone, and a stop with the user when no row
+	/// ever comes - because an agent may act on a description without ever reading the note.
+	/// </remarks>
+	internal const string HistoryRuleSummary =
+		"rows written since your call can be your compile's (other compiles write rows too); it has finished only once "
+		+ "its newest row is over seven minutes old, and a restart resting on those rows alone needs the user's "
+		+ "confirmation; none yet means it still runs, and if none appears after a few minutes (about 20 for a full "
+		+ "compile), read " + LastCompilationLogTool.ToolName + " and ask the user before compiling again.";
 
 	/// <summary>
 	/// The rest of the note of a <c>not-found</c> answer whose history could not be read.
@@ -222,7 +237,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
-	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: it then lists the environment's newest compilation-history rows with the time each finished (UTC, and seconds before checked-utc). Rows written since you called compile-creatio can be your compile's (other compiles write rows too), and it has finished only once its newest row is over five minutes old; if no row was written since your call, it is still running, so poll again.")]
+	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: it then lists the environment's newest compilation-history rows with the time each finished (UTC, and seconds before checked-utc): " + HistoryRuleSummary)]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
@@ -435,7 +450,7 @@ public sealed record CompileHistoryEntry(
 	DateTime FinishedUtc,
 
 	[property: JsonPropertyName("finished-seconds-ago")]
-	[Description("How long before checked-utc the row was written, in seconds.")]
+	[Description("How long before checked-utc the row was written, in seconds. checked-utc is this clio host's clock and finished-utc the environment's, so a skew between the two shifts it.")]
 	long FinishedSecondsAgo,
 
 	[property: JsonPropertyName("duration-seconds")]

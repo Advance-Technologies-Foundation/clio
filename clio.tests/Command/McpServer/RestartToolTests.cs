@@ -433,6 +433,61 @@ public sealed class RestartToolTests {
 		}
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: the restart request runs inside the response-deadline race, so a request that has not returned when the deadline passes - a fresh worker's login, an application reloading after a compile - answers in-progress at once, saying the request is not yet confirmed and pointing at restart-status, instead of answering after a 60 s client has given up.")]
+	public async Task RestartInstanceByName_Should_SayTheRequestIsPending_WhenTheDeadlinePassesBeforeTheRequestReturns() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		ManualResetEventSlim requestGate = new(false);
+		FakeRestartCommand resolvedCommand = new() { RequestGate = requestGate };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, commandResolver,
+			new RestartOperationRegistry()) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			CommandExecutionResult result = await tool.RestartInstanceByName("sandbox");
+
+			// Assert
+			string notice = string.Join(" ", result.Output.Select(message => message.Value?.ToString()));
+			result.ExitCode.Should().Be(0, because: "an unanswered request is not a failure yet");
+			notice.Should().Contain("has not been answered yet",
+				because: "the notice must not claim the restart was accepted before the request returned");
+			notice.Should().NotContain("already succeeded",
+				because: "nothing about the request's outcome is known at the deadline");
+			notice.Should().Contain("restart-status",
+				because: "the operation is begun before the request, so restart-status can report what the request did");
+		} finally {
+			requestGate.Set();
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: a restart request that fails is recorded as requestfailed, so restart-status can report it to an agent that already got an in-progress answer - not as timedout, which would claim a restart happened and only the warm-up failed.")]
+	public async Task RestartInstanceByName_Should_RecordRequestFailed_WhenTheRestartRequestFails() {
+		// Arrange
+		FakeRestartCommand resolvedCommand = new() { ExitCodeToReturn = 1 };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant-a");
+		RestartOperationRegistry registry = new();
+		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, commandResolver, registry);
+
+		// Act
+		CommandExecutionResult result = await tool.RestartInstanceByName("sandbox");
+
+		// Assert
+		result.ExitCode.Should().NotBe(0, because: "the restart request failed and that is the call's answer");
+		registry.GetLatest("tenant-a").Status.Should().Be(RestartOperationStatus.RequestFailed,
+			because: "the operation begun before the request must end with what actually failed");
+	}
+
 	private sealed class FakeRestartCommand : RestartCommand {
 		public RestartOptions? CapturedOptions { get; private set; }
 		public RestartOptions? CapturedReadinessOptions { get; private set; }
@@ -447,6 +502,10 @@ public sealed class RestartToolTests {
 		/// branch or hold the lock-free wait open while it probes a concurrent call.</summary>
 		public ManualResetEventSlim? ReadinessGate { get; init; }
 
+		/// <summary>When set, <see cref="Execute"/> blocks on this gate so a test can hold the restart request past the
+		/// response deadline.</summary>
+		public ManualResetEventSlim? RequestGate { get; init; }
+
 		public FakeRestartCommand()
 			: base(
 				Substitute.For<IApplicationClient>(),
@@ -456,6 +515,7 @@ public sealed class RestartToolTests {
 
 		public override int Execute(RestartOptions options) {
 			CapturedOptions = options;
+			RequestGate?.Wait();
 			return ExitCodeToReturn;
 		}
 
@@ -465,25 +525,5 @@ public sealed class RestartToolTests {
 			ReadinessGate?.Wait();
 			return ReadyToReturn;
 		}
-	}
-
-	[TestCase(10, 35, TestName = "a fast restart request leaves the rest of the deadline")]
-	[TestCase(45, 0, TestName = "a request that used the whole deadline leaves none")]
-	[TestCase(70, 0, TestName = "a request that outlived the deadline leaves none, never a negative")]
-	[Category("Unit")]
-	[Description("ENG-102333: the restart tools count the response deadline from before their restart request, so a slow request - a fresh worker's login, an application reloading after a compile - uses the deadline up instead of being added to it. A request that alone outlasts 60 s still answers late; the deadline does not race the request itself.")]
-	public void RemainingResponseDeadline_ShouldSubtractTheRestartRequest(int elapsedSeconds, int expectedSeconds) {
-		// Arrange
-		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, Substitute.For<IToolCommandResolver>(),
-			new RestartOperationRegistry()) {
-			ResponseDeadlineOverride = TimeSpan.FromSeconds(45)
-		};
-
-		// Act
-		TimeSpan remaining = tool.RemainingResponseDeadline(TimeSpan.FromSeconds(elapsedSeconds));
-
-		// Assert
-		remaining.Should().Be(TimeSpan.FromSeconds(expectedSeconds),
-			because: "the readiness wait gets only what the request left of the deadline, and a spent deadline answers in-progress at once");
 	}
 }

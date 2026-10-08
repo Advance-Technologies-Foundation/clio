@@ -22,6 +22,6 @@ with it the operation records and any work a worker was in the middle of.
 
 **What breaks if you ignore it** — an answer that reaches this client after 60 s is lost with its record. The
 default response deadline is 45 s for that reason, but it counts from when the tool starts: a saturated worker
-pool's queueing, a worker's start, and a restart request that alone outlasts 60 s still push an answer past it. A
+pool's queueing and a worker's start still push an answer past it. A
 fix checked only with the CLI at its defaults never reaches this path; the CLI with `MCP_TOOL_TIMEOUT=60000`
 reproduces the timeout but not the restart.

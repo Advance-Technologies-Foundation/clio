@@ -112,7 +112,7 @@ public sealed class CompileStatusToolTests {
 			because: "a not-found that reads as 'nothing ran' sends an agent to compile again - a second runtime reload for every user");
 		response.Note.Should().Contain("match by time",
 			because: "other compiles write rows too, and the time is what ties a row to the agent's compile");
-		response.Note.Should().Contain("only when its newest row is more than five minutes old",
+		response.Note.Should().Contain("only when its newest row is more than seven minutes old",
 			because: "a compile writes a row per project as each ends, so its first row is not its end, and the application reloads after the last one (measured: a full compile was over five minutes after its last row)");
 		response.Note.Should().Contain("ask the user before compiling again",
 			because: "a compile that wrote no row ends in the user's decision - core-rules requires their confirmation before every compile");
@@ -339,10 +339,8 @@ public sealed class CompileStatusToolTests {
 			because: "an agent whose client gave up must know the compile keeps running and is tracked here");
 		description.Should().Contain("compilation-history rows",
 			because: "the description must say what a not-found answer carries for a session that holds no record");
-		description.Should().Contain("since you called compile-creatio",
-			because: "the description must say how a row is tied to the agent's own compile");
-		description.Should().Contain("over five minutes old",
-			because: "one row is not a finished compile, and the description must say when it is");
+		description.Should().Contain(CompileStatusTool.HistoryRuleSummary,
+			because: "the description uses the one short form of the history rule, with both of its exits");
 	}
 
 	[Test]

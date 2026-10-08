@@ -441,7 +441,9 @@ session lose their in-flight calls too. Two changes answer it, and a third was r
 - the default response deadline (`McpProgressHeartbeat.DefaultResponseDeadline`) is **45 s**, down from 150 s,
   so the in-progress answer reaches a 60 s client first (measured delivery 1-3 s after the deadline; a full
   compile on a stand answered at 46.2 s). The sticky call budget is derived from it (45 s + 60 s = 105 s), and
-  the restart tools count it from before their restart request, not from the readiness wait. Two deadlines are
+  the restart tools race their restart request as well as the readiness wait. Their operation is begun before
+  the request, so an answer that arrives first points at `restart-status`, which reports a failed request as the
+  new status `requestfailed`. Two deadlines are
   deliberately NOT lowered:
   - the read-response deadline (120 s, `adr-read-only-mcp-response-deadline.md`): a read that hits it is lost,
     not continued, so lowering it would fail reads that take 45-60 s and succeed today;
@@ -457,7 +459,7 @@ session lose their in-flight calls too. Two changes answer it, and a third was r
   returned true UTC and, after an application restart, local time with a `Z`. The read is abandoned after
   25 s, login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
   reported as such rather than as a read to retry. One row is not a finished compile - a compile writes a row as
-  each project ends - so agents are told it has finished only once its newest row is over five minutes old (the runtime reload lands about two minutes after the last row; five minutes is the quiet window clio's own compile uses when it sees no reload), that a restart resting on these rows alone needs the user's confirmation, and that a
+  each project ends - so agents are told it has finished only once its newest row is over seven minutes old (the runtime reload lands about two minutes after the last row; seven is the five-minute quiet window clio's own compile uses when it sees no reload, plus two minutes for a slower reload and for skew between the clio host's clock and the environment's), that a restart resting on these rows alone needs the user's confirmation, and that a
   compile which wrote no row ends in asking the user, never in a compile of their own;
 - persisting the operation registry outside the server process was rejected: the worker that waits for the
   result dies with the server, so a persisted record could only say "started, outcome unknown" and would

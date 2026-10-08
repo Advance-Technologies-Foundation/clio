@@ -1,7 +1,6 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,32 +27,14 @@ public class RestartTool(
 	internal const string RestartByCredentialsToolName = "restart-by-credentials";
 
 	/// <summary>
-	/// Test seam overriding the call's MCP response deadline, which the readiness wait gets what is left of through
-	/// <see cref="RemainingResponseDeadline"/>. <see langword="null"/> in
+	/// Test seam overriding the call's MCP response deadline, which races the restart request and the readiness wait
+	/// together. <see langword="null"/> in
 	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> applies);
 	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
 	/// without racing the real ceiling.
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
-	/// <summary>
-	/// What is left of the response deadline for the readiness wait once the restart request has taken
-	/// <paramref name="elapsed"/>.
-	/// </summary>
-	/// <param name="elapsed">How long the call has run before the readiness wait starts.</param>
-	/// <returns>The rest of the deadline, never negative.</returns>
-	/// <remarks>
-	/// The deadline is the CALL's, not the wait's (ENG-102333). The restart request runs before the race, in a
-	/// fresh sticky worker that logs in first, and right after a compile the application can hang a request for
-	/// 44 s. Counted from the start of the wait, the in-progress answer would arrive that much later than the
-	/// deadline promises, past the 60 s after which Claude Code desktop gives up and restarts the MCP server. A
-	/// request that used the whole deadline leaves zero, and the race then answers in-progress at once: the
-	/// restart was requested successfully, only the readiness is still unknown.
-	/// </remarks>
-	internal TimeSpan RemainingResponseDeadline(TimeSpan elapsed) {
-		TimeSpan remaining = (ResponseDeadlineOverride ?? McpProgressHeartbeat.DefaultResponseDeadline) - elapsed;
-		return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
-	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
@@ -183,37 +164,60 @@ public class RestartTool(
 			return InternalExecute<RestartCommand>(options);
 		}
 
-		// Phase 1: restart request only, under the per-tenant execution lock (released on return). It is NOT inside the
-		// deadline race: it is a synchronous login plus request, and a request that alone outlasts the 60 s after which
-		// Claude Code desktop gives up still answers late (ENG-102333). Racing it would need an in-progress answer for
-		// "the restart has not been confirmed as requested", which has no poll route; until that exists, the deadline
-		// counts the request's time (RemainingResponseDeadline) so it is at least not added on top.
-		Stopwatch sinceCall = Stopwatch.StartNew();
-		CommandExecutionResult requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
-		if (requestResult.ExitCode != 0) {
-			// The restart request itself failed (or the environment did not resolve) — surface it as-is; there
-			// is nothing to wait on, so no operation is tracked.
-			return requestResult;
-		}
-
-		// Phase 2: readiness wait, lock-free and tracked. Begin BEFORE the deadline race so the operation-id
-		// is available for the in-progress notice even when the wait outlives the response.
+		// The operation is begun BEFORE the restart request, and the request runs INSIDE the deadline race (ENG-102333).
+		// A fresh sticky worker logs in first, and right after a compile a request can hang for 44 s; outside the race
+		// that time came on top of the deadline and could push the answer past the 60 s after which Claude Code desktop
+		// gives up and restarts the MCP server, losing the restart-status record. Begun first, the operation gives an
+		// answer that arrives before the request returned somewhere to point: restart-status reports a failed request as
+		// failed, and an accepted one as its readiness wait's outcome.
 		string tenantKey = ResolveTenantLockKey(options);
 		RestartOperationRecord operation = registry.Begin(tenantKey, waitContext.EnvironmentName);
+		RestartRequestPhase requestPhase = new();
 		try {
 			return await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
-				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId),
-				deadline: RemainingResponseDeadline(sinceCall.Elapsed),
+				() => RequestThenWaitForReadiness(options, waitContext, tenantKey, operation.OperationId, requestPhase),
+				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
-			return CommandExecutionResult.FromInfo(
-				BuildInProgressMessage(
+			return CommandExecutionResult.FromInfo(requestPhase.Accepted
+				? BuildInProgressMessage(
 					waitContext.TargetDescription, waitContext.ToolName, waitContext.WaitTimeoutSeconds,
-					operation.OperationId, waitContext.EnvironmentName));
+					operation.OperationId, waitContext.EnvironmentName)
+				: BuildRequestPendingMessage(
+					waitContext.TargetDescription, waitContext.ToolName, operation.OperationId,
+					waitContext.EnvironmentName));
 		}
+	}
+
+	// Phase 1, the restart request, runs under the per-tenant execution lock (released when InternalExecute returns);
+	// Phase 2, the readiness wait, does not. Both run on the detached work, and every exit finishes the operation, so
+	// restart-status can never observe it stuck "running".
+	private CommandExecutionResult RequestThenWaitForReadiness(RestartOptions options, RestartWaitContext waitContext,
+		string tenantKey, string operationId, RestartRequestPhase requestPhase) {
+		CommandExecutionResult requestResult;
+		try {
+			requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
+		} catch (Exception) {
+			registry.FinishRequestFailed(operationId, 1);
+			throw;
+		}
+		if (requestResult.ExitCode != 0) {
+			// The restart request itself failed (or the environment did not resolve) - there is nothing to wait on.
+			registry.FinishRequestFailed(operationId, requestResult.ExitCode);
+			return requestResult;
+		}
+		requestPhase.MarkAccepted();
+		return RunReadinessWait(options, requestResult, waitContext, tenantKey, operationId);
+	}
+
+	// Written by the detached work, read by the deadline branch on another thread.
+	private sealed class RestartRequestPhase {
+		private volatile bool _accepted;
+		internal bool Accepted => _accepted;
+		internal void MarkAccepted() => _accepted = true;
 	}
 
 	// Runs the read-only readiness poll WITHOUT the per-tenant execution lock (so it does not serialize other
@@ -286,6 +290,22 @@ public class RestartTool(
 		+ $"readiness wait continues server-side for up to {waitTimeoutSeconds}s). "
 		+ BuildPollGuidance(operationId, environmentName)
 		+ $" Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
+
+	/// <summary>
+	/// Builds the in-progress notice for a restart whose request had not been answered when the deadline passed.
+	/// </summary>
+	/// <param name="targetDescription">The restart target, as the notice names it.</param>
+	/// <param name="toolName">The restart tool, which the notice says not to call again.</param>
+	/// <param name="operationId">The operation restart-status reports.</param>
+	/// <param name="environmentName">The registered environment, or <see langword="null"/> on the credentials path.</param>
+	/// <returns>The notice.</returns>
+	internal static string BuildRequestPendingMessage(
+		string targetDescription, string toolName, string operationId, string environmentName) =>
+		$"The restart request for {targetDescription} has not been answered yet (MCP response deadline reached); it "
+		+ "keeps going server-side, so it is not yet known whether the restart was accepted. "
+		+ BuildPollGuidance(operationId, environmentName)
+		+ (string.IsNullOrWhiteSpace(environmentName) ? string.Empty : " A request that fails is reported there as requestfailed.")
+		+ $" Do NOT retry {toolName}.";
 
 	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has
 	// none. Corrected 2026-08-18, story 7 AC-00: this comment used to claim the two keys could NEVER be
