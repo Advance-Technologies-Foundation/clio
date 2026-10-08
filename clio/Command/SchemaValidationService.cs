@@ -2016,21 +2016,25 @@ public static class SchemaValidationService
 			JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v)
 				? v
 				: entry;
-			if (values.ValueKind != JsonValueKind.Object) {
-				continue;
-			}
-			// A merge carries no type, so every property is checked.
-			string componentType = values.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
-				typeElement.ValueKind == JsonValueKind.String
-					? typeElement.GetString()
-					: null;
-			foreach (JsonProperty property in values.EnumerateObject()) {
-				if (componentType is null || declaredInputs.DeclaresProperty(componentType, property.Name)) {
-					ExtractDollarBindings(property.Value, bindings);
-				}
+			if (values.ValueKind == JsonValueKind.Object) {
+				CollectDeclaredPropertyBindings(values, declaredInputs, bindings);
 			}
 		}
 		return bindings;
+	}
+
+	private static void CollectDeclaredPropertyBindings(
+		JsonElement values, DeclaredPropertyIndex declaredInputs, HashSet<string> bindings) {
+		// A merge carries no type, so every property is checked.
+		string componentType = values.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+			typeElement.ValueKind == JsonValueKind.String
+				? typeElement.GetString()
+				: null;
+		IEnumerable<JsonProperty> checkedProperties = values.EnumerateObject()
+			.Where(property => componentType is null || declaredInputs.DeclaresProperty(componentType, property.Name));
+		foreach (JsonProperty property in checkedProperties) {
+			ExtractDollarBindings(property.Value, bindings);
+		}
 	}
 
 	private static void ExtractDollarBindings(JsonElement value, HashSet<string> bindings) {
