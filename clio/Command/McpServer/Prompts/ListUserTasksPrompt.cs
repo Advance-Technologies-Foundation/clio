@@ -22,6 +22,8 @@ public static class ListUserTasksPrompt {
 		 List the user-facing user tasks available on Creatio environment `{environmentName}` using the
 		 `list-user-tasks` tool. The result is the same palette the visual process designer shows (including
 		 custom user tasks); each entry has a name and a UId. Use one of the returned names as the
-		 `userTaskName` of a `userTask` element when building a process with `create-business-process`.
+		 `userTaskName` of a `userTask` element when building a process with `create-business-process` -
+		 except `PreconfiguredPageUserTask` and `OpenEditPageUserTask`, which are built as `preconfiguredPage` /
+		 `openEditPage` elements with their blocks, because a generic `userTask` cannot carry those blocks.
 		 """;
 }
