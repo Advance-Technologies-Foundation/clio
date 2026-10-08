@@ -45,8 +45,13 @@ public class ListUserTasksTool(
 		 OpenWorld = false),
 	 Description("List the user-facing user tasks available on a Creatio environment (the process designer "
 		 + "palette), including custom ones. Returns each task's name and UId; pass a name as a userTaskName "
-		 + "on a userTask element when building a process with create-business-process. Three exceptions, where a "
-		 + "DEDICATED element type carries configuration the generic userTask route cannot: for "
+		 + "on a userTask element when building a process with create-business-process. Exceptions, where a "
+		 + "DEDICATED element type carries configuration the generic userTask route cannot: "
+		 + "PreconfiguredPageUserTask (Pre-configured page) is built ONLY as type preconfiguredPage with its "
+		 + "preconfiguredPage block - the generic route cannot carry that block and is REFUSED; "
+		 + "OpenEditPageUserTask (Open edit page) is built as type openEditPage with its openEditPage block - "
+		 + "that block is refused on a generic userTask, so the generic route builds a page-less element that "
+		 + "fails at run time; for "
 		 + "EmailTemplateUserTask (Send email) prefer type sendEmail with its email block, and for "
 		 + "ApprovalUserTask (Approval) prefer type approval with its approval block — an Approval element built "
 		 + "as a generic userTask has no approval object, no record under approval and nobody assigned to approve "
@@ -55,9 +60,11 @@ public class ListUserTasksTool(
 		+ "and for ChangeAdminRightsUserTask (Change access rights) prefer type changeAccessRights with its "
 		 + "accessRights block plus the element record filter - a generic userTask naming that schema IS accepted "
 		 + "and carries both, but does not survive a deployed CrtProcessBuilder that predates the element, which "
-		 + "discards the block and still answers success. If an environment rejects either (\"Element type 'sendEmail' is not supported yet\"), its deployed "
-		 + "CrtProcessBuilder predates that element type: fall back to a generic userTask named after the schema, "
-		 + "which older packages do build. Requires the "
+		 + "discards the block and still answers success. If an environment rejects one of these types (\"Element type 'sendEmail' is not supported yet\"), its deployed "
+		 + "CrtProcessBuilder predates that element type: for EmailTemplateUserTask and ApprovalUserTask only, "
+		 + "fall back to a generic userTask named after the schema, which older packages do build with the block; "
+		 + "for every other task above, update the package with install-process-builder instead - a generic "
+		 + "PreconfiguredPageUserTask or OpenEditPageUserTask has no page and fails at run time. Requires the "
 		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment. Install it with install-process-builder.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
