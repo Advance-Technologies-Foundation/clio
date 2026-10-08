@@ -38,6 +38,9 @@ D-numbers (D1-D29) and measurement ids (M1-M26) are the ones defined in [decisio
 (M26 is the T-19 probe of [traps](eng-92719-file-processing-element-traps.md#t-19)).
 
 Written 2026-10-01, read-only: nothing was built, committed, pushed, merged, or written to Jira or to the stand.
+Anchors, version numbers, floors and in-flight work were re-checked on 2026-10-08 against crt-process-builder `main`
+`d9571626` (CrtProcessBuilder 1.6.6.85), clio `master` `db6e2bf9e` and clio-knowledge `master` `73a619e`
+(libraryVersion 1.15.100). The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54.
 **Basis labels:**
 - **measured**: observed by reading git, `gh api` or Jira on 2026-10-01, or recounted from delivery data;
 - **source**: read in code or documentation (a runtime claim with this label is a hypothesis);
@@ -57,10 +60,18 @@ Written 2026-10-01, read-only: nothing was built, committed, pushed, merged, or 
 | **MH** | not created: "typeFromElement collection mirror leaves its items unbound" waited on M3, and M3 refuted defect H-1 on 2026-10-02 | (would have been a Sub-task of PT) |
 
 In-flight work that shares files with this split:
-- **CA** = ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap;
+- **CA** = ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap. Its package PR
+  (https://creatio.ghe.com/engineering/crt-process-builder/pull/81, 1.6.6.82) and clio PR https://github.com/Advance-Technologies-Foundation/clio/pull/1693 merged on 2026-10-07.
+  Still open: the clio branch `feature/ENG-99970-target-package` (+42 B on the create description) and the knowledge
+  branch `feature/ENG-99970-process-digest` (claims 1.16.2);
 - **SK** = ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17
   graph validator into the write path (ENG-88414). ENG-88414 is AI-driven application development;
 - **CI** = ENG-92113 Deliver clioprocessbuiilder package - CI for adding package into clio release.
+
+Also in flight, not part of O8: ENG-102112 (the generic `userTask` Pre-configured page refusal; package and clio
+branches `feature/ENG-102112-preconfigured-page-generic-route`, claiming 1.6.6.87, not on `main`). It inserts its
+refusal in `UserTaskElementHandler.cs` right after `FindInstanceByName`, keyed on the resolved schema UId: the
+shape and insertion point OA.5 plans. It is the precedent for OA.5 and a certain merge conflict with PK-OA.
 
 PR ids:
 - `PK-` is a crt-process-builder PR (https://creatio.ghe.com/engineering/crt-process-builder, base `main`);
@@ -106,15 +117,15 @@ variant registry from throughput-first.
 | 1 | Package `main`: ruleset 82837 sets `dismiss_stale_reviews_on_push: true` and allows the merge methods `merge` and `squash`. Ruleset 82852 has Copilot review every push except on drafts (`review_draft_pull_requests: false`). Ruleset 1555232 requires `continuous-integration/jenkins/pr-head`, with the strict up-to-date policy. Ruleset 82837 covers the default branch, `branches/**`, `creatio-branches/**` and `release/**`, so `feature/*` bases are outside it. | measured 2026-10-01 | `gh api --hostname creatio.ghe.com repos/engineering/crt-process-builder/rules/branches/main` |
 | 2 | clio `master`: no dismissal on push. Required checks, strict: Detect changes, Unit Tests, Integration Tests, Analyzer Tests, SonarCloud Code Analysis. Thread resolution is required. clio-knowledge `master`: no dismissal; one required check, "Producer contract suite", not strict. | measured 2026-10-01 | `gh api repos/Advance-Technologies-Foundation/{clio,clio-knowledge}/rules/branches/master` |
 | 3 | Two of our package PRs in review at the same time stamped the same version twice: 1.6.6.42 (`8c3acf07` ENG-91844 Implement full parameter mapping (sources); `9eae8795` ENG-92711 Script task element) and 1.6.6.49 (`4442d802`, `c7415f67`). | measured | `git show <sha>:packages/CrtProcessBuilder/descriptor.json` |
-| 4 | Open package PRs: https://creatio.ghe.com/engineering/crt-process-builder/pull/80 (SK, draft), https://creatio.ghe.com/engineering/crt-process-builder/pull/81 (CA, draft), https://creatio.ghe.com/engineering/crt-process-builder/pull/82 (ENG-95255 [Arch debt] Developer-Centric: make the cli-process-builder repository self-sufficient for a newcomer and an agent (ENG-92704); ENG-92704 is Create BP via AI Toolkit), https://creatio.ghe.com/engineering/crt-process-builder/pull/83 (CI). Their descriptor stamps (1.6.6.36, .39, .24, .24) are below `main`'s 1.6.6.54, so each one re-cuts when it merges. The highest stamp in history is 1.6.6.54; the reverted 1.6.6.900 probe stamp is ignored. | measured (the stamps come from the research checkout's refs; run `git fetch` before claiming a number) | `gh api ... pulls?state=open`; `git log --all -p -- packages/CrtProcessBuilder/descriptor.json` |
-| 5 | Guard tests that bind a rebundle into one tree: `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` (:940), `ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (:1335), `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral` (:1504), `CapabilityMapVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (:1565). `ExpectedArchiveVersion = "1.6.6.54"` (:318). | source (read 2026-10-01) | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
-| 6 | The floor literals are `1.6.6.40` in `CreateBusinessProcessCommand.cs:240`, `ModifyBusinessProcessCommand.cs:196` and `ModifyProcessAsNewVersionCommand.cs:59`. | source (read 2026-10-01) | clio `clio/Command/` |
+| 4 | Open package PRs: https://creatio.ghe.com/engineering/crt-process-builder/pull/80 (SK, draft), https://creatio.ghe.com/engineering/crt-process-builder/pull/81 (CA, draft), https://creatio.ghe.com/engineering/crt-process-builder/pull/82 (ENG-95255 [Arch debt] Developer-Centric: make the cli-process-builder repository self-sufficient for a newcomer and an agent (ENG-92704); ENG-92704 is Create BP via AI Toolkit), https://creatio.ghe.com/engineering/crt-process-builder/pull/83 (CI). Their descriptor stamps (1.6.6.36, .39, .24, .24) are below `main`'s 1.6.6.54, so each one re-cuts when it merges. The highest stamp in history is 1.6.6.54; the reverted 1.6.6.900 probe stamp is ignored. On 2026-10-08: CA's #81 has merged, `main` is at 1.6.6.85, and the highest claimed number is 1.6.6.87 (the ENG-102112 branches); 1.6.6.86 is held by nothing. | measured (the stamps come from the research checkout's refs; run `git fetch` before claiming a number) | `gh api ... pulls?state=open`; `git log --all -p -- packages/CrtProcessBuilder/descriptor.json` |
+| 5 | Guard tests that bind a rebundle into one tree: `BundledArchive_ShouldCarryAtLeastEveryDeclaredRequirement` (:940), `ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (:1335), `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral` (:1504), `CapabilityMapVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (:1565). `ExpectedArchiveVersion = "1.6.6.54"` (:318) when read on 2026-10-01; `"1.6.6.85"` on master `db6e2bf9e`. | source (read 2026-10-01; re-read 2026-10-08) | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` |
+| 6 | The floor literals are `1.6.6.77` in `CreateBusinessProcessCommand.cs:247`, `ModifyBusinessProcessCommand.cs:203` and `ModifyProcessAsNewVersionCommand.cs:66`, raised from 1.6.6.40 by ENG-102114 (https://github.com/Advance-Technologies-Foundation/clio/pull/1760, 2026-10-07). | source (read 2026-10-01; re-read 2026-10-08) | clio `clio/Command/` |
 | 7 | TeamCity never runs the process-designer e2e: `baseFilter` is `TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual`. A stand with an older package turns a new fixture into **Ignored**, not Failed (`Assert.Ignore`). | source (read 2026-10-01) | `clio.mcp.e2e/TestSelection/mcp-e2e-selection.json:46`; `clio.mcp.e2e/Support/Mcp/ProcessDesignerE2EArrange.cs:73-93` |
 | 8 | The ManagerMap arm list has no `fileprocessing`. Its suffix arm matches only tokens ending in `usertask`, so an older clio meeting the `fileprocessing` token returns `Unknown`, which is a hard `validate-process-graph` Error. | source (read 2026-10-01) | `clio/Command/ProcessModel/Schema.cs:1144-1149` |
 | 9 | Size against review latency, over the package's merged feature PRs. 1,500-4,500 added lines: 12 PRs, median 48.7 h open, 0.75 dismissed approvals per PR. 4,500+ lines: 12 PRs (the `nitro/sprint-3-release` merge https://creatio.ghe.com/engineering/crt-process-builder/pull/73 excluded), median 50.5 h, 1.58 dismissals per PR. Under 1,500 lines: 4-20 h, depending on which chore PRs are excluded. | measured (recount 2026-10-01 of `research/prsplit/pkg_stats.tsv`) | delivery data |
 | 10 | Delivery history: one package, clio and knowledge triple per ticket. Package merge to last merge took 30-71 min for ENG-92706 Send email element (custom message), ENG-96230 Collection process parameter type, ENG-99856 Sub-process element: support MULTI-INSTANCE (running the callee once per item of a collection), ENG-91844 Implement full parameter mapping (sources) and ENG-92711 Script task element. The one outlier is about 16 h, for ENG-96504 Read data element: collection mode. | measured | `research/delivery-surface-verification.md` C13 |
 | 11 | How `main` was merged, over its 13 most recent first-parent commits. Merge commits: https://creatio.ghe.com/engineering/crt-process-builder/pull/72, https://creatio.ghe.com/engineering/crt-process-builder/pull/73, https://creatio.ghe.com/engineering/crt-process-builder/pull/74, https://creatio.ghe.com/engineering/crt-process-builder/pull/75, https://creatio.ghe.com/engineering/crt-process-builder/pull/76, https://creatio.ghe.com/engineering/crt-process-builder/pull/77, https://creatio.ghe.com/engineering/crt-process-builder/pull/78, https://creatio.ghe.com/engineering/crt-process-builder/pull/79 and https://creatio.ghe.com/engineering/crt-process-builder/pull/84. Squashes: https://creatio.ghe.com/engineering/crt-process-builder/pull/68, https://creatio.ghe.com/engineering/crt-process-builder/pull/69, https://creatio.ghe.com/engineering/crt-process-builder/pull/70 and https://creatio.ghe.com/engineering/crt-process-builder/pull/71. | measured | `git log --first-parent origin/main` |
-| 12 | `ProcessMappingService.ResolveProcessParameter` matches process parameters by flat name only; element parameters go through `ResolveElementParameterForMapping`, which accepts dotted paths. So the Object variant's outputs (element parameters) can be mapped today, and process-parameter file paths cannot. | source | `PB/Mappings/ProcessMappingService.cs:221, 280, 425-435, 445` |
+| 12 | `ProcessMappingService.ResolveProcessParameter` matches process parameters by flat name only; element parameters go through `ResolveElementParameterForMapping`, which accepts dotted paths. So the Object variant's outputs (element parameters) can be mapped today, and process-parameter file paths cannot. | source | `PB/Mappings/ProcessMappingService.cs:380, 440, 594-604, 614` |
 | 13 | Jira today: link 560203 says ENG-95984 File process parameter type **blocks** ENG-96505 Element readiness and object attachments mode. ENG-96506 Generated report + process parameter modes has no links. FE's only children are OA and RP, and PT has none. FE "is blocked by" ENG-91843 Add and modify process parameters, which is Closed. | measured 2026-10-01 | Jira |
 | 14 | The package's CLAUDE.md defines no review gates; clio's AGENTS.md gates are applied to the package by convention. Gate 1 (before the PR opens) is "ALWAYS (comprehensive)". The size triage applies only to gate 2 (every new commit). | source (read 2026-10-01) | `pbm/CLAUDE.md`; clio `AGENTS.md` "Code review" |
 
@@ -171,8 +182,8 @@ package worktrees live on a short path, `C:/Projects/workspace/<short>`, because
 | KB-SF | libraryVersion bump | - | small | pins | refute-first fact check |
 
 **Version numbers are rules, not projections.** Each cut claims a number before cutting, in the PR
-description and in the shared cut claim (section 9). The claim is the first number at or above 1.6.6.55 that
-is free in both histories. Re-cuts burn numbers.
+description and in the shared cut claim (section 9). The claim is the first free number above the highest number
+claimed anywhere at cut time; today that means 1.6.6.88 or higher (section 9.1). Re-cuts burn numbers.
 
 The **floor** is the **final** cut of the clio PR, equal to `ExpectedArchiveVersion` when it merges. It is not
 the first cut. Two reasons:
@@ -207,8 +218,8 @@ behaviour moves in KB-PT (decisions D9).
 
 | Repo | Contents |
 |---|---|
-| pkg | The PR description maps each commit to its D-id. The commits:<br>(1) D1 aliases, and the Binary/BLOB refusal, which names File and keeps the substrings `not supported` and `Binary`;<br>(2) D2 `FileCollection` write alias and describe predicate; D3 defaults;<br>(3) D4 `ResolveProcessParameterPath`, with both `ResolveProcessParameter` callers switched (`ProcessMappingService.cs:221, 280`); behaviour-neutral, pinned by the existing tests;<br>(4) D5 binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in `ApplyMapping` (`:48-63`), and the whole `BindCollection` API with the P2 policy (MH does not exist);<br>(5) D6 dotted-mirror refusal;<br>(6) D7 constants, `referenceSchema`, delete guard, `setParameter` shape;<br>(7) D8 nested-only listing (`PB/Describe/ProcessDescriber.cs:187-193`) and the element-source decode;<br>(8) D9 parity: the mirror binds its items too (contingency X4, M3 refuted H-1);<br>(9) `docs/file-parameter-capture.md`;<br>(10) restamp, last.<br>The probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`PBT/ProcessParameterServiceTests.cs:1670-1678`) moves from `Binary` to `Image` or `Color`. Otherwise it would stop exercising the generic message once Binary gets its own. It is the only automated guard of the refusal text, because the clio e2e that pins the same substrings is in `McpE2E.ProcessDesigner`, which TeamCity never runs (section 3, row 7). `:144-150` is unchanged.<br>The PR's "Visible behaviour changes" section lists: (a) rule P1 of D5 changes what an item-only `InputRecordCollection` mapping writes: when the source is an item of a collection, the parent `InputRecordCollection` is now bound to the source's collection too, so a multi-instance sub-process iterates once per source row instead of once; (b) describe reports `sourceElement`/`sourceElementParameter` for every single-token element-to-element value; (c) `type: File` and `type: FileCollection` are accepted, and Binary/BLOB are refused with a message that names File. |
-| clio | Rebundle; floor raise; type lists in create and modify (+30 B / +28 B). Budget swap S1 + C6 (create) and S2 (modify), which must keep `this clio requires <floor>`, `multiInstanceOptions {...}` and the `stopped validating formulas` collapse clause, with no floor literal in the 60 characters before it (ENG-95984 File process parameter type plan CL-2). `ModifyProcessAsNewVersionTool.cs:83-88` floor parenthetical rewritten once. Describe decoded-source clause. **ManagerMap arm `"fileprocessing" or "processfile"`** (`Schema.cs:1144-1145`), with `ManagerMapResolveDataIdTests` cases and the update to `docs/knowledge/ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`. McpCapabilityMap rows. The Binary e2e `[Description]` reworded (refused for good). PT's story status flips (in-progress, review; the done flip rides in CL-OA). The spec set is CL-PT-DOC's (section 5.7). NEW `clio.mcp.e2e/FileParameterToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = floor). Must stay green on the stand, each result recorded in the PR: `SubProcessMultiInstanceToolE2ETests`, `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`, `DescribeProcessToolE2ETests`. |
+| pkg | The PR description maps each commit to its D-id. The commits:<br>(1) D1 aliases, and the Binary/BLOB refusal, which names File and keeps the substrings `not supported` and `Binary`;<br>(2) D2 `FileCollection` write alias and describe predicate; D3 defaults;<br>(3) D4 `ResolveProcessParameterPath`, with both `ResolveProcessParameter` callers switched (`ProcessMappingService.cs:380, 440`); behaviour-neutral, pinned by the existing tests;<br>(4) D5 binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in `ApplyMapping` (`:48-72`), and the whole `BindCollection` API with the P2 policy (MH does not exist);<br>(5) D6 dotted-mirror refusal;<br>(6) D7 constants, `referenceSchema`, delete guard, `setParameter` shape;<br>(7) D8 nested-only listing (`PB/Describe/ProcessDescriber.cs:188-194`) and the element-source decode;<br>(8) D9 parity: the mirror binds its items too (contingency X4, M3 refuted H-1);<br>(9) `docs/file-parameter-capture.md`;<br>(10) restamp, last.<br>The probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`PBT/ProcessParameterServiceTests.cs:1670-1678`) moves from `Binary` to `Image` or `Color`. Otherwise it would stop exercising the generic message once Binary gets its own. It is the only automated guard of the refusal text, because the clio e2e that pins the same substrings is in `McpE2E.ProcessDesigner`, which TeamCity never runs (section 3, row 7). `:144-150` is unchanged.<br>The PR's "Visible behaviour changes" section lists: (a) rule P1 of D5 changes what an item-only `InputRecordCollection` mapping writes: when the source is an item of a collection, the parent `InputRecordCollection` is now bound to the source's collection too, so a multi-instance sub-process iterates once per source row instead of once; (b) describe reports `sourceElement`/`sourceElementParameter` for every single-token element-to-element value; (c) `type: File` and `type: FileCollection` are accepted, and Binary/BLOB are refused with a message that names File. |
+| clio | Rebundle; floor raise; type lists in create and modify (+30 B / +28 B). No budget swap: ENG-102114 deleted C6 and shortened S2, and the estimated room on master `db6e2bf9e` (about 465 B on create, 146 B on modify) takes PT's and OA's additions. Any edit near the floor sentence keeps `this clio requires <floor>` and the `stopped validating formulas` collapse clause, with no floor literal in the 60 characters before it (ENG-95984 File process parameter type plan CL-2). `ModifyProcessAsNewVersionTool.cs:83-88` floor parenthetical rewritten once. Describe decoded-source clause. **ManagerMap arm `"fileprocessing" or "processfile"`** (`Schema.cs:1144-1145`), with `ManagerMapResolveDataIdTests` cases and the update to `docs/knowledge/ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`. McpCapabilityMap rows. The Binary e2e `[Description]` reworded (refused for good). PT's story status flips (in-progress, review; the done flip rides in CL-OA). The spec set is CL-PT-DOC's (section 5.7). NEW `clio.mcp.e2e/FileParameterToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = floor). Must stay green on the stand, each result recorded in the PR: `SubProcessMultiInstanceToolE2ETests`, `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`, `DescribeProcessToolE2ETests`. |
 | kb | **Births the `process-files` guide** (no banner), with full registration: `bundle-source.json` entry, `requirements.itemIds`, `resourceUris`, `GuidanceMigrationTests.PostMigrationGuidance`, routing row, `ProcessGuideSet.GoLiveFloor`, a pin test. `parameters.md`: the type list plus the FileCollection exception, measured against the 345 chars left. `sub-process.md:133-137` and `sub-process-when.md:49-51` rewritten with a version gate, keeping the "send both" advice. |
 
 ### 5.3 OA: ENG-96505 Element readiness and object attachments mode
@@ -289,7 +300,7 @@ DAY 0 - in parallel; nothing merges except CL-PT-DOC and CL-DOC
   Owner : decisions O1-O8 (section 13) + D2 D3 D5 D10 D11 D14-D17 D22-D25
   Jira  : create SF; re-link (section 12); AC edits
   Stand : one at a time; every write needs the user's go-ahead; read-only probes first
-          [M13][M6][M3]+baseline[M14][M19][M20][M24] .. on 1.6.6.54, BEFORE the first PT cut is installed
+          [M13][M6][M3]+baseline[M14][M19][M20][M24] .. on 1.6.6.54, BEFORE the first PT cut (all run 2026-10-02)
                     (M6, M3 gate PK-PT, M3 done; M14 gates PK-OA; M13 gates PK-RP; M19, M20, M24 gate no code)
           [M10][M11ab][M17-Q7] ...... gate PK-OA  (version-independent; may run during PK-PT review)
           [M1][M15] ................. gate PK-RP  (version-independent; may run during PK-PT / PK-OA review)
@@ -396,9 +407,13 @@ The same applies to CL-RP and KB-RP, and to CL-SF and KB-SF.
 
 ### 9.1 Choosing and claiming a number
 
-1. Go up from clio's `ExpectedArchiveVersion` (1.6.6.54 today). Check the candidate in both histories, using the
-   `git log --all -p ... | sort -u -V` commands in `docs/agent-instructions/bundled-packages.md` (rules at
-   :127-340). Ignore the 1.6.6.900 probe stamp. Never adopt another branch's height.
+1. Take the first free number ABOVE the highest number claimed anywhere at cut time: clio's
+   `ExpectedArchiveVersion`, package `main`, and every branch and tag of both repositories (`git fetch` first).
+   On 2026-10-08 main and clio's bundle are at 1.6.6.85 and the ENG-102112 branches claim 1.6.6.87, so the answer is
+   1.6.6.88 or higher; a cut below a merged higher bundle would be a downgrade the convergence check refuses. Check
+   the candidate in both histories, using the `git log --all -p ... | sort -u -V` commands in
+   `docs/agent-instructions/bundled-packages.md` (rules at :127-340). Ignore the 1.6.6.900 probe stamp. Never adopt
+   another branch's number.
 2. Claim the number BEFORE cutting, in the PR description and in **one shared cut claim**: a comment on
    ENG-92719 File processing element. Agree a merge window per ticket with the owners of CA, SK and CI (O8).
 3. Cut with `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`. An
@@ -418,7 +433,7 @@ The same applies to CL-RP and KB-RP, and to CL-SF and KB-SF.
 ### 9.2 Files that move with a floor raise (CL-PT, CL-OA, CL-RP)
 
 All of them move to the PR's final cut, in the same commit as the archive:
-- `CreateBusinessProcessCommand.cs:240`, `ModifyBusinessProcessCommand.cs:196`, `ModifyProcessAsNewVersionCommand.cs:59`,
+- `CreateBusinessProcessCommand.cs:247`, `ModifyBusinessProcessCommand.cs:203`, `ModifyProcessAsNewVersionCommand.cs:66`,
   each with its comment block;
 - `ProcessDesignerRequiresPackageAttributeTests.cs:67-68, 106`;
 - the enforced-floor clause in the create, modify and modify-as-new-version descriptions;
@@ -498,7 +513,7 @@ Other finer splits also fail:
 
 | # | Trigger | Action |
 |---|---|---|
-| X1 | CL-PT cannot merge before an in-flight branch needs create/modify description bytes. Candidates: CA (+42 B on create), ENG-100153 O5: accept an object for create-business-process 'descriptor', and ENG-100154 O4: short-form get-tool-contract by default. | Move the S1/C6/S2 swap and the ManagerMap arm into an early clio PR `ENG-95984 File process parameter type` from `master`, branch `feature/ENG-95984-description-budget`. It keeps `this clio requires 1.6.6.40`, so the floor guard stays green, and it merges before CL-PT. This PR shares CL-PT's title by the title rule and is told apart by its branch (section 2). |
+| X1 | CL-PT cannot merge before an in-flight branch needs create/modify description bytes. Candidates: CA (+42 B on create), ENG-100153 O5: accept an object for create-business-process 'descriptor', and ENG-100154 O4: short-form get-tool-contract by default. **No trigger on 2026-10-08:** ENG-100153 O5 and ENG-100154 merged, the swap is no longer needed (C6 deleted, S2 shortened by ENG-102114; about 465 / 146 B left, estimated), and CA's +42 B fits. It fires only if a re-measure shows the ceiling blocking. | Move the ManagerMap arm, and any description shortening the re-measure then needs, into an early clio PR `ENG-95984 File process parameter type` from `master`, branch `feature/ENG-95984-description-budget`. It keeps `this clio requires 1.6.6.77` (the current floor), so the floor guard stays green, and it merges before CL-PT. This PR shares CL-PT's title by the title rule and is told apart by its branch (section 2). |
 | X2 | PK-RP's Process-parameter variant fails its stand proof (the M4 chain) while the Report variant is ready | Cherry-pick the Report commit group into PK-RP. Move the Process-parameter group to a NEW Sub-task under FE, "Process parameter source of the Process file element". RP is re-scoped to the Report mode (owner decision). |
 | X3 | The owner ranks custom-object attachments above reports (AI Toolkit apps create custom objects, which is the typical SysFile case; inference) | Swap the PK-RP and PK-SF slots. PK-SF then lifts SysFile for the Object variant only. PK-RP ships with SysFile targets refused through the registry, unless M23 (c)(d) passed before its code freeze. |
 | X4 | M3 refutes H-1. **Fired 2026-10-02:** 3 iterations, all "name set" | No MH triple; the D9 parity change becomes one commit in PK-PT (section 5.2, commit 8). |
@@ -548,7 +563,7 @@ MH is not created (M3 refuted H-1), so it needs no link.
 |---|---|---|---|
 | SysFile attachment storage in the Process file element (**SF**) | ENG-92719 File processing element | day 0 (owner decision O1) | main track, after RP |
 | typeFromElement collection mirror leaves its items unbound (**MH**) | ENG-95984 File process parameter type | not created: M3 refuted H-1 (O2) | - |
-| Refuse collection parameters as filter values (D22) | ENG-92719 File processing element | day 0 | side lane, while PK-OA is still a draft (touches only `PB/Filters/ProcessFilterService.cs:525-591`) |
+| Refuse collection parameters as filter values (D22) | ENG-92719 File processing element | day 0 | side lane, while PK-OA is still a draft (touches only `PB/Filters/ProcessFilterService.cs:533-595`; since 1.6.6.75 one guard in `ResolveReference` covers all three spellings, and M19 still holds on 1.6.6.85) |
 | Builder-made user tasks do not set SerializeToDB (D20) | ENG-92719 File processing element | day 0 | after PK-SF |
 | Allow-list the data types a typeFromElement mirror may copy (D6) | ENG-95984 File process parameter type | day 0 | after PK-RP |
 | Describe: decode process-parameter sources into re-appliable names (D8) | ENG-95984 File process parameter type | day 0 | after PK-RP |
@@ -632,7 +647,8 @@ These are also collected in [open-questions](eng-92719-file-processing-element-o
 10. **Hand over to the human merger** in this order:
    - the package PR (tag pushed and verified on the remote first);
    - the clio PR (updated with master, CI green);
-   - the knowledge PR (libraryVersion above master at merge).
+   - the knowledge PR (libraryVersion above master at merge, and above every number another branch claims: on
+     2026-10-08 master is 1.15.100 and branches claim 1.15.101-1.15.104 and 1.16.2).
 
    Then check `info-knowledge`'s library version before any run that depends on the guidance.
 
@@ -643,6 +659,9 @@ Rules:
 - Schema writes and runs go one at a time; a parallel burst crashes the app pool.
 - Cleanup uses `execute-dataservice-batch`, because the stand rejects HTTP DELETE.
 - The stand carries ONE ticket's cut at a time. Reinstall it together with the rebundle, and tell every verifier.
+- A clio built from master (bundle 1.6.6.85, floors 1.6.6.77) refuses the process tools against a stand still on
+  1.6.6.54. Upgrade the stand before the first builder run, or use an older clio for a 1.6.6.54 re-measurement, and
+  name the package version in every record.
 
 After each cut:
 1. Build the clio PR and run `install-process-builder` from the refreshed build output.

@@ -5,7 +5,7 @@
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Status | Proposed, 2026-10-01. 6 decisions wait for the owner (section 1, Q13-Q18): D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
-| Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
+| Baselines | Anchors point to CrtProcessBuilder `main` `d9571626` (package 1.6.6.85), clio `master` `db6e2bf9e` and clio-knowledge `master` `73a619e` (guidance libraryVersion 1.15.100), re-pinned 2026-10-08. The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
 ## Summary
@@ -44,11 +44,11 @@ some branch is never an argument for or against an option.
 
 | Alias | Path |
 |---|---|
-| PB | crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/` (main `3f4cce50`) |
+| PB | crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/` (main `d9571626`, 1.6.6.85) |
 | PBA | crt-process-builder `packages/CrtProcessBuilder/Files/src/CrtProcessBuilderApp.cs` |
 | PBT | crt-process-builder `tests/UnitTests/CrtProcessBuilder.Tests/` |
-| CLIO | clio repository root (master `03ef3944f`) |
-| KB | clio-knowledge repository root (master `d0b5a2b`) |
+| CLIO | clio repository root (master `db6e2bf9e`) |
+| KB | clio-knowledge repository root (master `73a619e`, libraryVersion 1.15.100) |
 | CORE | Creatio core `TSBpm/Src/Lib` at 10.1.37 |
 | PD | `PackageStore/CrtProcessDesigner/branches/7.8.0/Schemas` (byte-identical to what the stand serves) |
 | PS | `PackageStore` (the shipped corpus) |
@@ -217,7 +217,7 @@ same questions, with their options, are Q1-Q19 in
   stays unchanged. The probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`:1671-1678`)
   moves its input from `Binary` to another unsupported registered name (`Image` or `Color`): Binary now gets the
   dedicated message, and the probe would otherwise pass only because "FileCollection" contains "Collection".
-  The clio e2e that pins the refusal (`CLIO/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2178-2204`) stays
+  The clio e2e that pins the refusal (`CLIO/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2360-2386`) stays
   green, but it never runs in TeamCity: `baseFilter` excludes `McpE2E.ProcessDesigner`
   (`CLIO/clio.mcp.e2e/TestSelection/mcp-e2e-selection.json:46`, measured 2026-10-01). So the PBT is the only
   automated guard. The e2e's `[Description]` is reworded to "refused for good", not "deferred".
@@ -236,7 +236,7 @@ same questions, with their options, are Q1-Q19 in
   parameter type) refuses file outputs because their items carry no column Tag
   (`PB/Parameters/ProcessParameterService.cs:456-475`). basis=source.
 - `compositeobjectlist` is accepted on write (`ProcessParameterService.cs:31-33`), and the write contract has no
-  `itemProperties` or `tag` member (`PB/Contracts/ProcessDescriptorContracts.cs:1965-2040`). The shipped guide
+  `itemProperties` or `tag` member (`PB/Contracts/ProcessDescriptorContracts.cs:1977-2052`). The shipped guide
   tells agents to feed a described collection back through `typeFromElement`, "never by re-typing the shape"
   (`KB/guidance/mcp/guides/processes/parameters.md:35-37`, pinned by
   `KB/automation/Clio.Knowledge.Bundle.Tests/CollectionParameterGuidanceTests.cs:24-25`). A file collection has no
@@ -304,7 +304,7 @@ same questions, with their options, are Q1-Q19 in
   parameters, not process parameters. Shipped file parameters: both
   singles Variable; collections one Variable, one Out. basis=measured (corpus, 2026-10-01).
 - A sub-process caller can feed only an In or Variable callee parameter; anything else is refused loudly by
-  `EnsureSubProcessTargetCanHoldAValue` (`PB/Mappings/ProcessMappingService.cs:79-110`). basis=source.
+  `EnsureSubProcessTargetCanHoldAValue` (`PB/Mappings/ProcessMappingService.cs:238-269`). basis=source.
 - The core does not restrict a PROCESS-level parameter by direction: the direction check of
   `ParameterValuesValidationRule` (`CORE/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-286`) returns at
   once for a parameter with no element. The one platform rule is the sub-process element's: it silently clears a
@@ -337,7 +337,7 @@ Variable FileCollection is never refused (a caller can fill it and the process c
 ## D4. Dotted process-parameter paths
 
 **Context.** `ResolveProcessParameter` is flat-only for both `targetProcessParameter` and `processParameter`
-(`PB/Mappings/ProcessMappingService.cs:425-435`, callers `:221, :280`; re-read). Shipped content binds a
+(`PB/Mappings/ProcessMappingService.cs:594-604`, callers `:380, :440`; re-read). Shipped content binds a
 process-level item both as a source (`$FileCollection.FileCollectionParameter`) and as a target
 (`PS/ProcessTests/branches/7.8.0/Schemas/FileParameterProcess/metadata.json:47, 1440`). Dotted ELEMENT-parameter
 paths already work through `ProcessSchemaElementLocator.DescendItemProperties` (`PB/ProcessSchemaElementLocator.cs:166-241`).
@@ -377,7 +377,7 @@ dotted source and target, a meta path with no element segment, the failing segme
   gives the input collection a FileLocator item. Iterating such a sub-process over Read data rows or over
   `CreatedObjectFileIds` is legal and runs, with that item null on each iteration (shipped:
   `FileCopyProcessPP.SubProcess1` iterates over `CreatedObjectFileIds`, outer only). basis=source + corpus.
-- `ProcessMappingService.ApplyMapping` (`PB/Mappings/ProcessMappingService.cs:48-63`) is the one funnel for
+- `ProcessMappingService.ApplyMapping` (`PB/Mappings/ProcessMappingService.cs:48-72`) is the one funnel for
   `mappings[]`, `addMapping`, the build, the mirror, the entity-connection binder and the approval applier.
 - Every mapping is stored as a Script meta-path formula. An agent can send an `expression` source, and describe
   returns undecoded sources as `value` formulas (D8).
@@ -393,10 +393,14 @@ dotted source and target, a meta path with no element segment, the failing segme
 
 **Decision: option 2, inside `ApplyMapping`, with two scoping rules.**
 - **Structured sources only.** The rules below run only when the source is `sourceElement` (+
-  `sourceElementParameter`) or `processParameter`. An `expression` source is written verbatim to the named
-  target: it never auto-binds or resets a parent, never pairs items, and is never refused by these rules (the
-  platform validates the formula as today). Replaying describe output that still carries formulas therefore
-  writes exactly what it names.
+  `sourceElementParameter`) or `processParameter`. An `expression` source goes to the named target as given: it
+  never auto-binds or resets a parent, never pairs items, and is never refused by these rules (the platform
+  validates the formula as before). The package does check it in one way: since 1.6.6.79 (ENG-102114) every
+  meta-path token must be the path the platform writes for an item of THIS process, so a misspelled token, a token
+  from another process and a column of a collection item are refused, and the token's GUIDs are stored lower-cased
+  (`PB/Mappings/ProcessMappingService.cs:457-468`; 1.6.6.85 extended the lower-casing). Nested-item tokens such as
+  `Files.File` and `ObjectFiles.File` are accepted. Replaying describe output that still carries formulas into the
+  same process therefore writes what it names; a replay into another process is refused.
 - **File-consuming targets** (for P2 and R-M2): the Process variant's `Files` (ENG-96506 Generated report +
   process parameter modes, also bound by D18); a process-level collection that matches the FileCollection
   predicate (D2), because what it holds is later handed to the former; later, the Send email and Creatio.ai
@@ -411,7 +415,7 @@ dotted source and target, a meta path with no element segment, the failing segme
 | **P2-MI** (notice only) | structured outer mapping onto a multi-instance `InputRecordCollection` with an unbound FileLocator item | nothing beyond the outer write | "callee parameter `<F>` will be empty on every iteration unless you map `InputRecordCollection.<F>`" |
 | **P3** plain source on an item | structured source; the target is an item; the source is not a collection item; single-instance owner | item <- source; the parent is **reset to None** if it was bound to a collection | notice ("`Files` was bound to `X`; it was cleared because `Files.File` now takes a single file") |
 | **R-M1** | flat FileLocator target <- a collection item (`F <- OF1.ObjectFiles.File`) | - | **refuse** ("a single File cannot take an item of `ObjectFiles`; use a FileCollection, or a multi-instance sub-process"). **Measured by M6 (2026-10-02):** outside a row context `F` reads null while the source collection holds two files, so the refusal stays |
-| **R-M2** | a file-consuming target collection has a FileLocator item and the source collection has none (`Files <- ReadData.ResultCompositeObjectList`) | - | **refuse**. `ParameterTypeCompatibility` accepts it today (`PB/Mappings/ParameterTypeCompatibility.cs:240-242`: item shapes are not compared); the runtime is predicted to throw in the consumer |
+| **R-M2** | a file-consuming target collection has a FileLocator item and the source collection has none (`Files <- ReadData.ResultCompositeObjectList`) | - | **refuse**. `ParameterTypeCompatibility` accepts it today (`PB/Mappings/ParameterTypeCompatibility.cs:255-257`: item shapes are not compared); the runtime is predicted to throw in the consumer |
 
 An explicit API for later consumers (ENG-95985 Send email attachments and the element variants):
 `void BindCollection(ProcessSchema schema, ProcessMappingDescriptor outer, IReadOnlyList<(string TargetItem, string SourceItem)> itemPairs)`
@@ -420,7 +424,7 @@ mean the P2 policy.
 
 **Consequences.**
 - P3 rationale: the designer leaves a stale parent bound, which yields N copies of one file (one per source row);
-  there is no `removeMapping` operation (`CLIO/clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs:189`),
+  there is no `removeMapping` operation (`CLIO/clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs:188`),
   so the caller could not clear it.
 - P1 also fixes a silent multi-instance hazard: an item-only `InputRecordCollection.X` binding gives an iteration
   count of 1 today. Two shipped guide passages state that behaviour as measured fact
@@ -434,7 +438,7 @@ mean the P2 policy.
   sub-process whose callee has a Guid and a File parameter, iterated over `CreatedObjectFileIds` and over Read data
   rows, is ACCEPTED with the P2-MI notice and no item written; (2) the same iteration with explicit outer and
   per-item mappings writes exactly what it writes today; (3) an `expression` onto `Files` and then onto
-  `Files.File` writes both verbatim and nothing else; (4) build -> describe -> replay the described parameters as
+  `Files.File` writes both as given (GUIDs lower-cased) and nothing else; (4) build -> describe -> replay the described parameters as
   mappings leaves both levels unchanged.
 - **Owner decision: agreed on 2026-10-07 as recommended.** P3 resets the stale parent with a notice; P2 and R-M2
   apply to file-consuming targets only.
@@ -465,30 +469,33 @@ All basis=source.
 
 | Case | Today | Change |
 |---|---|---|
-| `value` on a File (addParameter, setParameter) | stored as a text constant (`PB/Parameters/ProcessParameterValueValidator.cs:190-215`) | refuse: "a File has no constant form; map it from an element's file output or another File parameter". `EnsureNotCollectionConstant` (`ProcessParameterService.cs:425-431`) generalises to "no constant form" |
-| `addMapping value` onto a FileLocator or collection target | accepted; the platform's pre-save rule skips constant sources | refuse in `ValidateConstantValue` (`ProcessParameterValueValidator.cs:133-221`), which every constant route passes |
+| `value` on a File (addParameter, setParameter) | stored as a text constant (`PB/Parameters/ProcessParameterValueValidator.cs:213-238`) | refuse: "a File has no constant form; map it from an element's file output or another File parameter". `EnsureNotCollectionConstant` (`ProcessParameterService.cs:425-431`) generalises to "no constant form" |
+| `addMapping value` onto a FileLocator or collection target | accepted; the platform's pre-save rule skips constant sources | refuse in `ValidateConstantValue` (`ProcessParameterValueValidator.cs:147-244`), which every constant route passes |
 | `referenceSchema` on File or FileCollection | File silently becomes a Lookup | refuse (D2) |
 | `removeParameter` of a collection whose ITEM is referenced | missed: `FindParameterUsages` tests the root UId only (`ProcessParameterService.cs:576-647`) | test the root and every item UId, recursively |
 | `setParameter type: FileCollection` on a differently shaped collection | silent no-op (same stored type) | refuse: "FileCollection would change this collection's shape; remove it and add it again" |
 | `setParameter direction` on File or FileCollection | allowed | unchanged (the remedy in D3) |
-| `expression` into a FileLocator or collection target | stored, validated by the platform | unchanged, and outside the D5 rules |
+| `expression` into a FileLocator or collection target | stored; its meta-path tokens checked by the package since 1.6.6.79, the formula validated by the platform | unchanged, and outside the D5 rules |
 
 Type compatibility needs no change: FileLocator and collections fall through to an exact type match
-(`PB/Mappings/ParameterTypeCompatibility.cs:240-242`). **Owner decision: no.**
+(`PB/Mappings/ParameterTypeCompatibility.cs:255-257`). **Owner decision: no.**
 
 ## D8. Describe of file parameters, nested-only bindings and single-token element sources
 
 **Context.**
 - `ToDescribeParameter` already projects `itemProperties` recursively (`PB/Parameters/ProcessParameterService.cs:141-181`).
   clio's `DescribedParameter` declares `itemProperties`, `tag`, `sourceElement`, `sourceElementParameter` and
-  `sourceColumn` (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:1886-2012`) but has no extension bag, so a NEW
+  `sourceColumn` (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:1897-2033`) but has no extension bag, so a NEW
   per-parameter field would be dropped (`CLIO/docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md`).
+  ENG-99970 (2026-10-07) added `valueOmitted` to it and `filterDecodedCompletely` to `DescribedElement`; both concern
+  `DataSourceFilters` only, not file parameters.
 - Describe lists a non-output element parameter only when its ROOT value was set in this schema
-  (`PB/Describe/ProcessDescriber.cs:187-193`), so a nested-only `Files.File <- $File` binding is invisible.
+  (`PB/Describe/ProcessDescriber.cs:188-194`), so a nested-only `Files.File <- $File` binding is invisible.
 - Describe decodes a source into `sourceElement` / `sourceElementParameter` / `sourceColumn` only for a
-  THREE-segment record-column path (`PB/Contracts/DescribeContracts.cs:1456-1471`); every other source is a `value`
-  formula. An agent therefore replays an element-to-element binding as an `expression`, which D5 writes verbatim:
-  safe, but it bypasses the D5 checks on the replay.
+  THREE-segment record-column path (`PB/Contracts/DescribeContracts.cs:1467-1482`); every other source is a `value`
+  formula. An agent therefore replays an element-to-element binding as an `expression`, which D5 passes through
+  (only the package's meta-path check runs): safe within the same process, but it bypasses the D5 checks on the
+  replay.
 - A stale MCP clio client strips `itemProperties`, `isOutput` and `isRequired`; a current clio carries them.
 
 **Decision.**
@@ -507,7 +514,8 @@ Type compatibility needs no change: FileLocator and collections fall through to 
   is additive (a member that was null now carries a name) and is listed as a visible change in the PR.
 - **Stays a Sub-task:** decoding single-token PROCESS-parameter sources into `processParameter` needs a new member
   on clio's bagless `DescribedParameter`. Sub-task under ENG-95984 File process parameter type: "Describe: decode
-  process-parameter sources into re-appliable names". Until then those bindings replay as verbatim expressions.
+  process-parameter sources into re-appliable names". Until then those bindings replay as expressions (accepted
+  in the same process, because describe reports the canonical token).
 - The element block (D19) decodes its own bindings, so OA and RP do not depend on that Sub-task.
 
 **Consequences.** PBT `ProcessDescriberTests`: a `Files` input bound only on `Files.File` is listed; a single-token
@@ -565,7 +573,7 @@ in the same knowledge PR as the parity commit, KB-PT. **Owner decision: no longe
   unknown TYPE token is refused loudly by an older server (`:57-66`); a block riding a known type is silently
   dropped (no `IExtensibleDataObject`, `PB/Contracts/VersionContracts.cs:22-26`).
 - `source` already means an object NAME in `readData`, `changeData`, `addData` and `deleteData`
-  (`PB/Contracts/ProcessDescriptorContracts.cs:1012, 1038, 1155, 1213`). Every variant needs its own group on
+  (`PB/Contracts/ProcessDescriptorContracts.cs:1018, 1044, 1164, 1222`). Every variant needs its own group on
   create anyway (`attachments.object`, `report.printable`, `files`), and on an update the variant is known from
   the stored schema UId.
 
@@ -634,7 +642,7 @@ Discriminator, given (a):
 - Vocabulary agents already know: `readData.numberOfRecords` (omitted = read all), `readData.sort {column, direction}`
   (ONE object), `approval.object` + `approval.recordId`, `openEditPage.recordId` with the value sources `value`,
   `processParameter`, `sourceElement` + `sourceElementParameter` (+ `sourceColumn`), `expression` (a formula such
-  as `[#SysVariable.CurrentUserContact#]`) (`PB/Contracts/ProcessDescriptorContracts.cs:414-422, 925-966, 1265-1306`).
+  as `[#SysVariable.CurrentUserContact#]`) (`PB/Contracts/ProcessDescriptorContracts.cs:414-422, 925-972, 1274-1315`).
 - Designer labels: "What is the source of the file?", "Which object to receive file from?", "How to filter
   records?", "Read first N records", "How to sort records?", "What to do with file?" (Save to object attachments /
   Use in process), "What object to save file to?" plus a record field, "What report to generate?", "Generate
@@ -675,7 +683,7 @@ shared `filter` vs in the variant group (D16).
   "files": {                             // Process parameter variant; exactly ONE source (D18)
     "processParameter": "Docs"           // a FileCollection, a File, or a dotted item (Docs.File)
     // or "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" or "ObjectFiles.File"
-    // or "expression": a formula, written verbatim onto Files.File (notice)
+    // or "expression": a formula, written as given onto Files.File (meta-path tokens checked; notice)
   },
 
   "saveTo": {                            // when action = saveToAttachments; required for the files variant
@@ -693,7 +701,7 @@ Parameter mapping (designer parity; the parameter UIds are in [platform-referenc
 |---|---|---|
 | (the group present) | the element's `SchemaUId` and `ManagerItemUId` | identity |
 | `action` | `ResultActionType` 0 or 1 | constant |
-| `attachments.object` | `SourceEntitySchemaUId` (the file object UId); `SourceDataEntitySchemaUId` (the record object in SysFile mode, cleared otherwise) | constant, written directly (the mapping path's Lookup validator checks a record id, not a schema UId) |
+| `attachments.object` | `SourceEntitySchemaUId` (the file object UId); `SourceDataEntitySchemaUId` (the record object in SysFile mode, cleared otherwise) | constant, written directly by the binder from the resolved schema (the generic mapping path skips the block's checks and still accepts a `SysSchema` row Id, T-54; since 1.6.6.69 the binder can check the UId through `ValidateConstantValue`) |
 | `attachments.recordId`, `report.recordId` | the scope condition inside `DataSourceFilters` (D16) | compiled by `FileProcessingScopeFilter` |
 | `attachments.numberOfRecords` | `RecordsToRead` | constant (the template copy when omitted, D20) |
 | `attachments.sort` | `OrderByInfo` `<Col>:<1 asc, 2 desc>:1` | constant |
@@ -716,7 +724,9 @@ Rules common to the block:
 - All four value-source members (`attachments.recordId`, `report.recordId`, `report.fileNameSuffix`,
   `saveTo.recordId`) use ONE shared contract, `FileProcessingValueSourceDescriptor`, with the
   `OpenEditPageRecordDescriptor` member names and the house rule "exactly one source", so one key never means two
-  shapes in one element.
+  shapes in one element. Its `expression` runs the same length bound and `MetaPathTokenReference` check that
+  `openEditPage.recordId.expression` runs since 1.6.6.79 (`PB/Elements/OpenEditPageConfigBinder.cs:874-881`), so the
+  new value surfaces do not become the only unchecked ones.
 - **Read-only members come in two kinds.**
   - *Identity checks* are declared on the write contract and accepted only when equal to the derived value; a
     different value is refused, naming the derived one: `source`, `attachments.storage`, `attachments.fileObject`,
@@ -733,7 +743,7 @@ Rules common to the block:
 
 **Consequences.** New contracts `FileProcessingDescriptor` (with its group and value-source types) on
 `ProcessElementDescriptor` (`PB/Contracts/ProcessDescriptorContracts.cs:13-246`) and `ProcessElementUpdateDescriptor`
-(`PB/Contracts/ModifyContracts.cs:303-510`). `FilterDescriptor` does not change, so the other filter targets and
+(`PB/Contracts/ModifyContracts.cs:307-514`). `FilterDescriptor` does not change, so the other filter targets and
 clio's bagless filter DTOs are untouched. If the strict-keys work above lands first, its allow-list learns the new
 write members and its read-back list the describe-only members (D26). **Owner decision: yes.** The naming bundle:
 `attachments`, `report`, `files`, `saveTo`, the `action` values, `report.printable`, `fileNameSuffix`, `recordId`
@@ -746,7 +756,7 @@ values dropped), refuses it while another element's or a process parameter's val
 asks for confirmation only when the element is configured. The package already has "same value = no-op, different
 = remove and add again" for parameter types (`PB/Parameters/ProcessParameterService.cs:232-237`) and a dependency
 scanner (`PB/Graph/ProcessElementDependencyScanner.cs:69-132`). Partial-update precedents: readData keeps omitted
-members (an explicit empty `columns` array resets, `ProcessDescriptorContracts.cs:1255-1288`); approval says
+members (an explicit empty `columns` array resets, `ProcessDescriptorContracts.cs:1264-1297`); approval says
 "OMITTING it is a partial update, not a default". The designer clears the filter on EVERY source-object change
 (`PD/ObjectFileProcessingUserTaskPropertiesPage/ObjectFileProcessingUserTaskPropertiesPage.js:184-202, 228-248`) and on
 every report change (`PD/ReportFileProcessingUserTaskPropertiesPage/ReportFileProcessingUserTaskPropertiesPage.js:204-211`).
@@ -829,6 +839,16 @@ route at all.
   `ReportNameDataSourceColumnUId`, `DataSourceFilters`, `ConsiderTimeInFilter`) is refused, pointing to
   `setElement fileProcessing`, with the same per-cut scope. `addMapping` onto the value inputs (`Files`,
   `Files.File`, `ConnectedObjectId`, `ReportName`) stays legal and runs the same rules as the block (D5, D18).
+  Since 1.6.6.69 raw `addMapping` writes a correct schema UId onto the four storage parameters (T-54), so this
+  refusal takes away a route that works. It stays because that route bypasses the block's checks (storage pair,
+  link column, D12's clearing) and still accepts a `SysSchema` row Id.
+- Precedents in the package: ENG-102113 (1.6.6.69) already refuses block-owned targets inside `ApplyMapping`:
+  `EnsureNotAnOpenEditPageObjectConstant` and, for the data elements' objects, `FindDataObjectSlot` +
+  `EnsureTheDataObjectIsKept` (keep-only, the block route named in the refusal), keyed through
+  `UserTaskSchemaIdentity` (`PB/Mappings/ProcessMappingService.cs:96-111, 136-183, 203-226`). F-E2 extends that slot
+  table instead of adding a second mechanism. ENG-102112 (an unmerged branch that claims 1.6.6.87) adds a generic
+  Pre-configured page refusal right after `FindInstanceByName`, keyed on the resolved schema UId: the same shape and
+  insertion point as F-E1, so OA.5 follows it and will conflict with it in `UserTaskElementHandler.cs`.
 - `setFilter` on a claimed element goes through the new filter target (D16).
 
 **Consequences.** The PT e2e uses no generic file-processing route (D28). The OA knowledge PR adds the element to the
@@ -908,7 +928,7 @@ contradictions refused; always written.
   OFF on the stand; `Creatio.FeatureToggling.Features.GetIsEnabled(string)` is reachable and lets the code default
   win (predicted true on the stand; M25).
 - `ConnectedObjectId` is Guid-typed in all three templates, so the shared constant validator checks the format only
-  (`PB/Parameters/ProcessParameterValueValidator.cs:207-209`); the designer edits it as a LOOKUP of the record object
+  (`PB/Parameters/ProcessParameterValueValidator.cs:230-232`); the designer edits it as a LOOKUP of the record object
   and the runtime writes it straight into the link column (`FileProcessing.cs:193-201`).
 
 **Options.**
@@ -1011,10 +1031,12 @@ contradictions refused; always written.
 - The Delete data precedent evaluates "has a selecting filter" once, at the END of the request, for the elements
   the request touched (`PB/Elements/DeleteDataNotices.cs`, `IDeleteDataNoticeLedger`), because `setFilter` can
   follow `addElement` in a batch.
-- clio's filter DTOs carry no `[JsonExtensionData]` bag (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:1621-1643`);
+- clio's filter DTOs carry no `[JsonExtensionData]` bag (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:1631-1653`);
   `DescribedElement` does (`:719-726`), so an undeclared element block survives any clio.
 - The filter right-hand vocabulary is `value`, `processParameter`, `elementParameter {elementName, parameter, column}`,
-  `expression` (a raw meta-path token) and `macro` (`PB/Contracts/FilterContracts.cs:100-150`); every other
+  `expression` (a bare meta-path token; since 1.6.6.75, ENG-102110, validated: only the canonical bare path of a ROOT
+  process parameter, a top-level element's root parameter or one column of its record,
+  `PB/Filters/FilterExpressionReference.cs:74-92`) and `macro` (`PB/Contracts/FilterContracts.cs:108-165`); every other
   `recordId` uses the value-source vocabulary, where `expression` is a formula. `CurrentUserContact` is a macro in
   the filter grammar (`PB/Filters/MacrosCatalog.cs:67`) and the formula `[#SysVariable.CurrentUserContact#]` in the
   value-source one.
@@ -1082,12 +1104,17 @@ contradictions refused; always written.
   filter then omits that condition; an `AND(scope, OR)` unwraps back. A scope condition that does not decode stays in
   `filter.conditions`, and no `recordId` is reported, so nothing is lost. The lift also applies to designer-made
   legacy filters, so describe output resubmits stably.
+- Since 1.6.6.82 (ENG-99970) `FilterDescriptorReader` stamps `DecodedCompletely` and describe reports
+  `filterDecodedCompletely` (`PB/Filters/FilterDescriptorReader.cs:57-97`), and `BuildFilterValue` writes `isNull` on
+  every is-null leaf (`PB/Filters/ProcessFilterService.cs:265-273`). `Split` lifts no `recordId` from a lossy decode,
+  and `Join` keeps the `isNull` flag of the remainder it re-writes.
 - Describe issue (OA, for designer-built SysFile elements): a SysFile scope whose `RecordId` lookup reference
   differs from `SourceDataEntitySchemaUId` ("the record scope refers to 'Contact' records but the element reads
   attachments of 'UsrProject'; it reads no files").
 - Tests: scope compile per source and the refused formula; legacy InFilter; Report `Id`; root rule, unconfigured
   element, type check; scope set twice; sort; OR wrap and unwrap; corpus filter lift; each writer keeps the other's
-  half; empty-filter refusal and notice for touched elements only; the `numberOfRecords` notice.
+  half; a lossy decode is not lifted; `isNull` survives `Join`; empty-filter refusal and notice for touched elements
+  only; the `numberOfRecords` notice.
 - **Owner decision: yes.** The R2 shape (`recordId` inside the groups); refuse (recommended) or notice for the
   empty-filter cases.
 
@@ -1173,9 +1200,10 @@ the filter (D12). e2e: `Assert.Ignore` when `list-printables` returns no rows; `
 - A structured SINGLE FileLocator source (a File parameter or a single element output) binds `Files.File` only and
   leaves `Files` unbound, **pending M1**. If M1 fails, the single-file path is withdrawn (refused) and the guide tells
   agents to wrap one file in a FileCollection.
-- `expression` is written verbatim onto `Files.File`, `Files` left unbound, with a notice ("not checked: the formula
-  must yield one file"). It exists so that a describe of a nested binding that is not a single token resubmits; like
-  every expression, it is outside D5's rules.
+- `expression` is written onto `Files.File` as given, `Files` left unbound, with a notice ("the result is not
+  checked: the formula must yield one file"). The package's meta-path check runs on it as on every expression since
+  1.6.6.79, and nested-item tokens such as `ObjectFiles.File` pass it. It exists so that a describe of a nested
+  binding that is not a single token resubmits; like every expression, it is outside D5's rules.
 - Refused: a structured source with no FileLocator item (R-M2), an outer-only binding, no binding at all, any
   mapping FROM this element's `Files` input, `useInProcess` (D14). `saveTo` is required.
 - The variant's `ObjectFiles` (item `ObjectFile`, the copies) and `CreatedObjectFileIds` are listed as outputs, with
@@ -1196,10 +1224,11 @@ METADATA shape at both levels; the runtime reader is internal, so the runtime go
 inherited defaults (`RecordsToRead` 50, an unset `ResultActionType`), an empty `ConnectedObjectColumnUId` and a
 nested-only `Files` binding are invisible, and `ReportId` and `TargetEntitySchemaUId` are bare GUIDs (measured on
 PrintQuotationReport and GenerateDNSRecordsSpecification, 2026-10-01). clio passes an undeclared element block
-through `DescribedElement.AdditionalData` (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:719-726`). Describe
+through `DescribedElement.AdditionalData` (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:729-736`). Describe
 may return an unconverged snapshot for compiled processes.
 
-**Decision.** A typed `fileProcessing` block in `DescribeProcessElement` (`PB/Contracts/DescribeContracts.cs:112-367`),
+**Decision.** A typed `fileProcessing` block in `DescribeProcessElement` (`PB/Contracts/DescribeContracts.cs:112-378`;
+the class gained `filterDecodedCompletely` in 1.6.6.82, so expect a rebase),
 reporting EFFECTIVE values (inherited template defaults count), in the write vocabulary so that it round-trips. Per
 cut: OA describes Object elements with the block; Report and Process elements keep today's generic describe until RP.
 
@@ -1378,7 +1407,7 @@ RF1-RF3 corrections (plan C-6).
 | Add data creates the report's data row before a report | guidance in RP, plus the build-and-describe e2e TC-74 (CL-RP) |
 | Process file -> multi-instance sub-process per file (`InputRecordCollection.F <- OF1.ObjectFiles.File`; P1 binds the parent), or per created Id | OA e2e, after PT merges |
 | Object -> Process variant chain | RP e2e |
-| NEW Sub-task under ENG-92719 File processing element: "Refuse collection parameters as filter values" (a guard in `ProcessFilterService.ResolveReference`, `PB/Filters/ProcessFilterService.cs:525-591`) | its own PR, size S, not file-specific |
+| NEW Sub-task under ENG-92719 File processing element: "Refuse collection parameters as filter values" (one guard in `ProcessFilterService.ResolveReference`, `PB/Filters/ProcessFilterService.cs:533-595`; since 1.6.6.75 the `expression` spelling resolves through the same two structured branches, so that guard covers all three spellings, and neither branch checks for a collection type yet: M19 still holds on 1.6.6.85) | its own PR, size S, not file-specific |
 
 **Consequences.** The FE criterion "Tests cover the five patterns" is amended (Part D). The guide's "Consumers"
 section states what is buildable, what is not yet (Send email attachments, Creatio.ai files) and the
@@ -1427,17 +1456,29 @@ does not exist for the Process-parameter source. **Owner decision: yes** (Jira e
 
 ## D25. Guidance placement and tool-description budget
 
-**Context** (measured on a replica of the size tests, 2026-10-01).
+**Context** (measured on a replica of the size tests, 2026-10-01; the knowledge sizes recomputed with the same rule
+on clio-knowledge master `73a619e`, 2026-10-08).
 - Knowledge budget: 27,793 characters per process article (JSON-escaped length plus a 1,400 envelope,
   `KB/automation/Clio.Knowledge.Bundle.Tests/ProcessGuideResponseSizeTests.cs:43, 131, 156`). process-activity-connections
-  and process-modeling are at 99.9%, process-parameters 98.8% (about 345 characters left), process-element-catalog
-  97.7% (about 648 left), send-email 89.1%, sub-process 70.5%, routing 64.9%.
+  and process-modeling are at 99.9% (25 and 40 characters left), process-parameters 98.8% (about 345 left),
+  process-element-catalog 98.4% (about 456 left; 648 on 2026-10-01), send-email 89.1%, sub-process 70.5%, routing
+  67.0% (64.9% on 2026-10-01). process-formulas has 241 left, but no PR of this work edits it.
 - An article with the banner "Part of the process guide set." must be indexed in process-modeling, which has no
   room. Precedents without the banner: process-script-task, run-process-button, process-custom-elements.
-- Tool contracts: ceiling 35,072 B; create 34,863 (209 left), modify 34,883 (189), describe 33,148 (1,924). In
-  flight: ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap (adds +42 B to
-  create); ENG-100154 O4: short-form get-tool-contract by default (changes which part of a contract an agent sees
-  without asking).
+- Tool contracts: ceiling 35,072 B (`CLIO/clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs:164`). On
+  2026-10-01: create 34,863 (209 left), modify 34,883 (189), describe 33,148 (1,924). Estimated on clio master
+  `db6e2bf9e` from the last recorded measure and the changed string literals (not measured): create about 34,607
+  (about 465 left), modify about 34,926 (about 146 left), describe about 33,367 (about 1,705 left; ENG-99970 added
+  219 B). ENG-102114 deleted C6 and dropped S2's member list. Still in flight: the ENG-99970 CAADT runs for BPMS
+  Tools cost 6-15x other teams - find and close the gap branch `feature/ENG-99970-target-package` (+42 B on
+  create).
+- Short form (ENG-100154, merged 2026-10-07): a default `get-tool-contract` lookup must fit 18,432 B
+  (`CLIO/clio/Command/McpServer/Tools/ToolContractShortForm.cs:62`), and the seven process-designer short forms are
+  guarded together. The short form keeps the lead, each field's first sentence and every sentence with a safety word
+  ("never", "must not", ...). A type-list addition does not count against it; a new refusal sentence in create or
+  modify worded with "never" or "must not" does.
+- `descriptor` and `operations` are JSON values since ENG-100153 O5 (2026-10-07); a string holding the same JSON is
+  still accepted and passed through unchanged.
 - X2 (a `name=` in a description must be in the curated fixture) and X3 (the floor sentence must stay).
 - Two shipped multi-instance passages state as measured fact that a per-item mapping without the explicit
   `InputRecordCollection` mapping runs ONE iteration (`KB/guidance/mcp/guides/processes/sub-process.md:133-137`,
@@ -1452,10 +1493,12 @@ palette caption), or one guide per ticket.
   rewrites the storage section. Size target at most 22,000 characters; planned seam: the report section splits into
   `process-files-report` past 80%. Each knowledge PR registers the article fully (article, `bundle-source.json` entry
   and `requirements.itemIds`, the migration list, a routing row, `ProcessGuideSet.GoLiveFloor`, a pin test in the
-  style of `CollectionParameterGuidanceTests`) and bumps libraryVersion above master at merge time.
+  style of `CollectionParameterGuidanceTests`) and bumps libraryVersion above master at merge time and above every
+  number another branch claims (master 1.15.100; branches claim 1.15.101-1.15.104 and 1.16.2 on 2026-10-08).
 - Content per PR:
   - PT: File and FileCollection; the read-back and the item-name caveat (D2); direction (D3); P1, P2, P3, R-M1,
-    R-M2, file-consuming targets, "an expression is written verbatim" (D5); refusals.
+    R-M2, file-consuming targets, "an expression goes through as given; only its meta-path tokens are checked" (D5);
+    refusals.
   - OA: the element and "the group is the variant" (D10); `attachments` with `recordId`, "numberOfRecords defaults
     to 50 and does NOT read all", the sort shape (with the M24 result); member-wise merge (D12); identity checks vs
     describe-only members (D11); legacy storage and "SysFile storage is refused in this version"; the H-G3-1 warning
@@ -1463,7 +1506,7 @@ palette caption), or one guide per ticket.
     endpoint sentence of D-3 ("most shipped uses end in a record's attachments; when a following element needs the
     files, map the element's output collection", plan C-2), pinned by TC-88 in place of "rarely an endpoint".
   - RP: report (`templateId` -> `report.printable`, Word `separateReports`, the same-object swap keeps the filter,
-    temporary files) and process parameter (`files`, `expression` verbatim).
+    temporary files) and process parameter (`files`, `expression` as given).
   - SF: the SysFile hazards (record-object sort columns, `RecordSchemaName`, checking the Freedom UI attachment
     list); the refusal sentences removed behind a version gate.
 - Existing articles:
@@ -1483,21 +1526,20 @@ palette caption), or one guide per ticket.
   fileProcessing", and concrete "from CrtProcessBuilder [version]" lines written with the merged cut's number (no
   placeholder can merge).
 - Tool descriptions:
-  - PT: type lists only (create +30, modify +28), no `name=` pointer (the routing row reaches agents). Same commit:
-    the budget swap on create and modify, replaced by a short clause that KEEPS three things: `this clio requires
-    <floor>`, `multiInstanceOptions {enabled, executionMode, ignoreErrors}` (X3), and a collapse clause with the exact
-    words `stopped validating formulas`. The collapse clause goes after the multiInstanceOptions list, so that no
-    floor literal sits in the 60 characters before it. This is required by
-    `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`
-    (`CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:1587-1623`; ENG-95984 File process parameter type
-    plan CL-2). Net about -390 B on create and -55 B on modify, re-measured in the PR. describe: the decoded-source clause covers "a value that IS another element's
-    output" (about +40 B of 1,924).
+  - PT: type lists only (create +30, modify +28), no `name=` pointer (the routing row reaches agents). No budget
+    swap: it was planned when create had 209 B and modify 189 B left. ENG-102114 has since deleted C6 and removed
+    S2's member list, and with about 465 / 146 B left PT's and OA's additions fit (about 307 / 44 B left after both;
+    re-measured in each PR). The floor-sentence guards still bind any edit near the floor clause: `this clio
+    requires <floor>` stays (X3), and the collapse clause with the exact words `stopped validating formulas` keeps
+    no floor literal in the 60 characters before it (`FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`,
+    `CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:1587-1623`; ENG-95984 File process parameter type
+    plan CL-2). describe: the decoded-source clause covers "a value that IS another element's output" (about +40 B
+    of about 1,705).
   - OA: the token in the type list, the block clause with `get-guidance name=process-files owns the fileProcessing
     block`, the `addElement` / `setElement` lists, the describe clause (estimated create +128, modify +74, describe
     +128; re-measured). The curated fixture `CLIO/clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json`
-    is re-pinned in the same commit to the PUBLISHED PT generation. Expected end state: about 430 B of headroom on
-    create and 130 B on modify (ENG-95984 File process parameter type plan section 4.3, row 2; re-measured in the PR); no
-    ceiling change.
+    is re-pinned in the same commit to the PUBLISHED PT generation. Expected end state: about 307 B of headroom on
+    create and 44 B on modify (an estimate from the 2026-10-08 sizes; re-measured in the PR); no ceiling change.
   - RP: the enforced floor clause moves to RP's final cut (byte-neutral), plus the capability-map floor rows and the
     e2e floor. No other description change: the block pointer is variant-neutral.
   - SF: no description change and no floor raise (D26).
@@ -1517,7 +1559,7 @@ palette caption), or one guide per ticket.
     for the `fileProcessing` block: the group present is the variant; use the dedicated type, not a generic
     `userTask` named ObjectFileProcessingUserTask; `get-guidance name=process-files` owns the block. RP adds the
     `report` and `files` groups to that sentence.
-  - `ModifyBusinessProcessPrompt` (`CLIO/clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs:84-121`)
+  - `ModifyBusinessProcessPrompt` (`CLIO/clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs:87-124`)
     states the `setElement` merge rule per element. OA adds the `fileProcessing` rule (D12): member-wise merge, an
     empty value clears, a value source replaces the whole value, and the variant cannot change in place.
   - `DescribeProcessPrompt` (`CLIO/clio/Command/McpServer/Prompts/ProcessDesigner/DescribeProcessPrompt.cs:33-35`)
@@ -1525,8 +1567,8 @@ palette caption), or one guide per ticket.
     block name does not depend on the variant.
   - PT: the prompts list no parameter types, so they need no update.
   - Cost: about 0.5-1 h each in OA.10 and RP.6 (plan section 5). Each change gets a clio unit test that pins the new
-    sentence, next to the existing prompt pins (`CLIO/clio.tests/Command/McpServer/CreateBusinessProcessToolTests.cs:334`,
-    `ModifyBusinessProcessToolTests.cs:246, 441, 499`, `DescribeProcessToolTests.cs:96, 109, 209`). For
+    sentence, next to the existing prompt pins (`CLIO/clio.tests/Command/McpServer/CreateBusinessProcessToolTests.cs:335`,
+    `ModifyBusinessProcessToolTests.cs:246, 442, 547`, `DescribeProcessToolTests.cs:96, 109, 209`). For
     `ListUserTasksPrompt`, the test also pins that the generic-route advice excludes the schemas the cut claims.
 - Resources: no process-specific MCP resource exists (`CLIO/clio/Command/McpServer/Resources/`), so none needs an
   update. `CLIO/clio/tpl`: it names none of these tools or schemas, so it needs no update.
@@ -1539,24 +1581,30 @@ palette caption), or one guide per ticket.
 **Consequences.** Merge order per ticket is package -> clio -> knowledge; the knowledge generation that births
 `process-files` must be PUBLISHED (merged, released, and visible in `info-knowledge`) before the clio PR that first
 names it merges, because CI checks only the fixture. A failed `update-knowledge` keeps serving the old guidance, so
-check `info-knowledge`'s library version before any guidance-dependent verification. The in-flight work of
-ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap splits parameters.md; whichever
-of the two merges second rebases a two-line edit. **Owner decision: yes** (the guide name).
+check `info-knowledge`'s library version before any guidance-dependent verification. The knowledge half of
+ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap is still unmerged (branch
+`feature/ENG-99970-process-digest`) and splits parameters.md; whichever of the two merges second rebases a two-line
+edit. **Owner decision: yes** (the guide name).
 
 ## D26. `[RequiresPackage]` floors and version numbers
 
-**Context.** create, modify and modify-as-new-version carry 1.6.6.40 (`CLIO/clio/Command/CreateBusinessProcessCommand.cs:240`,
-`ModifyBusinessProcessCommand.cs:196`, `ModifyProcessAsNewVersionCommand.cs:59`); the rule is that the floor moves
+**Context.** create, modify and modify-as-new-version carry 1.6.6.77 since ENG-102114 (https://github.com/Advance-Technologies-Foundation/clio/pull/1760, 2026-10-07; they
+carried 1.6.6.40 when this plan was written) (`CLIO/clio/Command/CreateBusinessProcessCommand.cs:247`,
+`ModifyBusinessProcessCommand.cs:203`, `ModifyProcessAsNewVersionCommand.cs:66`); the rule is that the floor moves
 when clio starts advertising behaviour an older server may not have (`CreateBusinessProcessCommand.cs:211-217`).
 Older-server behaviour: PT's `File` -> a misleading "not supported" and a silent unbound mirror; P1/P2 change what
 `addMapping` writes; OA's `fileProcessing` on `setElement` -> silently dropped; RP's new members -> dropped. Package
-main, clio's bundled archive and the stand are at 1.6.6.54. Two of the team's package PRs in review at the same time
-stamped the same number twice (1.6.6.42 and 1.6.6.49, measured from git history).
+main and clio's bundled archive are at 1.6.6.85 (2026-10-07); the stand was at 1.6.6.54 when it was measured on
+2026-10-02. The ENG-102112 branches claim 1.6.6.87 (a package tag and a clio bundle); no branch or tag holds
+1.6.6.86. Two of the team's package PRs in review at the same time stamped the same number twice (1.6.6.42 and
+1.6.6.49, measured from git history).
 
 **Decision.** Numbers are rules, not projections.
 - Each cut claims, in its PR description and in one shared claim on ENG-92719 File processing element, the first
-  number at or above 1.6.6.55 that is free in both histories, going up from clio's `ExpectedArchiveVersion` and never
-  adopting another branch's height. Re-cuts burn numbers. Cut with
+  free number ABOVE the highest number claimed anywhere at cut time (main, any branch or tag of either repository, a
+  clio bundle), never reusing a number another branch holds. Today that means 1.6.6.88 or higher, because the
+  ENG-102112 branches claim 1.6.6.87 over main's 1.6.6.85. A cut below a merged higher bundle would be a downgrade
+  the convergence check refuses. Re-cuts burn numbers. Cut with
   `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`.
 - **Floor = the FINAL cut of that clio PR** (equal to `ExpectedArchiveVersion` when it merges), not the first cut: a
   foreign archive under our first number would satisfy a first-cut floor while lacking the feature.
@@ -1567,15 +1615,19 @@ stamped the same number twice (1.6.6.42 and 1.6.6.49, measured from git history)
 - Files that move with each raise: the three literals and their comment blocks,
   `ProcessDesignerRequiresPackageAttributeTests.cs:67-68, 106`, the enforced floor clause in three descriptions
   (X3), `docs/McpCapabilityMap.md` floor rows, the new e2e fixtures' `MinimumPackageVersion`; the floor-history
-  parenthetical of `ModifyProcessAsNewVersionTool.cs:83-88` is rewritten once without the enumeration.
+  parenthetical of `ModifyProcessAsNewVersionTool.cs:83-88` (it already lists 1.6.6.40 and 1.6.6.77) is rewritten
+  once without the enumeration.
 - If ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17 graph
-  validator into the write path (ENG-88414) (ENG-88414 is AI-driven application development) lands first, our next
+  validator into the write path (ENG-88414) (ENG-88414 is AI-driven application development; still unmerged on
+  2026-10-08, its branch at 1.6.6.36 and 170 commits behind main) lands first, our next
   package PR teaches its key allow-list the new
   write members and its read-back list the describe-only members; if ours lands first, that work adds them on
   rebase.
 - No new WCF operation, so `ExpectedOperationContractCount` and `ExpectedAuthorizationGateCallSites` do not move.
 
-**Consequences.** Reinstall the stand in the same breath as a rebundle, or tell the verifier. net472 package
+**Consequences.** Reinstall the stand in the same breath as a rebundle, or tell the verifier. A clio built from
+master (bundle 1.6.6.85, floors 1.6.6.77) refuses the process tools against a stand still on 1.6.6.54, so any
+re-measurement needs the stand upgraded or an older clio, and every record names the package version. net472 package
 worktrees live on `C:/Projects/workspace/<short>` (MAX_PATH). Every clio PR states "ClioRing compatibility
 reviewed, no Ring-consumed contract changed" (Ring consumes only the catalog entry, its name, Purpose text and
 Destructive flag, and counts the Resident flag for its summary line, `clio-ring/ClioRing.Ipc/ClioIpcModels.cs:80-95`;
@@ -1689,8 +1741,11 @@ the designer, because the builder cannot build them until these tickets land. Me
 | M26 | After "Save to object attachments", does the Object variant's `ObjectFiles` hold the SOURCE locators? (probe in [traps](eng-92719-file-processing-element-traps.md), T-19) | yes | the OA.12 guide sentence and the CL-OA record `after-saving-object-files-points-at-the-source-files.md` | no code (the guide sentence and the record wait on it) |
 
 Timing: M3, M3b, M6's builder mapping, M13, M14, M19, M20 and M24 run on day 0, on 1.6.6.54, before the first cut of
-this work is installed. The others are version-independent and may run on any cut
-([open-questions](eng-92719-file-processing-element-open-questions.md) B.0, B.2).
+this work is installed; they ran on 2026-10-02 ([open-questions](eng-92719-file-processing-element-open-questions.md)
+C.6, C.7). Main has moved to 1.6.6.85 since, so those records describe 1.6.6.54, and a repeat needs a 1.6.6.54 stand
+and a clio that still bundles 1.6.6.54 (a master clio refuses the process tools there). The others are
+version-independent and may run on any cut ([open-questions](eng-92719-file-processing-element-open-questions.md) B.0,
+B.2).
 
 M5 (outer-only `Files` gives an NRE) is skipped: the case is refused anyway. **Owner decision: no** for the plan;
 every row with "Write? yes" needs the user's go-ahead before it runs.
@@ -1943,7 +1998,7 @@ New server-side texts; none costs tool-description bytes.
 | F-R2 | refuse | a bad `fileNameSuffixColumn`; suffix and column together | D17 |
 | F-R3 | notice | ConvertInPDF; several records into one target; feature off; temporary report files into an Out parameter; Word `separateReports: false` accepted | D14, D17 |
 | F-P1 | refuse | a `files` source with no FileLocator item; outer-only; none; a mapping FROM `Files`; a `value` | D18 |
-| F-P2 | notice | `files.expression` written verbatim onto `Files.File` | D18 |
+| F-P2 | notice | `files.expression` written as given onto `Files.File` (only its meta-path tokens are checked) | D18 |
 
 ## Appendix B. Review log
 
@@ -1966,7 +2021,7 @@ problem is fixed by a different change than the one proposed. Nothing was reject
 | A10 | low | A `saveTo.recordId` constant takes the format-only Guid branch | Accepted. Validated as a lookup of the record object | D15, D21 |
 | B1 | high | A `filter.recordId` lift is dropped by clio's bagless filter DTOs | Accepted, changed: the record scope moved into the block; filter DTOs untouched | D11, D16, D19 |
 | B2 | high | "Read-only members accepted only when equal" refuses correct resubmissions | Accepted. Two kinds: identity checks vs describe-only members | D11, D19 |
-| B3 | high | The binder rules did not say how an `expression` source is classified | Accepted. Rules run for structured sources only; expressions verbatim; single-token element-source decode pulled into PT; `files.expression` accepted | D5, D8, D18 |
+| B3 | high | The binder rules did not say how an `expression` source is classified | Accepted. Rules run for structured sources only; expressions pass as given (since 1.6.6.79 the package checks their meta-path tokens); single-token element-source decode pulled into PT; `files.expression` accepted | D5, D8, D18 |
 | B4 | high | "A supplied group REPLACES the member" loses configuration silently | Accepted. Member-wise merge; empty value clears; value sources replace whole | D12 rule 1, D25 |
 | B5 | high | A FileCollection described as `CompositeObjectList` rebuilds shapeless and green | Accepted. Describe emits `FileCollection`; the guide exception is measured with the type-list edit | D2, D3, D25 |
 | B6 | high | Two `recordId` vocabularies in one element | Accepted, by the B1 move: one value-source contract; only CurrentUserContact accepted as a formula | D11, D16, D24 |
@@ -2009,7 +2064,7 @@ The sibling documents each finding names were aligned in the reconciliation of 2
 | # | Sev. | Finding | Disposition | Where |
 |---|---|---|---|---|
 | R3-1 | high | Part D's comparison rule "UIds ignored, `GS5` normalised" fails on four keys the plans already accept (serialization-capture N2, N9, N10, N13) | Accepted. Verified in `CORE/Terrasoft.Core/Process/ProcessSchemaActivity.cs:291-305` (the `BK15` sync covers top-level parameters only), `BaseProcessSchemaElement.cs:217` with `PB/Parameters/ProcessParameterService.cs:65, 478` (process-parameter `IL2`), and crt-process-builder `docs/script-task-element-capture.md:30-32` (`BL8`). D-1 carried N9 (N2, N10 and N13 are element keys) until the reconciliation of 2026-10-01 moved the ENG-95984 File process parameter type criteria to its plan's AC-8 rule. D-2, D-3 and D-4 carry all four exceptions, and D20 states the full rule and where each sibling document states it | D20, D24, D-1..D-4 |
-| R3-2 | high | D25 left the MCP prompts out of scope on a false premise: they enumerate the dedicated element types, their blocks and the generic `userTask` route | Accepted, extended. Verified on clio master `03ef3944f`: `ListUserTasksPrompt.cs:22-25`, `CreateBusinessProcessPrompt.cs:25, 38-49, 97-99`, `ModifyBusinessProcessPrompt.cs:84-121`. `DescribeProcessPrompt.cs:33-35` (the block list) was added to the finding. Resources and `clio/tpl` were checked: neither refers to these tools or schemas. The PR MCP statement now names prompts, resources and tpl | D13, D25 |
+| R3-2 | high | D25 left the MCP prompts out of scope on a false premise: they enumerate the dedicated element types, their blocks and the generic `userTask` route | Accepted, extended. Verified on clio master `03ef3944f`: `ListUserTasksPrompt.cs:22-25`, `CreateBusinessProcessPrompt.cs:25, 38-49, 97-99`, `ModifyBusinessProcessPrompt.cs:87-124`. `DescribeProcessPrompt.cs:33-35` (the block list) was added to the finding. Resources and `clio/tpl` were checked: neither refers to these tools or schemas. The PR MCP statement now names prompts, resources and tpl | D13, D25 |
 | R3-3 | medium | D-3 kept "Process file is rarely an endpoint", which the corpus disproves | Accepted. Re-counted in `PS` for this edit: 16 processes; 4 product processes with 5 elements, all Report variant with `ResultActionType` 0. The sentence is replaced by the plan C-2 wording, with a change-table row, and TC-88 pins the corrected sentence | D-3, D25 |
 
 ### Round 4: residual cross-document consistency (4 findings: 3 applied, 1 not applied)
@@ -2022,4 +2077,4 @@ This round edited this document only.
 | R4-1 | D-3 and D-4 stated a shorter comparison rule than D-2 and D20: no N1 pairing by caption (element name and lane) and no N11, N14-N16 format normalisations, so the OA and RP criteria would fail on the element name, a stale `BK15.GT1`, request-culture resource rows, the three "no value" forms and filter key ordinals | Accepted. D-3 and D-4 now carry D-2's N1 bullet and its format-normalisation bullet word for word. Their `GS5` bullet takes D-2's wording too, because "template-default values" could be read as values the template wrote, and D20 normalises any value equal to the template default (an explicit `numberOfRecords: 50` included). Plan section 1.3 row N2's summary, which omits N11 and N14-N16, is the plan's to correct | D-3, D-4 |
 | R4-2 | D-4 said the shipped report processes "describe as `fileProcessing`", which is the block and wire spelling, while D10 has build and describe emit the lowercase token | Accepted. D-4 now reads `buildType: fileprocessing` (D10, "Visible change per cut"). Test-plan section 11 row RP-7 carries the same wording and is the test plan's to correct | D-4 |
 | R4-3 | D-3's guidance bullet paraphrased the endpoint sentence that TC-88 pins ("... When a following element needs the files, it maps ...") | Accepted. The bullet quotes the pinned sentence verbatim, as D25, the D-3 change table, plan OA.12 and test-plan TC-88 do | D-3 |
-| R4-4 | Line ranges differ across documents; normalisation to `ModifyBusinessProcessToolE2ETests.cs:2178-2205` was proposed | Not applied. Re-read at clio `03ef3944f`: the test runs from `[Test]` at line 2178 to its closing brace at 2204, and line 2205 is blank, so D1's `2178-2204` is exact; the `2178-2205` in traps, reuse, open-questions, the ENG-95984 File process parameter type plan (twice) and its test plan is the off-by-one form. This document's other three citations are exact as written: `ProcessParameterServiceTests.cs:1671-1678` (D1; `[Test]` is at 1670, the `[Description]` at 1671), `BundledProcessBuilderPackageTests.cs:1587-1623` (D25) and `ProcessMappingService.cs:425-435` (D4, method signature to closing brace) | D1, D4, D25 |
+| R4-4 | Line ranges differ across documents; normalisation to `ModifyBusinessProcessToolE2ETests.cs:2360-2387` was proposed | Not applied. Re-read at clio `03ef3944f`: the test runs from `[Test]` at line 2178 to its closing brace at 2204, and line 2205 is blank, so D1's `2178-2204` is exact; the `2178-2205` in traps, reuse, open-questions, the ENG-95984 File process parameter type plan (twice) and its test plan is the off-by-one form. This document's other three citations are exact as written: `ProcessParameterServiceTests.cs:1671-1678` (D1; `[Test]` is at 1670, the `[Description]` at 1671), `BundledProcessBuilderPackageTests.cs:1587-1623` (D25) and `ProcessMappingService.cs:594-604` (D4, method signature to closing brace) | D1, D4, D25 |

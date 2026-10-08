@@ -46,7 +46,7 @@ the element, and the 16 shipped processes, are in [use-cases](eng-92719-file-pro
 | `UI` | `C:/Projects/creatio-ui` | the Angular diagram. The checkout is a feature branch; the compiled bundle shipped in core agrees on every lookup cited |
 | `PS` | `C:/Projects/PackageStore` | shipped package corpus (`*/branches/7.8.0`) |
 | `UT` | `C:/Projects/UnitTests` | platform unit tests |
-| `PB` | `packages/CrtProcessBuilder/Files/src/cs` in https://creatio.ghe.com/engineering/crt-process-builder, main `3f4cce50` (1.6.6.54) | only where the platform fact touches the builder |
+| `PB` | `packages/CrtProcessBuilder/Files/src/cs` in https://creatio.ghe.com/engineering/crt-process-builder, main `d9571626` (1.6.6.85), re-pinned 2026-10-08; the stand ran 1.6.6.54 (`3f4cce50`) when measured | only where the platform fact touches the builder |
 
 **Basis.** *source* means read in code or metadata. For runtime behaviour this is a hypothesis. *measured* means
 observed on the stand `Creatio` (core 10.1.37.0, .NET Framework, MSSQL) or counted

@@ -5,7 +5,7 @@
 | Issues | ENG-92719 File processing element (Story), sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Acceptance criteria served | "Server serialization matches a designer-built capture" in all four issues (plan AC-FE5, AC-OA7, AC-RP6; ENG-95984 File process parameter type plan AC-8) |
-| Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves); CrtProcessBuilder `main` `3f4cce50` = 1.6.6.54; clio `master` `03ef3944f` |
+| Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves). Anchors point to CrtProcessBuilder `main` `d9571626` = 1.6.6.85 and clio `master` `db6e2bf9e`, re-pinned 2026-10-08; the stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`) |
 | How it was made | Read-only, 2026-10-01. Corpus re-scanned for this document (16 processes, 30 elements, 400 stored parameter entries, 394 mapping rows). Nothing was built, saved or run on the stand |
 
 ## Summary
@@ -56,8 +56,8 @@ expected to write, derived from source plus corpus; section 12 measures it.
 | `NUI` | `CORE/Terrasoft.Nui/Resources/Terrasoft` (classic shell client, 10.1.37) |
 | `PD` / `PDR` | `C:/Projects/PackageStore/CrtProcessDesigner/branches/7.8.0/Schemas` / `.../Resources` |
 | `PS` | `C:/Projects/PackageStore` (shipped corpus; every file cited is under `<Package>/branches/7.8.0/`) |
-| `PB` / `PBD` | https://creatio.ghe.com/engineering/crt-process-builder, `packages/CrtProcessBuilder/Files/src/cs` / `docs`, main `3f4cce50` (1.6.6.54) |
-| `CLIO` | clio repository root, master `03ef3944f` |
+| `PB` / `PBD` | https://creatio.ghe.com/engineering/crt-process-builder, `packages/CrtProcessBuilder/Files/src/cs` / `docs`, main `d9571626` (1.6.6.85) |
+| `CLIO` | clio repository root, master `db6e2bf9e` |
 
 **Placeholders in JSON fragments.** `<P>` = the process schema UId, `<T>` = the user-task schema UId (`9387c794…`,
 `6c620dd2…` or `c2bf0416…`), `<E>` = the element UId, `<lane>` = the lane UId. `…` elides a UId's tail or a long string.
@@ -109,7 +109,7 @@ datable signal: an element that lacks `TargetDataEntitySchemaUId` was last saved
 basis=source.
 
 **Do not compare describe output.** `describe-business-process` hides inherited template defaults, empty link
-columns and nested-only bindings (`PB/Describe/ProcessDescriber.cs:187-198`), and it resolves a process by name to
+columns and nested-only bindings (`PB/Describe/ProcessDescriber.cs:188-199`), and it resolves a process by name to
 its base version (`CLIO/docs/knowledge/ProcessModel/describe-business-process-reads-the-base-version-not-the-active-one.md`).
 The capture is the stored metadata plus the stored resources, nothing else (section 12.2).
 
@@ -514,7 +514,7 @@ shows "File" on the card ([decisions](eng-92719-file-processing-element-decision
 |---|---|
 | `className` | `"Terrasoft.FilterGroup"` |
 | `serializedFilterEditData` | the editor's form: `className` on every node, `leftExpressionCaption`, `displayValue` of mapped values, `rootSchemaName`, the filter `key`s. Captions are frozen in the authoring culture; they are not resources |
-| `dataSourceFilters` | the lean form the runtime reads (`PB/Filters/ProcessFilterService.cs:22`, `PB/Filters/FilterDescriptorReader.cs:61`): no `className`, no captions; parameter display values removed by `deleteParameterDisplayValues` |
+| `dataSourceFilters` | the lean form the runtime reads (`PB/Filters/ProcessFilterService.cs:22`, `PB/Filters/FilterDescriptorReader.cs:62`): no `className`, no captions; parameter display values removed by `deleteParameterDisplayValues` |
 
 The page writes it only when the filter changed. Before writing, it applies `ConsiderTimeInFilter`: every date-time
 comparison gets `trimDateTimeParameterToDate = !ConsiderTimeInFilter`. The stored `rootSchemaName` is ignored at run
@@ -708,7 +708,8 @@ attachment)`** (predicted; the record left empty in UO-4 must be set before the 
 This table is the comparison rule. The test plan's TC-41 rule (also used by TC-59, TC-69, DT-02 and DT-04) is this
 table for elements. The ENG-95984 File process parameter type AC-8 rule (its test-plan section 4.2) takes the
 process-parameter rows. The table lists every known or predicted difference and says how the comparison treats it.
-"Today" means the generic route on 1.6.6.54 ([decisions](eng-92719-file-processing-element-decisions.md) D13; G4 f.1).
+"Today" means the generic route on 1.6.6.54, where M14 measured it ([decisions](eng-92719-file-processing-element-decisions.md) D13; G4 f.1);
+the generic route's code is unchanged on 1.6.6.85.
 
 | # | Key | Designer | Builder today | After D20 | Comparison | Measured by |
 |---|---|---|---|---|---|---|

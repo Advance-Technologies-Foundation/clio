@@ -32,13 +32,14 @@ still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 
 Written 2026-10-01; measured on the stand 2026-10-02. No product code was written. The probes were built in package
 `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
 branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12 and Q19 are
-agreed; Q13-Q18 are open.** The code was read at these points:
+agreed; Q13-Q18 are open.** Every anchor points to these lines (re-pinned 2026-10-08). The stand measurements of
+2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`).
 
-| Source | Version read |
+| Source | Version the anchors point to |
 |---|---|
-| crt-process-builder | `main` `3f4cce50` (CrtProcessBuilder 1.6.6.54, the version the stand runs) |
-| clio | `master` `03ef3944f` |
-| clio-knowledge | `master` `d0b5a2b` (libraryVersion 1.15.90) |
+| crt-process-builder | `main` `d9571626` (CrtProcessBuilder 1.6.6.85) |
+| clio | `master` `db6e2bf9e` |
+| clio-knowledge | `master` `73a619e` (libraryVersion 1.15.100) |
 | Creatio core | 10.1.37, the stand's core |
 
 **Basis labels** used in every document:
@@ -58,6 +59,17 @@ constraints.
 | **SF** | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
 | **MH** | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on measurement M3, and M3 refuted the defect on 2026-10-02 |
 
+Other issues the documents cite, by key (titles as in Jira on 2026-10-08):
+
+| Key | Title | Why it is cited |
+|---|---|---|
+| ENG-99970 | CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap | merged 2026-10-07; filter read-back and the is-null flag |
+| ENG-95244 | [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17 graph validator into the write path (ENG-88414) | strict descriptor keys, unmerged; M20 still holds |
+| ENG-102110 | Process filters: a [#...#]-wrapped expression is accepted by setFilter but never evaluated at runtime | merged at 1.6.6.75; a filter `expression` is validated |
+| ENG-102112 | create-business-process silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage block | branch only, claims 1.6.6.87; precedent and merge conflict for OA.5 |
+| ENG-102113 | modify-business-process addMapping: Add data object (EntitySchemaId) is validated against the record Id instead of the schema UId | merged at 1.6.6.69; a schema-registry Lookup accepts a schema UId (T-54) |
+| ENG-102114 | Process builder: raw meta-path tokens (filter expression, modify flow conditions) get no shape check - a missing dot before [EntityColumn:...] fails only at runtime | merged at 1.6.6.79/.85; every meta-path token is checked and its GUIDs lower-cased |
+
 PR ids: `PK-` = crt-process-builder, `CL-` = clio, `KB-` = clio-knowledge (for example PK-OA). D1-D29, M1-M26 and
 Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md) and
 [open-questions](eng-92719-file-processing-element-open-questions.md).
@@ -71,7 +83,7 @@ Q1-Q19 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 1 | [platform-reference](eng-92719-file-processing-element-platform-reference.md) | **What the platform does, end to end.** The three schemas and their 13 / 8 / 13 parameters. The runtime per variant. `ResultActionType`: Object and Report produce their output collections for both values, and the Process variant supports SaveToFiles only. The file data model. Storage chosen per entity. The classic designer field by field. The diagram, the feature flags, and what the server validates (almost nothing). §13 lists every load-bearing claim that is still only source-traced. |
 | 2 | [use-cases](eng-92719-file-processing-element-use-cases.md) | **Why customers use the element, and how the product uses it.** Academy and Community. All 16 shipped processes with the element (30 elements), of which 4 are product processes that follow one recipe. The five Jira patterns tested against the corpus. The recommended scope per pattern, and the "which variant for which intent" guidance. Proposed as the "attached use-case inventory" that the Story refers to; Jira has no such attachment today. |
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
-| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 58 of them silent (T-8 among them, refuted by M3; T-68 added on 2026-10-02).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
+| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 59 of them silent (T-8 among them, refuted by M3; T-54 since CrtProcessBuilder 1.6.6.69; T-68 added on 2026-10-02).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
 | 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 6 of them wait for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
@@ -244,15 +256,18 @@ ENG-95984 File process parameter type does not functionally block ENG-96505 Elem
 mode. The Object variant's outputs are element parameters, and dotted element paths can address them today
 (source). What it really blocks is ENG-96506 Generated report + process parameter modes, which has no Jira link today.
 
-PK-OA still merges after CL-PT, for two reasons (pr-split edges E4 and E6):
+PK-OA still merges after CL-PT (pr-split edges E4 and E6):
 - CL-PT ships the `ManagerMap` arm `fileprocessing` / `processfile`. Without it, an older clio meeting the token
   raises a hard `validate-process-graph` Error.
-- CL-PT also ships the description-budget swap. Against the 35,072-byte ceiling, create has 209 bytes left and
-  modify 189.
+- `main` must never hold two cuts that no clio has bundled yet (E4).
+
+CL-PT no longer needs a description-budget swap. It was planned when create had 209 bytes and modify 189 left
+against the 35,072-byte ceiling. ENG-102114 has since deleted C6 and shortened S2, and on clio master `db6e2bf9e`
+create has about 465 bytes left and modify about 146 (estimated, not measured), enough for PT's and OA's additions.
 
 Separately, CL-OA merges only after KB-PT is published (edge E5). KB-PT creates the new `process-files` guide,
 because the articles the text would otherwise extend (process-modeling, activity-connections, parameters,
-element-catalog) are 97.7-99.9% full, and CL-OA writes the first `name=process-files`.
+element-catalog) are 98.4-99.9% full, and CL-OA writes the first `name=process-files`.
 
 TeamCity never runs the process-designer e2e. So every e2e run is a manual run on the stand, and it counts only with
 Ignored = 0.
@@ -287,7 +302,7 @@ The BMAD artifacts each issue needs before its package PR opens are tabled in
 [pr-split](eng-92719-file-processing-element-pr-split.md) §5.8.
 
 Contingency splits fire only on a named trigger (§11):
-- X1, an early clio PR for the budget swap;
+- X1, an early clio PR for description bytes (no trigger on 2026-10-08: the swap is no longer needed);
 - X2, cherry-pick RP's Report half if the Process-parameter half fails its stand proof;
 - X3, swap the RP and SF slots.
 
@@ -378,7 +393,10 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 
 ## Stand measurements pending
 
-Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54.
+Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54 when measured on 2026-10-02. A clio
+built from master (bundle 1.6.6.85, floors 1.6.6.77 since 2026-10-07) refuses the process tools against a stand
+still on 1.6.6.54, so a re-measurement needs the stand upgraded or an older clio, and every record names the
+package version.
 On 2026-10-02 five of the seven read-only measurements (M10, M11 a/b in memory, M13, M15, M17-Q7;
 [open-questions](eng-92719-file-processing-element-open-questions.md) C.6) and the day-0 builder probes M3b, M14,
 M19, M20 and M24 (C.7) were run. M3 was run the same day and refuted H-1, so MH is not created. The day-0 probes also
@@ -495,8 +513,8 @@ Each item has its reason in [plan](eng-92719-file-processing-element-plan.md) §
 | Creatio core | `C:/Projects/Creatio/.devenv/repos/core/TSBpm/Src/Lib` (cited as `CORE/`), 10.1.37, the stand's version, cited for runtime claims. The 8.3.x checkout `C:/Projects/Creatio2/TSBpm/Src/Lib` is cited only where it was read; the differences are in [platform-reference](eng-92719-file-processing-element-platform-reference.md) §12 |
 | Classic designer | `C:/Projects/PackageStore/CrtProcessDesigner/branches/7.8.0` (its `Schemas` folder is cited as `PD/`). The 13 client units involved are byte-identical to what the stand serves (measured 2026-10-01) |
 | Shipped corpus | `C:/Projects/PackageStore`: 1,090 package directories and 1,665 process schemas. 16 of them hold the element (30 elements: Object 14, Process 2, Report 14), with 400 stored parameter entries and 394 mapping rows |
-| Package under change | crt-process-builder `main` `3f4cce50` (1.6.6.54), byte-identical to the stand's installed package |
-| MCP and guidance surface | clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (libraryVersion 1.15.90) |
+| Package under change | crt-process-builder `main` `d9571626` (1.6.6.85), re-pinned 2026-10-08. The stand ran 1.6.6.54 when measured on 2026-10-02, byte-identical to `main` `3f4cce50` then |
+| MCP and guidance surface | clio `master` `db6e2bf9e`; clio-knowledge `master` `73a619e` (libraryVersion 1.15.100), re-pinned 2026-10-08 |
 | Stand | read-only reads on 2026-10-01, sequential. Designer readings UO-1..UO-4 were taken on a new, unsaved process, and the tab was closed without saving |
 | Product documentation | Academy: the Process file article (7.17 to 10), Send email, Creatio.ai text files, and 43 release-note pages. Community threads, cited as documentation, never as evidence of today's behaviour |
 | New designer | `C:/Projects/creatio-ui`, **verified negative**: no file-processing logic; its 13 `File` matches are all BPMN import |

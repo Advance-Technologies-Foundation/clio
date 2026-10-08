@@ -25,7 +25,7 @@ the stand (core 10.1.37) on the date given. *backlog* = Jira state, used for sco
 | PS | `C:/Projects/PackageStore` (the shipped corpus) |
 | PD | `PS/CrtProcessDesigner/branches/7.8.0` (byte-identical to what the stand serves) |
 | CORE | `C:/Projects/Creatio/.devenv/repos/core/TSBpm/Src/Lib` (10.1.37, the stand's core) |
-| PB | crt-process-builder `main` `3f4cce50` (package 1.6.6.54), `packages/CrtProcessBuilder/Files/src/cs` |
+| PB | crt-process-builder `main` `d9571626` (package 1.6.6.85, re-pinned 2026-10-08; the stand measurements of 2026-10-02 ran on 1.6.6.54, `3f4cce50`), `packages/CrtProcessBuilder/Files/src/cs` |
 | `<P>:<n>` in the corpus tables | `PS/<Package>/branches/7.8.0/Schemas/<Process>/metadata.json:<n>` |
 
 ---
@@ -260,8 +260,9 @@ element: Send email, Read data, Add data, Modify data, or a Creatio.ai call" (ba
 
 ### 3.1 Capability per pattern
 
-"Today" means CrtProcessBuilder 1.6.6.54 with clio `master`. Today the element exists only through the unguarded
-generic `userTask` route, which writes no configuration (D13), so it is not counted as support.
+"Today" means CrtProcessBuilder 1.6.6.54 with clio `master` as read on 2026-10-01; the column still holds on
+1.6.6.85, whose generic route is unchanged and which still accepts a collection as a filter value. Today the element exists only
+through the unguarded generic `userTask` route, which writes no configuration (D13), so it is not counted as support.
 
 | Pattern | Today | After ENG-95984 File process parameter type | After ENG-96505 Element readiness and object attachments mode | After ENG-96506 Generated report + process parameter modes | Still missing after all three | Home |
 |---|---|---|---|---|---|---|
@@ -269,7 +270,7 @@ generic `userTask` route, which writes no configuration (D13), so it is not coun
 | **P2a** Read data to Process file (which record; report filter; file name) | `readData` yes; the element cannot be configured | - | `attachments.recordId` and `saveTo.recordId` from `sourceElement` + `sourceColumn` (D11, D16) | `report.recordId`; a `fileNameSuffix` formula over a Read data column | nothing | ENG-96505 Element readiness and object attachments mode, ENG-96506 Generated report + process parameter modes |
 | **P2b** Process file to Read data (re-read the files) | By a filter on the file object: yes. By `CreatedObjectFileIds`: **not a platform feature**. Each filter right-hand expression becomes one ESQ parameter (`CORE/Terrasoft.Nui.ServiceModel/Extensions/QueryExtension.cs:378-388`; source). PB accepts a collection as a filter value with no type check, so it saves green and is predicted to fail at run time (D29 M19) | - | - | - | a guard that refuses collection references (not file-specific) | guidance, plus the new Sub-task "Refuse collection parameters as filter values" (D22) |
 | **P3** Add data with Process file | `addData` yes. A FileLocator into a column is **impossible**: 0 entity columns of that type exist (corpus), and PB refuses the mapping by exact type match | - | - | the "create the report's data row, generate, delete the row" recipe becomes buildable | nothing buildable is missing | guidance in ENG-96506 Generated report + process parameter modes |
-| **P4** Process file to Modify data (re-find the saved file) | `changeData` + `contains` + macro `CurrentHour` exist (`PB/Filters/MacrosCatalog.cs:59`; `PB/Contracts/FilterContracts.cs:102-106`) | - | Object save produces files to re-find | Report save completes recipe A | nothing; the hazards go into guidance | guidance in ENG-96505 Element readiness and object attachments mode; per-Id route via P8 |
+| **P4** Process file to Modify data (re-find the saved file) | `changeData` + `contains` + macro `CurrentHour` exist (`PB/Filters/MacrosCatalog.cs:59`; `PB/Contracts/FilterContracts.cs:110-114`) | - | Object save produces files to re-find | Report save completes recipe A | nothing; the hazards go into guidance | guidance in ENG-96505 Element readiness and object attachments mode; per-Id route via P8 |
 | **P5** Process file to Creatio.ai (Sub-agent) | **No.** PB has no ExecuteIntent support (grep, 2026-10-01). The generic route builds the element without the skill's parameters or `Files<N>` slots | - | a source exists | more sources | the element itself (skill selection and parameter sync; size L) and a `files` slot (S, reusing the ENG-95985 Send email attachments writer) | **outside ENG-92719 File processing element**. ENG-92725 Execute AI Intent element (BP generation) is Closed, Won't Do (backlog, 2026-10-01) |
 
 The AC also says "an element's output collection can be mapped by more than one downstream element". The corpus has
