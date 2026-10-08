@@ -81,10 +81,11 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 			existingBindingUId: Guid.Parse("c653d44c-9c7c-125d-e269-b9257b353ff9"));
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains("re-saved in the database only")
-			&& message.Contains("carries the binding as the last export wrote it")
-			&& !message.Contains("without this binding")));
+		WarningMessages().Should().ContainSingle(because: "one re-saved binding gets one warning")
+			.Which.Should().Contain("re-saved in the database only")
+			.And.Contain("carries the binding as the last export wrote it")
+			.And.NotContain("without this binding",
+				because: "the folder may already hold the binding from an earlier export");
 	}
 
 	[Test]
@@ -166,11 +167,12 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 		_sut.DeleteBinding(Package, "UsrStatus");
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains("removed from the database only")
-			&& message.Contains("(Pkg/UsrPkg/Data/UsrStatus) was not updated")
-			&& message.Contains("still ships the removed binding")
-			&& message.Contains("pkg-to-file-system")));
+		WarningMessages().Should().ContainSingle(because: "one removed binding gets one warning")
+			.Which.Should().Contain("removed from the database only")
+			.And.Contain("(Pkg/UsrPkg/Data/UsrStatus) was not updated")
+			.And.Contain("still ships the removed binding")
+			.And.Contain("pkg-to-file-system",
+				because: "the reader must learn that a commit still carries the binding and how to fix it");
 	}
 
 	[Test]
@@ -183,9 +185,10 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 		_sut.DeleteBinding(Package, "UsrStatus");
 
 		// Assert
-		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
-			message.Contains("was removed from the database, but clio could not read")
-			&& message.Contains("Pkg/UsrPkg/Data/UsrStatus")));
+		WarningMessages().Should().ContainSingle(because: "one removed binding gets one conditional warning")
+			.Which.Should().Contain("was removed from the database, but clio could not read")
+			.And.Contain("Pkg/UsrPkg/Data/UsrStatus",
+				because: "an unknown state still has to name the folder the reader may need to update");
 	}
 
 	[Test]
@@ -247,6 +250,13 @@ public sealed class PackageDataBindingWriterFileDesignModeTests {
 		warning.Should().Contain("before the next pkg-to-db",
 			because: "pkg-to-db makes the database match the disk and a database-only binding does not survive it");
 	}
+
+	// Reads the warnings through the recorded-calls API, so the expectation is a plain assertion on the
+	// written text and a failure names the messages that were actually logged.
+	private string[] WarningMessages() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+		.Select(call => (string)call.GetArguments()[0]!)
+		.ToArray();
 
 	private static DataBindingDbSchema BuildSchema() {
 		DataBindingSchemaColumn[] columns = [

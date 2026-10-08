@@ -10,8 +10,10 @@ ticket: ENG-102507
 date: 2026-10-07
 ---
 
-**What is true** — read from the Creatio core source (`creatio-core`, October 2026). FSM itself was
-not switched on to check this: the shared stand was not in FSM and must not be switched.
+**What is true** — read from the Creatio core source (`creatio-core`, October 2026) and checked on a
+disposable FSM stand (eng101676, Creatio 10.2.414, PR #1772): after `sync-schemas` `create-lookup` +
+`seed-rows` both `Data/` folders were missing on disk until `pkg-to-file-system` wrote them, with the
+same binding UIds `read-data-binding-db` returned.
 `SchemaDataDesignerService.svc/SaveSchema` → `SaveSchemaDataCommand.InternalExecute` writes
 `SysPackageSchemaData`, its columns and the bound rows to the database and has no file-system branch.
 Entity schemas behave differently: they are saved through `FileSystemEnabledSchemaManager`, which also
@@ -27,7 +29,10 @@ marked deleted (`PackageStorageComposer.ShouldItemBeMarkedAsDeleted`). Only `Cli
 the other direction. By that logic, a binding that exists only in the database would be deleted from it
 by the next `pkg-to-db`, including the automatic one that `create-user-task` and
 `modify-user-task-parameters` run when they write parameter directions. That deletion follows from the code and has not been reproduced
-on a stand.
+on a stand. It concerns the binding registration (`SysPackageSchemaData`), not the bound rows in the
+target table: `pkg-to-db` never installs those rows
+([`Command/load-packages-to-db-registers-definitions-not-package-data.md`](../Command/load-packages-to-db-registers-definitions-not-package-data.md)),
+which is what the workspace template means by "leaves package data alone".
 
 **Why it is this way** — FSM has the developer edit client modules and C# source on disk. Everything
 else is designer-driven and stays database-first until the user runs "download packages to file system".

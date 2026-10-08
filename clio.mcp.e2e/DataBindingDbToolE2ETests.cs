@@ -115,6 +115,8 @@ public sealed class DataBindingDbToolE2ETests : DataBindingDbFixtureBase {
 		AssertToolCallSucceeded(result);
 		AssertCommandExitCode(result, 0,
 			"the warning must never turn a saved binding into a failure that a caller would retry");
+		AssertIncludesInfoMessage(result,
+			"a saved binding still reports its completion message next to any warning");
 		AssertOutputDoesNotContain(result, "could not read whether file system development mode is enabled",
 			"the real GetIsFileDesignMode request must be readable, or every binding write carries a conditional warning");
 		if (fileDesignModeOn) {

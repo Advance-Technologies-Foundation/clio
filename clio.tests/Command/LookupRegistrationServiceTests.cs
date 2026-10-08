@@ -125,6 +125,38 @@ public sealed class LookupRegistrationServiceTests {
 		logger.Received(1).WriteInfo("Lookup 'UsrOrderStatus' registered in Lookups.");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("In file system development mode the lookup registration warns through the shared logger that Data/Lookup_<schema> exists only in the database, so the create-lookup and sync-schemas result carries the folder and the export step (GitHub #1747).")]
+	public void EnsureLookupRegistration_Should_Warn_About_Database_Only_Binding_When_File_Design_Mode_Is_Enabled() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = CreateServiceUrlBuilder();
+		ILogger logger = Substitute.For<ILogger>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(callInfo => BuildResponse(callInfo.ArgAt<string>(0), callInfo.ArgAt<string>(1), _ => { }, _ => { }));
+		IFileDesignModeStateReader stateReader = Substitute.For<IFileDesignModeStateReader>();
+		stateReader.GetIsFileDesignModeEnabled().Returns(true);
+		LookupRegistrationService sut = new(
+			applicationClient,
+			serviceUrlBuilder,
+			new PackageDataBindingWriter(applicationClient, serviceUrlBuilder, CreateTargetResolver(),
+				CreateSchemaClient(), stateReader, logger),
+			logger);
+
+		// Act
+		sut.EnsureLookupRegistration(PackageName, "UsrOrderStatus", "Order status");
+
+		// Assert
+		logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => (string)call.GetArguments()[0]!)
+			.Should().ContainSingle(because: "the lookup registration saves one binding")
+			.Which.Should().Contain($"Pkg/{PackageName}/Data/Lookup_UsrOrderStatus")
+			.And.Contain(PackageDataBindingWriter.FileSystemExportCommandName,
+				because: "the result must name the database-only folder and the command that writes it to disk");
+	}
+
 	private static IFileDesignModeStateReader CreateDisabledFileDesignMode() {
 		IFileDesignModeStateReader stateReader = Substitute.For<IFileDesignModeStateReader>();
 		stateReader.GetIsFileDesignModeEnabled().Returns(false);
