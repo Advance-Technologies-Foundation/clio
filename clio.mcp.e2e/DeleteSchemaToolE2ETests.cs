@@ -17,8 +17,19 @@ namespace Clio.Mcp.E2E;
 /// End-to-end proof that a remote <c>delete-schema</c> of an entity schema reports what it leaves behind: the
 /// database table always, and the package folders when the sandbox is in file system mode.
 /// </summary>
+/// <remarks>
+/// Developer-local, like <c>DataBindingDbColorSchemaE2ETests</c>: <c>create-entity-schema</c> publishes
+/// configuration and starts the asynchronous, global OData rebuild, so any test running against the same stand
+/// meanwhile fails with "Creatio is currently rebuilding the OData library". <see cref="NonParallelizableAttribute"/>
+/// does not bound that rebuild, so the fixture never runs in an automatic lane (see <c>clio.mcp.e2e/AGENTS.md</c>).
+/// The folder cleanup itself is covered off-stand by <c>DeletedItemFileCleanerTests</c> and
+/// <c>DeleteSchemaRemoteCommandTests</c>.
+/// </remarks>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
+[Category("McpE2E.Manual")]
+[Category("LocalOnly")]
+[Explicit("Publishes a schema and starts the global OData rebuild on the shared stand; run it by hand against a leased sandbox.")]
 [AllureNUnit]
 [AllureFeature(DeleteSchemaTool.DeleteSchemaToolName)]
 [NonParallelizable]
@@ -40,6 +51,10 @@ public sealed class DeleteSchemaToolE2ETests : McpContractFixtureBase {
 	[AllureName("delete-schema reports the retained table and the package files of a deleted entity")]
 	[Description("Creates an entity schema in a new package, deletes it with remote delete-schema, and verifies the result says the table stays and, by file system mode, either stays silent about files or names the package folders.")]
 	public async Task DeleteSchema_ShouldReportRetainedTableAndPackageFiles_WhenEntitySchemaIsDeletedRemotely() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"create-entity-schema publishes configuration and starts the global OData rebuild, which "
+			+ "makes every concurrent test on the shared stand fail with \"Creatio is currently "
+			+ "rebuilding the OData library\". Run this scenario by hand against a leased sandbox.");
 		// Arrange
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(8));
 		CancellationToken token = context.CancellationTokenSource.Token;
@@ -75,8 +90,12 @@ public sealed class DeleteSchemaToolE2ETests : McpContractFixtureBase {
 			});
 			AllureApi.Step($"Assert the package files are reported for file system mode '{fileSystemMode}'", () => {
 				if (string.Equals(fileSystemMode, "on", StringComparison.OrdinalIgnoreCase)) {
+					// "No folders ... were found (searched: ...)" also names the folder, so it must not satisfy this.
 					output.Should().Contain(message => message.Value != null
-						&& message.Value.Contains($"Schemas/{schemaName}/"),
+						&& message.Value.Contains($"Schemas/{schemaName}/")
+						&& ((message.MessageType == LogDecoratorType.Info
+								&& message.Value.StartsWith("Removed from package folder", StringComparison.Ordinal))
+							|| message.MessageType == LogDecoratorType.Warning),
 						because: "in file system mode the schema folder is either removed or named as left behind");
 					return;
 				}

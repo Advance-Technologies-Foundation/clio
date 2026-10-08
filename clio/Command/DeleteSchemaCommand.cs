@@ -163,8 +163,9 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		}
 		catch (Exception exception) {
 			// The cleaner reports file system failures itself; anything else must still end as a warning.
+			// The type stays in the text so a programming error is not mistaken for a file system problem.
 			result = new DeletedItemFileCleanupResult(DeletedItemFileCleanupStatus.NotCleaned, null, expected, [], [],
-				exception.Message);
+				$"{exception.GetType().Name}: {exception.Message}");
 		}
 		if (result.Status == DeletedItemFileCleanupStatus.Cleaned) {
 			ReportCleanedPackageFiles(result, itemName, expectedFolders, consequence);
@@ -195,7 +196,7 @@ public class DeleteSchemaCommand : RemoteCommand<DeleteSchemaOptions> {
 		}
 		catch (Exception exception) {
 			// Transport, authentication or an unexpected payload all mean the same thing here: the mode is unknown.
-			problem = $"GetIsFileDesignMode failed: {exception.Message}";
+			problem = $"GetIsFileDesignMode failed with {exception.GetType().Name}: {exception.Message}";
 			return null;
 		}
 	}
