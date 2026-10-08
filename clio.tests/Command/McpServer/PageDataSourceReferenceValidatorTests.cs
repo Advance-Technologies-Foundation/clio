@@ -699,7 +699,7 @@ public sealed class PageDataSourceReferenceValidatorTests {
 
 		// Act
 		PageSyncValidationResult result = await MobilePageValidation.RunAsync(
-			MobileBodyWithoutDataSource, mobileCatalog, webCatalog, CreateValidator(), resolveTemplateBase: () => (null, "{}"));
+			MobileBodyWithoutDataSource, new MobileValidationCatalogs(mobileCatalog, webCatalog), CreateValidator(), resolveTemplateBase: () => (null, "{}"));
 
 		// Assert
 		result.ContentOk.Should().BeFalse(because: "sync-pages and update-page must not report success for a page with no data source");
@@ -719,8 +719,7 @@ public sealed class PageDataSourceReferenceValidatorTests {
 		// Act
 		PageSyncValidationResult result = await MobilePageValidation.RunAsync(
 			MobileBodyWithoutDataSource,
-			Substitute.For<IMobileComponentInfoCatalog>(),
-			Substitute.For<IComponentInfoCatalog>(),
+			new MobileValidationCatalogs(Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>()),
 			CreateValidator(),
 			resolveTemplateBase: resolver);
 

@@ -49,6 +49,7 @@ public sealed class PageUpdateToolTests {
 	private IToolCommandResolver _commandResolver;
 	private IPlatformVersionResolverFactory _resolverFactory;
 	private PageUpdateTool _tool;
+	private PageUpdateCommand _command;
 	private IApplicationClient _applicationClient;
 
 	[SetUp]
@@ -79,6 +80,7 @@ public sealed class PageUpdateToolTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		_command = command;
 		_commandResolver = Substitute.For<IToolCommandResolver>();
 		_commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_webComponentCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -254,6 +256,37 @@ public sealed class PageUpdateToolTests {
 			Arg.Is<EnvironmentOptions>(options => string.IsNullOrWhiteSpace(options.Environment)));
 		ReceivedChartValidationVersion().Should().Be("9.9.9",
 			because: "the version probe must resolve against the header tenant's settings, not a silent active-environment fallback");
+	}
+
+	[Test]
+	[Description("ENG-101924: update-page validates a mobile body against the mobile registry of the version resolved from the target environment, not latest.")]
+	public async Task UpdatePage_ShouldScopeMobileCatalogToResolvedVersion_WhenEnvironmentResolvesVersion() {
+		// Arrange
+		EnvironmentSettings registeredSettings = new() { Uri = "https://registered.example.com" };
+		_commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(registeredSettings);
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4.1234", VersionResolutionSource.Environment));
+		_resolverFactory.Create(registeredSettings).Returns(resolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog());
+		PageUpdateTool tool = new(
+			_command, Substitute.For<ILogger>(), _commandResolver, mobileCatalog, _webComponentCatalog,
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
+			_resolverFactory, Substitute.For<ISettingsRepository>());
+		string mobileBody = MobileFieldBindingDeclaredInputsTests.Body(
+			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+		PageUpdateArgs args = new(SchemaName, mobileBody, null, true) { EnvironmentName = "sandbox" };
+
+		// Act
+		await tool.UpdatePage(args);
+
+		// Assert
+		await mobileCatalog.Received().LoadAsync("8.3.4", Arg.Any<CancellationToken>());
+		await mobileCatalog.DidNotReceive().LoadAsync(ComponentRegistryClient.LatestVersion, Arg.Any<CancellationToken>());
 	}
 
 	[Test]

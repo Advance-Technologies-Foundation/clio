@@ -59,8 +59,8 @@ public sealed class PageValidateTool(
 			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
 			// No base: validate-page has no schema/environment identity, so the apply-oracle seeds its own base.
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				body, mobileComponentCatalog, webComponentCatalog, dataSourceValidator, mobileResources,
-				cancellationToken: cancellationToken).ConfigureAwait(false);
+				body, new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, args.Version),
+				dataSourceValidator, mobileResources, cancellationToken: cancellationToken).ConfigureAwait(false);
 			// Run-process button structure is a purely offline check (no environment), and validate-page is the
 			// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
 			// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile
@@ -401,7 +401,7 @@ public sealed record PageValidateArgs(
 	string? Resources = null,
 
 	[property: JsonPropertyName("version")]
-	[property: Description("Target platform version for chart validation; prefer resolvedTargetVersion from get-component-info. Omitted or unavailable versions use the latest catalog.")]
+	[property: Description("Target platform version for chart and mobile validation; prefer resolvedTargetVersion from get-component-info. Omitted or unavailable versions use the latest catalog.")]
 	string? Version = null,
 
 	[property: JsonPropertyName("body-file")]

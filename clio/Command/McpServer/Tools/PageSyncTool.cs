@@ -108,12 +108,15 @@ public sealed class PageSyncTool(
 		// validation is disabled — the definitions would never be consumed. Null when validation is off or
 		// the registry/version is unavailable (fail-open).
 		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions = null;
+		string? mobileCatalogVersion = null;
 		if (args.Validate ?? true) {
 			string? platformVersion = await ResolvePlatformVersionAsync(args.EnvironmentName, cancellationToken).ConfigureAwait(false);
 			chartTypeDefinitions = await ChartWidgetValidation
 				.ResolveTypeDefinitionsAsync(webComponentCatalog, platformVersion, cancellationToken).ConfigureAwait(false);
+			mobileCatalogVersion = await ResolveMobileCatalogVersionAsync(pages, platformVersion, cancellationToken)
+				.ConfigureAwait(false);
 		}
-		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, chartTypeDefinitions);
+		List<PageSyncPageResult> results = ExecuteSyncBatch(args, pages, prePass, chartTypeDefinitions, mobileCatalogVersion);
 		return new PageSyncResponse {
 			Success = results.Count > 0 && results.All(r => r.Success),
 			Pages = results
@@ -121,9 +124,9 @@ public sealed class PageSyncTool(
 	}
 
 	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
-	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// The guard below only checks for an ABSENT resolver dependency (e.g. a unit test that did not supply
+	/// Resolves the target environment's platform version so the chart-widget and mobile validation catalogs
+	/// are scoped to the component set the environment actually ships (mirroring <c>get-component-info</c>'s
+	/// resolution). The guard below only checks for an ABSENT resolver dependency (e.g. a unit test that did not supply
 	/// one) — NOT a blank environment name. A blank name is a legitimate, expected shape under authorized
 	/// HTTP credential passthrough (the header carries the tenant, not an <c>environment-name</c> argument),
 	/// so the probe below must still run and be resolved through the injected
@@ -208,11 +211,28 @@ public sealed class PageSyncTool(
 		return new PageSyncPrePassEntry(null, findings);
 	}
 
+	// Loaded once off the lock: the per-page validation under the lock then reads the version that actually
+	// resolved, so an unpublished stand version does not repeat the CDN miss and its fallback for every page.
+	private async Task<string?> ResolveMobileCatalogVersionAsync(
+		IReadOnlyList<PageSyncPageInput> pages, string? platformVersion, CancellationToken cancellationToken) {
+		if (!pages.Any(page => PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile)) {
+			return platformVersion;
+		}
+		try {
+			ComponentCatalogState state = await mobileComponentCatalog.LoadAsync(
+				ChartWidgetValidation.NormaliseRequestedVersion(platformVersion), cancellationToken).ConfigureAwait(false);
+			return state?.ResolvedVersion ?? platformVersion;
+		} catch (ComponentRegistryUnavailableException) {
+			return platformVersion;
+		}
+	}
+
 	private List<PageSyncPageResult> ExecuteSyncBatch(
 		PageSyncArgs args,
 		IReadOnlyList<PageSyncPageInput> pages,
 		PageSyncPrePassResults prePass,
-		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions) {
+		IReadOnlyDictionary<string, System.Text.Json.JsonElement>? chartTypeDefinitions,
+		string? mobileCatalogVersion) {
 		var results = new List<PageSyncPageResult>(pages.Count);
 		var pendingIndices = new List<int>();
 		// Step 1: Materialise EVERY deterministic failure (syntax, regex
@@ -297,6 +317,7 @@ public sealed class PageSyncTool(
 					args.OutputDirectory,
 					prePass) {
 					EnvironmentName = args.EnvironmentName,
+					MobileCatalogVersion = mobileCatalogVersion,
 					PreResolvedValidationBases = preResolvedValidationBases,
 					DegradedOracleBaseIndices = degradedOracleBaseIndices
 				};
@@ -555,6 +576,7 @@ public sealed class PageSyncTool(
 			ctx.OutputDirectory,
 			prePassEntry.LintFindings) {
 			EnvironmentName = ctx.EnvironmentName,
+			MobileCatalogVersion = ctx.MobileCatalogVersion,
 			PreResolvedValidationBase = ctx.PreResolvedValidationBases.TryGetValue(index, out (string? Vmc, string? Mc) validationBase)
 				? validationBase
 				: null,
@@ -573,6 +595,9 @@ public sealed class PageSyncTool(
 		// Environment identity for the conflict-baseline guard. Init-only property (not a
 		// positional parameter) to keep the primary constructor under Sonar S107's limit.
 		public string? EnvironmentName { get; init; }
+
+		// The mobile registry version resolved once per batch off the lock (latest when the stand's has no file).
+		public string? MobileCatalogVersion { get; init; }
 
 		// Validation bases pre-resolved OFF the per-tenant lock, keyed by page index; empty when validation is off or
 		// no page needs an external base. See ExecuteSyncBatch.
@@ -611,6 +636,8 @@ public sealed class PageSyncTool(
 		// Environment identity for the conflict-baseline guard — see PageSyncBatchContext.
 		public string? EnvironmentName { get; init; }
 
+		public string? MobileCatalogVersion { get; init; }
+
 		// The validation base pre-resolved off the lock for this page (null when the page needs none or the read
 		// failed). Handed to the mobile oracle and the data-source check as a no-network delegate.
 		public (string? Vmc, string? Mc)? PreResolvedValidationBase { get; init; }
@@ -624,6 +651,7 @@ public sealed class PageSyncTool(
 		PageSyncPageInput page,
 		(string? Vmc, string? Mc)? preResolvedValidationBase,
 		string? environmentName,
+		string? mobileCatalogVersion,
 		out PageSyncValidationResult validationResult) {
 		validationResult = null;
 		if (PageSchemaTypeExtensions.FromBody(page.Body) == PageSchemaType.Mobile) {
@@ -639,8 +667,9 @@ public sealed class PageSyncTool(
 			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
 				preResolvedValidationBase is { } validationBase ? () => (validationBase.Vmc, validationBase.Mc) : null;
 			validationResult = MobilePageValidation
-				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, dataSourceValidator, mobileResources,
-					resolveTemplateBase: resolveBase)
+				.RunAsync(page.Body,
+					new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, mobileCatalogVersion),
+					dataSourceValidator, mobileResources, resolveTemplateBase: resolveBase)
 				.GetAwaiter().GetResult();
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
@@ -712,7 +741,7 @@ public sealed class PageSyncTool(
 			PageSyncValidationResult validationResult = null;
 			if (opOptions.Validate) {
 				PageSyncPageResult validationFailure = TryValidatePage(page,
-					opOptions.PreResolvedValidationBase, opOptions.EnvironmentName, out validationResult);
+					opOptions.PreResolvedValidationBase, opOptions.EnvironmentName, opOptions.MobileCatalogVersion, out validationResult);
 				if (validationFailure != null)
 					return validationFailure;
 			}

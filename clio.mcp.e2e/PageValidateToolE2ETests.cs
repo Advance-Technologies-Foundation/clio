@@ -1532,6 +1532,70 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-101924: a Designer-written binding in a property the mobile registry does not declare for the type (crt.List.selectionState) is not reported as undeclared.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page skips a binding in a property the mobile registry does not declare")]
+	[AllureDescription("Sends a mobile body whose crt.List binds selectionState to an undeclared attribute, the shape the Mobile Designer saves, and verifies validate-page does not report that binding.")]
+	public async Task PageValidateTool_Should_Skip_Binding_In_Property_The_Registry_Does_Not_Declare() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "LeadList", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "selectionState": "$LeadList_SelectionState" } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, body);
+
+		// Assert
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		(response.Validation!.Errors ?? []).Should().NotContain(
+			e => e.Contains("LeadList_SelectionState"),
+			because: "the mobile runtime never reads crt.List.selectionState, so a binding there cannot break the page");
+	}
+
+	[Test]
+	[Description("ENG-101924 counterpart guard: an input the registry declares for the type (crt.List.visible, inherited from baseInputs) bound to an undeclared attribute is still reported, so narrowing the check does not turn it off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects a declared input bound to an undeclared attribute")]
+	[AllureDescription("Sends a mobile body whose crt.List binds visible to an attribute declared nowhere, and verifies validate-page returns valid=false naming it.")]
+	public async Task PageValidateTool_Should_Reject_Declared_Input_Bound_To_Undeclared_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "UsrList", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "visible": "$UsrMissing" } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, body);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "visible is an input the mobile runtime reads, so a binding to a missing attribute is an error");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("UsrMissing"),
+			because: "the undeclared-binding error must name the attribute so the agent can declare it");
+	}
+
+	[Test]
 	[Description("ENG-95429 regression guard: returns valid=true for the CORRECTED mobile insert — byte-for-byte the rejected body above except that 'type' sits inside 'values' — so the new type-placement rule cannot false-positive on the canonical shape agents are told to emit. Keeping the pair a pure A/B means only the type placement can explain the differing verdicts.")]
 	[AllureTag(ToolName)]
 	[AllureName("validate-page accepts a mobile insert whose type sits inside values")]

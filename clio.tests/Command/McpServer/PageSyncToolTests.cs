@@ -258,6 +258,110 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-101924 on the sync-pages save path: a mobile binding in a property the registry does not declare does not block the save.")]
+	public async Task SyncPages_WhenMobileBindingIsInUndeclaredProperty_SavesThePage() {
+		// Arrange
+		PageSyncTool tool = BuildMobileBindingSyncTool(out _);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileFieldBindingDeclaredInputsTests.Body(
+				"""{"operation":"insert","name":"LeadList","values":{"type":"crt.List","selectionState":"$LeadList_SelectionState"}}"""))],
+			Validate: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		(response.Pages[0].Error ?? string.Empty).Should().NotContain("LeadList_SelectionState",
+			because: "the save path must narrow the binding check the same way validate-page does");
+		response.Pages[0].Success.Should().BeTrue(
+			because: "selectionState is not a crt.List input, so the Designer-written binding cannot break the page");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-101924 on the sync-pages save path: a declared input bound to an undeclared attribute still rejects the page.")]
+	public async Task SyncPages_WhenMobileDeclaredInputBindsUndeclaredAttribute_RejectsThePage() {
+		// Arrange
+		PageSyncTool tool = BuildMobileBindingSyncTool(out _);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileFieldBindingDeclaredInputsTests.Body(
+				"""{"operation":"insert","name":"LeadList","values":{"type":"crt.List","visible":"$UsrMissing"}}"""))],
+			Validate: true);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeFalse(
+			because: "visible is an inherited input the runtime reads, so its binding is checked");
+		response.Pages[0].Error.Should().Contain("UsrMissing",
+			because: "the failure must name the undeclared attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("sync-pages validates mobile bodies against the registry of the version resolved from the target environment.")]
+	public async Task SyncPages_ShouldScopeMobileCatalogToResolvedVersion_WhenEnvironmentResolvesVersion() {
+		// Arrange
+		PageSyncTool tool = BuildMobileBindingSyncTool(out IMobileComponentInfoCatalog mobileCatalog);
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileFieldBindingDeclaredInputsTests.Body(
+				"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}"""))],
+			Validate: true);
+
+		// Act
+		await tool.SyncPages(args);
+
+		// Assert
+		await mobileCatalog.Received().LoadAsync("8.2.1", Arg.Any<CancellationToken>());
+		await mobileCatalog.DidNotReceive().LoadAsync("latest", Arg.Any<CancellationToken>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the stand's version has no published mobile registry, sync-pages resolves the fallback once off the lock and validates every page against it, instead of repeating the miss per page.")]
+	public async Task SyncPages_WhenStandVersionHasNoMobileRegistry_ValidatesAgainstTheResolvedFallback() {
+		// Arrange
+		PageSyncTool tool = BuildMobileBindingSyncTool(out IMobileComponentInfoCatalog mobileCatalog);
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog() with { ResolvedVersion = ComponentRegistryClient.LatestVersion });
+		string body = MobileFieldBindingDeclaredInputsTests.Body(
+			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrFirst_MobileFormPage", body), new PageSyncPageInput("UsrSecond_MobileFormPage", body)],
+			Validate: true);
+
+		// Act
+		await tool.SyncPages(args);
+
+		// Assert
+		await mobileCatalog.Received(1).LoadAsync("8.2.1", Arg.Any<CancellationToken>());
+		await mobileCatalog.Received(2).LoadAsync(ComponentRegistryClient.LatestVersion, Arg.Any<CancellationToken>());
+	}
+
+	private static PageSyncTool BuildMobileBindingSyncTool(out IMobileComponentInfoCatalog mobileCatalog) {
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(new EnvironmentSettings());
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.2.1", VersionResolutionSource.Environment));
+		IPlatformVersionResolverFactory resolverFactory = Substitute.For<IPlatformVersionResolverFactory>();
+		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
+		mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(call => MobileFieldBindingDeclaredInputsTests.LiveCatalog() with { ResolvedVersion = call.Arg<string>() });
+		return new PageSyncTool(commandResolver, new MockFileSystem(), mobileCatalog, Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()), resolverFactory);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Updates multiple pages in a single call")]
 	public async Task SyncPages_Should_Process_Multiple_Pages() {
 		// Arrange

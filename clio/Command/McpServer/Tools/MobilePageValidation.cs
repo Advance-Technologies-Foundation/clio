@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -10,26 +11,24 @@ namespace Clio.Command.McpServer.Tools;
 /// Runs all mobile page validators using the mobile and web component catalogs.
 /// Returns a <see cref="PageSyncValidationResult"/> with <c>MarkersOk</c> and <c>JsSyntaxOk</c>
 /// set to <c>true</c> (mobile pages have neither), errors on structural/binding issues,
-/// and warnings for web-only component types. Both catalogs are async (cache → CDN
-/// fallback chain); validators use <c>latest</c> because catalogs differ in component
-/// SET, not per-version semantics — knowing the GA-pinned version is not required to
-/// decide whether a component type is mobile-allowed or web-only.
+/// and warnings for web-only component types. Both catalogs are async (cache → CDN fallback chain) and read
+/// at the target stand's platform version, or <c>latest</c> when it is unknown. The mobile catalog's per-type
+/// inputs also narrow the binding check to the properties that version's runtime reads.
 /// </summary>
 internal static class MobilePageValidation {
 	internal static async Task<PageSyncValidationResult> RunAsync(
 		string body,
-		IMobileComponentInfoCatalog mobileCatalog,
-		IComponentInfoCatalog webCatalog,
+		MobileValidationCatalogs catalogs,
 		IPageDataSourceReferenceValidator dataSourceValidator,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
 		CancellationToken cancellationToken = default) {
-		Task<IReadOnlyList<ComponentRegistryEntry>> mobileTask =
-			mobileCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
-		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
-			webCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
-		await Task.WhenAll(mobileTask, webTask).ConfigureAwait(false);
-		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileTask.Result ?? [];
+		string catalogVersion = ChartWidgetValidation.NormaliseRequestedVersion(catalogs.PlatformVersion);
+		Task<ComponentCatalogState> mobileStateTask = catalogs.Mobile.LoadAsync(catalogVersion, cancellationToken);
+		Task<IReadOnlyList<ComponentRegistryEntry>> webTask = catalogs.Web.GetAllAsync(catalogVersion, cancellationToken);
+		await Task.WhenAll(mobileStateTask, webTask).ConfigureAwait(false);
+		ComponentCatalogState? mobileState = await mobileStateTask.ConfigureAwait(false);
+		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState?.Entries ?? [];
 		IReadOnlyList<ComponentRegistryEntry> webEntries = webTask.Result ?? [];
 		HashSet<string> allowedMobile = new(
 			mobileEntries.Select(e => e.ComponentType),
@@ -38,8 +37,9 @@ internal static class MobilePageValidation {
 			webEntries.Select(e => e.ComponentType)
 				.Where(t => !allowedMobile.Contains(t)),
 			StringComparer.OrdinalIgnoreCase);
-		(List<string> errors, List<string> warnings) =
-			SchemaValidationService.ValidateMobilePage(body, allowedMobile, webOnly, explicitResources);
+		DeclaredPropertyIndex declaredInputs = BuildDeclaredInputs(mobileState);
+		(List<string> errors, List<string> warnings) = SchemaValidationService.ValidateMobilePage(
+			body, allowedMobile, webOnly, declaredInputs, explicitResources);
 		// Once the cheap structural checks pass, run the faithful differ oracle: apply the diff sections
 		// through the client-engine clones (JsonDiffApplier / JsonPathDiffApplier) and surface any exception
 		// the Creatio differ would raise (e.g. "Item \"X\" is not a container for other items"). The error is
@@ -81,4 +81,18 @@ internal static class MobilePageValidation {
 			Warnings = warnings.Count > 0 ? warnings : null
 		};
 	}
+
+	private static DeclaredPropertyIndex BuildDeclaredInputs(ComponentCatalogState? state) =>
+		state is null
+			? DeclaredPropertyIndex.Disabled
+			: DeclaredPropertyIndex.FromRegistry(state.Lookup, state.GlobalReferences?.BaseInputs);
 }
+
+/// <summary>
+/// The component catalogs a mobile page is validated against and the stand's platform version they are read for;
+/// a <see langword="null"/> version reads <c>latest</c>.
+/// </summary>
+internal sealed record MobileValidationCatalogs(
+	IMobileComponentInfoCatalog Mobile,
+	IComponentInfoCatalog Web,
+	string? PlatformVersion = null);

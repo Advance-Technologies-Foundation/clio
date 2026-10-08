@@ -1,0 +1,5595 @@
+{
+ "viewConfigDiff": [
+  {
+   "operation": "insert",
+   "name": "CreateOrderButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(CreateOrderButton_caption)#",
+    "clicked": {
+     "request": "crt.RunBusinessProcessRequest",
+     "params": {
+      "processName": "CreateNewOrderFromLead",
+      "processRunType": "ForTheSelectedPage",
+      "recordIdProcessParameterName": "LeadId"
+     }
+    }
+   },
+   "parentName": "FloatingActionButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "ProgressBarContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "small",
+     "bottom": "none",
+     "left": "small"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "MainContainer",
+   "propertyName": "items",
+   "index": 0
+  },
+  {
+   "operation": "insert",
+   "name": "ProgressBar",
+   "values": {
+    "type": "crt.EntityStageProgressBar",
+    "saveOnChange": false,
+    "askUserToChangeSchema": true,
+    "entityName": "Lead"
+   },
+   "parentName": "ProgressBarContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "merge",
+   "name": "GeneralTabContainer",
+   "values": {
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "operation": "insert",
+   "name": "SideAreaProfileFieldFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "primary",
+    "borderRadius": "medium",
+    "padding": {
+     "top": "medium",
+     "right": "medium",
+     "bottom": "medium",
+     "left": "medium"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "GeneralTabContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadDisqualifyReason",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "#ResourceString(LeadDisqualifyReason_label)#",
+    "labelPosition": "above",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": false,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LookupAttribute_mfwvuqd"
+   },
+   "parentName": "SideAreaProfileFieldFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Status",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {},
+    "label": "$Resources.Strings.LookupAttribute_dr0vsd0",
+    "labelPosition": "above",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LookupAttribute_dr0vsd0"
+   },
+   "parentName": "SideAreaProfileFieldFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SideAreaProfileFieldGridContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "rows": "minmax(max-content, 32px)",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "layoutConfig": {},
+    "alignItems": "stretch",
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "SideAreaProfileFieldFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadTypeDetails",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.LookupAttribute_rsim6pt",
+    "labelPosition": "above",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "readonly": false,
+    "control": "$LookupAttribute_rsim6pt"
+   },
+   "parentName": "SideAreaProfileFieldGridContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactSource",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.QualifiedContactSource",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "above",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedContactSource"
+   },
+   "parentName": "SideAreaProfileFieldGridContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "PredictiveScore",
+   "values": {
+    "type": "crt.NumberInput",
+    "label": "#ResourceString(PredictiveScore_label)#",
+    "labelPosition": "above",
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "#ResourceString(PredictiveScore_tooltip)#",
+    "readonly": true,
+    "control": "$NumberAttribute_sgdzxor"
+   },
+   "parentName": "SideAreaProfileFieldFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "CustomerInfoFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "primary",
+    "borderRadius": "medium",
+    "padding": {
+     "top": "medium",
+     "right": "medium",
+     "bottom": "medium",
+     "left": "medium"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "items": []
+   },
+   "parentName": "GeneralTabContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactFieldsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {},
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "medium",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "CustomerInfoFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactLabelContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {},
+    "direction": "row",
+    "fitContent": true,
+    "gap": "medium",
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "medium",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "wrap": "wrap",
+    "items": []
+   },
+   "parentName": "ContactFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactLabel",
+   "values": {
+    "type": "crt.Label",
+    "layoutConfig": {},
+    "caption": "#MacrosTemplateString(#ResourceString(ContactLabel_caption)#)#",
+    "labelType": "headline-3",
+    "labelThickness": "default",
+    "labelEllipsis": false,
+    "labelColor": "#0D2E4E",
+    "labelBackgroundColor": "transparent",
+    "labelTextAlign": "start",
+    "visible": true
+   },
+   "parentName": "ContactLabelContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactCompactProfile",
+   "values": {
+    "type": "crt.ContactCompactProfile",
+    "readonly": true,
+    "visible": true,
+    "referenceColumn": "$Parameter_r8t9n2f"
+   },
+   "parentName": "ContactFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "JobTitle",
+   "values": {
+    "type": "crt.Input",
+    "label": "$Resources.Strings.QualifiedContactJobTitle",
+    "placeholder": "",
+    "tooltip": "",
+    "readonly": true,
+    "multiline": false,
+    "labelPosition": "above",
+    "visible": true,
+    "control": "$QualifiedContactJobTitle"
+   },
+   "parentName": "ContactFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactCommunicationOptions",
+   "values": {
+    "type": "crt.CommunicationOptions",
+    "readonly": true,
+    "columnsCount": 1,
+    "showNoDataPlaceholder": true,
+    "labelPosition": "above",
+    "layoutConfig": {},
+    "items": "$CommunicationOptions_f87c6ae",
+    "masterRecordColumnName": "Contact",
+    "visible": true,
+    "masterRecordColumnValue": "$Parameter_r8t9n2f"
+   },
+   "parentName": "ContactFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AccountFieldsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {},
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "CustomerInfoFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AccountLabelContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {},
+    "direction": "row",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "medium",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "wrap",
+    "items": []
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AccountLabel",
+   "values": {
+    "type": "crt.Label",
+    "layoutConfig": {},
+    "caption": "#MacrosTemplateString(#ResourceString(AccountLabel_caption)#)#",
+    "labelType": "headline-3",
+    "labelThickness": "default",
+    "labelEllipsis": false,
+    "labelColor": "#0D2E4E",
+    "labelBackgroundColor": "transparent",
+    "labelTextAlign": "start",
+    "visible": true
+   },
+   "parentName": "AccountLabelContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AccountCompactProfile",
+   "values": {
+    "type": "crt.AccountCompactProfile",
+    "readonly": true,
+    "visible": true,
+    "referenceColumn": "$Parameter_3pxm4wn"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Web",
+   "values": {
+    "type": "crt.WebInput",
+    "label": "$Resources.Strings.QualifiedAccountWeb",
+    "labelPosition": "above",
+    "placeholder": "",
+    "tooltip": "",
+    "needHandleSave": false,
+    "caption": "#ResourceString(Web_caption)#",
+    "readonly": true,
+    "visible": true,
+    "control": "$QualifiedAccountWeb"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Type",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.QualifiedAccountType",
+    "ariaLabel": "#ResourceString(Type_ariaLabel)#",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "above",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedAccountType"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Industry",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.QualifiedAccountIndustry",
+    "ariaLabel": "#ResourceString(Industry_ariaLabel)#",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "above",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedAccountIndustry"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "EmployeesNumber",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.QualifiedAccountEmployeesNumber",
+    "ariaLabel": "#ResourceString(EmployeesNumber_ariaLabel)#",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "above",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedAccountEmployeesNumber"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AnnualRevenue",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.QualifiedAccountAnnualRevenue",
+    "ariaLabel": "#ResourceString(AnnualRevenue_ariaLabel)#",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "above",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedAccountAnnualRevenue"
+   },
+   "parentName": "AccountFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OverviewTab",
+   "values": {
+    "type": "crt.TabContainer",
+    "caption": "#ResourceString(OverviewTab_caption)#",
+    "iconPosition": "only-text",
+    "visible": true,
+    "items": []
+   },
+   "parentName": "Tabs",
+   "propertyName": "items",
+   "index": 1
+  },
+  {
+   "operation": "insert",
+   "name": "MainTabContainer_4fjmsq8",
+   "values": {
+    "type": "crt.GridContainer",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "padding": {
+     "bottom": "medium"
+    },
+    "items": []
+   },
+   "parentName": "OverviewTab",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "GridContainer_4fjmsq8",
+   "values": {
+    "type": "crt.GridContainer",
+    "padding": {
+     "top": "medium",
+     "bottom": "medium",
+     "right": "medium",
+     "left": "medium"
+    },
+    "color": "primary",
+    "borderRadius": "medium",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "items": []
+   },
+   "parentName": "MainTabContainer_4fjmsq8",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OverviewNewAnalyticsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "rows": "minmax(max-content, 32px)",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "fitContent": true,
+    "visible": false,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "small",
+     "right": "none",
+     "bottom": "small",
+     "left": "none"
+    },
+    "alignItems": "stretch",
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr",
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr",
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "GridContainer_4fjmsq8",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "PredictiveProbabilityMetricFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "direction": "column",
+    "fitContent": true,
+    "gap": "medium",
+    "items": []
+   },
+   "parentName": "OverviewNewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "PredictiveProbabilityHeaderFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "fitContent": true,
+    "alignItems": "center",
+    "padding": {
+     "top": "extra-small",
+     "left": "medium"
+    },
+    "items": [],
+    "gap": "medium"
+   },
+   "parentName": "PredictiveProbabilityMetricFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProbabilityLabel",
+   "values": {
+    "type": "crt.Label",
+    "caption": "#ResourceString(ProbabilityLabel_caption)#",
+    "labelType": "body-large",
+    "labelThickness": "default",
+    "labelEllipsis": false,
+    "labelColor": "#0D2E4E",
+    "labelBackgroundColor": "transparent",
+    "labelTextAlign": "start",
+    "visible": true
+   },
+   "parentName": "PredictiveProbabilityHeaderFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "PredictiveProbabilityMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "config": {
+     "title": "#ResourceString(PredictiveProbabilityMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "IndicatorWidget_hiat35m_Data",
+       "schemaName": "Lead",
+       "filters": {
+        "filter": {
+         "items": {},
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Lead"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "PredictiveScore"
+          },
+          "functionType": 2,
+          "aggregationType": 2,
+          "aggregationEvalType": 0
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Id",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "number",
+       "decimalSeparator": ".",
+       "decimalPrecision": 0,
+       "thousandSeparator": ","
+      }
+     },
+     "text": {
+      "template": "#ResourceString(PredictiveProbabilityMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small",
+      "labelPosition": "before-after"
+     },
+     "layout": {
+      "color": "steel-blue",
+      "icon": {
+       "iconName": "level-icon"
+      },
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "without-fill"
+    },
+    "visible": true
+   },
+   "parentName": "PredictiveProbabilityMetricFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "EmailsSentNewMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "config": {
+     "title": "#ResourceString(EmailsSentNewMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "IndicatorWidget_5p2zg38_Data",
+       "schemaName": "Activity",
+       "filters": {
+        "filter": {
+         "items": {
+          "36162f02-3f07-4988-b739-96c621cc849b": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "Type"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "ActivityType",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Email",
+               "Id": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+               "value": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+               "displayValue": "Email"
+              }
+             }
+            }
+           ]
+          },
+          "5405cbfe-90f7-4210-a565-cf6764008f40": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "MessageType"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "EmailType",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Outgoing",
+               "Id": "7f6d3f94-f36b-1410-068c-20cf30b39373",
+               "value": "7f6d3f94-f36b-1410-068c-20cf30b39373",
+               "displayValue": "Outgoing"
+              }
+             }
+            }
+           ]
+          }
+         },
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Activity"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "Id"
+          },
+          "functionType": 2,
+          "aggregationType": 1,
+          "aggregationEvalType": 2
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Lead",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "number",
+       "decimalSeparator": ".",
+       "decimalPrecision": 0,
+       "thousandSeparator": ","
+      }
+     },
+     "text": {
+      "template": "#ResourceString(EmailsSentNewMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small",
+      "labelPosition": "above-under"
+     },
+     "layout": {
+      "color": "vivid-purple",
+      "icon": {
+       "iconName": "mail-icon"
+      },
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "without-fill"
+    },
+    "visible": true
+   },
+   "parentName": "OverviewNewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OutgoingCallsNewMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 3,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 3,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "config": {
+     "title": "#ResourceString(OutgoingCallsNewMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "IndicatorWidget_x73skz0_Data",
+       "schemaName": "Call",
+       "filters": {
+        "filter": {
+         "items": {
+          "4b580017-4f7a-458f-a0c6-c4c7845af4bc": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "Direction"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "CallDirection",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Outgoing",
+               "Id": "53f71b5f-7e17-4cf5-bf14-6a59212db422",
+               "Image": "",
+               "value": "53f71b5f-7e17-4cf5-bf14-6a59212db422",
+               "displayValue": "Outgoing"
+              }
+             }
+            }
+           ]
+          }
+         },
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Call"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "Id"
+          },
+          "functionType": 2,
+          "aggregationType": 1,
+          "aggregationEvalType": 2
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Lead",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "number",
+       "decimalSeparator": ".",
+       "decimalPrecision": 0,
+       "thousandSeparator": ","
+      }
+     },
+     "text": {
+      "template": "#ResourceString(OutgoingCallsNewMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small",
+      "labelPosition": "above-under"
+     },
+     "layout": {
+      "color": "forest-green",
+      "icon": {
+       "iconName": "phone-icon"
+      },
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "without-fill"
+    },
+    "visible": true
+   },
+   "parentName": "OverviewNewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "CreatedOnMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 4,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 4,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 4,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "config": {
+     "title": "#ResourceString(CreatedOnMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "IndicatorWidget_eo3onft_Data",
+       "schemaName": "Lead",
+       "filters": {
+        "filter": {
+         "items": {},
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Lead"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "CreatedOn"
+          },
+          "functionType": 2,
+          "aggregationType": 5,
+          "aggregationEvalType": 0
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Id",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "datetime",
+       "date": {
+        "display": true
+       },
+       "time": {
+        "display": false
+       }
+      }
+     },
+     "text": {
+      "template": "#ResourceString(CreatedOnMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small",
+      "labelPosition": "above-under"
+     },
+     "layout": {
+      "color": "blue",
+      "icon": {
+       "iconName": "calendar-icon"
+      },
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "without-fill"
+    },
+    "visible": true
+   },
+   "parentName": "OverviewNewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OverviewAnalyticsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "rows": "minmax(max-content, 32px)",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "small",
+     "right": "none",
+     "bottom": "small",
+     "left": "none"
+    },
+    "alignItems": "stretch",
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr",
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr",
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 2,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "GridContainer_4fjmsq8",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "EmailsSentMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      }
+     }
+    },
+    "config": {
+     "title": "#ResourceString(EmailsSentMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "EmailsSentMetric_Data",
+       "schemaName": "Activity",
+       "filters": {
+        "filter": {
+         "items": {
+          "4a4c02c8-7cdf-4ae2-af98-186b362fe534": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "Type"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "ActivityType",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Email",
+               "Id": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+               "value": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+               "displayValue": "Email"
+              }
+             }
+            }
+           ]
+          },
+          "174ad6a8-31c4-4ff2-89ad-cae289883a15": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "MessageType"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "EmailType",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Outgoing",
+               "Id": "7f6d3f94-f36b-1410-068c-20cf30b39373",
+               "value": "7f6d3f94-f36b-1410-068c-20cf30b39373",
+               "displayValue": "Outgoing"
+              }
+             }
+            }
+           ]
+          }
+         },
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Activity"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "Id"
+          },
+          "functionType": 2,
+          "aggregationType": 1,
+          "aggregationEvalType": 2
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Lead",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "number",
+       "decimalSeparator": ".",
+       "decimalPrecision": 0,
+       "thousandSeparator": ","
+      }
+     },
+     "dataSourceConfig": {
+      "entitySchemaName": "Lead",
+      "attributes": {
+       "QualifiedContactJobTitle": {
+        "path": "QualifiedContact.JobTitle",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountWeb": {
+        "path": "QualifiedAccount.Web",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountType": {
+        "path": "QualifiedAccount.Type",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountIndustry": {
+        "path": "QualifiedAccount.Industry",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountEmployeesNumber": {
+        "path": "QualifiedAccount.EmployeesNumber",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountAnnualRevenue": {
+        "path": "QualifiedAccount.AnnualRevenue",
+        "type": "ForwardReference"
+       }
+      }
+     },
+     "text": {
+      "template": "#ResourceString(EmailsSentMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small"
+     },
+     "layout": {
+      "color": "cadmium-red",
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "full-fill"
+    },
+    "sectionBindingColumnRecordId": "$Id"
+   },
+   "parentName": "OverviewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OutgoingCallsMetric",
+   "values": {
+    "type": "crt.IndicatorWidget",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 3,
+       "colSpan": 2,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 3,
+       "colSpan": 2,
+       "rowSpan": 1
+      }
+     }
+    },
+    "config": {
+     "title": "#ResourceString(OutgoingCallsMetric_title)#",
+     "data": {
+      "providing": {
+       "attribute": "OutgoingCallsMetric_Data",
+       "schemaName": "Call",
+       "filters": {
+        "filter": {
+         "items": {
+          "1d1580c9-29f8-4362-aee9-ef5496a39df4": {
+           "filterType": 4,
+           "comparisonType": 3,
+           "isEnabled": true,
+           "trimDateTimeParameterToDate": false,
+           "leftExpression": {
+            "expressionType": 0,
+            "columnPath": "Direction"
+           },
+           "isAggregative": false,
+           "dataValueType": 10,
+           "referenceSchemaName": "CallDirection",
+           "rightExpressions": [
+            {
+             "expressionType": 2,
+             "parameter": {
+              "dataValueType": 10,
+              "value": {
+               "Name": "Outgoing",
+               "Id": "53f71b5f-7e17-4cf5-bf14-6a59212db422",
+               "Image": "",
+               "value": "53f71b5f-7e17-4cf5-bf14-6a59212db422",
+               "displayValue": "Outgoing"
+              }
+             }
+            }
+           ]
+          }
+         },
+         "logicalOperation": 0,
+         "isEnabled": true,
+         "filterType": 6,
+         "rootSchemaName": "Call"
+        },
+        "filterAttributes": []
+       },
+       "aggregation": {
+        "column": {
+         "orderDirection": 0,
+         "orderPosition": -1,
+         "isVisible": true,
+         "expression": {
+          "expressionType": 1,
+          "functionArgument": {
+           "expressionType": 0,
+           "columnPath": "Id"
+          },
+          "functionType": 2,
+          "aggregationType": 1,
+          "aggregationEvalType": 2
+         }
+        }
+       },
+       "dependencies": [
+        {
+         "attributePath": "Lead",
+         "relationPath": "PDS.Id"
+        }
+       ]
+      },
+      "formatting": {
+       "type": "number",
+       "decimalSeparator": ".",
+       "decimalPrecision": 0,
+       "thousandSeparator": ","
+      }
+     },
+     "dataSourceConfig": {
+      "entitySchemaName": "Lead",
+      "attributes": {
+       "QualifiedContactJobTitle": {
+        "path": "QualifiedContact.JobTitle",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountWeb": {
+        "path": "QualifiedAccount.Web",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountType": {
+        "path": "QualifiedAccount.Type",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountIndustry": {
+        "path": "QualifiedAccount.Industry",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountEmployeesNumber": {
+        "path": "QualifiedAccount.EmployeesNumber",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountAnnualRevenue": {
+        "path": "QualifiedAccount.AnnualRevenue",
+        "type": "ForwardReference"
+       }
+      }
+     },
+     "text": {
+      "template": "#ResourceString(OutgoingCallsMetric_template)#",
+      "metricMacros": "{0}",
+      "fontSizeMode": "extra-small"
+     },
+     "layout": {
+      "color": "forest-green",
+      "border": {
+       "hidden": true
+      }
+     },
+     "theme": "full-fill"
+    },
+    "sectionBindingColumnRecordId": "$Id"
+   },
+   "parentName": "OverviewAnalyticsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OverviewFieldsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "column",
+    "fitContent": true,
+    "gap": "medium",
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 3,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "GridContainer_4fjmsq8",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OverviewFieldsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "rows": "minmax(max-content, 32px)",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "layoutConfig": {},
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "OverviewFieldsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadType",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.LookupAttribute_ivqsxmp",
+    "labelPosition": "auto",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LookupAttribute_ivqsxmp"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "CreatedOn",
+   "values": {
+    "type": "crt.DateTimePicker",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "pickerType": "datetime",
+    "label": "$Resources.Strings.DateTimeAttribute_1b4r79a",
+    "labelPosition": "auto",
+    "readonly": true,
+    "control": "$DateTimeAttribute_1b4r79a"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "QualifiedContact",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.Parameter_r8t9n2f",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_icp70f0_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_icp70f0"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "control": "$Parameter_r8t9n2f"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "QualifiedAccount",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 4,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 2,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 2,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.Parameter_3pxm4wn",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_hd0i1qq_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_hd0i1qq"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "control": "$Parameter_3pxm4wn"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadName",
+   "values": {
+    "type": "crt.Input",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 5,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "#ResourceString(LeadName_label)#",
+    "labelPosition": "auto",
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LeadName"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SalesChannel",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 6,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 3,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 3,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.LookupAttribute_1prxdry",
+    "labelPosition": "auto",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LookupAttribute_1prxdry"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Group",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 7,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 4,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 4,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.LookupAttribute_dzve5mq",
+    "labelPosition": "auto",
+    "listActions": [],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$LookupAttribute_dzve5mq"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Owner",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 8,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 4,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 4,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.LookupAttribute_0ljkabs",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_udcglv2_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_udcglv2"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "control": "$LookupAttribute_0ljkabs"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactChannel",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 9,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 5,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 5,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.QualifiedContactChannel",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "auto",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedContactChannel"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ContactRegisterMethod",
+   "values": {
+    "type": "crt.ComboBox",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 10,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 5,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 5,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.QualifiedContactRegisterMethod",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "auto",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": true,
+    "placeholder": "",
+    "control": "$QualifiedContactRegisterMethod"
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "DetailsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 11,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 6,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 6,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      }
+     }
+    },
+    "direction": "column",
+    "fitContent": true,
+    "gap": "medium",
+    "items": []
+   },
+   "parentName": "OverviewFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Commentary",
+   "values": {
+    "type": "crt.Input",
+    "layoutConfig": {},
+    "multiline": true,
+    "label": "#ResourceString(Commentary_label)#",
+    "labelPosition": "auto",
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$StringAttribute_cg42kpk"
+   },
+   "parentName": "DetailsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ClosingDetails",
+   "values": {
+    "type": "crt.Input",
+    "label": "$Resources.Strings.StringAttribute_1zhbdlz",
+    "labelPosition": "auto",
+    "multiline": true,
+    "visible": false,
+    "placeholder": "#ResourceString(ClosingDetails_placeholder)#",
+    "tooltip": "",
+    "control": "$StringAttribute_1zhbdlz"
+   },
+   "parentName": "DetailsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(SimilarLeadExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 4,
+     "rowSpan": 1
+    },
+    "items": [],
+    "tools": []
+   },
+   "parentName": "GridContainer_4fjmsq8",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadListContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "SimilarLeadExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadList",
+   "values": {
+    "type": "crt.List",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      }
+     }
+    },
+    "visible": true,
+    "fitContent": true,
+    "items": "$SimilarLeadList",
+    "primaryColumnName": "SimilarLeadListDS_Id",
+    "columns": [
+     {
+      "id": "45c62464-d133-5858-df87-14ad6c0e1840",
+      "code": "SimilarLeadListDS_LeadName",
+      "caption": "#ResourceString(SimilarLeadListDS_LeadName)#",
+      "dataValueType": 30,
+      "sticky": true
+     },
+     {
+      "id": "c630c167-17a0-e0fb-cf4c-82bf667c741a",
+      "code": "SimilarLeadListDS_QualifyStatus",
+      "path": "QualifyStatus",
+      "caption": "#ResourceString(SimilarLeadListDS_QualifyStatus)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "QualifyStatus",
+      "sticky": true
+     },
+     {
+      "id": "71ac2dc1-9155-6b88-7e91-5207bea6da95",
+      "code": "SimilarLeadListDS_CreatedOn",
+      "path": "CreatedOn",
+      "caption": "#ResourceString(SimilarLeadListDS_CreatedOn)#",
+      "dataValueType": 7
+     },
+     {
+      "id": "b8bd990e-fcd1-15a7-ee80-bfb5e09e9e32",
+      "code": "SimilarLeadListDS_Owner",
+      "path": "Owner",
+      "caption": "#ResourceString(SimilarLeadListDS_Owner)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Contact"
+     },
+     {
+      "id": "706c2640-8ee5-f238-87ce-1d714a7c0d52",
+      "code": "SimilarLeadListDS_QualifiedAccount",
+      "path": "QualifiedAccount",
+      "caption": "#ResourceString(SimilarLeadListDS_QualifiedAccount)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Account"
+     },
+     {
+      "id": "632c0495-294d-b50f-5860-a18f0a83081b",
+      "code": "SimilarLeadListDS_QualifiedContact",
+      "path": "QualifiedContact",
+      "caption": "#ResourceString(SimilarLeadListDS_QualifiedContact)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Contact"
+     }
+    ],
+    "features": {
+     "editable": {
+      "enable": true,
+      "itemsCreation": false
+     }
+    },
+    "selectionState": "$SimilarLeadList_SelectionState",
+    "_selectionOptions": {
+     "attribute": "SimilarLeadList_SelectionState"
+    },
+    "itemLayout": {
+     "name": "SimilarLeadList_ListItem",
+     "type": "crt.ListItem",
+     "title": "$SimilarLeadListDS_LeadName",
+     "body": [
+      {
+       "value": "$SimilarLeadListDS_QualifyStatus"
+      },
+      {
+       "value": "$SimilarLeadListDS_CreatedOn"
+      },
+      {
+       "value": "$SimilarLeadListDS_Owner"
+      },
+      {
+       "value": "$SimilarLeadListDS_QualifiedAccount"
+      },
+      {
+       "value": "$SimilarLeadListDS_QualifiedContact"
+      }
+     ]
+    }
+   },
+   "parentName": "SimilarLeadListContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadToolsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 24px)",
+    "columns": [
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "items": []
+   },
+   "parentName": "SimilarLeadExpansionPanel",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadToolsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "gap": "medium",
+    "alignItems": "center",
+    "layoutConfig": {
+     "colSpan": 1,
+     "column": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "SimilarLeadToolsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadRefreshButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(SimilarLeadRefreshButton_caption)#",
+    "icon": "reload-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.LoadDataRequest",
+     "params": {
+      "config": {
+       "loadType": "reload",
+       "useLastLoadParameters": true
+      },
+      "dataSourceName": "SimilarLeadListDS"
+     }
+    }
+   },
+   "parentName": "SimilarLeadToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadSettingsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(SimilarLeadSettingsButton_caption)#",
+    "icon": "actions-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "visible": true,
+    "menuItems": []
+   },
+   "parentName": "SimilarLeadToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SimilarLeadExportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(SimilarLeadExportDataButton_caption)#",
+    "icon": "export-button-icon",
+    "color": "default",
+    "size": "medium",
+    "clicked": {
+     "request": "crt.ExportDataGridToExcelRequest",
+     "params": {
+      "viewName": "SimilarLeadList",
+      "filters": "$SimilarLeadList | crt.ToCollectionFilters : 'SimilarLeadList' : $SimilarLeadList_SelectionState"
+     }
+    }
+   },
+   "parentName": "SimilarLeadSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "ProcessingTab",
+   "values": {
+    "type": "crt.TabContainer",
+    "caption": "#ResourceString(ProcessingTab_caption)#",
+    "iconPosition": "only-text",
+    "visible": true,
+    "items": []
+   },
+   "parentName": "Tabs",
+   "propertyName": "items",
+   "index": 2
+  },
+  {
+   "operation": "insert",
+   "name": "MainTabContainer_2j4wpsa",
+   "values": {
+    "type": "crt.GridContainer",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "padding": {
+     "bottom": "medium"
+    },
+    "items": []
+   },
+   "parentName": "ProcessingTab",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "GridContainer_2j4wpsa",
+   "values": {
+    "type": "crt.GridContainer",
+    "padding": {
+     "top": "medium",
+     "bottom": "medium",
+     "right": "medium",
+     "left": "medium"
+    },
+    "color": "primary",
+    "borderRadius": "medium",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "items": []
+   },
+   "parentName": "MainTabContainer_2j4wpsa",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Timeline",
+   "values": {
+    "type": "crt.Timeline",
+    "tools": [],
+    "hideTools": false,
+    "masterSchemaId": "$Id",
+    "caption": "#ResourceString(Timeline_caption)#",
+    "label": "#ResourceString(Timeline_label)#",
+    "filters": [
+     {
+      "visible": true,
+      "name": "TimelineFilter_Entity"
+     },
+     {
+      "visible": true,
+      "name": "TimelineFilter_Date"
+     },
+     {
+      "visible": true,
+      "name": "TimelineFilter_Owner"
+     },
+     {
+      "visible": true,
+      "name": "TimelineFilter_SystemMessages"
+     }
+    ],
+    "filterValues": "$Timeline_AllTileFilters",
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "GridContainer_2j4wpsa",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "TimelineTile_Call",
+   "values": {
+    "type": "crt.TimelineTile",
+    "classes": [
+     "view-element"
+    ],
+    "linkedColumn": "Lead",
+    "sortedByColumn": "StartDate",
+    "ownerColumn": "CreatedBy",
+    "data": {
+     "uId": "2f81fa05-11ae-400d-8e07-5ef6a620d1ad",
+     "schemaName": "Call",
+     "schemaType": null,
+     "filter": null,
+     "columns": [
+      {
+       "columnName": "Direction",
+       "columnLayout": {
+        "column": 1,
+        "row": 1,
+        "colSpan": 4,
+        "rowSpan": 1
+       }
+      },
+      {
+       "columnName": "StartDate",
+       "columnLayout": {
+        "column": 5,
+        "row": 1,
+        "colSpan": 4,
+        "rowSpan": 1
+       }
+      },
+      {
+       "columnName": "EndDate",
+       "columnLayout": {
+        "column": 9,
+        "row": 1,
+        "colSpan": 4,
+        "rowSpan": 1
+       }
+      },
+      {
+       "columnName": "Duration",
+       "columnLayout": {
+        "column": 13,
+        "row": 1,
+        "colSpan": 4,
+        "rowSpan": 1
+       }
+      }
+     ]
+    },
+    "iconPosition": "only-icon",
+    "icon": "star-tab-icon",
+    "visible": true,
+    "filters": "$TimelineTile_Call_Items"
+   },
+   "parentName": "Timeline",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "TimelineTile_Email",
+   "values": {
+    "type": "crt.TimelineTile",
+    "classes": [
+     "view-element"
+    ],
+    "linkedColumn": "Lead",
+    "sortedByColumn": "SendDate",
+    "ownerColumn": "SenderContact",
+    "data": {
+     "uId": "c449d832-a4cc-4b01-b9d5-8a12c42a9f89",
+     "schemaName": "Activity",
+     "schemaType": "Email",
+     "filter": {
+      "columnName": "Type",
+      "columnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+      "comparisonType": 3
+     },
+     "columns": [
+      {
+       "columnName": "Title",
+       "columnLayout": {
+        "column": 1,
+        "row": 1,
+        "colSpan": 12,
+        "rowSpan": 1
+       }
+      },
+      {
+       "columnName": "Body",
+       "columnLayout": {
+        "column": 1,
+        "row": 2,
+        "colSpan": 12,
+        "rowSpan": 2
+       }
+      }
+     ]
+    },
+    "iconPosition": "only-icon",
+    "icon": "star-tab-icon",
+    "visible": true,
+    "filters": "$TimelineTile_Email_Items"
+   },
+   "parentName": "Timeline",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "TimelineTile_Task",
+   "values": {
+    "type": "crt.TimelineTile",
+    "classes": [
+     "view-element"
+    ],
+    "linkedColumn": "Lead",
+    "sortedByColumn": "StartDate",
+    "ownerColumn": "Owner",
+    "data": {
+     "uId": "c449d832-a4cc-4b01-b9d5-8a12c42a9f89",
+     "schemaName": "Activity",
+     "schemaType": "Activity",
+     "filter": {
+      "columnName": "Type",
+      "columnValue": "e2831dec-cfc0-df11-b00f-001d60e938c6",
+      "comparisonType": 4
+     },
+     "columns": [
+      {
+       "columnName": "Title",
+       "columnLayout": null
+      },
+      {
+       "columnName": "Status",
+       "columnLayout": {
+        "column": 1,
+        "row": 1,
+        "colSpan": 6,
+        "rowSpan": 1
+       }
+      },
+      {
+       "columnName": "DetailedResult",
+       "columnLayout": {
+        "column": 1,
+        "row": 2,
+        "colSpan": 6,
+        "rowSpan": 1
+       }
+      }
+     ]
+    },
+    "iconPosition": "only-icon",
+    "icon": "star-tab-icon",
+    "visible": true,
+    "filters": "$TimelineTile_Task_Items"
+   },
+   "parentName": "Timeline",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "TimelineTile_SysFile",
+   "values": {
+    "type": "crt.TimelineTile",
+    "classes": [
+     "view-element"
+    ],
+    "sortedByColumn": "CreatedOn",
+    "data": {
+     "schemaType": "SysFile"
+    },
+    "iconPosition": "only-icon",
+    "icon": "star-tab-icon",
+    "visible": true,
+    "ownerColumn": "CreatedBy"
+   },
+   "parentName": "Timeline",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "TimelineTile_Feed",
+   "values": {
+    "type": "crt.TimelineTile",
+    "classes": [
+     "view-element"
+    ],
+    "sortedByColumn": "CreatedOn",
+    "data": {
+     "schemaType": "Feed"
+    },
+    "iconPosition": "only-icon",
+    "icon": "star-tab-icon",
+    "visible": true,
+    "linkedColumn": "Lead",
+    "ownerColumn": "CreatedBy"
+   },
+   "parentName": "Timeline",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SalesTab",
+   "values": {
+    "type": "crt.TabContainer",
+    "caption": "#ResourceString(SalesTab_caption)#",
+    "iconPosition": "only-text",
+    "visible": true,
+    "items": []
+   },
+   "parentName": "Tabs",
+   "propertyName": "items",
+   "index": 3
+  },
+  {
+   "operation": "insert",
+   "name": "MainTabContainer_5k25s63",
+   "values": {
+    "type": "crt.GridContainer",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "padding": {
+     "bottom": "medium"
+    },
+    "items": []
+   },
+   "parentName": "SalesTab",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "GridContainer_5k25s63",
+   "values": {
+    "type": "crt.GridContainer",
+    "padding": {
+     "top": "medium",
+     "bottom": "medium",
+     "right": "medium",
+     "left": "medium"
+    },
+    "color": "primary",
+    "borderRadius": "medium",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "items": []
+   },
+   "parentName": "MainTabContainer_5k25s63",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunityPlanningExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(OpportunityPlanningExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "visible": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "GridContainer_5k25s63",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunityPlanningFieldsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "OpportunityPlanningExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunityPlanningFieldsFlexContainerLeft",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "OpportunityPlanningFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Budget",
+   "values": {
+    "type": "crt.NumberInput",
+    "label": "#ResourceString(Budget_label)#",
+    "labelPosition": "auto",
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "#ResourceString(Budget_tooltip)#",
+    "control": "$NumberAttribute_6nr0xsg"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerLeft",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Opportunity",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.LookupAttribute_wl8vj23",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_o3h2431_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_o3h2431"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "control": "$LookupAttribute_wl8vj23"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerLeft",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "Order",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.PDS_Order_nctpkmz",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_zbn39tz_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_zbn39tz"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "visible": false,
+    "readonly": false,
+    "placeholder": "",
+    "tooltip": "",
+    "control": "$PDS_Order_nctpkmz"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerLeft",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunityPlanningFieldsFlexContainerRight",
+   "values": {
+    "type": "crt.FlexContainer",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 1,
+       "column": 2,
+       "colSpan": 1,
+       "rowSpan": 1
+      }
+     }
+    },
+    "direction": "column",
+    "fitContent": true,
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "justifyContent": "start",
+    "alignItems": "stretch",
+    "gap": "medium",
+    "wrap": "nowrap",
+    "items": []
+   },
+   "parentName": "OpportunityPlanningFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "DecisionDate",
+   "values": {
+    "type": "crt.DateTimePicker",
+    "pickerType": "date",
+    "label": "#ResourceString(DecisionDate_label)#",
+    "labelPosition": "auto",
+    "visible": true,
+    "placeholder": "",
+    "tooltip": "#ResourceString(DecisionDate_tooltip)#",
+    "control": "$DateTimeAttribute_q8nrp29"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerRight",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "SalesOwner",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "$Resources.Strings.LookupAttribute_kyciimy",
+    "labelPosition": "auto",
+    "listActions": [
+     {
+      "code": "addRecord",
+      "type": "crt.ComboboxSearchTextAction",
+      "icon": "combobox-add-new",
+      "caption": "#ResourceString(addRecord_quqpon1_caption)#",
+      "clicked": {
+       "request": "crt.CreateRecordFromLookupRequest",
+       "params": {}
+      },
+      "name": "addRecord_quqpon1"
+     }
+    ],
+    "showValueAsLink": true,
+    "controlActions": [],
+    "control": "$LookupAttribute_kyciimy"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerRight",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OrderOwner",
+   "values": {
+    "type": "crt.ComboBox",
+    "label": "#ResourceString(OrderOwner_label)#",
+    "ariaLabel": "#ResourceString(OrderOwner_ariaLabel)#",
+    "isAddAllowed": true,
+    "showValueAsLink": true,
+    "labelPosition": "auto",
+    "controlActions": [],
+    "listActions": [],
+    "tooltip": "",
+    "readonly": true,
+    "visible": false,
+    "placeholder": "",
+    "control": "$PDS_OrderOwner"
+   },
+   "parentName": "OpportunityPlanningFieldsFlexContainerRight",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "BusinessCase",
+   "values": {
+    "type": "crt.Input",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 2,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.StringAttribute_cdi5zf7",
+    "labelPosition": "auto",
+    "multiline": true,
+    "visible": true,
+    "placeholder": "#ResourceString(BusinessCase_placeholder)#",
+    "tooltip": "",
+    "control": "$StringAttribute_cdi5zf7"
+   },
+   "parentName": "OpportunityPlanningFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductSuggestions",
+   "values": {
+    "type": "crt.Input",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 4,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      },
+      "large": {
+       "row": 3,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 1
+      }
+     }
+    },
+    "label": "$Resources.Strings.StringAttribute_s73ygx6",
+    "labelPosition": "auto",
+    "multiline": true,
+    "visible": true,
+    "placeholder": "#ResourceString(ProductSuggestions_placeholder)#",
+    "tooltip": "",
+    "control": "$StringAttribute_s73ygx6"
+   },
+   "parentName": "OpportunityPlanningFieldsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(ProductsExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "visible": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 2,
+     "rowSpan": 1
+    },
+    "items": [],
+    "tools": []
+   },
+   "parentName": "GridContainer_5k25s63",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsListContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "ProductsExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsList",
+   "values": {
+    "type": "crt.List",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      }
+     }
+    },
+    "items": "$ProductsList",
+    "primaryColumnName": "ProductsListDS_Id",
+    "columns": [
+     {
+      "id": "051bd06b-a958-d153-df6b-0e999bf6f789",
+      "code": "ProductsListDS_Product",
+      "path": "Product",
+      "caption": "#ResourceString(ProductsListDS_Product)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Product",
+      "width": 484
+     },
+     {
+      "id": "a3b8f6ae-66ad-9d31-e4aa-e5c2418a143c",
+      "code": "ProductsListDS_ProductPrice",
+      "path": "Product.Price",
+      "caption": "#ResourceString(ProductsListDS_ProductPrice)#",
+      "dataValueType": 6,
+      "width": 232
+     }
+    ],
+    "visible": true,
+    "features": {
+     "editable": {
+      "enable": true,
+      "itemsCreation": true
+     }
+    },
+    "fitContent": true,
+    "selectionState": "$ProductsList_SelectionState",
+    "_selectionOptions": {
+     "attribute": "ProductsList_SelectionState"
+    },
+    "itemLayout": {
+     "name": "ProductsList_ListItem",
+     "type": "crt.ListItem",
+     "title": "$ProductsListDS_Product",
+     "body": [
+      {
+       "value": "$ProductsListDS_ProductPrice"
+      }
+     ]
+    }
+   },
+   "parentName": "ProductsListContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsToolsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 24px)",
+    "columns": [
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "items": []
+   },
+   "parentName": "ProductsExpansionPanel",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsToolsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "gap": "medium",
+    "alignItems": "center",
+    "layoutConfig": {
+     "colSpan": 1,
+     "column": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "ProductsToolsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsAddButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(ProductsAddButton_caption)#",
+    "icon": "add-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": false,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.CreateRecordRequest",
+     "params": {
+      "entityName": "LeadProduct",
+      "defaultValues": [
+       {
+        "attributeName": "Lead",
+        "value": "$Id"
+       }
+      ]
+     }
+    }
+   },
+   "parentName": "ProductsToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsRefreshButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(ProductsRefreshButton_caption)#",
+    "icon": "reload-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.LoadDataRequest",
+     "params": {
+      "config": {
+       "loadType": "reload",
+       "useLastLoadParameters": true
+      },
+      "dataSourceName": "ProductsListDS"
+     }
+    }
+   },
+   "parentName": "ProductsToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsSettingsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(ProductsSettingsButton_caption)#",
+    "icon": "actions-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "visible": true,
+    "menuItems": []
+   },
+   "parentName": "ProductsToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsExportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(ProductsExportDataButton_caption)#",
+    "icon": "export-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ExportDataGridToExcelRequest",
+     "params": {
+      "viewName": "ProductsList",
+      "filters": "$ProductsList | crt.ToCollectionFilters : 'ProductsList' : $ProductsList_SelectionState"
+     }
+    }
+   },
+   "parentName": "ProductsSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "ProductsImportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(ProductsImportDataButton_caption)#",
+    "icon": "import-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ImportDataRequest",
+     "params": {
+      "entitySchemaName": "LeadProduct"
+     }
+    }
+   },
+   "parentName": "ProductsSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "HistoryTab",
+   "values": {
+    "type": "crt.TabContainer",
+    "caption": "#ResourceString(HistoryTab_caption)#",
+    "iconPosition": "only-text",
+    "visible": true,
+    "items": []
+   },
+   "parentName": "Tabs",
+   "propertyName": "items",
+   "index": 4
+  },
+  {
+   "operation": "insert",
+   "name": "MainTabContainer_4pbcdzl",
+   "values": {
+    "type": "crt.GridContainer",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "padding": {
+     "bottom": "medium"
+    },
+    "items": []
+   },
+   "parentName": "HistoryTab",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "GridContainer_4pbcdzl",
+   "values": {
+    "type": "crt.GridContainer",
+    "padding": {
+     "top": "medium",
+     "bottom": "medium",
+     "right": "medium",
+     "left": "medium"
+    },
+    "color": "primary",
+    "borderRadius": "medium",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "items": []
+   },
+   "parentName": "MainTabContainer_4pbcdzl",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(StageHistoryExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "visible": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": [],
+    "tools": []
+   },
+   "parentName": "GridContainer_4pbcdzl",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryListContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "StageHistoryExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryList",
+   "values": {
+    "type": "crt.List",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      }
+     }
+    },
+    "items": "$GridDetail_q6k1kvr",
+    "features": {
+     "editable": {
+      "enable": false,
+      "itemsCreation": false
+     }
+    },
+    "visible": true,
+    "fitContent": true,
+    "primaryColumnName": "StageHistoryListDS_Id",
+    "columns": [
+     {
+      "id": "ffddf855-8c14-ffe9-b647-0835544c8d37",
+      "code": "StageHistoryListDS_QualifyStatus",
+      "path": "QualifyStatus",
+      "caption": "#ResourceString(StageHistoryListDS_QualifyStatus)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "QualifyStatus",
+      "width": 280
+     },
+     {
+      "id": "8b125526-4abc-a8d5-ffe8-bdb485b3d01d",
+      "code": "StageHistoryListDS_StartDate",
+      "path": "StartDate",
+      "caption": "#ResourceString(StageHistoryListDS_StartDate)#",
+      "dataValueType": 7
+     },
+     {
+      "id": "29af74bd-80ec-ec12-ce02-cbc825081be8",
+      "code": "StageHistoryListDS_DueDate",
+      "path": "DueDate",
+      "caption": "#ResourceString(StageHistoryListDS_DueDate)#",
+      "dataValueType": 7
+     },
+     {
+      "id": "88b0898d-afbc-efed-b62c-8a4871991cff",
+      "code": "StageHistoryListDS_ModifiedBy",
+      "path": "ModifiedBy",
+      "caption": "#ResourceString(StageHistoryListDS_ModifiedBy)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Contact"
+     }
+    ],
+    "selectionState": "$StageHistoryList_SelectionState",
+    "_selectionOptions": {
+     "attribute": "StageHistoryList_SelectionState"
+    },
+    "itemLayout": {
+     "name": "StageHistoryList_ListItem",
+     "type": "crt.ListItem",
+     "title": "$StageHistoryListDS_QualifyStatus",
+     "body": [
+      {
+       "value": "$StageHistoryListDS_StartDate"
+      },
+      {
+       "value": "$StageHistoryListDS_DueDate"
+      },
+      {
+       "value": "$StageHistoryListDS_ModifiedBy"
+      }
+     ]
+    }
+   },
+   "parentName": "StageHistoryListContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryToolsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 24px)",
+    "columns": [
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "items": []
+   },
+   "parentName": "StageHistoryExpansionPanel",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryToolsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "gap": "medium",
+    "alignItems": "center",
+    "layoutConfig": {
+     "colSpan": 1,
+     "column": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "StageHistoryToolsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryRefreshButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(StageHistoryRefreshButton_caption)#",
+    "icon": "reload-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.LoadDataRequest",
+     "params": {
+      "config": {
+       "loadType": "reload",
+       "useLastLoadParameters": true
+      },
+      "dataSourceName": "StageHistoryListDS"
+     }
+    }
+   },
+   "parentName": "StageHistoryToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistorySettingsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(StageHistorySettingsButton_caption)#",
+    "icon": "actions-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "visible": true,
+    "menuItems": []
+   },
+   "parentName": "StageHistoryToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "StageHistoryExportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(StageHistoryExportDataButton_caption)#",
+    "icon": "export-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ExportDataGridToExcelRequest",
+     "params": {
+      "viewName": "StageHistoryList",
+      "filters": "$GridDetail_q6k1kvr | crt.ToCollectionFilters : 'GridDetail_q6k1kvr' : $StageHistoryList_SelectionState"
+     }
+    }
+   },
+   "parentName": "StageHistorySettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(LeadsByCustomerExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "visible": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 2,
+     "rowSpan": 1
+    },
+    "items": [],
+    "tools": []
+   },
+   "parentName": "GridContainer_4pbcdzl",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerListContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "LeadsByCustomerExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerList",
+   "values": {
+    "type": "crt.List",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      }
+     }
+    },
+    "items": "$GridDetail_yoxos8p",
+    "features": {
+     "editable": {
+      "enable": true,
+      "itemsCreation": false
+     }
+    },
+    "visible": true,
+    "fitContent": true,
+    "primaryColumnName": "LeadsByCustomerListDS_Id",
+    "columns": [
+     {
+      "id": "927598a3-3574-697c-3dca-565fb294076c",
+      "code": "LeadsByCustomerListDS_LeadName",
+      "caption": "#ResourceString(LeadsByCustomerListDS_LeadName)#",
+      "dataValueType": 30,
+      "width": 328
+     },
+     {
+      "id": "58135ad8-a7f5-77cc-52a5-e8d06e38fd70",
+      "code": "LeadsByCustomerListDS_LeadType",
+      "path": "LeadType",
+      "caption": "#ResourceString(LeadsByCustomerListDS_LeadType)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "LeadType",
+      "width": 221
+     },
+     {
+      "id": "8465f1b1-71cd-bea9-6bff-d9fc69f0ac5d",
+      "code": "LeadsByCustomerListDS_QualifyStatus",
+      "path": "QualifyStatus",
+      "caption": "#ResourceString(LeadsByCustomerListDS_QualifyStatus)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "QualifyStatus",
+      "width": 212
+     },
+     {
+      "id": "03a78cc8-4966-3af7-5b3b-f13b2227a789",
+      "code": "LeadsByCustomerListDS_Owner",
+      "path": "Owner",
+      "caption": "#ResourceString(LeadsByCustomerListDS_Owner)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Contact"
+     },
+     {
+      "id": "3c03d6a9-8d4e-35b5-50ab-4a4705c96c1d",
+      "code": "LeadsByCustomerListDS_CreatedOn",
+      "path": "CreatedOn",
+      "caption": "#ResourceString(LeadsByCustomerListDS_CreatedOn)#",
+      "dataValueType": 7
+     }
+    ],
+    "selectionState": "$LeadsByCustomerList_SelectionState",
+    "_selectionOptions": {
+     "attribute": "LeadsByCustomerList_SelectionState"
+    },
+    "itemLayout": {
+     "name": "LeadsByCustomerList_ListItem",
+     "type": "crt.ListItem",
+     "title": "$LeadsByCustomerListDS_LeadName",
+     "body": [
+      {
+       "value": "$LeadsByCustomerListDS_LeadType"
+      },
+      {
+       "value": "$LeadsByCustomerListDS_QualifyStatus"
+      },
+      {
+       "value": "$LeadsByCustomerListDS_Owner"
+      },
+      {
+       "value": "$LeadsByCustomerListDS_CreatedOn"
+      }
+     ]
+    }
+   },
+   "parentName": "LeadsByCustomerListContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerToolsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 24px)",
+    "columns": [
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "items": []
+   },
+   "parentName": "LeadsByCustomerExpansionPanel",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerToolsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "gap": "medium",
+    "alignItems": "center",
+    "layoutConfig": {
+     "colSpan": 1,
+     "column": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "LeadsByCustomerToolsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerAddButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(LeadsByCustomerAddButton_caption)#",
+    "icon": "add-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.CreateRecordRequest",
+     "params": {
+      "entityName": "Lead",
+      "defaultValues": [
+       {
+        "attributeName": "QualifiedAccount",
+        "value": "$Parameter_3pxm4wn"
+       }
+      ]
+     }
+    }
+   },
+   "parentName": "LeadsByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerRefreshButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(LeadsByCustomerRefreshButton_caption)#",
+    "icon": "reload-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.LoadDataRequest",
+     "params": {
+      "config": {
+       "loadType": "reload",
+       "useLastLoadParameters": true
+      },
+      "dataSourceName": "LeadsByCustomerListDS"
+     }
+    }
+   },
+   "parentName": "LeadsByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerSettingsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(LeadsByCustomerSettingsButton_caption)#",
+    "icon": "actions-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "visible": true,
+    "menuItems": []
+   },
+   "parentName": "LeadsByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerExportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(LeadsByCustomerExportDataButton_caption)#",
+    "icon": "export-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ExportDataGridToExcelRequest",
+     "params": {
+      "viewName": "LeadsByCustomerList",
+      "filters": "$GridDetail_yoxos8p | crt.ToCollectionFilters : 'GridDetail_yoxos8p' : $LeadsByCustomerList_SelectionState"
+     }
+    }
+   },
+   "parentName": "LeadsByCustomerSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "LeadsByCustomerImportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(LeadsByCustomerImportDataButton_caption)#",
+    "icon": "import-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ImportDataRequest",
+     "params": {
+      "entitySchemaName": "Lead"
+     }
+    }
+   },
+   "parentName": "LeadsByCustomerSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerExpansionPanel",
+   "values": {
+    "type": "crt.ExpansionPanel",
+    "title": "#ResourceString(OpportunitiesByCustomerExpansionPanel_title)#",
+    "toggleType": "default",
+    "togglePosition": "before",
+    "expanded": true,
+    "labelColor": "auto",
+    "fullWidthHeader": false,
+    "titleWidth": 20,
+    "padding": {
+     "top": "small",
+     "bottom": "small",
+     "left": "none",
+     "right": "none"
+    },
+    "fitContent": true,
+    "visible": true,
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 3,
+     "rowSpan": 1
+    },
+    "items": [],
+    "tools": []
+   },
+   "parentName": "GridContainer_4pbcdzl",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerListContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 32px)",
+    "columns": [
+     "minmax(32px, 1fr)",
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "adaptive": {
+     "small": {
+      "columns": [
+       "1fr"
+      ]
+     },
+     "medium": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     },
+     "large": {
+      "columns": [
+       "1fr",
+       "1fr"
+      ]
+     }
+    },
+    "items": []
+   },
+   "parentName": "OpportunitiesByCustomerExpansionPanel",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerList",
+   "values": {
+    "type": "crt.List",
+    "layoutConfig": {
+     "adaptive": {
+      "small": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 1,
+       "rowSpan": 1
+      },
+      "medium": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      },
+      "large": {
+       "row": 1,
+       "column": 1,
+       "colSpan": 2,
+       "rowSpan": 6
+      }
+     }
+    },
+    "items": "$GridDetail_qiohu6o",
+    "visible": true,
+    "fitContent": true,
+    "primaryColumnName": "OpportunitiesByCustomerListDS_Id",
+    "columns": [
+     {
+      "id": "3f9ebb5c-bd21-6360-5878-56b6a00f8167",
+      "code": "OpportunitiesByCustomerListDS_Title",
+      "caption": "#ResourceString(OpportunitiesByCustomerListDS_Title)#",
+      "dataValueType": 30,
+      "width": 335
+     },
+     {
+      "id": "30177b78-9e40-9751-0b3b-c1ba0e92b9d4",
+      "code": "OpportunitiesByCustomerListDS_Stage",
+      "path": "Stage",
+      "caption": "#ResourceString(OpportunitiesByCustomerListDS_Stage)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "OpportunityStage",
+      "width": 232
+     },
+     {
+      "id": "4b7cbd7f-83ac-2cc7-e749-0b30da18326c",
+      "code": "OpportunitiesByCustomerListDS_Amount",
+      "path": "Amount",
+      "caption": "#ResourceString(OpportunitiesByCustomerListDS_Amount)#",
+      "dataValueType": 32,
+      "width": 174
+     },
+     {
+      "id": "2b1794d2-3176-c682-c44f-fecb12655cae",
+      "code": "OpportunitiesByCustomerListDS_Owner",
+      "path": "Owner",
+      "caption": "#ResourceString(OpportunitiesByCustomerListDS_Owner)#",
+      "dataValueType": 10,
+      "referenceSchemaName": "Contact",
+      "width": 212
+     },
+     {
+      "id": "e252ad8b-286d-8b88-422d-715ce75ed0ea",
+      "code": "OpportunitiesByCustomerListDS_DueDate",
+      "path": "DueDate",
+      "caption": "#ResourceString(OpportunitiesByCustomerListDS_DueDate)#",
+      "dataValueType": 8,
+      "width": 177
+     }
+    ],
+    "features": {
+     "editable": {
+      "enable": true,
+      "itemsCreation": false
+     }
+    },
+    "selectionState": "$OpportunitiesByCustomerList_SelectionState",
+    "_selectionOptions": {
+     "attribute": "OpportunitiesByCustomerList_SelectionState"
+    },
+    "itemLayout": {
+     "name": "OpportunitiesByCustomerList_ListItem",
+     "type": "crt.ListItem",
+     "title": "$OpportunitiesByCustomerListDS_Title",
+     "body": [
+      {
+       "value": "$OpportunitiesByCustomerListDS_Stage"
+      },
+      {
+       "value": "$OpportunitiesByCustomerListDS_Amount"
+      },
+      {
+       "value": "$OpportunitiesByCustomerListDS_Owner"
+      },
+      {
+       "value": "$OpportunitiesByCustomerListDS_DueDate"
+      }
+     ]
+    }
+   },
+   "parentName": "OpportunitiesByCustomerListContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerToolsContainer",
+   "values": {
+    "type": "crt.GridContainer",
+    "rows": "minmax(max-content, 24px)",
+    "columns": [
+     "minmax(32px, 1fr)"
+    ],
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "styles": {
+     "overflow-x": "hidden"
+    },
+    "visible": true,
+    "color": "transparent",
+    "borderRadius": "none",
+    "padding": {
+     "top": "none",
+     "right": "none",
+     "bottom": "none",
+     "left": "none"
+    },
+    "items": []
+   },
+   "parentName": "OpportunitiesByCustomerExpansionPanel",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerToolsFlexContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "gap": "medium",
+    "alignItems": "center",
+    "layoutConfig": {
+     "colSpan": 1,
+     "column": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": []
+   },
+   "parentName": "OpportunitiesByCustomerToolsContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerAddButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(OpportunitiesByCustomerAddButton_caption)#",
+    "icon": "add-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.CreateRecordRequest",
+     "params": {
+      "entityName": "Opportunity",
+      "defaultValues": [
+       {
+        "attributeName": "Account",
+        "value": "$Parameter_3pxm4wn"
+       }
+      ]
+     }
+    }
+   },
+   "parentName": "OpportunitiesByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerRefreshButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(OpportunitiesByCustomerRefreshButton_caption)#",
+    "icon": "reload-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clickMode": "default",
+    "clicked": {
+     "request": "crt.LoadDataRequest",
+     "params": {
+      "config": {
+       "loadType": "reload",
+       "useLastLoadParameters": true
+      },
+      "dataSourceName": "OpportunitiesByCustomerListDS"
+     }
+    }
+   },
+   "parentName": "OpportunitiesByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerSettingsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(OpportunitiesByCustomerSettingsButton_caption)#",
+    "icon": "actions-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "visible": true,
+    "menuItems": []
+   },
+   "parentName": "OpportunitiesByCustomerToolsFlexContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerExportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(OpportunitiesByCustomerExportDataButton_caption)#",
+    "icon": "export-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ExportDataGridToExcelRequest",
+     "params": {
+      "viewName": "OpportunitiesByCustomerList",
+      "filters": "$GridDetail_qiohu6o | crt.ToCollectionFilters : 'GridDetail_qiohu6o' : $OpportunitiesByCustomerList_SelectionState"
+     }
+    }
+   },
+   "parentName": "OpportunitiesByCustomerSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "OpportunitiesByCustomerImportDataButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(OpportunitiesByCustomerImportDataButton_caption)#",
+    "icon": "import-button-icon",
+    "color": "default",
+    "size": "medium",
+    "visible": true,
+    "clicked": {
+     "request": "crt.ImportDataRequest",
+     "params": {
+      "entitySchemaName": "Opportunity"
+     }
+    }
+   },
+   "parentName": "OpportunitiesByCustomerSettingsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "NextStepsTabContainer",
+   "values": {
+    "type": "crt.TabContainer",
+    "caption": "#ResourceString(NextStepsTabContainer_caption)#",
+    "iconPosition": "left-icon",
+    "visible": true,
+    "icon": "task-tab-icon",
+    "items": []
+   },
+   "parentName": "Tabs",
+   "propertyName": "items",
+   "index": 5
+  },
+  {
+   "operation": "insert",
+   "name": "MainTabContainer_32x0qgt",
+   "values": {
+    "type": "crt.GridContainer",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "padding": {
+     "bottom": "medium"
+    },
+    "items": []
+   },
+   "parentName": "NextStepsTabContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "GridContainer_32x0qgt",
+   "values": {
+    "type": "crt.GridContainer",
+    "padding": {
+     "top": "medium",
+     "bottom": "medium",
+     "right": "medium",
+     "left": "medium"
+    },
+    "color": "primary",
+    "borderRadius": "medium",
+    "gap": {
+     "rowGap": "medium",
+     "columnGap": "medium"
+    },
+    "alignItems": "stretch",
+    "tools": []
+   },
+   "parentName": "MainTabContainer_32x0qgt",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "NextStepsTabContainerHeaderContainer",
+   "values": {
+    "type": "crt.FlexContainer",
+    "direction": "row",
+    "alignItems": "center",
+    "layoutConfig": {
+     "column": 1,
+     "colSpan": 1,
+     "row": 1,
+     "rowSpan": 1
+    },
+    "items": [],
+    "gap": "medium"
+   },
+   "parentName": "GridContainer_32x0qgt",
+   "propertyName": "tools"
+  },
+  {
+   "operation": "insert",
+   "name": "NextStepsTabContainerHeaderLabel",
+   "values": {
+    "type": "crt.Label",
+    "caption": "#MacrosTemplateString(#ResourceString(NextStepsTabContainerHeaderLabel_caption)#)#",
+    "labelType": "headline-3",
+    "labelThickness": "default",
+    "labelEllipsis": false,
+    "labelColor": "#0D2E4E",
+    "labelBackgroundColor": "transparent",
+    "labelTextAlign": "start",
+    "visible": true
+   },
+   "parentName": "NextStepsTabContainerHeaderContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "AddNextStepsButton",
+   "values": {
+    "type": "crt.Button",
+    "caption": "#ResourceString(AddNextStepsButton_caption)#",
+    "icon": "add-button-icon",
+    "iconPosition": "only-icon",
+    "color": "default",
+    "size": "medium",
+    "clickMode": "menu",
+    "layoutConfig": {},
+    "menuItems": []
+   },
+   "parentName": "NextStepsTabContainerHeaderContainer",
+   "propertyName": "items"
+  },
+  {
+   "operation": "insert",
+   "name": "CreateTaskButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(CreateTaskButton_caption)#",
+    "color": "default",
+    "size": "medium",
+    "clicked": {
+     "request": "crt.AddNextStepRequest",
+     "params": {
+      "entityName": "Activity"
+     }
+    }
+   },
+   "parentName": "AddNextStepsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "insert",
+   "name": "CreateEmailButton",
+   "values": {
+    "type": "crt.MenuItem",
+    "caption": "#ResourceString(CreateEmailButton_caption)#",
+    "color": "default",
+    "size": "medium",
+    "clicked": {
+     "request": "crt.CreateEmailRequest"
+    }
+   },
+   "parentName": "AddNextStepsButton",
+   "propertyName": "menuItems"
+  },
+  {
+   "operation": "merge",
+   "name": "Feed",
+   "values": {
+    "dataSourceName": "PDS",
+    "entitySchemaName": "Lead"
+   }
+  },
+  {
+   "operation": "merge",
+   "name": "AttachmentFileList",
+   "values": {
+    "recordColumnName": "Lead",
+    "columns": [
+     {
+      "id": "3fb963b9-dc31-43eb-b899-ecc98131cde8",
+      "code": "AttachmentListDS_Name",
+      "caption": "#ResourceString(AttachmentListDS_Name)#",
+      "dataValueType": 28,
+      "width": 200
+     }
+    ]
+   }
+  }
+ ],
+ "viewModelConfigDiff": [
+  {
+   "operation": "merge",
+   "path": [
+    "attributes"
+   ],
+   "values": {
+    "HeaderCaption": {
+     "value": "#ResourceString(DefaultHeaderCaption)#"
+    },
+    "QueueItemId": {
+     "from": "ElementExecutionData",
+     "converter": "crt.ToQueueItemId"
+    },
+    "Id": {
+     "modelConfig": {
+      "path": "PDS.Id"
+     }
+    },
+    "LeadName": {
+     "modelConfig": {
+      "path": "PDS.LeadName"
+     }
+    },
+    "Parameter_r8t9n2f": {
+     "modelConfig": {
+      "path": "PDS.QualifiedContact"
+     }
+    },
+    "QualifiedContactJobTitle": {
+     "modelConfig": {
+      "path": "PDS.QualifiedContactJobTitle"
+     }
+    },
+    "CommunicationOptions_f87c6ae": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "ContactCommunicationOptionsDS",
+      "sortingConfig": {
+       "default": [
+        {
+         "columnName": "CreatedOn",
+         "direction": "asc"
+        }
+       ]
+      }
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "ContactCommunicationOptionsDS_CreatedOn": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.CreatedOn"
+        }
+       },
+       "ContactCommunicationOptionsDS_Number": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.Number"
+        }
+       },
+       "ContactCommunicationOptionsDS_Primary": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.Primary"
+        }
+       },
+       "ContactCommunicationOptionsDS_NonActual": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.NonActual"
+        }
+       },
+       "ContactCommunicationOptionsDS_CommunicationType": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.CommunicationType"
+        }
+       },
+       "ContactCommunicationOptionsDS_CommunicationTypeDisplayFormat": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.CommunicationTypeDisplayFormat"
+        }
+       },
+       "ContactCommunicationOptionsDS_CommunicationTypeName": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.CommunicationTypeName"
+        }
+       },
+       "ContactCommunicationOptionsDS_Id": {
+        "modelConfig": {
+         "path": "ContactCommunicationOptionsDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "Parameter_3pxm4wn": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccount"
+     }
+    },
+    "QualifiedAccountWeb": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccountWeb"
+     }
+    },
+    "QualifiedAccountType": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccountType"
+     }
+    },
+    "QualifiedAccountIndustry": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccountIndustry"
+     }
+    },
+    "QualifiedAccountEmployeesNumber": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccountEmployeesNumber"
+     }
+    },
+    "QualifiedAccountAnnualRevenue": {
+     "modelConfig": {
+      "path": "PDS.QualifiedAccountAnnualRevenue"
+     }
+    },
+    "LookupAttribute_ivqsxmp": {
+     "modelConfig": {
+      "path": "PDS.LeadType"
+     }
+    },
+    "DateTimeAttribute_1b4r79a": {
+     "modelConfig": {
+      "path": "PDS.CreatedOn"
+     }
+    },
+    "LookupAttribute_0ljkabs": {
+     "modelConfig": {
+      "path": "PDS.Owner"
+     }
+    },
+    "StringAttribute_cg42kpk": {
+     "modelConfig": {
+      "path": "PDS.Commentary"
+     }
+    },
+    "LookupAttribute_dzve5mq": {
+     "modelConfig": {
+      "path": "PDS.Group"
+     }
+    },
+    "LookupAttribute_dr0vsd0": {
+     "modelConfig": {
+      "path": "PDS.Status"
+     }
+    },
+    "LookupAttribute_rsim6pt": {
+     "modelConfig": {
+      "path": "PDS.LeadTypeDetails"
+     }
+    },
+    "QualifiedContactSource": {
+     "modelConfig": {
+      "path": "PDS.QualifiedContactSource"
+     }
+    },
+    "QualifiedContactChannel": {
+     "modelConfig": {
+      "path": "PDS.QualifiedContactChannel"
+     }
+    },
+    "QualifiedContactRegisterMethod": {
+     "modelConfig": {
+      "path": "PDS.QualifiedContactRegisterMethod"
+     }
+    },
+    "SimilarLeadList": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "SimilarLeadListDS",
+      "sortingConfig": {
+       "default": [
+        {
+         "direction": "asc",
+         "columnName": "LeadName"
+        }
+       ]
+      },
+      "filterAttributes": [
+       {
+        "name": "SimilarLeadSearchFilter_SimilarLeadList",
+        "loadOnChange": true
+       }
+      ]
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "SimilarLeadListDS_LeadName": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.LeadName"
+        }
+       },
+       "SimilarLeadListDS_QualifyStatus": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.QualifyStatus"
+        }
+       },
+       "SimilarLeadListDS_CreatedOn": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.CreatedOn"
+        }
+       },
+       "SimilarLeadListDS_Owner": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.Owner"
+        }
+       },
+       "SimilarLeadListDS_QualifiedAccount": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.QualifiedAccount"
+        }
+       },
+       "SimilarLeadListDS_QualifiedContact": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.QualifiedContact"
+        }
+       },
+       "SimilarLeadListDS_Id": {
+        "modelConfig": {
+         "path": "SimilarLeadListDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "LookupAttribute_1prxdry": {
+     "modelConfig": {
+      "path": "PDS.SalesChannel"
+     }
+    },
+    "NumberAttribute_6nr0xsg": {
+     "modelConfig": {
+      "path": "PDS.Budget"
+     }
+    },
+    "LookupAttribute_wl8vj23": {
+     "modelConfig": {
+      "path": "PDS.Opportunity"
+     }
+    },
+    "DateTimeAttribute_q8nrp29": {
+     "modelConfig": {
+      "path": "PDS.DecisionDate"
+     }
+    },
+    "LookupAttribute_kyciimy": {
+     "modelConfig": {
+      "path": "PDS.SalesOwner"
+     }
+    },
+    "StringAttribute_cdi5zf7": {
+     "modelConfig": {
+      "path": "PDS.BusinessCase"
+     }
+    },
+    "StringAttribute_s73ygx6": {
+     "modelConfig": {
+      "path": "PDS.ProductSuggestions"
+     }
+    },
+    "ProductsList": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "ProductsListDS",
+      "filterAttributes": [
+       {
+        "name": "ProductsSearchFilter_ProductsList",
+        "loadOnChange": true
+       }
+      ]
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "ProductsListDS_Product": {
+        "modelConfig": {
+         "path": "ProductsListDS.Product"
+        }
+       },
+       "ProductsListDS_ProductPrice": {
+        "modelConfig": {
+         "path": "ProductsListDS.ProductPrice"
+        }
+       },
+       "ProductsListDS_Id": {
+        "modelConfig": {
+         "path": "ProductsListDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "GridDetail_q6k1kvr": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "StageHistoryListDS",
+      "filterAttributes": [
+       {
+        "name": "StageHistorySearchFilter_GridDetail_q6k1kvr",
+        "loadOnChange": true
+       }
+      ]
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "StageHistoryListDS_QualifyStatus": {
+        "modelConfig": {
+         "path": "StageHistoryListDS.QualifyStatus"
+        }
+       },
+       "StageHistoryListDS_StartDate": {
+        "modelConfig": {
+         "path": "StageHistoryListDS.StartDate"
+        }
+       },
+       "StageHistoryListDS_DueDate": {
+        "modelConfig": {
+         "path": "StageHistoryListDS.DueDate"
+        }
+       },
+       "StageHistoryListDS_ModifiedBy": {
+        "modelConfig": {
+         "path": "StageHistoryListDS.ModifiedBy"
+        }
+       },
+       "StageHistoryListDS_Id": {
+        "modelConfig": {
+         "path": "StageHistoryListDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "GridDetail_yoxos8p": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "LeadsByCustomerListDS",
+      "filterAttributes": [
+       {
+        "name": "LeadsByCustomerSearchFilter_GridDetail_yoxos8p",
+        "loadOnChange": true
+       }
+      ]
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "LeadsByCustomerListDS_LeadName": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.LeadName"
+        }
+       },
+       "LeadsByCustomerListDS_LeadType": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.LeadType"
+        }
+       },
+       "LeadsByCustomerListDS_QualifyStatus": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.QualifyStatus"
+        }
+       },
+       "LeadsByCustomerListDS_Owner": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.Owner"
+        }
+       },
+       "LeadsByCustomerListDS_CreatedOn": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.CreatedOn"
+        }
+       },
+       "LeadsByCustomerListDS_Id": {
+        "modelConfig": {
+         "path": "LeadsByCustomerListDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "GridDetail_qiohu6o": {
+     "isCollection": true,
+     "modelConfig": {
+      "path": "OpportunitiesByCustomerListDS",
+      "filterAttributes": [
+       {
+        "name": "OpportunitiesByCustomerSearchFilter_GridDetail_qiohu6o",
+        "loadOnChange": true
+       }
+      ]
+     },
+     "viewModelConfig": {
+      "attributes": {
+       "OpportunitiesByCustomerListDS_Title": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.Title"
+        }
+       },
+       "OpportunitiesByCustomerListDS_Stage": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.Stage"
+        }
+       },
+       "OpportunitiesByCustomerListDS_Amount": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.Amount"
+        }
+       },
+       "OpportunitiesByCustomerListDS_Owner": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.Owner"
+        }
+       },
+       "OpportunitiesByCustomerListDS_DueDate": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.DueDate"
+        }
+       },
+       "OpportunitiesByCustomerListDS_Id": {
+        "modelConfig": {
+         "path": "OpportunitiesByCustomerListDS.Id"
+        }
+       }
+      }
+     }
+    },
+    "LookupAttribute_mfwvuqd": {
+     "modelConfig": {
+      "path": "PDS.LeadDisqualifyReason"
+     }
+    },
+    "StringAttribute_1zhbdlz": {
+     "modelConfig": {
+      "path": "PDS.ClosingDetails"
+     }
+    },
+    "NumberAttribute_sgdzxor": {
+     "modelConfig": {
+      "path": "PDS.PredictiveScore"
+     }
+    },
+    "Timeline_AllTileFilters": {
+     "from": [],
+     "converter": "crt.ToTileFilterGroup"
+    },
+    "PDS_Order_nctpkmz": {
+     "modelConfig": {
+      "path": "PDS.Order"
+     }
+    },
+    "PDS_OrderOwner": {
+     "modelConfig": {
+      "path": "PDS.OrderOwner"
+     }
+    }
+   }
+  }
+ ],
+ "modelConfigDiff": [
+  {
+   "operation": "merge",
+   "path": [],
+   "values": {
+    "primaryDataSourceName": "PDS",
+    "dependencies": {
+     "SimilarLeadListDS": [
+      {
+       "attributePath": "Id",
+       "relationPath": "PDS.Id"
+      }
+     ],
+     "ProductsListDS": [
+      {
+       "attributePath": "Lead",
+       "relationPath": "PDS.Id"
+      }
+     ],
+     "StageHistoryListDS": [
+      {
+       "attributePath": "Lead",
+       "relationPath": "PDS.Id"
+      }
+     ],
+     "LeadsByCustomerListDS": [
+      {
+       "attributePath": "QualifiedAccount",
+       "relationPath": "PDS.QualifiedAccount"
+      }
+     ],
+     "OpportunitiesByCustomerListDS": [
+      {
+       "attributePath": "Account",
+       "relationPath": "PDS.QualifiedAccount"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "operation": "merge",
+   "path": [
+    "dataSources"
+   ],
+   "values": {
+    "PDS": {
+     "type": "crt.EntityDataSource",
+     "config": {
+      "entitySchemaName": "Lead",
+      "attributes": {
+       "QualifiedContactJobTitle": {
+        "path": "QualifiedContact.JobTitle",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountWeb": {
+        "path": "QualifiedAccount.Web",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountType": {
+        "path": "QualifiedAccount.Type",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountIndustry": {
+        "path": "QualifiedAccount.Industry",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountEmployeesNumber": {
+        "path": "QualifiedAccount.EmployeesNumber",
+        "type": "ForwardReference"
+       },
+       "QualifiedAccountAnnualRevenue": {
+        "path": "QualifiedAccount.AnnualRevenue",
+        "type": "ForwardReference"
+       },
+       "QualifiedContactSource": {
+        "path": "QualifiedContact.Source",
+        "type": "ForwardReference"
+       },
+       "QualifiedContactChannel": {
+        "path": "QualifiedContact.Channel",
+        "type": "ForwardReference"
+       },
+       "QualifiedContactRegisterMethod": {
+        "path": "QualifiedContact.RegisterMethod",
+        "type": "ForwardReference"
+       },
+       "OrderOwner": {
+        "path": "Order.Owner",
+        "type": "ForwardReference"
+       }
+      }
+     },
+     "scope": "page"
+    },
+    "CommunicationOptions_f87c6aeDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "ContactCommunication",
+      "attributes": {
+       "CreatedOn": {
+        "path": "CreatedOn"
+       },
+       "Number": {
+        "path": "Number"
+       },
+       "Primary": {
+        "path": "Primary"
+       },
+       "NonActual": {
+        "path": "NonActual"
+       },
+       "CommunicationType": {
+        "path": "CommunicationType"
+       },
+       "CommunicationTypeDisplayFormat": {
+        "type": "ForwardReference",
+        "path": "CommunicationType.DisplayFormat"
+       },
+       "CommunicationTypeName": {
+        "type": "ForwardReference",
+        "path": "CommunicationType.Name"
+       }
+      }
+     }
+    },
+    "ContactCommunicationOptionsDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "ContactCommunication",
+      "attributes": {
+       "CreatedOn": {
+        "path": "CreatedOn"
+       },
+       "Number": {
+        "path": "Number"
+       },
+       "Primary": {
+        "path": "Primary"
+       },
+       "NonActual": {
+        "path": "NonActual"
+       },
+       "CommunicationType": {
+        "path": "CommunicationType"
+       },
+       "CommunicationTypeDisplayFormat": {
+        "type": "ForwardReference",
+        "path": "CommunicationType.DisplayFormat"
+       },
+       "CommunicationTypeName": {
+        "type": "ForwardReference",
+        "path": "CommunicationType.Name"
+       }
+      }
+     }
+    },
+    "SimilarLeadListDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "SimilarLead",
+      "attributes": {
+       "LeadName": {
+        "path": "LeadName"
+       },
+       "QualifyStatus": {
+        "path": "QualifyStatus"
+       },
+       "CreatedOn": {
+        "path": "CreatedOn"
+       },
+       "Owner": {
+        "path": "Owner"
+       },
+       "QualifiedAccount": {
+        "path": "QualifiedAccount"
+       },
+       "QualifiedContact": {
+        "path": "QualifiedContact"
+       }
+      }
+     }
+    },
+    "ProductsListDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "LeadProduct",
+      "attributes": {
+       "Product": {
+        "path": "Product"
+       },
+       "ProductPrice": {
+        "type": "ForwardReference",
+        "path": "Product.Price"
+       }
+      }
+     }
+    },
+    "StageHistoryListDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "LeadInQualifyStatus",
+      "attributes": {
+       "QualifyStatus": {
+        "path": "QualifyStatus"
+       },
+       "StartDate": {
+        "path": "StartDate"
+       },
+       "DueDate": {
+        "path": "DueDate"
+       },
+       "ModifiedBy": {
+        "path": "ModifiedBy"
+       }
+      }
+     }
+    },
+    "LeadsByCustomerListDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "Lead",
+      "attributes": {
+       "LeadName": {
+        "path": "LeadName"
+       },
+       "LeadType": {
+        "path": "LeadType"
+       },
+       "QualifyStatus": {
+        "path": "QualifyStatus"
+       },
+       "Owner": {
+        "path": "Owner"
+       },
+       "CreatedOn": {
+        "path": "CreatedOn"
+       }
+      }
+     }
+    },
+    "OpportunitiesByCustomerListDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "Opportunity",
+      "attributes": {
+       "Title": {
+        "path": "Title"
+       },
+       "Stage": {
+        "path": "Stage"
+       },
+       "Amount": {
+        "path": "Amount"
+       },
+       "Owner": {
+        "path": "Owner"
+       },
+       "DueDate": {
+        "path": "DueDate"
+       }
+      }
+     }
+    },
+    "TimelineTile_CallDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "Call"
+     }
+    },
+    "TimelineTile_EmailDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "Activity"
+     }
+    },
+    "TimelineTile_TaskDS": {
+     "type": "crt.EntityDataSource",
+     "scope": "viewElement",
+     "config": {
+      "entitySchemaName": "Activity"
+     }
+    }
+   }
+  },
+  {
+   "operation": "merge",
+   "path": [
+    "dataSources",
+    "AttachmentListDS",
+    "config"
+   ],
+   "values": {
+    "entitySchemaName": "FileLead"
+   }
+  }
+ ]
+}
