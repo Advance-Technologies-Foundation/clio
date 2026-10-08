@@ -3320,6 +3320,47 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: an addMapping onto a PROCESS parameter touches no element, so a Read data element left without its source by an earlier request is not reported (ENG-102537: only elements the request touched are judged). A mapping that names an element AS WELL is refused by the mapping service before anything is tracked - measured on 1.6.6.91 - so this is the only shape a process-parameter mapping can take.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process does not warn about an untouched element when a mapping targets a process parameter")]
+	public async Task ModifyBusinessProcess_Should_NotWarnAboutAnUntouchedElement_WhenAMappingTargetsAProcessParameter() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpProcParamMapE2e{Guid.NewGuid():N}";
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildPerformTaskWithIntegerParameterDescriptor(processName)
+		});
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.90");
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			CallToolResult added = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """[ { "op": "addElement", "element": { "name": "ReadLeftBare", "type": "readData" } } ]"""
+			});
+			SerializeToolText(added).Should().Contain("Read data 'ReadLeftBare' has NO source object",
+				because: "the arrange leaves an element the check would report whenever a request touches it");
+
+			// Act
+			CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """[ { "op": "addMapping", "mapping": { "targetProcessParameter": "Attempts", "value": "3" } } ]"""
+			});
+
+			// Assert
+			string text = SerializeToolText(callResult);
+			text.Should().Contain("1 operation(s) applied", because: "the mapping onto the process parameter is saved");
+			text.Should().NotContain("ReadLeftBare",
+				because: "the request changed no element, so the element left bare earlier is not judged");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
 	[Description("Over the real MCP path: mapping a type-incompatible source (an Integer process parameter) onto the Perform task's Lookup->Contact performer parameter is rejected with the incompatible-types diagnosis and the edit is not persisted.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects a type-incompatible mapping onto the performer lookup")]
