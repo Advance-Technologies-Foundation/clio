@@ -5,6 +5,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Common.Telemetry;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,28 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public class BindingsModuleMcpHostGateTests {
+	[TestCase(false, typeof(NullServedContentMeter))]
+	[TestCase(true, typeof(ServedContentMeter))]
+	[Category("Unit")]
+	[Description("Counts served content only in the stdio MCP host, where one process is one agent session, and hands every resolution in a container the same meter (ENG-100157).")]
+	public void Register_ShouldCountServedContentOnlyInTheStdioHost_WhenHostModeChanges(
+		bool registerMcpHost, Type expectedMeterType) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: registerMcpHost);
+
+		// Act
+		IServedContentMeter first = provider.GetRequiredService<IServedContentMeter>();
+		IServedContentMeter second = provider.GetRequiredService<IServedContentMeter>();
+
+		// Assert
+		first.Should().BeOfType(expectedMeterType,
+			because: "only the stdio host counts; every other container, mcp-http's included, keeps the inert meter so one count never mixes sessions");
+		second.Should().BeSameAs(first,
+			because: "get-guidance, get-tool-contract and the telemetry service must share one count, or the stamp would never see what the tools recorded");
+	}
+
 	[TestCase(false)]
 	[TestCase(true)]
 	[Category("Unit")]

@@ -78,8 +78,15 @@ public sealed class TelemetryService : ITelemetryService
 	/// changes the meaning of <c>coding_agent</c> (a canonical slug, not the caller's spelling). Without
 	/// the bump a consumer could only tell the two shapes apart by event date, which is the inference
 	/// this field exists to remove.
+	/// <para>
+	/// 2 -> 3: adds the served-content counters (<c>guidance_reads</c>, <c>guidance_rereads</c>,
+	/// <c>guidance_bytes</c>, <c>contract_reads</c>, <c>contract_bytes</c>) and
+	/// <c>guidance_library_version</c>, which clio stamps from <see cref="IServedContentMeter"/>. They are
+	/// absent from an event recorded by a process that served nothing, so a consumer must not read their
+	/// absence on a v3 event as zero.
+	/// </para>
 	/// </remarks>
-	private const string SchemaVersion = "2";
+	private const string SchemaVersion = "3";
 
 	private static readonly object SyncRoot = new();
 	private static readonly JsonSerializerOptions JsonOptions = new() {
@@ -105,6 +112,7 @@ public sealed class TelemetryService : ITelemetryService
 	private readonly TimeProvider _timeProvider;
 	private readonly string _telemetryRoot;
 	private readonly ILogger<TelemetryService> _logger;
+	private readonly IServedContentMeter _servedContentMeter;
 
 	/// <summary>
 	/// Legacy app-creation names: DEPRECATED, still accepted, never to be advertised as a choice.
@@ -225,8 +233,12 @@ public sealed class TelemetryService : ITelemetryService
 	/// <see cref="TimeProvider.System"/>; tests can supply a controllable provider.
 	/// </param>
 	/// <param name="logger">Optional diagnostics logger; silent when omitted.</param>
+	/// <param name="servedContentMeter">
+	/// Optional source of the served-content counters stamped on every recorded event. When omitted, no
+	/// served-content attribute is stamped - the enrichment is fail-soft by design.
+	/// </param>
 	public TelemetryService(Ms.IFileSystem fileSystem, string telemetryRoot = null, TimeProvider timeProvider = null,
-		ILogger<TelemetryService> logger = null)
+		ILogger<TelemetryService> logger = null, IServedContentMeter servedContentMeter = null)
 	{
 		_fileSystem = fileSystem ?? throw new ArgumentNullException(nameof(fileSystem));
 		_timeProvider = timeProvider ?? TimeProvider.System;
@@ -234,6 +246,7 @@ public sealed class TelemetryService : ITelemetryService
 			? DefaultTelemetryRoot
 			: telemetryRoot;
 		_logger = logger ?? NullLogger<TelemetryService>.Instance;
+		_servedContentMeter = servedContentMeter;
 	}
 
 	/// <inheritdoc />
@@ -435,6 +448,32 @@ public sealed class TelemetryService : ITelemetryService
 	];
 
 	/// <summary>
+	/// Wire key of the guidance library version stamped beside the served-content counters.
+	/// </summary>
+	internal const string GuidanceLibraryVersionAttribute = "guidance_library_version";
+
+	/// <summary>
+	/// The served-content counters clio stamps on an event: what this process served the agent so far.
+	/// </summary>
+	/// <remarks>
+	/// Unlike the token counters these are clio's OWN measurement, so they are exact and need no agent
+	/// cooperation - the reason they exist is that an agent cannot see what its session cost. They are
+	/// cumulative for the process, so they carry the same max-is-the-total semantics as the token series,
+	/// and the difference between two stages of one run is what clio served between them. The wire keys
+	/// are copied by hand into the CAADT collector's attribute allow-list, which drops any key it does not
+	/// know after answering 200 - rename one here and it vanishes silently (see the telemetry vocabulary
+	/// maintenance policy in <c>AGENTS.md</c>).
+	/// </remarks>
+	private static IReadOnlyList<(string name, long value)> ServedContentFields(ServedContentSnapshot served) =>
+	[
+		("guidance_reads", served.GuidanceReads),
+		("guidance_rereads", served.GuidanceRereads),
+		("guidance_bytes", served.GuidanceBytes),
+		("contract_reads", served.ContractReads),
+		("contract_bytes", served.ContractBytes)
+	];
+
+	/// <summary>
 	/// Canonicalizes <c>coding_agent</c> to a lowercase slug so one host counts as one cohort.
 	/// </summary>
 	/// <remarks>
@@ -550,6 +589,31 @@ public sealed class TelemetryService : ITelemetryService
 		}
 	}
 
+	/// <summary>
+	/// Stamps what this process served the agent so far, when it served anything.
+	/// </summary>
+	/// <remarks>
+	/// Nothing is stamped by a process that served nothing. That is not an optimisation: the CAADT hook
+	/// records its own events (the session-start floor, <c>session_usage</c>) through a SEPARATE, short-lived
+	/// <c>clio mcp-server</c> per dispatch, which never serves guidance - a row of zeros from it would read as
+	/// a session that cost nothing and drag every median down.
+	/// </remarks>
+	private void AddServedContentAttributes(List<OpenTelemetryAttribute> attributes)
+	{
+		if (_servedContentMeter is null || !_servedContentMeter.TryGetSnapshot(out ServedContentSnapshot served)) {
+			return;
+		}
+		foreach ((string name, long value) in ServedContentFields(served)) {
+			attributes.Add(new OpenTelemetryAttribute(name, new OpenTelemetryValue(IntValue: value)));
+		}
+		// The version comes out of a published library manifest, not from clio's own code, so it is
+		// shape-checked like any other token before it reaches a ClickHouse column. A value that is not a
+		// bounded lowercase token is dropped rather than truncated: a guessed version is worse than none.
+		if (IsAllowedToken(served.GuidanceLibraryVersion)) {
+			attributes.Add(StringAttribute(GuidanceLibraryVersionAttribute, served.GuidanceLibraryVersion));
+		}
+	}
+
 	private OpenTelemetryLogEvent BuildLogEvent(TelemetryEventRequest request, string eventId, DateTimeOffset timestamp,
 		long? durationSinceSessionStartMs)
 	{
@@ -587,6 +651,7 @@ public sealed class TelemetryService : ITelemetryService
 				attributes.Add(new OpenTelemetryAttribute(name, new OpenTelemetryValue(IntValue: value.Value)));
 			}
 		}
+		AddServedContentAttributes(attributes);
 		if (request.DurationMs.HasValue) {
 			attributes.Add(new OpenTelemetryAttribute("duration_ms", new OpenTelemetryValue(IntValue: request.DurationMs.Value)));
 		}
