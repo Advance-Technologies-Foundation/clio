@@ -162,6 +162,10 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
   follow the poll guidance (covered by prompt + tool-description updates and an e2e assertion).
 - **Tuning:** the 150 s default trades a little slack below 180 s; env-var override covers clients
   with other ceilings.
+- **Amended 2026-10-08 (ENG-102333):** the default is now **45 s**. Claude Code desktop 2.1.293 has a
+  60 s per-call ceiling that progress does not reset, and after hitting it restarts the MCP server, so a
+  later answer loses the operation's record (see `adr-mcp-worker-execution-boundary.md` §3.2a). The
+  override still raises it for a client that waits longer.
 
 ---
 

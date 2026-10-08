@@ -57,24 +57,41 @@ internal static class McpProgressHeartbeat {
 	/// Environment variable that overrides <see cref="DefaultResponseDeadline"/>, expressed in
 	/// seconds (invariant culture, accepted range 0 &lt; n ≤ 600). Lets operators tune the response
 	/// deadline to a client's hard request ceiling (for example a larger value for a client that
-	/// permits longer calls). Invalid or out-of-range values fall back to the 150 s default.
+	/// permits longer calls). Invalid or out-of-range values fall back to the 45 s default.
 	/// </summary>
 	internal const string ResponseDeadlineOverrideEnvVar = "CLIO_MCP_RESPONSE_DEADLINE_SECONDS";
 
 	/// <summary>
-	/// Default wall-clock budget for the whole MCP <em>response</em> on long-running create tools.
-	/// Chosen below GitHub Copilot CLI's hard ~180 s per-request ceiling (which, unlike an
-	/// inactivity timeout, <em>is not</em> reset by <c>notifications/progress</c> — see
-	/// <c>spec/adr/adr-create-app-section-response-deadline.md</c>, ENG-91316). When the backend
-	/// work exceeds this budget the tool returns an actionable "in-progress, poll" envelope before
-	/// the client gives up with <c>-32001 Request timed out</c>, while the work keeps running on the
-	/// long-lived server. Overridable via <see cref="ResponseDeadlineOverrideEnvVar"/>.
+	/// Default wall-clock budget for the whole MCP <em>response</em> on long-running tools. When the
+	/// backend work exceeds this budget the tool returns an actionable "in-progress, poll" envelope
+	/// before the client gives up with <c>-32001 Request timed out</c>, while the work keeps running on
+	/// the long-lived server. Overridable via <see cref="ResponseDeadlineOverrideEnvVar"/>.
 	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>45 s, below the lowest hard per-request ceiling measured on a client (ENG-102333).</b> Claude
+	/// Code desktop 2.1.293 gives up on a tool call after 60 s whatever <c>notifications/progress</c> it
+	/// receives, and on its next call restarts the clio MCP server. That restart ends every operation
+	/// the server tracked and every other in-flight call of the session, so an answer that arrives
+	/// after 60 s is not merely late on that client: the operation's record is gone. The default was
+	/// 150 s, chosen below GitHub Copilot CLI's ~180 s ceiling (ENG-91316,
+	/// <c>spec/adr/adr-create-app-section-response-deadline.md</c>); the measured overhead between the
+	/// deadline and the answer reaching the client is 1-3 s, so 45 s leaves a margin below 60 s.
+	/// </para>
+	/// <para>
+	/// The cost is more polling: an operation that finished between 45 s and 150 s used to return its
+	/// result and now returns the in-progress envelope. The parent's bound on one sticky call moves with
+	/// this value (<c>McpWorkerCallDispatcher.DefaultStickyCallBudget</c>). It is measured from the start
+	/// of the race, so a tool with work before the race (the restart request) subtracts that work from
+	/// it; the parent's queueing and the worker's spawn are not counted. run-process does not use it
+	/// (<c>RunProcessTool.RunProcessResponseDeadline</c>).
+	/// </para>
+	/// </remarks>
 	internal static readonly TimeSpan DefaultResponseDeadline =
 		ResolveResponseDeadline(Environment.GetEnvironmentVariable(ResponseDeadlineOverrideEnvVar));
 
 	/// <summary>
-	/// Parses a raw seconds override into a response deadline, falling back to 150 s for null / empty /
+	/// Parses a raw seconds override into a response deadline, falling back to 45 s for null / empty /
 	/// non-numeric / out-of-range (<c>0 &lt; n ≤ 600</c>) values.
 	/// </summary>
 	/// <remarks>
@@ -93,7 +110,7 @@ internal static class McpProgressHeartbeat {
 			return TimeSpan.FromSeconds(seconds);
 		}
 
-		return TimeSpan.FromSeconds(150);
+		return TimeSpan.FromSeconds(45);
 	}
 
 	/// <summary>
@@ -316,7 +333,7 @@ internal static class McpProgressHeartbeat {
 			: Task.Run(() => PumpChannelAsync(channel, operationName, effectiveInterval, heartbeatCts.Token), CancellationToken.None);
 		try {
 			// The delay shares heartbeatCts so the finally below cancels the surviving timer when
-			// work wins the race — no 150 s timer lingers after a fast completion.
+			// work wins the race — no deadline timer lingers after a fast completion.
 			Task completed = await Task
 				.WhenAny(workTask, Task.Delay(effectiveDeadline, heartbeatCts.Token))
 				.ConfigureAwait(false);
@@ -332,7 +349,7 @@ internal static class McpProgressHeartbeat {
 			// cancelled, Task.Delay won the race only because heartbeatCts is linked to
 			// cancellationToken — the deadline never elapsed, and on server shutdown the detached
 			// Task.Run dies with the process, so the "work continues, keep polling" guidance would be
-			// false. Propagate cancellation distinctly instead of fabricating a 150 s deadline.
+			// false. Propagate cancellation distinctly instead of fabricating a deadline.
 			cancellationToken.ThrowIfCancellationRequested();
 			throw new McpResponseDeadlineExceededException(operationName, effectiveDeadline);
 		}

@@ -466,4 +466,24 @@ public sealed class RestartToolTests {
 			return ReadyToReturn;
 		}
 	}
+
+	[TestCase(10, 35, TestName = "a fast restart request leaves the rest of the deadline")]
+	[TestCase(45, 0, TestName = "a request that used the whole deadline leaves none")]
+	[TestCase(70, 0, TestName = "a request that outlived the deadline leaves none, never a negative")]
+	[Category("Unit")]
+	[Description("ENG-102333: the restart tools count the response deadline from before their restart request, so a slow request - a fresh worker's login, an application reloading after a compile - cannot push the in-progress answer past the 60 s after which Claude Code desktop gives up.")]
+	public void RemainingResponseDeadline_ShouldSubtractTheRestartRequest(int elapsedSeconds, int expectedSeconds) {
+		// Arrange
+		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, Substitute.For<IToolCommandResolver>(),
+			new RestartOperationRegistry()) {
+			ResponseDeadlineOverride = TimeSpan.FromSeconds(45)
+		};
+
+		// Act
+		TimeSpan remaining = tool.RemainingResponseDeadline(TimeSpan.FromSeconds(elapsedSeconds));
+
+		// Assert
+		remaining.Should().Be(TimeSpan.FromSeconds(expectedSeconds),
+			because: "the readiness wait gets only what the request left of the deadline, and a spent deadline answers in-progress at once");
+	}
 }

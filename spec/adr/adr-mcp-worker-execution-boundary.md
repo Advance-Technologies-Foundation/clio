@@ -433,6 +433,36 @@ compile started - and `CompileCreatioClientTimeoutE2ETests` pins it, so an SDK u
 test instead of stranding reservations. What remains is a worker that wedges after receiving the call, which
 the deadline path was exposed to already.
 
+**Decided 2026-10-08 (ENG-102333, after QA): keeping the worker is not enough on a client that restarts the
+server.** Claude Code desktop 2.1.293 gives up on a call after 60 s and, on its next call, restarts the clio MCP
+server; every worker - and with it every operation record - goes with the server, and the other agents of the
+session lose their in-flight calls too. Two changes answer it, and a third was rejected:
+
+- the default response deadline (`McpProgressHeartbeat.DefaultResponseDeadline`) is **45 s**, down from 150 s,
+  so the in-progress answer reaches a 60 s client first (measured delivery 1-3 s after the deadline; a full
+  compile on a stand answered at 46.2 s). The sticky call budget is derived from it (45 s + 60 s = 105 s), and
+  the restart tools count it from before their restart request, not from the readiness wait. Two deadlines are
+  deliberately NOT lowered:
+  - the read-response deadline (120 s, `adr-read-only-mcp-response-deadline.md`): a read that hits it is lost,
+    not continued, so lowering it would fail reads that take 45-60 s and succeed today;
+  - `run-process` (150 s, `RunProcessTool.RunProcessResponseDeadline`): it runs in a per-call worker that the
+    parent kills after the answer, and its "still running, do not re-run" note would be false if it arrived
+    before the RunProcess request had been sent - which nothing records today. Below the parent's 120 s
+    per-call budget that answer stays unreachable, as before;
+- a `compile-status` not-found answer reads the environment's `CompilationHistory` and lists the newest rows
+  with their finish times in UTC. That record lives in the environment, so it survives any server restart,
+  and its time is what `last-compilation-log`'s verdict lacks. The rows are read through DataService, whose
+  times are in the session's zone, and converted with that session's offset from `GetApplicationInfo`. OData
+  was tried first and rejected: the platform labels whatever the entity layer returns as UTC, and one stand
+  returned true UTC and, after an application restart, local time with a `Z`. The read is abandoned after
+  25 s, login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
+  reported as such rather than as a read to retry. One row is not a finished compile - a compile writes a row as
+  each project ends - so agents are told it has finished once its newest row is over five minutes old (measured: a full compile was over 5 min 10 s after its last row, the runtime reload in between), and that a
+  compile which wrote no row ends in asking the user, never in a compile of their own;
+- persisting the operation registry outside the server process was rejected: the worker that waits for the
+  result dies with the server, so a persisted record could only say "started, outcome unknown" and would
+  still need the history to resolve it.
+
 When `mcp-http` returns (stage 5), a kept worker no longer ends with its caller, so its lifetime must be bounded
 by the credential's validity - `StickyWorkerLifetimeBound.Resolve` already takes it.
 

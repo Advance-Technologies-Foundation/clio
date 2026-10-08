@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
@@ -28,11 +29,30 @@ public class RestartTool(
 
 	/// <summary>
 	/// Test seam overriding the MCP response deadline used by the readiness wait. <see langword="null"/> in
-	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> ~150 s applies);
+	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> applies);
 	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
 	/// without racing the real ceiling.
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
+
+	/// <summary>
+	/// What is left of the response deadline for the readiness wait once the restart request has taken
+	/// <paramref name="elapsed"/>.
+	/// </summary>
+	/// <param name="elapsed">How long the call has run before the readiness wait starts.</param>
+	/// <returns>The rest of the deadline, never negative.</returns>
+	/// <remarks>
+	/// The deadline is the CALL's, not the wait's (ENG-102333). The restart request runs before the race, in a
+	/// fresh sticky worker that logs in first, and right after a compile the application can hang a request for
+	/// 44 s. Counted from the start of the wait, the in-progress answer would arrive that much later than the
+	/// deadline promises, past the 60 s after which Claude Code desktop gives up and restarts the MCP server. A
+	/// request that used the whole deadline leaves zero, and the race then answers in-progress at once: the
+	/// restart was requested successfully, only the readiness is still unknown.
+	/// </remarks>
+	internal TimeSpan RemainingResponseDeadline(TimeSpan elapsed) {
+		TimeSpan remaining = (ResponseDeadlineOverride ?? McpProgressHeartbeat.DefaultResponseDeadline) - elapsed;
+		return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+	}
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
@@ -163,6 +183,7 @@ public class RestartTool(
 		}
 
 		// Phase 1: restart request only, under the per-tenant execution lock (released on return).
+		Stopwatch sinceCall = Stopwatch.StartNew();
 		CommandExecutionResult requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
 		if (requestResult.ExitCode != 0) {
 			// The restart request itself failed (or the environment did not resolve) — surface it as-is; there
@@ -180,7 +201,7 @@ public class RestartTool(
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
 				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId),
-				deadline: ResponseDeadlineOverride,
+				deadline: RemainingResponseDeadline(sinceCall.Elapsed),
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
 			return CommandExecutionResult.FromInfo(
