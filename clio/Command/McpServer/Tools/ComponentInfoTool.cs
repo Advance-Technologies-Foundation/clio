@@ -1146,13 +1146,13 @@ public sealed class ComponentRegistryEnvelope {
 	/// <summary>
 	/// Producer marker present ONLY on the RUNTIME-DERIVED mobile registry generation (introspected from
 	/// the Flutter mobile runtime), carrying the release branch and the commit it was generated from.
-	/// Absent from the web-derived generation that every VERSIONED mobile path still serves today
-	/// (8.3.0/8.3.3/8.3.4/10.0.0), and absent from the web registry.
+	/// Absent from the web-derived generation the versioned mobile paths served before their regeneration,
+	/// and absent from the web registry.
 	/// <para>
 	/// It gates nothing and is reported nowhere: the producer republished <c>latest</c> without it on
 	/// 2026-09-17 while the catalog content stayed runtime-derived, so a feature gated on it switched itself
-	/// off with nothing failing. The converter's property prune (ENG-96589) is gated on the platform version
-	/// plus the inherited <c>baseInputs</c> surface instead — see
+	/// off with nothing failing. The converter's property prune (ENG-96589) is gated on the inherited
+	/// <c>baseInputs</c> surface instead — see
 	/// <c>MobileRegistryGeneration</c> — and the conversion guide reports
 	/// <c>propertyPruneApplied</c> rather than this marker, because a field that is absent from every
 	/// published catalog cannot tell a caller whether anything ran. Mapped here so the marker stays out of

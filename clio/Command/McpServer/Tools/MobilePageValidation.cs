@@ -11,9 +11,9 @@ namespace Clio.Command.McpServer.Tools;
 /// Runs all mobile page validators using the mobile and web component catalogs.
 /// Returns a <see cref="PageSyncValidationResult"/> with <c>MarkersOk</c> and <c>JsSyntaxOk</c>
 /// set to <c>true</c> (mobile pages have neither), errors on structural/binding issues,
-/// and warnings for web-only component types. Both catalogs are async (cache → CDN
-/// fallback chain) and read at <c>latest</c>. The mobile catalog's per-type inputs also narrow the
-/// binding check, so a stand older than <c>latest</c> is checked against the newest runtime's surface.
+/// and warnings for web-only component types. Both catalogs are async (cache → CDN fallback chain) and read
+/// at the target stand's platform version, or <c>latest</c> when it is unknown. The mobile catalog's per-type
+/// inputs also narrow the binding check to the properties that version's runtime reads.
 /// </summary>
 internal static class MobilePageValidation {
 	internal static async Task<PageSyncValidationResult> RunAsync(
@@ -23,11 +23,11 @@ internal static class MobilePageValidation {
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		MobilePageMergedConfigContext? templateBaseContext = null,
 		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
+		string? platformVersion = null,
 		CancellationToken cancellationToken = default) {
-		Task<ComponentCatalogState> mobileStateTask =
-			mobileCatalog.LoadAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
-		Task<IReadOnlyList<ComponentRegistryEntry>> webTask =
-			webCatalog.GetAllAsync(ComponentRegistryClient.LatestVersion, cancellationToken);
+		string catalogVersion = ChartWidgetValidation.NormaliseRequestedVersion(platformVersion);
+		Task<ComponentCatalogState> mobileStateTask = mobileCatalog.LoadAsync(catalogVersion, cancellationToken);
+		Task<IReadOnlyList<ComponentRegistryEntry>> webTask = webCatalog.GetAllAsync(catalogVersion, cancellationToken);
 		await Task.WhenAll(mobileStateTask, webTask).ConfigureAwait(false);
 		ComponentCatalogState? mobileState = await mobileStateTask.ConfigureAwait(false);
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState?.Entries ?? [];
@@ -81,11 +81,10 @@ internal static class MobilePageValidation {
 		};
 	}
 
-	// The same index the converter prunes with, so a property it would drop is one this check ignores.
 	private static DeclaredPropertyIndex BuildDeclaredInputs(ComponentCatalogState? state) =>
-		state?.GlobalReferences?.BaseInputs is null
+		state is null
 			? DeclaredPropertyIndex.Disabled
-			: DeclaredPropertyIndex.Build(state.Lookup, new MobileRegistryGeneration(state.GlobalReferences.BaseInputs));
+			: DeclaredPropertyIndex.FromRegistry(state.Lookup, state.GlobalReferences?.BaseInputs);
 }
 
 /// <summary>

@@ -388,6 +388,7 @@ public static class SchemaValidationService
 		ValidateMobilePage(body, allowedMobileTypes, webOnlyTypes,
 			DeclaredPropertyIndex.Disabled, explicitResources);
 
+	/// <inheritdoc cref="ValidateMobilePage(string, IReadOnlySet{string}, IReadOnlySet{string}, IReadOnlyDictionary{string, string})"/>
 	/// <param name="declaredInputs">The mobile registry's per-type inputs; narrows the binding check.</param>
 	internal static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
 		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
@@ -1489,8 +1490,8 @@ public static class SchemaValidationService
 
 	/// <summary>
 	/// Same check, limited to the top-level properties <paramref name="declaredInputs"/> declares for the element's
-	/// type. It is only as complete as the registry: a property a preprocessor reads but the registry omits is not
-	/// checked (ENG-101924).
+	/// type, plus <c>control</c> on every element. It is only as complete as the registry: another property a
+	/// preprocessor reads but the registry omits is not checked (ENG-101924).
 	/// </summary>
 	internal static SchemaValidationResult ValidateMobileFieldBindings(
 		string body, DeclaredPropertyIndex declaredInputs) {
@@ -2031,11 +2032,16 @@ public static class SchemaValidationService
 				? typeElement.GetString()
 				: null;
 		IEnumerable<JsonProperty> checkedProperties = values.EnumerateObject()
-			.Where(property => componentType is null || declaredInputs.DeclaresProperty(componentType, property.Name));
+			.Where(property => componentType is null || IsAlwaysCheckedProperty(property.Name)
+				|| declaredInputs.DeclaresProperty(componentType, property.Name));
 		foreach (JsonProperty property in checkedProperties) {
 			ExtractDollarBindings(property.Value, bindings);
 		}
 	}
+
+	// The runtime copies `control` to `bindTo` on any named element, declared or not.
+	private static bool IsAlwaysCheckedProperty(string propertyName) =>
+		string.Equals(propertyName, "control", StringComparison.OrdinalIgnoreCase);
 
 	private static void ExtractDollarBindings(JsonElement value, HashSet<string> bindings) {
 		if (value.ValueKind == JsonValueKind.String) {

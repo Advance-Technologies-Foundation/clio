@@ -408,15 +408,13 @@ public sealed class PageUpdateTool(
 	}
 
 	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
-	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
-	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
-	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
+	/// Resolves the target environment's platform version so the chart-widget and mobile validation catalogs are
+	/// scoped to the component set the environment actually ships (mirroring <c>get-component-info</c>'s
+	/// resolution). Fail-soft on any resolution failure or absent resolver dependencies: <see langword="null"/>
+	/// maps to the safe <c>latest</c> catalog, so version resolution never blocks a save.
 	/// </summary>
 	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
-		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile
-			|| resolverFactory is null || settingsRepository is null) {
+		if (resolverFactory is null || settingsRepository is null) {
 			return null;
 		}
 		try {
@@ -463,7 +461,8 @@ public sealed class PageUpdateTool(
 						// config (the own body survives the merge).
 						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
 						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-						Logger: _logger))
+						Logger: _logger),
+					platformVersion: requestedVersion)
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {

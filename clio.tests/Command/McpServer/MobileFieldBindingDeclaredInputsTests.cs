@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -45,12 +46,14 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 	}
 
 	[Test]
-	[Description("A type the registry has no inputs for keeps today's check: crt.List.selectionState is skipped, crt.TimelineTile.filters is not.")]
-	public void ValidateMobileFieldBindings_DesignerLeadPageWhenTileTypeHasNoRegistryData_KeepsOnlyTimelineTileErrors() {
+	[Description("With today's registry crt.List.selectionState is skipped, but crt.TimelineTile publishes no inputs yet, so its filters are still checked.")]
+	public void ValidateMobileFieldBindings_DesignerLeadPageWithLiveRegistry_KeepsOnlyTimelineTileErrors() {
 		// Arrange
+		DeclaredPropertyIndex index = LiveIndex();
+		index.ByType.Should().NotContainKey("crt.TimelineTile",
+			because: "the premise is that the pinned registry publishes no crt.TimelineTile inputs");
 		LiveCatalog().Lookup["crt.List"].Inputs!.Keys.Should().NotContain("selectionState",
 			because: "the premise is that the mobile list never reads selectionState");
-		DeclaredPropertyIndex index = WithoutType(LiveIndex(), "crt.TimelineTile");
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(DesignerLeadBody(), index);
@@ -65,7 +68,7 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 	[Description("Once the registry publishes the inputs TimelineTileConfig.fromJson reads, the Designer-saved Lead page validates with no errors.")]
 	public void ValidateMobileFieldBindings_DesignerLeadPageWhenRegistryDeclaresTileInputs_ReturnsValid() {
 		// Arrange
-		DeclaredPropertyIndex index = WithDeclaredInputs(LiveIndex(), "crt.TimelineTile", TimelineTileInputs);
+		DeclaredPropertyIndex index = IndexWithInputs("crt.TimelineTile", TimelineTileInputs);
 
 		// Act
 		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(DesignerLeadBody(), index);
@@ -92,10 +95,41 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 	}
 
 	[Test]
-	[Description("An indicator's record binding is checked once the registry declares it, so an indicator scoped to a missing attribute still fails.")]
-	public void ValidateMobileFieldBindings_WhenIndicatorRecordBindingIsUndeclared_ReturnsError() {
+	[Description("control is checked on every element, because the runtime copies it to bindTo whether or not the type declares it.")]
+	public void ValidateMobileFieldBindings_WhenUndeclaredControlBindsUndeclaredAttribute_ReturnsError() {
 		// Arrange
-		DeclaredPropertyIndex index = WithDeclaredInputs(LiveIndex(), "crt.IndicatorWidget", "sectionBindingColumnRecordId");
+		LiveCatalog().Lookup["crt.Label"].Inputs!.Keys.Should().NotContain("control",
+			because: "the premise is that crt.Label does not declare control");
+		string body = Body("""{"operation":"insert","name":"Caption","values":{"type":"crt.Label","control":"$UsrMissing"}}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrMissing"),
+			because: "properties_attribute_preprocessor binds control on any named element");
+	}
+
+	[Test]
+	[Description("Pins today's gap: the pinned registry does not declare crt.IndicatorWidget.sectionBindingColumnRecordId, so a binding there is not checked until mobile-app#813 is published.")]
+	public void ValidateMobileFieldBindings_WhenLiveRegistryOmitsIndicatorRecordBinding_SkipsIt() {
+		// Arrange
+		string body = Body(
+			"""{"operation":"insert","name":"Metric","values":{"type":"crt.IndicatorWidget","sectionBindingColumnRecordId":"$UsrMissing"}}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().BeEmpty(
+			because: "the key is not declared yet; this test should flip once the regenerated registry is pinned");
+	}
+
+	[Test]
+	[Description("Once the registry declares the indicator's record binding, an indicator scoped to a missing attribute fails.")]
+	public void ValidateMobileFieldBindings_WhenRegistryDeclaresIndicatorRecordBinding_ReturnsError() {
+		// Arrange
+		DeclaredPropertyIndex index = IndexWithInputs("crt.IndicatorWidget", "sectionBindingColumnRecordId");
 		string body = Body(
 			"""{"operation":"insert","name":"Metric","values":{"type":"crt.IndicatorWidget","sectionBindingColumnRecordId":"$UsrMissing"}}""");
 
@@ -122,7 +156,7 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 	}
 
 	[Test]
-	[Description("A disabled index — no registry, or the web-derived generation — leaves the check exactly as it was.")]
+	[Description("A disabled index — no registry was loaded — leaves the check exactly as it was.")]
 	public void ValidateMobileFieldBindings_WhenIndexIsDisabled_ChecksEveryProperty() {
 		// Arrange
 		string body = Body("""{"operation":"insert","name":"LeadList","values":{"type":"crt.List","selectionState":"$LeadList_SelectionState"}}""");
@@ -134,6 +168,77 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 		// Assert
 		result.Errors.Should().ContainSingle(e => e.Contains("LeadList_SelectionState"),
 			because: "a disabled index declares everything, which is the pre-ENG-101924 behaviour");
+	}
+
+	[Test]
+	[Description("Type and property names match case-insensitively, the way the registry lookup and the runtime treat them.")]
+	public void ValidateMobileFieldBindings_WhenTypeAndPropertyCaseDiffers_MatchesCaseInsensitively() {
+		// Arrange
+		string body = Body("""
+			{"operation":"insert","name":"LeadList","values":{"type":"CRT.LIST","SelectionState":"$LeadList_SelectionState"}},
+			{"operation":"insert","name":"Field","values":{"type":"Crt.Input","Visible":"$UsrMissing"}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "only the declared visible binding is checked")
+			.Which.Should().Contain("UsrMissing", because: "Visible matches the inherited visible input regardless of case");
+	}
+
+	[Test]
+	[Description("Nested objects follow their top-level key: a binding under a declared key is checked, one under an undeclared key is not.")]
+	public void ValidateMobileFieldBindings_WhenBindingIsNested_FollowsTopLevelDeclaration() {
+		// Arrange
+		string body = Body("""
+			{"operation":"insert","name":"LeadList","values":{"type":"crt.List",
+			  "itemLayout":{"type":"crt.ListItem","title":"$UsrDeclaredNestedMissing"},
+			  "selectionState":{"inner":"$UsrUndeclaredNestedMissing"}}}
+			""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrDeclaredNestedMissing"),
+			because: "itemLayout is a declared crt.List input, so bindings inside it are checked");
+		result.Errors.Should().NotContain(e => e.Contains("UsrUndeclaredNestedMissing"),
+			because: "selectionState is not declared, so nothing under it is checked");
+	}
+
+	[Test]
+	[TestCase("visible")]
+	[TestCase("bindTo")]
+	[Description("baseInputs keys count as declared on every type that declares something of its own.")]
+	public void ValidateMobileFieldBindings_WhenBaseInputBindsUndeclaredAttribute_ReturnsError(string baseInput) {
+		// Arrange
+		LiveCatalog().GlobalReferences!.BaseInputs!.Keys.Should().Contain(baseInput,
+			because: "the premise is that the key is declared in references.baseInputs");
+		LiveCatalog().Lookup["crt.Input"].Inputs!.Keys.Should().NotContain(baseInput,
+			because: "the premise is that crt.Input does not declare the key itself");
+		string body = Body($$$"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","{{{baseInput}}}":"$UsrMissing"}}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrMissing"),
+			because: "an inherited input is read by the runtime like any other declared input");
+	}
+
+	[Test]
+	[Description("A custom type the registry does not know keeps the full check.")]
+	public void ValidateMobileFieldBindings_WhenTypeIsUnknown_ChecksEveryProperty() {
+		// Arrange
+		string body = Body("""{"operation":"insert","name":"Custom","values":{"type":"usr.CustomWidget","anything":"$UsrMissing"}}""");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateMobileFieldBindings(body, LiveIndex());
+
+		// Assert
+		result.Errors.Should().ContainSingle(e => e.Contains("UsrMissing"),
+			because: "an unknown type has no membership data, so the check fails open");
 	}
 
 	[Test]
@@ -166,8 +271,24 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 			because: "the skipped-property case above must not come from the tool dropping the binding check altogether");
 	}
 
-	private static string Body(string viewConfigDiffEntry) =>
-		$$"""{"viewConfigDiff":[{{viewConfigDiffEntry}}],"viewModelConfigDiff":{{DeclaredAttributes}}}""";
+	[Test]
+	[Description("validate-page reads the mobile registry for the version it is given, not always latest.")]
+	public async Task ValidatePage_WhenVersionIsSupplied_LoadsThatRegistryVersion() {
+		// Arrange
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(LiveCatalog());
+		PageValidateTool tool = new(mobileCatalog, Substitute.For<IComponentInfoCatalog>(), new MockFileSystem());
+		string body = Body("""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+
+		// Act
+		await tool.ValidatePage(new PageValidateArgs(Body: body, Version: "8.3.2.4199"));
+
+		// Assert
+		await mobileCatalog.Received(1).LoadAsync("8.3.2", Arg.Any<CancellationToken>());
+	}
+
+	internal static string Body(string viewConfigDiffEntries) =>
+		$$"""{"viewConfigDiff":[{{viewConfigDiffEntries}}],"viewModelConfigDiff":{{DeclaredAttributes}}}""";
 
 	private static string DesignerLeadBody() => File.ReadAllText(Path.Combine(
 		TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures",
@@ -181,26 +302,24 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 
 	private static DeclaredPropertyIndex LiveIndex() {
 		ComponentCatalogState state = LiveCatalog();
-		return DeclaredPropertyIndex.Build(
-			state.Lookup, new MobileRegistryGeneration(state.GlobalReferences!.BaseInputs));
+		return DeclaredPropertyIndex.FromRegistry(state.Lookup, state.GlobalReferences!.BaseInputs);
 	}
 
-	private static DeclaredPropertyIndex WithDeclaredInputs(
-		DeclaredPropertyIndex index, string componentType, params string[] inputs) {
-		IEnumerable<string> existing = index.ByType.TryGetValue(componentType, out IReadOnlySet<string> declared)
-			? declared
-			: LiveCatalog().GlobalReferences!.BaseInputs!.Keys;
-		var byType = new Dictionary<string, IReadOnlySet<string>>(index.ByType, StringComparer.OrdinalIgnoreCase) {
-			[componentType] = new HashSet<string>(existing.Concat(inputs), StringComparer.OrdinalIgnoreCase)
-		};
-		return new DeclaredPropertyIndex(true, byType);
+	private static DeclaredPropertyIndex IndexWithInputs(string componentType, params string[] inputs) {
+		ComponentCatalogState state = LiveCatalog();
+		var lookup = new Dictionary<string, ComponentRegistryEntry>(state.Lookup, StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, JsonElement> declared = lookup.TryGetValue(componentType, out ComponentRegistryEntry existing)
+			&& existing.Inputs is not null
+				? new Dictionary<string, JsonElement>(existing.Inputs)
+				: [];
+		foreach (string input in inputs) {
+			declared[input] = JsonSerializer.SerializeToElement(new { type = "string" });
+		}
+		lookup[componentType] = new ComponentRegistryEntry { ComponentType = componentType, Inputs = declared };
+		return DeclaredPropertyIndex.FromRegistry(lookup, state.GlobalReferences!.BaseInputs);
 	}
 
-	private static DeclaredPropertyIndex WithoutType(DeclaredPropertyIndex index, string componentType) {
-		var byType = new Dictionary<string, IReadOnlySet<string>>(index.ByType, StringComparer.OrdinalIgnoreCase);
-		byType.Remove(componentType);
-		return new DeclaredPropertyIndex(true, byType);
-	}
+	internal static ComponentCatalogState LiveCatalog() => Catalog.Value;
 
 	private static readonly Lazy<ComponentCatalogState> Catalog = new(() => {
 		string path = Path.Combine(
@@ -209,6 +328,4 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 		using FileStream stream = File.OpenRead(path);
 		return ComponentInfoCatalog.LoadFromStream(stream);
 	});
-
-	private static ComponentCatalogState LiveCatalog() => Catalog.Value;
 }

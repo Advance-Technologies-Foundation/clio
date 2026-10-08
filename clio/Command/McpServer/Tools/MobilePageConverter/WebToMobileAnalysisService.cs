@@ -327,8 +327,9 @@ public static partial class WebToMobileAnalysisService {
 		// MobileRegistryGeneration. Deliberately NOT gated on the stand's platform version: each version's
 		// registry describes the runtime that version runs, so an old stand served its own regenerated file
 		// is pruned correctly rather than merely spared.
-		DeclaredPropertyIndex declaredProps =
-			DeclaredPropertyIndex.Build(mobileByType, mobileRegistryGeneration);
+		DeclaredPropertyIndex declaredProps = mobileRegistryGeneration is { CatalogIsRuntimeDerived: true }
+			? DeclaredPropertyIndex.FromRegistry(mobileByType, mobileRegistryGeneration.BaseInputs)
+			: DeclaredPropertyIndex.Disabled;
 		PropertyPruneResult propertyPrune = PruneUndeclaredProperties(
 			elementMap, declaredProps, convertedRequests, flaggedRequests, droppedRequests, unresolvedTargets);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
