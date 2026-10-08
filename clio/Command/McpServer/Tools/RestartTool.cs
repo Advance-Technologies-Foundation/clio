@@ -304,7 +304,12 @@ public class RestartTool(
 		$"The restart request for {targetDescription} has not been answered yet (MCP response deadline reached); it "
 		+ "keeps going server-side, so it is not yet known whether the restart was accepted. "
 		+ BuildPollGuidance(operationId, environmentName)
-		+ (string.IsNullOrWhiteSpace(environmentName) ? string.Empty : " A request that fails is reported there as requestfailed.")
+		+ (string.IsNullOrWhiteSpace(environmentName)
+			? " Whether this restart happened is unknown, and nothing here will report it: do not assume new code is "
+			  + "loaded - an instance that answers proves nothing, because it also answers when the request failed and "
+			  + "it never went down. Ask the user before restarting again."
+			: " A request that fails is reported there as requestfailed: no restart happened, so ask the user, then "
+			  + "retry once.")
 		+ $" Do NOT retry {toolName}.";
 
 	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has

@@ -488,6 +488,44 @@ public sealed class RestartToolTests {
 			because: "the operation begun before the request must end with what actually failed");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: on the credentials path restart-status cannot report the restart, so a notice that comes before the request returned must say the outcome is unknown and that an answering instance proves nothing - after a failed request it answers because it never went down, and the new code is not loaded.")]
+	public void BuildRequestPendingMessage_Should_SayTheOutcomeIsUnknown_OnTheCredentialsPath() {
+		// Arrange
+		const string target = "https://sandbox.example.com";
+
+		// Act
+		string notice = RestartTool.BuildRequestPendingMessage(target, RestartTool.RestartByCredentialsToolName,
+			"0f8fad5bd9cb469fa16570867728950e", environmentName: null);
+
+		// Assert
+		notice.Should().Contain("has not been answered yet", because: "the request had not returned when the notice was built");
+		notice.Should().Contain("do not assume new code is loaded",
+			because: "after a failed request the instance never restarted, so the new code is not loaded");
+		notice.Should().Contain("Ask the user before restarting again",
+			because: "a restart reloads the application for every user and needs the user's decision when its predecessor's fate is unknown");
+		notice.Should().NotContain("requestfailed",
+			because: "restart-status cannot report a credentials-started restart, so pointing at its status would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: by environment name, a notice that comes before the request returned points at restart-status and says what requestfailed means.")]
+	public void BuildRequestPendingMessage_Should_ExplainRequestFailed_ByEnvironmentName() {
+		// Arrange
+		const string target = "environment 'sandbox'";
+
+		// Act
+		string notice = RestartTool.BuildRequestPendingMessage(target, RestartTool.RestartByEnvironmentNameToolName,
+			"0f8fad5bd9cb469fa16570867728950e", "sandbox");
+
+		// Assert
+		notice.Should().Contain("restart-status", because: "the operation is tracked under the environment name");
+		notice.Should().Contain("requestfailed: no restart happened, so ask the user, then retry once",
+			because: "an agent must know what to do when restart-status says the request itself failed");
+	}
+
 	private sealed class FakeRestartCommand : RestartCommand {
 		public RestartOptions? CapturedOptions { get; private set; }
 		public RestartOptions? CapturedReadinessOptions { get; private set; }
