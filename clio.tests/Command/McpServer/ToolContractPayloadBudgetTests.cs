@@ -161,6 +161,11 @@ public sealed class ToolContractPayloadBudgetTests {
 	// create, and a hand-written meta path must have every segment dot-separated - and paid for the
 	// setFlowCondition rewrite by dropping the refusal-message detail process-formulas already owns:
 	// modify-business-process 35047, create-business-process 34656.
+	//
+	// ENG-102112 (2026-10-08) added the preconfiguredPage and openEditPage blocks to modify's addElement list
+	// and the generic-route refusal to both descriptions. Modify paid by merging its four per-block entries,
+	// which each repeated "same block as create-business-process" behind an escaped em dash, into one:
+	// modify-business-process 35016, create-business-process 34854, describe-business-process 33367.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
