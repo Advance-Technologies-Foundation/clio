@@ -75,10 +75,10 @@ public class ListUserTasksToolTests {
 		description.Should().Contain("the generic route cannot carry that block and is REFUSED",
 			because: "the caller must learn that the generic route fails, not that it is merely second best - "
 				+ "and a bare word would stay green if another clause said REFUSED while this one was removed");
-		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask",
-			because: "the older-package fallback to a generic userTask must not send the caller to a route that builds a page-less element");
-		description.Should().Contain("fall back to a generic userTask named after the schema",
-			because: "the fallback stays for the tasks whose block a generic userTask CAN carry - Send email and Approval");
+		description.Should().Contain("for EmailTemplateUserTask and ApprovalUserTask only, fall back to a generic userTask named after the schema",
+			because: "the older-package fallback is named positively, for the two tasks whose block a generic userTask carries");
+		description.Should().Contain("a generic PreconfiguredPageUserTask or OpenEditPageUserTask has no page and fails at run time",
+			because: "the fallback must not send the caller to a route that builds a page-less element");
 	}
 
 	[Test]

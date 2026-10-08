@@ -344,6 +344,8 @@ public class CreateBusinessProcessToolTests {
 			because: "the always-loaded description must say the generic route is refused, not merely discouraged");
 		prompt.Should().Contain("`PreconfiguredPageUserTask`, which cannot carry the block and is refused",
 			because: "the prompt steers the build and must name the task the generic route is refused for");
+		prompt.Should().Contain("except `PreconfiguredPageUserTask` and `OpenEditPageUserTask`",
+			because: "step (1) sends every list-user-tasks name to a generic userTask, so it must carve out the two page tasks");
 	}
 
 	[Test]

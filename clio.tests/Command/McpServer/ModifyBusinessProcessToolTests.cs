@@ -39,8 +39,8 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The addElement field list names the preconfiguredPage block and says a generic userTask naming PreconfiguredPageUserTask is refused. Without it the modify contract offered no way to add a Pre-configured page, and the server's refusal pointed at a block the contract never mentioned.")]
-	public void ModifyBusinessProcess_Description_ShouldOfferThePreconfiguredPageBlockOnAddElement() {
+	[Description("The addElement field list names the openEditPage and preconfiguredPage blocks, each on its own element type, and says a generic userTask naming PreconfiguredPageUserTask is refused; the prompt says the same. Without it the modify contract offered no way to add either page element, and the server's refusal pointed at a block the contract never mentioned.")]
+	public void ModifyBusinessProcess_Description_ShouldOfferBothPageBlocksOnAddElement() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
 			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
@@ -50,6 +50,9 @@ public class ModifyBusinessProcessToolTests {
 			because: "addElement applies both page blocks, and each is valid only on its own element type");
 		description.Should().Contain("a generic userTask cannot carry either page block, and one naming PreconfiguredPageUserTask is REFUSED",
 			because: "the caller must learn the generic route is refused before the server tells it");
+		ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess").Should().Contain(
+			"a generic `userTask` cannot carry either block, and one naming",
+			because: "the prompt must match its tool's contract");
 	}
 
 	[Test]

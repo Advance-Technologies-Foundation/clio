@@ -352,17 +352,19 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpGenericPrePageE2e{Guid.NewGuid():N}";
-		try {
-			// Act
-			CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = BuildGenericPreconfiguredPageDescriptor(processName)
-			});
 
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGenericPreconfiguredPageDescriptor(processName)
+		});
+		// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
+		string text = ToolText(callResult);
+		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.88");
+
+		try {
 			// Assert
-			// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
-			string text = ToolText(callResult);
-			IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.88");
 			string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
 			describeJson.Should().Contain("was not found",
 				because: "the refusal must leave nothing behind - a saved process with an unconfigured page element is "

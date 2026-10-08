@@ -12,11 +12,15 @@ namespace Clio.Mcp.E2E.Support.Mcp;
 internal static class ProcessDesignerE2ESupport {
 
 	/// <summary>
-	/// The phrase clio's convergence refusal carries when the sandbox's CrtProcessBuilder is older than the archive
-	/// this clio bundles (<c>BundledPackageConvergence</c>). Only that refusal says it, so its presence means the
-	/// call never reached the package.
+	/// The phrases of the refusals clio throws BEFORE a gated call reaches the package: convergence, when the
+	/// sandbox's CrtProcessBuilder is older than the archive this clio bundles (<c>BundledPackageConvergence</c>),
+	/// and the package requirement itself - missing, or below the declared floor (<c>RequiredPackageChecker</c>).
+	/// The package never writes either phrase, so their presence means the call never reached it.
 	/// </summary>
-	private const string PackageBehindMarker = "but the target environment has";
+	private static readonly string[] PackageNotUsableMarkers = [
+		"but the target environment has",
+		"To use this command, you need to install the"
+	];
 
 	/// <summary>
 	/// Removes a process a test built. Called from finally, so a failed or timed-out delete is reported, not
@@ -42,16 +46,19 @@ internal static class ProcessDesignerE2ESupport {
 	}
 
 	/// <summary>
-	/// Ignores the test when clio refused the call because the sandbox's CrtProcessBuilder is older than the archive
-	/// this clio bundles. Keyed on that refusal's own wording, so any other failure - including the regression a
-	/// test exists to catch - still goes red instead of being reported as an old environment.
+	/// Ignores the test when clio refused the call because the sandbox's CrtProcessBuilder is missing, below the
+	/// command's floor, or older than the archive this clio bundles. Keyed on those refusals' own wording, so any
+	/// other failure - including the regression a test exists to catch - still goes red instead of being reported
+	/// as an old environment. Call it BEFORE any cleanup is scheduled: nothing was built when it fires.
 	/// </summary>
-	internal static void IgnoreWhenProcessBuilderIsBehind(string toolText, string requiredVersion) {
-		if (toolText.Contains(PackageBehindMarker, StringComparison.Ordinal)) {
-			Assert.Ignore(
-				$"The sandbox's CrtProcessBuilder is older than the archive this clio bundles, so clio refused the "
-				+ $"call before the package saw it. This test needs CrtProcessBuilder {requiredVersion} on the stand "
-				+ "(install-process-builder); it is Ignored, NOT passing.");
+	internal static void IgnoreWhenProcessBuilderIsBehind(string toolText, string writtenAgainstVersion) {
+		foreach (string marker in PackageNotUsableMarkers) {
+			if (toolText.Contains(marker, StringComparison.Ordinal)) {
+				Assert.Ignore(
+					"clio refused the call before the sandbox's CrtProcessBuilder saw it - the package is missing or "
+					+ "older than this clio requires. Install it with install-process-builder (this test was written "
+					+ $"against {writtenAgainstVersion}); it is Ignored, NOT passing.");
+			}
 		}
 	}
 
