@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 8 decisions wait for the owner (section 1, Q12-Q19): D2, D3 (Variable), D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
+| Status | Proposed, 2026-10-01. 7 decisions wait for the owner (section 1, Q13-Q19): D2, D3 (Variable), D5, D22, D23, D24 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
 | Baselines | CrtProcessBuilder `main` `3f4cce50` (package 1.6.6.54, also installed on the stand); clio `master` `03ef3944f`; clio-knowledge `master` `d0b5a2b` (guidance libraryVersion 1.15.90); Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -108,8 +108,8 @@ named decision and nothing else unless stated.
 |---|---|---|---|---|
 | 1 | D2 | How does a caller declare a file collection? | `type: FileCollection`, read back by describe as `FileCollection` **Agreed 2026-10-07.** | Relax the `typeFromElement` mirror (cannot declare a callee input or a script-filled list); generic `itemProperties` (an older server silently drops it and saves a shapeless collection) |
 | 2 | D3 | Default direction of a FileCollection | **Variable**: never refused, designer plain-Add parity, the shipped in-process file case. **Agreed 2026-10-07** (it reverses the first recommendation, Out) | Out (one rule per stored type; but shipped Out collections are results, 3 of 84 read inside their process, and a caller-filled one is refused until re-declared) |
-| 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice | Designer parity: keep the stale parent, which yields N copies of one file |
-| 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
+| 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice **Agreed 2026-10-07.** | Designer parity: keep the stale parent, which yields N copies of one file |
+| 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only **Agreed 2026-10-07.** | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
 | 5 | D9 | Where the mirror defect H-1 is fixed | Answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
 | 6 | D10 | Element token and how the variant is chosen | Token `fileProcessing` (alias `processFile`); the variant is the group present; `source` is an optional check | A required `source` enum (collides with `readData.source`); a `fileSource` key |
 | 7 | D11 | Naming bundle of the block | `attachments`, `report`, `files`, `saveTo`, `action: useInProcess / saveToAttachments`, `report.printable`, `fileNameSuffix`, `recordId` inside the groups | Any renaming before code; afterwards renames cost a deprecation |
@@ -138,7 +138,7 @@ same questions, with their options, are Q1-Q19 in
 | D2 | Declaring a file collection: `FileCollection` | PT | agreed 2026-10-07 | - |
 | D3 | Direction and Tag defaults | PT | agreed 2026-10-07 (Variable) | - |
 | D4 | Dotted process-parameter paths | PT | no | - |
-| D5 | The two-level collection binder | PT | **yes** | M6 (R-M1; done 2026-10-02: refusal stays) |
+| D5 | The two-level collection binder | PT | agreed 2026-10-07 | M6 (R-M1; done 2026-10-02: refusal stays) |
 | D6 | The dotted-mirror bug | PT | no | - |
 | D7 | Constants, `referenceSchema`, delete guard, `setParameter` shape | PT | no | - |
 | D8 | Describe of file parameters, nested-only bindings, single-token element sources | PT | no | - |
@@ -436,8 +436,8 @@ mean the P2 policy.
   per-item mappings writes exactly what it writes today; (3) an `expression` onto `Files` and then onto
   `Files.File` writes both verbatim and nothing else; (4) build -> describe -> replay the described parameters as
   mappings leaves both levels unchanged.
-- **Owner decision: yes.** P3 (reset with a notice, recommended, vs designer parity) and the P2 scope
-  (file-consuming targets, recommended, vs every collection).
+- **Owner decision: agreed on 2026-10-07 as recommended.** P3 resets the stale parent with a notice; P2 and R-M2
+  apply to file-consuming targets only.
 
 ## D6. The dotted-mirror bug
 

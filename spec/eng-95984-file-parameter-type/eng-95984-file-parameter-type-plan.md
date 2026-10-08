@@ -186,7 +186,7 @@ attachment slots to this set.
 | P1 | target is an item of a collection AND source is an item of a collection | item, and the parent to the source's parent (recursively) | refuse when the parent is bound to a DIFFERENT collection; same source is a no-op; applies to `InputRecordCollection.<F>` too |
 | P2 | outer collection mapping onto a file-consuming target that has a FileLocator item | each target FileLocator item to the paired source item: exact name (case-insensitive, type-checked), else the single-FileLocator pair (`Files.File` to `ObjectFiles.ObjectFile`) | always a notice naming what it bound; never overwrites an item already bound into the new source; an unpairable file item gets "at run time it will be empty" |
 | P2-MI | outer mapping onto a multi-instance `InputRecordCollection` with an unbound FileLocator item | nothing extra | notice: the callee parameter will be empty on every iteration unless mapped |
-| P3 | plain (non-item) source onto an item of a single-instance owner | the item; the parent reset to None if it was bound to a collection | notice (owner decision: reset vs designer parity) |
+| P3 | plain (non-item) source onto an item of a single-instance owner | the item; the parent reset to None if it was bound to a collection | notice (owner decision: reset, agreed 2026-10-07) |
 | R-M1 | flat FileLocator target from a collection item (`F` from `OF1.ObjectFiles.File`) | - | refuse ("use a FileCollection, or a multi-instance sub-process"); M6 (2026-10-02): the mapping reads null, so the refusal stays |
 | R-M2 | file-consuming target collection from a collection with no FileLocator item (`Files` from `ReadData.ResultCompositeObjectList`) | - | refuse |
 | expression | any `expression` source | verbatim, to the named target only | none of the rules above; the platform validates the formula as today |
@@ -597,8 +597,8 @@ remote), clio, knowledge.
 |---|---|---|
 | O-1 | D2: FileCollection as a type alias (A) over relaxing the mirror (B) or generic `itemProperties` (C) | A **Agreed 2026-10-07.** |
 | O-2 | D3: FileCollection default direction | Variable **Agreed 2026-10-07.** |
-| O-3 | D5: P3 resets a stale parent with a notice, or keeps designer parity (leave it) | reset with notice |
-| O-4 | D5: P2 scope | file-consuming targets only (not every collection) |
+| O-3 | D5: P3 resets a stale parent with a notice, or keeps designer parity (leave it) | reset with notice **Agreed 2026-10-07.** |
+| O-4 | D5: P2 scope | file-consuming targets only (not every collection) **Agreed 2026-10-07.** |
 | O-5 | D9: if M3 confirms H-1, fix in this PR or in its own Sub-task first | moot: M3 refuted H-1 on 2026-10-02; binding the items is one parity commit in this PR (X4) |
 | O-6 | D25: guide name | `process-files` |
 | O-7 | D24: replace A1-A4 with AC-1..AC-10 of section 1.4 as the ONE replacement text. It supersedes the shorter block that stood in decisions D-1, which dropped six rules and moved the `ReportFiles` verification into a sub-task that cannot configure that variant. Decisions D-1, README Q1 and open-questions Q1 point here | yes **Agreed 2026-10-07.** |

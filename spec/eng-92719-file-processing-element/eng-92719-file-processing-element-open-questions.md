@@ -5,7 +5,7 @@ type (Task) and ENG-92719 File processing element (Story), with its sub-tasks EN
 attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 19 owner questions (Q1-Q19). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
-Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A) and Q11 (Variable) the same day. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day. Q10-Q19 fix the contract. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
 queries. Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -60,7 +60,7 @@ the owner row of the sibling documents.
 | Q9 | Which follow-up Sub-tasks to create, and when | the unconditional ones now (day 0); MH not created (M3 refuted H-1); the designer bug report only after M11; the X2 one only on that contingency **Agreed 2026-10-07.** | any PR | decisions D-5; pr-split 12.3 |
 | Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` **Agreed 2026-10-07.** | PK-PT | D2; decisions row 1 |
 | Q11 | Default direction of a FileCollection | Variable (revised from Out after the 2026-10-07 recount) **Agreed 2026-10-07.** | PK-PT | D3; decisions row 2 |
-| Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets | PK-PT | D5; decisions rows 3, 4 |
+| Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets **Agreed 2026-10-07.** | PK-PT | D5; decisions rows 3, 4 |
 | Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check | PK-OA | D10; decisions row 6 |
 | Q14 | Naming bundle of the `fileProcessing` block | as proposed, including `numberOfRecords` defaulting to 50 | PK-OA | D11; decisions row 7 |
 | Q15 | `ResultActionType` when `action` is omitted on create | inferred from `saveTo`, always written | PK-OA | D14; decisions row 8 |
@@ -270,7 +270,7 @@ restrict a process-level parameter by direction (decisions D3). A Variable FileC
 can fill it and the process can return it; it is also the designer's plain Add and the shipped in-process file case.
 **What changes:** one guide sentence and the serialization pin used by the PT test.
 
-#### Q12. Two-level binder policy
+#### Q12. Two-level binder policy (agreed 2026-10-07: P3 resets with a notice; P2 and R-M2 on file-consuming targets only)
 
 The designer binds the nested item and, when the source is itself a collection item, also the parent
 (`PD/MappingEditMixin/MappingEditMixin.js:947-995`). All 11 of 11 shipped file-collection bindings bind both levels
