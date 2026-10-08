@@ -59,8 +59,8 @@ public sealed class PageValidateTool(
 			// No templateBaseContext: validate-page has no schema/environment identity, so the apply-oracle seeds
 			// its own base. cancellationToken is now named (it moved past templateBaseContext, CA1068).
 			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				body, mobileComponentCatalog, webComponentCatalog, mobileResources,
-				platformVersion: args.Version, cancellationToken: cancellationToken).ConfigureAwait(false);
+				body, new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, args.Version),
+				mobileResources, cancellationToken: cancellationToken).ConfigureAwait(false);
 			// Run-process button structure is a purely offline check (no environment), and validate-page is the
 			// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
 			// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile

@@ -18,16 +18,14 @@ namespace Clio.Command.McpServer.Tools;
 internal static class MobilePageValidation {
 	internal static async Task<PageSyncValidationResult> RunAsync(
 		string body,
-		IMobileComponentInfoCatalog mobileCatalog,
-		IComponentInfoCatalog webCatalog,
+		MobileValidationCatalogs catalogs,
 		IReadOnlyDictionary<string, string>? explicitResources = null,
 		MobilePageMergedConfigContext? templateBaseContext = null,
 		Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveTemplateBase = null,
-		string? platformVersion = null,
 		CancellationToken cancellationToken = default) {
-		string catalogVersion = ChartWidgetValidation.NormaliseRequestedVersion(platformVersion);
-		Task<ComponentCatalogState> mobileStateTask = mobileCatalog.LoadAsync(catalogVersion, cancellationToken);
-		Task<IReadOnlyList<ComponentRegistryEntry>> webTask = webCatalog.GetAllAsync(catalogVersion, cancellationToken);
+		string catalogVersion = ChartWidgetValidation.NormaliseRequestedVersion(catalogs.PlatformVersion);
+		Task<ComponentCatalogState> mobileStateTask = catalogs.Mobile.LoadAsync(catalogVersion, cancellationToken);
+		Task<IReadOnlyList<ComponentRegistryEntry>> webTask = catalogs.Web.GetAllAsync(catalogVersion, cancellationToken);
 		await Task.WhenAll(mobileStateTask, webTask).ConfigureAwait(false);
 		ComponentCatalogState? mobileState = await mobileStateTask.ConfigureAwait(false);
 		IReadOnlyList<ComponentRegistryEntry> mobileEntries = mobileState?.Entries ?? [];
@@ -86,6 +84,15 @@ internal static class MobilePageValidation {
 			? DeclaredPropertyIndex.Disabled
 			: DeclaredPropertyIndex.FromRegistry(state.Lookup, state.GlobalReferences?.BaseInputs);
 }
+
+/// <summary>
+/// The component catalogs a mobile page is validated against and the stand's platform version they are read for;
+/// a <see langword="null"/> version reads <c>latest</c>.
+/// </summary>
+internal sealed record MobileValidationCatalogs(
+	IMobileComponentInfoCatalog Mobile,
+	IComponentInfoCatalog Web,
+	string? PlatformVersion = null);
 
 /// <summary>
 /// Best-effort resolver for the mobile-diff apply-oracle's base: reads the TARGET PAGE's own merged

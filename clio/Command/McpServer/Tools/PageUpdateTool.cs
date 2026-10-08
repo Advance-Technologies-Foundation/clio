@@ -454,15 +454,16 @@ public sealed class PageUpdateTool(
 			SchemaValidationService.TryParseResources(options.Resources,
 				out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation
-				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
+				.RunAsync(options.Body,
+					new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, requestedVersion),
+					mobileResources,
 					templateBaseContext: new MobilePageMergedConfigContext(_commandResolver, options.SchemaName,
 						// The write mode decides the validation base: replace (default) validates against the base
 						// WITHOUT the page's own body (it gets overwritten); append validates against the full merged
 						// config (the own body survives the merge).
 						options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode,
 						// update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-						Logger: _logger),
-					platformVersion: requestedVersion)
+						Logger: _logger))
 				.GetAwaiter().GetResult();
 			if (!mobileResult.ContentOk) {
 				return (new PageUpdateResponse {

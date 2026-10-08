@@ -660,8 +660,9 @@ public sealed class PageSyncTool(
 			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
 				preResolvedMobileBase is { } mobileBase ? () => (mobileBase.Vmc, mobileBase.Mc) : null;
 			validationResult = MobilePageValidation
-				.RunAsync(page.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
-					resolveTemplateBase: resolveBase, platformVersion: platformVersion)
+				.RunAsync(page.Body,
+					new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, platformVersion),
+					mobileResources, resolveTemplateBase: resolveBase)
 				.GetAwaiter().GetResult();
 			if (!validationResult.ContentOk)
 				return new PageSyncPageResult {
