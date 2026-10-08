@@ -344,7 +344,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a generic userTask naming PreconfiguredPageUserTask is refused BY THE SERVER and the process is not created (ENG-102112). That route can never carry the preconfiguredPage block, and before CrtProcessBuilder 1.6.6.87 it built green with no page, which failed at run time with an ItemNotFoundException. Needs CrtProcessBuilder 1.6.6.87 on the stand.")]
+	[Description("Over the real MCP path, a generic userTask naming PreconfiguredPageUserTask is refused BY THE SERVER and the process is not created (ENG-102112). That route can never carry the preconfiguredPage block, and before CrtProcessBuilder 1.6.6.88 it built green with no page, which failed at run time with an ItemNotFoundException. Needs CrtProcessBuilder 1.6.6.88 on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process refuses a generic userTask Pre-configured page")]
 	public async Task CreateBusinessProcess_Should_RefuseAGenericUserTaskPreconfiguredPage() {

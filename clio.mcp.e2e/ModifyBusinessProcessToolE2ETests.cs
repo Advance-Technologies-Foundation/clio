@@ -3187,7 +3187,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: addElement with a generic userTask naming PreconfiguredPageUserTask is REFUSED with the dedicated preconfiguredPage route in the message, and the aborted edit leaves no element behind (ENG-102112). Before CrtProcessBuilder 1.6.6.87 the element was added with no page and failed at run time. Needs 1.6.6.87 on the stand.")]
+	[Description("Over the real MCP path: addElement with a generic userTask naming PreconfiguredPageUserTask is REFUSED with the dedicated preconfiguredPage route in the message, and the aborted edit leaves no element behind (ENG-102112). Before CrtProcessBuilder 1.6.6.88 the element was added with no page and failed at run time. Needs CrtProcessBuilder 1.6.6.88 on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses addElement of a generic userTask Pre-configured page")]
 	public async Task ModifyBusinessProcess_Should_RefuseAddingAGenericUserTaskPreconfiguredPage() {
@@ -3205,6 +3205,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		// Assert
 		string text = SerializeToolText(callResult);
+		text.Should().Contain("PrePage1",
+			because: "the refusal names the element the caller has to change");
 		text.Should().Contain("type 'preconfiguredPage'",
 			because: "the refusal must route the caller to the only element type that carries the page, its buttons and data sources");
 		text.Should().Contain("get-process-page-facts",

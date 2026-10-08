@@ -48,10 +48,10 @@ public class ListUserTasksTool(
 		 + "on a userTask element when building a process with create-business-process. Exceptions, where a "
 		 + "DEDICATED element type carries configuration the generic userTask route cannot: "
 		 + "PreconfiguredPageUserTask (Pre-configured page) is built ONLY as type preconfiguredPage with its "
-		 + "preconfiguredPage block - the generic route is REFUSED from CrtProcessBuilder 1.6.6.87, and an older "
-		 + "package builds an element with no page that fails at run time; OpenEditPageUserTask (Open edit page) "
-		 + "is built as type openEditPage with its openEditPage block - that block is refused on a generic "
-		 + "userTask, so the generic route builds an element with no page that fails at run time; for "
+		 + "preconfiguredPage block - the generic route cannot carry that block and is REFUSED; "
+		 + "OpenEditPageUserTask (Open edit page) is built as type openEditPage with its openEditPage block - "
+		 + "that block is refused on a generic userTask, so the generic route builds a page-less element that "
+		 + "fails at run time; for "
 		 + "EmailTemplateUserTask (Send email) prefer type sendEmail with its email block, and for "
 		 + "ApprovalUserTask (Approval) prefer type approval with its approval block — an Approval element built "
 		 + "as a generic userTask has no approval object, no record under approval and nobody assigned to approve "
@@ -61,10 +61,8 @@ public class ListUserTasksTool(
 		 + "accessRights block plus the element record filter - a generic userTask naming that schema IS accepted "
 		 + "and carries both, but does not survive a deployed CrtProcessBuilder that predates the element, which "
 		 + "discards the block and still answers success. If an environment rejects one of these types (\"Element type 'sendEmail' is not supported yet\"), its deployed "
-		 + "CrtProcessBuilder predates that element type: fall back to a generic userTask named after the schema, "
-		 + "which older packages do build - EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask, whose "
-		 + "generic element has no page and fails at run time; update the package with install-process-builder "
-		 + "instead. Requires the "
+		 + "CrtProcessBuilder predates that element type: update it with install-process-builder rather than "
+		 + "falling back to a generic userTask, which cannot carry the block. Requires the "
 		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment. Install it with install-process-builder.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args

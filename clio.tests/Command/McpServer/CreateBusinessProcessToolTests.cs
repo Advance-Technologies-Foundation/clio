@@ -340,7 +340,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		// Whole phrases on purpose: both surfaces already say "refused" about other things (a Classic UI page,
 		// an unknown type), so a bare word would pass with this sentence deleted.
-		toolDescription.Should().Contain("userTask naming PreconfiguredPageUserTask is REFUSED",
+		toolDescription.Should().Contain("userTask naming PreconfiguredPageUserTask cannot carry the block and is REFUSED",
 			because: "the always-loaded description must say the generic route is refused, not merely discouraged");
 		prompt.Should().Contain("`PreconfiguredPageUserTask`, which cannot carry the block and is refused",
 			because: "the prompt steers the build and must name the task the generic route is refused for");

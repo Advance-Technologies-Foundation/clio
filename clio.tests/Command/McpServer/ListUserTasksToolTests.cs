@@ -74,8 +74,8 @@ public class ListUserTasksToolTests {
 			because: "the description names the generic userTask route as the default, so the one task it is refused for must be named");
 		description.Should().Contain("REFUSED",
 			because: "the caller must learn that the generic route fails, not that it is merely second best");
-		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask",
-			because: "the closing fallback to a generic userTask for an older package must not send the caller back to the refused route");
+		description.Should().Contain("update it with install-process-builder rather than falling back to a generic userTask",
+			because: "the older-package advice must not send the caller back to a generic route that cannot carry the block");
 	}
 
 	[Test]
@@ -89,8 +89,23 @@ public class ListUserTasksToolTests {
 		// Act & Assert
 		description.Should().Contain("OpenEditPageUserTask (Open edit page) is built as type openEditPage",
 			because: "the description sends every other task name down the generic userTask route, which cannot carry this task's block");
-		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask",
-			because: "the older-package fallback to a generic userTask must not send the caller to a route that builds a page-less element");
+		description.Should().Contain("generic route builds a page-less element that fails at run time",
+			because: "the caller has to learn why the generic route is wrong for this task, not only that another type exists");
+	}
+
+	[Test]
+	[Description("The list-user-tasks prompt tells the caller to use a returned name on a generic userTask, so it must carve out the two page tasks whose block a generic userTask cannot carry - the prompt has to match its tool's contract.")]
+	[Category("Unit")]
+	public void ListUserTasksPrompt_ShouldCarveOutThePageTasks() {
+		// Arrange
+		const string environmentName = "sandbox";
+
+		// Act
+		string prompt = Clio.Command.McpServer.Prompts.ListUserTasksPrompt.PromptByEnvironmentName(environmentName);
+
+		// Assert
+		prompt.Should().Contain("except `PreconfiguredPageUserTask` and `OpenEditPageUserTask`",
+			because: "the prompt otherwise sends both page tasks down a generic route that builds a page-less element");
 	}
 
 	private sealed class FakeListUserTasksCommand : ListUserTasksCommand {
