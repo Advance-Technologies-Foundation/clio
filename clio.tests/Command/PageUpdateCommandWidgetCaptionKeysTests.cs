@@ -83,15 +83,34 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 	private void StubStoredKeys(params string[] keys) =>
 		_applicationClient.ExecutePostRequest(
 				GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(new JObject {
-				["success"] = true,
-				["schema"] = new JObject {
-					["uId"] = SchemaUId,
-					["name"] = SchemaName,
-					["body"] = "old body",
-					["localizableStrings"] = BuildLocalizableStrings(keys)
-				}
-			}.ToString());
+			.Returns(BuildGetSchemaResponse(SchemaUId, keys));
+
+	/// <summary>
+	/// Stubs <c>GetSchema</c> so that only a request for <paramref name="schemaUId"/> returns
+	/// <paramref name="keys"/>; a request for any other UId gets the designer's "not found" answer. A test
+	/// that claims WHICH schema the read targets cannot use the <c>Arg.Any</c> stub above - it would pass for
+	/// any UId.
+	/// </summary>
+	private void StubStoredKeysOnlyFor(string schemaUId, params string[] keys) {
+		_applicationClient.ExecutePostRequest(
+				GetSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Schema not found"}}""");
+		_applicationClient.ExecutePostRequest(
+				GetSchemaUrl, Arg.Is<string>(body => body.Contains(schemaUId)),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(BuildGetSchemaResponse(schemaUId, keys));
+	}
+
+	private static string BuildGetSchemaResponse(string schemaUId, string[] keys) =>
+		new JObject {
+			["success"] = true,
+			["schema"] = new JObject {
+				["uId"] = schemaUId,
+				["name"] = SchemaName,
+				["body"] = "old body",
+				["localizableStrings"] = BuildLocalizableStrings(keys)
+			}
+		}.ToString();
 
 	private static JArray BuildLocalizableStrings(string[] keys) =>
 		new(keys.Select(key => new JObject { ["name"] = key, ["value"] = "stored caption" }));
@@ -319,7 +338,7 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "base-pkg-uid" }
 		]);
 		StubSchemaInDesignPackage(null);
-		StubStoredKeys(StoredKey);
+		StubStoredKeysOnlyFor(SchemaUId, StoredKey);
 
 		// Act
 		bool result = _command.TryUpdatePage(ReplaceDryRun(BuildButtonBody(StoredKey)), out PageUpdateResponse response);
@@ -328,6 +347,12 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 		result.Should().BeTrue(because: "a dry run of a valid body succeeds");
 		(response.Warnings ?? []).Should().NotContain(warning => warning.Contains(UnresolvedCaptionFragment),
 			because: "the save copies the replaced schema's localizableStrings, so the key resolves on the new schema");
+		_applicationClient.Received().ExecutePostRequest(
+			GetSchemaUrl, Arg.Is<string>(body => body.Contains(SchemaUId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			GetSchemaUrl, Arg.Is<string>(body => !body.Contains(SchemaUId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		CallCount(SaveSchemaUrl).Should().Be(0, because: "a dry run never writes");
 	}
 

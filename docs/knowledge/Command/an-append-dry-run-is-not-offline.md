@@ -85,8 +85,8 @@ widen that test's name into a claim that the path runs without a server; a calle
 offline workflow on it will find one that cannot run. Its caption check does not fetch the body
 either: it resolves against the body and the passed resources first, and only for a binding still
 unresolved reads the stored keys plus the resolved hierarchy's keys through
-`IPersistedResourceKeyReader` (GH-1740) - the same key set the save gate accepts. Without that
-read, a layout-only re-save warned once for every key an earlier save had registered.
+`IPersistedResourceKeyReader` (GH-1740) - the same key set the save gate accepts. Skipping that
+read makes a layout-only re-save warn once for every key an earlier save registered.
 
 **Why it is this way** — a dry run exists to answer "what will this write do?", and in append mode
 that question cannot be answered without the server's body: the written body is a function of both

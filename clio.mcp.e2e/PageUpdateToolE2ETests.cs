@@ -1801,12 +1801,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ResolveReachableEnvironmentAsync(settings);
 		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
 		const string savePage = "ClioMcp_BlankPageToSave";
-		// Run-unique and NOT Usr-prefixed: a Usr key is auto-derived and would never warn, which would make
-		// the dry-run assertion vacuous. A registered localizableStrings entry cannot be removed through
-		// update-page, so each run leaves one unreferenced resource string on the seeded page.
-		string runId = Guid.NewGuid().ToString("N")[..8];
-		string registeredKey = $"E2ECaption{runId}_caption";
-		string neverRegisteredKey = $"E2EMissingCaption{runId}_caption";
+		// NOT Usr-prefixed: a Usr key is auto-derived and would never warn, which would make the dry-run
+		// assertion vacuous. The registered key is FIXED: a localizableStrings entry cannot be removed through
+		// update-page, so a run-unique key would leave one more resource string on the shared seeded page on
+		// every run. The never-registered key is only dry-run, never saved, so it can stay run-unique.
+		string registeredKey = PersistedCaptionProbeKey;
+		string neverRegisteredKey = $"E2EMissingCaption{Guid.NewGuid().ToString("N")[..8]}_caption";
 		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-caption-key-").FullName;
 		string? originalBody = null;
 		try {
@@ -1848,6 +1848,12 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			TryDeleteDirectory(sessionDir);
 		}
 	}
+
+	/// <summary>
+	/// Caption key the issue #1740 probes register on the seeded page. Kept fixed - and equal to the one in
+	/// <c>PageSyncToolE2ETests</c> - so repeated runs reuse one stored entry instead of growing the page.
+	/// </summary>
+	private const string PersistedCaptionProbeKey = "E2ECaptionProbe_caption";
 
 	/// <summary>
 	/// Returns <paramref name="originalBody"/> with one inserted button whose caption binds

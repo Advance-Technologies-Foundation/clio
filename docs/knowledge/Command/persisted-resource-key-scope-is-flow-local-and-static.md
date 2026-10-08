@@ -36,9 +36,9 @@ verdict rather than a slow one.
   the batch also writes, the pre-pass therefore skips the CONTENT half and lets the in-lock gate —
   which re-runs the identical chain after that save — decide. The lint half still runs in the
   pre-pass, because the in-lock path materialises lint warnings only. A dry run is not a save:
-  `update-page` keeps the entry after a successful dry run, because since GH-1740 a successful replace
-  dry run can carry a FAILED caption-key read whose reason is appended to the response only after the
-  command returns - dropping the entry first erased it.
+  `update-page` keeps the entry after a successful dry run, because a successful replace dry run can
+  carry a FAILED caption-key read whose reason is appended to the response only after the command
+  returns - dropping the entry first would erase that reason.
 
 With NO scope open the reader simply reads, uncached. That is the plain-CLI and unit-test shape and
 it is correct, only more expensive.
