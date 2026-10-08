@@ -238,7 +238,7 @@ public sealed class McpWorkerCallDispatcherTests {
 		request.WorkingDirectory.Should().Be(Environment.CurrentDirectory,
 			because: "this is the single place the host's directory is stated, and an end-to-end test spawns a real child from this very object to prove the child actually starts there");
 		request.Arguments.Should().Equal(["mcp-server", "--worker"],
-			because: "a worker child is clio's own MCP server in worker mode, and the flag is what the recursion guard reads");
+			because: "a worker child is clio's own MCP server in worker mode, and the flag is what the recursion guard reads; no fail-on flag is forwarded, because the MCP verbs ignore them (ENG-102487)");
 		request.Budget.Should().Be(TimeSpan.FromSeconds(7),
 			because: "the caller's budget is what the parent measures from spawn and kills on");
 		request.EnvironmentVariables.Should().BeSameAs(childEnvironment,

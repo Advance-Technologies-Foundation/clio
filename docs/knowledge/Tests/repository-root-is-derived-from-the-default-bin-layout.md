@@ -3,6 +3,7 @@ description: help/docs/readme test fixtures resolve the repository root as AppCo
 applies-to:
   - clio.tests/Command/ReadmeChecker.cs
   - clio.tests/HelpArtifactConsistencyTests.cs
+  - clio.tests/CommandHelpRendererTests.cs
   - clio.tests/Command/ExplorerContextMenuRegistrationTests.cs
 date: 2026-08-19
 ---
@@ -11,7 +12,8 @@ date: 2026-08-19
 `Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..")`, which is only the repository root when
 the test assembly sits in the default `clio.tests/bin/<config>/<tfm>/` layout. `ReadmeChecker` reaches
 `clio/Commands.md`, `clio/Wiki/WikiAnchors.txt`, `clio/help/en` and `clio/docs/commands` that way;
-`HelpArtifactConsistencyTests` and several others repeat the same four-level walk.
+`HelpArtifactConsistencyTests`, `CommandHelpRendererTests` (its pinned manual-help and committed-doc
+cases) and several others repeat the same four-level walk.
 
 **Why it is this way** — there is no repository-root property or marker-file search; the relative walk
 is the whole mechanism, and nothing validates that the computed directory is actually a checkout.
