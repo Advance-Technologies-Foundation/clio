@@ -93,47 +93,62 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// <para>
 	/// <b>One row is not a finished compile.</b> A compile writes a row as each project's build ends, up to about
 	/// half a minute apart, and the runtime reload lands about two minutes after the last row (see
-	/// <c>CompilationCompletionDecider</c>). Measured on a fresh 10.2 stand, a full compile's last row was written at
-	/// 11:32:52 UTC and the compile was over at 11:38:02, the reload in between, so "finished" is "the newest row is
-	/// more than five minutes old". The
-	/// agent cannot be told which rows are its own - other compiles and schema publishes write rows too - only how
-	/// to match them by time. A compile that never wrote a row (it did not start, or the environment keeps no
-	/// history) ends in the user's decision, never in a compile the agent starts on its own: core-rules requires the
-	/// user's confirmation before every compile.
+	/// <c>CompilationCompletionDecider</c>). "Finished" is "the newest row is more than five minutes old": the quiet
+	/// window <c>CompileConfigurationCommand.QuietFallback</c> uses when it sees no reload, so an agent reading the
+	/// history waits exactly as long as clio's own compile would.
+	/// </para>
+	/// <para>
+	/// <b>The rows cannot prove whose they are.</b> Other compiles and schema publishes write rows too, and
+	/// <c>CompilationHistory</c> is an ordinary entity, so the agent is told only how to match rows by time, and to
+	/// ask the user before a restart that rests on them alone - a restart reloads the application for every user. A
+	/// compile that never wrote a row (it did not start, or the environment keeps no history) ends in the user's
+	/// decision too, never in a compile the agent starts on its own: core-rules requires the user's confirmation
+	/// before every compile.
 	/// </para>
 	/// </remarks>
 	internal const string HistoryNote =
 		" compilation-history lists the environment's newest compilation-history rows, newest first, and "
-		+ "older-failures any failed rows among the newest 100 that are older than those. A compile writes one row per "
+		+ "older-failures up to five failed rows from further back among the newest 100. A compile writes one row per "
 		+ "project as that project's build ends, so one compile's rows arrive over its run, up to about half a minute "
-		+ "apart (finished-utc; finished-seconds-ago counts back from checked-utc). Rows whose finished-seconds-ago is "
-		+ "less than the time since you called compile-creatio (your client's timeout error says how long it waited) "
+		+ "apart (finished-utc; finished-seconds-ago counts back from checked-utc). Rows written since you called "
+		+ "compile-creatio - at least as long ago as your client's timeout error says it waited, plus the time since - "
 		+ "can be your compile's; other compiles and schema publishes write rows too, so match by time. Any of them with "
 		+ "succeeded=false and errors means a build failed. Treat your compile as finished only when its newest row is "
-		+ "more than five minutes old: until then more rows can follow, and the application reloads after the last row "
-		+ "(measured: a full compile was over five minutes after its last row), so do not restart before then. If no row is that recent, the compile is still "
-		+ "running: call compile-status again in a minute or two. If a package or process-name compile has had a few "
-		+ "minutes, or a full one about 20, and still no row is that recent, read " + LastCompilationLogTool.ToolName
+		+ "more than five minutes old: until then more rows can follow, and the application reloads about two minutes "
+		+ "after the last one. These rows cannot prove which compile wrote them, so ask the user before a restart that "
+		+ "rests on them alone. If no row was written since your call, the compile is still running: call compile-status "
+		+ "again in a minute or two. If a package or process-name compile has had a few minutes, or a full one about 20, "
+		+ "and still no row was written since your call, read " + LastCompilationLogTool.ToolName
 		+ " (through clio-run) and ask the user before compiling again.";
 
 	/// <summary>
 	/// The rest of the note of a <c>not-found</c> answer whose history could not be read.
 	/// </summary>
 	/// <remarks>
-	/// Asking again helps only when the environment did not answer - right after a compile it reloads and briefly
-	/// stops answering - so the note says to ask again only for that case; <c>compilation-history-error</c> says
-	/// which case it is. <c>last-compilation-log</c> stays the fallback, with the timing rule its undated verdict
-	/// needs: a timing rule, not a ban, because a restart the workflow needs afterwards (a package compile's
-	/// activation) is still owed.
+	/// The read fails the same way whether the environment is reloading after a compile, which passes, or cannot
+	/// serve the history at all (no read rights, wrong stored credentials), which does not; the answer cannot tell
+	/// them apart. So the note says to ask again once or twice and then stop. <c>last-compilation-log</c> stays the
+	/// fallback, with the timing rule its undated verdict needs: a timing rule, not a ban, because a restart the
+	/// workflow needs afterwards (a package compile's activation) is still owed.
 	/// </remarks>
 	internal const string HistoryUnavailableNote =
 		" The environment's compilation history could not be read (see compilation-history-error), so this answer "
-		+ "cannot say whether that compile finished. If the environment did not answer, call compile-status again in a "
-		+ "minute: right after a compile the application reloads and briefly stops answering. "
-		+ LastCompilationLogTool.ToolName + " (through clio-run) reads the environment's latest FINISHED compile and "
-		+ "carries no time, so until a compile you started has had time to finish (a package or process-name compile a "
-		+ "few minutes, a full one up to about 20) it can return an earlier compile's verdict: do not rely on it, or "
-		+ "restart on it, before then. Ask the user before compiling again.";
+		+ "cannot say whether that compile finished. Right after a compile the application reloads and briefly stops "
+		+ "answering, so call compile-status again in a minute; if the next poll or two still cannot read it, stop "
+		+ "polling. " + LastCompilationLogTool.ToolName + " (through clio-run) reads the environment's latest FINISHED "
+		+ "compile and carries no time, so until a compile you started has had time to finish (a package or "
+		+ "process-name compile a few minutes, a full one up to about 20) it can return an earlier compile's verdict: "
+		+ "do not rely on it, or restart on it, before then. Ask the user before compiling again.";
+
+	/// <summary>
+	/// The rest of the note of a <c>not-found</c> answer whose environment-name does not resolve.
+	/// </summary>
+	/// <remarks>
+	/// <c>last-compilation-log</c> is not offered here: it resolves the same name and fails the same way.
+	/// </remarks>
+	internal const string UnresolvedEnvironmentNote =
+		" Neither this answer nor last-compilation-log can read that environment until environment-name names one "
+		+ "this MCP server can reach (see compilation-history-error).";
 
 	/// <summary>
 	/// The <c>compilation-history-error</c> of a <c>not-found</c> answer whose history read failed or ran out of time.
@@ -161,10 +176,14 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	private static readonly Regex EchoableOperationId = new(@"^[0-9a-fA-F-]{1,64}\z", RegexOptions.CultureInvariant,
 		TimeSpan.FromMilliseconds(100));
 
-	// The project names the platform writes: the file name of a .csproj. Anything else is server-authored text of
-	// unknown origin - CompilationHistory is an ordinary entity - and is fenced before it reaches an agent.
-	private static readonly Regex PlatformProjectName = new(@"^[A-Za-z0-9_.-]{1,128}\.csproj\z",
+	// The project names the platform writes: dot-separated identifiers ending in .csproj, such as
+	// Terrasoft.Configuration.Dev.csproj. Anything else is server-authored text of unknown origin - CompilationHistory
+	// is an ordinary entity, and a hyphenated sentence would pass a looser pattern - so it is fenced before it reaches
+	// an agent. The length cap is the one validated identifiers get elsewhere.
+	private static readonly Regex PlatformProjectName = new(@"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+){0,6}\.csproj\z",
 		RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	private const int MaxPlatformProjectNameLength = 64;
 
 	/// <summary>
 	/// The wall-clock bound on the whole history read; a seam for tests, <see cref="DefaultHistoryReadBudget"/>
@@ -186,7 +205,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 			return "This MCP server session holds no record of a compile-creatio operation for this environment.";
 		}
 		string trimmed = operationId.Trim();
-		return EchoableOperationId.IsMatch(trimmed)
+		return IsMatch(EchoableOperationId, trimmed)
 			? $"This MCP server session holds no record of operation-id '{trimmed}' for this environment."
 			: "This MCP server session holds no record of the operation-id you passed for this environment.";
 	}
@@ -203,7 +222,7 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillExtended,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.ConfigurationBuild)]
-	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: it then lists the environment's newest compilation-history rows with the time each finished (UTC, and seconds before checked-utc). Rows written since you called compile-creatio can be your compile's (other compiles write rows too), and it has finished only once its newest row is over five minutes old; if none is that recent, it is still running, so poll again.")]
+	[Description("Returns the status of the most recent compile-creatio operation tracked for an environment, or of a specific operation-id from a compile-creatio in-progress response. Use this after compile-creatio returns an in-progress note, AND after your MCP client stopped waiting for compile-creatio (for example 'Request timed out'): the compile keeps running and is tracked here. Do not re-run compile-creatio just to check. A not-found answer means this MCP server session holds no record, not that nothing ran: it then lists the environment's newest compilation-history rows with the time each finished (UTC, and seconds before checked-utc). Rows written since you called compile-creatio can be your compile's (other compiles write rows too), and it has finished only once its newest row is over five minutes old; if no row was written since your call, it is still running, so poll again.")]
 	public CompileStatusResponse GetStatus(
 		[Description("Status query parameters")] [Required] CompileStatusArgs args) {
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
@@ -244,8 +263,9 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		string noRecord = NoRecordSentence(args.OperationId) + NotARunVerdict;
 		(CompilationHistoryReading reading, string error) = TryReadHistory(args.EnvironmentName, callerTenantKey);
 		if (reading is null) {
+			string unavailable = error == HistoryUnresolvedError ? UnresolvedEnvironmentNote : HistoryUnavailableNote;
 			return new CompileStatusResponse(true, "not-found", EnvironmentName: args.EnvironmentName,
-				Note: noRecord + HistoryUnavailableNote, CompilationHistoryError: error);
+				Note: noRecord + unavailable, CompilationHistoryError: error);
 		}
 		List<CompilationHistoryRow> listed = reading.Rows.Take(HistoryRowCount).ToList();
 		return new CompileStatusResponse(true, "not-found", EnvironmentName: args.EnvironmentName,
@@ -302,7 +322,20 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	}
 
 	private static string RenderProjectName(string projectName) =>
-		projectName is null || PlatformProjectName.IsMatch(projectName) ? projectName : UntrustedText.Fenced(projectName);
+		projectName is null
+		|| (projectName.Length <= MaxPlatformProjectNameLength && IsMatch(PlatformProjectName, projectName))
+			? projectName
+			: UntrustedText.Fenced(projectName);
+
+	// Both patterns are anchored and linear, so their timeout fires only on a starved thread; that must not turn a
+	// valid answer into a tool error, and the safe reading of "could not tell" is "not a match".
+	private static bool IsMatch(Regex pattern, string text) {
+		try {
+			return pattern.IsMatch(text);
+		} catch (RegexMatchTimeoutException) {
+			return false;
+		}
+	}
 
 	// The compiler's text is authored by whoever wrote the code on the environment, so it is fenced as data; the
 	// file is cut to its NAME, because the environment's directory layout is not the agent's business.

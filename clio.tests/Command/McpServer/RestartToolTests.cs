@@ -471,7 +471,7 @@ public sealed class RestartToolTests {
 	[TestCase(45, 0, TestName = "a request that used the whole deadline leaves none")]
 	[TestCase(70, 0, TestName = "a request that outlived the deadline leaves none, never a negative")]
 	[Category("Unit")]
-	[Description("ENG-102333: the restart tools count the response deadline from before their restart request, so a slow request - a fresh worker's login, an application reloading after a compile - cannot push the in-progress answer past the 60 s after which Claude Code desktop gives up.")]
+	[Description("ENG-102333: the restart tools count the response deadline from before their restart request, so a slow request - a fresh worker's login, an application reloading after a compile - uses the deadline up instead of being added to it. A request that alone outlasts 60 s still answers late; the deadline does not race the request itself.")]
 	public void RemainingResponseDeadline_ShouldSubtractTheRestartRequest(int elapsedSeconds, int expectedSeconds) {
 		// Arrange
 		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, Substitute.For<IToolCommandResolver>(),

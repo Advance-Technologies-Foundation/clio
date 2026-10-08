@@ -1,5 +1,5 @@
 ---
-description: DataService returns a DateTime column such as CreatedOn in the session user's time zone with no offset marker, and OData only LABELS what the entity layer returns as UTC - its Z was true UTC on one stand and state and local time on another; convert DataService times with GetApplicationInfo's userTimezoneOffset
+description: DataService returns a DateTime column such as CreatedOn in the session user's time zone with no offset marker, and OData only labels the entity layer's value as UTC, so its Z was true UTC on one stand and local time on another after a restart; convert DataService times with GetApplicationInfo's userTimezoneOffset
 applies-to:
   - clio/Common/CompilationHistoryReader.cs
 ticket: ENG-102333
@@ -21,7 +21,7 @@ The session's zone is its profile zone or, when that is empty, the clio host's o
 which labels whatever the entity layer hands OData as UTC; it converts nothing. Why the entity layer started
 converting after the restart was not traced.
 
-**What breaks if you ignore it** — a Creatio time compared with a UTC clock is off by the session offset,
-silently, and through OData only on some stands or after a restart: a three-hour-old row reads as three hours
-in the future. Read it through DataService and subtract `userTimezoneOffset` from the same session, as
-`CompilationHistoryReader` does. Comparing two DataService times with each other is safe.
+**What breaks if you ignore it** — a session-zone time read as UTC is off by the session offset, silently. In a
+zone east of UTC a row three hours old reads as fresh - an earlier compile's row passes for the one just started -
+and a fresh row reads as three hours in the future. Read the time through DataService and subtract
+`userTimezoneOffset` from the same session, as `CompilationHistoryReader` does.

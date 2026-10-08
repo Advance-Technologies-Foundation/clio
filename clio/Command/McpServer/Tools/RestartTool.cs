@@ -28,7 +28,8 @@ public class RestartTool(
 	internal const string RestartByCredentialsToolName = "restart-by-credentials";
 
 	/// <summary>
-	/// Test seam overriding the MCP response deadline used by the readiness wait. <see langword="null"/> in
+	/// Test seam overriding the call's MCP response deadline, which the readiness wait gets what is left of through
+	/// <see cref="RemainingResponseDeadline"/>. <see langword="null"/> in
 	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> applies);
 	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
 	/// without racing the real ceiling.

@@ -17,7 +17,7 @@ Session evidence (2026-07-10, Claude Opus 4.8 via Claude Desktop + clio MCP): th
 section creation, but the MCP call gave zero feedback and no deadline.
 
 `create-app-section` already solves the mirror problem for the **write** path
-(adr-create-app-section-response-deadline): after ~150 s it returns
+(adr-create-app-section-response-deadline): after ~150 s (45 s since ENG-102333) it returns
 `{"error-class":"creatio-timeout","section-created":"in-progress","retry-guidance":…}` before the
 client's hard request ceiling, and the backend work keeps running so a later poll observes it.
 

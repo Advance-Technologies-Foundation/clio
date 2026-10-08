@@ -941,7 +941,7 @@ public sealed class RunProcessToolTests {
 		// Assert
 		deadline.Should().BeGreaterThan(perCallBudget,
 			because: "the parent ends a run that outlives its budget with the budget error, as it always has, instead of the child claiming a launch it may not have sent");
-		deadline.Should().NotBe(McpProgressHeartbeat.DefaultResponseDeadline,
-			because: "run-process must not follow the shared default down to 45 s");
+		deadline.Should().NotBe(McpProgressHeartbeat.ResolveResponseDeadline(null),
+			because: "run-process must not follow the shared built-in default down to 45 s");
 	}
 }

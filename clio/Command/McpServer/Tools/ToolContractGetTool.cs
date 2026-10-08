@@ -6333,7 +6333,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: rows written since your call can be this compile's (other compiles write rows too), it has finished once its newest row is over five minutes old, and none yet means it still runs."),
+					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: rows written since your call can be this compile's (other compiles write rows too), it has finished only once its newest row is over five minutes old, and none yet means it still runs."),
 				new ToolAntiPattern(
 					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
 					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),

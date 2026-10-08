@@ -457,7 +457,7 @@ session lose their in-flight calls too. Two changes answer it, and a third was r
   returned true UTC and, after an application restart, local time with a `Z`. The read is abandoned after
   25 s, login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
   reported as such rather than as a read to retry. One row is not a finished compile - a compile writes a row as
-  each project ends - so agents are told it has finished once its newest row is over five minutes old (measured: a full compile was over 5 min 10 s after its last row, the runtime reload in between), and that a
+  each project ends - so agents are told it has finished only once its newest row is over five minutes old (the runtime reload lands about two minutes after the last row; five minutes is the quiet window clio's own compile uses when it sees no reload), that a restart resting on these rows alone needs the user's confirmation, and that a
   compile which wrote no row ends in asking the user, never in a compile of their own;
 - persisting the operation registry outside the server process was rejected: the worker that waits for the
   result dies with the server, so a persisted record could only say "started, outcome unknown" and would
