@@ -29,7 +29,10 @@ public static class ModifyBusinessProcessPrompt {
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
 		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
 		 `setFlowResults`, `setConnections`, or `clearConnections`
-		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build;
+		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build,
+		 so an `addElement` for a Pre-configured page or an Open edit page uses `type:"preconfiguredPage"` /
+		 `type:"openEditPage"` with its block: a generic `userTask` cannot carry either block, and one naming
+		 `PreconfiguredPageUserTask` is refused;
 		 `setParameter` updates a parameter in place, `removeParameter` is dependency-checked — over mappings,
 		 execution-context parameters AND conditional-flow conditions, sub-processes included; `setFlowCondition`
 		 (`source` + `target` + a non-empty `condition`) turns an existing plain flow into a CONDITIONAL branch in
