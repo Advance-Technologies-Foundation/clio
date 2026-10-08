@@ -204,7 +204,7 @@ public sealed class ApplicationInfoService(
 		string? id,
 		string? code)
 	{
-		SelectQueryResponseDto response = ExecuteSelectQuery<SelectQueryResponseDto>(
+		SelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildInstalledApplicationsQuery(id, code));
@@ -251,7 +251,7 @@ public sealed class ApplicationInfoService(
 		string appId,
 		string packageUId)
 	{
-		ApplicationEntitySelectQueryResponseDto response = ExecuteSelectQuery<ApplicationEntitySelectQueryResponseDto>(
+		ApplicationEntitySelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationEntitySelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildApplicationEntitiesQuery(appId, packageUId));
@@ -263,7 +263,7 @@ public sealed class ApplicationInfoService(
 		IServiceUrlBuilder serviceUrlBuilder,
 		string packageName)
 	{
-		ApplicationPageSelectQueryResponseDto response = ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
+		ApplicationPageSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildApplicationPagesQuery(packageName));
@@ -288,17 +288,32 @@ public sealed class ApplicationInfoService(
 		ApplicationEntityRecordDto entityRow)
 	{
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
-		string responseJson = client.ExecutePostRequest(
-			url,
-			JsonSerializer.Serialize(new { uId = entityRow.UId }));
-		RuntimeSchemaResponseDto response = Deserialize<RuntimeSchemaResponseDto>(
-			responseJson,
-			$"Runtime entity schema request '{entityRow.UId}'",
-			url);
-		if (!response.Success || response.Schema is null)
+		string requestBody = JsonSerializer.Serialize(new { uId = entityRow.UId });
+		// ENG-102683: a read that lands while Creatio reloads its route table after an OData rebuild is answered
+		// success:false ("Collection was modified"); it is a read, so it is re-sent on the shared transient budget.
+		(RuntimeSchemaResponseDto response, string responseJson) =
+			SelectQueryHelper.SendWithTransientRetry<(RuntimeSchemaResponseDto Response, string Body)>(
+				() =>
+				{
+					string body = client.ExecutePostRequest(url, requestBody);
+					return (Deserialize<RuntimeSchemaResponseDto>(
+						body,
+						$"Runtime entity schema request '{entityRow.UId}'",
+						url), body);
+				},
+				answer => answer.Response.Success
+					? null
+					: SelectQueryHelper.DescribeServerFailure(answer.Response.ErrorInfo?.Message, answer.Body));
+		if (!response.Success)
 		{
 			throw new InvalidOperationException(
-				response.ErrorInfo?.Message ?? $"Runtime entity schema '{entityRow.UId}' was not returned.");
+				$"Runtime entity schema '{entityRow.UId}' was not returned: "
+				+ SelectQueryHelper.DescribeServerFailure(response.ErrorInfo?.Message, responseJson));
+		}
+
+		if (response.Schema is null)
+		{
+			throw new InvalidOperationException($"Runtime entity schema '{entityRow.UId}' was not returned.");
 		}
 
 		string entityName = !string.IsNullOrWhiteSpace(response.Schema.Name)
@@ -582,23 +597,6 @@ public sealed class ApplicationInfoService(
 		}
 	}
 
-	private static T ExecuteSelectQuery<T>(
-		IApplicationClient client,
-		IServiceUrlBuilder serviceUrlBuilder,
-		object query)
-		where T : SelectQueryResponseBaseDto
-	{
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-		string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(query));
-		T response = Deserialize<T>(responseJson, "SelectQuery", url);
-		if (!response.Success)
-		{
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "Select query failed.");
-		}
-
-		return response;
-	}
-
 	// ENG-93365: routed through the shared guard so an HTML error/login page or a truncated body surfaces
 	// as a typed error naming the endpoint, never as a raw System.Text.Json parser message.
 	private static T Deserialize<T>(string responseJson, string operationName, string url) =>
@@ -684,15 +682,6 @@ public sealed class ApplicationInfoService(
 		};
 	}
 
-	private abstract class SelectQueryResponseBaseDto
-	{
-		[JsonPropertyName("success")]
-		public bool Success { get; set; }
-
-		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
-	}
-
 	private sealed class SelectQueryResponseDto : SelectQueryResponseBaseDto
 	{
 
@@ -743,12 +732,6 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("schema")]
 		public DesignSchemaDto? Schema { get; set; }
-	}
-
-	private sealed class ErrorInfoDto
-	{
-		[JsonPropertyName("message")]
-		public string? Message { get; set; }
 	}
 
 	private sealed class InstalledApplicationDto
