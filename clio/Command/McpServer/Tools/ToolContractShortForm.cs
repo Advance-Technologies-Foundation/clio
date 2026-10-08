@@ -27,7 +27,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </para>
 /// <para>
 /// What the short form keeps: the description's lead (the purpose, and for a destructive tool the call-time
-/// warning the catalog puts second); every sentence carrying a safety marker, wherever it stands
+/// warning that follows the purpose); every sentence carrying a safety marker, wherever it stands
 /// (<see cref="SafetyDuty"/> - a confirmation duty, an ask/tell/warn-the-user rule, a prohibition, an
 /// irreversibility warning), and every field description carrying one whole (<see cref="FieldDuty"/>); the
 /// input schema with its required list and validators; the error codes, preconditions,
@@ -338,7 +338,7 @@ internal static class ToolContractShortForm {
 
 	/// <summary>
 	/// Whether a <see cref="SafetyDuty"/> sentence STARTS inside the ordinary lead. Starts, not ends: the
-	/// create-business-process warning opens at character ~190 and runs past the ordinary lead, and a test on the ordinary
+	/// create-business-process warning opens after two ordinary sentences and runs past the ordinary lead, and a test on the ordinary
 	/// lead's own text would miss it and drop the rest of the block.
 	/// </summary>
 	internal static bool OpensWithSafetyWarning(string description) {

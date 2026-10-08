@@ -905,10 +905,11 @@ take a single `args` object with kebab-case fields.
 
 - **`get-target-package`** (read-only probe, non-resident — reachable via `clio-run`) answers which
   package a run's design-time writes land in, without writing anything: pass `package` to check a name
-  the user gave, or omit it to resolve the `CurrentPackageId` package the agent cannot read for itself
-  (`get-sys-setting` returns the All-Users default, which that per-developer setting normally has
-  none of). It returns `package-name`, which the agent states to the user and then passes to
-  `create-theme` / `set-logo` / `set-background-image` so one branding operation lands in one package.
+  the user gave, or omit it to resolve the `CurrentPackageId` package (the setting holds a package UId
+  and one All-employees value). Either way it checks that the package exists and is not locked. It returns
+  `package-name`, which the agent states to the user and then passes to `create-business-process` (the
+  descriptor's `packageName`) or `create-theme` / `set-logo` / `set-background-image`, so one operation
+  lands in one package.
   On failure it separates a definitive answer (`resolutionFailed: true` — absent, locked, or no current
   package; ask the user for another one) from an unreachable environment (`resolutionFailed: false` —
   retry; never report that no target package exists).
