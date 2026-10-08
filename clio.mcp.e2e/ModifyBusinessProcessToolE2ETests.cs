@@ -3233,6 +3233,49 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: one modify request adds two Read data elements without their block and finishes ONE of them with setElement.readData in the same request. Only the one still unconfigured at the END of the request is reported (ENG-102537): the check is judged on the final schema, so the documented addElement -> setElement flow raises nothing for the element it completed, and the edit itself is not refused. Needs CrtProcessBuilder 1.6.6.89 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process warns only about elements left unconfigured at the end of the request")]
+	public async Task ModifyBusinessProcess_Should_WarnOnlyAboutElementsLeftUnconfigured() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpUnconfiguredWarnE2e{Guid.NewGuid():N}";
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildPerformTaskDescriptor(processName)
+		});
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.89");
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			// Act
+			CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """
+					[
+					  { "op": "addElement", "element": { "name": "ReadLeftBare", "type": "readData" } },
+					  { "op": "addElement", "element": { "name": "ReadFinished", "type": "readData" } },
+					  { "op": "setElement", "elementName": "ReadFinished", "elementUpdate": { "readData": { "source": "Contact" } } }
+					]
+					"""
+			});
+
+			// Assert
+			string text = SerializeToolText(callResult);
+			text.Should().Contain("3 operation(s) applied",
+				because: "an unconfigured element is a warning, not a refusal - the edit is saved");
+			text.Should().Contain("Read data 'ReadLeftBare' has NO source object",
+				because: "the element still without a source at the end of the request is reported");
+			text.Should().NotContain("Read data 'ReadFinished'",
+				because: "the element a later operation in the same request configured must not be reported - a "
+					+ "warning about a state that no longer exists teaches the caller to ignore the channel");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
 	[Description("Over the real MCP path: mapping a type-incompatible source (an Integer process parameter) onto the Perform task's Lookup->Contact performer parameter is rejected with the incompatible-types diagnosis and the edit is not persisted.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects a type-incompatible mapping onto the performer lookup")]
