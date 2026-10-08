@@ -42,9 +42,10 @@ public static class ModifyBusinessProcessPrompt {
 		 `setFlow` (`source` + `target` + `kind`, plus `condition` for a conditional one) changes an EXISTING
 		 flow's kind in either direction, also in place.
 		 A conditional branch has TWO predicate dialects and its SOURCE decides which, not you. Off an element
-		 that enumerates RESULTS - among the types you can build, `approval`, `performTask`, `preconfiguredPage`,
-		 `openEditPage` with results by column - and, in a process the designer built, User dialog and
-		 Auto-generated page - each only once CONFIGURED into it - the designer edits that connector as a CHECKBOX LIST and offers no formula field at all.
+		 that enumerates RESULTS - among the types you can build, `approval`, `performTask`, `preconfiguredPage`
+		 and `openEditPage` with results by column, each only once CONFIGURED into it - the designer edits that
+		 connector as a CHECKBOX LIST and offers no formula field at all. In a process the designer built, User
+		 dialog and Auto-generated page enumerate results too.
 		 The list is NOT closed - other platform and custom elements qualify - but `sendEmail` is NOT one
 		 despite its server-side schema declaring results, so branch that one with a condition.
 		 On a source that DOES enumerate them the branch is declared with `results`: the result captions
