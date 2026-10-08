@@ -408,15 +408,13 @@ public sealed class PageUpdateTool(
 	}
 
 	/// <summary>
-	/// Resolves the target environment's platform version so the chart-widget validation catalog is scoped
-	/// to the component set the environment actually ships (mirroring <c>get-component-info</c>'s resolution).
-	/// Returns <see langword="null"/> for mobile bodies (chart validation is web-only — no probe needed) and
-	/// fail-soft on any resolution failure or absent resolver dependencies; <see cref="ChartWidgetValidation"/>
-	/// maps <see langword="null"/> to the safe <c>latest</c> superset so version resolution never blocks a save.
+	/// Resolves the target environment's platform version so the chart-widget and mobile validation catalogs are
+	/// scoped to the component set the environment actually ships (mirroring <c>get-component-info</c>'s
+	/// resolution). Fail-soft on any resolution failure or absent resolver dependencies: <see langword="null"/>
+	/// maps to the safe <c>latest</c> catalog, so version resolution never blocks a save.
 	/// </summary>
 	private async Task<string?> ResolvePlatformVersionAsync(PageUpdateOptions options, CancellationToken cancellationToken) {
-		if (PageSchemaTypeExtensions.FromBody(options.Body) == PageSchemaType.Mobile
-			|| resolverFactory is null || settingsRepository is null) {
+		if (resolverFactory is null || settingsRepository is null) {
 			return null;
 		}
 		try {
@@ -456,7 +454,9 @@ public sealed class PageUpdateTool(
 			SchemaValidationService.TryParseResources(options.Resources,
 				out Dictionary<string, string>? mobileResources, out _);
 			PageSyncValidationResult mobileResult = MobilePageValidation
-				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, mobileResources,
+				.RunAsync(options.Body,
+					new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, requestedVersion),
+					mobileResources,
 					templateBaseContext: new MobilePageMergedConfigContext(_commandResolver, options.SchemaName,
 						// The write mode decides the validation base: replace (default) validates against the base
 						// WITHOUT the page's own body (it gets overwritten); append validates against the full merged

@@ -166,6 +166,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// and the generic-route refusal to both descriptions. Modify paid by merging its four per-block entries,
 	// which each repeated "same block as create-business-process" behind an escaped em dash, into one:
 	// modify-business-process 35016, create-business-process 34854, describe-business-process 33367.
+	//
+	// ENG-99970 (the get-target-package routing sentence, "Take packageName from get-target-package.",
+	// placed second so a shortened contract keeps it) adds about 42 bytes to create-business-process; under
+	// the 137 * 256 ceiling that leaves it well inside, so the sentence needs no swap.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]
