@@ -347,6 +347,10 @@ curl -X POST http://localhost:8005/mcp \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
+## Notes
+
+- `--fail-on-error` and `--fail-on-warning` are not supported. They are accepted (hidden) only so an existing MCP client configuration keeps starting, and are ignored with a startup warning: a package install made through an MCP tool never uses the strict install-log check.
+
 ## Environment Variables
 
 | Variable | Description |
