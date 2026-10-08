@@ -130,6 +130,8 @@ public sealed class PackageTargetResolverTests {
 			because: "the environment answered: it has no current package, so the caller must ask the user for one");
 		resolution.Error.Should().Contain("CurrentPackageId",
 			because: "the message must name the setting the user or their IDE sets");
+		resolution.Error.Should().EndWith(PackageTargetResolver.AskForPackage,
+			because: "with no target the caller must ask the user, not pick one from list-packages");
 	}
 
 	[Test, Category("Unit")]
@@ -146,6 +148,8 @@ public sealed class PackageTargetResolverTests {
 		// Assert
 		resolution.Success.Should().BeFalse(because: "a dangling current-package setting names no usable target");
 		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered with no matching package");
+		resolution.Error.Should().EndWith(PackageTargetResolver.AskForPackage,
+			because: "with no target the caller must ask the user, not pick one from list-packages");
 	}
 
 	[Test, Category("Unit")]
