@@ -182,6 +182,7 @@
     "CuratedKnowledgeArtifactStartupE2ETests",
     "CuratedKnowledgeGitStartupE2ETests",
     "McpHttpRuntimeRoutingE2ETests",
+    "McpServerIgnoredFailOnFlagsE2ETests",
     "McpServerShutdownE2ETests",
     "McpWorkerContainmentE2ETests",
     "McpWorkerWorkingDirectoryE2ETests",
