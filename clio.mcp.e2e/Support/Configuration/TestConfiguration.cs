@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Clio.Command.McpServer;
+using Clio.Command.McpServer.Tools;
 using System.Runtime.CompilerServices;
 
 namespace Clio.Mcp.E2E.Support.Configuration;
@@ -26,6 +27,15 @@ internal static class TestConfiguration {
 		// from configuration is preserved.
 		if (!settings.ProcessEnvironmentVariables.ContainsKey("CLIO_NO_UPDATE_CHECK")) {
 			settings.ProcessEnvironmentVariables["CLIO_NO_UPDATE_CHECK"] = "true";
+		}
+		// Pin the MCP response deadline to its pre-ENG-102333 150 s for every e2e-spawned server. The stand tests
+		// assert an operation's RESULT - a created section, a restart that is ready - and a real stand often takes
+		// longer than the 45 s default to produce one, after which the tool answers "in progress" instead. The
+		// default itself is covered by a test that clears this pin (CompileCreatioClientTimeoutE2ETests), and every
+		// test of the deadline sets its own value. run-process does not use this variable: it keeps its own 150 s
+		// (RunProcessTool.RunProcessResponseDeadline). An explicit value from configuration is preserved.
+		if (!settings.ProcessEnvironmentVariables.ContainsKey(McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar)) {
+			settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "150";
 		}
 		if (!string.IsNullOrWhiteSpace(_sharedClioHome)) {
 			settings.ProcessEnvironmentVariables["CLIO_HOME"] = _sharedClioHome;

@@ -927,4 +927,21 @@ public sealed class RunProcessToolTests {
 	}
 
 	#endregion
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: run-process keeps its own 150 s deadline above the parent's per-call worker budget. The shared 45 s default would let its 'launched, do not re-run' answer arrive before the RunProcess request was sent, and the parent then kills the worker, so that answer must stay unreachable in worker mode.")]
+	public void RunProcessResponseDeadline_ShouldStayAboveThePerCallWorkerBudget() {
+		// Arrange
+		TimeSpan perCallBudget = Clio.Command.McpServer.Relay.McpWorkerCallDispatcher.DefaultBudget;
+
+		// Act
+		TimeSpan deadline = RunProcessTool.RunProcessResponseDeadline;
+
+		// Assert
+		deadline.Should().BeGreaterThan(perCallBudget,
+			because: "the parent ends a run that outlives its budget with the budget error, as it always has, instead of the child claiming a launch it may not have sent");
+		deadline.Should().NotBe(McpProgressHeartbeat.ResolveResponseDeadline(null),
+			because: "run-process must not follow the shared built-in default down to 45 s");
+	}
 }
