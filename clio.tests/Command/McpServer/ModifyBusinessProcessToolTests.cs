@@ -39,7 +39,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102112: the addElement field list names the preconfiguredPage block and says a generic userTask naming PreconfiguredPageUserTask is refused. Without it the modify contract offered no way to add a Pre-configured page, and the server's refusal pointed at a block the contract never mentioned.")]
+	[Description("The addElement field list names the preconfiguredPage block and says a generic userTask naming PreconfiguredPageUserTask is refused. Without it the modify contract offered no way to add a Pre-configured page, and the server's refusal pointed at a block the contract never mentioned.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferThePreconfiguredPageBlockOnAddElement() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),

@@ -327,7 +327,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102112: the always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and before CrtProcessBuilder 1.6.6.87 it built green and failed at run time, so the prose is what keeps a caller off it.")]
+	[Description("The always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and a package that does not refuse it builds an element that fails at run time, so the prose is what keeps a caller off it.")]
 	public void CreateBusinessProcessTool_ShouldSteerAPreconfiguredPageOffTheGenericUserTaskRoute() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)

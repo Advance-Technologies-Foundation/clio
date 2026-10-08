@@ -62,7 +62,7 @@ public class ListUserTasksToolTests {
 	}
 
 	[Test]
-	[Description("ENG-102112: list-user-tasks tells the caller to pass a task name on a generic userTask, so its description must carve out PreconfiguredPageUserTask - that route is refused from CrtProcessBuilder 1.6.6.87 and built a page-less element before it.")]
+	[Description("list-user-tasks tells the caller to pass a task name on a generic userTask, so its description must carve out PreconfiguredPageUserTask - that route is refused, and a package that does not refuse it builds a page-less element.")]
 	[Category("Unit")]
 	public void ListUserTasks_Description_ShouldRoutePreconfiguredPageToItsDedicatedType() {
 		// Arrange
@@ -76,6 +76,21 @@ public class ListUserTasksToolTests {
 			because: "the caller must learn that the generic route fails, not that it is merely second best");
 		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask",
 			because: "the closing fallback to a generic userTask for an older package must not send the caller back to the refused route");
+	}
+
+	[Test]
+	[Description("list-user-tasks routes OpenEditPageUserTask to type openEditPage. Its block is refused on a generic userTask, so that route can only build an element with no page, which fails at run time (measured: ItemNotFoundException in OpenEditPageUserTask) - and the element catalog already lists Open edit page among the dedicated types.")]
+	[Category("Unit")]
+	public void ListUserTasks_Description_ShouldRouteOpenEditPageToItsDedicatedType() {
+		// Arrange
+		string description = typeof(ListUserTasksTool).GetMethod(nameof(ListUserTasksTool.ListUserTasks))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act & Assert
+		description.Should().Contain("OpenEditPageUserTask (Open edit page) is built as type openEditPage",
+			because: "the description sends every other task name down the generic userTask route, which cannot carry this task's block");
+		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask",
+			because: "the older-package fallback to a generic userTask must not send the caller to a route that builds a page-less element");
 	}
 
 	private sealed class FakeListUserTasksCommand : ListUserTasksCommand {
