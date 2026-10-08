@@ -3153,15 +3153,16 @@ public sealed class WebToMobileConversionServiceTests {
 	[Test]
 	[Description("The KEEP branch of the two-shape invariant, stated as a comparison rather than as two separate assertions that happen to agree. Which traversal a menu takes is decided by whether the published mobile registry declares crt.MenuItem - invisible on the caller's page, so it must not reach the caller's report. The removal branch is already pinned this way; this is its other half, and it is the half that was wrong: one shape recorded the dead binding and the other said nothing.")]
 	public void Analyze_BothTraversalShapes_ReportTheSameBindingLoss_ForAKeptSubmenuOwner() {
-		// Arrange - one source page, read through both registries.
-		PageBundleInfo EntryGraph() => MenuButtonBundle(DeadParentWithLiveChild);
-		PageBundleInfo Carried() => MenuButtonBundle(DeadParentWithLiveChild);
+		// Arrange - one source page, read through both registries. ONE factory, called twice: the bundles must
+		// be indistinguishable, and two separately-named factories would let them drift apart unnoticed -
+		// which would silently turn this comparison into a comparison of two different pages.
+		PageBundleInfo Page() => MenuButtonBundle(DeadParentWithLiveChild);
 
-		// Act
+		// Act - mobileTypes is the ONLY difference between the two runs.
 		MobilePageConversionGuide asEntries =
-			Analyze(EntryGraph(), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
+			Analyze(Page(), mobileTypes: MenuEntryGraphTypes, rules: MenuRules());
 		MobilePageConversionGuide asCarried =
-			Analyze(Carried(), mobileTypes: MenuCarriedTypes, rules: MenuRules());
+			Analyze(Page(), mobileTypes: MenuCarriedTypes, rules: MenuRules());
 
 		// Assert
 		DroppedNames(asCarried).Should().BeEquivalentTo(DroppedNames(asEntries),
@@ -3180,6 +3181,50 @@ public sealed class WebToMobileConversionServiceTests {
 		ReasonParam(onCarried.Reason, ReasonCodes.DropRequestUnsupported, "note")
 			.Should().Be(ReasonParam(onEntries.Reason, ReasonCodes.DropRequestUnsupported, "note"),
 				because: "and down to the params, which is where a hand-written twin drifts first");
+	}
+
+	[Test]
+	[TestCaseSource(nameof(BothMenuShapes))]
+	[Description("The arrangement ENG-96178 was reported against, at the DEPTH a real page has it: the settings button that carries a menu sits inside ActionButtonsContainer, which is itself inside another container - not at the top of the page, which is where every other test in this family puts it. The defect was a node the walk never visited, so \"the pass reaches it two containers down\" is not a free consequence of \"the pass reaches it one container down\": the carried menu is copied into the owner's values by BuildMobileValues, and the recursion that has to find it again runs over whatever the walk built, at whatever depth. Both traversal shapes are exercised because which one production takes is a registry fact the caller's page does not contain, so a verdict differing between them would be a report changing for a reason the developer cannot see.")]
+	public void Analyze_SettingsButtonInsideActionButtonsContainer_SettlesItsDeadSubmenuOwner(
+		(string Shape, IReadOnlySet<string> Types) shape) {
+		// Arrange - Main > ActionButtonsContainer > SettingsButton > DeadParentItem > LiveChildItem.
+		PageBundleInfo bundle = Bundle($$"""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "ActionButtonsContainer", "type": "crt.FlexContainer", "items": [
+					{ "name": "SettingsButton", "type": "crt.Button", "caption": "Settings",
+					  "clickMode": "menu",
+					  "menuItems": [ {{DeadParentWithLiveChild}} ] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, mobileTypes: shape.Types, rules: MenuRules());
+
+		// Assert
+		DroppedNames(guide).Should().BeEmpty(
+			because: "nothing on this page is action-less - the owner still holds a live child and the button "
+				+ "still holds the owner - so a drop anywhere here would take a working menu entry off the page");
+		DroppedRequest dead = guide.RequestConversions!.DroppedRequests.Should().ContainSingle(
+			because: "the owner's dead action is the ONE loss this page has, and it has to be reported at this "
+				+ "depth exactly as it is at the top level - the nesting is the page's, not the caller's choice")
+			.Subject;
+		dead.ElementName.Should().Be("DeadParentItem",
+			because: "the record names the node that lost the action, not the button that carries it - the "
+				+ "button is still fully functional and pointing the developer at it would misdirect the fix");
+		dead.Binding.Should().Be("clicked",
+			because: "and the binding, which is what the developer has to go and re-wire");
+		dead.WebRequest.Should().Be("crt.PrintablesRequest",
+			because: "and the request, which is the value the developer acts on");
+		Codes(dead.Reason).Should().Equal([ReasonCodes.DropRequestUnsupported],
+			because: "the rules file CLEARS this request, so clio can state it is unsupported rather than "
+				+ "merely unknown - the weaker code would understate what was established");
+		string diff = JsonSerializer.Serialize(guide.ViewConfigDiff);
+		diff.Should().NotContain("crt.PrintablesRequest",
+			because: "reporting the loss while still shipping the dead binding would be the defect wearing a "
+				+ "report - the action has to be GONE from what the developer pastes");
+		diff.Should().Contain("crt.SaveRecordRequest",
+			because: "and the live child's action must survive untouched, which is the whole reason the owner "
+				+ "was exempted from removal in the first place");
 	}
 
 	[Test]
@@ -3664,12 +3709,14 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A request of nothing but WHITESPACE is not a binding, and both traversal shapes agree on that. The two IsEventBinding overloads are the only reason the shapes can be said to report identically, and they once disagreed here: the Newtonsoft twin rejected \"  \" through IsNullOrWhiteSpace while the STJ one accepted it on Length alone, so the carried shape dropped the item as an unknown request and the entry graph kept it. Nothing else in the suite compares the two on a value that is present but blank.")]
-	public void Analyze_MenuItemWithAWhitespaceRequest_IsTreatedIdenticallyInBothShapes() {
-		// Arrange — present, non-empty, and still not a request.
-		const string blank = """
+	[TestCase("")]
+	[TestCase("  ")]
+	[Description("A request that is PRESENT but BLANK - the empty string and whitespace alike - is not a binding, and both traversal shapes agree on that. The two IsEventBinding overloads are the only reason the shapes can be said to report identically, and they once disagreed on \"  \": the Newtonsoft twin rejected it through IsNullOrWhiteSpace while the STJ one accepted it on Length alone, so the carried shape dropped the item as an unknown request and the entry graph kept it. The EMPTY STRING is pinned for a different reason - it is the shape a reader of ENG-96178 AC1 (\"remove MenuItem if request is empty\") reaches for, and the answer is that AC1 is covered ELSEWHERE: the shipped crt.MenuItem rule tests clicked ITSELF for emptiness, which catches an absent clicked, null, {} and \"\". A binding OBJECT whose request string is blank is not that case - it is a malformed page clio cannot classify, and deleting a component over a value it cannot classify is the one mistake here that the developer has no way back from. So the item is KEPT and nothing is reported, identically on both shapes.")]
+	public void Analyze_MenuItemWithABlankRequest_IsTreatedIdenticallyInBothShapes(string blankRequest) {
+		// Arrange - present, non-empty as an object, and still not a request.
+		string blank = $$"""
 			{ "name": "BlankItem", "type": "crt.MenuItem", "caption": "Blank",
-			  "clicked": { "request": "  ", "params": {} } }
+			  "clicked": { "request": "{{blankRequest}}", "params": {} } }
 			""";
 
 		// Act
@@ -3680,11 +3727,18 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		DroppedNames(asCarried).Should().BeEquivalentTo(DroppedNames(asEntries),
-			because: "a blank request is not a dead request on one path and a live one on the other — which is "
+			because: "a blank request is not a dead request on one path and a live one on the other - which is "
 				+ "exactly what a Length-only check made it");
 		DroppedNames(asEntries).Should().NotContain("BlankItem",
-			because: "whitespace is not a request the Mobile app fails to support; it is no request at all, so "
-				+ "nothing may be reported as lost over it");
+			because: "a blank request is not a request the Mobile app fails to support; it is no request at "
+				+ "all, so nothing may be reported as lost over it");
+		foreach (MobilePageConversionGuide guide in new[] { asEntries, asCarried }) {
+			(guide.RequestConversions?.DroppedRequests ?? []).Should().NotContain(r => r.ElementName == "BlankItem",
+				because: "clio removed no action here - there was none to remove - and a drop record would tell "
+					+ "the developer to go and restore something the page never had");
+			(guide.RequestConversions?.FlaggedRequests ?? []).Should().NotContain(r => r.ElementName == "BlankItem",
+				because: "nor is there a request to go and verify on mobile, which is the whole content of a flag");
+		}
 	}
 
 	[Test]
