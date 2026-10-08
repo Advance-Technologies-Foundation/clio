@@ -13,6 +13,7 @@ using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -3187,6 +3188,51 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: addElement with a generic userTask naming PreconfiguredPageUserTask is REFUSED with the dedicated preconfiguredPage route in the message, and the aborted edit leaves no element behind (ENG-102112). Before CrtProcessBuilder 1.6.6.88 the element was added with no page and failed at run time. Needs CrtProcessBuilder 1.6.6.88 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses addElement of a generic userTask Pre-configured page")]
+	public async Task ModifyBusinessProcess_Should_RefuseAddingAGenericUserTaskPreconfiguredPage() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGenericPrePageAddE2e{Guid.NewGuid():N}";
+		// Built here rather than through CreateProcessAsync, so an outdated sandbox package is reported as such
+		// instead of as a failed arrange.
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildPerformTaskDescriptor(processName)
+		});
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.88");
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			// Act
+			CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = @"[ { ""op"": ""addElement"", ""element"": { ""name"": ""PrePage1"", ""type"": ""userTask"", ""userTaskName"": ""PreconfiguredPageUserTask"" } } ]"
+			});
+
+			// Assert
+			string text = SerializeToolText(callResult);
+			text.Should().Contain("PrePage1",
+				because: "the refusal names the element the caller has to change");
+			text.Should().Contain("type 'preconfiguredPage'",
+				because: "the refusal must route the caller to the only element type that carries the page, its buttons and data sources");
+			text.Should().Contain("get-process-page-facts",
+				because: "the refusal says where the page's buttons and data sources are read from");
+			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}));
+			described.Elements.Should().NotContain(element => element.Name == "PrePage1",
+				because: "a refused operation aborts the whole edit, so no unconfigured page element is saved");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
 	[Description("Over the real MCP path: mapping a type-incompatible source (an Integer process parameter) onto the Perform task's Lookup->Contact performer parameter is rejected with the incompatible-types diagnosis and the edit is not persisted.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects a type-incompatible mapping onto the performer lookup")]
@@ -3605,29 +3651,6 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		response.Success.Should().BeTrue(because: $"arrange: the registry view must be readable to pick {schemaName}'s row");
 		JsonElement row = response.Rows!.Value.EnumerateArray().Single();
 		return (row.GetProperty("Id").GetString()!, row.GetProperty("UId").GetString()!);
-	}
-
-	/// <summary>
-	/// Removes the process the test built. Called from finally, so a failed or timed-out delete is reported, not
-	/// thrown: an exception here would replace the assertion failure the test was already reporting. A remote
-	/// delete-schema can outlast the CLI's default request timeout, so the request gets the same ten minutes the
-	/// cleanup does.
-	/// </summary>
-	private static async Task DeleteProcessAsync(string environmentName, string processName) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(10));
-		try {
-			ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings,
-				["delete-schema", processName, "--remote", "-e", environmentName, "--timeout", "600000"],
-				cancellationToken: cleanup.Token);
-			if (deleted.ExitCode != 0) {
-				await TestContext.Error.WriteLineAsync(
-					$"Could not delete '{processName}': {deleted.StandardOutput} {deleted.StandardError}");
-			}
-		} catch (OperationCanceledException) {
-			await TestContext.Error.WriteLineAsync($"Deleting '{processName}' timed out; it stays on the stand.");
-		}
 	}
 
 	private static string BuildSchemaReferenceDescriptor(string processName) =>
