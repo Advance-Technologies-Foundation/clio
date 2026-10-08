@@ -90,7 +90,7 @@ internal sealed class GuidanceGetTool {
 	/// </remarks>
 	private static string? FirstPartyLibraryVersion(GuidanceArticle? article) =>
 		string.Equals(article?.LibraryId, CuratedKnowledgeSourceDefaults.LibraryId, StringComparison.Ordinal)
-			? article!.LibraryVersion
+			? article.LibraryVersion
 			: null;
 
 	private GuidanceGetResponse ResolveGuidance(GuidanceGetArgs args) {
