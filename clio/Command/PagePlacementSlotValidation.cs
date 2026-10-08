@@ -30,6 +30,7 @@ internal static class PagePlacementSlotValidation {
 	private const string NameKey = "name";
 	private const string ParentNameKey = "parentName";
 	private const string PropertyNameKey = "propertyName";
+	private const string NameToKey = "nameTo";
 	private static readonly HashSet<string> PlacementOperations =
 		new(StringComparer.Ordinal) { PageViewConfigDiffVerbs.Insert, PageViewConfigDiffVerbs.Move };
 
@@ -76,7 +77,8 @@ internal static class PagePlacementSlotValidation {
 					index,
 					operation.Value<string>(OperationKey),
 					StringValue(operation[NameKey]),
-					StringValue(operation[ParentNameKey])));
+					StringValue(operation[ParentNameKey]),
+					StringValue(operation[NameToKey])));
 			}
 		}
 		return found;
@@ -113,14 +115,15 @@ internal static class PagePlacementSlotValidation {
 
 	/// <summary>
 	/// Whether a differ error is the not-a-container rejection this placement causes (the differ names the
-	/// placement's parent).
+	/// placement's <c>nameTo</c> when it is set, otherwise its <c>parentName</c>).
 	/// </summary>
 	internal static bool IsRejectionOf(SlotlessPlacement placement, string differError) =>
 		string.Equals(differError, NotContainerMessage(placement), StringComparison.Ordinal);
 
 	private static string NotContainerMessage(SlotlessPlacement placement) =>
 		string.Format(System.Globalization.CultureInfo.InvariantCulture,
-			JsonDiffApplierResources.NotContainerItemInsertException, placement.ParentName);
+			JsonDiffApplierResources.NotContainerItemInsertException,
+			string.IsNullOrEmpty(placement.NameTo) ? placement.ParentName : placement.NameTo);
 
 	private static JArray ReadViewConfigDiff(string body) {
 		if (string.IsNullOrWhiteSpace(body)) {
@@ -142,4 +145,6 @@ internal static class PagePlacementSlotValidation {
 /// <param name="Operation">The operation verb (<c>insert</c> or <c>move</c>).</param>
 /// <param name="Name">The element the operation places.</param>
 /// <param name="ParentName">The parent it names.</param>
-internal sealed record SlotlessPlacement(int Index, string Operation, string Name, string ParentName);
+/// <param name="NameTo">The operation's <c>nameTo</c>, when it is a string; the differ names it instead of
+/// <paramref name="ParentName"/> in its rejection.</param>
+internal sealed record SlotlessPlacement(int Index, string Operation, string Name, string ParentName, string NameTo = null);

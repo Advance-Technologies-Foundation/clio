@@ -322,6 +322,7 @@
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
 				out PageAppendProjection projection, out response)) return false;
+			if (!TryValidatePlacementSlots(bodyToWrite, IsAppendMode(options), out response)) return false;
 			if (!TryValidateParents(bodyToWrite, context, out response)) return false;
 			// Captured BEFORE UpdateSchemaBody overwrites `body` with the resolved one.
 			IReadOnlyList<string> downgradeWarnings =
@@ -336,19 +337,23 @@
 			return true;
 		}
 
+		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
+		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
+		// neither render nor be read back by get-page.
+		private static bool TryValidatePlacementSlots(string body, bool isAppend, out PageUpdateResponse response) {
+			response = null;
+			SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+			if (slotResult.IsValid) return true;
+			response = new PageUpdateResponse {
+				Success = false,
+				Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors)
+					+ (isAppend ? PlacementSlotFailureHint : string.Empty)
+			};
+			return false;
+		}
+
 		private bool TryValidateParents(string body, EditableSchemaContext context, out PageUpdateResponse response) {
 			response = null;
-			// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check below does not)
-			// and on update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page
-			// can then neither render nor be read back by get-page.
-			SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
-			if (!slotResult.IsValid) {
-				response = new PageUpdateResponse {
-					Success = false,
-					Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors) + PlacementSlotFailureHint
-				};
-				return false;
-			}
 			if (context.SchemaType == PageSchemaType.Mobile) return true;
 			JArray candidate = PageParentNameValidation.ReadDiff(body);
 			if (!candidate.OfType<JObject>().Any(x => (x.Value<string>("operation") is "insert" or "move" or "set")
@@ -388,6 +393,7 @@
 			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
 			if (!IsAppendMode(options)) {
+				if (!TryValidatePlacementSlots(options.Body, isAppend: false, out response)) return false;
 				if (!TryValidateParents(options.Body, context, out response)) return false;
 				// Parent references require the target hierarchy even during a dry run. No schema is saved.
 				// Caption checks remain fragment-scoped because replace does not fetch localizableStrings.

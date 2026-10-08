@@ -144,6 +144,7 @@ public sealed class PagePlacementSlotValidationTests {
 [Property("Module", "Command")]
 public sealed class PagePlacementSlotSaveGuardTests {
 	private const string Uid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+	private const string StoredSlotlessMove = "[{\"operation\":\"move\",\"name\":\"Profile\",\"parentName\":\"Feed\",\"index\":0}]";
 	private ServiceProvider _provider;
 	private IApplicationClient _client;
 	private IPageDesignerHierarchyClient _hierarchy;
@@ -185,12 +186,6 @@ public sealed class PagePlacementSlotSaveGuardTests {
 	[TearDown]
 	public void TearDown() => _provider?.Dispose();
 
-	internal IApplicationClient Client => _client;
-
-	internal PageUpdateCommand Command => _command;
-
-	internal void ArrangeFor(bool mobile, string storedDiff) => Arrange(mobile, storedDiff);
-
 	[TestCase(true, "replace", false)]
 	[TestCase(true, "replace", true)]
 	[TestCase(true, "append", false)]
@@ -215,6 +210,11 @@ public sealed class PagePlacementSlotSaveGuardTests {
 		response.Error.Should().StartWith(PageUpdateCommand.PlacementSlotFailurePrefix)
 			.And.Contain("move 'Profile'").And.Contain("propertyName",
 				because: "the refusal names the operation and the missing slot instead of 'Value cannot be null'");
+		if (mode == "append") {
+			response.Error.Should().Contain("In append mode", because: "only an append merges the stored body into the write");
+		} else {
+			response.Error.Should().NotContain("In append mode", because: "in replace mode the operation comes only from the caller's body");
+		}
 		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -239,29 +239,12 @@ public sealed class PagePlacementSlotSaveGuardTests {
 		_client.Received().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
-}
-
-/// <summary>
-/// GH-1752: append mode over a page an older clio saved with a placement without a slot.
-/// </summary>
-[TestFixture]
-[Category("Unit")]
-[Property("Module", "Command")]
-public sealed class PagePlacementSlotAppendRepairTests {
-	private const string StoredSlotlessMove = "[{\"operation\":\"move\",\"name\":\"Profile\",\"parentName\":\"Feed\",\"index\":0}]";
-	private PagePlacementSlotSaveGuardTests _guard;
-
-	[SetUp]
-	public void SetUp() => _guard = new PagePlacementSlotSaveGuardTests();
-
-	[TearDown]
-	public void TearDown() => _guard.TearDown();
 
 	[Test]
 	[Description("An append that re-sends the stored move with its propertyName replaces the broken operation and saves - the repair path the get-page warning points to.")]
 	public void TryUpdatePage_ShouldSave_WhenAppendRepairsStoredMove() {
 		// Arrange
-		_guard.ArrangeFor(mobile: true, storedDiff: StoredSlotlessMove);
+		Arrange(mobile: true, storedDiff: StoredSlotlessMove);
 		var options = new PageUpdateOptions {
 			SchemaName = "UsrProof", Mode = "append",
 			Body = PagePlacementSlotValidationTests.MobileBody(
@@ -269,11 +252,11 @@ public sealed class PagePlacementSlotAppendRepairTests {
 		};
 
 		// Act
-		bool result = _guard.Command.TryUpdatePage(options, out PageUpdateResponse response);
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		// Assert
 		result.Should().BeTrue(because: "the incoming move has the same identity and replaces the stored one: " + response.Error);
-		_guard.Client.Received().ExecutePostRequest(
+		_client.Received().ExecutePostRequest(
 			Arg.Is<string>(x => x.EndsWith("SaveSchema")),
 			Arg.Is<string>(payload => payload.Contains("propertyName") && payload.Contains("Profile")),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -283,7 +266,7 @@ public sealed class PagePlacementSlotAppendRepairTests {
 	[Description("An unrelated append onto a page whose stored body has a placement without a slot is refused, and the message explains how to repair the stored operation.")]
 	public void TryUpdatePage_ShouldRejectWithRepairHint_WhenStoredBodyHasSlotlessMove() {
 		// Arrange
-		_guard.ArrangeFor(mobile: true, storedDiff: StoredSlotlessMove);
+		Arrange(mobile: true, storedDiff: StoredSlotlessMove);
 		var options = new PageUpdateOptions {
 			SchemaName = "UsrProof", Mode = "append",
 			Body = PagePlacementSlotValidationTests.MobileBody(
@@ -291,14 +274,14 @@ public sealed class PagePlacementSlotAppendRepairTests {
 		};
 
 		// Act
-		bool result = _guard.Command.TryUpdatePage(options, out PageUpdateResponse response);
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		// Assert
 		result.Should().BeFalse(because: "the merged body still carries the stored move the platform rejects");
 		response.Error.Should().Contain("move 'Profile'", because: "the refusal names the stored operation");
 		response.Error.Should().Contain("stored on the page",
 			because: "a caller whose fragment is valid must learn that the defect is in the stored body and how to fix it");
-		_guard.Client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")),
+		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 }
@@ -370,6 +353,23 @@ public sealed class PageGetCommandSlotlessPlacementTests {
 			because: "the skipped move leaves the element where the template placed it");
 		response.Raw.Body.Should().Contain("\"move\"", because: "the editable body is returned unchanged so the caller can fix it");
 		response.BaseViewModelConfig.Should().NotBeNull(because: "the replace-mode base is still resolved for validation");
+	}
+
+	[Test]
+	[Description("A move without a slot that also names nameTo is recovered too: the differ names nameTo, not parentName, in its rejection.")]
+	public void TryGetPage_ShouldReadPageWithWarning_WhenSlotlessMoveNamesNameTo() {
+		// Arrange
+		PageGetCommand command = CreateCommand(
+			"[{\"operation\":\"move\",\"name\":\"Profile\",\"parentName\":\"Feed\",\"nameTo\":\"Main\",\"index\":0}]");
+		var options = new PageGetOptions { SchemaName = SchemaName, Environment = "dev" };
+
+		// Act
+		bool ok = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the rejection names nameTo and must still be matched to the slotless move: " + response.Error);
+		response.Warnings.Should().ContainSingle(warning => warning.Contains("(move 'Profile')"),
+			because: "the skipped move is reported");
 	}
 
 	[Test]

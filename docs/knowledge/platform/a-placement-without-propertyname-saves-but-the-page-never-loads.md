@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/JsonDiffApplier.cs
   - clio/Command/PageGetOptions.cs
   - clio/Command/PageUpdateOptions.cs
-ticket: GH-1752
+ticket: ENG-102501
 date: 2026-10-07
 ---
 
@@ -26,7 +26,7 @@ every `JsonDiffApplierException` handler. That is why `get-page` answered
 `Value cannot be null. (Parameter 'key')` in issue #1752.
 
 **What breaks if you ignore it** — the save reports success and the page is dead in the designer and
-at runtime. The rule is therefore mandatory on every save path (`PageUpdateCommand.TryValidateParents`,
+at runtime. The rule is therefore mandatory on every save path (`PageUpdateCommand.TryValidatePlacementSlots`,
 also behind `validate=false`) and in `validate-page`. Do not "fix" it by defaulting the slot to
 `items`: the platform does not, so a clio that defaulted would resolve a bundle the platform refuses
 to render. `get-page` skips such an operation only when the strict build fails with exactly that
