@@ -246,7 +246,7 @@ public sealed class TelemetryService : ITelemetryService
 			? DefaultTelemetryRoot
 			: telemetryRoot;
 		_logger = logger ?? NullLogger<TelemetryService>.Instance;
-		_servedContentMeter = servedContentMeter ?? NullServedContentMeter.Instance;
+		_servedContentMeter = servedContentMeter;
 	}
 
 	/// <inheritdoc />
@@ -450,7 +450,7 @@ public sealed class TelemetryService : ITelemetryService
 	/// <summary>
 	/// Wire key of the guidance library version stamped beside the served-content counters.
 	/// </summary>
-	private const string GuidanceLibraryVersionAttribute = "guidance_library_version";
+	internal const string GuidanceLibraryVersionAttribute = "guidance_library_version";
 
 	/// <summary>
 	/// The served-content counters clio stamps on an event: what this process served the agent so far.
@@ -600,7 +600,7 @@ public sealed class TelemetryService : ITelemetryService
 	/// </remarks>
 	private void AddServedContentAttributes(List<OpenTelemetryAttribute> attributes)
 	{
-		if (!_servedContentMeter.TryGetSnapshot(out ServedContentSnapshot served)) {
+		if (_servedContentMeter is null || !_servedContentMeter.TryGetSnapshot(out ServedContentSnapshot served)) {
 			return;
 		}
 		foreach ((string name, long value) in ServedContentFields(served)) {
