@@ -102,12 +102,8 @@ public sealed class ToolContractGetTool {
 		RequestContext<CallToolRequestParams>? requestContext = null) {
 		ToolContractGetResponse response = ResolveContracts(args, requestContext);
 		// ENG-100157: metered on the way out, so the index, a fitted batch, a full batch and a refusal are all
-		// counted at the size the agent receives. Not for the legacy CAADT 1.4.0 fallback client: it fetches
-		// the full catalog for its own argument validation in a fresh process per call, the agent never
-		// reads it, and counting it would stamp a session that read only a catalog on that client's events.
-		if (_servedContentMeter?.IsCounting == true && !IsLegacyStdioClient(requestContext?.Server?.ClientInfo)) {
-			_servedContentMeter.RecordContract(McpResultSize.Of(response));
-		}
+		// counted at the size the agent actually receives.
+		_servedContentMeter?.RecordContract(McpResultSize.Of(response));
 		return response;
 	}
 

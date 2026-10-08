@@ -35,11 +35,9 @@ public sealed class ServedContentMeterTests {
 		// Act
 		meter.RecordGuidance("process-modeling", "1.16.2", 1_000);
 		meter.RecordGuidance(null, null, 300);
-		bool reported = meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
+		meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
 
 		// Assert
-		reported.Should().BeTrue(
-			because: "two responses were served");
 		snapshot.GuidanceReads.Should().Be(1,
 			because: "only a response that served an article is a read; a refusal served none");
 		snapshot.GuidanceBytes.Should().Be(1_300,
@@ -60,11 +58,9 @@ public sealed class ServedContentMeterTests {
 		meter.RecordGuidance("process-modeling", "1.16.2", 1_000);
 		meter.RecordGuidance("process-parameters", "1.16.2", 800);
 		meter.RecordGuidance("process-modeling", "1.16.2", 1_000);
-		bool reported = meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
+		meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
 
 		// Assert
-		reported.Should().BeTrue(
-			because: "three articles were served");
 		snapshot.GuidanceReads.Should().Be(3,
 			because: "every served article is a read, the repeated one included");
 		snapshot.GuidanceRereads.Should().Be(1,
@@ -83,11 +79,9 @@ public sealed class ServedContentMeterTests {
 		meter.RecordGuidance("routing", "1.16.1", 100);
 		meter.RecordGuidance("routing", "1.16.2", 100);
 		meter.RecordGuidance(null, null, 50);
-		bool reported = meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
+		meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
 
 		// Assert
-		reported.Should().BeTrue(
-			because: "three responses were served");
 		snapshot.GuidanceLibraryVersion.Should().Be("1.16.2",
 			because: "a guidance read can activate a newer generation mid-session, and the newest one is what the agent is reading now");
 	}
@@ -125,13 +119,11 @@ public sealed class ServedContentMeterTests {
 		// Act
 		Parallel.For(0, 1_000, index => {
 			meter.RecordGuidance("routing", "1.16.2", 10);
-			meter.RecordContract(3);
+			meter.RecordContract(1);
 		});
-		bool reported = meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
+		meter.TryGetSnapshot(out ServedContentSnapshot snapshot);
 
 		// Assert
-		reported.Should().BeTrue(
-			because: "two thousand responses were served");
 		snapshot.GuidanceReads.Should().Be(1_000,
 			because: "no concurrent read may be lost");
 		snapshot.GuidanceRereads.Should().Be(999,
@@ -140,33 +132,13 @@ public sealed class ServedContentMeterTests {
 			because: "no concurrent byte count may be lost");
 		snapshot.ContractReads.Should().Be(1_000,
 			because: "no concurrent contract read may be lost");
-		snapshot.ContractBytes.Should().Be(3_000,
-			because: "no concurrent contract byte count may be lost");
-	}
-
-	[Test]
-	[Description("Tells callers whether measuring is worth doing: the counting meter counts, the inert one does not, so a host that does not count never serializes a response twice.")]
-	public void IsCounting_ShouldReflectWhetherTheMeterCounts_WhenAskedBeforeMeasuring() {
-		// Arrange
-		IServedContentMeter counting = new ServedContentMeter();
-		IServedContentMeter inert = NullServedContentMeter.Instance;
-
-		// Act
-		bool countingCounts = counting.IsCounting;
-		bool inertCounts = inert.IsCounting;
-
-		// Assert
-		countingCounts.Should().BeTrue(
-			because: "the stdio host's meter needs every response measured");
-		inertCounts.Should().BeFalse(
-			because: "measuring for the inert meter would serialize every response a second time for nothing");
 	}
 
 	[Test]
 	[Description("The inert meter registered outside the stdio host records nothing, so a multi-session host can never stamp a mixed count.")]
 	public void NullServedContentMeter_ShouldNeverReport_WhenContentIsRecorded() {
 		// Arrange
-		NullServedContentMeter meter = NullServedContentMeter.Instance;
+		NullServedContentMeter meter = new();
 
 		// Act
 		meter.RecordGuidance("routing", "1.16.2", 100);

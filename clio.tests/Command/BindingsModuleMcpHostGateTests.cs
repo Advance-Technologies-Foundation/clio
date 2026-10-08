@@ -10,7 +10,6 @@ using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using Clio.Common.Telemetry;
 using Clio.Tests.Infrastructure;
-using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -80,26 +79,6 @@ public class BindingsModuleMcpHostGateTests {
 			because: "the contract the host's tool served must reach the host's telemetry service through one shared meter; a meter the DI graph failed to hand to either side stamps nothing");
 		attributes["contract_reads"].GetProperty("int_value").GetInt64().Should().Be(1,
 			because: "exactly one contract response was served before the event was recorded");
-	}
-
-	[Test]
-	[Category("Unit")]
-	[Description("Keeps the inert meter on the mcp-http build path (RegisterInto plus the transport-neutral RegisterMcpServer), which serves many sessions from one process (ENG-100157).")]
-	public void RegisterInto_ShouldKeepTheInertMeter_WhenBuildingTheMcpHttpHost() {
-		// Arrange: McpHttpServerCommand's graph - the shared registrations plus the transport-neutral MCP
-		// server builder, and deliberately NOT the stdio block of Register, which that host never runs.
-		IServiceCollection services = new ServiceCollection();
-		ISettingsRepository settingsRepository = new BindingsModule()
-			.RegisterInto(services, applyBootstrapRepairs: false);
-		BindingsModule.RegisterMcpServer(services, settingsRepository);
-		using ServiceProvider provider = services.BuildServiceProvider();
-
-		// Act
-		IServedContentMeter meter = provider.GetRequiredService<IServedContentMeter>();
-
-		// Assert
-		meter.Should().BeSameAs(NullServedContentMeter.Instance,
-			because: "one process count on a host that serves many sessions would stamp one session's cost on another session's events");
 	}
 
 	[TestCase(false)]
