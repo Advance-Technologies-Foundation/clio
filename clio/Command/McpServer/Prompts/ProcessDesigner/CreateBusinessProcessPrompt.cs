@@ -22,7 +22,9 @@ public static class CreateBusinessProcessPrompt {
 		string packageName = null) =>
 		$"""
 		 Build a business process on Creatio environment `{environmentName}` with the `create-business-process` tool.
-		 Steps: (1) call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values;
+		 Steps: (1) call `list-user-tasks` for `{environmentName}` to discover valid `userTaskName` values —
+		 except `PreconfiguredPageUserTask` and `OpenEditPageUserTask`, which are built as `preconfiguredPage` /
+		 `openEditPage` elements because a generic `userTask` cannot carry their blocks;
 		 (2) read `get-guidance name=process-modeling` for the full descriptor contract — element types, flows,
 		 parameters (incl. `typeFromElement` to copy an element parameter's exact type, and a constant `value`
 		 default), the `mappings` target/source contract (including `sourceColumn`, which takes ONE column of a

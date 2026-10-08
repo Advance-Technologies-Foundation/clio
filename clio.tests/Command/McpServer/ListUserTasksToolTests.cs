@@ -72,10 +72,13 @@ public class ListUserTasksToolTests {
 		// Act & Assert
 		description.Should().Contain("PreconfiguredPageUserTask (Pre-configured page) is built ONLY as type preconfiguredPage",
 			because: "the description names the generic userTask route as the default, so the one task it is refused for must be named");
-		description.Should().Contain("REFUSED",
-			because: "the caller must learn that the generic route fails, not that it is merely second best");
-		description.Should().Contain("update it with install-process-builder rather than falling back to a generic userTask",
-			because: "the older-package advice must not send the caller back to a generic route that cannot carry the block");
+		description.Should().Contain("the generic route cannot carry that block and is REFUSED",
+			because: "the caller must learn that the generic route fails, not that it is merely second best - "
+				+ "and a bare word would stay green if another clause said REFUSED while this one was removed");
+		description.Should().Contain("EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask",
+			because: "the older-package fallback to a generic userTask must not send the caller to a route that builds a page-less element");
+		description.Should().Contain("fall back to a generic userTask named after the schema",
+			because: "the fallback stays for the tasks whose block a generic userTask CAN carry - Send email and Approval");
 	}
 
 	[Test]

@@ -61,8 +61,10 @@ public class ListUserTasksTool(
 		 + "accessRights block plus the element record filter - a generic userTask naming that schema IS accepted "
 		 + "and carries both, but does not survive a deployed CrtProcessBuilder that predates the element, which "
 		 + "discards the block and still answers success. If an environment rejects one of these types (\"Element type 'sendEmail' is not supported yet\"), its deployed "
-		 + "CrtProcessBuilder predates that element type: update it with install-process-builder rather than "
-		 + "falling back to a generic userTask, which cannot carry the block. Requires the "
+		 + "CrtProcessBuilder predates that element type: fall back to a generic userTask named after the schema, "
+		 + "which older packages do build - EXCEPT for PreconfiguredPageUserTask and OpenEditPageUserTask, whose "
+		 + "generic element has no page and fails at run time; for those, update the package with "
+		 + "install-process-builder instead. Requires the "
 		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment. Install it with install-process-builder.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args

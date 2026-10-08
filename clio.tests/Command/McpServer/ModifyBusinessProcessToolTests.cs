@@ -46,9 +46,9 @@ public class ModifyBusinessProcessToolTests {
 			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
 
 		// Act & Assert
-		description.Should().Contain("preconfiguredPage? (same block as create-business-process",
-			because: "addElement applies the block, so the contract has to list it");
-		description.Should().Contain("userTask naming PreconfiguredPageUserTask is REFUSED",
+		description.Should().Contain("openEditPage?, preconfiguredPage? (each only on its own element type",
+			because: "addElement applies both page blocks, and each is valid only on its own element type");
+		description.Should().Contain("a generic userTask cannot carry either page block, and one naming PreconfiguredPageUserTask is REFUSED",
 			because: "the caller must learn the generic route is refused before the server tells it");
 	}
 

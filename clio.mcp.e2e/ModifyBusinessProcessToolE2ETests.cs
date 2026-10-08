@@ -13,6 +13,7 @@ using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -3194,30 +3195,41 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpGenericPrePageAddE2e{Guid.NewGuid():N}";
-		await CreateProcessAsync(context, processName, BuildPerformTaskDescriptor(processName));
-
-		// Act
-		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+		// Built here rather than through CreateProcessAsync, so an outdated sandbox package is reported as such
+		// instead of as a failed arrange.
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = @"[ { ""op"": ""addElement"", ""element"": { ""name"": ""PrePage1"", ""type"": ""userTask"", ""userTaskName"": ""PreconfiguredPageUserTask"" } } ]"
+			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-
-		// Assert
-		string text = SerializeToolText(callResult);
-		text.Should().Contain("PrePage1",
-			because: "the refusal names the element the caller has to change");
-		text.Should().Contain("type 'preconfiguredPage'",
-			because: "the refusal must route the caller to the only element type that carries the page, its buttons and data sources");
-		text.Should().Contain("get-process-page-facts",
-			because: "the refusal says where the page's buttons and data sources are read from");
-		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.88");
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			// Act
+			CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName
-			}));
-		described.Elements.Should().NotContain(element => element.Name == "PrePage1",
-			because: "a refused operation aborts the whole edit, so no unconfigured page element is saved");
+				["process-name"] = processName,
+				["operations"] = @"[ { ""op"": ""addElement"", ""element"": { ""name"": ""PrePage1"", ""type"": ""userTask"", ""userTaskName"": ""PreconfiguredPageUserTask"" } } ]"
+			});
+
+			// Assert
+			string text = SerializeToolText(callResult);
+			text.Should().Contain("PrePage1",
+				because: "the refusal names the element the caller has to change");
+			text.Should().Contain("type 'preconfiguredPage'",
+				because: "the refusal must route the caller to the only element type that carries the page, its buttons and data sources");
+			text.Should().Contain("get-process-page-facts",
+				because: "the refusal says where the page's buttons and data sources are read from");
+			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}));
+			described.Elements.Should().NotContain(element => element.Name == "PrePage1",
+				because: "a refused operation aborts the whole edit, so no unconfigured page element is saved");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
 	}
 
 	[Test]
@@ -3639,29 +3651,6 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		response.Success.Should().BeTrue(because: $"arrange: the registry view must be readable to pick {schemaName}'s row");
 		JsonElement row = response.Rows!.Value.EnumerateArray().Single();
 		return (row.GetProperty("Id").GetString()!, row.GetProperty("UId").GetString()!);
-	}
-
-	/// <summary>
-	/// Removes the process the test built. Called from finally, so a failed or timed-out delete is reported, not
-	/// thrown: an exception here would replace the assertion failure the test was already reporting. A remote
-	/// delete-schema can outlast the CLI's default request timeout, so the request gets the same ten minutes the
-	/// cleanup does.
-	/// </summary>
-	private static async Task DeleteProcessAsync(string environmentName, string processName) {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(10));
-		try {
-			ClioCliCommandResult deleted = await ClioCliCommandRunner.RunAsync(settings,
-				["delete-schema", processName, "--remote", "-e", environmentName, "--timeout", "600000"],
-				cancellationToken: cleanup.Token);
-			if (deleted.ExitCode != 0) {
-				await TestContext.Error.WriteLineAsync(
-					$"Could not delete '{processName}': {deleted.StandardOutput} {deleted.StandardError}");
-			}
-		} catch (OperationCanceledException) {
-			await TestContext.Error.WriteLineAsync($"Deleting '{processName}' timed out; it stays on the stand.");
-		}
 	}
 
 	private static string BuildSchemaReferenceDescriptor(string processName) =>
