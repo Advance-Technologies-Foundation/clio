@@ -41,7 +41,7 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body without saving. " + PageBodyAstLinter.DesignerSafetySummary + "Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget config. Data-source bindings are checked only against the body's own model config; update-page and sync-pages also read the inherited one. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
+	[Description("Validates a Freedom UI page body without saving. " + PageBodyAstLinter.DesignerSafetySummary + "Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget config. Never rejects a data-source binding: one the body leaves undeclared only warns; update-page and sync-pages check it. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,
@@ -89,12 +89,9 @@ public sealed class PageValidateTool(
 		if (!runProcessResult.IsValid) {
 			result = FoldInContentErrors(result, runProcessResult);
 		}
-		// No environment here, so no inherited base: only a body that settles every binding itself is decided, the
-		// rest is reported as not checked.
+		// No environment here, so no inherited base: the check cannot reject, it only warns about bindings the body
+		// does not declare itself.
 		SchemaValidationResult dataSourceResult = dataSourceValidator.Validate(body, resolveTemplateModelConfig: null);
-		if (!dataSourceResult.IsValid) {
-			result = FoldInContentErrors(result, dataSourceResult);
-		}
 		if (dataSourceResult.Warnings.Count > 0) {
 			result = new PageSyncValidationResult {
 				MarkersOk = result.MarkersOk, JsSyntaxOk = result.JsSyntaxOk, ContentOk = result.ContentOk,

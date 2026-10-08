@@ -215,22 +215,161 @@ public sealed class PageDataSourceReferenceValidatorTests {
 	}
 
 	[Test]
-	[Description("When the inherited base is unknown the check passes and warns that it did not run.")]
-	public void Validate_BaseUnavailable_PassesWithWarning() {
+	[Description("With no base available (validate-page) the check cannot reject; it passes and says the bindings were not checked.")]
+	public void Validate_NoBaseAvailable_PassesWithWarning() {
 		// Arrange
 		PageDataSourceReferenceValidator validator = CreateValidator();
 
 		// Act
-		SchemaValidationResult withoutResolver = validator.Validate(MobileBodyWithoutDataSource, null);
-		SchemaValidationResult withFailedRead = validator.Validate(MobileBodyWithoutDataSource, () => null);
+		SchemaValidationResult result = validator.Validate(MobileBodyWithoutDataSource, null);
 
 		// Assert
-		withoutResolver.IsValid.Should().BeTrue(
-			because: "validate-page has no environment and must not reject a source the template may declare");
-		withFailedRead.IsValid.Should().BeTrue(because: "a failed base read must not turn into a false rejection");
-		withFailedRead.Warnings.Should().ContainSingle(because: "a skipped check must be visible to the caller")
+		result.IsValid.Should().BeTrue(because: "validate-page has no environment and must not reject a source the template may declare");
+		result.Warnings.Should().ContainSingle(because: "a check that could not run must be visible to the caller")
 			.Which.Should().Contain("PDS", because: "the warning names the unchecked data source")
-			.And.Contain("were not checked", because: "the caller must not read the pass as a clean result");
+			.And.Contain("no inherited modelConfig is available", because: "validate-page never tried to read a base")
+			.And.NotContain("could not be read", because: "nothing failed: there was no base to read");
+	}
+
+	[Test]
+	[Description("When reading the base fails the check passes and says the bindings were not checked.")]
+	public void Validate_BaseReadFailed_PassesWithWarning() {
+		// Arrange
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(MobileBodyWithoutDataSource, () => null);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "a failed base read must not turn into a false rejection");
+		result.Warnings.Should().ContainSingle(because: "a skipped check must be visible to the caller")
+			.Which.Should().Contain("were not checked", because: "the caller must not read the pass as a clean result")
+			.And.Contain("could not be read", because: "the warning says why the check did not run");
+	}
+
+	[Test]
+	[Description("A body that binds to a data source it does not declare needs the inherited base.")]
+	public void NeedsResolvedBase_BodyWithUndeclaredReference_IsTrue() {
+		// Arrange
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		bool needsBase = validator.NeedsResolvedBase(MobileBodyWithoutDataSource);
+
+		// Assert
+		needsBase.Should().BeTrue(because: "PDS is bound but declared only in the page's own body, which a replace overwrites");
+	}
+
+	[Test]
+	[Description("A remove with properties on a data source strips those keys only; the data source stays declared.")]
+	public void Validate_RemovePropertiesFromDataSource_KeepsItDeclared() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "remove", "path": ["dataSources", "PDS"], "properties": ["scopes"] } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": { "scopes": [] } } }""");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the differ routes a remove with properties to the property group and keeps PDS");
+	}
+
+	[Test]
+	[Description("Removing a key from [\"dataSources\"] runs after inserts, so it undoes an insert of the same name.")]
+	public void Validate_RemovePropertiesAfterInsert_LeavesSourceUndeclared() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "remove", "path": ["dataSources"], "properties": ["PDS"] }, { "operation": "insert", "path": ["dataSources"], "propertyName": "PDS", "values": { "type": "crt.EntityDataSource" } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": {} }""");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the property remove runs after the insert and deletes PDS again")
+			.Which.Should().Contain("'PDS'", because: "the error must name the removed data source");
+	}
+
+	[Test]
+	[Description("The differ dispatches on the exact operation string, so a \"Merge\" declares nothing.")]
+	public void Validate_OperationKindWithWrongCase_IsNotADeclaration() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "Merge", "path": [], "values": { "dataSources": { "PDS": {} } } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "a Merge operation is a no-op in the differ")
+			.Which.Should().Contain("'PDS'", because: "the error must name the data source the no-op meant to declare");
+	}
+
+	[Test]
+	[Description("A set on [\"dataSources\"] replaces the whole set, so a source only the base declared is gone.")]
+	public void Validate_SetOnDataSources_ReplacesTheSet() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "set", "path": ["dataSources"], "values": { "OtherDS": {} } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": {} } }""");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the set removes the dataSources object and inserts only OtherDS")
+			.Which.Should().Contain("'PDS'", because: "the error must name the data source the set dropped");
+	}
+
+	[Test]
+	[Description("An attribute inserted under propertyName is named by that propertyName in the error.")]
+	public void Validate_InsertedAttribute_IsLabelledByPropertyName() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "insert", "path": ["attributes"], "propertyName": "UsrName",
+				"values": { "modelConfig": { "path": "PDS.UsrName" } } } ] }
+			""";
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the inserted attribute binds to the missing PDS")
+			.Which.Should().Contain("attribute 'UsrName'", because: "the agent must be pointed at the attribute it inserted")
+			.And.NotContain("attribute 'attributes'", because: "the path segment is not the attribute's name");
+	}
+
+	[Test]
+	[Description("Line separators and bidi controls in a body-sourced name are flattened before the name reaches the diagnostic.")]
+	public void Validate_UnicodeSeparatorsInReferrer_AreFlattened() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": {
+				"Usr\u2028Na\u202Eme": { "modelConfig": { "path": "PDS.UsrName" } } } } ] }
+			""";
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the one undeclared PDS reference is reported")
+			.Which.Should().Contain("attribute 'Usr Na me'", because: "U+2028 and U+202E are replaced with spaces")
+			.And.NotContain("\u2028", because: "a line separator must not split the diagnostic in the MCP transcript")
+			.And.NotContain("\u202E", because: "a bidi override must not reorder the diagnostic");
 	}
 
 	[Test]

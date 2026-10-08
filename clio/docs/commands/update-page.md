@@ -127,8 +127,8 @@ name instead of trying to edit a non-existent local `insert`.
   `SCHEMA_MODEL_CONFIG_DIFF`, or the mobile `modelConfigDiff`) from `get-page` `raw.body`. A non-empty
   `SCHEMA_MODEL_CONFIG_DIFF` makes `SCHEMA_MODEL_CONFIG` ignored. `mode: "append"`, whose base includes the page's own
   body, works only on a page in diff form: a generated web form page is full-config and append refuses it. When the inherited `modelConfig` cannot be read the check passes and the
-  response warns that it did not run; `validate-page` has no environment, so it decides only bodies that declare
-  every binding themselves.
+  response warns that it did not run; `validate-page` has no environment, so it never rejects and warns about
+  bindings the body does not declare itself.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.

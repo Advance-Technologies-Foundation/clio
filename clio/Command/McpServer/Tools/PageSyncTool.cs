@@ -73,7 +73,7 @@ public sealed class PageSyncTool(
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
-	             "On MOBILE bodies it additionally rejects a viewConfigDiff insert/set whose component `type` sits on the operation object instead of inside `values` (the differ discards it and the element never renders), and a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or `items` (every shipped form template populates those, so the differ strips the property and nothing is created; use one `insert` per child into a page container — clio validates against an empty base, so a bare Scaffold whose slots are empty is refused too), warns on the same authoring in any other slot, and warns when a `crt.Button` is inserted into `Scaffold`/`actions` (it saves but does not appear on the mobile designer canvas — use a page container's `items` with a `layoutConfig`). On web and mobile bodies it also rejects a binding to a data source neither the body nor the inherited modelConfig declares — sync-pages replaces the own body, so keep its model config (`dataSources`, `primaryDataSourceName`) from get-page `raw.body`; see get-guidance `mobile-page-modification`. " +
+	             "On MOBILE bodies it additionally rejects a viewConfigDiff insert/set whose component `type` sits on the operation object instead of inside `values` (the differ discards it and the element never renders), and a `merge` whose `values` authors child elements on `Scaffold`'s `actions`, `leading` or `items` (every shipped form template populates those, so the differ strips the property and nothing is created; use one `insert` per child into a page container — clio validates against an empty base, so a bare Scaffold whose slots are empty is refused too), warns on the same authoring in any other slot, and warns when a `crt.Button` is inserted into `Scaffold`/`actions` (it saves but does not appear on the mobile designer canvas — use a page container's `items` with a `layoutConfig`). On web and mobile bodies it also rejects a binding to a data source neither the body nor the inherited modelConfig declares — sync-pages replaces the own body, so keep its model config (`dataSources`, `primaryDataSourceName`) from get-page `raw.body` (get-guidance `page-modification`); mobile rules: get-guidance `mobile-page-modification`. " +
 	             "Before editing page bodies or resource payloads, call get-guidance with name `page-modification` and use its pre-edit checklist to select specialized page-authoring guides. " +
 	             "For conditional visibility, editability, required state based on field values or conditional set and clear value. Also filtering of lookups, based on condition or valur from other field (e.g. \"when Status=Closed, hide Description\"), use business rules instead of writing handlers or validators in page body \u2014 call get-guidance with name `business-rules` to learn more. " +
 	             "Section authoring rules for the body payload: " +
@@ -277,7 +277,7 @@ public sealed class PageSyncTool(
 		// same-tenant sync-pages/update-page calls block on, against this tool's lock-time goal. Resolving them here
 		// keeps the critical section network-free. Best-effort: a failed resolution is omitted; the oracle falls back
 		// to its seeded base and the data-source check passes with a warning.
-		(IReadOnlyDictionary<int, (string? Vmc, string? Mc)> preResolvedValidationBases, IReadOnlySet<int> degradedValidationBaseIndices) =
+		(IReadOnlyDictionary<int, (string? Vmc, string? Mc)> preResolvedValidationBases, IReadOnlySet<int> degradedOracleBaseIndices) =
 			validate
 				? PreResolveValidationBases(pages, pendingIndices, args.EnvironmentName)
 				: (new Dictionary<int, (string? Vmc, string? Mc)>(), new HashSet<int>());
@@ -298,7 +298,7 @@ public sealed class PageSyncTool(
 					prePass) {
 					EnvironmentName = args.EnvironmentName,
 					PreResolvedValidationBases = preResolvedValidationBases,
-					DegradedValidationBaseIndices = degradedValidationBaseIndices
+					DegradedOracleBaseIndices = degradedOracleBaseIndices
 				};
 				try {
 					foreach (int idx in pendingIndices) {
@@ -558,7 +558,7 @@ public sealed class PageSyncTool(
 			PreResolvedValidationBase = ctx.PreResolvedValidationBases.TryGetValue(index, out (string? Vmc, string? Mc) validationBase)
 				? validationBase
 				: null,
-			ValidationBaseResolutionDegraded = ctx.DegradedValidationBaseIndices.Contains(index)
+			OracleBaseResolutionDegraded = ctx.DegradedOracleBaseIndices.Contains(index)
 		};
 		return SyncSinglePage(page, opOptions);
 	}
@@ -581,7 +581,7 @@ public sealed class PageSyncTool(
 
 		// Page indices whose mobile apply-oracle base was NEEDED but could NOT be resolved (the validation fell back to the
 		// permissive seeded stub) — surfaced as a per-page warning so the degraded case is not read as a clean pass.
-		public IReadOnlySet<int> DegradedValidationBaseIndices { get; init; } = new HashSet<int>();
+		public IReadOnlySet<int> DegradedOracleBaseIndices { get; init; } = new HashSet<int>();
 	}
 
 	private sealed record PageSyncPrePassResults(IReadOnlyList<PageSyncPrePassEntry> Entries);
@@ -617,7 +617,7 @@ public sealed class PageSyncTool(
 
 		// True when this page's mobile apply oracle NEEDED a base but resolution failed — SyncSinglePage adds a warning so the
 		// degraded validation (against the seeded stub) is visible in the per-page result.
-		public bool ValidationBaseResolutionDegraded { get; init; }
+		public bool OracleBaseResolutionDegraded { get; init; }
 	}
 
 	private PageSyncPageResult TryValidatePage(
@@ -791,11 +791,11 @@ public sealed class PageSyncTool(
 		if (!opOptions.Validate && page.Force == true) {
 			validationResult = AppendCommandWarnings(validationResult, [PageUpdateTool.ForceValidateAdvisory]);
 		}
-		if (opOptions.ValidationBaseResolutionDegraded) {
+		if (opOptions.OracleBaseResolutionDegraded) {
 			// The mobile apply-oracle base could not be pre-resolved, so the body was validated against the permissive seeded
 			// stub — surface that in the per-page result so a degraded validation is not read as a clean pass.
 			validationResult = AppendCommandWarnings(validationResult, [
-				$"Validation base for '{page.SchemaName}' could not be resolved; the body was validated against "
+				$"Mobile apply-oracle base for '{page.SchemaName}' could not be resolved; the body was validated against "
 					+ "a permissive seeded base, so a template-owned-array error may not have been caught. Re-run when "
 					+ "the environment/credentials are available to validate against the real base."
 			]);

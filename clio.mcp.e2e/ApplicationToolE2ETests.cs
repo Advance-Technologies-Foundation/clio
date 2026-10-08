@@ -625,6 +625,30 @@ public sealed class ApplicationToolE2ETests {
 		PageSyncPageResult resaved = resaveResponse.Pages.Should().ContainSingle(because: "one page was submitted").Subject;
 		resaved.Success.Should().BeTrue(
 			because: $"the page's own generated body declares every data source it binds, so the check must not reject it. Error: {resaved.Error}");
+
+		// Act 3: update-page append of a fragment that binds PDS (dry run, nothing is saved)
+		const string appendFragment = """
+			{ "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": { "UsrPdsProbe": { "modelConfig": { "path": "PDS.Id" } } } } ] }
+			""";
+		CallToolResult appendResult = await arrangeContext.Session.CallToolAsync(
+			PageUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["schema-name"] = mobileFormPage,
+					["body"] = appendFragment,
+					["mode"] = "append",
+					["dry-run"] = true
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse appendResponse = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(appendResult);
+
+		// Assert 3
+		appendResponse.Success.Should().BeTrue(
+			because: $"the append base includes the page's own body, which declares PDS, so the fragment is not rejected. Error: {appendResponse.Error}");
+		(appendResponse.Warnings ?? []).Should().NotContain(w => w.Contains("were not checked"),
+			because: "update-page read the append base, so the data-source check ran");
 	}
 
 	[Category("McpE2E.Sandbox")]
@@ -709,7 +733,26 @@ public sealed class ApplicationToolE2ETests {
 		rejected.Error.Should().Contain("Data source 'PDS'", because: "the web replace base has no PDS")
 			.And.Contain("SCHEMA_MODEL_CONFIG", because: "the web remedy names the web body sections");
 
-		// Act 2: read back, then the remedy the error names
+		// Act 1b: the same body through update-page replace
+		CallToolResult updateResult = await arrangeContext.Session.CallToolAsync(
+			PageUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["schema-name"] = formPage,
+					["body"] = bodyWithoutDataSource
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		PageUpdateResponse updateResponse = EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(updateResult);
+
+		// Assert 1b
+		updateResponse.Success.Should().BeFalse(because: "update-page replace overwrites the own body just like sync-pages");
+		updateResponse.Error.Should().Contain("Data source 'PDS'", because: "update-page runs the same data-source check")
+			.And.Contain("do not re-run with validate=false",
+				because: "the caveat must reach the final update-page envelope next to its generic escape-hatch hint");
+
+		// Act 2: read back (neither rejected write landed), then the remedy the error names
 		string bodyAfterRejection = await ReadOwnBodyAsync();
 		CallToolResult resaveResult = await SyncAsync(generatedBody);
 		PageSyncResponse resaveResponse = EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(resaveResult);

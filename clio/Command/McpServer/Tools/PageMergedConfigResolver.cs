@@ -21,9 +21,9 @@ namespace Clio.Command.McpServer.Tools;
 /// base and the data-source check passes with a warning; a cancellation, however, is allowed to propagate.
 /// </summary>
 /// <remarks>
-/// The caller (<c>update-page</c>; <c>sync-pages</c> resolves before its lock) already runs under the MCP tool-execution lock and a flow-local log buffer,
-/// so this read needs neither its own lock nor a mid-flow <c>ClearMessages</c> (which would drop the tool's own
-/// captured log lines) — it behaves like the tool's other internal get-page reads.
+/// <c>update-page</c> calls this under the MCP tool-execution lock and a flow-local log buffer, so the read needs
+/// neither its own lock nor a mid-flow <c>ClearMessages</c> (which would drop the tool's own captured log lines).
+/// <c>sync-pages</c> calls it before taking its per-tenant lock, so the locked save loop does no network I/O.
 /// </remarks>
 internal static class PageMergedConfigResolver {
 

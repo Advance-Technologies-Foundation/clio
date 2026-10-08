@@ -95,7 +95,7 @@ public sealed class PageUpdateTool(
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first; a `processRunType=ForTheSelectedPage` button also REQUIRES `recordIdProcessParameterName` — the parameter that receives the current record — or update-page rejects it), and localizable strings to `page-schema-resources`. " +
 		SchemaValidationService.CustomCssPolicySummary + " " +
-		"WEB AND MOBILE: a binding (`modelConfig.path`, `dataSourceName`, `primaryDataSourceName`) to a data source that neither the body nor the page's inherited modelConfig declares is rejected — templates never declare `PDS`, so a replace write must keep the page's own model config (`dataSources`, `primaryDataSourceName`) from get-page `raw.body`; mode `append` works only on a page in diff form. " +
+		"WEB AND MOBILE: a binding (`modelConfig.path`, `dataSourceName`, `primaryDataSourceName`) to a data source that neither the body nor the page's inherited modelConfig declares is rejected — templates never declare `PDS`, so a replace write must keep the page's own model config (`dataSources`, `primaryDataSourceName`) from get-page `raw.body`; mode `append` works only on a page in diff form (get-guidance `page-modification`). " +
 		"MOBILE: a viewConfigDiff insert/set must carry its component `type` INSIDE `values` — the differ builds the element from `values` alone, so a type on the operation object is discarded and the save persists an element that never renders; this is rejected. A `merge` whose `values` authors child elements on `Scaffold`'s `actions`/`leading`/`items` is also rejected — every shipped form template populates those slots, so the differ strips the property out of the merge and nothing is created even though the write succeeds; author each child with its own `insert` into a page container. clio cannot see the target (it validates against an empty base), so a bare Scaffold whose slots really are empty is refused too. The same authoring in any other slot only warns, because there the target may legitimately lack the slot and the merge then creates it. A `crt.Button` inserted into `Scaffold`/`actions` is warned about: it saves but does not appear on the mobile designer canvas — place buttons in a page container's `items` with a `layoutConfig`. See get-guidance `mobile-page-modification`. " +
 		"INSERTED-FIELD CONTRACT: " + SchemaValidationService.InsertedFieldContractSummary)]
 	public async Task<PageUpdateResponse> UpdatePage(
@@ -460,8 +460,7 @@ public sealed class PageUpdateTool(
 			// The write mode decides the validation base: replace (default) validates against the base WITHOUT the
 			// page's own body (it gets overwritten); append validates against the full merged config (the own body
 			// survives the merge). update-page has a logger, so a degraded base resolution leaves a diagnostic trail.
-			var baseContext = new PageMergedConfigContext(_commandResolver, options.SchemaName,
-				options.Environment, options.Uri, options.Login, options.Password, Mode: options.Mode, Logger: _logger);
+			PageMergedConfigContext baseContext = CreateBaseContext(options);
 			PageSyncValidationResult mobileResult = MobilePageValidation
 				.RunAsync(options.Body, mobileComponentCatalog, webComponentCatalog, dataSourceValidator, mobileResources,
 					resolveTemplateBase: () => PageMergedConfigResolver.ResolveMergedConfig(baseContext))
@@ -519,9 +518,7 @@ public sealed class PageUpdateTool(
 		// Replace mode validates against the base without the page's own body (the write overwrites it); append
 		// against the full merged config. The read happens only when the body does not settle every binding itself.
 		SchemaValidationResult dataSourceResult = dataSourceValidator.Validate(options.Body,
-			() => PageMergedConfigResolver.ResolveMergedConfig(new PageMergedConfigContext(_commandResolver,
-				options.SchemaName, options.Environment, options.Uri, options.Login, options.Password,
-				Mode: options.Mode, Logger: _logger)).ModelConfigJson);
+			() => PageMergedConfigResolver.ResolveMergedConfig(CreateBaseContext(options)).ModelConfigJson);
 		if (!dataSourceResult.IsValid) {
 			return (new PageUpdateResponse {
 				Success = false,
@@ -530,6 +527,10 @@ public sealed class PageUpdateTool(
 		}
 		return (null, [.. webWarnings ?? [], .. dataSourceResult.Warnings]);
 	}
+
+	private PageMergedConfigContext CreateBaseContext(PageUpdateOptions options) =>
+		new(_commandResolver, options.SchemaName, options.Environment, options.Uri, options.Login, options.Password,
+			Mode: options.Mode, Logger: _logger);
 
 	/// <summary>
 	/// Maps the MCP tool arguments onto the command options. Internal so the argument-to-option mapping

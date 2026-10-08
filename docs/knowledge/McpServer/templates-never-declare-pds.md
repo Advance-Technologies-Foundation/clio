@@ -2,6 +2,8 @@
 description: No Freedom UI template declares PDS - a generated page holds it in its own body, so a replace write without it drops PDS while bindings stay; the data-source check mirrors the bundle builder and fails open only when the base cannot be read
 applies-to:
   - clio/Command/McpServer/Tools/PageDataSourceReferenceValidator.cs
+  - clio/Command/McpServer/Tools/PageMergedConfigResolver.cs
+  - clio/Command/McpServer/Tools/MobilePageValidation.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageValidateTool.cs

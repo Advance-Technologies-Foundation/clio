@@ -54,7 +54,14 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		if (unsettled.Count == 0) {
 			return result;
 		}
-		if (!TryParseObject(resolveTemplateModelConfig?.Invoke(), out JObject baseModelConfig)) {
+		if (resolveTemplateModelConfig is null) {
+			result.Warnings.Add(
+				$"Data-source bindings to {Sanitize(string.Join(", ", unsettled))} were not checked: the body does not " +
+				"declare them and no inherited modelConfig is available here; update-page and sync-pages check them " +
+				"against it.");
+			return result;
+		}
+		if (!TryParseObject(resolveTemplateModelConfig(), out JObject baseModelConfig)) {
 			result.Warnings.Add(
 				$"Data-source bindings to {Sanitize(string.Join(", ", unsettled))} were not checked: the page's " +
 				"inherited modelConfig could not be read, so a data source this write drops may have been missed.");
@@ -125,7 +132,11 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 			AddPathReference(modelConfig, path[^2], references);
 			return;
 		}
-		CollectAttributePathReferences(values, path.LastOrDefault(), references);
+		// An insert places its values under propertyName, which is the attribute's name.
+		string ownerName = KindOf(operation) == "insert" && StringValue(operation["propertyName"]) is { } propertyName
+			? propertyName
+			: path.LastOrDefault();
+		CollectAttributePathReferences(values, ownerName, references);
 	}
 
 	private static void CollectAttributePathReferences(
@@ -207,6 +218,8 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		bool dataSourcesExist = ApplyMerges(ops, declared, baseDataSources is not null);
 		ApplyRemoves(ops, declared);
 		ApplyInserts(ops, declared, dataSourcesExist);
+		ApplyRemoveProperties(ops, declared);
+		ApplySets(ops, declared);
 		return declared;
 	}
 
@@ -224,12 +237,9 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 	}
 
 	private static void ApplyRemoves(List<JObject> ops, HashSet<string> declared) {
-		foreach (JObject operation in ops.Where(op => KindOf(op) == "remove")) {
-			List<string> path = PathOf(operation);
-			if (path.Count == 2 && path[0] == DataSources && path[1] is { } removedName) {
+		foreach (JObject operation in ops.Where(op => KindOf(op) == "remove" && HasNoProperties(op))) {
+			if (PathOf(operation) is [DataSources, { } removedName]) {
 				declared.Remove(removedName);
-			} else if (path is [DataSources] && operation["properties"] is JArray properties) {
-				declared.ExceptWith(properties.Select(StringValue).Where(name => name is not null));
 			}
 		}
 	}
@@ -245,7 +255,37 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		}
 	}
 
-	private static string KindOf(JObject operation) => StringValue(operation["operation"])?.ToLowerInvariant();
+	// A remove that carries `properties` deletes only those keys from the addressed object, after the inserts.
+	private static void ApplyRemoveProperties(List<JObject> ops, HashSet<string> declared) {
+		foreach (JObject operation in ops.Where(op => KindOf(op) == "remove" && op["properties"] is JArray)) {
+			List<string> removedKeys = ((JArray)operation["properties"]).Select(StringValue).Where(key => key is not null).ToList();
+			List<string> path = PathOf(operation);
+			if (path is [DataSources]) {
+				declared.ExceptWith(removedKeys);
+			} else if (path.Count == 0 && removedKeys.Contains(DataSources)) {
+				declared.Clear();
+			}
+		}
+	}
+
+	// A set removes the addressed element and inserts its values in the same place: on ["dataSources"] the values
+	// replace the whole set, on ["dataSources", X] they replace X, which stays declared.
+	private static void ApplySets(List<JObject> ops, HashSet<string> declared) {
+		foreach (JObject operation in ops.Where(op => KindOf(op) == "set" && op[Values] is JObject)) {
+			List<string> path = PathOf(operation);
+			if (path is [DataSources]) {
+				declared.Clear();
+				AddKeys((JObject)operation[Values], declared);
+			} else if (path is [DataSources, { } replacedName]) {
+				declared.Add(replacedName);
+			}
+		}
+	}
+
+	private static bool HasNoProperties(JObject operation) => operation["properties"] is not JArray;
+
+	// The differ dispatches on the exact operation string, so "Merge" is not a merge.
+	private static string KindOf(JObject operation) => StringValue(operation["operation"]);
 
 	// Runtime macros such as #PrimaryDataSourceName()# resolve to a data source at render time, not to a key in
 	// dataSources, so they are not references this check can resolve.
@@ -299,11 +339,20 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 				"instead; update-page mode=append works only on a page whose current body is in diff form." + tail;
 	}
 
-	// Body-sourced text reaches the MCP transcript; a control character could forge a message boundary there.
+	// Body-sourced text reaches the MCP transcript; a control, line-separator or bidi character could forge a
+	// message boundary or reorder the text there.
 	private static string Sanitize(string value) {
-		string flat = new(value.Select(c => char.IsControl(c) ? ' ' : c).ToArray());
-		return flat.Length <= MaxEchoLength ? flat : flat[..MaxEchoLength] + "…";
+		string flat = new(value.Select(c => IsUnsafeForEcho(c) ? ' ' : c).ToArray());
+		if (flat.Length <= MaxEchoLength) {
+			return flat;
+		}
+		int cut = char.IsHighSurrogate(flat[MaxEchoLength - 1]) ? MaxEchoLength - 1 : MaxEchoLength;
+		return flat[..cut] + "…";
 	}
+
+	private static bool IsUnsafeForEcho(char c) =>
+		char.IsControl(c) || char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.Format
+			or System.Globalization.UnicodeCategory.LineSeparator or System.Globalization.UnicodeCategory.ParagraphSeparator;
 
 	private static bool TryParseObject(string json, out JObject value) {
 		value = null;
