@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -19,8 +20,8 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for ENG-102114 over the real MCP path: a condition written on an EXISTING process takes the
 /// <c>[#Element.Parameter.Column#]</c> name a build-path condition takes, and a meta path written by hand is
 /// accepted only in the spelling the platform writes, its prefix optional, naming a column the record delivers - in a
-/// condition and in a mapping expression. NOT in CI — run manually against an environment carrying
-/// CrtProcessBuilder 1.6.6.77 or later.
+/// condition and in a mapping expression - and stored with its GUIDs lower-cased. NOT in CI — run manually against an
+/// environment carrying CrtProcessBuilder 1.6.6.77 or later (1.6.6.85 for the GUID-case test).
 /// <para>The motivating defect (clio#1529): a hand-assembled token missing the dot before
 /// <c>[EntityColumn:…]</c>. On a Script value the platform refuses it at save with "Value for argument
 /// "parameterUId" must be specified", which names neither the flow nor the token; these tests pin that the package
@@ -39,6 +40,9 @@ public sealed class MetaPathConditionToolE2ETests {
 
 	/// <summary>The first cut that expands names on the modify path and checks a hand-written meta path.</summary>
 	private const string MinimumPackageVersion = "1.6.6.77";
+
+	/// <summary>The first cut that stores an accepted meta path with its GUIDs lower-cased.</summary>
+	private const string GuidCaseMinimumPackageVersion = "1.6.6.85";
 
 	/// <summary>The prefix the platform's GetMetaPath writes before every reference.</summary>
 	private const string Prefix = "[IsOwnerSchema:false].[IsSchema:false].";
@@ -117,7 +121,7 @@ public sealed class MetaPathConditionToolE2ETests {
 	}
 
 	[Test]
-	[Description("The prefix-less meta path - the spelling the published guidance taught, which processes built through clio store - is accepted and stored exactly as written, so a describe-then-modify round trip of such a process is never refused.")]
+	[Description("The prefix-less meta path - the spelling the published guidance taught, which processes built through clio store - is accepted and stored in that spelling, not rewritten to the prefixed one, so a describe-then-modify round trip of such a process is never refused.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process accepts the prefix-less meta path in a condition")]
 	public async Task ModifyBusinessProcess_Should_AcceptThePrefixLessMetaPath() {
@@ -143,7 +147,40 @@ public sealed class MetaPathConditionToolE2ETests {
 		McpCommandExecutionParser.Extract(modified).ExitCode.Should().Be(0,
 			because: "the prefix-less spelling is one of the two the check accepts");
 		ConditionOnCall(DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)))
-			.Should().Be(prefixLess, because: "an accepted token is never rewritten");
+			.Should().Be(prefixLess, because: "an accepted spelling is never rewritten to the other one");
+	}
+
+	[Test]
+	[Description("QA, 2026-10-07: a meta path whose GUIDs are upper case passed the check and saved green, but the run time and the designer match only lower case, so the branch read an empty value and the designer showed the raw token. The package now stores it with its GUIDs lower-cased - exactly the token the platform writes.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process stores an upper-case-GUID meta path lower-cased")]
+	public async Task ModifyBusinessProcess_Should_StoreAnUpperCaseGuidMetaPathLowerCased() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Meta-path condition", GuidCaseMinimumPackageVersion);
+		string processName = $"UsrClioBpMetaPathCaseE2e{Guid.NewGuid():N}";
+		await CreateAsync(context, processName, "[#ReadContact.ResultEntity.DoNotUseCall#] == false");
+		string canonical = ConditionOnCall(
+			DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)));
+		// Overwrite the built condition first, so the final read cannot pass on the create's own lower-case text.
+		await ModifyExpectingSuccessAsync(context, processName, SetCondition("true"));
+		string upper = Regex.Replace(canonical, @"\{[0-9a-f-]{36}\}", match => match.Value.ToUpperInvariant(),
+			RegexOptions.None, TimeSpan.FromSeconds(1));
+		upper.Should().NotBe(canonical, because: "the arrange must actually have upper-cased the GUIDs");
+
+		// Act
+		CallToolResult modified = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = SetCondition(upper)
+			});
+
+		// Assert
+		McpCommandExecutionParser.Extract(modified).ExitCode.Should().Be(0,
+			because: "a GUID's case carries no meaning, so the reference is accepted rather than refused");
+		ConditionOnCall(DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName)))
+			.Should().Be(canonical, because: "the run time and the designer match lower-case GUIDs only");
 	}
 
 	[Test]
