@@ -320,6 +320,29 @@ public sealed class PageSyncToolTests {
 		await mobileCatalog.DidNotReceive().LoadAsync("latest", Arg.Any<CancellationToken>());
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("When the stand's version has no published mobile registry, sync-pages resolves the fallback once off the lock and validates every page against it, instead of repeating the miss per page.")]
+	public async Task SyncPages_WhenStandVersionHasNoMobileRegistry_ValidatesAgainstTheResolvedFallback() {
+		// Arrange
+		PageSyncTool tool = BuildMobileBindingSyncTool(out IMobileComponentInfoCatalog mobileCatalog);
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog() with { ResolvedVersion = ComponentRegistryClient.LatestVersion });
+		string body = MobileFieldBindingDeclaredInputsTests.Body(
+			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrFirst_MobileFormPage", body), new PageSyncPageInput("UsrSecond_MobileFormPage", body)],
+			Validate: true);
+
+		// Act
+		await tool.SyncPages(args);
+
+		// Assert
+		await mobileCatalog.Received(1).LoadAsync("8.2.1", Arg.Any<CancellationToken>());
+		await mobileCatalog.Received(2).LoadAsync(ComponentRegistryClient.LatestVersion, Arg.Any<CancellationToken>());
+	}
+
 	private static PageSyncTool BuildMobileBindingSyncTool(out IMobileComponentInfoCatalog mobileCatalog) {
 		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommand(schemaType: 10);
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
@@ -332,7 +355,7 @@ public sealed class PageSyncToolTests {
 		resolverFactory.Create(Arg.Any<EnvironmentSettings>()).Returns(resolver);
 		mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog());
+			.Returns(call => MobileFieldBindingDeclaredInputsTests.LiveCatalog() with { ResolvedVersion = call.Arg<string>() });
 		return new PageSyncTool(commandResolver, new MockFileSystem(), mobileCatalog, Substitute.For<IComponentInfoCatalog>(),
 			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), resolverFactory);
 	}
