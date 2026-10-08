@@ -1,0 +1,445 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Clio.Command;
+using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
+using Clio.Common;
+using FluentAssertions;
+using ModelContextProtocol.Protocol;
+using ModelContextProtocol.Server;
+using NSubstitute;
+using NUnit.Framework;
+
+namespace Clio.Tests.Command.McpServer;
+
+/// <summary>
+/// ENG-100153: the process-designer tools accept their JSON-document argument - the create descriptor, the
+/// modify operations - EITHER as the JSON value itself or as a string holding its JSON text.
+/// </summary>
+/// <remarks>
+/// Every call here goes through <see cref="McpServerTool.Create(System.Reflection.MethodInfo, object,
+/// McpServerToolCreateOptions)"/> on the PRODUCTION serializer options and is invoked with a wire-shaped
+/// <c>{"args":{...}}</c> payload, because the defect being fixed lived in the binder: an object descriptor was
+/// refused before the tool body ran. A test that constructs the args record directly would bypass exactly
+/// that layer and prove nothing about it.
+/// </remarks>
+[TestFixture]
+[Property("Module", "McpServer")]
+public sealed class ProcessDesignerJsonDocumentArgumentTests {
+
+	private const string Descriptor =
+		"{\"name\":\"UsrAccount_Onboard\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[]}";
+
+	private const string Operations =
+		"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]";
+
+	private static readonly JsonSerializerOptions WireOptions = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process binds a descriptor sent as a JSON OBJECT and hands the command that same document - the call an agent could not make before ENG-100153.")]
+	public async Task CreateBusinessProcess_Should_AcceptTheDescriptorAsAnObject() {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"descriptor\":{Descriptor}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "an object descriptor is the natural call and must bind rather than be refused as a non-string");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command, which is where the descriptor is parsed and built");
+		JsonDocumentsShouldBeEqual(command.CapturedOptions!.DescriptorJson, Descriptor,
+			because: "the command must receive the document the caller sent, not a re-shaped copy of it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process keeps accepting the descriptor as a JSON STRING and forwards that string byte-for-byte, so every existing caller keeps working unchanged.")]
+	public async Task CreateBusinessProcess_Should_KeepAcceptingTheDescriptorAsAString() {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+		string encoded = JsonSerializer.Serialize(Descriptor);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"descriptor\":{encoded}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "the string form is the long-standing contract and must stay accepted");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		command.CapturedOptions!.DescriptorJson.Should().Be(Descriptor,
+			because: "a string descriptor is forwarded verbatim - the command, not the tool, parses and words its errors");
+	}
+
+	[TestCase("[]", "a JSON array")]
+	[TestCase("42", "a JSON number")]
+	[TestCase("true", "a JSON boolean")]
+	[TestCase("false", "a JSON boolean")]
+	[Category("Unit")]
+	[Description("create-business-process refuses a descriptor that is neither an object nor a string, naming both accepted forms, without dispatching the command.")]
+	public async Task CreateBusinessProcess_Should_RefuseADescriptorOfAnotherKind(string descriptor, string received) {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"descriptor\":{descriptor}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "a descriptor of the wrong kind is refused before anything is built");
+		TextOf(result).Should().Contain("descriptor must be a JSON object, or a string holding one",
+			because: "the refusal names both accepted forms so the caller can correct the call in one step");
+		TextOf(result).Should().Contain(received.Replace("a JSON ", "Received a JSON "),
+			because: "the refusal says what was received, which is what distinguishes it from an empty descriptor");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "a descriptor of the wrong kind is a caller error, exit code 1 under the CommandExecutionResult contract - the code the command gives the same mistake in string form - and not -1, which means clio itself broke");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("create-business-process answers a descriptor STRING that cannot be read as text (an unpaired surrogate escape) with a refusal naming both accepted forms, instead of letting JsonElement.GetString throw out of the tool. Before ENG-100153 the binder refused such a value; it must still be refused, as a caller error.")]
+	public async Task CreateBusinessProcess_Should_RefuseADescriptorStringThatIsNotValidText() {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			"{\"environment-name\":\"sandbox\",\"descriptor\":\"\\ud800\"}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "a string that cannot be read as text holds no document to build");
+		TextOf(result).Should().Contain("descriptor must be a JSON object, or a string holding one",
+			because: "the refusal names both accepted forms so the caller can correct the call in one step");
+		TextOf(result).Should().Contain("Received a JSON string that is not valid text",
+			because: "the refusal says why this string was not accepted");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "an unreadable string is a caller error, not a clio failure");
+	}
+
+	[TestCase("", Description = "descriptor omitted")]
+	[TestCase(",\"descriptor\":null", Description = "descriptor null")]
+	[TestCase(",\"descriptor\":\"\"", Description = "descriptor an empty string")]
+	[TestCase(",\"descriptor\":\"   \"", Description = "descriptor a whitespace-only string")]
+	[Category("Unit")]
+	[Description("create-business-process refuses a missing descriptor - omitted, null or an empty string - through the real binder with its own 'is required' refusal and exit code 1, without dispatching the command. Pins that an absent key still reaches the tool body rather than becoming a binder error.")]
+	public async Task CreateBusinessProcess_Should_RefuseAMissingDescriptor_AsACallerError(string descriptor) {
+		// Arrange
+		FakeCreateCommand command = new();
+		McpServerTool tool = CreateTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\"{descriptor}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "there is no descriptor to build a process from");
+		TextOf(result).Should().Contain("descriptor is required and cannot be empty",
+			because: "every spelling of a missing descriptor gets the tool's own refusal, which names the argument");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "a missing descriptor is a caller error fixed by sending one, the code a descriptor of the wrong "
+				+ "kind gets - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process binds operations sent as a JSON ARRAY and hands the command that same array.")]
+	public async Task ModifyBusinessProcess_Should_AcceptTheOperationsAsAnArray() {
+		// Arrange
+		FakeModifyCommand command = new();
+		McpServerTool tool = ModifyTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{Operations}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "an operations array is the natural call and must bind rather than be refused as a non-string");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		JsonDocumentsShouldBeEqual(command.CapturedOptions!.OperationsJson, Operations,
+			because: "the command must receive the operations the caller sent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process keeps accepting operations as a JSON STRING and forwards it verbatim.")]
+	public async Task ModifyBusinessProcess_Should_KeepAcceptingTheOperationsAsAString() {
+		// Arrange
+		FakeModifyCommand command = new();
+		McpServerTool tool = ModifyTool(command);
+		string encoded = JsonSerializer.Serialize(Operations);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{encoded}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "the string form is the long-standing contract and must stay accepted");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		command.CapturedOptions!.OperationsJson.Should().Be(Operations,
+			because: "a string is forwarded verbatim");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process refuses operations sent as an OBJECT - the right container kind is an array - naming both accepted forms.")]
+	public async Task ModifyBusinessProcess_Should_RefuseOperationsSentAsAnObject() {
+		// Arrange
+		FakeModifyCommand command = new();
+		McpServerTool tool = ModifyTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			"{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{\"op\":\"removeElement\"}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "a single operation object is not an operations array, and guessing a wrapper would hide the mistake");
+		TextOf(result).Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the refusal names both accepted forms");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "operations of the wrong kind are a caller error, exit code 1 - not -1, which means clio itself broke");
+	}
+
+	[TestCase("", Description = "operations omitted")]
+	[TestCase(",\"operations\":null", Description = "operations null")]
+	[TestCase(",\"operations\":\"\"", Description = "operations an empty string")]
+	[TestCase(",\"operations\":\"   \"", Description = "operations a whitespace-only string")]
+	[Category("Unit")]
+	[Description("modify-business-process refuses missing operations - omitted, null or an empty string - through the real binder with its own 'is required' refusal and exit code 1, without dispatching the command. Unlike modify-business-process-as-new-version, this tool has no snapshot form: the operations are the edit.")]
+	public async Task ModifyBusinessProcess_Should_RefuseMissingOperations_AsACallerError(string operations) {
+		// Arrange
+		FakeModifyCommand command = new();
+		McpServerTool tool = ModifyTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\"{operations}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "there is no edit to apply");
+		TextOf(result).Should().Contain("operations is required and cannot be empty",
+			because: "every spelling of missing operations gets the tool's own refusal, which names the argument");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "missing operations are a caller error fixed by sending them, the code operations of the wrong "
+				+ "kind get - not -1, which tells the caller that clio broke and a retry will not help");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version binds operations sent as a JSON ARRAY and hands the command that same array.")]
+	public async Task ModifyProcessAsNewVersion_Should_AcceptTheOperationsAsAnArray() {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{Operations}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "an operations array is the natural call and must bind rather than be refused as a non-string");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		JsonDocumentsShouldBeEqual(command.CapturedOptions!.OperationsJson, Operations,
+			because: "the command must receive the operations the caller sent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version binds package-name by its wire name now that PackageName is an init property rather than a positional parameter, and hands it to the command.")]
+	public async Task ModifyProcessAsNewVersion_Should_BindThePackageName() {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			"{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"package-name\":\"Custom\"}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "package-name is a declared argument and must bind rather than be refused as unknown");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		command.CapturedOptions!.PackageName.Should().Be("Custom",
+			because: "package-name is the only way to choose where the version is saved; an init property that did not "
+				+ "bind would silently save it into the source's package instead");
+	}
+
+	[TestCase("", Description = "operations omitted")]
+	[TestCase(",\"operations\":null", Description = "operations null")]
+	[TestCase(",\"operations\":\"\"", Description = "operations an empty string")]
+	[TestCase(",\"operations\":\"   \"", Description = "operations a whitespace-only string")]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version still treats absent, null and empty-string operations as the snapshot form, forwarding no operations rather than refusing the call.")]
+	public async Task ModifyProcessAsNewVersion_Should_KeepTheSnapshotForm_WhenOperationsAreAbsent(string operations) {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\"{operations}}}");
+
+		// Assert
+		result.IsError.Should().NotBe(true,
+			because: "no operations is the documented way to snapshot the source unchanged as a new version");
+		command.CapturedOptions.Should().NotBeNull(
+			because: "the call must reach the command before what it received can be asserted");
+		command.CapturedOptions!.OperationsJson.Should().BeEmpty(
+			because: "the snapshot form reaches the command as no operations, exactly as before ENG-100153");
+	}
+
+	[TestCase("{\"op\":\"removeElement\"}", "Received a JSON object", Description = "operations an object")]
+	[TestCase("\"\\ud800\"", "Received a JSON string that is not valid text", Description = "operations an unreadable string")]
+	[Category("Unit")]
+	[Description("modify-business-process-as-new-version refuses operations that are present but not an array or a readable string holding one, as a caller error (exit code 1), without dispatching the command. The unreadable string goes through the snapshot check first, so this also pins that the check cannot throw.")]
+	public async Task ModifyProcessAsNewVersion_Should_RefuseOperationsOfAnotherKind(string operations, string received) {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		McpServerTool tool = NewVersionTool(command);
+
+		// Act
+		CallToolResult result = await InvokeAsync(tool, ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			$"{{\"environment-name\":\"sandbox\",\"process-name\":\"UsrAccount_Onboard\",\"operations\":{operations}}}");
+
+		// Assert
+		command.CapturedOptions.Should().BeNull(
+			because: "operations that are present but unusable are refused, not taken for the snapshot form");
+		TextOf(result).Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the refusal names both accepted forms");
+		TextOf(result).Should().Contain(received,
+			because: "the refusal says what was received");
+		TextOf(result).Should().Contain("\"exit-code\":1",
+			because: "unusable operations are a caller error, exit code 1 - not -1, which means clio itself broke");
+	}
+
+	[TestCase(JsonValueKind.String)]
+	[TestCase(JsonValueKind.Number)]
+	[TestCase(JsonValueKind.Undefined)]
+	[Category("Unit")]
+	[Description("The JSON-document reader accepts only Object or Array as the expected kind, and throws on any other: a caller passing String would make every string argument 'the expected kind' and silently skip the kind check.")]
+	public void TryReadJsonDocumentArgument_Should_Throw_WhenTheExpectedKindIsNotAContainer(JsonValueKind expectedKind) {
+		// Arrange
+		using JsonDocument document = JsonDocument.Parse("{}");
+		JsonElement value = document.RootElement.Clone();
+
+		// Act
+		System.Action act = () => McpToolArgumentSupport.TryReadJsonDocumentArgument(value, expectedKind, "descriptor",
+			out _, out _);
+
+		// Assert
+		act.Should().Throw<System.ArgumentOutOfRangeException>(
+			because: "a non-container expected kind is a programming error, not a caller mistake to word back");
+	}
+
+	private static McpServerTool CreateTool(FakeCreateCommand command) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>()).Returns(command);
+		return McpServerTool.Create(
+			typeof(CreateBusinessProcessTool).GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!,
+			target: new CreateBusinessProcessTool(command, ConsoleLogger.Instance, resolver),
+			new McpServerToolCreateOptions { SerializerOptions = WireOptions });
+	}
+
+	private static McpServerTool ModifyTool(FakeModifyCommand command) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>()).Returns(command);
+		return McpServerTool.Create(
+			typeof(ModifyBusinessProcessTool).GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!,
+			target: new ModifyBusinessProcessTool(command, ConsoleLogger.Instance, resolver),
+			new McpServerToolCreateOptions { SerializerOptions = WireOptions });
+	}
+
+	private static McpServerTool NewVersionTool(FakeNewVersionCommand command) {
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<ModifyProcessAsNewVersionCommand>(Arg.Any<ModifyProcessAsNewVersionOptions>())
+			.Returns(command);
+		return McpServerTool.Create(
+			typeof(ModifyProcessAsNewVersionTool).GetMethod(nameof(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))!,
+			target: new ModifyProcessAsNewVersionTool(command, ConsoleLogger.Instance, resolver),
+			new McpServerToolCreateOptions { SerializerOptions = WireOptions });
+	}
+
+	private static async Task<CallToolResult> InvokeAsync(McpServerTool tool, string toolName, string argsJson) {
+		using JsonDocument args = JsonDocument.Parse(argsJson);
+		Dictionary<string, JsonElement> arguments = new() { ["args"] = args.RootElement.Clone() };
+		RequestContext<CallToolRequestParams> context =
+			McpRequestContextTestFactory.CreateCallToolContext(toolName, arguments);
+		context.MatchedPrimitive = tool;
+		return await tool.InvokeAsync(context, CancellationToken.None);
+	}
+
+	private static string TextOf(CallToolResult result) =>
+		string.Concat(result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+	private static void JsonDocumentsShouldBeEqual(string actual, string expected, string because) {
+		using JsonDocument actualDocument = JsonDocument.Parse(actual);
+		using JsonDocument expectedDocument = JsonDocument.Parse(expected);
+		JsonElement.DeepEquals(actualDocument.RootElement, expectedDocument.RootElement).Should().BeTrue(
+			because: because);
+	}
+
+	private sealed class FakeCreateCommand : CreateBusinessProcessCommand {
+		public CreateBusinessProcessOptions? CapturedOptions { get; private set; }
+
+		public FakeCreateCommand()
+			: base(Substitute.For<ICreateBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(CreateBusinessProcessOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeModifyCommand : ModifyBusinessProcessCommand {
+		public ModifyBusinessProcessOptions? CapturedOptions { get; private set; }
+
+		public FakeModifyCommand()
+			: base(Substitute.For<IModifyBusinessProcessService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(ModifyBusinessProcessOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeNewVersionCommand : ModifyProcessAsNewVersionCommand {
+		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
+
+		public FakeNewVersionCommand()
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(ModifyProcessAsNewVersionOptions options) {
+			CapturedOptions = options;
+			return 0;
+		}
+	}
+}

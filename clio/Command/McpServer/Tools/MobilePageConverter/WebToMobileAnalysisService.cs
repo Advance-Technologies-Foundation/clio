@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Newtonsoft.Json.Linq;
 using JsonNode = System.Text.Json.Nodes.JsonNode;
 using JsonArray = System.Text.Json.Nodes.JsonArray;
@@ -334,8 +335,9 @@ public static partial class WebToMobileAnalysisService {
 		// MobileRegistryGeneration. Deliberately NOT gated on the stand's platform version: each version's
 		// registry describes the runtime that version runs, so an old stand served its own regenerated file
 		// is pruned correctly rather than merely spared.
-		DeclaredPropertyIndex declaredProps =
-			DeclaredPropertyIndex.Build(mobileByType, mobileRegistryGeneration);
+		DeclaredPropertyIndex declaredProps = mobileRegistryGeneration is { CatalogIsRuntimeDerived: true }
+			? DeclaredPropertyIndex.FromRegistry(mobileByType, mobileRegistryGeneration.BaseInputs)
+			: DeclaredPropertyIndex.Disabled;
 		PropertyPruneResult propertyPrune = PruneUndeclaredProperties(
 			elementMap, declaredProps, convertedRequests, flaggedRequests, droppedRequests, unresolvedTargets);
 		RequestConversionInfo requestConversions = BuildRequestConversionInfo(
@@ -1470,67 +1472,13 @@ public static partial class WebToMobileAnalysisService {
 					ComponentType = mobileType,
 					Container = entry.Container,
 					Description = entry.Description,
-					AllowedProperties = BuildAllowedPropertyNames(entry, baseInputs).ToList(),
+					AllowedProperties = MobileRegistryDeclarations.BuildAllowedPropertyNames(entry, baseInputs).ToList(),
 					Example = entry.Example,
 					DesignerDefaults = entry.DesignerDefaults
 				});
 			}
 		}
 		return contracts;
-	}
-
-	/// <summary>
-	/// Every property name a mobile component DECLARES — the single membership authority (ENG-96589). The
-	/// union has four sources and dropping any one of them silently breaks converted pages:
-	/// <list type="bullet">
-	/// <item><description><c>inputs</c> — the component's own authorable surface.</description></item>
-	/// <item><description><c>outputs</c> — where the runtime-derived registry puts event/request bindings.
-	/// EVERY one of the 24 output keys in the live payload is ABSENT from the same component's
-	/// <c>inputs</c> (<c>crt.List.itemSelected</c>, <c>crt.Toggle.valueChange</c>,
-	/// <c>crt.ComboBox.valuePicked</c>, …), so an inputs-only union strips every binding.</description></item>
-	/// <item><description><c>properties</c> — the legacy schema generation.</description></item>
-	/// <item><description>the registry's root <c>references.baseInputs</c> — the inherited surface.
-	/// NO component declares <c>visible</c> in its own <c>inputs</c>, and none declares
-	/// <c>layoutConfig</c>; they exist ONLY here.</description></item>
-	/// </list>
-	/// The caller-facing <c>mobileContracts[].allowedProperties</c> and the set the prune enforces are this
-	/// one function, so a caller can always see WHY a property was pruned.
-	/// </summary>
-	/// <remarks>
-	/// Materialised as a case-insensitive set rather than probed per call: the registry's own dictionaries
-	/// are ORDINAL (<c>System.Text.Json</c> builds them with the default comparer;
-	/// <c>PropertyNameCaseInsensitive</c> binds POCO properties, not dictionary keys), which is why
-	/// <see cref="ResolveExpectedShape"/> and <see cref="DeclaresScalarString"/> iterate and compare instead
-	/// of indexing. This keeps that contract while paying the iteration once per TYPE.
-	/// </remarks>
-	private static SortedSet<string> BuildAllowedPropertyNames(
-		ComponentRegistryEntry entry,
-		IReadOnlyDictionary<string, JsonElement> baseInputs = null) {
-		var allowed = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-		if (entry is null) {
-			return allowed;
-		}
-		if (entry.Properties is not null) {
-			foreach (string key in entry.Properties.Keys) {
-				allowed.Add(key);
-			}
-		}
-		if (entry.Inputs is not null) {
-			foreach (string key in entry.Inputs.Keys) {
-				allowed.Add(key);
-			}
-		}
-		if (entry.Outputs is not null) {
-			foreach (string key in entry.Outputs.Keys) {
-				allowed.Add(key);
-			}
-		}
-		if (baseInputs is not null) {
-			foreach (string key in baseInputs.Keys) {
-				allowed.Add(key);
-			}
-		}
-		return allowed;
 	}
 
 	/// <summary>

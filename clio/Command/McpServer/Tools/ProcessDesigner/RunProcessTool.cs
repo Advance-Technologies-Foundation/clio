@@ -39,7 +39,27 @@ public sealed class RunProcessTool(
 
 	internal const string StillRunningStatus = "still-running";
 
-	// Test seam; null in production, where the default deadline applies.
+	/// <summary>
+	/// run-process's own response deadline: the 150 s every long tool had before ENG-102333, NOT the shared
+	/// <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// run-process runs in a per-call worker that the parent kills once the call answers, and the parent's budget for
+	/// that worker (120 s) is below this value, so in worker mode the "still running" answer is unreachable and a run
+	/// that outlives the budget ends in the parent's budget error, as it always has.
+	/// </para>
+	/// <para>
+	/// The shared 45 s default must not reach this tool. Its "still running" note tells the agent the process was
+	/// launched and must not be re-run, but nothing records whether the RunProcess request had been sent by then: a
+	/// cold worker spends seconds on its login, and right after a compile the application can hang requests for
+	/// 44 s. Answered before the request left, the note would claim a launch the parent's kill then prevents. Making
+	/// run-process answer before a 60 s client gives up needs a record of whether the launch was sent.
+	/// </para>
+	/// </remarks>
+	internal static readonly TimeSpan RunProcessResponseDeadline = TimeSpan.FromSeconds(150);
+
+	// Test seam; null in production, where RunProcessResponseDeadline applies.
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
 	internal static string BuildStillRunningNote(string processName) =>
@@ -70,9 +90,11 @@ public sealed class RunProcessTool(
 		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
 		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
 		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
-		+ "describe-business-process and launch the code it reports in `activeVersionName`. Whether this endpoint "
-		+ "itself folds a non-active code onto the active version is NOT established, so do not rely on it: pass "
-		+ "the active version's code explicitly. A display caption is still refused - launching must name a code "
+		+ "describe-business-process and launch the code it reports in `activeVersionName`. Measured: this endpoint "
+		+ "folds a non-active version's code onto the ACTIVE version, so run-process cannot run a version that is "
+		+ "not active - a run 'of' a new version executes the previous one. Pass the active version's code "
+		+ "explicitly; to see a new version run before activating it, the user runs it from the process designer. "
+		+ "A display caption is still refused - launching must name a code "
 		+ "- but the refusal names the code it resolved to, and that IS the active version's code, so the refusal "
 		+ "message is the short path to the right one.")]
 	public async Task<RunProcessResponse> RunProcess(
@@ -101,7 +123,9 @@ public sealed class RunProcessTool(
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
-			Password = args.Password
+			Password = args.Password,
+			// The same deadline the race below uses, so a failed run's log read never outlives it.
+			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? RunProcessResponseDeadline)
 		};
 
 		try {
@@ -110,7 +134,7 @@ public sealed class RunProcessTool(
 				requestContext?.Params?.ProgressToken,
 				ToolName,
 				() => Launch(options),
-				deadline: ResponseDeadlineOverride,
+				deadline: ResponseDeadlineOverride ?? RunProcessResponseDeadline,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 		catch (McpResponseDeadlineExceededException) {

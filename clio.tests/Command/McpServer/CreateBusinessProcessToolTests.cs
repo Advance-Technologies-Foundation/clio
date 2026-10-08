@@ -52,7 +52,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -84,7 +84,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the fake command reports a successful create");
@@ -107,7 +107,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().NotBe(0, because: "the fake command reports a failed create");
@@ -140,7 +140,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", sendEmailDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(sendEmailDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -179,7 +179,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", openEditPageDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(openEditPageDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -205,7 +205,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("   ", SampleDescriptor, null));
+			new CreateBusinessProcessArgs("   ", JsonArgument.Text(SampleDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -215,7 +215,7 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
-	[Description("Returns a failed result without resolving any command when the descriptor is empty.")]
+	[Description("Refuses an empty descriptor as a caller error (exit code 1) without resolving any command.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Fail_When_Descriptor_Is_Empty() {
 		// Arrange
@@ -226,11 +226,12 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", "   ", null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text("   "), null));
 
 		// Assert
-		result.ExitCode.Should().Be(-1,
-			because: "an empty descriptor is a validation error that must not reach command resolution");
+		result.ExitCode.Should().Be(1,
+			because: "an empty descriptor is a validation error the caller fixes by sending one, so it answers 1, "
+				+ "not -1, which means clio itself broke - and it must not reach command resolution");
 		commandResolver.DidNotReceiveWithAnyArgs().Resolve<CreateBusinessProcessCommand>(default!);
 		ConsoleLogger.Instance.ClearMessages();
 	}
@@ -263,7 +264,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", accessRightsDescriptor, null));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(accessRightsDescriptor), null));
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -291,7 +292,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.CreateBusinessProcess(
-			new CreateBusinessProcessArgs("docker_fix2", SampleDescriptor, "MyApp"));
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(SampleDescriptor), "MyApp"));
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "a build that needs a compile still succeeded");
@@ -323,6 +324,45 @@ public class CreateBusinessProcessToolTests {
 			return _exitCode;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and a package that does not refuse it builds an element that fails at run time, so the prose is what keeps a caller off it.")]
+	public void CreateBusinessProcessTool_ShouldSteerAPreconfiguredPageOffTheGenericUserTaskRoute() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		// Whole phrases on purpose: both surfaces already say "refused" about other things (a Classic UI page,
+		// an unknown type), so a bare word would pass with this sentence deleted.
+		toolDescription.Should().Contain("userTask naming PreconfiguredPageUserTask cannot carry the block and is REFUSED",
+			because: "the always-loaded description must say the generic route is refused, not merely discouraged");
+		prompt.Should().Contain("`PreconfiguredPageUserTask`, which cannot carry the block and is refused",
+			because: "the prompt steers the build and must name the task the generic route is refused for");
+		prompt.Should().Contain("except `PreconfiguredPageUserTask` and `OpenEditPageUserTask`",
+			because: "step (1) sends every list-user-tasks name to a generic userTask, so it must carve out the two page tasks");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create-business-process prompt's step (1) carves out AutoGeneratedPageUserTask and UserQuestionUserTask: the server refuses both on every route (ENG-102537) because nothing in this builder can configure them, so a list-user-tasks name must not be sent down the generic userTask route for them.")]
+	public void CreateBusinessProcessPrompt_ShouldCarveOutTheRefusedPageTasks() {
+		// Arrange
+		const string environmentName = "sandbox";
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName(environmentName);
+
+		// Assert
+		prompt.Should().Contain("`AutoGeneratedPageUserTask` and `UserQuestionUserTask`, which are refused",
+			because: "step (1) must carve out the two tasks the server refuses on every route");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Pins the DIRECTION of the record-filter consequence in the always-loaded tool description and in the prompt. An ABSENT record filter is the WIDENING state - the runtime gates on a non-empty filter, so the query runs unfiltered with record permissions disabled - while a PRESENT-but-conditionless one is the inert state. The shipped text had these two swapped, on every surface at once, which told callers that the widest permission change the feature can produce was harmless. Prose is the whole contract here: the element has no output parameters, so nothing at run time contradicts a wrong description.")]

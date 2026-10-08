@@ -629,19 +629,33 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		JObject topSchema = null;
 		string topUId = null;
 		foreach (SchemaLayer layer in layers) {
-			(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+			(JObject item, JObject layerSchema, string loadError) = LoadLayerItem(ctx, layer, schemaName);
 			if (loadError != null) {
-				return (null, null, null, $"Failed to load layer '{layer.PackageName}' ({layer.UId}): {loadError}");
+				return (null, null, null, loadError);
 			}
-			schemas.Add(new JObject {
-				["pkg"] = layer.PackageName,
-				["body"] = layerSchema["body"]?.ToString() ?? string.Empty
-			});
+			schemas.Add(item);
 			topSchema = layerSchema;
 			topUId = layer.UId;
 		}
 		return (schemas, topSchema, topUId, null);
 	}
+
+	// Loads one layer's own schema as the engine-facing {pkg, body} item; the error names the layer.
+	private (JObject item, JObject schema, string error) LoadLayerItem(
+		PageSourcesRunContext ctx, SchemaLayer layer, string schemaName) {
+		(JObject layerSchema, string loadError) = LoadSchemaCached(ctx, layer.UId, schemaName);
+		if (loadError != null || layerSchema == null) {
+			return (null, null, LayerLoadError(layer, loadError ?? NoSchemaReturned));
+		}
+		var item = new JObject {
+			["pkg"] = layer.PackageName,
+			["body"] = layerSchema["body"]?.ToString() ?? string.Empty
+		};
+		return (item, layerSchema, null);
+	}
+
+	private static string LayerLoadError(SchemaLayer layer, string reason) =>
+		$"Failed to load layer '{layer.PackageName}' ({layer.UId}): {reason}";
 
 	private JArray BuildSeed(PageSourcesRunContext ctx, JObject topSchema) {
 		// Walk `parent` from the top layer up to the base template. At EACH template level, enumerate every
@@ -1043,6 +1057,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				}
 				JObject detailEntry = BuildDetailEntry(ctx, layers[layers.Count - 1].UId, detailName);
 				if (detailEntry.HasValues) {
+					AddDetailBodies(ctx, detailEntry, layers, detailName);
 					detailSchemas[detailName] = detailEntry;
 				}
 			}
@@ -1081,6 +1096,30 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 			}
 		}
 		return detailEntry;
+	}
+
+	// bodies: every replacing layer of the detail base->top as {pkg, body}, each with its own-layer body. When any
+	// layer fails to load the entry carries no bodies, since a partial chain would hide that layer's content.
+	private void AddDetailBodies(
+		PageSourcesRunContext ctx, JObject detailEntry, IReadOnlyList<SchemaLayer> layers, string detailName) {
+		var bodies = new JArray();
+		foreach (SchemaLayer layer in layers) {
+			JObject item;
+			string loadError;
+			try {
+				(item, _, loadError) = LoadLayerItem(ctx, layer, detailName);
+			}
+			catch (Exception ex) {
+				(item, loadError) = (null, LayerLoadError(layer, ex.Message ?? ex.GetType().Name));
+			}
+			if (loadError != null) {
+				WarnDetail(ctx, $"Could not gather the layer chain (bodies) of detail '{detailName}': {loadError}. "
+					+ "Its entry carries no bodies; body is the top layer only.");
+				return;
+			}
+			bodies.Add(item);
+		}
+		detailEntry["bodies"] = bodies;
 	}
 
 	// An extraction failure omits only the detail's resourceStrings.

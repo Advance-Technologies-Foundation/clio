@@ -226,12 +226,15 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			because: "title is the internal caption of the single full-hierarchy load");
 		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
 			because: "body comes from the same full-hierarchy load as title and resourceStrings");
-		_applicationClient.Received(1).ExecutePostRequest(
+		_applicationClient.Received(2).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => body.Contains("\"uid-detail\"")));
 		_applicationClient.Received(1).ExecutePostRequest(
 			Arg.Any<string>(),
 			Arg.Is<string>(body => IsFullHierarchyRequestFor(body, "uid-detail")));
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => IsOwnLayerRequestFor(body, "uid-detail")));
 	}
 
 	private static bool IsFullHierarchyRequestFor(string requestBody, string schemaUId) {
@@ -240,6 +243,14 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		}
 		JObject request = JObject.Parse(requestBody);
 		return request["schemaUId"]?.ToString() == schemaUId && (request["useFullHierarchy"]?.Value<bool>() ?? false);
+	}
+
+	private static bool IsOwnLayerRequestFor(string requestBody, string schemaUId) {
+		if (string.IsNullOrEmpty(requestBody)) {
+			return false;
+		}
+		JObject request = JObject.Parse(requestBody);
+		return request["schemaUId"]?.ToString() == schemaUId && request["useFullHierarchy"]?.Value<bool>() == false;
 	}
 
 	[Test]
@@ -305,6 +316,260 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		detail["resourceStrings"].Should().BeNull(because: "the detail's merged strings could not be loaded");
 		response.Warnings.Should().ContainSingle(w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("resourceStrings"),
 			because: "the warning must name the detail and the block it lacks");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources writes a multi-layer detail's bodies as every replacing layer base->top with each layer's own body and package, keeping body as the top layer and title/resourceStrings as before.")]
+	public void TryAssemblePageSources_ShouldWriteDetailBodies_BaseToTop_ForMultiLayerDetail() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddSchema("uid-detail-base",
+			"define(\"UsrOrderLineDetail\", [], function() { return { methods: { init: function() { this.openLookupToLink(); } } }; });",
+			EmptyGuid, "UsrBase");
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			"uid-detail-base", "UsrExt", caption: "Order lines");
+		AddLocalizable("uid-detail-top", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the detail chain loads in full");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		JArray bodies = (JArray)detail!["bodies"];
+		bodies.Should().NotBeNull(because: "a detail whose every layer loads carries its layer chain");
+		bodies.Select(b => b["pkg"]!.ToString()).Should().Equal(new[] { "UsrBase", "UsrExt" },
+			because: "bodies lists every replacing layer of the detail base->top");
+		bodies[0]["body"]!.ToString().Should().Contain("openLookupToLink",
+			because: "the base layer carries its own body, including what the top layer does not repeat");
+		bodies[1]["body"]!.ToString().Should().NotContain("openLookupToLink",
+			because: "each layer carries its own body, not a merged text");
+		detail["body"]!.ToString().Should().Be(bodies[1]["body"]!.ToString(),
+			because: "body stays the top layer's body");
+		detail["title"]!.ToString().Should().Be("Order lines", because: "title is unchanged by bodies");
+		detail["resourceStrings"]!["Caption"]!["fr-FR"]!.ToString().Should().Be("Lignes de commande",
+			because: "resourceStrings is unchanged by bodies");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("UsrOrderLineDetail"),
+			because: "a fully loaded detail chain is not an incomplete collection");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources writes a single-layer detail's bodies as one item with the layer's package and its own-layer body, independent of the full-hierarchy body the entry carries.")]
+	public void TryAssemblePageSources_ShouldWriteSingleItemDetailBodies_ForSingleLayerDetail() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp");
+		_fullHierarchyViewByUid["uid-detail"] = (
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLineMerged\" }; });",
+			"Order lines");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		JArray bodies = (JArray)detail!["bodies"];
+		bodies.Should().ContainSingle(because: "a single-layer detail has a one-layer chain");
+		bodies[0]["pkg"]!.ToString().Should().Be("UsrApp", because: "the item names the layer's package");
+		bodies[0]["body"]!.ToString().Should().Contain("\"UsrOrderLine\"",
+			because: "the item carries the layer's own-layer body");
+		bodies[0]["body"]!.ToString().Should().NotContain("UsrOrderLineMerged",
+			because: "the item is not copied from the full-hierarchy load");
+		detail["body"]!.ToString().Should().Contain("UsrOrderLineMerged",
+			because: "body still comes from the full-hierarchy load");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources omits a detail's bodies, keeps body/title/resourceStrings, and warns naming the detail and the layer package when a lower layer of the detail fails to load.")]
+	public void TryAssemblePageSources_ShouldOmitDetailBodies_AndWarn_WhenDetailLayerFailsToLoad() {
+		// Arrange — the base layer is enumerated but its schema cannot be loaded
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrExt", caption: "Order lines");
+		AddLocalizable("uid-detail-top", "Caption", ("en-US", "Order lines"), ("fr-FR", "Lignes de commande"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's layer chain is best-effort and never fails the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a failed layer drops only the detail's bodies, not the detail");
+		detail!["bodies"].Should().BeNull(because: "a partial chain would hide the failed layer's content");
+		detail["body"]!.ToString().Should().Contain("UsrOrderLine", because: "body still comes from the top layer");
+		detail["title"]!.ToString().Should().Be("Order lines", because: "title is kept");
+		detail["resourceStrings"]!["Caption"]!["en-US"]!.ToString().Should().Be("Order lines",
+			because: "resourceStrings is kept");
+		response.Warnings.Should().ContainSingle(
+			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("UsrBase") && w.Contains("bodies"),
+			because: "the warning must name the detail, the failed layer's package and the block it lacks");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps a detail entry without bodies and warns naming the detail and the layer package when loading a lower layer of the detail throws.")]
+	public void TryAssemblePageSources_ShouldOmitDetailBodies_AndWarn_WhenDetailLayerLoadThrows() {
+		// Arrange — the base layer's GetSchema request throws instead of returning an error envelope
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrExt", caption: "Order lines");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("\"uid-detail-base\"")))
+			.Returns(_ => throw new InvalidOperationException("connection reset"));
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's layer chain is best-effort and never fails the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a throwing layer load drops only the detail's bodies, not the detail");
+		detail!["bodies"].Should().BeNull(because: "a partial chain would hide the failed layer's content");
+		detail["title"]!.ToString().Should().Be("Order lines", because: "title is kept");
+		response.Warnings.Should().ContainSingle(
+			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("UsrBase") && w.Contains("bodies")
+				&& w.Contains("connection reset"),
+			because: "the warning must name the detail, the failed layer's package, the block it lacks and the failure");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources keeps a detail entry without bodies and warns naming the detail, the layer package and the exception type when loading a lower layer of the detail throws an exception without a message.")]
+	public void TryAssemblePageSources_ShouldOmitDetailBodies_AndWarn_WhenDetailLayerLoadThrowsWithoutMessage() {
+		// Arrange — the base layer's GetSchema request throws an exception without a message
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrExt", caption: "Order lines");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Is<string>(body => body.Contains("\"uid-detail-base\"")))
+			.Returns(_ => throw new NullMessageException());
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's layer chain is best-effort and never fails the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		detail.Should().NotBeNull(because: "a throwing layer load drops only the detail's bodies, not the detail");
+		detail!["bodies"].Should().BeNull(because: "a partial chain would hide the failed layer's content");
+		detail["title"]!.ToString().Should().Be("Order lines", because: "title is kept");
+		response.Warnings.Should().ContainSingle(
+			w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("UsrBase") && w.Contains("bodies")
+				&& w.Contains(nameof(NullMessageException)),
+			because: "the warning must name the detail, the failed layer's package, the block it lacks and the exception type");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources writes a multi-layer detail's bodies base->top from each layer's own load when the detail's full-hierarchy load fails, warning only about the missing resourceStrings.")]
+	public void TryAssemblePageSources_ShouldWriteDetailBodies_WhenDetailFullHierarchyLoadFails() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 300);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail-base", "UsrBase", 100);
+		AddLayer("UsrOrderLineDetail", "uid-detail-top", "UsrExt", 300);
+		AddSchema("uid-detail-base",
+			"define(\"UsrOrderLineDetail\", [], function() { return { methods: { init: function() { this.openLookupToLink(); } } }; });",
+			EmptyGuid, "UsrBase");
+		AddSchema("uid-detail-top",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			"uid-detail-base", "UsrExt", caption: "Order lines");
+		_failFullHierarchyUids.Add("uid-detail-top");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		bool ok = _command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a detail's strings are best-effort and never fail the run");
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		JArray bodies = (JArray)detail!["bodies"];
+		bodies.Should().NotBeNull(because: "every layer of the detail loads on its own, so the chain is complete");
+		bodies.Select(b => b["pkg"]!.ToString()).Should().Equal(new[] { "UsrBase", "UsrExt" },
+			because: "bodies lists every replacing layer of the detail base->top");
+		bodies[0]["body"]!.ToString().Should().Contain("openLookupToLink",
+			because: "the base layer carries its own body");
+		bodies[1]["body"]!.ToString().Should().Be(detail["body"]!.ToString(),
+			because: "body comes from the top layer's own load, which is the last item of the chain");
+		detail["resourceStrings"].Should().BeNull(because: "the detail's merged strings could not be loaded");
+		response.Warnings.Should().ContainSingle(w => w.Contains("detail 'UsrOrderLineDetail'"),
+			because: "only the missing resourceStrings is reported for the detail");
+		response.Warnings.Should().Contain(w => w.Contains("detail 'UsrOrderLineDetail'") && w.Contains("resourceStrings"),
+			because: "the warning must name the detail and the block it lacks");
+	}
+
+	[Test]
+	[Description("TryAssemblePageSources writes a single-layer detail's bodies as one item equal to the own-layer body when the detail's full-hierarchy load fails.")]
+	public void TryAssemblePageSources_ShouldWriteSingleItemDetailBodies_WhenDetailFullHierarchyLoadFails() {
+		// Arrange
+		AddLayer("UsrOrderPage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrOrderPage\", [], function() { return { details: { V: { schemaName: \"UsrOrderLineDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrOrderLineDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrOrderLineDetail\", [], function() { return { entitySchemaName: \"UsrOrderLine\" }; });",
+			EmptyGuid, "UsrApp", caption: "Order lines");
+		_failFullHierarchyUids.Add("uid-detail");
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrOrderPage" };
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		JToken detail = manifest["detailSchemas"]!["UsrOrderLineDetail"];
+		JArray bodies = (JArray)detail!["bodies"];
+		bodies.Should().ContainSingle(because: "a single-layer detail has a one-layer chain");
+		bodies[0]["pkg"]!.ToString().Should().Be("UsrApp", because: "the item names the layer's package");
+		bodies[0]["body"]!.ToString().Should().Contain("UsrOrderLine",
+			because: "the only item carries the layer's own body");
+		bodies[0]["body"]!.ToString().Should().Be(detail["body"]!.ToString(),
+			because: "body comes from the same own-layer load");
+		response.Warnings.Should().NotContain(w => w.Contains("bodies"),
+			because: "the chain is complete, so no bodies warning is raised");
+	}
+
+	private sealed class NullMessageException : Exception {
+		public override string Message => null!;
 	}
 
 	[Test]

@@ -34,6 +34,19 @@ DESCRIPTION
     If writing them back fails, the command fails and its error lists every
     value it read, so they can be re-sent.
 
+    After the update, clio clears the menu cache (module structure,
+    workplaces, sections) of its own Creatio session, so the new caption and
+    icon appear in the menu that session reads without clearing Redis. A
+    failed clear is reported in Warnings and does not fail the command.
+
+    Other sessions keep the old menu. An open browser tab clears its own
+    cache only when it receives the ConfigurationStructureChanged websocket
+    message, so a tab that was not connected at that moment keeps the old
+    menu across reloads. On success clio prints the call that fixes such a
+    tab (NextStep in the output): run it in the developer console of that
+    tab, then reload the tab. Never clear Redis for this: it logs out every
+    user. Other API sessions keep the old menu until their session ends.
+
 SYNOPSIS
     clio update-app-section [options]
 

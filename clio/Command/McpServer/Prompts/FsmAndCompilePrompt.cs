@@ -82,7 +82,7 @@ public static class FsmAndCompilePrompt
 			  `package-name` compile does not pick such a save up and a full one takes about 20 minutes. Do not pass
 			  `package-name` with it.
 			  If the tool returns exit-code 0 with an in-progress note, it is still running server-side —
-			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
+			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying. The same holds if your client stops waiting first (for example `Request timed out`): never compile again to check.
 			  """;
 		}
 		if (string.IsNullOrWhiteSpace(packageName)) {
@@ -95,7 +95,7 @@ public static class FsmAndCompilePrompt
 			  registered Creatio environment `{environmentName}`.
 			  Do not pass `package-name` when you need the equivalent of `clio cc -e {environmentName} --all`.
 			  A full compilation can take several minutes; if the tool returns exit-code 0 with an
-			  in-progress note, it is still running server-side — poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
+			  in-progress note, it is still running server-side — poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying. The same holds if your client stops waiting first (for example `Request timed out`): never compile again to check.
 			  """;
 		}
 		return $"""
@@ -107,7 +107,7 @@ public static class FsmAndCompilePrompt
 			  `{packageName}` for registered Creatio environment `{environmentName}`.
 			  Pass `package-name` exactly as provided to avoid switching to full compilation.
 			  If the tool returns exit-code 0 with an in-progress note, it is still running server-side —
-			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying.
+			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying. The same holds if your client stops waiting first (for example `Request timed out`): never compile again to check.
 			  """;
 	}
 }

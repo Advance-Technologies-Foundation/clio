@@ -232,6 +232,46 @@ public sealed class GetClassicPageSourcesToolE2ETests : McpContractFixtureBase {
 			because: "at least one ContactPageV2 child page declares localizable strings, which must reach its resourceStrings");
 	}
 
+	[Test]
+	[Description("Writes each detail entry's bodies as its replacing-layer chain base->top ([{pkg, body}]); an entry without bodies is explained by a warning naming that detail.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-classic-page-sources writes each detail's layer chain as bodies")]
+	[AllureDescription("Collects the ContactPageV2 sources on a real stand and verifies at least one detail entry carries bodies and every bodies value is a non-empty array of {pkg, body} items with non-empty pkg and a string body. A detail without bodies must be named in a warning. No specific layer count is asserted, since the installed products vary per stand.")]
+	public async Task GetPageSources_Should_Write_Detail_Bodies_As_Layer_Chain() {
+		// Arrange & Act
+		SharedPageSources shared = await GetOrCollectSharedPageSourcesAsync();
+		GetClassicPageSourcesResponse response = shared.Response;
+
+		// Assert
+		response.Success.Should().BeTrue(
+			because: $"the page sources must assemble for '{MultiLayerPage}'. Error: {response.Error}");
+		using JsonDocument manifest = JsonDocument.Parse(shared.ManifestJson);
+		manifest.RootElement.TryGetProperty("detailSchemas", out JsonElement details).Should().BeTrue(
+			because: "ContactPageV2 references details");
+		List<JsonProperty> detailEntries = details.EnumerateObject().ToList();
+		detailEntries.Should().NotBeEmpty(because: "ContactPageV2 references details");
+		detailEntries.Any(detail => detail.Value.TryGetProperty("bodies", out _)).Should().BeTrue(
+			because: "a detail whose every layer loads carries its layer chain");
+		foreach (JsonProperty detail in detailEntries) {
+			if (!detail.Value.TryGetProperty("bodies", out JsonElement bodies)) {
+				(response.Warnings ?? []).Should().Contain(w => w.Contains($"detail '{detail.Name}'") && w.Contains("bodies"),
+					because: $"detail '{detail.Name}' without bodies must be explained by a warning");
+				continue;
+			}
+			bodies.ValueKind.Should().Be(JsonValueKind.Array, because: $"detail '{detail.Name}' bodies must be an array");
+			bodies.GetArrayLength().Should().BeGreaterThan(0,
+				because: $"detail '{detail.Name}' bodies lists at least its top layer");
+			foreach (JsonElement layer in bodies.EnumerateArray()) {
+				layer.GetProperty("pkg").GetString().Should().NotBeNullOrEmpty(
+					because: $"every layer of detail '{detail.Name}' names its package");
+				layer.TryGetProperty("body", out JsonElement layerBody).Should().BeTrue(
+					because: $"every layer of detail '{detail.Name}' carries its own body");
+				layerBody.ValueKind.Should().Be(JsonValueKind.String,
+					because: $"every layer body of detail '{detail.Name}' is the layer's source text");
+			}
+		}
+	}
+
 	// A resourceStrings block is { key: { culture: text } } with at least one non-empty text per key.
 	private static void AssertCultureMap(JsonElement block, string owner) {
 		block.ValueKind.Should().Be(JsonValueKind.Object, because: $"{owner} resourceStrings must be an object");

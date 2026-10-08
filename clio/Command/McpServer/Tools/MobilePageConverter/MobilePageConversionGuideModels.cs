@@ -807,7 +807,7 @@ public sealed class MobileComponentContract {
 	/// generation — and only then, because the web-derived one publishes Angular element attributes
 	/// (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) under that same key and they are not mobile properties.
 	/// <para>
-	/// Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>, which is also what the property
+	/// Built by <c>MobileRegistryDeclarations.BuildAllowedPropertyNames</c>, which is also what the property
 	/// prune enforces — so wherever <see cref="MobilePageConversionGuide.PrunedProperties"/> is non-null this
 	/// is exactly the set it can be reconciled against. (The prune is gated on the STAND as well, so the
 	/// reverse does not hold: this set can carry the inherited surface on a conversion that pruned nothing.)

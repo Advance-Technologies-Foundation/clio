@@ -99,6 +99,8 @@ The command prints structured JSON that includes:
 - created section identity and resolved entity schema name
 - resolved entity summary when available
 - created page summaries when available
+- `Warnings` when the menu cache of clio's session could not be cleared
+- `NextStep` — how to refresh an open browser tab that still shows the old menu after a reload
 
 ## Example
 
@@ -131,6 +133,7 @@ create a web-only section with automatically resolved icon metadata
   when it does not already start with it, and the prefix casing is always
   canonicalized (for example --code usrContacts with prefix Usr gives
   UsrContacts). The code must contain only Latin letters, digits, or underscore.
+- After the section is created, clio calls `ConfigurationDataService/GetData` with `forceGet = true` in the same Creatio session. That clears the session's cached module structure and its workplace and section caches, so the new section appears in the menu that session reads without clearing Redis or logging anyone out. Other sessions keep the old menu: an open browser tab clears its own cache only when it receives the `ConfigurationStructureChanged` websocket message, so a tab that was not connected at that moment keeps the old menu across reloads, and other API sessions keep it until they clear it or their session ends. On success the command prints, and the MCP response carries as `next-step`, the call that fixes such a tab: run `fetch('<GetData URL>', {method:'POST', headers:{'Content-Type':'application/json', BPMCSRF:document.cookie.match(/BPMCSRF=([^;]+)/)[1]}, body:'true'})` in the developer console of that tab, then reload it; the URL is the environment's own `ConfigurationDataService/GetData` URL. Never clear Redis for this: it logs out every user. A failed clear does not fail the command: it is reported as a warning (`Warnings` in the output, `warnings` in the MCP response).
 
 ## Timeout budget and failure classification
 
@@ -157,12 +160,12 @@ and `retry-guidance`.
 
 ### MCP response deadline (`in-progress`)
 
-Some MCP clients (for example GitHub Copilot CLI) enforce a **hard ~180 s
-per-request ceiling that progress notifications do not reset**, so on a cold or
-large environment the whole `create-app-section` call can exceed it and the
-client abandons the request with an opaque `-32001 Request timed out` (ENG-91316).
-To stay under that ceiling the MCP tool bounds its **response** by a wall-clock
-deadline (default **150 s**, override with `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`,
+Some MCP clients enforce a **hard per-request ceiling that progress notifications
+do not reset** (Claude Code desktop: 60 s; GitHub Copilot CLI: ~180 s), so on a cold
+or large environment the whole `create-app-section` call can exceed it and the
+client abandons the request with an opaque `-32001 Request timed out` (ENG-91316,
+ENG-102333). To stay under that ceiling the MCP tool bounds its **response** by a
+wall-clock deadline (default **45 s**, override with `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`,
 whole seconds, `0 < n ≤ 600`). When the work exceeds the deadline the tool returns
 `error-class: creatio-timeout` with `section-created: in-progress` **before** the
 client gives up, while the section keeps being created in the background on the

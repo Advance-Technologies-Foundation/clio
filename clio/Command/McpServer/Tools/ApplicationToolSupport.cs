@@ -46,7 +46,9 @@ internal static class ApplicationToolResultMapper {
 					ParentSchemaName = page.ParentSchemaName
 				})
 				.ToList(),
-			result.SchemaNamePrefix);
+			result.SchemaNamePrefix,
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionContextResponse Map(ApplicationSectionCreateResult result) {
@@ -92,7 +94,9 @@ internal static class ApplicationToolResultMapper {
 					PackageName = page.PackageName,
 					ParentSchemaName = page.ParentSchemaName
 				})
-				.ToList());
+				.ToList(),
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionUpdateContextResponse Map(ApplicationSectionUpdateResult result) {
@@ -129,7 +133,8 @@ internal static class ApplicationToolResultMapper {
 			CaptionCulture: result.CaptionCulture,
 			CaptionCultureValue: result.CaptionCultureValue,
 			PreservedCultures: result.PreservedCultures,
-			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null);
+			Warnings: result.Warnings is { Count: > 0 } ? result.Warnings : null,
+			NextStep: result.NextStep);
 	}
 
 	public static ApplicationSectionDeleteContextResponse Map(ApplicationSectionDeleteResult result) {
@@ -284,8 +289,13 @@ internal static class ApplicationToolHelper {
 	/// </summary>
 	/// <param name="caption">Requested section caption, surfaced in the guidance message.</param>
 	/// <param name="code">Optional explicit section code; helps the agent recognise the generated page schemas.</param>
+	/// <param name="nextStep">
+	/// The browser-tab instruction a completed answer carries. It depends only on the environment, so the in-progress
+	/// answer can carry it too; <see langword="null"/> when it could not be built.
+	/// </param>
 	/// <returns>Structured in-progress envelope.</returns>
-	public static ApplicationSectionContextResponse CreateSectionInProgressResponse(string caption, string? code) {
+	public static ApplicationSectionContextResponse CreateSectionInProgressResponse(string caption, string? code,
+		string? nextStep = null) {
 		string codeHint = string.IsNullOrWhiteSpace(code)
 			? string.Empty
 			: $" (code '{code.Trim()}', pages '{code.Trim()}_ListPage' / '{code.Trim()}_FormPage')";
@@ -300,7 +310,8 @@ internal static class ApplicationToolHelper {
 				+ "short while, then poll list-app-sections and get-app-info until the section and its "
 				+ "generated List and Form pages appear; only then continue. If the section still does not "
 				+ "appear after several minutes of polling, the background creation has failed (not merely "
-				+ "slowed) and a single retry of create-app-section is then safe.");
+				+ "slowed) and a single retry of create-app-section is then safe.",
+			NextStep: nextStep);
 	}
 
 	public static ApplicationSectionUpdateContextResponse CreateSectionUpdateContextResponse(ApplicationSectionUpdateContextResponse response) {
