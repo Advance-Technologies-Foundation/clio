@@ -263,6 +263,10 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 			Match operation = InProgressOperationId.Match(answer);
 			operation.Success.Should().BeTrue(
 				because: "the in-progress note must carry the operation-id compile-status is polled with: {0}", answer);
+			answer.Should().Contain("started-utc ",
+				because: "after a lost record the agent compares compilation-history rows with the time it called: {0}", answer);
+			answer.Should().NotContain("accepted",
+				because: "the stub still holds the login, so the build request has not even been sent: {0}", answer);
 			status.Status.Should().Be("running", because: "the compile is still held by the stub");
 			status.OperationId.Should().Be(operation.Groups[1].Value,
 				because: "compile-status must describe the operation the in-progress note named");
@@ -318,6 +322,10 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 				.And.StartWith("[untrusted-source-text begin]",
 					because: "the compiler's text is fenced as text the environment authored, with the file cut to its name");
 			withHistory.CheckedUtc.Should().NotBeNull(because: "the ages are counted back from it");
+			withHistory.Note.Should().Contain("never started",
+				because: "no row since the call can mean a request lost with a restarted server (QA round 3): {0}", withHistory.Note);
+			withHistory.Note.Should().Contain("Do not read " + LastCompilationLogTool.ToolName + " for it",
+				because: "with no row since the call that undated verdict can only be an earlier compile's: {0}", withHistory.Note);
 			withoutHistory.Status.Should().Be("not-found", because: "the server still holds no record");
 			withoutHistory.CompilationHistory.Should().BeNull(because: "the stub served no history and no session offset");
 			withoutHistory.CompilationHistoryError.Should().Be(CompileStatusTool.HistoryUnreadableError,

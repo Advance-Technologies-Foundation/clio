@@ -99,7 +99,7 @@ public record CommandExecutionResult(
 	//                     (DI/bootstrap/wiring bugs, a failed HTTP/verification call). Use FromError(...)
 	//                     for a message or FromException(...) for the full exception chain.
 	//   • exit code  0  → success. Also used for an IN-PROGRESS notice (FromInfo): the requested
-	//                     operation was accepted and is still running server-side past the MCP response
+	//                     operation was started and has not finished at the MCP response
 	//                     deadline — not a failure, so it stays on the success code, with the actionable
 	//                     "poll for status" guidance carried in the message (ENG-91315).
 	// Keeping the failure classes on distinct codes lets MCP callers / e2e tell "you passed bad
@@ -133,7 +133,7 @@ public record CommandExecutionResult(
 	/// Creates a successful <see cref="CommandExecutionResult"/> (exit code 0) carrying an informational
 	/// message instead of command output. Use for an IN-PROGRESS notice — a long-running operation
 	/// (e.g. <c>restart-by-environment-name</c> waiting for readiness, or <c>compile-creatio</c> exceeding
-	/// the MCP response deadline) that was accepted and is still running server-side: not a failure, so
+	/// the MCP response deadline) that was started and has not finished: not a failure, so
 	/// it stays on the success code, with actionable "poll for status" guidance in <paramref name="message"/>.
 	/// </summary>
 	public static CommandExecutionResult FromInfo(string message) =>
