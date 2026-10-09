@@ -92,7 +92,7 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			new PageBaselineGuard(fileSystem ?? new MockFileSystem()),
-			new PersistedResourceKeyReader());
+			new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 	}
 
 	/// <summary>
