@@ -46,7 +46,10 @@ public class ModifyProcessAsNewVersionTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	// Destructive=false is the substantive claim here, not a formality: this operation never opens, saves or
 	// activates the source. Everything it writes goes to a clone, and what the environment executes is unchanged
-	// when it returns — so a caller gated on destructive consent must not be stopped by it.
+	// when it returns — so a caller gated on destructive consent must not be stopped by it. The one live effect is
+	// a setTracing beside real edits (ENG-102111): it switches tracing for the whole family at once, the running
+	// version included, so the description tells the caller to put that to the user first - it changes what each
+	// run records, not which version runs.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "
@@ -86,7 +89,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
 		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
 		 + "server silently discards while "
-		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). After a successful save the version normally stays INTERPRETED and "
+		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits it switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "

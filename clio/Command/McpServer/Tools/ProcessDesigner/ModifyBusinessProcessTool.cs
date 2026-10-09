@@ -358,7 +358,7 @@ public class ModifyBusinessProcessTool(
 		 + "string, empty clears): the process-level usings and methods of its scriptTask C#. "
 		 + "setTracing (enabled:true|false): process tracing, on the version root; a traced run logs every "
 		 + "parameter value (get-guidance name=process-tracing). "
-		 + "Operations apply in order; any failure aborts the edit (nothing is saved). A SUCCESSFUL edit may still "
+		 + "Operations apply in order; any failure aborts the edit (setTracing aside). A SUCCESSFUL edit may still "
 		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
 		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
 		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "

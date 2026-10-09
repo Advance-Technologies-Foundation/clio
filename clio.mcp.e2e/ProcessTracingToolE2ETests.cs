@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
-using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -10,6 +9,7 @@ using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2EArrange;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
@@ -33,7 +33,6 @@ public sealed class ProcessTracingToolE2ETests {
 
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
-	private const string DescribeToolName = DescribeProcessTool.ToolName;
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 	private const string WrittenAgainst = "1.6.6.92";
 
@@ -43,7 +42,7 @@ public sealed class ProcessTracingToolE2ETests {
 	[AllureName("create-business-process isTracing switches tracing on and setTracing switches it off")]
 	public async Task Tracing_Should_SwitchOnAtCreate_AndOffWithSetTracing() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context = await StartAsync("process tracing", WrittenAgainst);
 		string processName = $"UsrClioBpTracingE2e{Guid.NewGuid():N}";
 		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -54,7 +53,7 @@ public sealed class ProcessTracingToolE2ETests {
 		createdText.Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
-			DescribeProcessResult tracedGraph = ParseDescribeResult(await DescribeAsync(context, processName));
+			DescribeProcessResult tracedGraph = ParseDescribedProcess(await DescribeAsync(context, processName));
 
 			// Act
 			CallToolResult switchedOff = await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
@@ -62,7 +61,7 @@ public sealed class ProcessTracingToolE2ETests {
 				["process-name"] = processName,
 				["operations"] = "[ { \"op\": \"setTracing\", \"enabled\": false } ]"
 			});
-			DescribeProcessResult untracedGraph = ParseDescribeResult(await DescribeAsync(context, processName));
+			DescribeProcessResult untracedGraph = ParseDescribedProcess(await DescribeAsync(context, processName));
 
 			// Assert
 			createdText.Should().Contain("Tracing is now ON",
@@ -80,7 +79,7 @@ public sealed class ProcessTracingToolE2ETests {
 			untracedGraph.Tracing.Should().BeNull(
 				because: "after setTracing enabled:false the server omits the block, which means runs are not traced");
 		} finally {
-			await DeleteProcessAsync(context.EnvironmentName!, processName);
+			await DeleteProcessAsync(context.EnvironmentName, processName);
 		}
 	}
 
@@ -90,7 +89,7 @@ public sealed class ProcessTracingToolE2ETests {
 	[AllureName("modify-business-process refuses setTracing without enabled")]
 	public async Task SetTracing_Should_BeRefused_WhenEnabledIsMissing() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context = await StartAsync("process tracing", WrittenAgainst);
 		string processName = $"UsrClioBpTracingRefuseE2e{Guid.NewGuid():N}";
 		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -106,14 +105,14 @@ public sealed class ProcessTracingToolE2ETests {
 				["process-name"] = processName,
 				["operations"] = "[ { \"op\": \"setTracing\" } ]"
 			});
-			DescribeProcessResult graph = ParseDescribeResult(await DescribeAsync(context, processName));
+			DescribeProcessResult graph = ParseDescribedProcess(await DescribeAsync(context, processName));
 
 			// Assert
 			SerializeToolText(refused).Should().Contain("'setTracing' requires 'enabled'",
 				because: "the server's refusal names the missing argument");
 			graph.Tracing.Should().NotBeNull(because: "a refused request changes nothing, and the process started traced");
 		} finally {
-			await DeleteProcessAsync(context.EnvironmentName!, processName);
+			await DeleteProcessAsync(context.EnvironmentName, processName);
 		}
 	}
 
@@ -123,7 +122,7 @@ public sealed class ProcessTracingToolE2ETests {
 	[AllureName("modify-business-process-as-new-version refuses a setTracing-only batch and creates no version")]
 	public async Task SetTracing_Should_BeRefusedBeforeAVersionExists_OnTheVersionRoute() {
 		// Arrange
-		await using ArrangeContext context = await ArrangeAsync();
+		await using ProcessDesignerArrangeContext context = await StartAsync("process tracing", WrittenAgainst);
 		string processName = $"UsrClioBpTracingVersionE2e{Guid.NewGuid():N}";
 		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -139,7 +138,7 @@ public sealed class ProcessTracingToolE2ETests {
 				["process-name"] = processName,
 				["operations"] = "[ { \"op\": \"setTracing\", \"enabled\": true } ]"
 			});
-			DescribeProcessResult graph = ParseDescribeResult(await DescribeAsync(context, processName));
+			DescribeProcessResult graph = ParseDescribedProcess(await DescribeAsync(context, processName));
 
 			// Assert
 			SerializeToolText(refused).Should().Contain("Send it to modify-business-process instead",
@@ -148,7 +147,7 @@ public sealed class ProcessTracingToolE2ETests {
 			(graph.Versions ?? new List<DescribedProcessVersion>()).Count(member => !member.IsRoot).Should().Be(0,
 				because: "the refusal fires before the clone, so the family still holds only the root");
 		} finally {
-			await DeleteProcessAsync(context.EnvironmentName!, processName);
+			await DeleteProcessAsync(context.EnvironmentName, processName);
 		}
 	}
 
@@ -165,89 +164,12 @@ public sealed class ProcessTracingToolE2ETests {
 			["flows"] = new[] { new Dictionary<string, object?> { ["source"] = "Start1", ["target"] = "End1" } }
 		});
 
-	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processName) =>
-		await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName
-		});
+	/// <summary>Deserialises the graph through the shared reader, which locates it by content.</summary>
+	private static DescribeProcessResult ParseDescribedProcess(CallToolResult describeResult) =>
+		JsonSerializer.Deserialize<DescribeProcessResult>(
+			DescribedProcessGraph.Read(describeResult).ToJsonString(),
+			new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
 
 	private static string SerializeToolText(CallToolResult callResult) =>
-		string.Join("\n", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
-
-	private static DescribeProcessResult ParseDescribeResult(CallToolResult callResult) {
-		JsonSerializerOptions options = new() { PropertyNameCaseInsensitive = true };
-		JsonElement content = JsonSerializer.SerializeToElement(callResult.Content);
-		foreach (JsonElement block in content.EnumerateArray()) {
-			if (!block.TryGetProperty("text", out JsonElement textElement)
-					|| textElement.ValueKind != JsonValueKind.String) {
-				continue;
-			}
-			string? envelopeJson = textElement.GetString();
-			if (string.IsNullOrWhiteSpace(envelopeJson)
-					|| !envelopeJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
-				continue;
-			}
-			using JsonDocument envelope = JsonDocument.Parse(envelopeJson);
-			if (!envelope.RootElement.TryGetProperty("execution-log-messages", out JsonElement messages)
-					|| messages.ValueKind != JsonValueKind.Array) {
-				continue;
-			}
-			foreach (JsonElement message in messages.EnumerateArray()) {
-				if (!message.TryGetProperty("value", out JsonElement value) || value.ValueKind != JsonValueKind.String) {
-					continue;
-				}
-				string? graphJson = value.GetString();
-				if (string.IsNullOrWhiteSpace(graphJson)
-						|| !graphJson.TrimStart().StartsWith("{", StringComparison.Ordinal)) {
-					continue;
-				}
-				try {
-					DescribeProcessResult? graph = JsonSerializer.Deserialize<DescribeProcessResult>(graphJson, options);
-					if (graph is { SchemaUId: not null }) {
-						return graph;
-					}
-				} catch (JsonException) {
-					// Not the structured-graph log message; keep scanning.
-				}
-			}
-		}
-		throw new InvalidOperationException("The describe-business-process MCP result did not contain a structured graph.");
-	}
-
-	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, string toolName,
-		Dictionary<string, object?> args) {
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		toolNames.Should().Contain(toolName,
-			because: $"the {toolName} tool must be discoverable via the get-tool-contract compact index before the end-to-end call");
-		return await context.Session.CallToolAsync(
-			toolName, new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
-	}
-
-	private static async Task<ArrangeContext> ArrangeAsync() {
-		McpE2ESettings settings = TestConfiguration.Load();
-		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
-		string? environmentName = settings.Sandbox.EnvironmentName;
-		if (string.IsNullOrWhiteSpace(environmentName)) {
-			Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (with CrtProcessBuilder 1.6.6.92 or newer) to run "
-				+ "the process tracing MCP E2E.");
-		}
-		if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {
-			Assert.Ignore($"The process tracing MCP E2E requires a reachable configured sandbox environment. "
-				+ $"'{environmentName}' was not reachable.");
-		}
-		CancellationTokenSource cancellationTokenSource = new(TimeSpan.FromMinutes(3));
-		McpServerSession session = await McpServerSession.StartAsync(settings, cancellationTokenSource.Token);
-		return new ArrangeContext(session, cancellationTokenSource, environmentName);
-	}
-
-	private sealed record ArrangeContext(
-		McpServerSession Session,
-		CancellationTokenSource CancellationTokenSource,
-		string? EnvironmentName) : IAsyncDisposable {
-		public async ValueTask DisposeAsync() {
-			await Session.DisposeAsync();
-			CancellationTokenSource.Dispose();
-		}
-	}
+		string.Join(Environment.NewLine, callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
 }

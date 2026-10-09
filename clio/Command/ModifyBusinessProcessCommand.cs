@@ -344,9 +344,16 @@ public sealed class ModifyBusinessProcessService(
 			// throw wearing the answer's shape: the elements it is about, and the one word that makes it
 			// re-sendable. Without the element list a caller has the server's sentence and no way to tell the
 			// user WHICH parts of their diagram move.
-			string layoutChange = result.LayoutChange?.RelaySentence() ?? string.Empty;
+			// A failure that still names the schema came AFTER the save: today only a tracing switch that failed
+			// behind a saved edit (ENG-102111). The edit exists, so its layout report is a description rather than a
+			// question - the re-send offer would invite repeating a batch that is already saved - and its warnings
+			// still apply: a compile the saved script change owes must not vanish with the failure.
+			bool saved = !string.IsNullOrWhiteSpace(result.SchemaUId);
+			string layoutChange = (saved ? result.LayoutChange?.ElementsClause() : result.LayoutChange?.RelaySentence())
+				?? string.Empty;
+			string warnings = saved && result.Warnings is { Count: > 0 } ? " " + string.Join(" ", result.Warnings) : string.Empty;
 			throw new InvalidOperationException(
-				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange);
+				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange + warnings);
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,

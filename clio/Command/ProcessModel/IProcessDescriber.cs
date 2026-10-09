@@ -415,8 +415,9 @@ public class DescribeProcessResult {
 
 	/// <summary>
 	/// Process tracing, reported by the server ONLY while it is on: an absent block means runs of the process are
-	/// not traced (or, rarely, that the server could not read the switch and logged it). The switch is a platform user property on the version family's root, so a version reports
-	/// the root's state.
+	/// not traced - or, rarely, that the server could not read the switch and logged it, or that the environment's
+	/// CrtProcessBuilder predates 1.6.6.92 and never reports it (describe keeps a presence-only package requirement).
+	/// The switch is a platform user property on the version family's root, so a version reports the root's state.
 	/// </summary>
 	[JsonPropertyName("tracing")]
 	public DescribedProcessTracing Tracing { get; set; }
@@ -441,8 +442,10 @@ public sealed class DescribedProcessTracing {
 	public bool Enabled { get; set; }
 
 	/// <summary>
-	/// The last day runs are traced (<c>yyyy-MM-dd</c>), after which the platform switches tracing off by itself;
-	/// <c>null</c> when the environment's <c>ProcessParameterTracingDisableTimeoutDays</c> is 0 and it never does.
+	/// The last day runs are traced (<c>yyyy-MM-dd</c>), after which the platform switches tracing off by itself.
+	/// <c>null</c> in two OPPOSITE cases: the environment's <c>ProcessParameterTracingDisableTimeoutDays</c> is 0, so
+	/// it never switches off; or the switch-on date could not be read, so the date is unknown and the platform's next
+	/// nightly run may switch it off. The warning of the write that switched it on says which.
 	/// </summary>
 	[JsonPropertyName("turnOffDate")]
 	public string TurnOffDate { get; set; }

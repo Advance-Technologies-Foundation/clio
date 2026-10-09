@@ -348,7 +348,13 @@ public sealed class CreateBusinessProcessService(
 		BuildProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("BuildProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			throw new InvalidOperationException(result.ErrorMessage ?? "BuildProcess failed.");
+			// A failure that still names the schema came AFTER the save: today only a tracing switch that failed
+			// behind a created process (ENG-102111). The process exists, so the build's warnings still apply - a
+			// compile its script task owes must not vanish with the failure.
+			string warnings = !string.IsNullOrWhiteSpace(result.SchemaUId) && result.Warnings is { Count: > 0 }
+				? " " + string.Join(" ", result.Warnings)
+				: string.Empty;
+			throw new InvalidOperationException((result.ErrorMessage ?? "BuildProcess failed.") + warnings);
 		}
 
 		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);
