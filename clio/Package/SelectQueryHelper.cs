@@ -86,32 +86,84 @@ internal static class SelectQueryHelper
 		int allowedAttempts = requestTimeout == Timeout.Infinite
 			? TransientFailureAttempts
 			: BoundedCallAttempts;
+		// Issue #1119: a server-side "Collection was modified; enumeration operation may not execute."
+		// arrived as an HTTP 200 with success:false and took out a whole 45-minute e2e run, because the
+		// read that resolves the target package had no retry at all.
+		(T response, string responseJson) = SendWithTransientRetry<(T Response, string Body)>(
+			() =>
+			{
+				string body = client.ExecutePostRequest(
+					url,
+					requestBody,
+					requestTimeout, maxAttempts, retryDelay);
+				// ENG-93365: an HTML error/login page or a truncated body must surface as a typed error naming the
+				// endpoint and the actual body, never as a raw System.Text.Json parser message.
+				return (ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, body, JsonOptions), body);
+			},
+			answer => answer.Response.Success
+				? null
+				: DescribeServerFailure(answer.Response.ErrorInfo?.Message, answer.Body),
+			allowedAttempts);
+		if (!response.Success)
+		{
+			throw new InvalidOperationException(
+				$"SelectQuery failed: {DescribeServerFailure(response.ErrorInfo?.Message, responseJson)}");
+		}
+		return response;
+	}
+
+	/// <summary>
+	/// Sends an idempotent read and re-sends it while the server answers with a transient failure, up to the
+	/// shared transient budget (<see cref="TransientFailureAttempts"/> sends, <see cref="TransientFailureRetryDelay"/>
+	/// apart).
+	/// </summary>
+	/// <remarks>
+	/// Only for reads: a re-send must carry no side effect. The server reports these failures in an HTTP 200 body
+	/// (<c>success: false</c>), so the transport-level retry never sees them. The caller decides what a failed final
+	/// answer means; this method never throws on its own.
+	/// </remarks>
+	/// <typeparam name="TAnswer">The parsed answer of one send.</typeparam>
+	/// <param name="send">Sends the read once and parses the answer.</param>
+	/// <param name="getFailureDetail">Returns <see langword="null"/> for a successful answer, otherwise the failure
+	/// text the server reported (see <see cref="DescribeServerFailure"/>).</param>
+	/// <param name="allowedAttempts">Maximum number of sends.</param>
+	/// <returns>The first successful answer, the first non-transient failure, or the last answer once the budget is
+	/// spent.</returns>
+	internal static TAnswer SendWithTransientRetry<TAnswer>(
+		Func<TAnswer> send,
+		Func<TAnswer, string?> getFailureDetail,
+		int allowedAttempts = TransientFailureAttempts)
+	{
+		ArgumentNullException.ThrowIfNull(send);
+		ArgumentNullException.ThrowIfNull(getFailureDetail);
 		int attempt = 1;
 		while (true)
 		{
-			string responseJson = client.ExecutePostRequest(
-				url,
-				requestBody,
-				requestTimeout, maxAttempts, retryDelay);
-			// ENG-93365: an HTML error/login page or a truncated body must surface as a typed error naming the
-			// endpoint and the actual body, never as a raw System.Text.Json parser message.
-			T response = ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, responseJson, JsonOptions);
-			if (response.Success)
+			TAnswer answer = send();
+			string? detail = getFailureDetail(answer);
+			if (detail is null || attempt >= allowedAttempts || !IsTransientFailure(detail))
 			{
-				return response;
-			}
-			string detail = response.ErrorInfo?.Message ?? responseJson;
-			// Issue #1119: a server-side "Collection was modified; enumeration operation may not execute."
-			// arrived as an HTTP 200 with success:false and took out a whole 45-minute e2e run, because the
-			// read that resolves the target package had no retry at all.
-			if (attempt >= allowedAttempts || !IsTransientFailure(detail))
-			{
-				throw new InvalidOperationException($"SelectQuery failed: {detail}");
+				return answer;
 			}
 			Thread.Sleep(TransientFailureRetryDelay);
 			attempt++;
 		}
 	}
+
+	/// <summary>
+	/// The text that describes a server-reported failure: the platform's <c>errorInfo.message</c>, or the raw
+	/// response body when that message is absent or blank.
+	/// </summary>
+	/// <remarks>
+	/// ENG-102683: during a route-table reload the platform answers <c>success: false</c> with an empty
+	/// <c>errorInfo.message</c> and puts "Collection was modified" elsewhere in the body; treating a blank message as
+	/// the detail hid the cause from both the transient classifier and the final error.
+	/// </remarks>
+	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
+	/// <param name="responseJson">The raw response body.</param>
+	/// <returns>The failure text.</returns>
+	internal static string DescribeServerFailure(string? errorMessage, string responseJson) =>
+		string.IsNullOrWhiteSpace(errorMessage) ? responseJson : errorMessage;
 
 	/// <summary>
 	/// Whether a server-reported SelectQuery failure is one a re-send can clear.

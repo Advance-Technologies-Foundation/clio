@@ -120,6 +120,28 @@ public class SelectQueryHelperTests {
 	}
 
 	[Test]
+	[Description("ENG-102683: treats a blank errorInfo.message as absent, so a transient marker elsewhere in the body is still retried and the final error names the raw body.")]
+	public void ExecuteSelectQuery_Should_Classify_And_Report_Raw_Body_When_Error_Message_Is_Blank() {
+		// Arrange
+		const string blankMessageJson =
+			"""{"success":false,"errorInfo":{"message":"","stackTrace":"Collection was modified; enumeration operation may not execute."}}""";
+		_applicationClient.ExecutePostRequest(
+				SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(blankMessageJson);
+
+		// Act
+		Action act = () => SelectQueryHelper.ExecuteSelectQuery<TestSelectResponse>(
+			_applicationClient, _serviceUrlBuilder, new { rootSchemaName = "SysPackage" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*stackTrace*Collection was modified*",
+				because: "a blank platform message must fall back to the raw body instead of an empty 'SelectQuery failed: '");
+		_applicationClient.Received(3).ExecutePostRequest(
+			SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
 	[Description("Sends a bounded SelectQuery exactly once even when the server reports a transient failure, so a caller that budgeted the call keeps the bound it stated.")]
 	public void ExecuteSelectQuery_Should_Not_Retry_When_Caller_Bounded_The_Call() {
 		// Arrange

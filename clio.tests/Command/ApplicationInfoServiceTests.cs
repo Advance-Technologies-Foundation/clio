@@ -556,6 +556,147 @@ public sealed class ApplicationInfoServiceTests {
 				+ "type table was removed, including its ordinal fallback for an unmodelled code");
 	}
 
+	[Test]
+	[Description("ENG-102683 T1: re-sends the installed-application SelectQuery when the server answers success:false with 'Collection was modified', and get-app-info succeeds on the retry.")]
+	public void GetApplicationInfo_Should_Retry_SelectQuery_On_Transient_Server_Failure() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns(TransientMessageFailureJson,
+				"""{"success":true,"rows":[{"Id":"app-uid","Code":"APP","Name":"App","Version":"1.0"}]}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.ApplicationId.Should().Be("app-uid",
+			because: "a SelectQuery that hit the route-table reload must be re-sent and its second answer used");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("ENG-102683 T2: re-sends RuntimeEntitySchemaRequest when the server answers success:false with 'Collection was modified' outside errorInfo.message, and get-app-info returns the entity.")]
+	public void GetApplicationInfo_Should_Retry_RuntimeEntitySchemaRequest_On_Transient_Server_Failure() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns(TransientBodyFailureJson,
+				"""{"success":true,"schema":{"uId":"entity-a","name":"UsrAlpha","caption":{"en-US":"Alpha caption"},"columns":{"Items":{}}}}""");
+
+		// Act
+		ApplicationInfoResult result = _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		result.Entities.Select(entity => entity.Name).Should().Contain("UsrAlpha",
+			because: "a runtime schema read that hit the route-table reload must be re-sent and its second answer used");
+		_applicationClient.Received(2).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("ENG-102683 T3: a non-transient success:false SelectQuery answer is sent once and get-app-info throws with the platform text.")]
+	public void GetApplicationInfo_Should_Not_Retry_NonTransient_SelectQuery_Failure() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns(NonTransientFailureJson);
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*Schema SysInstalledApp not found*",
+				because: "a real failure must fail at once and name the platform's own text");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("ENG-102683 T3: a non-transient success:false RuntimeEntitySchemaRequest answer is sent once and get-app-info throws with the platform text.")]
+	public void GetApplicationInfo_Should_Not_Retry_NonTransient_RuntimeEntitySchemaRequest_Failure() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns(NonTransientFailureJson);
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*entity-a*Schema SysInstalledApp not found*",
+				because: "a real failure must fail at once, name the entity and carry the platform's own text");
+		_applicationClient.Received(1).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("ENG-102683 T4: a persistent transient SelectQuery failure stops after three sends and the error names the platform text.")]
+	public void GetApplicationInfo_Should_Stop_SelectQuery_Retry_After_Budget_And_Name_Platform_Text() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)))
+			.Returns(TransientMessageFailureJson);
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*Collection was modified*",
+				because: "the final error must carry the platform's failure text, not a generic 'Select query failed.'");
+		_applicationClient.Received(3).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysInstalledApp\"", StringComparison.Ordinal)));
+	}
+
+	[Test]
+	[Description("ENG-102683 T4: a persistent transient RuntimeEntitySchemaRequest failure stops after three sends and the error falls back to the raw body when errorInfo.message is empty.")]
+	public void GetApplicationInfo_Should_Stop_RuntimeEntitySchemaRequest_Retry_After_Budget_And_Name_Raw_Body() {
+		// Arrange
+		ConfigureHappyPathResponses();
+		_applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+				Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)))
+			.Returns(TransientBodyFailureJson);
+
+		// Act
+		Action action = () => _sut.GetApplicationInfo("sandbox", null, "APP");
+
+		// Assert
+		action.Should().Throw<InvalidOperationException>()
+			.WithMessage("*entity-a*Collection was modified*",
+				because: "with an empty errorInfo.message the final error must fall back to the raw response body");
+		_applicationClient.Received(3).ExecutePostRequest(
+			Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
+			Arg.Is<string>(body => body.Contains("\"uId\":\"entity-a\"", StringComparison.Ordinal)));
+	}
+
+	private const string TransientMessageFailureJson =
+		"""{"success":false,"errorInfo":{"message":"System.InvalidOperationException: Collection was modified; enumeration operation may not execute."}}""";
+
+	private const string TransientBodyFailureJson =
+		"""{"success":false,"errorInfo":{"errorCode":"InvalidOperationException","message":"","stackTrace":"Collection was modified; enumeration operation may not execute. at System.Web.Routing.RouteCollection.GetRouteData"}}""";
+
+	private const string NonTransientFailureJson =
+		"""{"success":false,"errorInfo":{"message":"Schema SysInstalledApp not found."}}""";
+
 	private void ConfigureHappyPathResponses() {
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
