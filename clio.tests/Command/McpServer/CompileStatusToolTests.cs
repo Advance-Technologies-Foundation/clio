@@ -70,7 +70,7 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
-	[Description("ENG-102333: a not-found answer lists the environment's newest compilation-history rows with their UTC finish time and age, so an agent can tie one to the compile it started; the note does not read as 'nothing ran', and offers last-compilation-log and the user only once a compile has had time to write a row.")]
+	[Description("ENG-102333: a not-found answer lists the environment's newest compilation-history rows with their UTC finish time and age, so an agent can tie one to the compile it started; the note does not read as 'nothing ran', and a compile that wrote no row since the call ends with the user, not with last-compilation-log.")]
 	public void GetStatus_Should_ListTheCompilationHistory_WhenNoOperationIsTracked() {
 		// Arrange
 		CompileOperationRegistry registry = new();
@@ -121,7 +121,31 @@ public sealed class CompileStatusToolTests {
 		response.Note.Should().Contain("ask the user before a restart that rests on them alone",
 			because: "any schema publisher can write a row, so a restart that reloads the application for every user cannot rest on rows alone");
 		response.Note.Should().Contain("If no row was written since your call",
-			because: "the still-running case refers to the agent's own call, not to the five-minute rule just before it");
+			because: "the rowless case refers to the agent's own call, not to the seven-minute rule just before it");
+		response.Note.Should().Contain("compare finished-utc with the started-utc of compile-creatio's in-progress answer, allowing a minute either way",
+			because: "the in-progress answer carries the time the agent compares the rows with");
+		response.Note.Should().Contain("A row that finished clearly before your call is not your compile's",
+			because: "right after a restart the newest row can be over seven minutes old and still predate the call (QA)");
+		response.Note.Should().Contain("never started",
+			because: "a request lost with a restarted MCP server never runs, so no row since the call is not proof the compile is running (QA)");
+		response.Note.Should().Contain("treat it as not run and ask the user before compiling again",
+			because: "a compile that wrote no row in time ends in the user's decision");
+		response.Note.Should().Contain("Do not read " + LastCompilationLogTool.ToolName + " for it",
+			because: "with no row since the call that undated verdict can only be an earlier compile's, which QA's agent read as its own success");
+	}
+
+	[Test]
+	[Description("ENG-102333 round 3: the history read is bounded inside the built-in response deadline, so a not-found answer still reaches a client that gives up at 60 s like every other long tool's answer.")]
+	public void DefaultHistoryReadBudget_Should_StayInsideTheBuiltInResponseDeadline() {
+		// Arrange
+		TimeSpan builtInDeadline = McpProgressHeartbeat.ResolveResponseDeadline(null);
+
+		// Act
+		TimeSpan budget = CompileStatusTool.DefaultHistoryReadBudget;
+
+		// Assert
+		budget.Should().BeLessThan(builtInDeadline,
+			because: "the answer must arrive by the time the other long tools answer, well inside a 60 s client ceiling");
 	}
 
 	[Test]
@@ -169,6 +193,10 @@ public sealed class CompileStatusToolTests {
 			because: "the environment still holds its latest compile verdict, and last-compilation-log reads it without compiling");
 		response.Note.Should().Contain("carries no time",
 			because: "that verdict belongs to the latest FINISHED build, so read while a compile runs it is an earlier one's");
+		response.Note.Should().Contain("it cannot show that your compile ran",
+			because: "a compile whose request was lost with a restarted MCP server never ran, and the verdict is then an earlier compile's (QA)");
+		response.Note.Should().Contain("ask before compiling again or restarting on it",
+			because: "a restart reloads the application for every user, and an undated verdict is weaker evidence than the rows, whose restart already needs the user");
 	}
 
 	[Test]
@@ -336,7 +364,9 @@ public sealed class CompileStatusToolTests {
 
 		// Assert
 		description.Should().Contain("Request timed out",
-			because: "an agent whose client gave up must know the compile keeps running and is tracked here");
+			because: "an agent whose client gave up must know the compile may still be running and is tracked here");
+		description.Should().NotContain("keeps running",
+			because: "a compile whose request was lost with a restarted MCP server never ran, so the contract must not promise it runs (ENG-102333 QA)");
 		description.Should().Contain("compilation-history rows",
 			because: "the description must say what a not-found answer carries for a session that holds no record");
 		description.Should().Contain(CompileStatusTool.HistoryRuleSummary,
