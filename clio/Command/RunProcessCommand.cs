@@ -27,7 +27,7 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 
 	public int TimeoutSeconds { get; set; }
 
-	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running, so the read of
+	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running or not-started, so the read of
 	// a failed run's log gets only what is left. Null on a path with no such deadline.
 	internal DateTimeOffset? ResponseDeadline { get; set; }
 
@@ -234,7 +234,7 @@ public class RunProcessCommand(
 			// The MCP answer already told the caller nothing was launched; sending now would make that false.
 			response = new RunProcessResponse {
 				Status = NotStartedStatus,
-				Error = $"'{model.Code}' was not launched: the MCP response deadline was reached before the launch request was sent."
+				Error = $"'{model.Code}' was not launched: the MCP call was answered or cancelled before the launch request was sent."
 			};
 			return false;
 		}

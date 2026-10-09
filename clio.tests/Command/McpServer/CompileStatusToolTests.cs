@@ -135,6 +135,20 @@ public sealed class CompileStatusToolTests {
 	}
 
 	[Test]
+	[Description("ENG-102333 round 3: the history read is bounded inside the built-in response deadline, so a not-found answer still reaches a client that gives up at 60 s like every other long tool's answer.")]
+	public void DefaultHistoryReadBudget_Should_StayInsideTheBuiltInResponseDeadline() {
+		// Arrange
+		TimeSpan builtInDeadline = McpProgressHeartbeat.ResolveResponseDeadline(null);
+
+		// Act
+		TimeSpan budget = CompileStatusTool.DefaultHistoryReadBudget;
+
+		// Assert
+		budget.Should().BeLessThan(builtInDeadline,
+			because: "the answer must arrive by the time the other long tools answer, well inside a 60 s client ceiling");
+	}
+
+	[Test]
 	[Description("A row stamped a little after this host's clock reads as zero seconds ago, never as a negative age.")]
 	public void GetStatus_Should_NotReportANegativeAge_WhenTheClocksDisagree() {
 		// Arrange
@@ -350,7 +364,9 @@ public sealed class CompileStatusToolTests {
 
 		// Assert
 		description.Should().Contain("Request timed out",
-			because: "an agent whose client gave up must know the compile keeps running and is tracked here");
+			because: "an agent whose client gave up must know the compile may still be running and is tracked here");
+		description.Should().NotContain("keeps running",
+			because: "a compile whose request was lost with a restarted MCP server never ran, so the contract must not promise it runs (ENG-102333 QA)");
 		description.Should().Contain("compilation-history rows",
 			because: "the description must say what a not-found answer carries for a session that holds no record");
 		description.Should().Contain(CompileStatusTool.HistoryRuleSummary,

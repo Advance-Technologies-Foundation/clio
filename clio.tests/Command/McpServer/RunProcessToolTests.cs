@@ -836,6 +836,8 @@ public sealed class RunProcessToolTests {
 		response.Error.Should().Contain("was not launched", because: "the answer is a refusal to launch, not a verdict");
 		response.Error.Should().Contain("nothing ran",
 			because: "the caller must know exactly that no run started, so calling again cannot duplicate one");
+		response.Error.Should().Contain("the launch request was never sent",
+			because: "core-rules tells this answer from a platform refusal, which shares the status, by exactly this phrase");
 		response.Warnings.Should().BeEmpty(because: "there is no run whose outcome is unknown");
 	}
 

@@ -15,8 +15,8 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 // Deliberately NOT [RequiresPackage]-gated, unlike the rest of this folder: the endpoint is built
 // into every Creatio, so a gate would only break consumers. Does not extend BaseTool
-// because its work can outlive the response deadline, and that path holds the per-tenant monitor for the
-// whole call — same shape as CompileCreatioTool.
+// because its work can outlive the response deadline, and that path pins its session container for the
+// whole run rather than taking the per-tenant monitor — same shape as CompileCreatioTool.
 [McpServerToolType]
 public sealed class RunProcessTool(
 	ILogger logger,
@@ -130,7 +130,9 @@ public sealed class RunProcessTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Run (launch) a Creatio business process; resolve its CODE and parameter codes with get-process-signature "
-		+ "first, and read the outcome from `status`. VERSIONS: a code names ONE version, because every saved "
+		+ "first, and read the outcome from `status`. The call answers by the MCP response deadline (45 s by default): "
+		+ "a run that has not ended by then answers `still-running` with no verdict and no result-parameter values - "
+		+ "do not re-run it - and a launch whose request was not sent yet answers `not-started` (nothing ran). VERSIONS: a code names ONE version, because every saved "
 		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
 		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
 		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
@@ -258,7 +260,8 @@ public sealed record RunProcessArgs {
 
 	[JsonPropertyName("result-parameters")]
 	[Description("Codes of the parameters to read back after the run; a non-empty list forces a "
-		+ "background-mode process to run synchronously.")]
+		+ "background-mode process to run synchronously. The values come back only when the run ends within the "
+		+ "MCP response deadline.")]
 	public string[]? ResultParameters { get; init; }
 
 	[JsonPropertyName("timeout")]

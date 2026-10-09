@@ -445,6 +445,25 @@ public sealed class CompileCreatioToolTests
 			because: "the full-compilation guidance belongs to an omitted scope, not an empty one");
 	}
 
+	[TestCase(null, null)]
+	[TestCase("MyPackage", null)]
+	[TestCase(null, "UsrProc")]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: every compile prompt says an in-progress answer means the compile has not finished, never that it is still running server-side - a request lost with a restarted MCP server never runs.")]
+	public void CompileCreatioPrompt_Should_NotPromiseTheCompileIsRunning(string? packageName, string? processName)
+	{
+		// Arrange
+
+		// Act
+		string prompt = FsmAndCompilePrompt.CompileCreatio("sandbox", packageName, processName);
+
+		// Assert
+		prompt.Should().Contain("the compile has not finished",
+			because: "the in-progress answer does not show the environment has begun the build");
+		prompt.Should().NotContain("still running server-side",
+			because: "that is the claim QA showed can be false after a server restart");
+	}
+
 	[TestCase("")]
 	[TestCase("   ")]
 	[Category("Unit")]
@@ -809,7 +828,7 @@ public sealed class CompileCreatioToolTests
 		foreach (string text in new[] { description, recompile.Why })
 		{
 			text.Should().Contain("Request timed out",
-				because: "an agent whose client gave up must recognise the case: the compile keeps running on the stand");
+				because: "an agent whose client gave up must recognise the case: the compile may still be running on the stand");
 			text.Should().Contain(CompileStatusTool.CompileStatusToolName,
 				because: "the record of the running compile is reached through compile-status");
 			text.Should().Contain("compilation-history rows",

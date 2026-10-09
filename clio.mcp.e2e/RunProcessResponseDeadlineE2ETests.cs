@@ -89,6 +89,8 @@ public sealed class RunProcessResponseDeadlineE2ETests {
 			envelope.Error.Should().Contain("was not launched", because: "the answer is a refusal to launch, not a verdict");
 			envelope.Error.Should().Contain("nothing ran",
 				because: "the caller must know no run started, so calling again cannot duplicate one");
+			envelope.Error.Should().Contain("the launch request was never sent",
+				because: "the guidance tells this answer from a platform refusal by exactly this phrase");
 			stub.LoginCount.Should().BeGreaterThan(0,
 				because: "the call must have reached the environment - its login is what hangs. Stub: {0}",
 				stub.DescribeState());
