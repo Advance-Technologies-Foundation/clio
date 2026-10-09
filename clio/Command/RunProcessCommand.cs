@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using Clio.Command.ProcessModel;
 using Clio.Command.StartProcess;
 using Clio.Common;
@@ -26,9 +27,59 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 
 	public int TimeoutSeconds { get; set; }
 
-	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running, so the read of
+	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running or not-started, so the read of
 	// a failed run's log gets only what is left. Null on a path with no such deadline.
 	internal DateTimeOffset? ResponseDeadline { get; set; }
+
+	// Set by the MCP tool: decides, with the tool's deadline answer, whether the launch request is sent at all. Null
+	// on a path with no response deadline, which always sends.
+	internal RunProcessLaunchGate LaunchGate { get; set; }
+}
+
+/// <summary>
+/// Decides, once, between sending a run-process launch request and answering that nothing was launched.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The MCP tool answers at its response deadline while the launch carries on detached in the server process. Before
+/// ENG-102333 the answer was "launched and still running" whatever the launch had reached, so it was held back to
+/// 150 s - long enough that a client giving up at 60 s restarted the MCP server instead. Resolving the model
+/// and logging in come first and can take most of a minute on a busy or reloading environment, so "the request was
+/// sent" is the one fact the answer can rest on, and this gate makes it exact: whichever side claims the gate first
+/// wins, so a request is never sent after the answer said it was not.
+/// </para>
+/// <para>
+/// A sent request still does not prove a launch: a request the environment had only queued can be dropped with its
+/// connection when the MCP server restarts. The answer says so. A caller that cancels its call withdraws the gate
+/// too, so a launch nobody is waiting for never starts afterwards.
+/// </para>
+/// </remarks>
+internal sealed class RunProcessLaunchGate {
+
+	private const int Open = 0;
+	private const int Sent = 1;
+	private const int Withdrawn = 2;
+
+	private int _state = Open;
+	private long _sentUtcTicks;
+
+	/// <summary>Gets when the launch request was sent, or <see langword="null"/> when it was not.</summary>
+	internal DateTime? SentUtc => Volatile.Read(ref _state) == Sent
+		? new DateTime(Interlocked.Read(ref _sentUtcTicks), DateTimeKind.Utc)
+		: null;
+
+	/// <summary>Claims the gate for sending the launch request.</summary>
+	/// <param name="nowUtc">The time the request is sent.</param>
+	/// <returns><see langword="true"/> to send it; <see langword="false"/> when the answer already said nothing was launched.</returns>
+	internal bool TryMarkSent(DateTime nowUtc) {
+		// Written before the exchange, which is a full fence, so a reader that sees Sent sees the time too.
+		Interlocked.Exchange(ref _sentUtcTicks, nowUtc.Ticks);
+		return Interlocked.CompareExchange(ref _state, Sent, Open) == Open;
+	}
+
+	/// <summary>Claims the gate for an answer that says nothing was launched.</summary>
+	/// <returns><see langword="true"/> when the request had not been sent, and now never will be.</returns>
+	internal bool TryWithdraw() => Interlocked.CompareExchange(ref _state, Withdrawn, Open) == Open;
 }
 
 public sealed class RunProcessResponse {
@@ -78,7 +129,7 @@ public class RunProcessCommand(
 	};
 
 	private const string QueuedBackgroundStatus = "queued-background";
-	private const string NotStartedStatus = "not-started";
+	internal const string NotStartedStatus = "not-started";
 
 	private const int InactiveStatus = 0;
 	private const int ErrorStatus = 3;
@@ -179,6 +230,14 @@ public class RunProcessCommand(
 		};
 
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+		if (options.LaunchGate is not null && !options.LaunchGate.TryMarkSent(DateTime.UtcNow)) {
+			// The MCP answer already told the caller nothing was launched; sending now would make that false.
+			response = new RunProcessResponse {
+				Status = NotStartedStatus,
+				Error = $"'{model.Code}' was not launched: the MCP call was answered or cancelled before the launch request was sent."
+			};
+			return false;
+		}
 		// maxAttempts stays 1: idempotency belongs to the specific process, not to this transport, so a
 		// retry can duplicate work.
 		string rawResponse = applicationClient.ExecutePostRequest(url, StjSerializer.Serialize(args),
