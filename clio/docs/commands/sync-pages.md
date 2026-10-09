@@ -33,6 +33,15 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call the MCP `get-guidance` tool with `name=page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call the MCP `get-guidance` tool with `name=page-schema-validators` for details.
+- **Data-source bindings (web and mobile).** Applied to every body when `validate` is `true`. The first segment
+  of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data source
+  that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page bundle is
+  built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged into it).
+  Templates never declare `PDS`: a generated page holds it in its own body, so a replace write that drops it is
+  rejected (ENG-102161). On web, keep the `SCHEMA_MODEL_CONFIG` section, or the `dataSources` and
+  `primaryDataSourceName` operations of `SCHEMA_MODEL_CONFIG_DIFF`; on mobile, the `modelConfigDiff` operations. The
+  inherited `modelConfig` is read before the per-tenant lock; when it cannot be read the check passes and the page
+  result says it did not run.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
   - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a

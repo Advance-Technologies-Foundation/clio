@@ -1579,10 +1579,10 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 		[Test]
-		[Description("sync-pages pre-resolves the mobile apply-oracle base OFF the per-tenant lock for MULTIPLE mobile pages; when the base cannot be resolved the degraded validation surfaces as a per-page warning — proving PreResolveMobileBases runs end-to-end for a multi-page batch through the real MCP transport.")]
+		[Description("sync-pages pre-resolves the mobile apply-oracle base OFF the per-tenant lock for MULTIPLE mobile pages; when the base cannot be resolved the degraded validation surfaces as a per-page warning — proving PreResolveValidationBases runs end-to-end for a multi-page batch through the real MCP transport.")]
 		[AllureTag(ToolName)]
 		[AllureName("sync-pages pre-resolves mobile bases off-lock and surfaces degradation for a multi-page batch")]
-		[AllureDescription("Uses a reachable environment and submits TWO mobile pages whose viewModelConfigDiff inserts into a template-owned array (so each NEEDS an external base) for non-existent schemas. The off-lock pre-resolution therefore fails for both, and each page's result must carry the degraded-base warning through the real MCP server — confirming PreResolveMobileBases ran for every page and that a degraded validation is not reported as a clean pass.")]
+		[AllureDescription("Uses a reachable environment and submits TWO mobile pages whose viewModelConfigDiff inserts into a template-owned array (so each NEEDS an external base) for non-existent schemas. The off-lock pre-resolution therefore fails for both, and each page's result must carry the degraded-base warning through the real MCP server — confirming PreResolveValidationBases ran for every page and that a degraded validation is not reported as a clean pass.")]
 		public async Task PageSyncTool_Should_Surface_Degraded_MobileBase_For_MultiplePages() {
 			// Arrange
 			McpE2ESettings settings = TestConfiguration.Load();
@@ -1616,7 +1616,7 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 			callResult.IsError.Should().NotBeTrue(
 				because: "a degraded base resolution is a structured per-page outcome, not an MCP transport error");
 			response.Pages.Should().HaveCount(2,
-				because: "both submitted mobile pages must be processed off the lock by PreResolveMobileBases");
+				because: "both submitted mobile pages must be processed off the lock by PreResolveValidationBases");
 			response.Pages.Should().OnlyContain(
 				p => p.Validation != null && p.Validation.Warnings != null
 					&& p.Validation.Warnings.Any(w => w.Contains("could not be resolved") && w.Contains("seeded base")),
