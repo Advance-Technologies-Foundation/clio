@@ -117,9 +117,9 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: modify-business-process-as-new-version refuses a setTracing without 'enabled' BEFORE anything is cloned, so no version is created (ENG-102111). This covers the version route without leaving an undeletable version on the stand: the refusal fires in front of the clone. Needs CrtProcessBuilder 1.6.6.92 on the stand.")]
+	[Description("Over the real MCP path: modify-business-process-as-new-version refuses a batch made ONLY of setTracing BEFORE anything is cloned, so no version is created, and names modify-business-process (ENG-102111, owner decision): a version made only to flip a switch would be permanent. It also covers the version route without leaving an undeletable version on the stand. Needs CrtProcessBuilder 1.6.6.92 on the stand.")]
 	[AllureTag(NewVersionToolName)]
-	[AllureName("modify-business-process-as-new-version refuses setTracing without enabled and creates no version")]
+	[AllureName("modify-business-process-as-new-version refuses a setTracing-only batch and creates no version")]
 	public async Task SetTracing_Should_BeRefusedBeforeAVersionExists_OnTheVersionRoute() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync();
@@ -136,13 +136,14 @@ public sealed class ProcessTracingToolE2ETests {
 			CallToolResult refused = await CallToolAsync(context, NewVersionToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName,
-				["operations"] = "[ { \"op\": \"setTracing\" } ]"
+				["operations"] = "[ { \"op\": \"setTracing\", \"enabled\": true } ]"
 			});
 			DescribeProcessResult graph = ParseDescribeResult(await DescribeAsync(context, processName));
 
 			// Assert
-			SerializeToolText(refused).Should().Contain("'setTracing' requires 'enabled'",
-				because: "the version route refuses the same malformed switch the in-place route does");
+			SerializeToolText(refused).Should().Contain("Send it to modify-business-process instead",
+				because: "the refusal names the route that switches tracing without creating a version");
+			graph.Tracing.Should().BeNull(because: "a refused request switches nothing");
 			(graph.Versions ?? new List<DescribedProcessVersion>()).Count(member => !member.IsRoot).Should().Be(0,
 				because: "the refusal fires before the clone, so the family still holds only the root");
 		} finally {

@@ -86,7 +86,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
 		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
 		 + "server silently discards while "
-		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) After a successful save the version normally stays INTERPRETED and "
+		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "

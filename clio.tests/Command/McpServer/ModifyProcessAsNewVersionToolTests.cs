@@ -311,4 +311,25 @@ public class ModifyProcessAsNewVersionToolTests {
 			return _exitCode;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The version tool's contract says a batch made ONLY of setTracing is refused and where to send it instead (ENG-102111, owner decision): CrtProcessBuilder 1.6.6.92 refuses it because a version made only to flip a switch can never be deleted, and an agent that learns this from the refusal has already spent the call.")]
+	public void ModifyProcessAsNewVersion_Description_ShouldSendATracingOnlyBatchToTheInPlaceTool() {
+		// Arrange
+		MethodInfo method = typeof(ModifyProcessAsNewVersionTool)
+			.GetMethod(nameof(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))!;
+
+		// Act
+		string description = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("A batch made ONLY of setTracing is refused and creates nothing",
+			because: "the contract must state the refusal before the server does");
+		description.Should().Contain("send it to modify-business-process",
+			because: "the refusal is only useful with the route that does switch tracing");
+		description.Should().Contain("CrtProcessBuilder 1.6.6.92 or newer",
+			because: "the stated floor must match the [RequiresPackage] literal setTracing raised");
+	}
+
 }
