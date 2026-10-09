@@ -356,6 +356,32 @@ public sealed class PageUpdateCommandWidgetCaptionKeysTests {
 		CallCount(SaveSchemaUrl).Should().Be(0, because: "a dry run never writes");
 	}
 
+	[TestCase(StoredKey, true)]
+	[TestCase(MissingKey, false)]
+	[Description("Issue #1740 review: on a REAL first save into a design package (create-replacing) the caption gate reads the replaced schema's localizableStrings - the set the save copies into the new schema - so a key stored there is saved and a key stored nowhere is still refused before SaveSchema.")]
+	public void TryUpdatePage_ShouldGateCreateReplacingSaveOnTheReplacedSchemaKeys(string key, bool expectedSaved) {
+		// Arrange - the hierarchy head lives in another package and the design package holds no copy yet.
+		_hierarchyClient.GetParentSchemas(SchemaUId, PackageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "base-pkg-uid" }
+		]);
+		StubSchemaInDesignPackage(null);
+		StubStoredKeysOnlyFor(SchemaUId, StoredKey);
+
+		// Act
+		bool saved = _command.TryUpdatePage(ReplaceSave(BuildButtonBody(key)), out PageUpdateResponse response);
+
+		// Assert
+		saved.Should().Be(expectedSaved, because: $"only a key the replaced schema stores resolves on the new schema. Error: {response.Error}");
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			GetSchemaUrl, Arg.Is<string>(body => !body.Contains(SchemaUId)),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		CallCount(SaveSchemaUrl).Should().Be(expectedSaved ? 1 : 0,
+			because: "a refused save must not reach the designer service, an accepted one reaches it once");
+		if (!expectedSaved) {
+			response.Error.Should().Contain(MissingKey, because: "the refusal must name the missing key");
+		}
+	}
+
 	[Test]
 	[Description("Issue #1740 review: validate=false skips the save's caption gate, so the replace dry run previewing that save neither warns about a caption nor pays the stored-key read for it.")]
 	public void TryUpdatePage_ShouldNotCheckCaptions_WhenReplaceDryRunHasValidationOff() {

@@ -1861,7 +1861,8 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				because: "a key registered nowhere still renders raw, so sync-pages must keep reporting it");
 		} finally {
 			if (!string.IsNullOrWhiteSpace(originalBody)) {
-				await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
+				PageSyncResponse restore = await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
+				restore.Success.Should().BeTrue(because: "the E2E test must restore the shared seeded page body that later tests rely on");
 			}
 			TryDeleteDirectory(sessionDir);
 		}
