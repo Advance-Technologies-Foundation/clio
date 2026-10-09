@@ -1,26 +1,32 @@
 ---
-description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal and DescribedParameter have none, the membership MOVES (DescribedFlow left the bagless set) and this record has been wrong about that twice, so recount it against the file rather than trusting a list
+description: this record OWNS which Described* types in IProcessDescriber.cs carry a [JsonExtensionData] overflow bag and which drop an undeclared field in silence - the filter types, DescribedConnection, DescribedSignal, DescribedParameter and DescribedProcessTracing have none, the membership MOVES (DescribedFlow left the bagless set) and this record has been wrong about that twice, so recount it against the file rather than trusting a list
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
-date: 2026-09-17
+date: 2026-10-09
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
 `Described*` types and re-serializes them for the caller. The types that model an ELEMENT and its
 per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so an unknown field
 survives the round trip. **Counted against the file, not remembered** — this membership has now gone
-stale TWICE, and both times in a record whose whole point is that the list goes stale. **Recounted at
-ENG-92707: 15 types carry a bag, 8 do not** (the 8 excludes `ServerProcessDescriber`, which is the
-reader rather than a DTO).
+stale TWICE, and both times in a record whose whole point is that the list goes stale - and a third
+time between ENG-92707 and ENG-102111, when six bagged types arrived and none was added here.
+**Recounted at ENG-102111 (2026-10-09) by `[JsonExtensionData]` attribute lines, not by mentions in
+comments: 21 types carry a bag, 9 do not.** The 9 exclude `ServerProcessDescriber`, which is the
+reader rather than a DTO, and the identity and wire helpers `ProcessIdentity`, `ResolvedIdentity`,
+`DescribeProcessResultEnvelope` and `DescribeProcessWireResult`, which this record does not classify.
 
 - **bag, an undeclared field survives:** `DescribeProcessResult` (the graph root),
-  `DescribedElement`, `DescribedFlow`, `DescribedEmail`, `DescribedPerformer`, `DescribedApproval`,
-  `DescribedSubProcess`, `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`,
-  `ActivityInterval`), `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`)
+  `DescribedElement`, `DescribedFlow` (+ `DescribedFlowGeometry`), `DescribedEmail`,
+  `DescribedPerformer`, `DescribedApproval`, `DescribedSubProcess` (+ `DescribedMultiInstanceOptions`),
+  `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`, `ActivityInterval`),
+  `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`), `DescribedFormula`
+  (+ `DescribedFormulaTarget`), `DescribedScriptTask`, `DescribedUsing`
 - **no bag, still dropped in silence:** `DescribedFilter`, `DescribedFilterGroup`,
   `DescribedFilterCondition`, `DescribedFilterElementRef`, `DescribedConnection`,
-  `DescribedSignal`, `DescribedParameter`
+  `DescribedSignal`, `DescribedParameter`, `DescribedProcessTracing` (the `tracing` block: a field the
+  server adds to it beside `enabled` and `turnOffDate` reaches no caller until clio declares it)
 - **no bag, and NOT a gap:** `DescribedProcessVersion`. clio builds every family entry itself from
   the process library, so there is no server field to drop. `ServerProcessDescriber.ApplyVersionFacts`
   records that this inverts the day the server starts reporting the family, and that adding the bag
