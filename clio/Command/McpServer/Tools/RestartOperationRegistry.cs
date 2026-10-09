@@ -6,14 +6,20 @@ namespace Clio.Command.McpServer.Tools;
 /// Lifecycle status of a tracked restart readiness wait.
 /// </summary>
 public enum RestartOperationStatus {
-	/// <summary>The restart request already succeeded and the readiness wait is still polling.</summary>
+	/// <summary>The restart is under way: its request has not returned yet, or it was accepted and the readiness wait is still polling.</summary>
 	Running,
 
 	/// <summary>The instance answered its health-check within the timeout — it is ready.</summary>
 	Ready,
 
 	/// <summary>The instance did not answer its health-check before the readiness timeout elapsed.</summary>
-	TimedOut
+	TimedOut,
+
+	/// <summary>
+	/// The restart request itself failed, so no restart is known to have happened. Recorded since the request runs
+	/// inside the response-deadline race (ENG-102333), where an in-progress answer can precede the request's outcome.
+	/// </summary>
+	RequestFailed
 }
 
 /// <summary>
@@ -55,6 +61,14 @@ public interface IRestartOperationRegistry {
 	/// <param name="exitCode">The readiness result; <c>0</c> finalizes as <see cref="RestartOperationStatus.Ready"/>, anything else as <see cref="RestartOperationStatus.TimedOut"/>.</param>
 	/// <returns>The finalized record.</returns>
 	RestartOperationRecord Finish(string operationId, int exitCode);
+
+	/// <summary>
+	/// Finalizes a tracked restart whose restart request itself failed.
+	/// </summary>
+	/// <param name="operationId">The id returned by <see cref="Begin"/>.</param>
+	/// <param name="exitCode">The failed request's exit code; kept on the record as reported.</param>
+	/// <returns>The finalized record, as <see cref="RestartOperationStatus.RequestFailed"/>.</returns>
+	RestartOperationRecord FinishRequestFailed(string operationId, int exitCode);
 
 	/// <summary>
 	/// Returns the most recently started readiness wait for <paramref name="tenantKey"/>.
@@ -114,8 +128,14 @@ public sealed class RestartOperationRegistry : IRestartOperationRegistry {
 	}
 
 	/// <inheritdoc/>
-	public RestartOperationRecord Finish(string operationId, int exitCode) {
-		RestartOperationStatus status = exitCode == 0 ? RestartOperationStatus.Ready : RestartOperationStatus.TimedOut;
+	public RestartOperationRecord Finish(string operationId, int exitCode) =>
+		Complete(operationId, exitCode, exitCode == 0 ? RestartOperationStatus.Ready : RestartOperationStatus.TimedOut);
+
+	/// <inheritdoc/>
+	public RestartOperationRecord FinishRequestFailed(string operationId, int exitCode) =>
+		Complete(operationId, exitCode, RestartOperationStatus.RequestFailed);
+
+	private RestartOperationRecord Complete(string operationId, int exitCode, RestartOperationStatus status) {
 		DateTime finishedUtc = _utcNow();
 		return _store.AddOrUpdate(
 			operationId,

@@ -49,6 +49,7 @@ public sealed class PageUpdateToolTests {
 	private IToolCommandResolver _commandResolver;
 	private IPlatformVersionResolverFactory _resolverFactory;
 	private PageUpdateTool _tool;
+	private PageUpdateCommand _command;
 	private IApplicationClient _applicationClient;
 
 	[SetUp]
@@ -79,6 +80,7 @@ public sealed class PageUpdateToolTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		_command = command;
 		_commandResolver = Substitute.For<IToolCommandResolver>();
 		_commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_webComponentCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -90,7 +92,7 @@ public sealed class PageUpdateToolTests {
 			command, logger, _commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			_resolverFactory, settingsRepository);
 	}
 
@@ -257,6 +259,37 @@ public sealed class PageUpdateToolTests {
 	}
 
 	[Test]
+	[Description("ENG-101924: update-page validates a mobile body against the mobile registry of the version resolved from the target environment, not latest.")]
+	public async Task UpdatePage_ShouldScopeMobileCatalogToResolvedVersion_WhenEnvironmentResolvesVersion() {
+		// Arrange
+		EnvironmentSettings registeredSettings = new() { Uri = "https://registered.example.com" };
+		_commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(registeredSettings);
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4.1234", VersionResolutionSource.Environment));
+		_resolverFactory.Create(registeredSettings).Returns(resolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog());
+		PageUpdateTool tool = new(
+			_command, Substitute.For<ILogger>(), _commandResolver, mobileCatalog, _webComponentCatalog,
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
+			_resolverFactory, Substitute.For<ISettingsRepository>());
+		string mobileBody = MobileFieldBindingDeclaredInputsTests.Body(
+			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+		PageUpdateArgs args = new(SchemaName, mobileBody, null, true) { EnvironmentName = "sandbox" };
+
+		// Act
+		await tool.UpdatePage(args);
+
+		// Assert
+		await mobileCatalog.Received().LoadAsync("8.3.4", Arg.Any<CancellationToken>());
+		await mobileCatalog.DidNotReceive().LoadAsync(ComponentRegistryClient.LatestVersion, Arg.Any<CancellationToken>());
+	}
+
+	[Test]
 	[Description("AC-03: mixed header + explicit environment-name input is rejected by the resolver's HasExplicitCredentialArgs guard before any named-tenant lookup — the version probe never calls the resolver factory with a named registered environment's stored credentials, and fails soft to 'latest' instead of blocking the write.")]
 	public async Task UpdatePage_ShouldRejectProbeBeforeNamedTenantLookup_WhenMixedHeaderAndEnvironmentName() {
 		// Arrange
@@ -337,7 +370,7 @@ public sealed class PageUpdateToolTests {
 	}
 
 	[Test]
-	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> templateBaseContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
+	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> PageMergedConfigContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
 	public async Task UpdatePage_ThreadsMode_IntoGetPageExcludeOwnBody() {
 		// A mobile body whose viewModelConfigDiff needs an external base, so the oracle resolves it (invokes get-page).
 		const string mobileBody =

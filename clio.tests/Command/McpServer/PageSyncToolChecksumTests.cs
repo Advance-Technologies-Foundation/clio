@@ -90,7 +90,7 @@ public sealed class PageSyncToolChecksumTests {
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
 			new PageBaselineGuard(fileSystem),
-			new PersistedResourceKeyReader());
+			new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 	}
 
 	private static PageSyncArgs BuildArgs(string checksum, bool? force = null) =>

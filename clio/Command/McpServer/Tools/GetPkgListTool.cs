@@ -29,6 +29,13 @@ public sealed class GetPkgListTool(
 	internal const string GetPkgListToolName = "list-packages";
 
 	/// <summary>
+	/// The sentence both the tool description and its get-tool-contract definition end with. It routes the
+	/// "which package accepts my write" question away from this list, whose rows cannot answer it.
+	/// </summary>
+	internal const string WriteTargetNote =
+		"It does not say whether a package accepts changes; for a write target call get-target-package via clio-run.";
+
+	/// <summary>
 	/// Returns environment packages as structured MCP JSON.
 	/// </summary>
 	[McpServerTool(Name = GetPkgListToolName, ReadOnly = true, Destructive = false, Idempotent = true,
@@ -40,7 +47,7 @@ public sealed class GetPkgListTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Returns a bounded page of packages from the specified Creatio environment as structured JSON. Results are ordered by package name and capped at 50 by default. The response always reports count, total, offset, limit, and truncated so callers can page through the full filtered set.")]
+	[Description("Returns a bounded page of packages from the specified Creatio environment as structured JSON. Results are ordered by package name and capped at 50 by default. The response always reports count, total, offset, limit, and truncated so callers can page through the full filtered set. " + WriteTargetNote)]
 	public PackageListResponse GetPkgList(
 		[Description("List-packages parameters")] [Required] GetPkgListArgs args) {
 		if (args.Limit < 0) {
