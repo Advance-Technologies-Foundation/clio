@@ -1238,9 +1238,10 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
 	/// <summary>
-	/// The responsive layout applied to each MULTI-column mobile grid container: how many grid columns per
-	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
-	/// cell each child occupies. Both sides are ALREADY baked into the operations' values — the container's
+	/// The responsive layout applied to each MULTI-column mobile grid container: the grid columns per
+	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = one weighted column per child of
+	/// the web grid's fullest row, or 1 when a list spans past its column) and which cell each child occupies.
+	/// Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
 	/// it at the conversion gate as what the conversion DID, and if the user wants it different, the change
@@ -1847,7 +1848,7 @@ public sealed class AdaptiveLayoutGroup {
 
 	/// <summary>
 	/// Advisory overview of the grid columns per breakpoint (already in the container's <c>values</c>):
-	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
+	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of column weights (e.g. ["1fr","2fr"]).
 	/// </summary>
 	[JsonPropertyName("columnsByBreakpoint")]
 	public IReadOnlyDictionary<string, IReadOnlyList<string>> ColumnsByBreakpoint { get; init; }

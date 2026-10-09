@@ -337,8 +337,8 @@ public static partial class WebToMobileAnalysisService {
 			excludedRemovedMobileNames, actionTargetsProbe, unresolvedTargets);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
-		// to a single column and stack; on tablet/desktop (medium/large) keep the web columns and per-child
-		// placement. A 1-column grid gets no adaptive. Both the container columns and each child's
+		// to a single column and stack; on tablet (medium/large) derive weighted columns from the web grid's
+		// reference row. A 1-column web grid gets no adaptive. Both the container columns and each child's
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
 		List<AdaptiveLayoutGroup> adaptiveLayout =
 			BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns, mobileContainerParents);
@@ -5088,12 +5088,12 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
-	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet/desktop
-	/// (<c>medium</c> / <c>large</c>) it keeps the web column count and each child's web placement. A grid
-	/// with a single column gets NO adaptive (the mobile client renders the plain layout). Both sides are
-	/// baked deterministically: the container columns into the container's own mobileValues, and each child's
-	/// <c>layoutConfig.adaptive</c> (replacing the base placement, which is folded into medium/large) into
-	/// the child's mobileValues. Also returns an advisory group per converted container.
+	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet
+	/// (<c>medium</c> / <c>large</c>, identical) it derives weighted columns from the web grid's reference row
+	/// (see <see cref="BuildTabletGrid"/>). A grid with a single web column gets NO adaptive (the mobile client
+	/// renders the plain layout). Both sides are baked deterministically: the container columns into the
+	/// container's own mobileValues, and each child's <c>layoutConfig.adaptive</c> (replacing the base
+	/// placement) into the child's mobileValues. Also returns an advisory group per converted container.
 	/// </summary>
 	private static List<AdaptiveLayoutGroup> BuildAdaptiveLayout(
 		List<ElementMapEntry> elementMap,
@@ -5217,17 +5217,22 @@ public static partial class WebToMobileAnalysisService {
 				continue; // single-column grid — the mobile client works with the non-adaptive config
 			}
 			List<ElementMapEntry> children = byContainer[container];
+			List<WebCell> cells = children
+				.Select((child, i) => WebCellOf(sourceLayouts, child.WebName, i, webCols))
+				.ToList();
+			TabletGrid tablet = BuildTabletGrid(children, cells);
 
 			var items = new List<AdaptiveLayoutItem>();
 			for (int i = 0; i < children.Count; i++) {
 				ElementMapEntry child = children[i];
-				(int col, int row) = WebPlacement(sourceLayouts, child.WebName, i, webCols);
+				JsonObject stacked = Cell(1, i + 1);
+				JsonObject tabletCell = tablet.IsStacked ? Cell(1, i + 1) : Cell(tablet.Slots[i], cells[i].Row);
 				var adaptive = new JsonObject {
-					["small"] = Cell(1, i + 1),   // phone: single-column stack
-					["medium"] = Cell(col, row),  // tablet/desktop: keep the web row and column
-					["large"] = Cell(col, row)
+					["small"] = stacked,
+					["medium"] = tabletCell,
+					["large"] = tabletCell.DeepClone()
 				};
-				// Replace layoutConfig with the adaptive form (the web placement is folded into medium/large).
+				// Replace layoutConfig with the adaptive form (the tablet slot replaces the web placement).
 				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
 				// delta, so the object is created at the one point where it is guaranteed to carry something.
 				child.Values ??= new JsonObject();
@@ -5235,7 +5240,7 @@ public static partial class WebToMobileAnalysisService {
 				items.Add(new AdaptiveLayoutItem { Name = child.Name, LayoutConfigAdaptive = adaptive });
 			}
 
-			// Container columns: small = 1, medium/large = the web column count. Fold INTO the container's own
+			// Container columns: small = 1, medium/large = the tablet weights. Fold INTO the container's own
 			// element-map entry (insert or merge twin) so the result is a SINGLE operation on that element — no
 			// separate merge diff for the model to apply on top (which would duplicate the operation).
 			ElementMapEntry containerEntry = elementMap.FirstOrDefault(e =>
@@ -5248,16 +5253,22 @@ public static partial class WebToMobileAnalysisService {
 					containerEntry.Values = containerValues;
 				}
 				containerValues["adaptive"] = new JsonObject {
-					["small"] = new JsonObject { ["columns"] = ColumnsNode(1) },
-					["medium"] = new JsonObject { ["columns"] = ColumnsNode(webCols) },
-					["large"] = new JsonObject { ["columns"] = ColumnsNode(webCols) }
+					["small"] = new JsonObject { ["columns"] = ColumnsNode(StackedColumns) },
+					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Columns) },
+					["large"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Columns) }
 				};
+				// Only an inserted GRID owns its base columns here: a template twin keeps the template's, and the
+				// capture also counts a DataGrid's or a tab's `columns`, which are not track sizes.
+				if (IsInsert(containerEntry)
+					&& string.Equals(containerEntry.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
+					containerValues["columns"] = ColumnsNode(tablet.Columns);
+				}
 			}
 
 			groups.Add(new AdaptiveLayoutGroup {
 				ContainerName = container,
 				ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
-					["small"] = Cols(1), ["medium"] = Cols(webCols), ["large"] = Cols(webCols)
+					["small"] = StackedColumns, ["medium"] = tablet.Columns, ["large"] = tablet.Columns
 				},
 				Items = items
 			});
@@ -5266,37 +5277,127 @@ public static partial class WebToMobileAnalysisService {
 
 		static JsonObject Cell(int column, int row) =>
 			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
-		static IReadOnlyList<string> Cols(int n) => Enumerable.Repeat("1fr", n).ToList();
+	}
+
+	/// <summary>Most columns a mobile grid is given on tablet, whatever the web reference row holds.</summary>
+	private const int MobileGridMaxColumns = 12;
+
+	private static readonly IReadOnlyList<string> StackedColumns = ["1fr"];
+
+	/// <summary>
+	/// Mobile list types. A list that spans past its tablet slot on the web stacks the whole grid instead: the
+	/// runtime draws each column as an independent stack and ignores spans, so the list could only ever be one
+	/// slot wide.
+	/// </summary>
+	private static readonly HashSet<string> MobileListComponentTypes =
+		new(StringComparer.OrdinalIgnoreCase) { "crt.List", "crt.FileList" };
+
+	/// <summary>A child's frozen web grid cell (1-based); <c>Span</c> is the web <c>colSpan</c>.</summary>
+	private readonly record struct WebCell(int Column, int Row, int Span);
+
+	/// <summary>
+	/// Tablet layout of one grid: the column weights and, per child (same order as the input), its 1-based
+	/// column. <see cref="IsStacked"/> means the grid stacks like the phone, and <see cref="Slots"/> is unused.
+	/// </summary>
+	private sealed record TabletGrid(IReadOnlyList<string> Columns, IReadOnlyList<int> Slots, bool IsStacked);
+
+	/// <summary>
+	/// Derives the tablet grid from the web one. The mobile runtime honours neither span, so column count and
+	/// widths both come from ONE web row — the reference row, the row with the most children (lowest row on a
+	/// tie): one column per child (capped at <see cref="MobileGridMaxColumns"/>), weighted by its <c>colSpan</c>
+	/// reduced by the GCD. The children's start columns become slot boundaries, and every child lands in the last
+	/// slot whose boundary does not exceed its own start column; a collision within one row moves right, else to
+	/// the nearest free slot on the left. Unused web width (gaps, an empty trailing column) is dropped on purpose,
+	/// while the first boundary is 1 so every child has a slot.
+	/// </summary>
+	private static TabletGrid BuildTabletGrid(IReadOnlyList<ElementMapEntry> children, IReadOnlyList<WebCell> cells) {
+		int referenceRow = cells
+			.GroupBy(c => c.Row)
+			.OrderByDescending(g => g.Count())
+			.ThenBy(g => g.Key)
+			.First().Key;
+		List<WebCell> reference = cells
+			.Where(c => c.Row == referenceRow)
+			.OrderBy(c => c.Column)
+			.Take(MobileGridMaxColumns)
+			.ToList();
+
+		int divisor = reference.Aggregate(0, (acc, c) => Gcd(acc, c.Span));
+		List<string> columns = reference.Select(c => $"{c.Span / divisor}fr").ToList();
+		int[] boundaries = reference.Select(c => c.Column).ToArray();
+		boundaries[0] = 1;
+
+		var slots = new int[cells.Count];
+		for (int i = 0; i < cells.Count; i++) {
+			int slot = SlotOf(boundaries, cells[i].Column);
+			bool spansPastSlot = slot + 1 < boundaries.Length
+				&& cells[i].Column + cells[i].Span - 1 >= boundaries[slot + 1];
+			if (cells[i].Row != referenceRow
+				&& spansPastSlot
+				&& MobileListComponentTypes.Contains(children[i].MobileType ?? string.Empty)) {
+				return new TabletGrid(StackedColumns, [], IsStacked: true);
+			}
+			slots[i] = slot;
+		}
+		ResolveRowCollisions(cells, slots, boundaries.Length);
+		return new TabletGrid(columns, slots.Select(s => s + 1).ToList(), IsStacked: false);
+
+		static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
+	}
+
+	/// <summary>Index of the last boundary not greater than <paramref name="column"/>; 0 when none is.</summary>
+	private static int SlotOf(int[] boundaries, int column) {
+		int slot = 0;
+		for (int k = 1; k < boundaries.Length; k++) {
+			if (boundaries[k] <= column) {
+				slot = k;
+			}
+		}
+		return slot;
 	}
 
 	/// <summary>
-	/// The web grid POSITION of a child (<c>column</c>/<c>row</c> from its web <c>layoutConfig</c>). Falls back
-	/// to a left-to-right flow (<paramref name="cols"/> per row) using the child's <paramref name="index"/> when
-	/// the source declared no placement.
-	/// <para>
-	/// A position is the only part of a web placement that has a mobile counterpart. The web page's spans stay on
-	/// the web page: a mobile grid gives every item exactly one cell, so a child that spans two web columns is one
-	/// cell wide on mobile whatever the placement claims — see <see cref="SpanKeys"/>.
-	/// </para>
+	/// Within each web row, moves a child whose slot is already taken to the next free slot on the right, else
+	/// to the nearest free one on the left; a row with more children than slots leaves the surplus where it is.
 	/// </summary>
-	private static (int Col, int Row) WebPlacement(
-		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
-		if (name is not null && sourceLayouts.TryGetValue(name, out JObject lc)) {
-			return (
-				ReadInt(lc, "column") ?? (index % cols) + 1,
-				ReadInt(lc, "row") ?? (index / cols) + 1);
+	private static void ResolveRowCollisions(IReadOnlyList<WebCell> cells, int[] slots, int slotCount) {
+		foreach (IGrouping<int, int> row in Enumerable.Range(0, cells.Count).GroupBy(i => cells[i].Row)) {
+			var taken = new HashSet<int>();
+			foreach (int i in row.OrderBy(i => cells[i].Column)) {
+				if (taken.Add(slots[i])) {
+					continue;
+				}
+				int free = Enumerable.Range(slots[i] + 1, Math.Max(0, slotCount - slots[i] - 1))
+					.Concat(Enumerable.Range(0, slots[i]).Reverse())
+					.FirstOrDefault(s => !taken.Contains(s), -1);
+				if (free >= 0) {
+					slots[i] = free;
+					taken.Add(free);
+				}
+			}
 		}
-		return ((index % cols) + 1, (index / cols) + 1);
 	}
 
-	/// <summary>A JSON array of <paramref name="n"/> "1fr" column sizes.</summary>
-	private static JsonArray ColumnsNode(int n) {
-		var arr = new JsonArray();
-		for (int i = 0; i < n; i++) {
-			arr.Add("1fr");
-		}
-		return arr;
+	/// <summary>
+	/// The web grid cell of a child (<c>column</c>/<c>row</c>/<c>colSpan</c> from its web <c>layoutConfig</c>).
+	/// Falls back to a left-to-right flow (<paramref name="cols"/> per row) using the child's
+	/// <paramref name="index"/> when the source declared no position, and to a span of 1.
+	/// <para>
+	/// The span feeds only the tablet column WEIGHTS (<see cref="BuildTabletGrid"/>); it never reaches a placement,
+	/// because a mobile grid gives every item exactly one cell — see <see cref="SpanKeys"/>.
+	/// </para>
+	/// </summary>
+	private static WebCell WebCellOf(
+		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
+		JObject lc = name is not null && sourceLayouts.TryGetValue(name, out JObject found) ? found : null;
+		int column = (lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1;
+		int row = (lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1;
+		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
+		return new WebCell(column, row, Math.Max(1, span));
 	}
+
+	/// <summary>A JSON array of the given column track sizes.</summary>
+	private static JsonArray ColumnsNode(IEnumerable<string> columns) => new(columns.Select(c => (JsonNode)c).ToArray());
 
 	/// <summary>The bound column code of a field node: the first <c>$ref</c> that maps to a declared attribute's column.</summary>
 	private static string ResolveBoundColumn(ElementMapContext ctx, JObject node) {
@@ -5870,8 +5971,8 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// The placement keys that carry a SPAN. The mobile runtime places one item per cell and honours neither of
-	/// them, so 1 is the only value that describes what the page actually does; width at a breakpoint is the
-	/// CONTAINER's column count. They are written at all because the Freedom UI Mobile designer refuses to open
+	/// them, so 1 is the only value that describes what the page actually does; width at a breakpoint comes from
+	/// the CONTAINER's columns. They are written at all because the Freedom UI Mobile designer refuses to open
 	/// a page whose placement omits them.
 	/// </summary>
 	private static readonly string[] SpanKeys = ["colSpan", "rowSpan"];

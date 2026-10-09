@@ -94,6 +94,37 @@ public sealed class WebToMobileRealPageRegressionTests {
 	}
 
 	[Test]
+	[Description("ENG-94835 on the real page: the tablet columns of every multi-column grid on the OOTB Leads_FormPage match the refinement table — the span-built grids lose their empty columns, the grids of equal one-column cells are unchanged.")]
+	public void Analyze_ShouldDeriveTabletColumnsFromTheReferenceRow_OnTheRealLeadsFormPageShape() {
+		// Arrange
+		JsonObject fixture = LoadFixture();
+		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
+
+		// Act
+		MobilePageConversionGuide guide = Convert(fixture, mobileTypes, BundledRules());
+
+		// Assert
+		Dictionary<string, string> tabletColumns = guide.AdaptiveLayout!.ToDictionary(
+			g => g.ContainerName, g => string.Join(" ", g.ColumnsByBreakpoint["medium"]));
+		tabletColumns.Should().BeEquivalentTo(new Dictionary<string, string> {
+			["CardContentWrapper"] = "1fr 1fr",
+			["SideAreaProfileFieldGridContainer"] = "1fr 1fr",
+			["OverviewNewAnalyticsContainer"] = "1fr 1fr 1fr 1fr",
+			["OverviewAnalyticsContainer"] = "1fr 1fr",
+			["OverviewFieldsContainer"] = "1fr 1fr",
+			["OpportunityPlanningFieldsContainer"] = "1fr 1fr",
+			["SimilarLeadListContainer"] = "1fr",
+			["ProductsListContainer"] = "1fr",
+			["StageHistoryListContainer"] = "1fr",
+			["LeadsByCustomerListContainer"] = "1fr",
+			["OpportunitiesByCustomerListContainer"] = "1fr"
+		}, because: "these are the eleven adaptive grids of the refinement table: six change, five stay as they were");
+		guide.AdaptiveLayout!.Should().OnlyContain(
+			g => g.ColumnsByBreakpoint["medium"].SequenceEqual(g.ColumnsByBreakpoint["large"]),
+			because: "medium and large are one tablet layout");
+	}
+
+	[Test]
 	[Description("ENG-95081 on the real page: every crt.SearchFilter on the OOTB Leads_FormPage sits in a crt.ExpansionPanel's tools strip, and the shipped excludedComponents rule drops all five — each reported as a drop entry naming the rule, the host type and the slot.")]
 	public void Analyze_ShouldDropEverySearchFilter_OnTheRealLeadsFormPageShape() {
 		// Arrange

@@ -151,16 +151,18 @@ Mobile pages support 3 viewport breakpoints, defined in `MobileBreakpointType`:
 | `"medium"` | Phone landscape / tablet portrait |
 | `"large"` | Tablet landscape |
 
-`crt.GridContainer` supports an `adaptive` property for per-breakpoint column overrides:
+`crt.GridContainer` supports an `adaptive` property for per-breakpoint column overrides. Columns are an
+ARRAY with one entry per column: the runtime reads a single string such as `"1fr 1fr"` as ONE column, and
+honours integer `<n>fr` weights (`minmax(...)` or `"1.5fr"` fall back to an equal share):
 
 ```json
 {
   "type": "crt.GridContainer",
-  "columns": "1fr",
+  "columns": ["1fr", "2fr"],
   "adaptive": {
-    "small": { "columns": "1fr" },
-    "medium": { "columns": "1fr 1fr" },
-    "large": { "columns": "1fr 1fr 1fr" }
+    "small": { "columns": ["1fr"] },
+    "medium": { "columns": ["1fr", "2fr"] },
+    "large": { "columns": ["1fr", "2fr"] }
   }
 }
 ```
