@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
+using System.Linq;
+using System.Text.Json;
 using Clio;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Common.Telemetry;
 using Clio.Tests.Infrastructure;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +26,61 @@ namespace Clio.Tests.Command;
 [TestFixture]
 [Property("Module", "Command")]
 public class BindingsModuleMcpHostGateTests {
+	[TestCase(false, typeof(NullServedContentMeter))]
+	[TestCase(true, typeof(ServedContentMeter))]
+	[Category("Unit")]
+	[Description("Counts served content only in the stdio MCP host, where one process is one agent session, and hands every resolution in a container the same meter (ENG-100157).")]
+	public void Register_ShouldCountServedContentOnlyInTheStdioHost_WhenHostModeChanges(
+		bool registerMcpHost, Type expectedMeterType) {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: registerMcpHost);
+
+		// Act
+		IServedContentMeter first = provider.GetRequiredService<IServedContentMeter>();
+		IServedContentMeter second = provider.GetRequiredService<IServedContentMeter>();
+
+		// Assert
+		first.Should().BeOfType(expectedMeterType,
+			because: "only the stdio host counts; every other container, mcp-http's included, keeps the inert meter so one count never mixes sessions");
+		second.Should().BeSameAs(first,
+			because: "a transient meter would hand every resolution its own empty count");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Wires get-tool-contract and the telemetry service of the stdio host to one count, so a contract the tool served is on the next event the host records (ENG-100157).")]
+	public void Register_ShouldStampWhatTheHostToolServed_WhenTheStdioHostRecordsAnEvent() {
+		// Arrange
+		MockFileSystem fileSystem = TestFileSystem.MockFileSystem();
+		using ServiceProvider provider = (ServiceProvider)new BindingsModule(fileSystem)
+			.Register(profile: BindingsModuleRegistrationProfile.Bootstrap, registerMcpHost: true);
+		ToolContractGetTool contractTool = provider.GetRequiredService<ToolContractGetTool>();
+		ITelemetryService telemetry = provider.GetRequiredService<ITelemetryService>();
+		contractTool.GetToolContracts();
+
+		// Act
+		TelemetryEventResult result = telemetry.Send(new TelemetryEventRequest(
+			"018f6e4a-0000-7000-9000-000000000158", "workflow_started", TelemetryConsent: "granted"));
+
+		// Assert
+		result.Status.Should().Be("recorded",
+			because: "a granted-consent stage event is stored in the host's telemetry spool");
+		string eventsDirectory = TelemetryStoragePaths.EventsDirectory(TelemetryStoragePaths.ResolveRoot());
+		string eventFile = fileSystem.Directory.GetFiles(eventsDirectory, "*.json").Should().ContainSingle(
+			because: "exactly one event was recorded").Subject;
+		using JsonDocument document = JsonDocument.Parse(fileSystem.File.ReadAllText(eventFile));
+		Dictionary<string, JsonElement> attributes = document.RootElement.GetProperty("attributes")
+			.EnumerateArray()
+			.ToDictionary(attribute => attribute.GetProperty("key").GetString(),
+				attribute => attribute.GetProperty("value").Clone());
+		attributes.Should().ContainKey("contract_reads",
+			because: "the contract the host's tool served must reach the host's telemetry service through one shared meter; a meter the DI graph failed to hand to either side stamps nothing");
+		attributes["contract_reads"].GetProperty("int_value").GetInt64().Should().Be(1,
+			because: "exactly one contract response was served before the event was recorded");
+	}
+
 	[TestCase(false)]
 	[TestCase(true)]
 	[Category("Unit")]

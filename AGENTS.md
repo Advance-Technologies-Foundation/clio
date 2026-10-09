@@ -363,7 +363,7 @@ simply never appear in ClickHouse.
 
 Review the collector allow-lists whenever any of the following changes:
 - `CanonicalEventNames` or `LegacyAppCreationEventNames` in `clio\clio\Common\Telemetry\TelemetryService.cs` - any event name added, renamed or removed
-- The attribute set on the wire: `TelemetryEventRequest` (`clio\clio\Common\Telemetry\TelemetryModels.cs`), `BuildLogEvent` or `TokenCounterFields` in `TelemetryService.cs` - any attribute key added, renamed or removed
+- The attribute set on the wire: `TelemetryEventRequest` (`clio\clio\Common\Telemetry\TelemetryModels.cs`), `BuildLogEvent`, `TokenCounterFields`, `ServedContentFields` or `GuidanceLibraryVersionAttribute` in `TelemetryService.cs` - any attribute key added, renamed or removed
 - The OTLP shape itself: which field carries the event name, or the VALUE TYPE of an attribute. A new int-valued counter is not the same case as a new string - it takes a different OTTL path through the collector's sanitizer.
 
 ## Required collector targets

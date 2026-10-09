@@ -183,6 +183,12 @@ public class BindingsModule {
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
 				Command.McpServer.McpToolCompatibilityCatalog>();
+			// ENG-100157: the counting meter replaces the inert default RegisterInto installs, and ONLY here.
+			// A stdio process is one agent session and this is its one host container, so a container
+			// singleton is the session's count. mcp-http never enters this block and keeps the inert meter:
+			// it serves many sessions from one process, where one count would stamp a session's cost on
+			// another session's events. Same ORDERING DEPENDENCY as the two singletons above.
+			services.AddSingleton<IServedContentMeter, ServedContentMeter>();
 			// The execution-metadata reader and the execution router are deliberately NOT registered here.
 			// "One routing authority per host" must hold on BOTH transports, and this block runs for the
 			// stdio host only — mcp-http builds its graph from RegisterInto + RegisterMcpServer and never
@@ -684,13 +690,18 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<ValidateProcessGraphTool>();
 		services.AddTransient<DescribeProcessTool>();
+		// Inert by default: only the stdio MCP host (Register with registerMcpHost) counts what a session
+		// served, because only there is one process one agent session. Registered for every container so
+		// the telemetry service and the guidance and contract tools always resolve a meter.
+		services.AddSingleton<IServedContentMeter, NullServedContentMeter>();
 		// Singleton: the service is effectively stateless (its only shared mutable state is a static
 		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
 		// flusher that depends on it (no captured-dependency lifetime mismatch).
 		services.AddSingleton<ITelemetryService>(sp => new TelemetryService(
 			sp.GetRequiredService<IFileSystem>(),
 			timeProvider: sp.GetRequiredService<TimeProvider>(),
-			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>()));
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>(),
+			servedContentMeter: sp.GetRequiredService<IServedContentMeter>()));
 		services.AddSingleton<ITelemetryFlushOptionsProvider, TelemetryFlushOptionsProvider>();
 		services.AddSingleton<ITelemetryFlushService>(sp => new TelemetryFlushService(
 			sp.GetRequiredService<IFileSystem>(),
