@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Common;
 using McpServer.Resources;
 
@@ -383,6 +384,15 @@ public static class SchemaValidationService
 	/// <returns>A tuple of blocking errors and non-blocking warnings.</returns>
 	public static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
 		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		IReadOnlyDictionary<string, string>? explicitResources = null) =>
+		ValidateMobilePage(body, allowedMobileTypes, webOnlyTypes,
+			DeclaredPropertyIndex.Disabled, explicitResources);
+
+	/// <inheritdoc cref="ValidateMobilePage(string, IReadOnlySet{string}, IReadOnlySet{string}, IReadOnlyDictionary{string, string})"/>
+	/// <param name="declaredInputs">The mobile registry's per-type inputs; narrows the binding check.</param>
+	internal static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
+		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		DeclaredPropertyIndex declaredInputs,
 		IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		var warnings = new List<string>();
@@ -416,7 +426,7 @@ public static class SchemaValidationService
 		SchemaValidationResult indicatorProvidingResult = ValidateMobileIndicatorWidgetProviding(body);
 		if (!indicatorProvidingResult.IsValid) errors.AddRange(indicatorProvidingResult.Errors);
 
-		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
+		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body, declaredInputs);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
 
 		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
@@ -1475,7 +1485,16 @@ public static class SchemaValidationService
 	/// <returns>
 	/// A <see cref="SchemaValidationResult"/> that is invalid when an undeclared attribute binding is found.
 	/// </returns>
-	public static SchemaValidationResult ValidateMobileFieldBindings(string body) {
+	public static SchemaValidationResult ValidateMobileFieldBindings(string body) =>
+		ValidateMobileFieldBindings(body, DeclaredPropertyIndex.Disabled);
+
+	/// <summary>
+	/// Same check, limited to the top-level properties <paramref name="declaredInputs"/> declares for the element's
+	/// type, plus <c>control</c> on every element. It is only as complete as the registry: another property a
+	/// preprocessor reads but the registry omits is not checked (ENG-101924).
+	/// </summary>
+	internal static SchemaValidationResult ValidateMobileFieldBindings(
+		string body, DeclaredPropertyIndex declaredInputs) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			return result;
@@ -1495,7 +1514,7 @@ public static class SchemaValidationService
 			if (declaredAttributes.Count == 0) {
 				return result; // nothing to cross-check against
 			}
-			HashSet<string> referencedAttributes = CollectMobileViewBindings(root);
+			HashSet<string> referencedAttributes = CollectMobileViewBindings(root, declaredInputs);
 			foreach (string attr in referencedAttributes.Where(a => !declaredAttributes.Contains(a))) {
 				result.Errors.Add(
 					$"viewConfigDiff binds to '${attr}' but no matching attribute is declared in viewModelConfigDiff/viewModelConfig.");
@@ -1984,7 +2003,8 @@ public static class SchemaValidationService
 			string.Equals(last, AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {
+	private static HashSet<string> CollectMobileViewBindings(
+		JsonElement root, DeclaredPropertyIndex declaredInputs) {
 		var bindings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 			vcd.ValueKind != JsonValueKind.Array) {
@@ -1997,22 +2017,40 @@ public static class SchemaValidationService
 			JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v)
 				? v
 				: entry;
-			if (values.ValueKind != JsonValueKind.Object) {
-				continue;
+			if (values.ValueKind == JsonValueKind.Object) {
+				CollectDeclaredPropertyBindings(values, declaredInputs, bindings);
 			}
-			ExtractDollarBindings(values, bindings);
 		}
 		return bindings;
 	}
 
-	private static void ExtractDollarBindings(JsonElement obj, HashSet<string> bindings) {
-		foreach (JsonElement value in obj.EnumerateObject().Select(p => p.Value)) {
-			if (value.ValueKind == JsonValueKind.String) {
-				if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
-					bindings.Add(attrName);
-				}
-			} else if (value.ValueKind == JsonValueKind.Object) {
-				ExtractDollarBindings(value, bindings);
+	private static void CollectDeclaredPropertyBindings(
+		JsonElement values, DeclaredPropertyIndex declaredInputs, HashSet<string> bindings) {
+		// A merge carries no type, so every property is checked.
+		string componentType = values.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+			typeElement.ValueKind == JsonValueKind.String
+				? typeElement.GetString()
+				: null;
+		IEnumerable<JsonProperty> checkedProperties = values.EnumerateObject()
+			.Where(property => componentType is null || IsAlwaysCheckedProperty(property.Name)
+				|| declaredInputs.DeclaresProperty(componentType, property.Name));
+		foreach (JsonProperty property in checkedProperties) {
+			ExtractDollarBindings(property.Value, bindings);
+		}
+	}
+
+	// The runtime copies `control` to `bindTo` on any named element, declared or not.
+	private static bool IsAlwaysCheckedProperty(string propertyName) =>
+		string.Equals(propertyName, "control", StringComparison.OrdinalIgnoreCase);
+
+	private static void ExtractDollarBindings(JsonElement value, HashSet<string> bindings) {
+		if (value.ValueKind == JsonValueKind.String) {
+			if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
+				bindings.Add(attrName);
+			}
+		} else if (value.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in value.EnumerateObject()) {
+				ExtractDollarBindings(property.Value, bindings);
 			}
 		}
 	}

@@ -39,7 +39,27 @@ public sealed class RunProcessTool(
 
 	internal const string StillRunningStatus = "still-running";
 
-	// Test seam; null in production, where the default deadline applies.
+	/// <summary>
+	/// run-process's own response deadline: the 150 s every long tool had before ENG-102333, NOT the shared
+	/// <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/>.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// run-process runs in a per-call worker that the parent kills once the call answers, and the parent's budget for
+	/// that worker (120 s) is below this value, so in worker mode the "still running" answer is unreachable and a run
+	/// that outlives the budget ends in the parent's budget error, as it always has.
+	/// </para>
+	/// <para>
+	/// The shared 45 s default must not reach this tool. Its "still running" note tells the agent the process was
+	/// launched and must not be re-run, but nothing records whether the RunProcess request had been sent by then: a
+	/// cold worker spends seconds on its login, and right after a compile the application can hang requests for
+	/// 44 s. Answered before the request left, the note would claim a launch the parent's kill then prevents. Making
+	/// run-process answer before a 60 s client gives up needs a record of whether the launch was sent.
+	/// </para>
+	/// </remarks>
+	internal static readonly TimeSpan RunProcessResponseDeadline = TimeSpan.FromSeconds(150);
+
+	// Test seam; null in production, where RunProcessResponseDeadline applies.
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
 	internal static string BuildStillRunningNote(string processName) =>
@@ -105,7 +125,7 @@ public sealed class RunProcessTool(
 			Login = args.Login,
 			Password = args.Password,
 			// The same deadline the race below uses, so a failed run's log read never outlives it.
-			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? McpProgressHeartbeat.DefaultResponseDeadline)
+			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? RunProcessResponseDeadline)
 		};
 
 		try {
@@ -114,7 +134,7 @@ public sealed class RunProcessTool(
 				requestContext?.Params?.ProgressToken,
 				ToolName,
 				() => Launch(options),
-				deadline: ResponseDeadlineOverride,
+				deadline: ResponseDeadlineOverride ?? RunProcessResponseDeadline,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
 		catch (McpResponseDeadlineExceededException) {

@@ -1,5 +1,8 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -51,9 +54,16 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 
 	/// <summary>
 	/// How long the stub holds the worker's login, and with it the compile: far longer than the client's
-	/// "timeout" below and than the status poll that follows it, far shorter than clio's 150 s deadline.
+	/// "timeout" below and than the status poll that follows it, shorter than clio's response deadline (45 s by
+	/// default, and the 150 s the suite pins in <see cref="TestConfiguration.Load"/>).
 	/// </summary>
 	private static readonly TimeSpan CompileHold = TimeSpan.FromSeconds(30);
+
+	/// <summary>
+	/// The per-call ceiling of the client the QA run used: Claude Code desktop 2.1.293 gave up on a tool call after
+	/// 60 s and then restarted the MCP server, which ends every operation the server tracked.
+	/// </summary>
+	private static readonly TimeSpan ClientCeiling = TimeSpan.FromSeconds(60);
 
 	/// <summary>How long the whole scenario may take before the run is abandoned.</summary>
 	private static readonly TimeSpan ScenarioBudget = TimeSpan.FromMinutes(5);
@@ -206,6 +216,163 @@ public sealed class CompileCreatioClientTimeoutE2ETests {
 			TryDeleteDirectory(tempHome);
 		}
 	}
+
+	[Test]
+	[Category("McpE2E.NoEnvironment")]
+	[AllureTag(CompileCreatioTool.CompileCreatioToolName)]
+	[AllureTag(CompileStatusTool.CompileStatusToolName)]
+	[AllureName("compile-creatio answers before a 60-second client ceiling at the default deadline")]
+	[AllureDescription("Starts the real clio MCP server with no response-deadline override against a Creatio stub that holds the compile's login for longer than 60 s, and calls compile-creatio with process-name. The answer must be the in-progress note with an operation-id, and it must arrive before 60 s - the per-call ceiling after which Claude Code desktop gives up and restarts the MCP server. compile-status must then report that operation running.")]
+	[Description("ENG-102333 (QA on Claude Code desktop 2.1.293): at the default response deadline, compile-creatio answers a compile that outlasts 60 s with its in-progress note and operation-id before 60 s have passed, and compile-status then reports that operation running.")]
+	public async Task CompileCreatio_Should_AnswerInProgressBeforeSixtySeconds_WhenTheDefaultDeadlineApplies() {
+		// Arrange
+		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-e2e-102333d-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		try {
+			McpE2ESettings settings = IsolatedSettings(tempHome);
+			// Clears the suite's 150 s pin and whatever the runner's own environment carries. An empty value is
+			// "not set" to clio (McpProgressHeartbeat.ResolveResponseDeadline), so the built-in default applies, and
+			// the parent hands a sticky worker nothing for it either.
+			settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = string.Empty;
+			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+				StubSettings(stub), settings.ClioProcessPath, settings.ProcessEnvironmentVariables);
+			using CancellationTokenSource scenario = new(ScenarioBudget);
+			await using McpServerSession session = await McpServerSession.StartAsync(settings, scenario.Token);
+			stub.ResetCounters();
+			stub.SetLoginDelay(ClientCeiling + TimeSpan.FromSeconds(30));
+
+			// Act
+			Stopwatch waited = Stopwatch.StartNew();
+			CallToolResult answered = await AllureApi.Step("compile-creatio with a compile that outlasts 60 s",
+				async () => await session.CallToolAsync(CompileCreatioTool.CompileCreatioToolName, CompileArguments(),
+					scenario.Token));
+			waited.Stop();
+			CompileStatusResponse status = await AllureApi.Step("compile-status for that compile",
+				async () => await GetStatusAsync(session, scenario.Token));
+
+			// Assert
+			string answer = DescribeResult(answered);
+			waited.Elapsed.Should().BeLessThan(ClientCeiling,
+				because: "a client that gives up at 60 s restarts the MCP server, and the restart takes the operation's record with it; answered after {0}: {1}",
+				waited.Elapsed, answer);
+			waited.Elapsed.Should().BeGreaterThan(TimeSpan.FromSeconds(30),
+				because: "the stub holds the compile far past the deadline, so an earlier answer is not the deadline's and the timing above would prove nothing: {0}",
+				answer);
+			answered.IsError.Should().NotBe(true, because: "the in-progress note is not a failure: {0}", answer);
+			Match operation = InProgressOperationId.Match(answer);
+			operation.Success.Should().BeTrue(
+				because: "the in-progress note must carry the operation-id compile-status is polled with: {0}", answer);
+			status.Status.Should().Be("running", because: "the compile is still held by the stub");
+			status.OperationId.Should().Be(operation.Groups[1].Value,
+				because: "compile-status must describe the operation the in-progress note named");
+			stub.UnexpectedHandlerFailures.Should().BeEmpty(
+				because: "a broken stub would make every assertion above measure the instrument instead of clio");
+		}
+		finally {
+			TryDeleteDirectory(tempHome);
+		}
+	}
+
+	[Test]
+	[Category("McpE2E.NoEnvironment")]
+	[AllureTag(CompileStatusTool.CompileStatusToolName)]
+	[AllureName("compile-status lists the environment's compilation history when the server holds no record")]
+	[AllureDescription("Starts a fresh clio MCP server - what a client that restarts its server after giving up is left with - against a Creatio stub that serves CompilationHistory through DataService in a UTC+3 session and reports that offset through GetApplicationInfo, and calls compile-status. The not-found answer must list the stub's rows with their finish times converted to UTC and with fenced errors. With the stub serving no history, the answer must say the history could not be read and fall back to last-compilation-log.")]
+	[Description("ENG-102333 (QA): when the MCP server holds no record, compile-status reads the environment's compilation history and lists its rows with UTC finish times - converted from the session's zone with the session's offset - and fenced errors; when the history cannot be read it says so in clio's own words and falls back to last-compilation-log.")]
+	public async Task CompileStatus_Should_ListTheCompilationHistory_WhenTheServerHoldsNoRecord() {
+		// Arrange
+		await using CreatioWedgeStubServer stub = CreatioWedgeStubServer.Start();
+		string tempHome = Path.Combine(Path.GetTempPath(), $"clio-e2e-102333h-{Guid.NewGuid():N}");
+		Directory.CreateDirectory(tempHome);
+		try {
+			McpE2ESettings settings = IsolatedSettings(tempHome);
+			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
+				StubSettings(stub), settings.ClioProcessPath, settings.ProcessEnvironmentVariables);
+			using CancellationTokenSource scenario = new(ScenarioBudget);
+			await using McpServerSession session = await McpServerSession.StartAsync(settings, scenario.Token);
+			DateTime failedAt = DateTime.UtcNow.AddSeconds(-90);
+			stub.SetCompilationHistory(CompilationHistoryRows(failedAt, SessionOffset), (int)SessionOffset.TotalMinutes);
+
+			// Act
+			CompileStatusResponse withHistory = await AllureApi.Step("compile-status while the history answers",
+				async () => await GetStatusAsync(session, scenario.Token));
+			stub.SetCompilationHistory(null);
+			CompileStatusResponse withoutHistory = await AllureApi.Step("compile-status while it does not",
+				async () => await GetStatusAsync(session, scenario.Token));
+
+			// Assert
+			withHistory.Status.Should().Be("not-found", because: "a fresh server holds no compile record");
+			withHistory.CompilationHistoryError.Should().BeNull(because: "the history answered: {0}", withHistory.Note);
+			withHistory.CompilationHistory.Should().HaveCount(2, because: "the stub serves two rows");
+			withHistory.OlderFailures.Should().BeEmpty(because: "no row is older than the listed ones");
+			CompileHistoryEntry failed = withHistory.CompilationHistory![0];
+			failed.FinishedUtc.Should().BeCloseTo(failedAt, TimeSpan.FromMilliseconds(1),
+				because: "DataService wrote the time in the session's UTC+3 zone, and the session's own offset must turn it back into UTC");
+			failed.FinishedSecondsAgo.Should().BeInRange(60, 600,
+				because: "the row was written about 90 s before compile-status read it");
+			failed.Succeeded.Should().BeFalse(because: "the newest row is a failed build");
+			failed.ErrorCount.Should().Be(1, because: "the row carries one error and one warning");
+			failed.Errors.Should().ContainSingle(because: "warnings are not errors")
+				.Which.Should().Contain("CS0103").And.Contain("UsrProc.cs").And.NotContain("inetpub")
+				.And.StartWith("[untrusted-source-text begin]",
+					because: "the compiler's text is fenced as text the environment authored, with the file cut to its name");
+			withHistory.CheckedUtc.Should().NotBeNull(because: "the ages are counted back from it");
+			withoutHistory.Status.Should().Be("not-found", because: "the server still holds no record");
+			withoutHistory.CompilationHistory.Should().BeNull(because: "the stub served no history and no session offset");
+			withoutHistory.CompilationHistoryError.Should().Be(CompileStatusTool.HistoryUnreadableError,
+				because: "an answer without history says, in clio's own words, that it could not read it");
+			withoutHistory.Note.Should().Contain(LastCompilationLogTool.ToolName,
+				because: "without the history, last-compilation-log is the fallback");
+			stub.CompilationHistoryReadCount.Should().Be(1,
+				because: "the rows were read once, while the stub served them; without a session offset the read stops before asking for rows");
+			stub.UnexpectedHandlerFailures.Should().BeEmpty(
+				because: "a broken stub would make every assertion above measure the instrument instead of clio");
+		}
+		finally {
+			TryDeleteDirectory(tempHome);
+		}
+	}
+
+	// The in-progress notice names the operation as "(operation-id '<id>')"; System.Text.Json writes the
+	// apostrophes as \u0027, so both spellings are accepted.
+	private static readonly Regex InProgressOperationId = new(@"operation-id (?:'|\\u0027)([0-9a-fA-F-]+)(?:'|\\u0027)",
+		RegexOptions.CultureInvariant);
+
+	private static McpE2ESettings IsolatedSettings(string tempHome) {
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		settings.ProcessEnvironmentVariables[OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME"] = tempHome;
+		// Overrides the assembly-shared CLIO_HOME so the settings replacement stays in this fixture's own home.
+		settings.ProcessEnvironmentVariables["CLIO_HOME"] = tempHome;
+		return settings;
+	}
+
+	/// <summary>The session zone the stub's history is written in: UTC+3, as on the stands the QA ran on.</summary>
+	private static readonly TimeSpan SessionOffset = TimeSpan.FromHours(3);
+
+	// DataService writes CreatedOn in the session's zone, with no offset: this is the shape clio has to convert.
+	private static string SessionTime(DateTime utc, TimeSpan sessionOffset) =>
+		(utc + sessionOffset).ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture);
+
+	private static JsonArray CompilationHistoryRows(DateTime failedAt, TimeSpan sessionOffset) =>
+		new(
+			new JsonObject {
+				["CreatedOn"] = SessionTime(failedAt, sessionOffset),
+				["ProjectName"] = "Terrasoft.Configuration.Dev.csproj",
+				["Result"] = false,
+				["DurationInSeconds"] = 141,
+				["ErrorsWarnings"] = """
+					[{"errorNumber":"CS0103","errorText":"The name 'qaUndefinedVar' does not exist in the current context","fileName":"C:\\inetpub\\Creatio\\UsrProc.cs","line":34,"column":40,"isWarning":false},{"errorNumber":"CS0114","errorText":"hides an inherited member","isWarning":true}]
+					"""
+			},
+			new JsonObject {
+				["CreatedOn"] = SessionTime(failedAt.AddHours(-3), sessionOffset),
+				["ProjectName"] = "Terrasoft.Configuration.Dev.csproj",
+				["Result"] = true,
+				["DurationInSeconds"] = 90,
+				["ErrorsWarnings"] = "[]"
+			});
 
 	private static string StubSettings(CreatioWedgeStubServer stub) =>
 		$$"""

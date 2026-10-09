@@ -23,7 +23,8 @@ public sealed class PagePlacementSlotToolTests {
 	private static PageValidateTool CreateValidateTool() => new(
 		Substitute.For<IMobileComponentInfoCatalog>(),
 		Substitute.For<IComponentInfoCatalog>(),
-		new MockFileSystem());
+		new MockFileSystem(),
+		new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 
 	[TestCase(true)]
 	[TestCase(false)]

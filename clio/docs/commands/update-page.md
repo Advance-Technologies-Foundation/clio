@@ -117,6 +117,18 @@ name instead of trying to edit a non-existent local `insert`.
   declarations, callback parameters, AMD dependency arguments and known JavaScript/Creatio globals
   remain valid. Missing direct callees produce `undefined-section-call`. These AST checks run only on
   MCP `update-page` / `sync-pages` / `validate-page`; the CLI `update-page` verb does not run them.
+- **Data-source bindings (web and mobile).** MCP `update-page` / `sync-pages` / `validate-page` only. The first
+  segment of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data
+  source that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page
+  bundle is built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged
+  into it; `remove` operations and merges below a missing data source declare nothing). Templates never declare
+  `PDS`: a generated page holds it in its own body, so a replace write that drops it is rejected (ENG-102161). Keep
+  the web `SCHEMA_MODEL_CONFIG` section (or the `dataSources` / `primaryDataSourceName` operations of
+  `SCHEMA_MODEL_CONFIG_DIFF`, or the mobile `modelConfigDiff`) from `get-page` `raw.body`. A non-empty
+  `SCHEMA_MODEL_CONFIG_DIFF` makes `SCHEMA_MODEL_CONFIG` ignored. `mode: "append"`, whose base includes the page's own
+  body, works only on a page in diff form: a generated web form page is full-config and append refuses it. When the inherited `modelConfig` cannot be read the check passes and the
+  response warns that it did not run; `validate-page` has no environment, so it never rejects and warns about
+  bindings the body does not declare itself.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.

@@ -336,7 +336,7 @@ public sealed class ApplicationSectionCreateTool(
 		RequiresClientRequests = McpToolClientRequests.Progress,
 		SharedFileResource = McpToolSharedFileResource.None,
 		StartsOperation = true)]
-	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working — await completion and do not retry on a perceived timeout. Create sections in one app SEQUENTIALLY — do not fan out parallel create-app-section calls against the same app; each insert takes ~90-100 s and overlapping inserts contend server-side. clio serializes creations per app in-process and auto-retries a detail-less InsertQuery rejection (error-class=contention) once with verification, but you should still create one section at a time. If the response is bounded by a deadline before the work finishes it returns error-class=creatio-timeout with section-created=in-progress: the section is still being created server-side — do NOT retry create-app-section (that would duplicate it) and do NOT fall back to create-page; instead poll list-app-sections / get-app-info until the section and its <Code>_ListPage / <Code>_FormPage appear. On failure the response carries error-class (transport | creatio-timeout | server-error | contention), section-created (true | false | unknown | in-progress), and retry-guidance — follow that guidance instead of blind retries. Then clears the menu cache of clio's own server session; a failed clear is reported in `warnings`, not as a failure. Other sessions keep the old menu: an open browser tab refreshes only if its websocket was connected at the moment of the change, so a success also returns `next-step`, the call to run inside a tab that still shows the old menu after a reload. Never clear Redis for this.")]
+	[Description("Creates a section inside an existing application in Creatio through backend MCP and returns structured section, entity, and page readback data. Long-running: streams notifications/progress while working and, once the MCP response deadline passes (45 s by default, less than one insert takes), answers in-progress as below; do not retry on a perceived timeout. Create sections in one app SEQUENTIALLY — do not fan out parallel create-app-section calls against the same app; each insert takes ~90-100 s and overlapping inserts contend server-side. clio serializes creations per app in-process and auto-retries a detail-less InsertQuery rejection (error-class=contention) once with verification, but you should still create one section at a time. If the response is bounded by a deadline before the work finishes it returns error-class=creatio-timeout with section-created=in-progress: the section is still being created server-side — do NOT retry create-app-section (that would duplicate it) and do NOT fall back to create-page; instead poll list-app-sections / get-app-info until the section and its <Code>_ListPage / <Code>_FormPage appear. On failure the response carries error-class (transport | creatio-timeout | server-error | contention), section-created (true | false | unknown | in-progress), and retry-guidance — follow that guidance instead of blind retries. Then clears the menu cache of clio's own server session; a failed clear is reported in `warnings` of a completed answer, not as a failure (an in-progress answer cannot report it). Other sessions keep the old menu: an open browser tab refreshes only if its websocket was connected at the moment of the change, so a success and an in-progress answer also return `next-step`, the call to run inside a tab that still shows the old menu after a reload. Never clear Redis for this.")]
 	public async Task<ApplicationSectionContextResponse> ApplicationSectionCreate(
 		[Description("Parameters: environment-name, application-code, caption (required); description, entity-schema-name, code, icon-background, with-mobile-pages (optional). entity-schema-name must reference an existing object (validated before creation); several sections may target the same object, so reuse is allowed. The section code is generated from the caption; a non-Latin caption (for example 'Контакти') cannot produce a valid Latin code, so pass an explicit code such as code='Contacts'. If the object does not exist, creation fails with a 'does not exist' error; a detail-less InsertQuery rejection is classified error-class=contention — the server gives no detail, so it may be parallel creation OR a server-side rejection; clio verifies and auto-retries once, so create sections sequentially, run list-app-sections to confirm absence, and if a single sequential create still fails treat it as a server-side issue (check clio healthcheck / server logs).")]
 		[Required]
@@ -398,11 +398,27 @@ public sealed class ApplicationSectionCreateTool(
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 			return ApplicationToolHelper.CreateSectionContextResponse(ApplicationToolResultMapper.Map(result));
 		} catch (McpResponseDeadlineExceededException) {
-			return ApplicationToolHelper.CreateSectionInProgressResponse(args.Caption, args.Code);
+			return ApplicationToolHelper.CreateSectionInProgressResponse(args.Caption, args.Code,
+				TryBuildBrowserSessionNote(args.EnvironmentName));
 		} catch (ApplicationSectionCreateException ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(ex);
 		} catch (Exception ex) {
 			return ApplicationToolHelper.CreateSectionContextErrorResponse(SensitiveErrorTextRedactor.Redact(ex.Message));
+		}
+	}
+
+	// Since the 45 s response deadline (ENG-102333) most creations answer in-progress, and that answer used to drop
+	// the browser-tab instruction only a completed answer carried. The instruction needs nothing from the creation,
+	// so it is built here; a failure to build it leaves it out rather than failing a valid in-progress answer.
+	private string? TryBuildBrowserSessionNote(string environmentName) {
+		try {
+			(EnvironmentSettings settings, INavigationCacheResetter resetter) = _commandResolver
+				.ResolvePair<EnvironmentSettings, INavigationCacheResetter>(new EnvironmentOptions {
+					Environment = environmentName
+				});
+			return settings is null || resetter is null ? null : resetter.BuildBrowserSessionNote(settings);
+		} catch (Exception) {
+			return null;
 		}
 	}
 

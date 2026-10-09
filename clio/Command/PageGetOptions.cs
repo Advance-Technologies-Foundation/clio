@@ -367,10 +367,12 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		// standalone schema, or a chain collapsed by the ENG-94418 recovery path). Do NOT fall back to the full
 		// `parts` there: that would re-include the very own body this method exists to exclude and re-open the
 		// replace-mode false-positive (an insert into an array that lived only in the soon-to-be-overwritten own
-		// body would validate OK and then fail at runtime). Build([]) yields an explicitly EMPTY base, which
-		// correctly fails such an insert (the array does not exist in the base the replace write layers over).
+		// body would validate OK and then fail at runtime). The base is then an explicitly EMPTY object ({}), which
+		// correctly fails such an insert and tells the data-source check "read, declares nothing". Build([]) itself
+		// returns null configs, and null is reserved for "could not be read".
 		PageBundleInfo baseBundle = _bundleBuilder.Build(baseParts);
-		return (baseBundle.ViewModelConfig, baseBundle.ModelConfig);
+		return (baseBundle.ViewModelConfig ?? new System.Text.Json.Nodes.JsonObject(),
+			baseBundle.ModelConfig ?? new System.Text.Json.Nodes.JsonObject());
 	}
 
 	private IReadOnlyList<PageDesignerHierarchySchema> ResolveHierarchy(
