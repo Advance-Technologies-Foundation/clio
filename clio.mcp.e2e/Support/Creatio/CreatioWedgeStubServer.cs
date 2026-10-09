@@ -79,6 +79,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private const string ResetPath = "/reset";
 	private const string ControlPath = "/control";
 	private const string PingPathSuffix = "/ping";
+	private const string RunProcessPathMarker = "ProcessEngineService.svc/RunProcess";
 
 	/// <summary>Name of the forms-auth session cookie clio's application client harvests.</summary>
 	private const string SessionCookieName = ".ASPXAUTH";
@@ -98,6 +99,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private readonly List<string> _unexpectedHandlerFailures = [];
 	private int _loginCount;
 	private int _selectCount;
+	private int _runProcessCount;
 	private CreatioWedgeStubMode _mode = CreatioWedgeStubMode.Healthy;
 	private TimeSpan _selectDelay = TimeSpan.Zero;
 	private TimeSpan _loginDelay = TimeSpan.FromMilliseconds(200);
@@ -264,11 +266,24 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 		}
 	}
 
+	/// <summary>
+	/// Number of <c>ProcessEngineService.svc/RunProcess</c> launch requests received since the last reset: what
+	/// shows that a run-process call never sent its launch.
+	/// </summary>
+	public int RunProcessCount {
+		get {
+			lock (_sync) {
+				return _runProcessCount;
+			}
+		}
+	}
+
 	/// <summary>Zeroes the counters and clears the observed session list. Equivalent of <c>POST /reset</c>.</summary>
 	public void ResetCounters() {
 		lock (_sync) {
 			_loginCount = 0;
 			_selectCount = 0;
+			_runProcessCount = 0;
 			_compilationHistoryReadCount = 0;
 			_observedSelectSessions.Clear();
 			_observedSelectAuthorizationHeaders.Clear();
@@ -298,6 +313,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 				: $", handler-failures=[{string.Join(" | ", _unexpectedHandlerFailures)}]";
 			return $"login={_loginCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"select={_selectCount.ToString(CultureInfo.InvariantCulture)}, "
+				+ $"run-process={_runProcessCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"mode={_mode}, "
 				+ $"select-sessions=[{string.Join(", ", _observedSelectSessions)}], "
 				+ $"select-authorization=[{string.Join(", ", _observedSelectAuthorizationHeaders)}], "
@@ -367,6 +383,12 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			if (path.EndsWith(PingPathSuffix, StringComparison.Ordinal)) {
 				await WriteJsonAsync(context, new JsonObject { ["ok"] = true }).ConfigureAwait(false);
 				return;
+			}
+
+			if (path.Contains(RunProcessPathMarker, StringComparison.Ordinal)) {
+				lock (_sync) {
+					_runProcessCount++;
+				}
 			}
 
 			// Generic fallback for every other endpoint clio probes (runtime detection, build/compile).
