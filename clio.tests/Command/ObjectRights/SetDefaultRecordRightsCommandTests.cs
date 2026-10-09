@@ -338,6 +338,23 @@ public class SetDefaultRecordRightsCommandTests : BaseCommandTests<SetDefaultRec
 	}
 
 	[Test]
+	[Description("A person who answers no at the prompt cancels the call: exit code 0, the cancellation is said, and nothing is saved.")]
+	public void Execute_ShouldSaveNothing_WhenTheUserAnswersNo() {
+		// Arrange
+		ObjectIs(Info(true));
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(false);
+
+		// Act
+		int exitCode = _command.Execute(RuleOptions("read", o => o.Confirm = false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a cancellation is the user's decision, not a failure");
+		_infos.Should().Contain("Record-permissions change cancelled.", because: "the cancellation is said");
+		NothingSaved();
+	}
+
+	[Test]
 	[Description("A read-back in which ANOTHER rule changed fails the call as saved but NOT verified: the full-list save may have lost it.")]
 	public void Execute_ShouldFail_WhenReadBackLostAnotherRule() {
 		// Arrange

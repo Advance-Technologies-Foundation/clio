@@ -527,4 +527,40 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		_warnings.Should().Contain(w => w.Contains("the wait ended before the status could be read"),
 			because: "the honest reason is given");
 	}
+
+	[Test]
+	[Description("A status read that throws an unexpected exception (a non-JSON page, a bug) after the launch is still reported with the process id and the 'do NOT start it again' warning, never as a bare failure that invites a second run.")]
+	public void Execute_ShouldReportStatusUnknown_WhenAReadThrowsUnexpectedly() {
+		// Arrange
+		ObjectIs(true);
+		RealDelay();
+		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new System.Text.Json.JsonException("'<' is an invalid start of a value."));
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.TimeoutSeconds = 1));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the launch succeeded");
+		_warnings.Should().Contain(w => w.Contains("could not be read") && w.Contains("Do NOT start it again")
+				&& w.Contains(ProcessId.ToString()),
+			because: "the run has started, so the result names the process to check");
+	}
+
+	[Test]
+	[Description("A person who answers no at the prompt cancels the call: exit code 0, the cancellation is said, and nothing is started.")]
+	public void Execute_ShouldStartNothing_WhenTheUserAnswersNo() {
+		// Arrange
+		ObjectIs(true);
+		_console.IsInteractive.Returns(true);
+		_console.Prompt(Arg.Any<string>()).Returns(false);
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.Confirm = false));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a cancellation is the user's decision, not a failure");
+		_infos.Should().Contain("Record-rights update cancelled.", because: "the cancellation is said");
+		_actualization.DidNotReceiveWithAnyArgs().Start(default, default);
+	}
 }

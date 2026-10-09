@@ -169,6 +169,9 @@ the call.
   10 s; `get-object-rights` runs it last, after every object is read, so it never takes the read budget of the
   connected objects. Measured on kravchuk_0922 (8.3.4): `COUNT` over tables of up to 18 020 rows cost no more than a
   `ping`; its cost on a much larger customer table is not measured (accepted risk R9).
+- Narrowed after the second review (2026-10-09): `get-object-rights` skips the count when record permissions are OFF
+  and no rule is stored — `apply-default-record-rights` refuses such an object, so the count would decide nothing.
+  With rules stored while the switch is OFF it is still counted: turning the switch on brings them into effect.
 
 **RD7 — Apply: a separate tool `apply-default-record-rights`; the agent never runs it on its own.**
 - Separate from `set` on purpose: several rule changes are followed by one heavy run, and its cost and risk differ.

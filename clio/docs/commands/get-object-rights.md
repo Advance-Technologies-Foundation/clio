@@ -55,7 +55,8 @@ records created by the author get read / edit / delete at a level (granted, or d
 "do not apply for manager: true|false". Rules stored while record permissions are OFF are listed as not in effect; ON with no rule
 means every user sees only the records they create. `--grantee` and `--author` filter the rules. For the named object
 the number of existing records is reported (counted under the calling account) — the fact a user needs before
-deciding to run `apply-default-record-rights`. Change the record layer with `set-default-record-rights`.
+deciding to run `apply-default-record-rights`; it is not counted when record permissions are OFF and no rule is
+stored, since there is nothing to apply. Change the record layer with `set-default-record-rights`.
 
 ## Synopsis
 

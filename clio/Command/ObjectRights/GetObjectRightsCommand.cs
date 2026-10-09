@@ -119,7 +119,7 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			// Last, and only for the named object: the number of records is what a user needs to decide on
 			// apply-default-record-rights. Counting reads the whole table, so it never takes the read budget of the
 			// connected objects, and counting each connected object would cost a query each.
-			ReportRecordCount(rootName, requestOptions);
+			ReportRecordCount(rootName, root.RecordState, requestOptions);
 		}
 		return rootRead ? 0 : 1;
 	}
@@ -320,8 +320,14 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 	}
 
-	// A failed count is reported and never fails the read.
-	private void ReportRecordCount(string schemaName, CreatioRequestOptions requestOptions) {
+	// A failed count is reported and never fails the read. An object with record permissions OFF and no stored rule has
+	// nothing apply-default-record-rights could apply, so its table is not counted: on a large table the count is the
+	// costliest query of the read (ADR RD6, risk R9).
+	private void ReportRecordCount(string schemaName, DefaultRecordRightsState recordState,
+		CreatioRequestOptions requestOptions) {
+		if (!recordState.AdministratedByRecords && recordState.Rules.Count == 0) {
+			return;
+		}
 		string fact = ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions,
 			out long? count);
 		string line = $"  {schemaName}: {fact}.";

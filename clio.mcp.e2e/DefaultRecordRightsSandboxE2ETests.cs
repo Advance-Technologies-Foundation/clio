@@ -152,6 +152,7 @@ public sealed class DefaultRecordRightsSandboxE2ETests : DataBindingDbFixtureBas
 			"-> All employees", because: "an enable gives existing records no rights"));
 		AllureApi.Step("Verify the first apply completed", () => {
 			firstApply.Success.Should().BeTrue(because: $"the record-rights update must complete. Error: {firstApply.Error}");
+			firstApply.Output.Should().Contain("completed", because: "a small table finishes well within the wait");
 			firstApply.Output.Should().NotContain("could not check whether a record-rights update is already running",
 				because: "the running-update check must work on a real stand, not only fail quietly");
 		});

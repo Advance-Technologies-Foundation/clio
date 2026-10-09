@@ -196,7 +196,9 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 
 	// Polls the run's SysProcessLog row until it ends or the wait is over. A failed read is retried at the next poll: one
 	// fault does not end the wait. Running out of time is not a failure — the run goes on, and the result names the
-	// process to check — but "still running" is said only when a status was actually read.
+	// process to check — but "still running" is said only when a status was actually read. Every failure of a read is
+	// caught, not only a service failure: the run has started, and an exception that escaped here would reach the caller
+	// without the process id and the "do NOT start it again" warning, inviting a second heavy run.
 	private int WaitForEnd(string schemaName, Guid processId, int timeoutSeconds, CreatioRequestOptions requestOptions) {
 		TimeSpan waitFor = TimeSpan.FromSeconds(timeoutSeconds);
 		if (requestOptions.Deadline is { } call && call.Remaining < waitFor) {
@@ -218,7 +220,7 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 					}
 				}
 			}
-			catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex) || ex is TimeoutException) {
+			catch (Exception ex) {
 				lastReadError = ObjectRightsSupport.DisplayFailure(ex);
 			}
 			if (wait.IsSpent) {

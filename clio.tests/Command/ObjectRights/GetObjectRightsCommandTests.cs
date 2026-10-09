@@ -339,10 +339,9 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			"  UsrOpen: not administered by operation permissions (they are OFF) — available to all internal users.",
 			"    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds one with "
 				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself.",
-			RecordsOff,
-			"  UsrOrder: 0 existing record(s), counted under the calling account."
-		}, because: "the output is the facts per object — the operation rows unchanged, then the record layer, and the "
-			+ "record count for the named object only — and nothing more: no verdict");
+			RecordsOff
+		}, because: "the output is the facts per object — the operation rows unchanged, then the record layer — and "
+			+ "nothing more: no verdict, and no record count for an object with record permissions OFF and no rule");
 	}
 
 	[Test]
@@ -801,6 +800,35 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			.Which.Should().StartWith($"      Author ({Employees}) → Grantee ({Employees})", because: "it is the matching rule");
 		byGrantee.Should().ContainSingle(because: "only the rule with that grantee is listed")
 			.Which.Should().StartWith($"      Author ({Role}) → Grantee ({Role})", because: "it is the matching rule");
+	}
+
+	[Test]
+	[Description("An object with record permissions OFF and no stored rule is not counted: apply-default-record-rights has nothing to apply to it, and the count is the costliest query of the read.")]
+	public void Execute_ShouldNotCount_WhenRecordPermissionsAreOffWithNoRule() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(WithRecords("UsrOrder", false));
+
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_recordCounter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("An object with record permissions OFF but with stored rules is still counted: turning them on would bring the rules into effect.")]
+	public void Execute_ShouldCount_WhenRecordPermissionsAreOffWithStoredRules() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", false, RecordRule(Employees, Role)));
+		_recordCounter.CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(42L);
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		_logger.Received().WriteInfo("  UsrOrder: 42 existing record(s), counted under the calling account.");
 	}
 
 	[Test]
