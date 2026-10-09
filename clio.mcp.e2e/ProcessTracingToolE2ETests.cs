@@ -20,8 +20,9 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for process tracing (ENG-102111) across the three tools that carry it:
 /// <c>create-business-process</c> (<c>isTracing</c>), <c>modify-business-process</c> (<c>setTracing</c>) and
 /// <c>describe-business-process</c> (<c>tracing</c>). NOT in CI — run manually against a reachable sandbox carrying
-/// CrtProcessBuilder 1.6.6.92 or newer and a writable "Custom" package. The version path is covered by unit tests
-/// only: a version can never be deleted, so an E2E that created one would leave it on the stand.
+/// CrtProcessBuilder 1.6.6.92 or newer and a writable "Custom" package. On the version path only the REFUSAL is
+/// exercised end to end - it fires before any clone, so nothing is created; a version can never be deleted, so the
+/// accepted mixed batch stays with the unit tests.
 /// </summary>
 [TestFixture]
 [AllureNUnit]

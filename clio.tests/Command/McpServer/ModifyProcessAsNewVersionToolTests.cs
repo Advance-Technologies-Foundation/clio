@@ -296,22 +296,6 @@ public class ModifyProcessAsNewVersionToolTests {
 				+ "make the tool silently unreachable rather than fail anywhere");
 	}
 
-	private sealed class FakeCommand : ModifyProcessAsNewVersionCommand {
-		private readonly int _exitCode;
-
-		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
-
-		public FakeCommand(int exitCode = 0)
-			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
-			_exitCode = exitCode;
-		}
-
-		public override int Execute(ModifyProcessAsNewVersionOptions options) {
-			CapturedOptions = options;
-			return _exitCode;
-		}
-	}
-
 	[Test]
 	[Category("Unit")]
 	[Description("The version tool's contract says a batch made ONLY of setTracing is refused and where to send it instead (ENG-102111, owner decision): CrtProcessBuilder 1.6.6.92 refuses it because a version made only to flip a switch can never be deleted, and an agent that learns this from the refusal has already spent the call.")]
@@ -332,4 +316,19 @@ public class ModifyProcessAsNewVersionToolTests {
 			because: "the stated floor must match the [RequiresPackage] literal setTracing raised");
 	}
 
+	private sealed class FakeCommand : ModifyProcessAsNewVersionCommand {
+		private readonly int _exitCode;
+
+		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
+
+		public FakeCommand(int exitCode = 0)
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+			_exitCode = exitCode;
+		}
+
+		public override int Execute(ModifyProcessAsNewVersionOptions options) {
+			CapturedOptions = options;
+			return _exitCode;
+		}
+	}
 }
