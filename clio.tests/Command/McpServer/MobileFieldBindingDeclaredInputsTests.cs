@@ -277,7 +277,7 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(LiveCatalog());
-		PageValidateTool tool = new(mobileCatalog, Substitute.For<IComponentInfoCatalog>(), new MockFileSystem());
+		PageValidateTool tool = new(mobileCatalog, Substitute.For<IComponentInfoCatalog>(), new MockFileSystem(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = Body("""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
 
 		// Act
@@ -297,7 +297,7 @@ public sealed class MobileFieldBindingDeclaredInputsTests {
 	private static PageValidateTool ToolWithLiveMobileCatalog() {
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(LiveCatalog());
-		return new PageValidateTool(mobileCatalog, Substitute.For<IComponentInfoCatalog>(), new MockFileSystem());
+		return new PageValidateTool(mobileCatalog, Substitute.For<IComponentInfoCatalog>(), new MockFileSystem(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 	}
 
 	private static DeclaredPropertyIndex LiveIndex() {
