@@ -1337,7 +1337,7 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 					throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");
 				}
 
-				return TryConvertImageContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
+				return TryConvertBinaryContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
 			}
 		}
 
@@ -1353,7 +1353,7 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 				throw new InvalidOperationException($"Column '{columnName}' cannot be empty.");
 			}
 
-			return TryConvertImageContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
+			return TryConvertBinaryContentFile(stringValue, dataTypeUId, fileBasePath) ?? stringValue;
 		}
 
 		throw new InvalidOperationException(
@@ -1379,8 +1379,8 @@ internal sealed class DataBindingValueConverter : IDataBindingValueConverter {
 		return DataValueTypeMap.Resolve(dataTypeUId) == typeof(string);
 	}
 
-	private string? TryConvertImageContentFile(string stringValue, Guid dataTypeUId, string? fileBasePath) {
-		if (!DataValueTypeMap.IsImageContent(dataTypeUId) ||
+	private string? TryConvertBinaryContentFile(string stringValue, Guid dataTypeUId, string? fileBasePath) {
+		if (!DataValueTypeMap.IsBinaryContent(dataTypeUId) ||
 			string.IsNullOrWhiteSpace(stringValue) ||
 			string.Equals(stringValue, "null", StringComparison.OrdinalIgnoreCase)) {
 			return null;

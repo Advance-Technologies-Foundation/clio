@@ -24,6 +24,45 @@ public sealed class DataBindingToolE2ETests : McpContractFixtureBase {
 	private const string AddRowToolName = AddDataBindingRowTool.AddDataBindingRowToolName;
 	private const string RemoveRowToolName = RemoveDataBindingRowTool.RemoveDataBindingRowToolName;
 
+	[Test]
+	[AllureTag(CreateToolName)]
+	[AllureName("Runtime SysImage binding preserves image metadata and SVG bytes")]
+	[Description("Reads SysImage runtime metadata through MCP and creates a local binding with the native Image type and byte-exact SVG content, without writing a live SysImage row.")]
+	public async Task CreateDataBinding_ShouldPreserveImageContent_WhenRuntimeSysImageIsAvailable() {
+		// Arrange
+		await using DataBindingArrangeContext context = await ArrangeWorkspaceAsync(requireEnvironment: true);
+		byte[] bytes = System.Text.Encoding.UTF8.GetBytes("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><path d=\"M0 0h1v1H0z\"/></svg>");
+		await File.WriteAllBytesAsync(Path.Combine(context.WorkspacePath, "icon.svg"), bytes);
+
+		// Act
+		CommandExecutionActResult result = await ActCommandAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["package-name"] = context.PackageName,
+			["schema-name"] = "SysImage",
+			["workspace-path"] = context.WorkspacePath,
+			["environment-name"] = context.EnvironmentName,
+			["values"] = JsonSerializer.Serialize(new { Name = "Binding icon", MimeType = "image/svg+xml", Data = "icon.svg" })
+		});
+
+		// Assert
+		AssertToolCallSucceeded(result);
+		AssertCommandExitCode(result, 0, "runtime image content accepts a local file without a reference display value");
+		result.Execution.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info,
+			because: "successful binding creation must report its completion");
+		string bindingPath = Path.Combine(context.WorkspacePath, "packages", context.PackageName, "Data", "SysImage");
+		using JsonDocument descriptor = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(bindingPath, "descriptor.json")));
+		JsonElement column = descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(item => item.GetProperty("ColumnName").GetString() == "Data");
+		column.GetProperty("DataTypeValueUId").GetString().Should().Be("fa6e6e49-b996-475e-a77e-73904e4c5a88",
+			because: "SysImage.Data carries binary Image content, not ImageLookup references");
+		using JsonDocument data = JsonDocument.Parse(await File.ReadAllTextAsync(Path.Combine(bindingPath, "data.json")));
+		JsonElement value = data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()
+			.Single(item => item.GetProperty("SchemaColumnUId").GetString() == column.GetProperty("ColumnUId").GetString());
+		Convert.FromBase64String(value.GetProperty("Value").GetString()!).Should().Equal(bytes,
+			because: "decoding the package data must reproduce the source image exactly");
+		value.TryGetProperty("DisplayValue", out _).Should().BeFalse(
+			because: "content must not be emitted as an image-reference pair");
+	}
+
 	[Test, Category("McpE2E.Manual")]
 	[Description("Creates a native sequence-step binding through MCP and preserves rich-text HTML on a sequence-enabled environment.")]
 	public async Task CreateDataBinding_ShouldPreserveRichText_WhenSequenceSchemaIsAvailable() {

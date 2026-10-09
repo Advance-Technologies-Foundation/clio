@@ -37,8 +37,8 @@ public static class DataBindingPrompt {
 		 GUID primary key column or sets it to null, the tool generates it automatically. For lookup and
 		 image-reference columns, `values` may use an object with `value` and `displayValue` properties.
 		 If `displayValue` is omitted and the tool is already using Creatio runtime data, clio resolves it automatically.
-		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside the workspace that clio
-		 will encode. Use
+		 For image-content and binary columns, `values` may contain either an existing base64 string or a local
+		 file path inside the workspace that clio will encode. These content columns do not require `displayValue`. Use
 		 `localizations` `{localizations ?? "<not provided>"}` when localized row values must be written too.
 		 """;
 
@@ -62,7 +62,7 @@ public static class DataBindingPrompt {
 		 If that payload omits the GUID primary key column or sets it to null, the tool generates it automatically.
 		 For non-null lookup and image-reference columns, `values` should use an object like
 		 an object with `value` and `displayValue` properties so the binding row keeps both identifiers and display text.
-		 For image-content columns, `values` may contain either an existing base64 string or a local file path inside
+		 For image-content and binary columns, `values` may contain either an existing base64 string or a local file path inside
 		 the workspace that clio will encode.
 		 Use `localizations` `{localizations ?? "<not provided>"}` only when localized row values must also be updated.
 		 """;

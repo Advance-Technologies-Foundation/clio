@@ -162,6 +162,52 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Any<int>());
 	}
 
+	[TestCase(13, "UsrBinary", "Data", "AQID", "b7342b7a-5dde-40de-aa7c-24d2a57b3202", false)]
+	[TestCase(14, "SysImage", "Data", "AQID", "fa6e6e49-b996-475e-a77e-73904e4c5a88", false)]
+	[TestCase(16, "SysModule", "Logo", "4f41bcc2-7ed0-45e8-a1fd-474918966d15", "b039feb0-ee7c-4884-8aa6-d6d45d84316f", false)]
+	[TestCase(16, "SysModule", "Logo", "4f41bcc2-7ed0-45e8-a1fd-474918966d15", "b039feb0-ee7c-4884-8aa6-d6d45d84316f", true)]
+	[Description("Creates DB-first binary/image bindings and updates a section image reference using the runtime wire type and native SaveSchema identity.")]
+	public void Execute_ShouldPreserveNativeImageTypes_WhenRuntimeColumnsAreRequested(
+		int runtimeType, string schemaName, string columnName, string value, string expectedTypeUId, bool update) {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(schemaName,
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), columnName, runtimeType));
+		_bindingLookupResponseJson = BuildBindingLookupResponse(schemaName);
+		_boundSchemaDataItemsJson = "[]";
+		_entityIdProbeResponseJson = update
+			? $$"""{"rows":[{"Id":"{{ExistingRowId}}"}],"success":true}"""
+			: null;
+		Dictionary<string, string> values = new() { ["Id"] = ExistingRowId.ToString(), [columnName] = value };
+
+		// Act
+		int result = update
+			? _upsertCommand.Execute(new UpsertDataBindingRowDbOptions {
+				Environment = "dev", PackageName = PackageName, BindingName = schemaName,
+				ValuesJson = JsonSerializer.Serialize(values)
+			})
+			: _createCommand.Execute(new CreateDataBindingDbOptions {
+				Environment = "dev", PackageName = PackageName, SchemaName = schemaName,
+				RowsJson = JsonSerializer.Serialize(new[] { new { values } })
+			});
+
+		// Assert
+		result.Should().Be(0, because: "ordinary image references and content must not be classified as unsupported runtime types");
+		var requests = _applicationClient.ReceivedCalls().Where(call => call.GetMethodInfo().Name == "ExecutePostRequest")
+			.Select(call => call.GetArguments()).ToArray();
+		using JsonDocument insert = JsonDocument.Parse((string)requests.Single(args => ((string)args[0]).EndsWith(update ? "UpdateQuery" : "InsertQuery"))[1]);
+		JsonElement parameter = insert.RootElement.GetProperty("columnValues").GetProperty("items")
+			.GetProperty(columnName).GetProperty("parameter");
+		parameter.GetProperty("dataValueType").GetInt32().Should().Be(runtimeType,
+			because: "DataService must receive the runtime content/reference type unchanged");
+		parameter.GetProperty("value").GetString().Should().Be(value,
+			because: "DB-first inputs are scalar base64 content or image Guids");
+		using JsonDocument binding = JsonDocument.Parse((string)requests.Single(args => ((string)args[0]).EndsWith("SaveSchema"))[1]);
+		binding.RootElement.GetProperty("columns").EnumerateArray().Single(column => column.GetProperty("name").GetString() == columnName)
+			.GetProperty("dataValueTypeUId").GetString().Should().Be(expectedTypeUId,
+				because: "the registered package metadata must identify the correct native binary, image or image-reference type");
+	}
+
 	[Test]
 	[Description("Projects SaveSchema metadata to the primary key plus referenced columns so unrelated unsupported runtime columns do not block DB-first create-data-binding-db.")]
 	public void CreateDataBindingDb_Should_Project_SaveSchema_To_Referenced_Columns_When_Runtime_Schema_Has_Unsupported_Columns() {
@@ -170,7 +216,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			"Account",
 			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
 			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
-			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedCollection", 17));
 		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
 		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
 			new Dictionary<string, object?> {
@@ -199,7 +245,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 				body.Contains("\"entitySchemaName\":\"Account\"") &&
 				body.Contains("\"Name\"") &&
 				body.Contains("\"Id\"") &&
-				!body.Contains("UsrUnsupportedBlob")),
+				!body.Contains("UsrUnsupportedCollection")),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
@@ -213,12 +259,12 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			"Account",
 			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
 			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
-			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedCollection", 17));
 		CreateDataBindingDbOptions options = new() {
 			Environment = "dev",
 			PackageName = PackageName,
 			SchemaName = "Account",
-			RowsJson = """[{"values":{"UsrUnsupportedBlob":"payload"}}]"""
+			RowsJson = """[{"values":{"UsrUnsupportedCollection":"payload"}}]"""
 		};
 
 		// Act
@@ -229,8 +275,8 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			because: "DB-first binding creation must fail fast when the requested row explicitly uses an unsupported runtime column");
 		_logger.Received(1).WriteError(
 			Arg.Is<string>(message =>
-				message.Contains("UsrUnsupportedBlob") &&
-				message.Contains("dataValueType '16'")));
+				message.Contains("UsrUnsupportedCollection") &&
+				message.Contains("dataValueType '17'")));
 		_applicationClient.DidNotReceive().ExecutePostRequest(
 			"http://localhost/0/DataService/json/SyncReply/InsertQuery",
 			Arg.Any<string>(),
@@ -507,7 +553,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			"Account",
 			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
 			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
-			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedCollection", 17));
 		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
 		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
 			new Dictionary<string, object?> {
@@ -534,7 +580,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 				body.Contains("\"entitySchemaName\":\"Account\"") &&
 				body.Contains("\"Name\"") &&
 				body.Contains("\"Id\"") &&
-				!body.Contains("UsrUnsupportedBlob")),
+				!body.Contains("UsrUnsupportedCollection")),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());
@@ -654,7 +700,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			"Account",
 			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
 			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28),
-			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedBlob", 16));
+			(Guid.Parse("11111111-2222-3333-4444-555555555555"), "UsrUnsupportedCollection", 17));
 		_bindingLookupResponseJson = BuildBindingLookupResponse("Account", "UsrAccountBinding");
 		_boundSchemaDataItemsJson = JsonSerializer.Serialize(new[] {
 			new Dictionary<string, object?> {
@@ -684,7 +730,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			Arg.Is<string>(body =>
 				body.Contains("\"entitySchemaName\":\"Account\"") &&
 				body.Contains($"\"{remainingRowId}\"") &&
-				!body.Contains("UsrUnsupportedBlob")),
+				!body.Contains("UsrUnsupportedCollection")),
 			Arg.Any<int>(),
 			Arg.Any<int>(),
 			Arg.Any<int>());

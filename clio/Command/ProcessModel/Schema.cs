@@ -496,8 +496,9 @@ public static class DataValueTypeMap{
 		10 => LookupDataValueTypeUId,
 		12 => BooleanDataValueTypeUId,
 		18 => ColorDataValueTypeUId,
-		13 => ImageContentDataValueTypeUId,
-		14 => ImageReferenceDataValueTypeUId,
+		13 => BinaryDataValueTypeUId,
+		14 => ImageContentDataValueTypeUId,
+		16 => ImageReferenceDataValueTypeUId,
 		26 => LongTextDataValueTypeUId,
 		27 => ShortTextDataValueTypeUId,
 		28 => MediumTextDataValueTypeUId,
@@ -521,6 +522,9 @@ public static class DataValueTypeMap{
 	};
 
 	internal static bool IsImageContent(Guid dataValueTypeUId) => dataValueTypeUId == ImageContentDataValueTypeUId;
+
+	internal static bool IsBinaryContent(Guid dataValueTypeUId) =>
+		dataValueTypeUId == BinaryDataValueTypeUId || IsImageContent(dataValueTypeUId);
 
 	/// <summary>
 	/// True for the native Creatio Color data type. Kept separate from <see cref="Resolve"/> on purpose:

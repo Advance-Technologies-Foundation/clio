@@ -57,7 +57,7 @@ a scalar value or an object with value and
 displayValue. When runtime lookup data is available,
 create-data-binding resolves a missing displayValue
 automatically.
-For image-content columns, pass either a base64
+For image-content and binary columns, pass either a base64
 string or a local file path inside the workspace and
 clio encodes the file
 --localizations        Optional JSON object keyed by culture and column name
@@ -81,7 +81,7 @@ clio create-data-binding -e dev --package Custom --schema UsrCustomEntity --work
 # Create a binding with explicit localizations
 clio create-data-binding -e dev --package Custom --schema SysSettings --values "{\"Name\":\"Setting name\"}" --localizations '{\"ru-RU\":{\"Name\":\"Настройка\"}}'
 
-# Create a binding that uses an image-content column from a runtime schema
+# Create a binding that uses an image-content or binary column from a runtime schema
 clio create-data-binding -e dev --package Custom --schema UsrImageBinding --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrImageBinding\",\"UsrImage\":\"assets\\icon.png\"}"
 
 # Create a binding with explicit lookup display text
@@ -101,7 +101,7 @@ not the package directory. Clio resolves packages/{package-name} beneath that ro
 - If the primary key column is a Guid and is omitted or null in --values, create-data-binding generates it automatically
 - For lookup and image-reference columns, clio writes SchemaColumnUId, Value, and DisplayValue in data.json
 - For create-data-binding, lookup and image-reference values may use {"value":"...","displayValue":"..."}; if displayValue is omitted and Creatio runtime lookup data is available, clio resolves it automatically
-- For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
+- For image-content and binary columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
 - If the target binding folder already exists for another schema, the
 command fails instead of overwriting it
 - filter.json is always created as an empty file
@@ -123,3 +123,18 @@ add-data-binding-row, remove-data-binding-row, call-service, create-data-binding
 - [Clio Command Reference](../../Commands.md#create-data-binding)
 
 Runtime rich-text columns (including sequence step Description and Body) are supported and retain their HTML text in native package bindings.
+
+## Image content and references
+
+`SysImage.Data` is image content: pass base64 or a workspace file path. It does not need
+`displayValue`. Image references such as `SysModule.Logo` and `Image32` carry a SysImage
+record ID; use `{ "value": "<image-id>", "displayValue": "<image-name>" }` for local artifacts.
+Binary (Blob) content also accepts base64 or a workspace file path.
+
+For older generated bindings, verify the descriptor before reusing it: image content uses
+`FA6E6E49-B996-475E-A77E-73904E4C5A88`, image references use
+`B039FEB0-EE7C-4884-8AA6-D6D45D84316F`, and binary content uses
+`B7342B7A-5DDE-40DE-AA7C-24D2A57B3202`. Regenerate incorrectly typed bindings with
+all intended rows and localizations. Adding `displayValue` to image bytes does not repair
+incorrect descriptor metadata. Local files and a working live image do not prove package
+installation on another environment; verify the installed bytes and references separately.

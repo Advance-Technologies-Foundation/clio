@@ -412,6 +412,79 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("must stay inside the workspace")));
 	}
 
+	[TestCase(13, "UsrBinary", "b7342b7a-5dde-40de-aa7c-24d2a57b3202")]
+	[TestCase(14, "SysImage", "fa6e6e49-b996-475e-a77e-73904e4c5a88")]
+	[Description("Creates Blob and SysImage.Data bindings from runtime metadata with their native descriptor identities and byte-exact file content, without lookup display values.")]
+	public void Execute_ShouldPreserveBinaryBytesAndNativeDescriptor_WhenRuntimeColumnContainsData(
+		int runtimeType, string schemaName, string expectedTypeUId) {
+		// Arrange
+		const string svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"><path d=\"M0 0h1v1H0z\"/></svg>";
+		byte[] bytes = System.Text.Encoding.UTF8.GetBytes(svg);
+		FileSystem.AddFile(WorkspacePath("assets", "icon.svg"), new MockFileData(bytes));
+		string schemaResponse = ImageBindingSchemaResponseJson
+			.Replace("UsrImageBinding", schemaName).Replace("UsrImage", "Data")
+			.Replace("\"dataValueType\": 14", $"\"dataValueType\": {runtimeType}");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(schemaResponse);
+		CreateDataBindingOptions options = new() {
+			Environment = "dev", PackageName = PackageName, SchemaName = schemaName,
+			ValuesJson = JsonSerializer.Serialize(new { Data = Path.Combine("assets", "icon.svg") })
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "binary content is a file or base64 value, not a lookup requiring displayValue");
+		using JsonDocument descriptor = JsonDocument.Parse(FileSystem.File.ReadAllText(
+			WorkspacePath("packages", PackageName, "Data", schemaName, "descriptor.json")));
+		JsonElement column = descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(item => item.GetProperty("ColumnName").GetString() == "Data");
+		column.GetProperty("DataTypeValueUId").GetString().Should().Be(expectedTypeUId,
+			because: "Blob and Image have distinct native identities and neither is ImageLookup");
+		using JsonDocument data = JsonDocument.Parse(FileSystem.File.ReadAllText(
+			WorkspacePath("packages", PackageName, "Data", schemaName, "data.json")));
+		JsonElement value = data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()
+			.Single(item => item.GetProperty("SchemaColumnUId").GetString() == column.GetProperty("ColumnUId").GetString());
+		Convert.FromBase64String(value.GetProperty("Value").GetString()!).Should().Equal(bytes,
+			because: "the artifact must transport the original SVG bytes");
+		value.TryGetProperty("DisplayValue", out _).Should().BeFalse(
+			because: "binary image content must not be serialized as an image reference");
+	}
+
+	[Test]
+	[Description("Creates a runtime ImageLookup column with its native reference identity and preserves the image Guid and display value.")]
+	public void Execute_ShouldPreserveImageReference_WhenRuntimeColumnUsesImageLookup() {
+		// Arrange
+		const string imageId = "4f41bcc2-7ed0-45e8-a1fd-474918966d15";
+		string schemaResponse = ImageBindingSchemaResponseJson.Replace("UsrImageBinding", "UsrImageReference")
+			.Replace("\"UsrImage\"", "\"Logo\"").Replace("\"dataValueType\": 14", "\"dataValueType\": 16");
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(schemaResponse);
+		CreateDataBindingOptions options = new() {
+			Environment = "dev", PackageName = PackageName, SchemaName = "UsrImageReference",
+			ValuesJson = JsonSerializer.Serialize(new { Logo = new { value = imageId, displayValue = "Navigation icon" } })
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "runtime ImageLookup 16 must be a supported binding reference");
+		using JsonDocument descriptor = JsonDocument.Parse(FileSystem.File.ReadAllText(
+			WorkspacePath("packages", PackageName, "Data", "UsrImageReference", "descriptor.json")));
+		JsonElement column = descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(item => item.GetProperty("ColumnName").GetString() == "Logo");
+		column.GetProperty("DataTypeValueUId").GetString().Should().Be("b039feb0-ee7c-4884-8aa6-d6d45d84316f",
+			because: "a reference must retain ImageLookup metadata rather than binary content metadata");
+		using JsonDocument data = JsonDocument.Parse(FileSystem.File.ReadAllText(
+			WorkspacePath("packages", PackageName, "Data", "UsrImageReference", "data.json")));
+		JsonElement value = data.RootElement.GetProperty("PackageData")[0].GetProperty("Row").EnumerateArray()
+			.Single(item => item.GetProperty("SchemaColumnUId").GetString() == column.GetProperty("ColumnUId").GetString());
+		value.GetProperty("Value").GetString().Should().Be(imageId, because: "the reference points to the packaged image row");
+		value.GetProperty("DisplayValue").GetString().Should().Be("Navigation icon", because: "references retain their display text");
+	}
+
 	[Test]
 	[Description("Requires --environment or --uri for schemas that are not covered by the built-in offline template catalog.")]
 	public void Execute_Should_Fail_Without_Environment_For_NonTemplated_Schema() {
@@ -539,7 +612,7 @@ internal sealed class CreateDataBindingCommandTests : BaseCommandTests<CreateDat
 	        "66666666-6666-6666-6666-666666666666": {
 	          "uId": "66666666-6666-6666-6666-666666666666",
 	          "name": "UsrImage",
-	          "dataValueType": 13
+	          "dataValueType": 14
 	        }
 	      }
 	    },

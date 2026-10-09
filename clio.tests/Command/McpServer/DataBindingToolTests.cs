@@ -256,6 +256,12 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 		string dataJson = _mockFileSystem.File.ReadAllText(Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "UsrImageBinding", "data.json"));
 		dataJson.Should().Contain("\"Value\": \"AQID\"",
 			because: "the create-data-binding MCP flow should base64-encode the referenced image file");
+		using JsonDocument descriptor = JsonDocument.Parse(_mockFileSystem.File.ReadAllText(
+			Path.Combine(_workspaceRoot, "packages", _packageName, "Data", "UsrImageBinding", "descriptor.json")));
+		descriptor.RootElement.GetProperty("Descriptor").GetProperty("Columns").EnumerateArray()
+			.Single(column => column.GetProperty("ColumnName").GetString() == "UsrImage")
+			.GetProperty("DataTypeValueUId").GetString().Should().Be("fa6e6e49-b996-475e-a77e-73904e4c5a88",
+				because: "the MCP artifact must identify runtime Image 14 as content rather than an image reference");
 	}
 
 	[Test]
@@ -520,7 +526,7 @@ public sealed class DataBindingToolTests : BaseClioModuleTests {
 	        "66666666-6666-6666-6666-666666666666": {
 	          "uId": "66666666-6666-6666-6666-666666666666",
 	          "name": "UsrImage",
-	          "dataValueType": 13
+	          "dataValueType": 14
 	        }
 	      }
 	    },

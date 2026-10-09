@@ -52,7 +52,7 @@ clio add-data-binding-row --package Custom --binding-name SysSettings --values '
 # Replace an existing row and update localization data
 clio add-data-binding-row --package Custom --binding-name SysSettings --workspace-path C:\Work\MyWorkspace --values '{\"Name\":\"New name\"}" --localizations "{\"en-US\":{\"Name\":\"Localized name\"}}'
 
-# Add a row using a local image file for an image-content column
+# Add a row using a local image file for an image-content or binary column
 clio add-data-binding-row --package Custom --binding-name UsrImageBinding --workspace-path C:\Work\MyWorkspace --values "{\"Code\":\"UsrImageBinding\",\"UsrImage\":\"assets\\icon.png\"}"
 
 # Add a row with explicit lookup display text
@@ -67,7 +67,7 @@ not the package directory. Clio resolves packages/{package-name} beneath that ro
 - The row key is the primary column marked in descriptor.json
 - If that primary key is Guid-based and omitted or null in --values, add-data-binding-row generates it automatically
 - For non-null lookup and image-reference columns, use {"value":"...","displayValue":"..."} so data.json keeps both Value and DisplayValue
-- For image-content columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
+- For image-content and binary columns, a string value that points to an existing local file inside the workspace is encoded to base64 before writing data.json
 - Unknown columns in --values or --localizations are rejected
 - Existing rows with the same primary key are replaced instead of duplicated
 
@@ -80,3 +80,18 @@ not the package directory. Clio resolves packages/{package-name} beneath that ro
 create-data-binding, remove-data-binding-row
 
 - [Clio Command Reference](../../Commands.md#add-data-binding-row)
+
+## Image content and references
+
+`SysImage.Data` is image content: pass base64 or a workspace file path. It does not need
+`displayValue`. Image references such as `SysModule.Logo` and `Image32` carry a SysImage
+record ID; use `{ "value": "<image-id>", "displayValue": "<image-name>" }` for local artifacts.
+Binary (Blob) content also accepts base64 or a workspace file path.
+
+For older generated bindings, verify the descriptor before reusing it: image content uses
+`FA6E6E49-B996-475E-A77E-73904E4C5A88`, image references use
+`B039FEB0-EE7C-4884-8AA6-D6D45D84316F`, and binary content uses
+`B7342B7A-5DDE-40DE-AA7C-24D2A57B3202`. Regenerate incorrectly typed bindings with
+all intended rows and localizations. Adding `displayValue` to image bytes does not repair
+incorrect descriptor metadata. Local files and a working live image do not prove package
+installation on another environment; verify the installed bytes and references separately.

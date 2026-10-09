@@ -259,7 +259,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 ## Workspace
 
 <a id="add-data-binding-row"></a>
-- [`add-data-binding-row`](docs/commands/add-data-binding-row.md) - Add or replace a row in a package data binding
+- [`add-data-binding-row`](docs/commands/add-data-binding-row.md) - Add or replace a row in a package data binding, including image and binary content
 <a id="build-workspace"></a>
 <a id="build"></a>
 <a id="compile"></a>
@@ -271,7 +271,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="configure-workspace"></a>
 - [`cfg-worspace`](docs/commands/cfg-worspace.md) - Configure workspace package selection, `cfgw`
 <a id="create-data-binding"></a>
-- [`create-data-binding`](docs/commands/create-data-binding.md) - Create or regenerate a package data binding
+- [`create-data-binding`](docs/commands/create-data-binding.md) - Create or regenerate a package data binding with native column types
 <a id="create-data-binding-db"></a>
 - [`create-data-binding-db`](docs/commands/create-data-binding-db.md) - Create a DB-first package data binding by saving data directly to the remote Creatio database
 <a id="create-workspace"></a>
