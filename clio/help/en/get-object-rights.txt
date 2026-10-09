@@ -12,6 +12,11 @@ DESCRIPTION
     SysEntitySchemaOperationRight / "Object permissions" layer (who may read/create/edit/delete ANY record of
     the entity). By default every role's row is listed; pass --grantee to focus on one role.
 
+    The object is named by its code (entity schema name), and the code always wins. When no object has
+    that code, the object whose title it is is read, and the output says so; several objects with that
+    title are refused and listed as 'title' (code: name). Each object is shown by its title next to its
+    code - 'Creatio functionality' (Feature) - when its title differs from the code.
+
     The rows are listed in priority order, each with its [position] (0 is the highest). A user who is in
     several roles gets the operations of the highest matching row — decided per row, so a row with no
     operations denies them. Per object the output is one of: "administered by operation permissions"
@@ -33,7 +38,9 @@ DESCRIPTION
     lookups (SysAdmin*, SysUser*, SysSchema*, SysPackage*, SysSettings*, SysLic*, SysProcess*, Vw*,
     *Right/*Rights) are not read as connected objects and are named in a warning. A connected object that
     cannot be read, or a connected set that cannot be enumerated, is reported with a warning. A read that
-    times out stops the listing: the objects not read yet are named, to be read one by one.
+    times out stops the listing: the objects not read yet are named, to be read one by one. When the named
+    object's read times out, or the read budget is spent before the listing, its connected objects are not
+    listed at all.
 
     Each object also gets its RECORD layer: whether "Use record permissions" is ON, and every default
     record rule — records created by the author get read / edit / delete at a level (granted, or
@@ -45,7 +52,8 @@ DESCRIPTION
 
 OPTIONS
     --entity-schema-name
-        Object (entity schema) name to read (for example UsrOrder). Required.
+        The object to read: its code (entity schema name, for example UsrOrder), or its title when no
+        object has that code. Required.
 
     --grantee
         Optional SysAdminUnit id (role or user): show its row and the rows above it (every row when it has
@@ -64,8 +72,9 @@ OPTIONS
 EXIT CODES
     0   The read ran; per-object facts are printed. Connected objects that could not be read are reported
         with a warning.
-    1   The entity schema name was missing or not a plain schema identifier, --grantee or --author was not a GUID,
-        the named (root) object was not found, or its rights could not be read.
+    1   The entity schema name was missing or names no object by its code or its title, several objects
+        have it as their title, the title lookup failed, --grantee or --author was not a GUID, or the
+        named (root) object's rights could not be read.
 
 EXAMPLES
     List every row of an object, in priority order:

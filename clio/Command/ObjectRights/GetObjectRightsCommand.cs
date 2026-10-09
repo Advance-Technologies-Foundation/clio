@@ -16,9 +16,10 @@ namespace Clio.Command.ObjectRights;
 	+ "switch and the default record rules) of an object and, optionally, its connected objects")]
 public class GetObjectRightsOptions : RemoteCommandOptions {
 
-	/// <summary>The object (entity schema) to read.</summary>
+	/// <summary>The object to read: its code (entity schema name), or its title when no object has that code.</summary>
 	[Option("entity-schema-name", Required = true, HelpText =
-		"Object (entity schema) name to read")]
+		"Object to read: its code (entity schema name), or its title when no object has that code. Several objects with "
+		+ "the title are refused, listing them; the output shows each object's title next to its code.")]
 	public string EntitySchemaName { get; set; }
 
 	/// <summary>
@@ -47,6 +48,12 @@ public class GetObjectRightsOptions : RemoteCommandOptions {
 	/// left are named. <see langword="null"/>: no limit beyond each request's timeout.
 	/// </summary>
 	internal TimeSpan? ReadBudget { get; set; }
+
+	/// <summary>
+	/// The deadline the read runs under, when the caller supplies it whole (a test that steps the deadline's clock); not
+	/// a CLI option. <see langword="null"/>: the deadline is built from <see cref="ReadBudget"/>.
+	/// </summary>
+	internal RequestDeadline ReadDeadline { get; set; }
 }
 
 /// <summary>
@@ -73,10 +80,9 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 
 	/// <inheritdoc />
 	public override int Execute(GetObjectRightsOptions options) {
-		if (!ObjectRightsCommandInput.TryReadSchemaName(options.EntitySchemaName, _logger, out string schemaName)) {
+		if (!ObjectRightsCommandInput.TryReadObjectName(options.EntitySchemaName, _logger, out string named)) {
 			return 1;
 		}
-		options.EntitySchemaName = schemaName;
 		if (!TryParseUnitFilter(options.Grantee, out Guid? granteeFilter)) {
 			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
 			return 1;
@@ -87,48 +93,133 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 		}
 		RuleFilter ruleFilter = new(authorFilter, granteeFilter);
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.ReadBudget);
-		ConnectedObjectsResolution resolution;
+		if (options.ReadDeadline is not null) {
+			requestOptions = requestOptions with { Deadline = options.ReadDeadline };
+		}
+		// Each request of the read gets at most what is left of the budget (CreatioRequestOptions.ForNextRequest).
+		if (!TryReadRoot(named, requestOptions, out string rootName, out ObjectRightsInfo root, out bool byTitle)) {
+			return 1;
+		}
+		options.EntitySchemaName = rootName;
+		if (!TryListConnected(options, rootName, root, requestOptions, out ConnectedObjectsResolution resolution,
+				out string notListed)) {
+			return 1;
+		}
+		ReportHeader(options, granteeFilter, authorFilter, resolution, root);
+		if (byTitle) {
+			_logger.WriteInfo($"  {ObjectRightsCommandInput.NotACode(named, new[] { new ObjectTitleMatch(rootName, root.Caption) })}, "
+				+ "which is read.");
+		}
+		bool rootRead = ReportTarget(rootName, root, isRoot: true, granteeFilter, ruleFilter);
+		if (notListed is not null) {
+			_logger.WriteWarning(notListed);
+		}
+		ReadConnected(resolution.Objects.Skip(1).ToList(), requestOptions, granteeFilter, ruleFilter);
+		if (rootRead) {
+			// Last, and only for the named object: the number of records is what a user needs to decide on
+			// apply-default-record-rights. Counting reads the whole table, so it never takes the read budget of the
+			// connected objects, and counting each connected object would cost a query each.
+			ReportRecordCount(rootName, requestOptions);
+		}
+		return rootRead ? 0 : 1;
+	}
+
+	// Lists the root's connected objects when they are asked for. The root is read first — it decides which object the
+	// name means — so the listing gets what is left of the read budget, and is skipped, with a warning, once the budget is
+	// spent or the root's read timed out: a hang is not a fault, every further read against the same stand would most
+	// likely wait as long, and on MCP the read deadline would then take the whole answer with it. Returns false after
+	// writing the error.
+	private bool TryListConnected(GetObjectRightsOptions options, string rootName, ObjectRightsInfo root,
+		CreatioRequestOptions requestOptions, out ConnectedObjectsResolution resolution, out string notListed) {
+		resolution = new ConnectedObjectsResolution(new[] { rootName }, Array.Empty<string>());
+		notListed = null;
+		if (!options.IncludeConnected) {
+			return true;
+		}
+		if (root.TimedOut) {
+			notListed = $"  Stopped after the read of {rootName} timed out: its connected objects were not listed.";
+			return true;
+		}
+		if (ListingTimeout(requestOptions) is not { } timeout) {
+			notListed = $"  Stopped: the read budget of {requestOptions.Deadline.Budget.TotalSeconds:0} s is spent: the "
+				+ $"connected objects of {rootName} were not listed.";
+			return true;
+		}
 		// The resolver reports a failed schema read in-band (EnumerationError); this guard is the backstop for a
 		// service failure that still escapes it. Only the call is guarded: a failure in the code that reports the
 		// result is a bug, not a service failure.
 		try {
-			resolution = _connectedObjects.Resolve(options.EntitySchemaName, options.IncludeConnected, requestOptions.TimeOut);
+			resolution = _connectedObjects.Resolve(rootName, true, timeout);
+			return true;
 		}
 		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
 			_logger.WriteError($"Error: {ObjectRightsSupport.DisplayFailure(ex)}");
-			return 1;
+			return false;
 		}
-		ReportHeader(options, granteeFilter, authorFilter, resolution);
-		bool rootFailed = false;
-		for (int index = 0; index < resolution.Objects.Count; index++) {
-			bool isRoot = index == 0;
-			string target = resolution.Objects[index];
-			// The named object is always read; a connected one only while the budget lasts, so the answer — with what was
-			// read — arrives before the caller's deadline instead of being lost to it.
-			if (!isRoot && requestOptions.Deadline is { IsSpent: true } deadline) {
+	}
+
+	// The listing's timeout: the request timeout, cut to what is left of the read budget; null once the budget is spent,
+	// also when it runs out between the check and the cut, so the read root is still reported.
+	private static int? ListingTimeout(CreatioRequestOptions requestOptions) {
+		if (requestOptions.Deadline is { IsSpent: true }) {
+			return null;
+		}
+		try {
+			return requestOptions.ForNextRequest().TimeOut;
+		}
+		catch (TimeoutException) {
+			return null;
+		}
+	}
+
+	// The named object is always read; a connected one only while the budget lasts, so the answer — with what was read —
+	// arrives before the caller's deadline instead of being lost to it.
+	private void ReadConnected(IReadOnlyList<string> connected, CreatioRequestOptions requestOptions,
+		Guid? granteeFilter, RuleFilter ruleFilter) {
+		for (int index = 0; index < connected.Count; index++) {
+			string target = connected[index];
+			if (requestOptions.Deadline is { IsSpent: true } deadline) {
 				_logger.WriteWarning($"  Stopped: the read budget of {deadline.Budget.TotalSeconds:0} s is spent. Not read: "
-					+ $"{string.Join(", ", resolution.Objects.Skip(index))} — read them one by one.");
-				break;
+					+ $"{string.Join(", ", connected.Skip(index))} — read them one by one.");
+				return;
 			}
-			// Each request of the read gets at most what is left of the budget (CreatioRequestOptions.ForNextRequest).
 			ObjectRightsInfo info = ReadRights(target, requestOptions);
-			bool read = ReportTarget(target, info, isRoot, granteeFilter, ruleFilter);
-			rootFailed |= isRoot && !read;
-			if (info.TimedOut && index < resolution.Objects.Count - 1) {
-				// A hang, not a fault: every further read against the same stand would most likely wait as long, and on
-				// MCP the read deadline would then take the whole output with it.
+			ReportTarget(target, info, isRoot: false, granteeFilter, ruleFilter);
+			if (info.TimedOut && index < connected.Count - 1) {
 				_logger.WriteWarning($"  Stopped after the read of {target} timed out. Not read: "
-					+ $"{string.Join(", ", resolution.Objects.Skip(index + 1))} — read them one by one.");
-				break;
+					+ $"{string.Join(", ", connected.Skip(index + 1))} — read them one by one.");
+				return;
 			}
 		}
-		if (!rootFailed) {
-			// Last, and only for the named object: the number of records is what a user needs to decide on
-			// apply-default-record-rights. Counting reads the whole table, so it never takes the read budget of the
-			// connected objects, and counting each connected object would cost a query each.
-			ReportRecordCount(options.EntitySchemaName, requestOptions);
+	}
+
+	// The read's own policy for a title (ObjectRightsCommandInput.TryResolveObjectName owns the code-first rule): when
+	// no object has the code, the one object with that title is read, and several are refused with the candidates, so
+	// the read never guesses between them. An object with the code that is not found is reported like any object that is
+	// not found. Returns false after writing the error.
+	private bool TryReadRoot(string named, CreatioRequestOptions requestOptions, out string rootName,
+		out ObjectRightsInfo root, out bool byTitle) {
+		rootName = null;
+		root = null;
+		byTitle = false;
+		if (!ObjectRightsCommandInput.TryResolveObjectName(named, code => ReadRights(code, requestOptions), _rightsReader,
+				requestOptions, _logger, out ObjectNameResolution resolution)) {
+			return false;
 		}
-		return rootFailed ? 1 : 0;
+		if (resolution.TitleMatches.Count == 0) {
+			rootName = resolution.Code;
+			root = resolution.ByCode;
+			return true;
+		}
+		if (resolution.TitleMatches.Count > 1) {
+			_logger.WriteError($"Error: {ObjectRightsCommandInput.NotACode(named, resolution.TitleMatches)}. Re-run with "
+				+ "the exact code.");
+			return false;
+		}
+		rootName = resolution.TitleMatches[0].Name;
+		root = ReadRights(rootName, requestOptions);
+		byTitle = true;
+		return true;
 	}
 
 	// An omitted grantee means "every role"; a given one must be a non-empty GUID.
@@ -145,9 +236,9 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	}
 
 	private void ReportHeader(GetObjectRightsOptions options, Guid? granteeFilter, Guid? authorFilter,
-		ConnectedObjectsResolution resolution) {
+		ConnectedObjectsResolution resolution, ObjectRightsInfo root) {
 		_logger.WriteInfo(
-			$"Object permissions for '{options.EntitySchemaName}'"
+			$"Object permissions for {ObjectRightsSupport.FormatObject(options.EntitySchemaName, root.Caption)}"
 			+ (options.IncludeConnected ? " and its connected objects" : "")
 			+ (granteeFilter is null ? "" : $" (grantee {granteeFilter})")
 			+ (authorFilter is null ? "" : $" (rules of author {authorFilter})") + ":");
@@ -242,9 +333,13 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 	}
 
 	private void ReportOperationLayer(string schemaName, ObjectRightsInfo info, Guid? granteeFilter) {
+		// An object is named by its code, with its title next to it when it has one of its own.
+		string label = ObjectRightsSupport.HasOwnTitle(schemaName, info.Caption)
+			? ObjectRightsSupport.FormatObject(schemaName, info.Caption)
+			: schemaName;
 		if (!info.AdministratedByOperations) {
 			_logger.WriteInfo(
-				$"  {schemaName}: not administered by operation permissions (they are OFF) — available to all internal "
+				$"  {label}: not administered by operation permissions (they are OFF) — available to all internal "
 				+ "users.");
 			if (info.Roles.Count > 0) {
 				// The rows the service returns for such an object (a synthesized All employees row when none is
@@ -262,10 +357,10 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			return;
 		}
 		if (!info.Roles.Any()) {
-			_logger.WriteInfo($"  {schemaName}: administered by operation permissions, with NO rows.");
+			_logger.WriteInfo($"  {label}: administered by operation permissions, with NO rows.");
 			return;
 		}
-		_logger.WriteInfo($"  {schemaName}: administered by operation permissions. Rows in priority order:");
+		_logger.WriteInfo($"  {label}: administered by operation permissions. Rows in priority order:");
 		ReportRows(info.Roles, granteeFilter);
 	}
 

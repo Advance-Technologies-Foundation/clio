@@ -47,11 +47,13 @@ in the settings file; the local spool is then only pruned (age and size caps). N
 uploaded unless consent is granted.
 
 Local telemetry is stored under &lt;clio-home&gt;/telemetry (relocate with CLIO_TELEMETRY_HOME;
-honors CLIO_HOME). Each event carries only product workflow metadata — session_id,
+honors CLIO_HOME). Each event carries only product workflow metadata: session_id,
 event_name, timestamps, coding_agent, clio_version, platform, an anonymous installation_id,
-and skill/plugin versions — never prompts, secrets, tokens, customer data, or generated
-content. Spooled events are pruned after at most 30 days locally; the collected metrics are
-retained up to 1 year server-side.
+skill/plugin versions, the workflow, variant and model labels, the LLM token counts an agent
+reports, and the number and size of the guidance articles and tool contracts clio served in
+the session with the version of clio's own guidance library. It never carries prompts,
+secrets, access tokens, customer data, or generated content. Spooled events are pruned after
+at most 30 days locally; the collected metrics are retained up to 1 year server-side.
 
 Guidance is discovered from active trusted knowledge libraries rather than a list compiled into Clio.
 Call `get-guidance` with an unknown name to receive `availableGuides`, or use MCP `resources/list` to
@@ -195,6 +197,9 @@ Bootstrap an existing-app or page workflow from the authoritative contract befor
 Use your MCP client to call get-tool-contract {"tool-names":["get-page","get-component-info","sync-pages"]}.
 Bootstrap page inspection/editing and discover whether get-component-info is needed before mutating the page body file get-page writes.
 
+Use your MCP client to call get-tool-contract {"tool-names":["create-business-process"],"detail":"full"}.
+A named lookup is fitted to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest come back in a SHORT form (marked "detail":"short" with "full-contract-bytes") that keeps the purpose and every sentence carrying a safety marker (a confirmation, an ask/tell/warn-the-user rule, a prohibition or an irreversibility warning, in the description or in a field; other rules may need "detail":"full"), the input schema, the error codes, preconditions and flows, and leaves out the rest of the description and the examples. Pass "detail":"full" for the complete contracts, or "detail":"short" for all short. A reply that still does not fit carries repeated error codes once: a later contract's error-contract then names the earlier one in "same-as".
+
 Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
 get-guidance again with the selected name.
     Discover and read the currently installed publisher-owned guidance catalog.
@@ -221,6 +226,9 @@ get-guidance again with the selected name.
 - Entity tools work DB-first: schemas are created directly in PostgreSQL
 - Guidance lookups use the persistent disk cache and hot reload only when its activation marker changes; the publisher is contacted by install-knowledge/update-knowledge and by a read-triggered refresh bounded by the autoupdate.knowledge schedule (hourly by default), never per MCP session or per lookup
 - Some tool calls run in a short-lived child worker process the server supervises and can kill. How many such workers may run at once is capped, and `CLIO_MCP_WORKER_CONCURRENCY` raises or lowers that cap. The default is derived from the host's processor count, so on a single-vCPU host it is low: a long operation (`compile-creatio`, `restart-*`) can be refused with `error-class=clio-worker-saturated` until the variable is raised. Nothing is spawned and no request reaches Creatio on that refusal, so it is safe to retry.
+- `compile-creatio`, `restart-*`, `create-app-section`, `install-process-builder` and `install-dashboards-migrator` answer "in progress" once the MCP response deadline passes instead of waiting for the operation to end: 45 s by default from when the tool starts, below the 60 s after which Claude Code desktop gives up on a call. `CLIO_MCP_RESPONSE_DEADLINE_SECONDS` (`0 < n <= 600`) changes it for a client that waits longer. `run-process` answers at the same deadline: `not-started` with an error when its launch request had not been sent yet (it then never is, so nothing ran), `still-running` when it had (clio has no verdict; do not re-run it).
+- A long operation keeps its worker when your MCP client stops waiting after the call reached it (for example a client-side request timeout): the operation runs to its end, `compile-status` / `restart-status` can still report it, and the worker holds its slot until then. A second operation of the same kind for that environment is refused as already in progress meanwhile. A client that restarts the MCP server after giving up (Claude Code desktop does) takes that record with the server: `compile-status` then answers not-found and lists the environment's newest compilation-history rows with the time each finished; compare them with the `started-utc` that `compile-creatio`'s in-progress answer carries. A compile with no row since the call may never have run: a request still on its way when the server restarted is lost with it.
+- `--fail-on-error` and `--fail-on-warning` are not supported. They are accepted (hidden) only so an existing MCP client configuration keeps starting, and are ignored with a startup warning: a package install made through an MCP tool never uses the strict install-log check, whether the call runs in the server or in a worker process.
 
 ## Return Values
 

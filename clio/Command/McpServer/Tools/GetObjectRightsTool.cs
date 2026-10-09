@@ -46,8 +46,8 @@ public sealed class GetObjectRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read OBJECT operation permissions — who may read/create/edit/delete a whole entity (the SysEntitySchemaOperationRight / \"Object permissions\" layer). " +
-		"Read-only companion of set-object-rights. Reports, per object, every role's row in PRIORITY order with its [position] (0 is the highest; a user in several roles gets the highest matching row, and a row with no operations denies them); pass grantee to show that role's row and the rows above it (every row when it has none, or when the object is not administered). " +
-		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; each request gets one attempt of at most 30 s, and the listing stops after 90 s or a read that times out, naming the objects not read — then read them one by one. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
+		"Read-only companion of set-object-rights. entity-schema-name is the object's code; when no object has that code, the object with that title is read (several objects with it are refused, listing them), and each object is shown by its title next to its code ('Creatio functionality' (Feature)). Reports, per object, every role's row in PRIORITY order with its [position] (0 is the highest; a user in several roles gets the highest matching row, and a row with no operations denies them); pass grantee to show that role's row and the rows above it (every row when it has none, or when the object is not administered). " +
+		"include-connected also reports the root object's own lookup objects (security/system objects are skipped) — the discovery step before deciding, per object, what to change with set-object-rights; each request gets one attempt of at most 30 s, and the listing stops after 90 s or a read that times out, naming the objects not read — then read them one by one; when the named object's read times out, or the 90 s are spent before the listing, its connected objects are not listed at all. The output is facts only, with no coverage verdict. Fails (success=false) when the root object cannot be read; a connected object that cannot be read is reported with a warning. " +
 		"An object not administered by operation permissions is available to all INTERNAL users; external users reach it only through an explicit grant; every row listed for it applies once operation permissions are turned on. " +
 		"Also reports RECORD permissions per object: whether \"Use record permissions\" is ON, and every default record rule (records created by author -> read/edit/delete level for grantee, and \"do not apply for manager: true|false\"); rules stored while it is OFF are listed as not in effect; ON with no rule means every user sees only the records they create. grantee and author filter the rules. For the named object it reports the number of existing records (for the apply-default-record-rights decision). Change the record layer with set-default-record-rights. " +
 		"Unknown or misspelled argument names are refused.")]
@@ -92,7 +92,7 @@ public sealed record GetObjectRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Object (entity schema) name to read.")]
+	[property: Description("The object to read: its code (entity schema name), or its title when no object has that code.")]
 	[property: Required]
 	string EntitySchemaName,
 

@@ -32,6 +32,41 @@ public class ObjectRightsToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The set-object-rights description tells the agent that the object is named by its code, that a title is refused, and to name the object by code and title before a write: the contract an agent reads even when it skips the guidance.")]
+	public void SetObjectRightsTool_ShouldTellTheAgentTheObjectIsNamedByItsCode_WhenInspectingDescription() {
+		// Arrange & Act
+		string description = DescriptionOf(typeof(SetObjectRightsTool), nameof(SetObjectRightsTool.SetObjectRights));
+
+		// Assert
+		description.Should().Contain("entity-schema-name is the object's CODE, not its title",
+			because: "the developer's word can be another object's title");
+		description.Should().Contain("a title is refused with the code it belongs to",
+			because: "the agent learns what a title gets it before it sends one");
+		description.Should().Contain("before a write, name the object to the developer by both",
+			because: "the developer is the one who can tell which object was meant");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The get-object-rights description says that a title is read when no object has the code, and that the output shows the title next to the code.")]
+	public void GetObjectRightsTool_ShouldTellTheAgentHowATitleIsRead_WhenInspectingDescription() {
+		// Arrange & Act
+		string description = DescriptionOf(typeof(GetObjectRightsTool), nameof(GetObjectRightsTool.GetObjectRights));
+
+		// Assert
+		description.Should().Contain("when no object has that code, the object with that title is read",
+			because: "the code always wins, and a title is read only when no object has the code");
+		description.Should().Contain("each object is shown by its title next to its code",
+			because: "the agent can relay which object it read");
+	}
+
+	private static string DescriptionOf(Type toolType, string methodName) =>
+		((System.ComponentModel.DescriptionAttribute)toolType.GetMethod(methodName)!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Single()).Description;
+
+	[Test]
+	[Category("Unit")]
 	[Description("Marks the single args wrapper as schema-required on set-object-rights so an omitted args object fails with a structured error.")]
 	public void SetObjectRightsTool_ShouldRequireArgsWrapper_WhenInspectingMethodSignature() {
 		// Arrange & Act

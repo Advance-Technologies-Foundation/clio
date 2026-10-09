@@ -237,7 +237,14 @@ namespace Clio.Command;
 // rather than the package, and a filter compares its column against the record reference with no refusal at
 // all - while the three-segment name is passed through verbatim and fails the platform's gate as "Expression
 // expected". 1.6.6.40 is the first archive with sourceColumn.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.40",
+// Raised to 1.6.6.77 by ENG-102114: a condition written BY NAME on the modify path (`addFlow` / `setFlow` /
+// `setFlowCondition`) and the check of every hand-written `[#...#]` meta path - spelled as the platform writes it,
+// prefix optional, and a column the read loads. A 1.6.6.40-1.6.6.76 server stores a modify-path `[#Name#]`
+// verbatim, which the platform's gate then refuses as "Expression expected", and saves a correctly spelled meta
+// path on a column the read does not load green, reading EMPTY at run time - the defect this raise closes.
+// Convergence refuses everything below the bundled archive anyway; this floor is the gate in its degraded modes
+// (an unreadable archive, a pre-release version). 1.6.6.77 is the first archive with both.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.77",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

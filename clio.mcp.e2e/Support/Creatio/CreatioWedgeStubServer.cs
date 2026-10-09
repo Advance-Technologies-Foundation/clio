@@ -73,10 +73,13 @@ internal enum CreatioWedgeStubMode {
 internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private const string LoginPathSuffix = "/AuthService.svc/Login";
 	private const string SelectQueryPathMarker = "SelectQuery";
+	private const string ApplicationInfoPathMarker = "ApplicationInfoService.svc/GetApplicationInfo";
+	private const string CompilationHistorySchemaName = "CompilationHistory";
 	private const string CountersPath = "/counters";
 	private const string ResetPath = "/reset";
 	private const string ControlPath = "/control";
 	private const string PingPathSuffix = "/ping";
+	private const string RunProcessPathMarker = "ProcessEngineService.svc/RunProcess";
 
 	/// <summary>Name of the forms-auth session cookie clio's application client harvests.</summary>
 	private const string SessionCookieName = ".ASPXAUTH";
@@ -96,9 +99,13 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private readonly List<string> _unexpectedHandlerFailures = [];
 	private int _loginCount;
 	private int _selectCount;
+	private int _runProcessCount;
 	private CreatioWedgeStubMode _mode = CreatioWedgeStubMode.Healthy;
 	private TimeSpan _selectDelay = TimeSpan.Zero;
 	private TimeSpan _loginDelay = TimeSpan.FromMilliseconds(200);
+	private JsonArray? _compilationHistoryRows;
+	private int _sessionOffsetMinutes;
+	private int _compilationHistoryReadCount;
 
 	private CreatioWedgeStubServer(HttpListener listener, string baseUrl) {
 		_listener = listener;
@@ -236,11 +243,48 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 		}
 	}
 
+	/// <summary>
+	/// Serves a compilation history: a DataService <c>SelectQuery</c> on <c>CompilationHistory</c> answers
+	/// <paramref name="rows"/>, and <c>GetApplicationInfo</c> reports <paramref name="sessionOffsetMinutes"/> as the
+	/// session's time-zone offset - the two requests clio's history read makes. Each row's <c>CreatedOn</c> must be
+	/// written in that session zone, with no offset, as Creatio's DataService writes it. <see langword="null"/> (the
+	/// default) leaves both routes on their ordinary handling, where the offset read finds no offset.
+	/// </summary>
+	public void SetCompilationHistory(JsonArray? rows, int sessionOffsetMinutes = 0) {
+		lock (_sync) {
+			_compilationHistoryRows = rows;
+			_sessionOffsetMinutes = sessionOffsetMinutes;
+		}
+	}
+
+	/// <summary>How many compilation-history queries were answered with the served rows.</summary>
+	public int CompilationHistoryReadCount {
+		get {
+			lock (_sync) {
+				return _compilationHistoryReadCount;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Number of <c>ProcessEngineService.svc/RunProcess</c> launch requests received since the last reset: what
+	/// shows that a run-process call never sent its launch.
+	/// </summary>
+	public int RunProcessCount {
+		get {
+			lock (_sync) {
+				return _runProcessCount;
+			}
+		}
+	}
+
 	/// <summary>Zeroes the counters and clears the observed session list. Equivalent of <c>POST /reset</c>.</summary>
 	public void ResetCounters() {
 		lock (_sync) {
 			_loginCount = 0;
 			_selectCount = 0;
+			_runProcessCount = 0;
+			_compilationHistoryReadCount = 0;
 			_observedSelectSessions.Clear();
 			_observedSelectAuthorizationHeaders.Clear();
 			_observedLoginPrincipals.Clear();
@@ -269,6 +313,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 				: $", handler-failures=[{string.Join(" | ", _unexpectedHandlerFailures)}]";
 			return $"login={_loginCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"select={_selectCount.ToString(CultureInfo.InvariantCulture)}, "
+				+ $"run-process={_runProcessCount.ToString(CultureInfo.InvariantCulture)}, "
 				+ $"mode={_mode}, "
 				+ $"select-sessions=[{string.Join(", ", _observedSelectSessions)}], "
 				+ $"select-authorization=[{string.Join(", ", _observedSelectAuthorizationHeaders)}], "
@@ -326,6 +371,10 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 				return;
 			}
 
+			if (await TryRespondWithCompilationHistoryAsync(context, path, requestBody).ConfigureAwait(false)) {
+				return;
+			}
+
 			if (path.Contains(SelectQueryPathMarker, StringComparison.Ordinal)) {
 				await RespondToSelectQueryAsync(context).ConfigureAwait(false);
 				return;
@@ -334,6 +383,12 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 			if (path.EndsWith(PingPathSuffix, StringComparison.Ordinal)) {
 				await WriteJsonAsync(context, new JsonObject { ["ok"] = true }).ConfigureAwait(false);
 				return;
+			}
+
+			if (path.Contains(RunProcessPathMarker, StringComparison.Ordinal)) {
+				lock (_sync) {
+					_runProcessCount++;
+				}
 			}
 
 			// Generic fallback for every other endpoint clio probes (runtime detection, build/compile).
@@ -361,6 +416,36 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 				_unexpectedHandlerFailures.Add($"{exception.GetType().Name}: {exception.Message}");
 			}
 		}
+	}
+
+	private async Task<bool> TryRespondWithCompilationHistoryAsync(HttpListenerContext context, string path,
+		string requestBody) {
+		JsonArray? rows;
+		int offsetMinutes;
+		lock (_sync) {
+			rows = _compilationHistoryRows?.DeepClone().AsArray();
+			offsetMinutes = _sessionOffsetMinutes;
+		}
+		if (rows is null) {
+			return false;
+		}
+		if (path.Contains(ApplicationInfoPathMarker, StringComparison.Ordinal)) {
+			await WriteJsonAsync(context, new JsonObject {
+				["applicationInfo"] = new JsonObject {
+					["sysValues"] = new JsonObject { ["userTimezoneOffset"] = offsetMinutes }
+				}
+			}).ConfigureAwait(false);
+			return true;
+		}
+		if (path.Contains(SelectQueryPathMarker, StringComparison.Ordinal)
+			&& requestBody.Contains(CompilationHistorySchemaName, StringComparison.Ordinal)) {
+			lock (_sync) {
+				_compilationHistoryReadCount++;
+			}
+			await WriteJsonAsync(context, new JsonObject { ["success"] = true, ["rows"] = rows }).ConfigureAwait(false);
+			return true;
+		}
+		return false;
 	}
 
 	private async Task RespondToLoginAsync(HttpListenerContext context, string requestBody) {

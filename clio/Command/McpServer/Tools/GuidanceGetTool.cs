@@ -9,6 +9,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.McpServer.Knowledge;
+using Clio.Common.Telemetry;
 using ModelContextProtocol.Server;
 
 namespace Clio.Command.McpServer.Tools;
@@ -23,19 +24,25 @@ internal sealed class GuidanceGetTool {
 	private readonly IKnowledgeGuidanceSource _guidanceSource;
 	private readonly IKnowledgeFeedbackPolicyService _feedbackPolicyService;
 	private readonly IKnowledgeBundleActivator _activator;
+	private readonly IServedContentMeter _servedContentMeter;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="GuidanceGetTool"/> class.
 	/// </summary>
 	/// <param name="guidanceSource">Resolves embedded and externally delivered guidance without fallback.</param>
+	/// <param name="feedbackPolicyService">Supplies the discrepancy-reporting policy projected on every response.</param>
+	/// <param name="activator">Explains why no bundle is active when guidance is unavailable.</param>
+	/// <param name="servedContentMeter">Counts what this session served, for the product telemetry stamp.</param>
 	public GuidanceGetTool(
 		IKnowledgeGuidanceSource guidanceSource,
 		IKnowledgeFeedbackPolicyService feedbackPolicyService,
-		IKnowledgeBundleActivator activator) {
+		IKnowledgeBundleActivator activator,
+		IServedContentMeter servedContentMeter) {
 		_activator = activator ?? throw new ArgumentNullException(nameof(activator));
 		_guidanceSource = guidanceSource ?? throw new ArgumentNullException(nameof(guidanceSource));
 		_feedbackPolicyService = feedbackPolicyService
 			?? throw new ArgumentNullException(nameof(feedbackPolicyService));
+		_servedContentMeter = servedContentMeter ?? throw new ArgumentNullException(nameof(servedContentMeter));
 	}
 
 	private static readonly Dictionary<string, string> LegacyAliases = new(StringComparer.Ordinal) {
@@ -64,6 +71,27 @@ internal sealed class GuidanceGetTool {
 		[Description("Parameters: name (required). Use one of the names returned in availableGuides.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
+		GuidanceGetResponse response = ResolveGuidance(args);
+		// ENG-100157: metered on the way out, so every response this method returns (an article, a refusal,
+		// a failure) is counted at its serialized size. Only a served article counts as a read.
+		_servedContentMeter.RecordGuidance(response.Article?.Name, FirstPartyLibraryVersion(response.Article),
+			McpResultSize.Of(response));
+		return Task.FromResult(response);
+	}
+
+	/// <summary>
+	/// The version of the library that served <paramref name="article"/>, only when that library is clio's own.
+	/// </summary>
+	/// <remarks>
+	/// A partner or customer library carries a version its owner chose ("2.0.0-acme-bank" is a valid one),
+	/// so reporting it would upload customer-authored data next to the installation id. The telemetry
+	/// service additionally accepts only a plain numeric version, because a Git source can claim any
+	/// library id.
+	/// </remarks>
+	private static string? FirstPartyLibraryVersion(GuidanceArticle? article) =>
+		article is { LibraryId: CuratedKnowledgeSourceDefaults.LibraryId } ? article.LibraryVersion : null;
+
+	private GuidanceGetResponse ResolveGuidance(GuidanceGetArgs args) {
 		try {
 			KnowledgeFeedbackGuidancePolicy feedbackPolicy = CreateFeedbackPolicy();
 			string? effectiveName = args.Name;
@@ -79,16 +107,16 @@ internal sealed class GuidanceGetTool {
 				}
 			}
 			if (string.IsNullOrWhiteSpace(effectiveName)) {
-				return Task.FromResult(new GuidanceGetResponse {
+				return new GuidanceGetResponse {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
 					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}. See availableGuides for valid values.",
 					AvailableGuides = _guidanceSource.GetNames().ToList()
-				});
+				};
 			}
 			KnowledgeArticleLookup lookup = _guidanceSource.FindByName(effectiveName);
 			if (lookup.Status == KnowledgeArticleLookupStatus.Active) {
-				return Task.FromResult(new GuidanceGetResponse {
+				return new GuidanceGetResponse {
 					Success = true,
 					FeedbackPolicy = feedbackPolicy,
 					Hint = aliasHint,
@@ -105,19 +133,19 @@ internal sealed class GuidanceGetTool {
 						SourceAlias = lookup.Provenance?.SourceAlias,
 						LocalPath = lookup.Provenance?.LocalPath
 					}
-				});
+				};
 			}
 			if (lookup.Status == KnowledgeArticleLookupStatus.Ambiguous) {
-				return Task.FromResult(new GuidanceGetResponse {
+				return new GuidanceGetResponse {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
 					ErrorCode = KnowledgeGuidanceAmbiguousException.ErrorCode,
 					Error = lookup.Diagnostic,
 					AvailableGuides = _guidanceSource.GetNames().ToList()
-				});
+				};
 			}
 			if (lookup.Status == KnowledgeArticleLookupStatus.Unavailable) {
-				return Task.FromResult(new GuidanceGetResponse {
+				return new GuidanceGetResponse {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
 					ErrorCode = KnowledgeGuidanceUnavailableException.ErrorCode,
@@ -131,22 +159,22 @@ internal sealed class GuidanceGetTool {
 					// reads. See SensitiveErrorTextRedactor.RedactUntrustedOrNull.
 					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic),
 					AvailableGuides = _guidanceSource.GetNames().ToList()
-				});
+				};
 			}
-			return Task.FromResult(new GuidanceGetResponse {
+			return new GuidanceGetResponse {
 				Success = false,
 				FeedbackPolicy = feedbackPolicy,
 				ErrorCode = KnowledgeGuidanceNotFoundException.ErrorCode,
 				Error = $"Unknown guidance '{effectiveName}'. Use one of availableGuides.",
 				AvailableGuides = _guidanceSource.GetNames().ToList()
-			});
+			};
 		} catch (Exception ex) {
-			return Task.FromResult(new GuidanceGetResponse {
+			return new GuidanceGetResponse {
 				Success = false,
 				FeedbackPolicy = CreateFeedbackPolicy(),
 				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
 				AvailableGuides = _guidanceSource.GetNames().ToList()
-			});
+			};
 		}
 	}
 

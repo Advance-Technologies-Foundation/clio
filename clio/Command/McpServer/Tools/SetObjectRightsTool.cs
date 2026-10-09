@@ -48,6 +48,7 @@ public sealed class SetObjectRightsTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
 	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
+		"entity-schema-name is the object's CODE, not its title: the developer's word can be another object's title, so a title is refused with the code it belongs to, and the output shows the title next to the code ('Creatio functionality' (Feature)) — before a write, name the object to the developer by both. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +
 		"A grant or revoke needs grantee and operations (read,create,edit,delete): nothing is granted by default. revoke=true clears the named operations on the role's row while KEEPING the row (rows are never removed or moved). " +
 		"The rows are a priority list: a user in several roles gets the highest matching row, and a row with an operation cleared denies it to users for whom it is that row. A new row goes at the lowest priority; the result names the rows above the grantee's row. " +
@@ -113,7 +114,7 @@ public sealed record SetObjectRightsArgs(
 	string EnvironmentName,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("The one object (entity schema) whose operation permissions are changed.")]
+	[property: Description("The one object whose operation permissions are changed, by its CODE (entity schema name). A title is refused, naming the code it belongs to.")]
 	[property: Required]
 	string EntitySchemaName,
 

@@ -77,7 +77,7 @@ internal static class ChartWidgetValidation {
 	/// the validator must never block a save because the version string was malformed, so it leans on the
 	/// safe <c>latest</c> superset rather than rejecting.
 	/// </summary>
-	private static string NormaliseRequestedVersion(string? requestedVersion) {
+	internal static string NormaliseRequestedVersion(string? requestedVersion) {
 		if (string.IsNullOrWhiteSpace(requestedVersion)) {
 			return ComponentRegistryClient.LatestVersion;
 		}

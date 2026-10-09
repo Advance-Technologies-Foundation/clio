@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Sockets;
@@ -227,5 +228,76 @@ public class ObjectRightsSupportTests {
 		// Assert
 		requested.Should().Be(row, because: "a request and a row name an operation the same way");
 		reordered.Should().Be("edit/read", because: "a request is echoed in the order it was given");
+	}
+
+	[TestCase("Feature", "Creatio functionality", "'Creatio functionality' (Feature)")]
+	[TestCase("Feature", "  Creatio functionality ", "'Creatio functionality' (Feature)")]
+	[TestCase("Contact", "Contact", "'Contact'")]
+	[TestCase("Contact", "contact", "'Contact'")]
+	[TestCase("UsrFoo", null, "'UsrFoo'")]
+	[TestCase("UsrFoo", " ", "'UsrFoo'")]
+	[Description("An object is named by its title and its code when it has a title of its own, and by its code alone when its title is the code or the service returned none.")]
+	public void FormatObject_ShouldNameTheObjectByTitleAndCodeOrByCodeAlone_WhenGivenItsTitle(string schemaName,
+		string caption, string expected) {
+		// Act
+		string rendered = ObjectRightsSupport.FormatObject(schemaName, caption);
+
+		// Assert
+		rendered.Should().Be(expected, because: "the developer sees which object the code names");
+	}
+
+	[Test]
+	[Description("A title is rendered on one line, so it cannot start a line that reads like the command's own output.")]
+	public void FormatObject_ShouldKeepTheTitleOnOneLine_WhenItHasALineBreak() {
+		// Act
+		string rendered = ObjectRightsSupport.FormatObject("UsrOrder", "Order\nError: forged");
+
+		// Assert
+		rendered.Should().NotContain("\n", because: "a server-supplied title is rendered on one line");
+		rendered.Should().EndWith("(UsrOrder)", because: "the code still follows the title");
+	}
+
+	[Test]
+	[Description("A title cannot close its quotes early: its own apostrophes are rendered as typographic ones, so a title such as \"Orders' (UsrOrder)\" cannot show another object's code where the real one belongs, in the object's name or in a list of candidates.")]
+	public void FormatObject_ShouldNotLetATitleCloseItsQuotes_WhenTheTitleHasAnApostrophe() {
+		// Arrange
+		const string forged = "Orders' (UsrOrder)";
+
+		// Act
+		string named = ObjectRightsSupport.FormatObject("SysAdminUnit", forged);
+		string listed = ObjectRightsSupport.FormatTitleMatches(new[] { new ObjectTitleMatch("SysAdminUnit", forged) });
+
+		// Assert
+		named.Should().Be("'Orders’ (UsrOrder)' (SysAdminUnit)", because: "the only plain quotes are the ones around the title");
+		listed.Should().Be("'Orders’ (UsrOrder)' (code: SysAdminUnit)", because: "a candidate list renders a title the same way");
+	}
+
+	[Test]
+	[Description("A long title is shortened, so it cannot carry a whole made-up clause into the output.")]
+	public void FormatObject_ShouldShortenTheTitle_WhenItIsLong() {
+		// Act
+		string named = ObjectRightsSupport.FormatObject("UsrOrder", new string('x', 300));
+
+		// Assert
+		named.Length.Should().BeLessThan(120, because: "a title is capped well below the general display cap");
+		named.Should().EndWith("(UsrOrder)", because: "the code still follows the title");
+	}
+
+	[Test]
+	[Description("The objects a title names are listed as 'title' (code: name), like the process tools list the candidates of a caption, and a long list names five and counts the rest.")]
+	public void FormatTitleMatches_ShouldNameFiveAndCountTheRest_WhenATitleNamesMany() {
+		// Arrange
+		ObjectTitleMatch[] two = { new("Specification", "Feature"), new("UsrFeature", "Feature") };
+		ObjectTitleMatch[] seven = Enumerable.Range(1, 7).Select(index => new ObjectTitleMatch($"Usr{index}", "Feature"))
+			.ToArray();
+
+		// Act
+		string few = ObjectRightsSupport.FormatTitleMatches(two);
+		string many = ObjectRightsSupport.FormatTitleMatches(seven);
+
+		// Assert
+		few.Should().Be("'Feature' (code: Specification); 'Feature' (code: UsrFeature)",
+			because: "each candidate shows its title and its code");
+		many.Should().EndWith("'Feature' (code: Usr5); and 2 more", because: "a long list stays bounded and says how many it left out");
 	}
 }

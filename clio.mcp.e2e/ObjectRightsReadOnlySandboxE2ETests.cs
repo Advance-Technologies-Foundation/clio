@@ -63,7 +63,8 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		filtered.Output.Should().Contain($"(grantee {AllEmployees})",
 			because: "the filtered read names the grantee it reports on");
 		string[] rowsBelowAllEmployees = RowsBelow(all.Output, AllEmployees);
-		if (all.Output.Contains("Contact: administered by operation permissions. Rows in priority order:")) {
+		if (Regex.IsMatch(all.Output ?? string.Empty,
+				ObjectLine("Contact", @"administered by operation permissions\. Rows in priority order:"))) {
 			foreach (string row in rowsBelowAllEmployees) {
 				filtered.Output.Should().NotContain(row,
 					because: "on an administered object the filter lists the grantee's row and the rows above it only");
@@ -96,19 +97,24 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		// Assert
 		communication.Success.Should().BeTrue(because: $"the root and its lookups are readable. Error: {communication.Error}");
 		communication.Output.Should().Contain("and its connected objects", because: "the listing says it covers the lookups");
-		communication.Output.Should().MatchRegex(@"(?m)^\s*Contact: (administered|not administered)",
+		communication.Output.Should().MatchRegex(ObjectLine("Contact", "(administered|not administered)"),
 			because: "Contact is ContactCommunication's own lookup, so it is read as a connected object");
-		communication.Output.Should().NotMatchRegex(@"(?m)^\s*CommunicationType:",
+		communication.Output.Should().NotMatchRegex(ObjectLine("CommunicationType", ""),
 			because: "CommunicationType is an inherited column, and only the root's own lookups are connected objects");
 		inRole.Success.Should().BeTrue(because: $"a security object named as the root is read. Error: {inRole.Error}");
 		inRole.Output.Should().Contain("SysAdminUnit: security/system object — not read as a connected object",
 			because: "the role directory is never read as a connected object");
-		inRole.Output.Should().NotMatchRegex(@"(?m)^\s*SysAdminUnit: (administered|not administered)",
+		inRole.Output.Should().NotMatchRegex(ObjectLine("SysAdminUnit", "(administered|not administered)"),
 			because: "a security/system lookup is named, not read");
 		foreach (ObjectRightsToolResponse response in new[] { communication, inRole }) {
 			response.Output.Should().NotContain("Stopped:", because: "two small listings fit the MCP read budget");
 		}
 	}
+
+	// The line of one object in a listing, whatever the stand's language: an object is shown by its code alone, or by its
+	// title next to its code ('Communication type' (CommunicationType)) when the two differ.
+	private static string ObjectLine(string code, string state) =>
+		$@"(?m)^\s*(?:'[^']*' \()?{Regex.Escape(code)}\)?: {state}";
 
 	// The listed rows ("[position] Name (id): operations") that sit below the grantee's row in an unfiltered listing.
 	private static string[] RowsBelow(string output, string grantee) {
@@ -201,6 +207,55 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 	private static string WithoutRecordCount(string? output) =>
 		string.Join('\n', (output ?? string.Empty).Split('\n')
 			.Where(line => !line.Contains("existing record", StringComparison.OrdinalIgnoreCase)));
+
+	[Test]
+	[Description("On a real stand, the platform object Feature is shown by its title next to its code; get-object-rights reads it by that title, and a set-object-rights preview given the title is refused, naming the code. Nothing is written.")]
+	[AllureTag(GetObjectRightsTool.ToolName)]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureName("object-rights tools name an object by its code and show its title")]
+	[AllureDescription("Reads Feature (CrtCoreBase), whose title differs from its code, takes the title from the output so the test does not depend on the stand's language, reads the object by that title, and previews a set-object-rights call given the title, which must be refused before anything is written.")]
+	public async Task ObjectRights_Should_Name_The_Object_By_Code_And_Title_On_A_Real_Stand() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		Dictionary<string, object?> readFeature = new() {
+			["environment-name"] = context.EnvironmentName, ["entity-schema-name"] = "Feature"
+		};
+		ObjectRightsToolResponse byCode = await CallAsync(context, GetObjectRightsTool.ToolName, readFeature);
+		byCode.Success.Should().BeTrue(because: $"Feature is a platform object every stand has. Error: {byCode.Error}");
+		Match titled = Regex.Match(byCode.Output ?? string.Empty,
+			@"^Object permissions for '(?<title>[^']+)' \(Feature\):", RegexOptions.Multiline);
+		titled.Success.Should().BeTrue(because: $"Feature has a title of its own, shown next to its code. Output: {byCode.Output}");
+		string title = titled.Groups["title"].Value;
+		if (title.Contains('’') || title.Length >= 100) {
+			// The output renders a title's apostrophes as typographic ones and shortens a long title, so such a title, as
+			// shown, is not the stored one and cannot be passed back.
+			Assert.Ignore($"Feature's title on this stand is rendered differently from the stored one: {title}");
+		}
+
+		// Act
+		ObjectRightsToolResponse byTitle = await CallAsync(context, GetObjectRightsTool.ToolName, new() {
+			["environment-name"] = context.EnvironmentName, ["entity-schema-name"] = title
+		});
+		ObjectRightsToolResponse titledWrite = await CallAsync(context, SetObjectRightsTool.ToolName, new() {
+			["environment-name"] = context.EnvironmentName,
+			["entity-schema-name"] = title,
+			["grantee"] = AllEmployees,
+			["operations"] = "read",
+			["enable-operation-permissions"] = true,
+			["preview"] = true
+		});
+		ObjectRightsToolResponse after = await CallAsync(context, GetObjectRightsTool.ToolName, readFeature);
+
+		// Assert
+		byTitle.Success.Should().BeTrue(
+			because: $"no object has the title as its code, so the object with that title is read. Error: {byTitle.Error}");
+		byTitle.Output.Should().Contain("it is the title of Feature, which is read",
+			because: "the output says the object was found by its title");
+		titledWrite.Success.Should().BeFalse(because: "a write names its object by its code");
+		titledWrite.Error.Should().Contain("is not an object code", because: "a title is refused");
+		titledWrite.Error.Should().Contain("it is the title of Feature", because: "the refusal names the code to pass");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(byCode.Output), because: "nothing was written");
+	}
 
 	private static async Task<ObjectRightsToolResponse> CallAsync(ArrangeContext context, string toolName,
 		Dictionary<string, object?> args) {

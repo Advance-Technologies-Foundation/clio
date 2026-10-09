@@ -445,6 +445,25 @@ public sealed class CompileCreatioToolTests
 			because: "the full-compilation guidance belongs to an omitted scope, not an empty one");
 	}
 
+	[TestCase(null, null)]
+	[TestCase("MyPackage", null)]
+	[TestCase(null, "UsrProc")]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: every compile prompt says an in-progress answer means the compile has not finished, never that it is still running server-side - a request lost with a restarted MCP server never runs.")]
+	public void CompileCreatioPrompt_Should_NotPromiseTheCompileIsRunning(string? packageName, string? processName)
+	{
+		// Arrange
+
+		// Act
+		string prompt = FsmAndCompilePrompt.CompileCreatio("sandbox", packageName, processName);
+
+		// Assert
+		prompt.Should().Contain("the compile has not finished",
+			because: "the in-progress answer does not show the environment has begun the build");
+		prompt.Should().NotContain("still running server-side",
+			because: "that is the claim QA showed can be false after a server restart");
+	}
+
 	[TestCase("")]
 	[TestCase("   ")]
 	[Category("Unit")]
@@ -661,7 +680,7 @@ public sealed class CompileCreatioToolTests
 		// Arrange
 
 		// Act
-		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
 
 		// Assert
 		message.Should().Contain("sandbox", because: "the agent must know which environment is still compiling");
@@ -718,6 +737,108 @@ public sealed class CompileCreatioToolTests
 		{
 			executeGate.Set(); // release the detached work so it finalizes and frees the tenant lock
 			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: when the caller stops waiting for compile-creatio (an MCP client's own request timeout cancels the call), the compile already started keeps running: the record stays 'running', a second compile for the target is refused, and the compile still finishes, records its verdict and releases the configuration-build reservation. This is the worker half the parent relies on when it keeps such a worker.")]
+	public async Task CompileCreatio_Should_KeepTheOperationRunningAndFinishIt_WhenTheCallerCancelsTheCall()
+	{
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-tenant");
+		commandResolver.GetTargetKey(Arg.Any<EnvironmentOptions>()).Returns("sandbox-target");
+		using ManualResetEventSlim executeGate = new(false);
+		FakeCompileConfigurationCommand resolvedCommand = new() { ExecuteGate = executeGate };
+		commandResolver.Resolve<CompileConfigurationCommand>(Arg.Any<CompileConfigurationOptions>())
+			.Returns(resolvedCommand);
+		ICompileOperationRegistry registry = new CompileOperationRegistry();
+		CompileCreatioTool tool = new(ConsoleLogger.Instance, commandResolver, registry);
+		using CancellationTokenSource caller = new();
+
+		try
+		{
+			// Act
+			Task<CommandExecutionResult> abandoned = tool.CompileCreatio(new CompileCreatioArgs("sandbox", null),
+				cancellationToken: caller.Token);
+			await caller.CancelAsync();
+			Func<Task> awaitingTheCall = async () => await abandoned;
+			await awaitingTheCall.Should().ThrowAsync<OperationCanceledException>(
+				because: "a cancelled call is reported as cancelled; the client that cancelled is no longer waiting for a result");
+			CompileOperationStatus statusAfterCancel = registry.GetLatest("sandbox-tenant")!.Status;
+			CommandExecutionResult second = await tool.CompileCreatio(new CompileCreatioArgs("sandbox", null));
+			executeGate.Set();
+			bool finished = SpinWait.SpinUntil(
+				() => registry.GetLatest("sandbox-tenant")?.Status != CompileOperationStatus.Running,
+				TimeSpan.FromSeconds(10));
+			bool reservationReleased = SpinWait.SpinUntil(() => {
+				if (!McpToolExecutionLock.TryReserveConfigurationBuild("sandbox-target",
+						out McpToolExecutionLock.BuildReservation probe))
+				{
+					return false;
+				}
+				McpToolExecutionLock.ReleaseConfigurationBuild("sandbox-target", probe);
+				return true;
+			}, TimeSpan.FromSeconds(10));
+
+			// Assert
+			statusAfterCancel.Should().Be(CompileOperationStatus.Running,
+				because: "the compile was handed to the detached heartbeat before the caller gave up, so it is still running and compile-status must say so");
+			second.ExitCode.Should().Be(1,
+				because: "the first compile still owns the target, so a second one must be refused rather than started beside it");
+			second.Output.Should().Contain(message => message.Value != null
+					&& message.Value.ToString()!.Contains(CompileStatusTool.CompileStatusToolName),
+				because: "the refusal must send the caller to compile-status for the compile that is still running");
+			finished.Should().BeTrue(
+				because: "the compile runs to its end whatever happened to the call that started it");
+			registry.GetLatest("sandbox-tenant")!.Status.Should().Be(CompileOperationStatus.Succeeded,
+				because: "the verdict of the finished compile is recorded for compile-status to report");
+			reservationReleased.Should().BeTrue(
+				because: "the configuration-build reservation is released where the compile really ends, not when its caller stopped waiting");
+		}
+		finally
+		{
+			executeGate.Set();
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and that a compile-status with no record lists the environment's compilation history with finish times.")]
+	public void CompileCreatio_Description_And_Contract_Should_Cover_A_Client_Side_Timeout()
+	{
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!;
+		ToolContractGetTool contractTool = new();
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+		ToolAntiPattern recompile = contractTool
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single().AntiPatterns!
+			.Single(pattern => pattern.Pattern
+				== $"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}");
+
+		// Assert
+		foreach (string text in new[] { description, recompile.Why })
+		{
+			text.Should().Contain("Request timed out",
+				because: "an agent whose client gave up must recognise the case: the compile may still be running on the stand");
+			text.Should().Contain(CompileStatusTool.CompileStatusToolName,
+				because: "the record of the running compile is reached through compile-status");
+			text.Should().Contain("compilation-history rows",
+				because: "when compile-status holds no record, it lists the environment's own compilation history rather than leaving the agent to compile again");
+			text.Should().Contain("finished after your call",
+				because: "the finish time is what ties a history row to this compile");
+			text.Should().Contain("over seven minutes old",
+				because: "one row is not a finished compile: rows arrive as each project ends");
+			text.Should().Contain(CompileStatusTool.HistoryRuleSummary,
+				because: "every surface that summarizes the history rule uses the one short form, with both of its exits - the user before a restart on rows alone, and a stop with the user when no row ever comes");
 		}
 	}
 
@@ -999,7 +1120,7 @@ public sealed class CompileCreatioToolTests
 	public void BuildInProgressMessage_Should_Reflect_Reject_Semantics_And_Warn_Against_Concurrent_Ops()
 	{
 		// Act
-		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
 
 		// Assert
 		message.Should().Contain("rejected, not queued",
@@ -1007,6 +1128,29 @@ public sealed class CompileCreatioToolTests
 		message.Should().Contain("restart-by-environment-name",
 			because: "the notice must warn against restarting the environment mid-compile");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 (QA): the in-progress notice does not claim the compile was accepted - at the deadline the build request may not have reached the environment, and a server restart then loses it - and it carries the started-utc the agent compares compilation-history rows with.")]
+	public void BuildInProgressMessage_Should_CarryTheStartTime_AndNotClaimTheCompileWasAccepted()
+	{
+		// Arrange
+
+		// Act
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
+
+		// Assert
+		message.Should().NotContain("accepted",
+			because: "at the deadline clio may still be logging in or its request may be queued, and a request lost with a restarted server never runs");
+		message.Should().Contain("started-utc 2026-10-09T08:15:30Z",
+			because: "the agent ties compilation-history rows to its own compile by comparing them with this time");
+		message.Should().Contain("does not say whether the environment has begun the build",
+			because: "only a compilation-history row proves the build ran");
+		message.Should().Contain("compilation-history rows that finished after started-utc",
+			because: "after a lost record the rows are the only evidence, and only those after the call can be this compile's");
+	}
+
+	private static readonly DateTime StartedUtc = new(2026, 10, 9, 8, 15, 30, DateTimeKind.Utc);
 
 	private sealed class FakeCompileConfigurationCommand : CompileConfigurationCommand
 	{

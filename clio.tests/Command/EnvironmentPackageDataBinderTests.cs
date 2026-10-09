@@ -30,8 +30,11 @@ public sealed class EnvironmentPackageDataBinderTests {
 	private static readonly Guid BackgroundImageId = Guid.Parse("7a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d");
 	private static readonly Guid ExistingBindingUId = Guid.Parse("9a1b2c3d-4e5f-4a6b-8c9d-0e1f2a3b4c5d");
 
-	/// <summary>The SysPackage row id the environment's CurrentPackageId setting points at.</summary>
-	private static readonly Guid CurrentPackageRowId = Guid.Parse("2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
+	/// <summary>
+	/// The package's SysPackage row Id. It differs from <see cref="PackageUId"/>, as it does for most packages on a
+	/// real environment, so a lookup that filters the wrong column cannot pass.
+	/// </summary>
+	private static readonly Guid PackageRowId = Guid.Parse("2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
 
 	private static readonly Guid PanelIconFeatureId = Guid.Parse("6b1c2d3e-4f50-4a6b-8c9d-0e1f2a3b4c5d");
 	private static readonly Guid PanelIconFeatureStateRowId = Guid.Parse("7c1d2e3f-4a50-4b6c-8d9e-0f1a2b3c4d5e");
@@ -1174,10 +1177,11 @@ public sealed class EnvironmentPackageDataBinderTests {
 		public string DeleteBindingResponse { get; set; } = """{"success":true}""";
 
 		/// <summary>
-		/// Value the CurrentPackageId sys-setting answers with. Defaults to the row id that resolves to this
-		/// environment's package; blank models an environment where no current package is set.
+		/// Value the CurrentPackageId sys-setting answers with. Defaults to this environment's package UId - the
+		/// platform stores the setting as a package UId, not a row Id; blank models an environment where no
+		/// current package is set.
 		/// </summary>
-		public string CurrentPackageIdValue { get; set; } = CurrentPackageRowId.ToString();
+		public string CurrentPackageIdValue { get; set; } = PackageUId.ToString();
 
 		public int PackageInstallType { get; set; }
 
@@ -1308,7 +1312,8 @@ public sealed class EnvironmentPackageDataBinderTests {
 				applicationClient,
 				serviceUrlBuilder,
 				new PackageDataBindingWriter(
-					applicationClient, serviceUrlBuilder, targetResolver, CreateSchemaClient()),
+					applicationClient, serviceUrlBuilder, targetResolver, CreateSchemaClient(),
+					CreateDisabledFileDesignMode(), Substitute.For<ILogger>()),
 				targetResolver,
 				Substitute.For<ILogger>());
 		}
@@ -1345,16 +1350,21 @@ public sealed class EnvironmentPackageDataBinderTests {
 		}
 
 		/// <summary>
-		/// Answers the SysPackage lookup in both shapes it is asked: filtered by Id, where only this
-		/// environment's current package resolves and any other id is a dangling setting, and unfiltered.
+		/// Answers the SysPackage lookup the way a real environment does: filtered by UId or by Id, only the
+		/// column's own value of this environment's package matches and any other value is a dangling setting;
+		/// unfiltered, the package row comes back.
 		/// </summary>
 		private string LookupPackage(Dictionary<string, string> filters) {
-			if (filters.TryGetValue("Id", out string? id)) {
-				return string.Equals(id, CurrentPackageRowId.ToString(), StringComparison.OrdinalIgnoreCase)
-					? PackageRows()
-					: """{"success":true,"rows":[]}""";
+			string? expected = filters.TryGetValue("UId", out string? uId) ? uId
+				: filters.TryGetValue("Id", out string? id) ? id
+				: null;
+			if (expected is null) {
+				return PackageRows();
 			}
-			return PackageRows();
+			string actual = filters.ContainsKey("UId") ? PackageUId.ToString() : PackageRowId.ToString();
+			return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)
+				? PackageRows()
+				: """{"success":true,"rows":[]}""";
 		}
 
 		private string PackageRows() {
@@ -1472,6 +1482,12 @@ public sealed class EnvironmentPackageDataBinderTests {
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Insert).Returns(InsertRowUrl);
 			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Update).Returns(UpdateRowUrl);
 			return serviceUrlBuilder;
+		}
+
+		private static IFileDesignModeStateReader CreateDisabledFileDesignMode() {
+			IFileDesignModeStateReader stateReader = Substitute.For<IFileDesignModeStateReader>();
+			stateReader.GetIsFileDesignModeEnabled().Returns(false);
+			return stateReader;
 		}
 
 		private IDataBindingSchemaClient CreateSchemaClient() {

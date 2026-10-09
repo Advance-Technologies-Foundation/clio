@@ -111,6 +111,41 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 			because: "validate-page must be advertised so MCP clients can discover the client-side validation tool");
 	}
 
+	private static string WebBodyWithModel(string modelConfig) =>
+		"define(\"UsrPdsRepro_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{ \"attributes\": { \"UsrName\": { \"modelConfig\": { \"path\": \"PDS.UsrName\" } } } }/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
+		"modelConfig: /**SCHEMA_MODEL_CONFIG*/" + modelConfig + "/**SCHEMA_MODEL_CONFIG*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	[Test]
+	[Description("ENG-102161: validate-page has no environment, so a binding the body leaves undeclared passes with a warning that the data-source check did not run; a body that declares its sources gets no such warning.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page warns instead of rejecting an undeclared data-source binding")]
+	[AllureDescription("Sends two web bodies binding PDS.UsrName through the real MCP server: one whose own SCHEMA_MODEL_CONFIG declares PDS (no warning) and one that does not (valid, with a 'were not checked' warning naming PDS).")]
+	public async Task PageValidateTool_Should_Warn_When_DataSource_Binding_Cannot_Be_Checked() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string declaring = WebBodyWithModel("""{ "dataSources": { "PDS": { "type": "crt.EntityDataSource" } }, "primaryDataSourceName": "PDS" }""");
+		string notDeclaring = WebBodyWithModel("""{ "dataSources": { "OtherDS": { "type": "crt.EntityDataSource" } } }""");
+
+		// Act
+		PageValidateResponse declaringResponse = await CallAsync(context.Session, context.CancellationTokenSource.Token, declaring);
+		PageValidateResponse notDeclaringResponse = await CallAsync(context.Session, context.CancellationTokenSource.Token, notDeclaring);
+
+		// Assert
+		declaringResponse.Valid.Should().BeTrue(because: "the body declares the data source it binds");
+		(declaringResponse.Validation?.Warnings ?? []).Should().NotContain(w => w.Contains("were not checked"),
+			because: "nothing needed the inherited config, so the check ran completely");
+		notDeclaringResponse.Valid.Should().BeTrue(because: "validate-page cannot read the inherited config, so it must not reject");
+		notDeclaringResponse.Validation!.Warnings.Should().Contain(
+			w => w.Contains("PDS") && w.Contains("were not checked") && w.Contains("no inherited modelConfig is available"),
+			because: "a green validate-page must not be read as proof that PDS is declared");
+	}
+
 	[Test]
 	[Description("Returns valid: true when the page body is structurally correct.")]
 	[AllureTag(ToolName)]
@@ -1494,6 +1529,70 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		response.Validation!.Errors.Should().Contain(
 			e => e.Contains("SimilarLeadListDS_NotDeclared"),
 			because: "the undeclared-binding error must name the attribute so the agent can fix the declaration before writing");
+	}
+
+	[Test]
+	[Description("ENG-101924: a Designer-written binding in a property the mobile registry does not declare for the type (crt.List.selectionState) is not reported as undeclared.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page skips a binding in a property the mobile registry does not declare")]
+	[AllureDescription("Sends a mobile body whose crt.List binds selectionState to an undeclared attribute, the shape the Mobile Designer saves, and verifies validate-page does not report that binding.")]
+	public async Task PageValidateTool_Should_Skip_Binding_In_Property_The_Registry_Does_Not_Declare() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "LeadList", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "selectionState": "$LeadList_SelectionState" } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, body);
+
+		// Assert
+		response.Validation.Should().NotBeNull(
+			because: "validation details are always included in the response");
+		(response.Validation!.Errors ?? []).Should().NotContain(
+			e => e.Contains("LeadList_SelectionState"),
+			because: "the mobile runtime never reads crt.List.selectionState, so a binding there cannot break the page");
+	}
+
+	[Test]
+	[Description("ENG-101924 counterpart guard: an input the registry declares for the type (crt.List.visible, inherited from baseInputs) bound to an undeclared attribute is still reported, so narrowing the check does not turn it off.")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page still rejects a declared input bound to an undeclared attribute")]
+	[AllureDescription("Sends a mobile body whose crt.List binds visible to an attribute declared nowhere, and verifies validate-page returns valid=false naming it.")]
+	public async Task PageValidateTool_Should_Reject_Declared_Input_Bound_To_Undeclared_Attribute() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string body = """
+			{
+			  "viewConfigDiff": [
+			    { "operation": "insert", "name": "UsrList", "parentName": "MainContainer", "propertyName": "items",
+			      "values": { "type": "crt.List", "visible": "$UsrMissing" } }
+			  ],
+			  "viewModelConfigDiff": [
+			    { "operation": "merge", "path": ["attributes"], "values": { "UsrName": {} } }
+			  ],
+			  "modelConfigDiff": []
+			}
+			""";
+
+		// Act
+		PageValidateResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token, body);
+
+		// Assert
+		response.Valid.Should().BeFalse(
+			because: "visible is an input the mobile runtime reads, so a binding to a missing attribute is an error");
+		response.Validation!.Errors.Should().Contain(
+			e => e.Contains("UsrMissing"),
+			because: "the undeclared-binding error must name the attribute so the agent can declare it");
 	}
 
 	[Test]

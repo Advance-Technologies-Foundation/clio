@@ -10,6 +10,7 @@
   - Decided after the manual test run (2026-10-05), superseding the 2026-10-01 rule that accepted
     `disable-operation-permissions` only on a revoke that empties the last granting row: the switch and the rows
     change separately (D9). The disable is a call of its own that keeps every row; the enable can be one too.
+  - Decided after the retest (2026-10-05): the object is named by its code, and its title is shown next to it (D10).
   - The facts under "Platform model" were checked on a stand on 2026-09-28/29.
 - **Date:** 2026-09-28 (updated 2026-10-05)
 - **Jira:** [ENG-99741](https://creatio.atlassian.net/browse/ENG-99741) (related ENG-99969, ENG-100406, ENG-100407)
@@ -237,13 +238,34 @@ disable flags.
   does for an enable. Technical users keep following the rows. Emptying the last granting row is not possible with
   the tool, before or after a disable, because a revoke on an object that is off is refused; the designer can do it.
 
+**D10 — The object is named by its code; its title is shown next to it** *(decided 2026-10-05, after the retest)*.
+- `entity-schema-name` is the object's code (entity schema name), and the code always wins: an object with that code
+  is the one read or written.
+- The output shows the object's title next to its code — `'Creatio functionality' (Feature)` — whenever the two
+  differ: `get` for every object it lists, `set` in its preview, its result and its refusals.
+- `get` reads by title when no object has the code: the one object with that title is read, and the output says so.
+  Several objects with the title are refused, listed as `'title' (code: name)`, the form the process tools use for
+  the candidates of a caption. A name that is not a schema identifier is only ever looked up as a title.
+- `set` refuses a title and names the code(s) it belongs to, as `run-process` refuses a process caption: the approval
+  shows the code, and a title is not unique.
+- The `set-object-rights` `[Description]` tells the agent that the object is named by its code and to name it to the
+  developer by code and title before a write.
+- *Why.* In the retest the developer asked for rights on "object Feature". The agent passed "Feature" as the code and
+  changed schema `Feature`, titled "Creatio functionality", while the object titled "Feature" is schema
+  `Specification`, and said nothing: it never opened the guidance, whose rule covers this, and the output showed the
+  code only. A rule that must hold cannot live in the guidance alone. The title in the output and the rule in the
+  description reach an agent that reads only the contract.
+- *Not done.* A word that is one object's code and another object's title is not flagged: the code wins silently, as
+  in the process tools. No clio tool reports such a namesake, and it would take a title lookup on every call; the
+  title in the output already shows the developer which object the code named.
+
 ## Responsibilities: tool vs guidance
 
 The tools work like the designer, one object at a time, plus a few guard-rails that the designer does not have. They
 report facts. The guidance explains what the facts mean and decides what to do.
 
 **The tool:**
-- makes exactly the one change that the arguments name, on one object;
+- makes exactly the one change that the arguments name, on one object, which it names by its code and its title (D10);
 - refuses a risky transition that the arguments do not name:
   - enabling or disabling operation permissions without its flag — the switch changes only through its flag, and a
     disable is a call of its own that changes no row (D9);
@@ -299,6 +321,8 @@ report facts. The guidance explains what the facts mean and decides what to do.
     be one too, and a revoke never changes the switch. On a security or system object (no opt-in, D5) the disable is
     one explicit call as well: its name and the flag are in the arguments the host shows, and the guidance never
     proposes such an object.
+  - D10: the output shows the object's title next to its code; `set` refuses a title, naming the code, and `get` reads
+    by title only when no object has the code.
   - `preview` stays as a dry run.
 - **Jira ENG-99741 ACs** need a revision:
   - AC1 becomes one call per object;
@@ -366,6 +390,7 @@ Invariants:
 6. Output and exit code come from the plan and the read-back. A change that was not saved is never reported as done.
 7. Unknown argument names are refused before any read or write.
 8. A call grants or revokes only the operations it names; no operation is implied by default.
+9. The object a write changes is named by its code: a title is refused, naming the code it belongs to (D10).
 
 ## Open questions
 

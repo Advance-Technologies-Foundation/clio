@@ -255,6 +255,11 @@ public sealed record ObjectRightsInfo(
 	}
 }
 
+/// <summary>An object (entity schema) whose title is the name a caller passed.</summary>
+/// <param name="Name">The object's code (entity schema name).</param>
+/// <param name="Caption">Its title, as the service returned it.</param>
+public sealed record ObjectTitleMatch(string Name, string Caption);
+
 /// <summary>
 /// The outcome of a save: why it failed — <see langword="null"/> when the service reported it done — and whether no
 /// answer came, after which the save may still land.

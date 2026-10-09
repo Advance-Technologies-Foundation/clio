@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio;
@@ -282,5 +283,80 @@ public sealed class ProcessDesignerEmittedSchemaTests {
 			because: "the mapping / value / recordId column source is named only here for the agent");
 		description.Should().Contain(filterColumnForm,
 			because: "the filter's column source has to be named too, in the form this tool documents");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor", true)]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations", true)]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations", false)]
+	[Category("Unit")]
+	[Description("The JSON-document argument of each process write tool is emitted with its description intact, keeps its required status, and is no longer typed as a string (ENG-100153). The SDK drops the description of an optional positional JsonElement? = null, and for these non-resident tools that description is the only one an agent reads.")]
+	public void ProcessWriteTools_Should_AdvertiseTheirJsonDocumentArgument_AsAValueWithADescription(
+			string toolName, string wireName, bool required) {
+		// Arrange & Act
+		using JsonDocument schema = EmittedInputSchema(toolName);
+		JsonElement args = ArgsSchema(schema);
+		JsonElement property = args.GetProperty("properties").GetProperty(wireName);
+
+		// Assert
+		property.TryGetProperty("description", out JsonElement description).Should().BeTrue(
+			because: $"'{wireName}' must carry its description - it says both accepted forms, and a derived "
+				+ "contract has nothing else to show the agent");
+		description.GetString().Should().Contain("string holding the same JSON is also accepted",
+			because: "the description must say that the long-standing string form still works");
+		property.TryGetProperty("type", out JsonElement type).Should().BeFalse(
+			because: $"a 'type' on '{wireName}' would restrict it to one JSON kind, and it accepts two: the value and a "
+				+ $"string holding it (emitted: {type})");
+		RequiredNames(args).Contains(wireName).Should().Be(required,
+			because: required
+				? $"'{wireName}' is the edit itself on this tool, so it stays mandatory"
+				: "absent operations is the documented snapshot form, so the argument must stay optional");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations")]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations")]
+	[Category("Unit")]
+	[Description("The contract get-tool-contract derives for a process write tool types its JSON-document argument as 'any', not 'object': the operations argument is an ARRAY, and the typeless schema used to be reported as an object (ENG-100153).")]
+	public void DerivedContract_Should_TypeTheJsonDocumentArgument_AsAny(string toolName, string wireName) {
+		// Arrange
+		ToolContractGetTool tool = new(BuildProductionRegistry());
+
+		// Act - detail "full": the contract under test is the complete one. Today detail is ignored for a named
+		// lookup; once ENG-100154 lands, a default named lookup is fitted to one inline reply and shortens long
+		// field descriptions, and "full" keeps this test reading the whole field.
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], "full")).Tools!.Single();
+		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);
+
+		// Assert
+		field.Type.Should().Be(McpToolRegistrySchemaContract.AnyType,
+			because: $"'{wireName}' accepts the JSON value or a string holding it; 'object' would tell the caller the "
+				+ "operations array is an object, and 'string' would restate the pre-ENG-100153 contract");
+		field.Description.Should().Contain("string holding the same JSON is also accepted",
+			because: "the derived contract carries the emitted description, which names both accepted forms");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, "descriptor")]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, "operations")]
+	[TestCase(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, "operations")]
+	[Category("Unit")]
+	[Description("With no invoker registry, get-tool-contract falls back to the contract reflected from the args record, and that fallback types the JSON-document argument as 'any' too - the answer the registry-derived contract gives - rather than 'object' (ENG-100153).")]
+	public void ReflectedFallbackContract_Should_TypeTheJsonDocumentArgument_AsAny(string toolName, string wireName) {
+		// Arrange - no registry: the degraded path that resolves an uncurated tool through McpToolSchemaCatalog.
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(
+			new ToolContractGetArgs([toolName], "full")).Tools!.Single();
+		ToolContractField field = contract.InputSchema.Properties.Single(property => property.Name == wireName);
+
+		// Assert
+		contract.Description.Should().Contain("Auto-generated from the tool input schema",
+			because: "the contract under test must come from the reflection fallback, not from a registry");
+		field.Type.Should().Be(McpToolRegistrySchemaContract.AnyType,
+			because: $"both contract builders must type '{wireName}' the same way, and it accepts the JSON value or a "
+				+ "string holding it - 'object' would tell the caller the operations array is an object");
+		field.Description.Should().Contain("string holding the same JSON is also accepted",
+			because: "the fallback reads the same member description, which names both accepted forms");
 	}
 }

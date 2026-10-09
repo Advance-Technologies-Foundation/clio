@@ -74,6 +74,52 @@ public static class ObjectRightsSupport {
 
 	private const int MaxErrorLength = 500;
 
+	// How many objects a title names in a refusal before the rest are counted; a title shared by many objects would
+	// otherwise grow the message with every one of them.
+	private const int TitleMatchesNamed = 5;
+
+	/// <summary>
+	/// Whether <paramref name="caption"/> is a title of its own: one the service returned, other than the object's code
+	/// (case aside). Only then does the output show it next to the code.
+	/// </summary>
+	/// <param name="schemaName">The object's code (entity schema name).</param>
+	/// <param name="caption">The object's title, when the service returned one.</param>
+	/// <returns><see langword="true"/> when the title differs from the code.</returns>
+	public static bool HasOwnTitle(string schemaName, string caption) =>
+		!string.IsNullOrWhiteSpace(caption)
+		&& !string.Equals(caption.Trim(), schemaName, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>
+	/// Names an object for output by its title and its code — <c>'Creatio functionality' (Feature)</c> — when it has a
+	/// title of its own, otherwise by its code, quoted (<c>'Feature'</c>). A developer names an object by its title as
+	/// often as by its code, and the two can name different objects, so the output shows both.
+	/// </summary>
+	/// <param name="schemaName">The object's code (entity schema name).</param>
+	/// <param name="caption">The object's title, when the service returned one.</param>
+	/// <returns>The display-safe name.</returns>
+	public static string FormatObject(string schemaName, string caption) =>
+		HasOwnTitle(schemaName, caption) ? $"'{DisplayTitle(caption)}' ({schemaName})" : $"'{schemaName}'";
+
+	// A title is text anyone with schema rights can set, printed inside quotes and before the code. Its own quotes are
+	// turned into a typographic apostrophe and its length is kept short, so a title such as "Orders' (UsrOrder)" cannot
+	// close the quotes early and show another object's code where the real one belongs.
+	private static string DisplayTitle(string caption) =>
+		TextUtilities.SanitizeForDisplay(caption?.Trim() ?? string.Empty, MaxTitleLength).Replace('\'', '’');
+
+	private const int MaxTitleLength = 100;
+
+	/// <summary>
+	/// Renders the objects a title names, as <c>'Feature' (code: Specification)</c> — the form the process tools use
+	/// for the candidates of a caption — at most five of them, then how many more.
+	/// </summary>
+	/// <param name="matches">The objects with the title.</param>
+	/// <returns>The display-safe list.</returns>
+	public static string FormatTitleMatches(IReadOnlyList<ObjectTitleMatch> matches) {
+		string listed = string.Join("; ", matches.Take(TitleMatchesNamed)
+			.Select(match => $"'{DisplayTitle(match.Caption)}' (code: {match.Name})"));
+		return matches.Count <= TitleMatchesNamed ? listed : $"{listed}; and {matches.Count - TitleMatchesNamed} more";
+	}
+
 	/// <summary>
 	/// Renders one row for output: its position, the grantee's name — with its id when asked for — and its operations,
 	/// e.g. <c>[1] Sales managers: read/create</c>. Both commands and the read-back use it, so a row is always rendered

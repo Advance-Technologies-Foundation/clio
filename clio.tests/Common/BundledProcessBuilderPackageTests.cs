@@ -197,10 +197,10 @@ public class BundledProcessBuilderPackageTests {
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
 	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
-	/// on the producing commit before packing anything — 2886 passed, 0 failed, 0 skipped, measured on this cut
+	/// on the producing commit before packing anything — 3088 passed, 0 failed, 0 skipped, measured on this cut
 	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
 	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
-	/// verified the archive inventory it produced (227 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
+	/// verified the archive inventory it produced (229 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
 	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
 	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"93F6151D51B86C1B57E5060446E2FE023D1B1978065E764B3C543FA8CA12FB8A";
+		"0B09E65DA8A178293A022FE4A8299EE98AF7A4871904D3AF39C07191F802BBDE";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.63";
+	private const string ExpectedArchiveVersion = "1.6.6.91";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "5e59d29bfd19275116381862db9cba8354f0e34e";
+	private const string ExpectedProducingCommit = "980e9c0378f47330069e0e65a024e6a6ff54abc3";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790948235000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791468946000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

@@ -55,11 +55,15 @@ DESCRIPTION
     confirmation. --preview writes nothing. On MCP the call applies the change: the host's approval of
     the call is the confirmation.
 
-    The object name is trimmed and must be a plain schema identifier (letters, digits, '_').
+    The object is named by its code (entity schema name: letters, digits, '_'; trimmed). A title is
+    refused, naming the code it belongs to: a title is not unique, and the same word can be one
+    object's code and another object's title. The output shows the object's title next to its code -
+    'Creatio functionality' (Feature).
 
 OPTIONS
     --entity-schema-name
-        The one object (entity schema) whose operation permissions are changed (for example UsrOrder). Required.
+        The one object whose operation permissions are changed, by its code (entity schema name, for
+        example UsrOrder). A title is refused, naming the code it belongs to. Required.
 
     --grantee
         SysAdminUnit id (organizational/functional role or user) to grant or revoke. Names are not
@@ -100,12 +104,14 @@ EXIT CODES
     0   The change was applied (or was already in the requested state, or cancelled at the prompt), or a
         --preview completed (nothing was written). A save that reported an error but whose read-back shows
         the plan succeeds with a warning.
-    1   An input was invalid (missing or non-identifier entity-schema-name, grantee not a GUID, missing
+    1   An input was invalid (a missing entity-schema-name, or one that is an object's title rather than
+        its code - the refusal names the code - or neither, grantee not a GUID, missing
         --operations on a grant or revoke, unknown operation, an --operations value that names no
         operation, --preview with --confirm, --enable-operation-permissions with --revoke,
         --disable-operation-permissions with --grantee, --operations, --revoke or
         --enable-operation-permissions, a call that names no change), confirmation was missing in a
-        non-interactive run, the object was not found or could not be read, the grantee does not exist,
+        non-interactive run, the object was not found or could not be read, the title lookup failed,
+        the grantee does not exist,
         the change was refused (a grant that would turn operation permissions on without
         --enable-operation-permissions, a revoke that would leave no granting row, an enable alone over
         rows that grant nothing, a revoke on an object that does not use operation permissions, a

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
@@ -11,6 +12,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
+using Clio.Common.Telemetry;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -1286,7 +1288,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreateEntityBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1519,7 +1521,7 @@ public sealed class ToolContractGetToolTests {
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
 			CreatePageBusinessRuleTool.BusinessRuleCreateToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -1911,7 +1913,7 @@ public sealed class ToolContractGetToolTests {
 			PageSyncTool.ToolName,
 			PageUpdateTool.ToolName,
 			ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
-		]));
+		], ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -2225,7 +2227,7 @@ public sealed class ToolContractGetToolTests {
 		];
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools));
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools, ToolContractShortForm.FullDetail));
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -4479,4 +4481,30 @@ public sealed class ToolContractGetToolTests {
 		contract.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Meters every get-tool-contract response, a named batch and the compact index alike, at the size the agent receives (ENG-100157).")]
+	public void GetToolContracts_ShouldMeterEveryResponse_WhenAMeterIsSupplied() {
+		// Arrange
+		ServedContentMeter meter = new();
+		ToolContractGetTool tool = new(null, meter);
+
+		// Act
+		ToolContractGetResponse named = tool.GetToolContracts(new ToolContractGetArgs([SendTelemetryTool.ToolName]));
+		ToolContractGetResponse index = tool.GetToolContracts();
+
+		// Assert
+		meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "contract responses are content this session served");
+		served.ContractReads.Should().Be(2,
+			because: "both responses reached the agent");
+		served.ContractBytes.Should().Be(McpResultBytes(named) + McpResultBytes(index),
+			because: "the count is the size of the result text the agent reads, serialized with the MCP result options");
+		served.GuidanceReads.Should().Be(0,
+			because: "a contract read is not a guidance read");
+	}
+
+	private static long McpResultBytes(ToolContractGetResponse response) =>
+		Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response, Clio.BindingsModule.CreateMcpSerializerOptions()));
 }

@@ -400,6 +400,105 @@ never reused.** Any code path that cancels a send on a sticky worker must retire
 "the send threw `OperationCanceledException`" is the signal. Stages 7 and 8 own the sticky pool, so this is
 their constraint to honour, not a Stage 4 detail.
 
+**Decided 2026-10-07 (ENG-102333): a cancelled STARTER is decided by the same fact as a cancelled poll.** Story
+14 left open what a cancelled starter means (its AC-03 asked for the reuse decision to be written down), and the
+first implementation reaped the worker on every caller cancellation. That is wrong for every family whose work
+outlives the call: an MCP client's own request timeout (Claude Code: `Request timed out`, followed by
+`notifications/cancelled`) fired before clio's 150 s in-progress answer, the parent reaped the worker that held
+the only `CompileOperationRegistry` record, and `compile-status` then answered `not-found` for compiles that ran
+to completion on the stand. So:
+
+- the request was **written** (session not retired, worker alive) → the worker is **kept** and marked
+  abandoned. All six starters (compile, both restarts, both installs, `create-app-section`) hand their long work
+  to the detached heartbeat, which runs it to the end and then sends the private completion signal (rule 5);
+  killing the worker would cut that work part-way - a compile or restart Creatio already has keeps running
+  without its record, an install or section creation stops in the middle of its own steps. Kept, the work
+  finishes, the signal releases the target's reservation, a status poll (where the family has one) still
+  reaches the record, and the completion linger and the lifetime bound reap the worker. The next call over the
+  session proves the worker alive with the bounded probe first, exactly as the poll path does;
+- the send did **not** complete, the worker exited, or the cancellation came before the entry was registered
+  (spawn, handshake) → the worker is released at once, as before. Nothing reached the worker, so there is no
+  operation to keep, and a retired session is never reused.
+
+Two consequences are accepted rather than missed. **Cancelling no longer stops an operation whose request
+reached the worker but whose first request to Creatio has not been sent yet** (environment resolution, login);
+before, a kill in that window could stop it by winning a race, while the deadline path never could. And **once
+the caller has cancelled, the parent bounds the kept worker only by the completion signal, supervision (exit or
+retirement) and the lifetime bound** (`StickyWorkerLifetimeBound.ExplicitMaximum`, 65 min) - the sticky call
+budget no longer applies, exactly as for a worker that answered in-progress at the deadline. That leaves one
+case the parent cannot see: a worker that received the call but never opened its completion ledger. The
+SDK does run clio's call-tool filter for a request whose cancellation arrives right behind it - measured with
+`notifications/cancelled` written back to back with the `tools/call`: the worker signalled at once, with no
+compile started - and `CompileCreatioClientTimeoutE2ETests` pins it, so an SDK upgrade that changed it fails a
+test instead of stranding reservations. What remains is a worker that wedges after receiving the call, which
+the deadline path was exposed to already.
+
+**Decided 2026-10-08 (ENG-102333, after QA): keeping the worker is not enough on a client that restarts the
+server.** Claude Code desktop 2.1.293 gives up on a call after 60 s and, on its next call, restarts the clio MCP
+server; every worker - and with it every operation record - goes with the server, and the other agents of the
+session lose their in-flight calls too. Two changes answer it, and a third was rejected:
+
+- the default response deadline (`McpProgressHeartbeat.DefaultResponseDeadline`) is **45 s**, down from 150 s,
+  so the in-progress answer reaches a 60 s client first (measured delivery 1-3 s after the deadline; a full
+  compile on a stand answered at 46.2 s). The sticky call budget is derived from it (45 s + 60 s = 105 s), and
+  the restart tools race their restart request as well as the readiness wait. Their operation is begun before
+  the request, so an answer that arrives first points at `restart-status`, which reports a failed request as the
+  new status `requestfailed`. Two deadlines are
+  deliberately NOT lowered:
+  - the read-response deadline (120 s, `adr-read-only-mcp-response-deadline.md`): a read that hits it is lost,
+    not continued, so lowering it would fail reads that take 45-60 s and succeed today;
+  - `run-process` (150 s, `RunProcessTool.RunProcessResponseDeadline`; superseded in round 3, below): it runs in a per-call worker that the
+    parent kills after the answer, and its "still running, do not re-run" note would be false if it arrived
+    before the RunProcess request had been sent - which nothing records today. Below the parent's 120 s
+    per-call budget that answer stays unreachable, as before;
+- a `compile-status` not-found answer reads the environment's `CompilationHistory` and lists the newest rows
+  with their finish times in UTC. That record lives in the environment, so it survives any server restart,
+  and its time is what `last-compilation-log`'s verdict lacks. The rows are read through DataService, whose
+  times are in the session's zone, and converted with that session's offset from `GetApplicationInfo`. OData
+  was tried first and rejected: the platform labels whatever the entity layer returns as UTC, and one stand
+  returned true UTC and, after an application restart, local time with a `Z`. The read is abandoned after
+  25 s (40 s since round 3), login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
+  reported as such rather than as a read to retry. One row is not a finished compile - a compile writes a row as
+  each project ends - so agents are told it has finished only once its newest row is over seven minutes old (the runtime reload lands about two minutes after the last row; seven is the five-minute quiet window clio's own compile uses when it sees no reload, plus two minutes for a slower reload and for skew between the clio host's clock and the environment's), that a restart resting on these rows alone needs the user's confirmation, and that a
+  compile which wrote no row ends in asking the user, never in a compile of their own;
+- persisting the operation registry outside the server process was rejected: the worker that waits for the
+  result dies with the server, so a persisted record could only say "started, outcome unknown" and would
+  still need the history to resolve it.
+
+ENG-102333 round 3 (2026-10-09, QA re-test on Claude Code desktop) found the restart is caused by ANY call that runs
+past 60 s, not only by a slow compile: another agent's calls - most likely `run-process`, then at 150 s - restarted
+the shared server and killed a compile's sticky worker mid-compile. A server killed about 55 s after
+`compile-creatio` was called left no compilation-history row at all: on that stand the first project started 50-80 s
+after the call. So:
+
+- `run-process` answers at the shared response deadline. The bullet above was wrong about where it runs: it is not
+  in the worker cohort, so it runs in the server process and its 150 s answer was reachable. A launch gate
+  (`RunProcessLaunchGate`) is claimed once, either by the command right before the RunProcess request or by the
+  deadline answer: `not-started` means the request was never sent and never will be; `still-running` names the time it
+  was sent and says clio cannot tell whether the environment started the run. The accepted cost: a synchronous run of
+  45-150 s used to answer with its verdict and result-parameter values and now answers still-running on every client,
+  with no handle to poll; a client that waits longer gets them back by raising `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`;
+- `compile-creatio`'s in-progress answer no longer says "accepted": at the deadline the request may not have reached
+  the environment, and even a sent one proves nothing - only a history row does. It carries `started-utc`, the time
+  the agent compares rows with;
+- a not-found answer no longer calls a compile with no row since the call "still running", and no longer sends the
+  agent to `last-compilation-log` for it: with no row since the call that undated verdict can only be an earlier
+  compile's, which QA's agent read as its own success. After ten minutes (a package or process-name compile) or about
+  20 (a full one) such a compile is treated as not run and the user decides;
+- the history read is bounded at 40 s, up from 25 s: the first poll after a server restart logs in from a fresh
+  worker and often ran out on a busy stand.
+
+Deliberately NOT done, by the owner's decision on 2026-10-09: bounding every other tool. Reads keep their 120 s
+deadline, a per-call worker its 120 s budget, and most in-process write tools have no bound at all, so a client
+that gives up at 60 s can still restart the server through them. A universal bound would have to exempt ClioRing
+(`clientInfo.name = "clio-ring"`), whose deploy, uninstall and workflow runs go through `clio-run` and take minutes.
+
+When `mcp-http` returns (stage 5), a kept worker no longer ends with its caller, so its lifetime must be bounded
+by the credential's validity - `StickyWorkerLifetimeBound.Resolve` already takes it.
+
+The terminal-stage family (§3.3) is unaffected: a cancelled deploy still kills its child and reports the last
+stage reached.
+
 #### 3.2b How far a structural guard can enforce rule 12 — corrected 2026-08-18
 
 Rule 12 is guarded structurally today: TC-U-401 walks `Assembly.GetTypes()` restricted to the relay's
