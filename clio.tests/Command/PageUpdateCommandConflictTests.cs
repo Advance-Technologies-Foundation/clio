@@ -422,15 +422,21 @@ public sealed class PageUpdateCommandConflictTests
 	}
 
 	[Test]
-	[Description("Issue #1741: the legitimate first save. When target-package-uid resolves to the design package of an absent-schema baseline and the replacing schema still does not exist, the save proceeds, and the baseline is marked applied so the successful save refreshes it.")]
+	[Description("Issue #1741: the legitimate first save. When target-package-uid resolves to the design package of an absent-schema baseline (recorded braced and upper-case, typed bare and lower-case) and the replacing schema still does not exist, the save proceeds, and the baseline is marked applied so the successful save refreshes it.")]
 	public void TryUpdatePage_ShouldSaveAndMarkTheBaselineApplied_WhenTargetPackageUidNamesTheAbsentBaselinePackageAndTheSchemaIsStillAbsent() {
-		// Arrange
+		// Arrange — the hierarchy head lives in another package, so the write creates a replacing schema.
+		const string packageUId = "0f3c1d2e-aaaa-bbbb-cccc-1234567890ab";
 		StubChecksumRow("fresh-after-save");
 		StubReplacingSchemaAbsentInPackage();
-		PageUpdateCommand command = CreateReplacingCommand();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas(SchemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
+		]);
+		PageUpdateCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient);
 		PageUpdateOptions options = CreateOptions();
-		options.TargetPackageUId = "design-pkg-uid";
-		options.ConditionalBaselineDesignPackageUId = "design-pkg-uid";
+		options.TargetPackageUId = packageUId;
+		options.ConditionalBaselineDesignPackageUId = "{" + packageUId.ToUpperInvariant() + "}";
 		options.ConditionalBaselineSchemaAbsent = true;
 
 		// Act
@@ -443,6 +449,37 @@ public sealed class PageUpdateCommandConflictTests
 			because: "the save landed in the package the baseline describes, so that baseline must be refreshed");
 		response.NewChecksum.Should().Be("fresh-after-save",
 			because: "the applied baseline puts the post-save checksum query in play, which the refresh needs");
+	}
+
+	[Test]
+	[Description("Issue #1741: a PINNED save whose target-package-uid names the design package of an absent-schema baseline. The caller's checksum keeps governing the conflict check, the absence marker is not armed (so an existing schema is not refused as schema-created-externally), and the baseline is marked applied so the successful save refreshes it.")]
+	public void TryUpdatePage_ShouldLetThePinGovernAndMarkTheBaselineApplied_WhenAPinnedSaveNamesTheAbsentBaselinePackage() {
+		// Arrange — the hierarchy resolves an EXISTING editable schema in the targeted package.
+		const string packageUId = "0f3c1d2e-aaaa-bbbb-cccc-1234567890ab";
+		StubChecksumRow("server-checksum");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas(SchemaUId, packageUId).Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = packageUId }
+		]);
+		PageUpdateCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient,
+			viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "server-checksum");
+		options.TargetPackageUId = packageUId;
+		options.ConditionalBaselineDesignPackageUId = "{" + packageUId.ToUpperInvariant() + "}";
+		options.ConditionalBaselineSchemaAbsent = true;
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the pinned checksum matches the server's, so nothing was modified externally");
+		response.Conflict.Should().BeFalse(
+			because: "the caller's pin is the stronger witness, so the absent-schema baseline must not refuse the save");
+		options.ExpectedChecksum.Should().Be("server-checksum", because: "the caller's pin must stay unchanged");
+		options.ExpectedSchemaAbsent.Should().BeFalse(because: "the absence marker must not be armed over a caller pin");
+		options.ConditionalBaselineApplied.Should().BeTrue(
+			because: "the save landed in the package the baseline describes, so that baseline must be refreshed");
 	}
 
 	[Test]
