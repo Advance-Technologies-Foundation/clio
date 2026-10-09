@@ -65,8 +65,13 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// the application reloads and a request can hang for 44 s. The answer has to arrive well inside the 60 s after
 	/// which a client such as Claude Code desktop gives up and restarts the MCP server, so the read is abandoned at
 	/// this bound and the answer says the history could not be read.
+	/// <para>
+	/// 40 s, up from 25 s (ENG-102333 round 3): on a busy stand the first poll after an MCP server restart - a fresh
+	/// worker, so a fresh login - often ran out at 25 s and only the poll a minute later read the history (QA). 40 s
+	/// keeps the answer inside the 45 s the other long tools answer by, so it still reaches a 60 s client.
+	/// </para>
 	/// </remarks>
-	internal static readonly TimeSpan DefaultHistoryReadBudget = TimeSpan.FromSeconds(25);
+	internal static readonly TimeSpan DefaultHistoryReadBudget = TimeSpan.FromSeconds(40);
 
 	/// <summary>
 	/// What a <c>not-found</c> answer says right after it names the missing record.
@@ -106,21 +111,36 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// decision too, never in a compile the agent starts on its own: core-rules requires the user's confirmation
 	/// before every compile.
 	/// </para>
+	/// <para>
+	/// <b>No row since the call can mean the compile never ran (ENG-102333, QA).</b> A client that restarts this MCP
+	/// server before the build request reaches the environment takes the request with it: on a busy stand the first
+	/// project started 50-80 s after the call, and a server killed at about 55 s left no row at all. So the note does
+	/// not call a rowless compile "still running", and it does not send the agent to <c>last-compilation-log</c> for
+	/// it: that verdict carries no time, and with no row since the call it can only be an earlier compile's - the QA
+	/// agent read it as a green verdict for a compile that never happened. The agent compares rows with the
+	/// <c>started-utc</c> compile-creatio's in-progress answer carries; the minute it allows covers skew between this
+	/// host's clock and the environment's.
+	/// </para>
 	/// </remarks>
 	internal const string HistoryNote =
 		" compilation-history lists the environment's newest compilation-history rows, newest first, and "
 		+ "older-failures up to five failed rows from further back among the newest 100. A compile writes one row per "
 		+ "project as that project's build ends, so one compile's rows arrive over its run, up to about half a minute "
-		+ "apart (finished-utc; finished-seconds-ago counts back from checked-utc). Rows written since you called "
-		+ "compile-creatio - at least as long ago as your client's timeout error says it waited, plus the time since - "
-		+ "can be your compile's; other compiles and schema publishes write rows too, so match by time. Any of them with "
-		+ "succeeded=false and errors means a build failed. Treat your compile as finished only when its newest row is "
-		+ "more than seven minutes old: until then more rows can follow, and the application reloads about two minutes "
-		+ "after the last one. These rows cannot prove which compile wrote them, so ask the user before a restart that "
-		+ "rests on them alone. If no row was written since your call, the compile is still running: call compile-status "
-		+ "again in a minute or two. If a package or process-name compile has had a few minutes, or a full one about 20, "
-		+ "and still no row was written since your call, read " + LastCompilationLogTool.ToolName
-		+ " (through clio-run) and ask the user before compiling again.";
+		+ "apart (finished-utc; finished-seconds-ago counts back from checked-utc). Only rows that finished after your "
+		+ "call can be your compile's: compare finished-utc with the started-utc of compile-creatio's in-progress "
+		+ "answer, allowing a minute either way because the environment's clock and this host's can differ, or, "
+		+ "without one, take your call to be at least as long ago as your client's timeout error says it waited, plus "
+		+ "the time since. A row that finished clearly before your call is not your compile's, even one more than seven "
+		+ "minutes old that looks like a finished compile. Other compiles and schema publishes write rows too, so match by "
+		+ "time. Any of them with succeeded=false and errors means a build failed. Treat your compile as finished only "
+		+ "when its newest row is more than seven minutes old: until then more rows can follow, and the application "
+		+ "reloads about two minutes after the last one. These rows cannot prove which compile wrote them, so ask the "
+		+ "user before a restart that rests on them alone. If no row was written since your call, the compile has "
+		+ "either not finished its first project yet or never started: a request still on its way when this MCP server "
+		+ "restarted was lost with it. Call compile-status again in a minute or two. If a package or process-name "
+		+ "compile has had ten minutes, or a full one about 20, and still no row was written since your call, treat it "
+		+ "as not run and ask the user before compiling again. Do not read " + LastCompilationLogTool.ToolName
+		+ " for it: with no row since your call it can only return an earlier compile's verdict.";
 
 	/// <summary>
 	/// The short form of the history rule, the one every tool surface that summarizes it reuses.
@@ -131,10 +151,13 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 	/// ever comes - because an agent may act on a description without ever reading the note.
 	/// </remarks>
 	internal const string HistoryRuleSummary =
-		"rows written since your call can be your compile's (other compiles write rows too); it has finished only once "
-		+ "its newest row is over seven minutes old, and a restart resting on those rows alone needs the user's "
-		+ "confirmation; none yet means it still runs, and if none appears after a few minutes (about 20 for a full "
-		+ "compile), read " + LastCompilationLogTool.ToolName + " and ask the user before compiling again.";
+		"only rows that finished after your call (the started-utc of compile-creatio's in-progress answer) can be your "
+		+ "compile's, and "
+		+ "other compiles write rows too; it has finished only once its newest row is over seven minutes old, and a "
+		+ "restart resting on those rows alone needs the user's confirmation; none yet means it has not finished a "
+		+ "project yet or never started, and if none appears within ten minutes (about 20 for a full compile), treat it "
+		+ "as not run and ask the user before compiling again - " + LastCompilationLogTool.ToolName + " could then only "
+		+ "show an earlier compile's verdict.";
 
 	/// <summary>
 	/// The rest of the note of a <c>not-found</c> answer whose history could not be read.
@@ -152,8 +175,10 @@ public sealed class CompileStatusTool(ICompileOperationRegistry registry, IToolC
 		+ "answering, so call compile-status again in a minute; if the next poll or two still cannot read it, stop "
 		+ "polling. " + LastCompilationLogTool.ToolName + " (through clio-run) reads the environment's latest FINISHED "
 		+ "compile and carries no time, so until a compile you started has had time to finish (a package or "
-		+ "process-name compile a few minutes, a full one up to about 20) it can return an earlier compile's verdict: "
-		+ "do not rely on it, or restart on it, before then. Ask the user before compiling again.";
+		+ "process-name compile about ten minutes, a full one about 20) it can return an earlier compile's verdict: "
+		+ "do not rely on it, or restart on it, before then. Even after that it cannot show that your compile ran: a "
+		+ "compile whose request was lost when this MCP server restarted never ran, and the verdict is then an earlier "
+		+ "compile's. Tell the user it is unconfirmed, and ask before compiling again or restarting on it.";
 
 	/// <summary>
 	/// The rest of the note of a <c>not-found</c> answer whose environment-name does not resolve.
@@ -425,7 +450,7 @@ public sealed record CompileStatusResponse(
 	DateTime? CheckedUtc = null,
 
 	[property: JsonPropertyName("compilation-history")]
-	[Description("On a not-found answer: the environment's newest compilation-history rows, newest first - one row per project a compile built, written when that project's build ended. Rows written since you called compile-creatio can be that compile's; other compiles and schema publishes write rows too.")]
+	[Description("On a not-found answer: the environment's newest compilation-history rows, newest first - one row per project a compile built, written when that project's build ended. Only rows that finished after you called compile-creatio (the started-utc of its in-progress answer) can be that compile's; other compiles and schema publishes write rows too.")]
 	IReadOnlyList<CompileHistoryEntry> CompilationHistory = null,
 
 	[property: JsonPropertyName("compilation-history-error")]

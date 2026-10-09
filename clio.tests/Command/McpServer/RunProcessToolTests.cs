@@ -812,8 +812,8 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A run that outlives the MCP response deadline is answered with status 'still-running' and no process id: the platform exposes no handle for an in-flight synchronous run.")]
-	public async Task RunProcess_Should_Report_AcceptedStillRunning_When_The_Response_Deadline_Is_Reached() {
+	[Description("ENG-102333 round 3: a deadline that comes before the launch request was sent is answered not-started with an error, because the answer withdraws the launch and the request is then never sent.")]
+	public async Task RunProcess_Should_Answer_NotStarted_When_The_Deadline_Comes_Before_The_Launch_Request() {
 		// Arrange
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant");
@@ -831,14 +831,225 @@ public sealed class RunProcessToolTests {
 			new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
 
 		// Assert
-		response.Status.Should().Be("still-running",
-			because: "answering before Creatio does is not a failure and not a success");
-		response.Error.Should().BeNull(because: "the launch itself was accepted");
-		response.ProcessId.Should().BeNull(
-			because: "the id only exists in the RunProcess response and the log row is written when the run "
-				+ "ends, so there is genuinely no handle to report — reporting a guessed one would be worse");
-		response.Warnings.Should().ContainSingle().Which.Should().Contain("Do NOT re-run",
-			because: "a second launch duplicates the work, which is the one thing the caller must not do");
+		response.Status.Should().Be(RunProcessTool.NotStartedStatus,
+			because: "the launch request had not been sent, and the answer's withdrawal means it never will be");
+		response.Error.Should().Contain("was not launched", because: "the answer is a refusal to launch, not a verdict");
+		response.Error.Should().Contain("nothing ran",
+			because: "the caller must know exactly that no run started, so calling again cannot duplicate one");
+		response.Warnings.Should().BeEmpty(because: "there is no run whose outcome is unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: a run whose launch request was sent before the deadline is answered still-running, with the time the request left and no process id; the note does not claim the run started.")]
+	public async Task RunProcess_Should_Answer_StillRunning_With_The_Send_Time_When_The_Request_Was_Sent() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+		using ManualResetEventSlim release = new(false);
+		using ManualResetEventSlim sent = new(false);
+		DateTime postedAt = default;
+		harness.ApplicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => {
+				postedAt = DateTime.UtcNow;
+				sent.Set();
+				release.Wait(TimeSpan.FromSeconds(30));
+				return """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true}""";
+			});
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant");
+		commandResolver.Resolve<RunProcessCommand>(Arg.Any<RunProcessOptions>()).Returns(harness.Command);
+		RunProcessTool tool = new(ConsoleLogger.Instance, commandResolver) {
+			ResponseDeadlineOverride = TimeSpan.FromSeconds(5)
+		};
+		DateTime before = DateTime.UtcNow.AddSeconds(-1);
+
+		try {
+			// Act
+			RunProcessResponse response = await tool.RunProcess(
+				new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
+
+			// Assert
+			sent.IsSet.Should().BeTrue(because: "the launch request was sent well before the five-second deadline");
+			response.Status.Should().Be(RunProcessTool.StillRunningStatus,
+				because: "answering before Creatio does is not a failure and not a success");
+			response.Error.Should().BeNull(because: "the request was sent, so this is not a refusal");
+			response.ProcessId.Should().BeNull(
+				because: "the id only exists in the RunProcess response and the log row is written when the run "
+					+ "ends, so there is genuinely no handle to report — reporting a guessed one would be worse");
+			string note = response.Warnings.Should().ContainSingle(because: "the one warning is the still-running note").Subject;
+			note.Should().Contain("Do NOT re-run",
+				because: "a second launch duplicates the work, which is the one thing the caller must not do");
+			System.Text.RegularExpressions.Match sentAt = System.Text.RegularExpressions.Regex.Match(note,
+				@"was sent at (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)");
+			sentAt.Success.Should().BeTrue(because: "the note names when the request left: {0}", note);
+			DateTime named = DateTime.ParseExact(sentAt.Groups[1].Value, "yyyy-MM-dd'T'HH:mm:ss'Z'",
+				System.Globalization.CultureInfo.InvariantCulture,
+				System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal);
+			named.Should().BeOnOrAfter(before, because: "the request cannot have left before the call");
+			named.Should().BeOnOrBefore(postedAt.AddSeconds(1),
+				because: "the time named is the one recorded right before the request left, in UTC");
+			note.Should().Contain("cannot say whether the environment started the run",
+				because: "a request the environment had only queued can be dropped with its connection");
+			note.Should().Contain("tell the user the outcome is unconfirmed",
+				because: "SysProcessLog times can be the user's local time marked Z, so a time comparison alone cannot attribute a row to this launch");
+			note.Should().NotContain("was launched",
+				because: "a sent request is not proof of a launch");
+		}
+		finally {
+			release.Set();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: when the deadline answers not-started while the launch is still being prepared, the preparation that finishes afterwards reaches the launch and does not send the RunProcess request.")]
+	public async Task RunProcess_Should_Not_Send_The_Launch_After_Answering_NotStarted() {
+		// Arrange
+		BlockedLaunch blocked = BuildBlockedLaunch();
+		RunProcessTool tool = new(ConsoleLogger.Instance, blocked.Resolver) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			RunProcessResponse response = await tool.RunProcess(
+				new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
+			blocked.Release.Set();
+			bool reachedLaunch = blocked.ReachedLaunch.Wait(TimeSpan.FromSeconds(10));
+			Thread.Sleep(500);
+
+			// Assert
+			response.Status.Should().Be(RunProcessTool.NotStartedStatus,
+				because: "the model was still being read when the deadline answered");
+			reachedLaunch.Should().BeTrue(because: "the detached preparation went on to the launch once released");
+			blocked.Posted.Should().BeEmpty(
+				because: "the answer said nothing was launched, so the request must never go");
+		}
+		finally {
+			blocked.Release.Set();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3 (review): a call its client cancels before any answer does not launch afterwards - its caller got no answer and may call again, which would be a second run.")]
+	public async Task RunProcess_Should_Not_Launch_After_Its_Call_Was_Cancelled() {
+		// Arrange
+		BlockedLaunch blocked = BuildBlockedLaunch();
+		RunProcessTool tool = new(ConsoleLogger.Instance, blocked.Resolver) {
+			ResponseDeadlineOverride = TimeSpan.FromSeconds(30)
+		};
+		using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(100));
+
+		try {
+			// Act
+			Func<Task> call = () => tool.RunProcess(
+				new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" },
+				cancellationToken: cancellation.Token);
+			await call.Should().ThrowAsync<OperationCanceledException>(
+				because: "a cancelled call ends without an answer");
+			blocked.Release.Set();
+			bool reachedLaunch = blocked.ReachedLaunch.Wait(TimeSpan.FromSeconds(10));
+			Thread.Sleep(500);
+
+			// Assert
+			reachedLaunch.Should().BeTrue(because: "the detached preparation went on to the launch once released");
+			blocked.Posted.Should().BeEmpty(
+				because: "nobody is waiting for that launch any more, so it must not start");
+		}
+		finally {
+			blocked.Release.Set();
+		}
+	}
+
+	private sealed record BlockedLaunch(
+		IToolCommandResolver Resolver,
+		ManualResetEventSlim Release,
+		ManualResetEventSlim ReachedLaunch,
+		List<string> Posted);
+
+	// A launch whose model read blocks until Release is set; ReachedLaunch is set when the command builds the launch
+	// URL, right before it claims the gate, and Posted records every RunProcess request that was sent.
+	private static BlockedLaunch BuildBlockedLaunch() {
+		ManualResetEventSlim release = new(false);
+		ManualResetEventSlim reachedLaunch = new(false);
+		List<string> posted = [];
+		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
+		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
+			.Returns(_ => {
+				release.Wait(TimeSpan.FromSeconds(30));
+				return new ProcessModelType(Guid.NewGuid(), ProcessCode) {
+					Name = "Migrate dashboards process",
+					Parameters = MigratorSignature()
+				};
+			});
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient
+			.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				lock (posted) {
+					posted.Add(call.ArgAt<string>(1));
+				}
+				return """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true}""";
+			});
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(_ => {
+				reachedLaunch.Set();
+				return "ServiceModel/ProcessEngineService.svc/RunProcess";
+			});
+		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder, NothingLogged(),
+			ConsoleLogger.Instance);
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant");
+		resolver.Resolve<RunProcessCommand>(Arg.Any<RunProcessOptions>()).Returns(command);
+		return new BlockedLaunch(resolver, release, reachedLaunch, posted);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: once the answer has withdrawn the launch, the command sends no RunProcess request and reports not-started.")]
+	public void TryRun_Should_Not_Send_The_Launch_Request_When_The_Gate_Was_Withdrawn() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+		RunProcessLaunchGate gate = new();
+		gate.TryWithdraw().Should().BeTrue(because: "an open gate can be withdrawn");
+		RunProcessOptions options = new() { ProcessName = ProcessCode, LaunchGate = gate };
+
+		// Act
+		bool launched = harness.Command.TryRun(options, out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeFalse(because: "nothing was launched");
+		response.Status.Should().Be("not-started", because: "the answer already said nothing was launched");
+		harness.PostedBodies.Should().BeEmpty(
+			because: "sending after the answer said 'not launched' would make that answer false");
+		gate.SentUtc.Should().BeNull(because: "no request left");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 round 3: the launch gate is claimed once - a sent request cannot be withdrawn, a withdrawn one cannot be sent - and it records when the request was sent.")]
+	public void RunProcessLaunchGate_Should_Be_Claimed_Once() {
+		// Arrange
+		RunProcessLaunchGate sentFirst = new();
+		RunProcessLaunchGate withdrawnFirst = new();
+		DateTime sentAt = new(2026, 10, 9, 8, 0, 0, DateTimeKind.Utc);
+
+		// Act
+		bool sent = sentFirst.TryMarkSent(sentAt);
+		bool withdrawnAfterSend = sentFirst.TryWithdraw();
+		bool withdrawn = withdrawnFirst.TryWithdraw();
+		bool sentAfterWithdraw = withdrawnFirst.TryMarkSent(sentAt);
+
+		// Assert
+		sent.Should().BeTrue(because: "an open gate lets the request go");
+		withdrawnAfterSend.Should().BeFalse(because: "a request already sent cannot be taken back");
+		sentFirst.SentUtc.Should().Be(sentAt, because: "the note names when the request left");
+		withdrawn.Should().BeTrue(because: "an open gate can be withdrawn");
+		sentAfterWithdraw.Should().BeFalse(because: "after the answer said 'not launched' the request must never go");
+		withdrawnFirst.SentUtc.Should().BeNull(because: "no request left");
 	}
 
 	[Test]
@@ -930,18 +1141,21 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102333: run-process keeps its own 150 s deadline above the parent's per-call worker budget. The shared 45 s default would let its 'launched, do not re-run' answer arrive before the RunProcess request was sent, and the parent then kills the worker, so that answer must stay unreachable in worker mode.")]
-	public void RunProcessResponseDeadline_ShouldStayAboveThePerCallWorkerBudget() {
+	[Description("ENG-102333 round 3: run-process answers at the shared response deadline, so a client that gives up at 60 s gets its answer, and that answer would stay reachable in a per-call worker, whose budget is above it.")]
+	public void RunProcessResponseDeadline_Should_Be_The_Shared_Deadline_Below_The_PerCall_Budget() {
 		// Arrange
-		TimeSpan perCallBudget = Clio.Command.McpServer.Relay.McpWorkerCallDispatcher.DefaultBudget;
+		TimeSpan builtInPerCallBudget = Clio.Command.McpServer.Relay.McpWorkerCallDispatcher.ResolveBudget(null);
 
 		// Act
 		TimeSpan deadline = RunProcessTool.RunProcessResponseDeadline;
+		TimeSpan builtInDeadline = McpProgressHeartbeat.ResolveResponseDeadline(null);
 
 		// Assert
-		deadline.Should().BeGreaterThan(perCallBudget,
-			because: "the parent ends a run that outlives its budget with the budget error, as it always has, instead of the child claiming a launch it may not have sent");
-		deadline.Should().NotBe(McpProgressHeartbeat.ResolveResponseDeadline(null),
-			because: "run-process must not follow the shared built-in default down to 45 s");
+		deadline.Should().Be(McpProgressHeartbeat.DefaultResponseDeadline,
+			because: "run-process follows the shared deadline, the one an operator tunes for a client that waits longer");
+		builtInDeadline.Should().BeLessThan(TimeSpan.FromSeconds(60),
+			because: "a client that gives up at 60 s restarts the MCP server, killing every call in flight");
+		builtInDeadline.Should().BeLessThan(builtInPerCallBudget,
+			because: "were run-process moved into a per-call worker, an answer the parent's kill always beats would be unreachable");
 	}
 }

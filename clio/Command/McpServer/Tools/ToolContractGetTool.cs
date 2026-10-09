@@ -6303,7 +6303,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile has not finished, and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
 					Field(CompileProcessNameFieldName, StringType, "Optional business process code. Compiles the package that process is in through CrtProcessBuilder 1.6.6.33+ and answers with the compiler errors, the process's own first - the compile a Script Task or process methods saved by create/modify-business-process need: on Creatio 10.x a package-name compile does not pick such a save up, and a full one takes about 20 minutes. An interpreted process without C# is answered without a compile. Exclusive with package-name.")
 				]),
 			CommandExecutionOutput(),
@@ -6334,7 +6334,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: " + CompileStatusTool.HistoryRuleSummary),
+					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile may still be running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: " + CompileStatusTool.HistoryRuleSummary),
 				new ToolAntiPattern(
 					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
 					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),

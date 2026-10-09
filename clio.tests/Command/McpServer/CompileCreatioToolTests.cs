@@ -661,7 +661,7 @@ public sealed class CompileCreatioToolTests
 		// Arrange
 
 		// Act
-		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
 
 		// Assert
 		message.Should().Contain("sandbox", because: "the agent must know which environment is still compiling");
@@ -814,7 +814,7 @@ public sealed class CompileCreatioToolTests
 				because: "the record of the running compile is reached through compile-status");
 			text.Should().Contain("compilation-history rows",
 				because: "when compile-status holds no record, it lists the environment's own compilation history rather than leaving the agent to compile again");
-			text.Should().Contain("written since your call",
+			text.Should().Contain("finished after your call",
 				because: "the finish time is what ties a history row to this compile");
 			text.Should().Contain("over seven minutes old",
 				because: "one row is not a finished compile: rows arrive as each project ends");
@@ -1101,7 +1101,7 @@ public sealed class CompileCreatioToolTests
 	public void BuildInProgressMessage_Should_Reflect_Reject_Semantics_And_Warn_Against_Concurrent_Ops()
 	{
 		// Act
-		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123");
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
 
 		// Assert
 		message.Should().Contain("rejected, not queued",
@@ -1109,6 +1109,29 @@ public sealed class CompileCreatioToolTests
 		message.Should().Contain("restart-by-environment-name",
 			because: "the notice must warn against restarting the environment mid-compile");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333 (QA): the in-progress notice does not claim the compile was accepted - at the deadline the build request may not have reached the environment, and a server restart then loses it - and it carries the started-utc the agent compares compilation-history rows with.")]
+	public void BuildInProgressMessage_Should_CarryTheStartTime_AndNotClaimTheCompileWasAccepted()
+	{
+		// Arrange
+
+		// Act
+		string message = CompileCreatioTool.BuildInProgressMessage("sandbox", "op-123", StartedUtc);
+
+		// Assert
+		message.Should().NotContain("accepted",
+			because: "at the deadline clio may still be logging in or its request may be queued, and a request lost with a restarted server never runs");
+		message.Should().Contain("started-utc 2026-10-09T08:15:30Z",
+			because: "the agent ties compilation-history rows to its own compile by comparing them with this time");
+		message.Should().Contain("does not say whether the environment has begun the build",
+			because: "only a compilation-history row proves the build ran");
+		message.Should().Contain("compilation-history rows that finished after started-utc",
+			because: "after a lost record the rows are the only evidence, and only those after the call can be this compile's");
+	}
+
+	private static readonly DateTime StartedUtc = new(2026, 10, 9, 8, 15, 30, DateTimeKind.Utc);
 
 	private sealed class FakeCompileConfigurationCommand : CompileConfigurationCommand
 	{

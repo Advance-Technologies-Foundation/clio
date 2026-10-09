@@ -32,8 +32,8 @@ internal static class TestConfiguration {
 		// assert an operation's RESULT - a created section, a restart that is ready - and a real stand often takes
 		// longer than the 45 s default to produce one, after which the tool answers "in progress" instead. The
 		// default itself is covered by a test that clears this pin (CompileCreatioClientTimeoutE2ETests), and every
-		// test of the deadline sets its own value. run-process does not use this variable: it keeps its own 150 s
-		// (RunProcessTool.RunProcessResponseDeadline). An explicit value from configuration is preserved.
+		// test of the deadline sets its own value. run-process reads it too (RunProcessTool.RunProcessResponseDeadline),
+		// so its stand tests keep their verdicts as well. An explicit value from configuration is preserved.
 		if (!settings.ProcessEnvironmentVariables.ContainsKey(McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar)) {
 			settings.ProcessEnvironmentVariables[McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar] = "150";
 		}
