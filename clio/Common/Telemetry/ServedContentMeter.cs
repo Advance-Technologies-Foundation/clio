@@ -69,8 +69,9 @@ public sealed class ServedContentMeter : IServedContentMeter
 			_guidanceBytes += responseBytes;
 			if (!string.IsNullOrWhiteSpace(articleName)) {
 				_guidanceReads++;
-				// A second read of an article this session already received is the measurable trace of a
-				// context compaction: the agent lost the article and fetched it again in full.
+				// A second response for an article this process already served. In a single agent that is the
+				// trace of a context compaction; Task subagents and a conversation after /clear share the
+				// process, so their reads of the same article count too.
 				if (!_articlesServed.Add(articleName)) {
 					_guidanceRereads++;
 				}

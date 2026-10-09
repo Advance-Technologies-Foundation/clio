@@ -72,8 +72,8 @@ internal sealed class GuidanceGetTool {
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		GuidanceGetResponse response = ResolveGuidance(args);
-		// ENG-100157: metered on the way out, so every exit (an article, a refusal, a failure) is counted at
-		// the size the agent actually receives. Only a served article counts as a read.
+		// ENG-100157: metered on the way out, so every response this method returns (an article, a refusal,
+		// a failure) is counted at its serialized size. Only a served article counts as a read.
 		_servedContentMeter.RecordGuidance(response.Article?.Name, FirstPartyLibraryVersion(response.Article),
 			McpResultSize.Of(response));
 		return Task.FromResult(response);

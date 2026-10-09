@@ -131,8 +131,10 @@ counters (`guidance_reads`, `guidance_rereads`, `guidance_bytes`, `contract_read
 and the string `guidance_library_version`. They differ from every other attribute in two ways:
 
 - **Measured by clio, never accepted from the caller.** `IServedContentMeter` counts the
-  `get-guidance` and `get-tool-contract` responses in-process, at the UTF-8 size of the result text the
-  agent receives (the response serialized with the MCP result options). A caller that sends one of
+  `get-guidance` and `get-tool-contract` responses in-process, at the UTF-8 size of the response the tool
+  returns, serialized with the MCP result options. That is what the agent receives on the normal path;
+  a call the MCP filter refuses before the tool runs is not counted, a response the read deadline
+  abandons still is, and a `clio-run` dispatch is measured before clio-run wraps it. A caller that sends one of
   these keys is rejected as `unsupported-fields`, like any unknown field. They are clio's own data, the
   counts and sizes of its own output, and carry nothing of the customer's: not even which article was
   read, only whether it was read before. `guidance_library_version` is reported for clio's own library
@@ -140,19 +142,21 @@ and the string `guidance_library_version`. They differ from every other attribut
   partner or customer library chooses its own version string, and "2.0.0-acme-bank" is a valid one, so
   its version is never reported; the numeric shape also stops a Git source that claims the first-party
   library id.
-- **Cumulative per stdio process, absent until something is served.** One stdio `clio mcp-server`
-  process is one agent session, so the counters are running totals for that process: a session's total
-  is the maximum, the difference between two stages is what was served between them, and a drop marks a
-  new process. They are stamped on every event the same process records (in practice the agent's
+- **Cumulative per stdio process, absent until something is served.** The counters are running totals
+  for one stdio `clio mcp-server` process: the process total is the maximum, the difference between two
+  stages is what was served between them, and a drop marks a new process. In Claude Code one process
+  also serves the agent's Task subagents and outlives `/clear`, so it can span more than one
+  conversation. They are stamped on every event the same process records (in practice the agent's
   stage events) and are ABSENT from an event recorded by a process that served nothing. That rule is
   load-bearing: the CAADT hook sends its session-start floor and `session_usage` through a separate,
   short-lived `clio mcp-server` per dispatch, which never serves guidance, so zeros from it would read
   as sessions that cost nothing. Only the stdio host counts; every other container, the multi-session
   mcp-http host included, keeps an inert meter rather than mixing sessions into one count.
 
-`guidance_rereads` is the field the work exists for: a re-read of an article the session already
-received is the measurable trace of a context compaction, which is what multiplies the cost of a
-process build (ENG-99970). Before/after comparisons of guidance changes key on
+`guidance_rereads` is the field the work exists for: it counts responses for an article the process
+already served. In a single agent that is the measurable trace of a context compaction, which is what
+multiplies the cost of a process build (ENG-99970). Task subagents reading the same article, a new
+conversation after `/clear` and an agent re-reading a guide on instruction count too. Before/after comparisons of guidance changes key on
 `guidance_library_version`, because guidance now refreshes independently of the clio version.
 
 Unknown fields are rejected; agent-supplied free strings are
@@ -217,7 +221,7 @@ one path that transitions an existing `granted` decision to `denied`.
   `metrics-installation` PR #20 on 2026-09-11. Merging the chart is not deploying it: the widened
   allow-lists take effect per environment only once that chart is rolled out there, so against a
   collector still on the old config those attributes are uploaded and then dropped at ingestion,
-  silently. `schema_version` 2 remains what a consumer routes on.
+  silently. Those attributes left `schema_version` at 2; ENG-100157 moved it to 3.
 - **ENG-100157:** the six served-content keys must be in the collector's `transform/caadt_attributes`
   allow-list in all three `values-*.yaml` (and `check-vocabulary-sync.ps1` expects 23 keys) BEFORE a clio
   emitting `schema_version` 3 is released - against an older collector they are uploaded and dropped

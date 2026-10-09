@@ -18,8 +18,9 @@ process records and stamps nothing while that process has served nothing. The CA
 and every `session_usage` reading by spawning a detached `clio mcp-server` per dispatch, which serves
 nothing, so those events never carry the counters; only the agent's own stage events do.
 
-**Why it is this way** - a stdio process is one agent session, so a process total is a session total,
-and the hook's process cannot see the agent process's memory. A zero stamped by the hook's process would
+**Why it is this way** - the stdio process is the narrowest scope clio can count in: in Claude Code it
+serves one agent with its Task subagents and outlives `/clear`. The hook's process cannot see the agent
+process's memory. A zero stamped by the hook's process would
 claim a session that cost nothing. mcp-http serves many sessions from one process, where one count would
 stamp a session's cost on another session's events.
 

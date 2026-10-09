@@ -102,7 +102,7 @@ public sealed class ToolContractGetTool {
 		RequestContext<CallToolRequestParams>? requestContext = null) {
 		ToolContractGetResponse response = ResolveContracts(args, requestContext);
 		// ENG-100157: metered on the way out, so the index, a fitted batch, a full batch and a refusal are all
-		// counted at the size the agent actually receives.
+		// counted at their serialized size.
 		_servedContentMeter?.RecordContract(McpResultSize.Of(response));
 		return response;
 	}
