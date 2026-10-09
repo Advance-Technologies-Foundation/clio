@@ -72,6 +72,13 @@ clio create-lookup --package UsrSalesApp --name UsrDealType --title "Deal Type" 
 - --package, --name, and --title are required.
 - BaseLookup already provides Name and Description; do not add those via --column.
 - cliogate must be installed in the target environment.
+- The Lookups registration is a package data binding named `Lookup_<name>`. In file system development
+  mode the platform saves it to the database only: the schema files reach the package folder on disk,
+  the `Data/Lookup_<name>` folder does not. The command prints a warning naming the folder; run
+  `clio pkg-to-file-system -e <env>` to write it to disk. That command rewrites every package folder
+  on disk from the database (except client modules and C# source code) and removes on-disk items the
+  database does not have, so commit on-disk work that is not in the database yet first, and run it
+  before the next `pkg-to-db`.
 
 ## Reporting Bugs
 

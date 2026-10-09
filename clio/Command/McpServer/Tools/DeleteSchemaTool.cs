@@ -33,6 +33,17 @@ public class DeleteSchemaTool(
 				 DCM, process user task, campaign, service, addon, Copilot intent, localization schemas,
 				 as well as SQL scripts, data bindings, and assemblies.
 
+				 File system mode: the platform delete removes database records only. When the environment is in
+				 file system mode, the tool also removes the item's folders (`Schemas/<name>/`,
+				 `Resources/<name>.*/`, `Data/<name>/`, `SqlScripts/<name>/`, `Assemblies/<name>/`) from the
+				 package folder on this machine (`Terrasoft.Configuration/Pkg/<package>` under the environment's
+				 registered `EnvironmentPath`; a package linked with `link-from-repository` is changed in the
+				 repository). When it cannot reach that folder or read the mode, the result carries a warning that
+				 lists the folders left behind; remove them by hand, otherwise the next `pkg-to-db` registers the
+				 item again.
+
+				 Deleting an entity schema does not drop its database table, columns or data; the result says so.
+
 				 This operation is destructive and cannot be undone.
 				 """)]
 	public CommandExecutionResult DeleteSchema(
