@@ -583,6 +583,7 @@ public class BindingsModule {
 		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
 		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
+		services.AddTransient<IPageDataSourceReferenceValidator, PageDataSourceReferenceValidator>();
 		// The diff appliers retain per-chain alias state, so PageBundleBuilder needs a FRESH instance per diff
 		// chain (not one shared instance): inject the factory and call it per chain. Registered as Func<> here
 		// (and skipped in RegisterAssemblyInterfaceTypes) because the applier ctor takes a primitive bool arg DI

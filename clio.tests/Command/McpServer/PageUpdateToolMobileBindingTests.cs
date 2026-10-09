@@ -26,7 +26,8 @@ public sealed class PageUpdateToolMobileBindingTests {
 			mobileComponentCatalog: mobileCatalog,
 			webComponentCatalog: Substitute.For<IComponentInfoCatalog>(),
 			pageBaselineGuard: new PageBaselineGuard(Substitute.For<System.IO.Abstractions.IFileSystem>()),
-			new PersistedResourceKeyReader());
+			new PersistedResourceKeyReader(),
+			new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 
 	private static IMobileComponentInfoCatalog LiveMobileCatalog() {
 		IMobileComponentInfoCatalog catalog = Substitute.For<IMobileComponentInfoCatalog>();
