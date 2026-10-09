@@ -27,15 +27,18 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 
 	private IApplicationClient _applicationClient = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
+	private IFileDesignModeStateReader _fileDesignModeStateReader = null!;
 
 	public override void Setup() {
 		base.Setup();
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
 
 	public override void TearDown() {
 		base.TearDown();
 		_applicationClient.ClearReceivedCalls();
 		_packageListProvider.ClearReceivedCalls();
+		_fileDesignModeStateReader.ClearReceivedCalls();
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -70,9 +73,12 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData)
 			.Returns("http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData");
 
+		_fileDesignModeStateReader = Substitute.For<IFileDesignModeStateReader>();
+
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => serviceUrlBuilder);
+		containerBuilder.AddTransient(_ => _fileDesignModeStateReader);
 	}
 
 	[Test]
@@ -125,9 +131,12 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	[Description("Returns failure result from create-data-binding-db when neither environment-name is provided, matching the file-first tool's environment guard.")]
 	public void CreateDataBindingDb_Should_Return_Failure_Without_Environment() {
 		// Arrange
+		// Resolve before configuring the substitute: building the command calls other substitutes, and NSubstitute
+		// must not see those calls inside Returns().
+		CreateDataBindingDbCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingDbCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(Container.GetRequiredService<CreateDataBindingDbCommand>());
+			.Returns(resolvedCommand);
 		CreateDataBindingDbTool tool = new(
 			Container.GetRequiredService<CreateDataBindingDbCommand>(),
 			Container.GetRequiredService<ILogger>(),
@@ -177,12 +186,44 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("Returns the file system development mode warning as a typed warning in the MCP result of create-data-binding-db, with exit code 0, so an agent learns that the package folder on disk lacks the binding (GitHub #1747).")]
+	public void CreateDataBindingDb_Should_Return_Package_Folder_Warning_In_Mcp_Output_When_File_Design_Mode_Is_Enabled() {
+		// Arrange
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(true);
+		CreateDataBindingDbCommand resolvedCommand = Container.GetRequiredService<CreateDataBindingDbCommand>();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateDataBindingDbCommand>(Arg.Any<EnvironmentOptions>()).Returns(resolvedCommand);
+		CreateDataBindingDbTool tool = new(
+			Container.GetRequiredService<CreateDataBindingDbCommand>(),
+			Container.GetRequiredService<ILogger>(),
+			commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateDataBindingDb(new CreateDataBindingDbArgs(
+			EnvironmentName: "dev",
+			PackageName: PackageName,
+			SchemaName: "SysSettings",
+			RowsJson: """[{"values":{"Name":"MCP row"}}]"""));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "the warning reports where the binding is missing and must not turn the saved binding into a failure");
+		result.Output.Should().Contain(message => message is WarningMessage
+				&& message.Value.ToString()!.Contains($"Pkg/{PackageName}/Data/")
+				&& message.Value.ToString()!.Contains(LoadPackagesTool.LoadPackagesToFileSystemToolName),
+			because: "MCP callers must receive the typed warning naming the folder and the export tool");
+	}
+
+	[Test]
 	[Description("Returns failure result from upsert-data-binding-row-db when environment-name is empty, matching the DB-first command-layer validation guard.")]
 	public void UpsertDataBindingRowDb_Should_Return_Failure_Without_Environment() {
 		// Arrange
+		// Resolve before configuring the substitute: building the command calls other substitutes, and NSubstitute
+		// must not see those calls inside Returns().
+		UpsertDataBindingRowDbCommand resolvedCommand = Container.GetRequiredService<UpsertDataBindingRowDbCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpsertDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(Container.GetRequiredService<UpsertDataBindingRowDbCommand>());
+			.Returns(resolvedCommand);
 		UpsertDataBindingRowDbTool tool = new(
 			Container.GetRequiredService<UpsertDataBindingRowDbCommand>(),
 			Container.GetRequiredService<ILogger>(),
@@ -240,9 +281,12 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 	[Description("Returns failure result from remove-data-binding-row-db when environment-name is empty, matching the DB-first command-layer validation guard.")]
 	public void RemoveDataBindingRowDb_Should_Return_Failure_Without_Environment() {
 		// Arrange
+		// Resolve before configuring the substitute: building the command calls other substitutes, and NSubstitute
+		// must not see those calls inside Returns().
+		RemoveDataBindingRowDbCommand resolvedCommand = Container.GetRequiredService<RemoveDataBindingRowDbCommand>();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<RemoveDataBindingRowDbCommand>(Arg.Any<EnvironmentOptions>())
-			.Returns(Container.GetRequiredService<RemoveDataBindingRowDbCommand>());
+			.Returns(resolvedCommand);
 		RemoveDataBindingRowDbTool tool = new(
 			Container.GetRequiredService<RemoveDataBindingRowDbCommand>(),
 			Container.GetRequiredService<ILogger>(),
@@ -355,6 +399,31 @@ public sealed class DataBindingDbToolTests : BaseClioModuleTests {
 			because: "the remove prompt should explain how projected binding metadata is rebuilt after deletion");
 		removePrompt.Should().Contain("read back from Creatio",
 			because: "the remove prompt should require remote read-back instead of trusting mutation intent");
+	}
+
+	[Test]
+	[Description("Prompt guidance for every DB-first data-binding tool tells agents that in file system development mode the change reaches the database only and names pkg-to-file-system as the step that writes it to the package folder (GitHub #1747).")]
+	public void DataBindingDbPrompt_Should_Name_The_File_System_Export_For_File_Design_Mode() {
+		// Arrange & Act
+		string[] prompts = [
+			DataBindingDbPrompt.CreateDataBindingDb("dev", PackageName, "SysSettings"),
+			DataBindingDbPrompt.UpsertDataBindingRowDb("dev", PackageName, "SysSettings", """{"Name":"x"}"""),
+			DataBindingDbPrompt.RemoveDataBindingRowDb("dev", PackageName, "SysSettings", ExistingRowId.ToString())
+		];
+
+		// Assert
+		prompts.Should().AllSatisfy(prompt => {
+			prompt.Should().Contain("file system development mode the binding change reaches the database only",
+				because: "an agent on an FSM environment must not commit the package folder believing it carries the binding");
+			prompt.Should().Contain($"`{LoadPackagesTool.LoadPackagesToFileSystemToolName}`",
+				because: "the prompt must name the tool that writes the binding into the package folder on disk");
+			prompt.Should().Contain($"`{LoadPackagesTool.LoadPackagesToDbToolName}`",
+				because: "pkg-to-db makes the database match the disk, so the export has to come first");
+			prompt.Should().Contain($"`{ClioRunTool.ToolName}`",
+				because: "the export tool is not resident, so the prompt must name the route an agent can call");
+			prompt.Should().Contain("confirm with the user",
+				because: "the export rewrites every package folder on disk and must not run without the user's consent");
+		});
 	}
 
 	private static string BuildApplicationClientResponse(string url, string body) {
