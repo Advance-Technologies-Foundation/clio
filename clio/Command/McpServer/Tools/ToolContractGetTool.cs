@@ -10,6 +10,7 @@ using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
+using Clio.Common.Telemetry;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -29,6 +30,7 @@ public sealed class ToolContractGetTool {
 		"Call get-tool-contract with no arguments for a compact index of every tool.";
 
 	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
+	private readonly IServedContentMeter? _servedContentMeter;
 
 	/// <summary>
 	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
@@ -47,8 +49,14 @@ public sealed class ToolContractGetTool {
 	/// The MCP invoker registry; resolved from DI by the SDK per call (may be <c>null</c> in tests that
 	/// only exercise curated contracts).
 	/// </param>
-	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+	/// <param name="servedContentMeter">
+	/// Counts the contract bytes this session served, for the product telemetry stamp. Optional because the
+	/// count is fail-soft enrichment: without it the contract is served exactly the same, just not counted.
+	/// </param>
+	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry,
+		IServedContentMeter? servedContentMeter = null) {
 		_toolInvokerRegistry = toolInvokerRegistry;
+		_servedContentMeter = servedContentMeter;
 	}
 
 	/// <summary>
@@ -92,6 +100,15 @@ public sealed class ToolContractGetTool {
 		[Description("Parameters: tool-names (optional array) and detail (optional: index, full or short). Omit entirely for a compact index of all tools; pass tool-names for their contracts; detail=full expands every contract in full.")]
 		ToolContractGetArgs? args = null,
 		RequestContext<CallToolRequestParams>? requestContext = null) {
+		ToolContractGetResponse response = ResolveContracts(args, requestContext);
+		// ENG-100157: metered on the way out, so the index, a fitted batch, a full batch and a refusal are all
+		// counted at their serialized size.
+		_servedContentMeter?.RecordContract(McpResultSize.Of(response));
+		return response;
+	}
+
+	private ToolContractGetResponse ResolveContracts(ToolContractGetArgs? args,
+		RequestContext<CallToolRequestParams>? requestContext) {
 		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
 		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
 		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to

@@ -47,11 +47,13 @@ in the settings file; the local spool is then only pruned (age and size caps). N
 uploaded unless consent is granted.
 
 Local telemetry is stored under &lt;clio-home&gt;/telemetry (relocate with CLIO_TELEMETRY_HOME;
-honors CLIO_HOME). Each event carries only product workflow metadata — session_id,
+honors CLIO_HOME). Each event carries only product workflow metadata: session_id,
 event_name, timestamps, coding_agent, clio_version, platform, an anonymous installation_id,
-and skill/plugin versions — never prompts, secrets, tokens, customer data, or generated
-content. Spooled events are pruned after at most 30 days locally; the collected metrics are
-retained up to 1 year server-side.
+skill/plugin versions, the workflow, variant and model labels, the LLM token counts an agent
+reports, and the number and size of the guidance articles and tool contracts clio served in
+the session with the version of clio's own guidance library. It never carries prompts,
+secrets, access tokens, customer data, or generated content. Spooled events are pruned after
+at most 30 days locally; the collected metrics are retained up to 1 year server-side.
 
 Guidance is discovered from active trusted knowledge libraries rather than a list compiled into Clio.
 Call `get-guidance` with an unknown name to receive `availableGuides`, or use MCP `resources/list` to
