@@ -271,8 +271,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 				break;
 			} catch (JsonDiffApplierException ex) {
 				// Each pass removes at least one operation, so the loop ends.
-				List<PageSchemaBundlePart> reduced = WithoutRejectedPlacements(current, ex.Message, skipped);
-				if (reduced is null) {
+				if (!TryWithoutRejectedPlacements(current, ex.Message, skipped,
+						out List<PageSchemaBundlePart> reduced)) {
 					throw;
 				}
 				current = reduced;
@@ -287,9 +287,10 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 
 	// Only the rejection a slotless placement itself causes is recovered, and only the placement it names is
 	// skipped. A chain that fails for another reason (a cycle, a merge without values, an insert into an undeclared
-	// slot) stays a strict failure even when it also carries such a placement. Returns null when nothing matches.
-	private static List<PageSchemaBundlePart> WithoutRejectedPlacements(
-		List<PageSchemaBundlePart> parts, string rejectionMessage, List<string> skipped) {
+	// slot) stays a strict failure even when it also carries such a placement. Returns false when nothing matches.
+	private static bool TryWithoutRejectedPlacements(
+		List<PageSchemaBundlePart> parts, string rejectionMessage, List<string> skipped,
+		out List<PageSchemaBundlePart> reduced) {
 		bool removedAny = false;
 		List<PageSchemaBundlePart> result = new(parts.Count);
 		foreach (PageSchemaBundlePart part in parts) {
@@ -309,7 +310,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 				PagePlacementSlotValidation.DescribeSkipped(part.Schema.Name, part.Schema.PackageName, placement)));
 			result.Add(new PageSchemaBundlePart(part.Schema, part.ParsedBody.WithViewConfigDiff(kept)));
 		}
-		return removedAny ? result : null;
+		reduced = result;
+		return removedAny;
 	}
 
 	/// <summary>
