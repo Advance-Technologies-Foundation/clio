@@ -1056,6 +1056,8 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.ObjectRights.IDefaultRecordRightsPlanner, Clio.Common.ObjectRights.DefaultRecordRightsPlanner>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
+		services.AddTransient<IEnvironmentPackageFolderResolver, EnvironmentPackageFolderResolver>();
+		services.AddTransient<IDeletedItemFileCleaner, DeletedItemFileCleaner>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();
 		services.AddTransient<TurnFarmModeCommand>();

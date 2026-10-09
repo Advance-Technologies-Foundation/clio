@@ -115,6 +115,11 @@ namespace Clio.Command {
 				_logger.WriteError(exception.Message);
 				return InvalidGZipArchiveExitCode;
 			}
+			catch (PackageItemDescriptorMissingException exception) {
+				// A pre-flight refusal: the message names every folder to fix, a stack trace adds nothing.
+				_logger.WriteError(exception.Message);
+				return 1;
+			}
 			catch (Exception exception) {
 				_logger.WriteError(exception.ToString());
 				return 1;
