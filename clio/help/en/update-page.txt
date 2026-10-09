@@ -81,6 +81,19 @@ DESCRIPTION
       and known JavaScript/Creatio globals remain valid. Missing helper calls
       are rejected with undefined-section-call. These AST checks run on MCP
       update-page / sync-pages / validate-page only, not the CLI verb below.
+    DATA-SOURCE BINDINGS (web and mobile; MCP update-page / sync-pages /
+    validate-page only):
+    - Rejected: a binding to a data source that neither the body nor the
+      page's inherited modelConfig declares -- an attribute's
+      modelConfig.path, a dataSourceName, or the primaryDataSourceName.
+      Templates never declare PDS, so a replace write that drops the
+      page's own PDS is rejected (ENG-102161). Keep the web
+      SCHEMA_MODEL_CONFIG section (or the dataSources and
+      primaryDataSourceName operations of SCHEMA_MODEL_CONFIG_DIFF, or
+      the mobile modelConfigDiff) from get-page raw.body; --mode append
+      works only on a page in diff form. Passes with a warning when the
+      inherited modelConfig cannot be read; validate-page never rejects
+      and warns about bindings the body does not declare itself.
     MOBILE RULES (MCP update-page / sync-pages / validate-page only --
     the CLI verb below does NOT run them; it checks a mobile body only
     for disallowed sections):
