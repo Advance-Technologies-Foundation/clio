@@ -591,7 +591,7 @@ public sealed class ApplicationToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Drives the real tool's catch(McpResponseDeadlineExceededException) path: when section creation exceeds the MCP response deadline the tool returns the in-progress envelope (success=false, creatio-timeout, section-created=in-progress, poll guidance) through the full chain, not only the helper in isolation.")]
+	[Description("Drives the real tool's catch(McpResponseDeadlineExceededException) path: when section creation exceeds the MCP response deadline the tool returns the in-progress envelope (success=false, creatio-timeout, section-created=in-progress, poll guidance, and the next-step a completed answer would carry) through the full chain, not only the helper in isolation.")]
 	public void ApplicationSectionCreate_Should_Return_InProgress_Envelope_When_Service_Exceeds_Response_Deadline() {
 		// Arrange — substitute the service to throw the deadline exception the heartbeat wrapper
 		// raises when the work outlives the response budget, exercising the tool's deadline branch.
@@ -599,10 +599,14 @@ public sealed class ApplicationToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		EnvironmentSettings resolvedSettings = new() { Uri = "https://sandbox.example.com" };
 		commandResolver.Resolve<EnvironmentSettings>(Arg.Any<EnvironmentOptions>()).Returns(resolvedSettings);
+		INavigationCacheResetter navigationCacheResetter = Substitute.For<INavigationCacheResetter>();
+		navigationCacheResetter.BuildBrowserSessionNote(resolvedSettings).Returns("Run the menu refresh in the open tab.");
+		commandResolver.ResolvePair<EnvironmentSettings, INavigationCacheResetter>(Arg.Any<EnvironmentOptions>())
+			.Returns((resolvedSettings, navigationCacheResetter));
 		applicationSectionCreateService.CreateSection(resolvedSettings, Arg.Any<ApplicationSectionCreateRequest>(), Arg.Any<int?>(), Arg.Any<int?>(), Arg.Any<bool>(), Arg.Any<Action<string>>())
 			.Returns(_ => throw new McpResponseDeadlineExceededException(
 				ApplicationSectionCreateTool.ApplicationSectionCreateToolName,
-				TimeSpan.FromSeconds(150)));
+				TimeSpan.FromSeconds(45)));
 		ApplicationSectionCreateTool tool = new(
 			Substitute.For<ILogger>(), commandResolver, applicationSectionCreateService);
 
@@ -625,6 +629,8 @@ public sealed class ApplicationToolTests {
 			because: "the in-progress message must name the section still being created server-side");
 		result.RetryGuidance.Should().Contain("list-app-sections",
 			because: "the agent must be steered to poll the read tools instead of retrying create-app-section");
+		result.NextStep.Should().Be("Run the menu refresh in the open tab.",
+			because: "ENG-102333: at the 45 s default most creations answer in-progress, and the browser-tab instruction depends only on the environment, so the in-progress answer must carry it too");
 	}
 
 	[Test]

@@ -84,7 +84,7 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
 
 1. **Response deadline (new).** Introduce a bounded wrapper around the synchronous `work` —
    `McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(work, deadline, …)` (or a sibling helper)
-   — that races `work` against a wall-clock `deadline`. Default deadline **150 s** (safely below
+   — that races `work` against a wall-clock `deadline`. Default deadline **150 s** (45 s since ENG-102333; safely below
    Copilot CLI's ~180 s), overridable via a new env var (e.g. `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`)
    for clients with a different ceiling. The heartbeat continues to fire at 15 s for clients that
    honour it.
@@ -162,6 +162,10 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
   follow the poll guidance (covered by prompt + tool-description updates and an e2e assertion).
 - **Tuning:** the 150 s default trades a little slack below 180 s; env-var override covers clients
   with other ceilings.
+- **Amended 2026-10-08 (ENG-102333):** the default is now **45 s**. Claude Code desktop 2.1.293 has a
+  60 s per-call ceiling that progress does not reset, and after hitting it restarts the MCP server, so a
+  later answer loses the operation's record (see `adr-mcp-worker-execution-boundary.md` §3.2a). The
+  override still raises it for a client that waits longer.
 
 ---
 
@@ -173,7 +177,7 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
 2. `ApplicationSectionCreateService`: support a "deadline / background" call shape that uses a
    generous server-side insert budget (no 90 s abort) so the section commits; keep the existing
    synchronous shape for non-MCP/CLI callers.
-3. `ApplicationSectionCreateTool`: wire the response deadline (default 150 s, env override); on
+3. `ApplicationSectionCreateTool`: wire the response deadline (default 150 s, 45 s since ENG-102333; env override); on
    deadline return the `creatio-timeout / in-progress` envelope; update `[Description]`.
 4. `ApplicationToolResponses` / mapper: add `in-progress` `section-created` state + sharpened
    `retry-guidance`.
@@ -196,7 +200,7 @@ the response deadline makes the tool correct for **hard-ceiling** clients (Copil
   insert returns early and generation is async server-side, the readback poll alone suffices. Needs
   one instrumented cold-stand run (ENG-91316 item 1) to confirm; the design works either way but the
   insert-budget detail depends on it.
-- **Q2 — exact Copilot CLI ceiling.** Assumed ~180 s from ENG-91540; the 150 s default leaves margin.
+- **Q2 — exact Copilot CLI ceiling.** Assumed ~180 s from ENG-91540; the 150 s default leaves margin (45 s since ENG-102333, for Claude Code desktop's 60 s).
   Confirm and make the env-var default authoritative.
 - **Q3 — should the deadline live in a shared MCP base (so every long create inherits it)** rather
   than per-tool? Decide during story 1/3.
