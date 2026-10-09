@@ -788,7 +788,7 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and read last-compilation-log, whose undated verdict can be an earlier compile's, when compile-status has no record.")]
+	[Description("ENG-102333: compile-creatio's description and its curated contract both say what to do when the agent's own MCP client stops waiting first - poll compile-status, never compile again to check, and that a compile-status with no record lists the environment's compilation history with finish times.")]
 	public void CompileCreatio_Description_And_Contract_Should_Cover_A_Client_Side_Timeout()
 	{
 		// Arrange
@@ -812,10 +812,14 @@ public sealed class CompileCreatioToolTests
 				because: "an agent whose client gave up must recognise the case: the compile keeps running on the stand");
 			text.Should().Contain(CompileStatusTool.CompileStatusToolName,
 				because: "the record of the running compile is reached through compile-status");
-			text.Should().Contain(LastCompilationLogTool.ToolName,
-				because: "when compile-status holds no record, the environment's own verdict is read with last-compilation-log rather than by compiling again");
-			text.Should().Contain("FINISHED compile",
-				because: "last-compilation-log carries no time, so while this compile still runs it shows an earlier one's verdict");
+			text.Should().Contain("compilation-history rows",
+				because: "when compile-status holds no record, it lists the environment's own compilation history rather than leaving the agent to compile again");
+			text.Should().Contain("written since your call",
+				because: "the finish time is what ties a history row to this compile");
+			text.Should().Contain("over seven minutes old",
+				because: "one row is not a finished compile: rows arrive as each project ends");
+			text.Should().Contain(CompileStatusTool.HistoryRuleSummary,
+				because: "every surface that summarizes the history rule uses the one short form, with both of its exits - the user before a restart on rows alone, and a stop with the user when no row ever comes");
 		}
 	}
 

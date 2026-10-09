@@ -389,14 +389,59 @@ public sealed class TelemetryFlushServiceTests
 		// attribute survives the store-to-wire mapping, not which casing it was sent in.
 		AttributeString(attributes, "coding_agent").Should().Be("codex",
 			because: "agent metadata must survive the mapping");
-		AttributeString(attributes, "schema_version").Should().Be("2",
+		AttributeString(attributes, "schema_version").Should().Be("3",
 			because: "the schema_version enrichment must survive the mapping");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Carries the served-content counters to the wire as OTLP ints and the library version as a string (ENG-100157), the value types the collector's allow-list keeps.")]
+	public async Task FlushAsync_Should_Map_Served_Content_Counters_To_Otlp_Ints()
+	{
+		// Arrange: stamped by the real store from a meter that served content, so the wire shape is the
+		// one an agent session actually produces.
+		ServedContentMeter meter = new();
+		meter.RecordGuidance("process-modeling", "1.16.2", 1_000);
+		meter.RecordGuidance("process-modeling", "1.16.2", 1_000);
+		meter.RecordContract(4_000);
+		TelemetryService store = new(new System.IO.Abstractions.FileSystem(), _telemetryHome,
+			new MutableTimeProvider(BaseTime), servedContentMeter: meter);
+		store.Send(new TelemetryEventRequest("sess-served", "workflow_started", Workflow: "app-creation")
+			with { TelemetryConsent = "granted" });
+		FakeHttpHandler handler = new();
+		TelemetryFlushService service = CreateService(handler);
+
+		// Act
+		await service.FlushAsync();
+
+		// Assert
+		CapturedRequest request = handler.Requests.Should().ContainSingle(
+			because: "the single stored event should upload as one OTLP batch").Subject;
+		using JsonDocument document = JsonDocument.Parse(request.Body!);
+		JsonElement attributes = document.RootElement
+			.GetProperty("resourceLogs")[0].GetProperty("scopeLogs")[0]
+			.GetProperty("logRecords")[0].GetProperty("attributes");
+		foreach ((string key, string expected) in new[] {
+			("guidance_reads", "2"), ("guidance_rereads", "1"), ("guidance_bytes", "2000"),
+			("contract_reads", "1"), ("contract_bytes", "4000")
+		}) {
+			AttributeInt(attributes, key).Should().Be(expected,
+				because: $"'{key}' must reach the collector as an OTLP int, which lands as a queryable number in ClickHouse");
+		}
+		AttributeString(attributes, "guidance_library_version").Should().Be("1.16.2",
+			because: "the library version must reach the collector as a string attribute");
 	}
 
 	private static string AttributeString(JsonElement attributes, string key) =>
 		attributes.EnumerateArray()
 			.Single(attribute => attribute.GetProperty("key").GetString() == key)
 			.GetProperty("value").GetProperty("stringValue").GetString();
+
+	// OTLP/JSON encodes an int64 as a decimal string under intValue.
+	private static string AttributeInt(JsonElement attributes, string key) =>
+		attributes.EnumerateArray()
+			.Single(attribute => attribute.GetProperty("key").GetString() == key)
+			.GetProperty("value").GetProperty("intValue").GetString();
 
 	[Test]
 	[Category("Unit")]
