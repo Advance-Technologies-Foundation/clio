@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Clio.Command.ObjectRights;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -18,6 +19,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	private GetObjectRightsCommand _command;
 	private IObjectRightsReader _rightsReader;
 	private IConnectedObjectsResolver _connectedObjects;
+	private IObjectRecordCounter _recordCounter;
 	private ILogger _logger;
 
 	public override void Setup() {
@@ -28,6 +30,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 	public override void TearDown() {
 		_rightsReader.ClearReceivedCalls();
 		_connectedObjects.ClearReceivedCalls();
+		_recordCounter.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		base.TearDown();
 	}
@@ -36,14 +39,18 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		base.AdditionalRegistrations(containerBuilder);
 		_rightsReader = Substitute.For<IObjectRightsReader>();
 		_connectedObjects = Substitute.For<IConnectedObjectsResolver>();
+		_recordCounter = Substitute.For<IObjectRecordCounter>();
 		_logger = Substitute.For<ILogger>();
 		// Default: no fan-out — the resolver returns just the root object.
 		_connectedObjects.Resolve(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<int?>())
 			.Returns(callInfo => Resolution((string)callInfo[0]));
 		containerBuilder.AddTransient(_ => _rightsReader);
 		containerBuilder.AddTransient(_ => _connectedObjects);
+		containerBuilder.AddTransient(_ => _recordCounter);
 		containerBuilder.AddTransient(_ => _logger);
 	}
+
+	private const string RecordsOff = "    Record permissions: OFF, no default record rules.";
 
 	private static ConnectedObjectsResolution Resolution(params string[] objects) =>
 		new(objects, Array.Empty<string>());
@@ -318,19 +325,23 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
 		lines.Should().Equal(new[] {
-			$"Object operation permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
+			$"Object permissions for 'UsrOrder' and its connected objects (grantee {Role}):",
 			$"  {GetObjectRightsCommand.PriorityRule}",
 			$"  {GetObjectRightsCommand.GuidancePointer}",
 			"  UsrOrder: administered by operation permissions. Rows in priority order:",
 			$"    [0] Sales managers ({Role}): read/create/edit",
+			RecordsOff,
 			"  UsrStatus: administered by operation permissions. Rows in priority order:",
 			$"    grantee {Role} has NO row (no operations granted).",
 			"    A new row would go below every row; these decide first for a user who is also in those roles:",
 			$"      [0] All employees ({Employees}): read/create/edit/delete",
+			RecordsOff,
 			"  UsrOpen: not administered by operation permissions (they are OFF) — available to all internal users.",
 			"    It has no 'All employees' row: set-object-rights --enable-operation-permissions adds one with "
-				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself."
-		}, because: "the output is the facts per object, and nothing more — no verdict");
+				+ "read/create/edit/delete below any stored rows, unless the grant is for All employees itself.",
+			RecordsOff
+		}, because: "the output is the facts per object — the operation rows unchanged, then the record layer — and "
+			+ "nothing more: no verdict, and no record count for an object with record permissions OFF and no rule");
 	}
 
 	[Test]
@@ -666,6 +677,178 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
 	}
 
+	// ---- the record layer (ENG-100406) ----
+
+	private static ObjectRightsInfo WithRecords(string name, bool recordsOn, params DefaultRecordRule[] rules) =>
+		Administered(name, EmployeesRow(0)) with { AdministratedByRecords = recordsOn, RecordRules = rules };
+
+	private static DefaultRecordRule RecordRule(Guid author, Guid grantee) =>
+		new(author, "Author", grantee, "Grantee", RecordRightLevel.Granted, RecordRightLevel.Delegated,
+			RecordRightLevel.NotSet, true);
+
+	[Test]
+	[Description("With record permissions ON, every default record rule is listed with both ids, its three levels and the manager flag.")]
+	public void Execute_ShouldListRecordRules_WhenRecordPermissionsAreOn() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", true, RecordRule(Employees, Role)));
+
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_logger.Received().WriteInfo(Arg.Is<string>(line => line.StartsWith("    Record permissions: ON.")));
+		_logger.Received().WriteInfo($"      Author ({Employees}) → Grantee ({Role}): read granted, edit delegated, delete -, "
+			+ "do not apply for manager: true");
+	}
+
+	[Test]
+	[Description("With record permissions OFF, stored rules are listed as not in effect, and the switch line says record rights are not evaluated.")]
+	public void Execute_ShouldMarkStoredRules_WhenRecordPermissionsAreOff() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", false, RecordRule(Employees, Role)));
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		_logger.Received().WriteInfo(Arg.Is<string>(line => line.Contains("Record permissions: OFF")
+			&& line.Contains("not in effect while record permissions are off")));
+	}
+
+	[Test]
+	[Description("With record permissions ON and no rule, the output states the built-in default: every user sees only the records they create.")]
+	public void Execute_ShouldStateOwnRecordsDefault_WhenOnWithNoRule() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(WithRecords("UsrOrder", true));
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		_logger.Received().WriteInfo(Arg.Is<string>(line => line.Contains("NO default record rules")
+			&& line.Contains("every user sees only the records they create")));
+	}
+
+	[Test]
+	[Description("--author filters the rules by author; a filter that matches none says so with the total.")]
+	public void Execute_ShouldFilterRulesByAuthor() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", true, RecordRule(Employees, Role)));
+
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", Author = Role.ToString() });
+
+		// Assert
+		exitCode.Should().Be(0, because: "a filter is not an error");
+		_logger.Received().WriteInfo("      no rule matches the filter (1 rule(s) in all).");
+	}
+
+	[Test]
+	[Description("--author that is not a GUID is refused before any read.")]
+	public void Execute_ShouldRefuse_WhenAuthorIsNotGuid() {
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", Author = "Sales" });
+
+		// Assert
+		exitCode.Should().Be(1, because: "an author is a SysAdminUnit id");
+		_rightsReader.DidNotReceiveWithAnyArgs().GetObjectRights(default, default);
+	}
+
+	[Test]
+	[Description("The record count is read for the named object only, and a failed count is a warning that never fails the read.")]
+	public void Execute_ShouldCountRootOnly_AndTolerateCountFailure() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(call => WithRecords((string)call[0], true));
+		_recordCounter.CountRecords(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: denied"));
+
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", IncludeConnected = true });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the count is a fact, not part of the read");
+		_recordCounter.Received(1).CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>());
+		_logger.Received().WriteWarning(Arg.Is<string>(line => line.Contains("UsrOrder: existing records not counted")));
+	}
+
+	[Test]
+	[Description("--author and --grantee each keep only the matching default record rule.")]
+	public void Execute_ShouldKeepOnlyMatchingRules_WhenFiltered() {
+		// Arrange
+		DefaultRecordRule byEmployees = RecordRule(Employees, Employees);
+		DefaultRecordRule toRole = RecordRule(Role, Role);
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", true, byEmployees, toRole));
+		System.Collections.Generic.List<string> lines = new();
+		_logger.When(l => l.WriteInfo(Arg.Any<string>())).Do(call => lines.Add((string)call[0]));
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", Author = Employees.ToString() });
+		string[] byAuthor = lines.Where(line => line.StartsWith("      ") && line.Contains(" → ")).ToArray();
+		lines.Clear();
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", Grantee = Role.ToString() });
+		string[] byGrantee = lines.Where(line => line.StartsWith("      ") && line.Contains(" → ")).ToArray();
+
+		// Assert
+		byAuthor.Should().ContainSingle(because: "only the rule with that author is listed")
+			.Which.Should().StartWith($"      Author ({Employees}) → Grantee ({Employees})", because: "it is the matching rule");
+		byGrantee.Should().ContainSingle(because: "only the rule with that grantee is listed")
+			.Which.Should().StartWith($"      Author ({Role}) → Grantee ({Role})", because: "it is the matching rule");
+	}
+
+	[Test]
+	[Description("An object with record permissions OFF and no stored rule is not counted: apply-default-record-rights has nothing to apply to it, and the count is the costliest query of the read.")]
+	public void Execute_ShouldNotCount_WhenRecordPermissionsAreOffWithNoRule() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(WithRecords("UsrOrder", false));
+
+		// Act
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
+		_recordCounter.DidNotReceiveWithAnyArgs().CountRecords(default, default);
+	}
+
+	[Test]
+	[Description("An object with record permissions OFF but with stored rules is still counted: turning them on would bring the rules into effect.")]
+	public void Execute_ShouldCount_WhenRecordPermissionsAreOffWithStoredRules() {
+		// Arrange
+		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>())
+			.Returns(WithRecords("UsrOrder", false, RecordRule(Employees, Role)));
+		_recordCounter.CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(42L);
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+
+		// Assert
+		_logger.Received().WriteInfo("  UsrOrder: 42 existing record(s), counted under the calling account.");
+	}
+
+	[Test]
+	[Description("The named object's records are counted only after every object is read, so the count never takes the read budget of the connected objects.")]
+	public void Execute_ShouldCountAfterTheConnectedReads() {
+		// Arrange
+		_connectedObjects.Resolve("UsrOrder", true, Arg.Any<int?>()).Returns(Resolution("UsrOrder", "UsrStatus"));
+		_rightsReader.GetObjectRights(Arg.Any<string>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(call => WithRecords((string)call[0], true));
+
+		// Act
+		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder", IncludeConnected = true });
+
+		// Assert
+		Received.InOrder(() => {
+			_rightsReader.GetObjectRights("UsrStatus", Arg.Any<CreatioRequestOptions>());
+			_recordCounter.CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>());
+		});
+	}
+
 	[Test]
 	[Description("An object with a title of its own is shown by its title next to its code, in the header and on its line, and an object found by its code is never looked up by title.")]
 	public void Execute_ShouldShowTheTitleNextToTheCode_WhenTheObjectHasATitleOfItsOwn() {
@@ -679,7 +862,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 
 		// Assert
 		exitCode.Should().Be(0, because: "the read completed");
-		_logger.Received().WriteInfo("Object operation permissions for 'Creatio functionality' (Feature):");
+		_logger.Received().WriteInfo("Object permissions for 'Creatio functionality' (Feature):");
 		_logger.Received().WriteInfo(
 			"  'Creatio functionality' (Feature): administered by operation permissions. Rows in priority order:");
 		_rightsReader.DidNotReceiveWithAnyArgs().FindObjectsByTitle(default, default);
@@ -703,7 +886,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		// Assert
 		exitCode.Should().Be(0, because: "the object with that title was read");
 		_logger.Received().WriteInfo("  'Order' is not an object code: it is the title of UsrOrder, which is read.");
-		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("Object operation permissions for 'Order' (UsrOrder)")));
+		_logger.Received().WriteInfo(Arg.Is<string>(m => m.StartsWith("Object permissions for 'Order' (UsrOrder)")));
 		_connectedObjects.Received(1).Resolve("UsrOrder", true, Arg.Any<int?>());
 	}
 

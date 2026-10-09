@@ -126,6 +126,45 @@ internal static class SelectQueryHelper
 	}
 
 	/// <summary>
+	/// Builds a SelectQuery that returns one row with the number of records of <paramref name="rootSchemaName"/> the
+	/// caller can read, in the column <paramref name="alias"/> (an aggregation COUNT over <c>Id</c>).
+	/// </summary>
+	internal static object BuildCountQuery(string rootSchemaName, string alias) =>
+		new
+		{
+			rootSchemaName,
+			operationType = 0,
+			allColumns = false,
+			isDistinct = false,
+			ignoreDisplayValues = false,
+			rowCount = 1,
+			rowsOffset = -1,
+			isPageable = false,
+			columns = new
+			{
+				items = new Dictionary<string, object>(StringComparer.Ordinal)
+				{
+					[alias] = new
+					{
+						expression = new
+						{
+							// Function → aggregation → count, as Terrasoft.Nui.ServiceModel serializes it.
+							expressionType = 1,
+							functionType = 2,
+							aggregationType = 1,
+							functionArgument = new
+							{
+								expressionType = 0,
+								columnPath = "Id"
+							}
+						},
+						isVisible = true
+					}
+				}
+			}
+		};
+
+	/// <summary>
 	/// Builds a SelectQuery whose filters are combined with AND.
 	/// </summary>
 	/// <param name="rootSchemaName">Schema to query.</param>

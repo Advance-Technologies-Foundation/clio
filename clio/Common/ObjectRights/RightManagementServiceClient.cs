@@ -8,14 +8,16 @@ using Clio.Package;
 namespace Clio.Common.ObjectRights;
 
 /// <summary>
-/// Reads object operation permissions (the SysEntitySchemaOperationRight layer) for an entity, using the native
-/// Creatio <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System
-/// Designer "Object permissions" section uses. Reports EVERY role's row, in priority order.
+/// Reads object permissions for an entity, using the native Creatio
+/// <c>RightManagementService.svc/GetAdministratedObject</c> service — the same service the System Designer "Object
+/// permissions" section uses: the operation layer (SysEntitySchemaOperationRight, EVERY role's row in priority order)
+/// and the record layer (the "Use record permissions" switch and the default record rules).
 /// </summary>
 public interface IObjectRightsReader {
 	/// <summary>
-	/// Reads the operation permissions of the entity schema <paramref name="schemaName"/>: the switch, every role's
-	/// row in priority order, and a snapshot a save can write back. A failed read is reported in
+	/// Reads the object permissions of the entity schema <paramref name="schemaName"/>: the operation switch and every
+	/// role's row in priority order, the record switch and the default record rules, and a snapshot a save can write
+	/// back. A failed read is reported in
 	/// <see cref="ObjectRightsInfo.ReadError"/> and never as "not administered".
 	/// </summary>
 	/// <param name="schemaName">The entity schema name.</param>
@@ -57,7 +59,33 @@ public interface IObjectRightsWriter {
 	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
 }
 
-/// <summary>Resolves a SysAdminUnit (role or user) id to its name, to confirm a grantee exists before a write.</summary>
+/// <summary>
+/// Saves a planned record-permissions state — the "Use record permissions" switch and the default record rules —
+/// through <c>RightManagementService.svc/SaveAdministratedObject</c>. The writer holds no policy (see
+/// <see cref="IDefaultRecordRightsPlanner"/>).
+/// </summary>
+public interface IDefaultRecordRightsWriter {
+	/// <summary>
+	/// Writes <paramref name="after"/> onto the object read as <paramref name="snapshot"/>. The platform REPLACES the whole
+	/// rule list on save, so when the planned rules differ from the rules read, the save sends the FULL planned list: a
+	/// rule the plan keeps is sent exactly as read (any field the projection cannot represent included), a changed rule
+	/// is the read rule with its levels and flag replaced, a new rule is added, and a rule the plan drops is left out.
+	/// When the planned rules equal the rules read, the list is sent as null ("leave untouched"). The operation, column
+	/// and entity-operation collections are always sent as null; every other field round-trips as read.
+	/// </summary>
+	/// <param name="snapshot">The object as it was read.</param>
+	/// <param name="after">The planned record state.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> on success, otherwise why the save failed or was not sent, and
+	/// whether no answer came (the save may then still land).</returns>
+	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, DefaultRecordRightsState after,
+		CreatioRequestOptions requestOptions);
+}
+
+/// <summary>
+/// Resolves a SysAdminUnit (role or user) id to its name, to confirm that a grantee — or a default record rule's author —
+/// exists before a write.
+/// </summary>
 public interface IGranteeLookup {
 	/// <summary>
 	/// Returns the name of the SysAdminUnit <paramref name="grantee"/>, or <see langword="null"/> when no such
@@ -74,10 +102,12 @@ public interface IGranteeLookup {
 /// DataService (the clio name→UId convention), reads the object's operation rows, and saves a planned state.
 /// </summary>
 public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsReader, IObjectRightsWriter,
-	IGranteeLookup {
+	IDefaultRecordRightsWriter, IGranteeLookup {
 
 	private const string AdministratedByOperationsField = "administratedByOperations";
 	private const string OperationRowsField = "entitySchemaOperationsRights";
+	private const string AdministratedByRecordsField = "administratedByRecords";
+	private const string RecordRulesField = "entitySchemaRecordDefRights";
 
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
@@ -102,7 +132,9 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 				: new ObjectRightsInfo(false, schemaName, null, false, Array.Empty<RoleOperationRights>());
 		}
 		return new ObjectRightsInfo(true, Str(node["name"]) ?? schemaName, Str(node["caption"]),
-			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node));
+			Flag(node, AdministratedByOperationsField), ProjectRoles(node), Snapshot: new ObjectRightsSnapshot(node),
+			AdministratedByRecords: Flag(node, AdministratedByRecordsField), RecordRules: ProjectRecordRules(node),
+			SchemaUId: Guid.TryParse(Str(node["uId"]), out Guid uId) ? uId : Guid.Empty);
 	}
 
 	/// <inheritdoc />
@@ -123,16 +155,38 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		// Mirror the platform client: only the collection that changed (operation rights) is sent; the record,
 		// column and entity-operation collections are sent as null ("leave untouched") so the save neither
 		// re-processes nor risks clobbering them.
-		payload["entitySchemaRecordDefRights"] = null;
+		payload[RecordRulesField] = null;
 		payload["entitySchemaColumnsRights"] = null;
 		payload["entityOperationGrantees"] = null;
-		// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another
-		// client saves between our read and our save is overwritten. The caller reads the object back and reports
-		// any difference from the plan.
-		// The save is sent exactly once, like the other clio writes (manage-access, the schema designer's save and
-		// build): Creatio.Client re-sends a request after ANY exception, a timeout included, and a new row is sent
-		// without an id, so a retry of a save the server already committed could add the row a second time.
-		// A save the call's deadline leaves no time for is not sent at all, so its outcome is known: nothing changed.
+		return SendSave(payload, requestOptions);
+	}
+
+	/// <inheritdoc />
+	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, DefaultRecordRightsState after,
+		CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(snapshot);
+		ArgumentNullException.ThrowIfNull(after);
+		JsonObject payload = snapshot.Node.DeepClone().AsObject();
+		payload[AdministratedByRecordsField] = after.AdministratedByRecords;
+		// The save replaces the whole rule list, so a changed list is sent in full; an unchanged one as null, which
+		// leaves the stored rules alone and never re-sends a rule the plan did not touch.
+		bool rulesChange = new DefaultRecordRightsState(after.AdministratedByRecords, ProjectRecordRules(payload))
+			.RulesDifferFrom(after);
+		payload[RecordRulesField] = rulesChange ? BuildRecordRules(payload, after.Rules) : null;
+		payload[OperationRowsField] = null;
+		payload["entitySchemaColumnsRights"] = null;
+		payload["entityOperationGrantees"] = null;
+		return SendSave(payload, requestOptions);
+	}
+
+	// Read-modify-write is last-writer-wins: SaveAdministratedObject carries no version, so a change another client saves
+	// between our read and our save is overwritten. The caller reads the object back and reports any difference from
+	// the plan.
+	// The save is sent exactly once, like the other clio writes (manage-access, the schema designer's save and build):
+	// Creatio.Client re-sends a request after ANY exception, a timeout included, and a new row is sent without an id, so
+	// a retry of a save the server already committed could add the row a second time.
+	// A save the call's deadline leaves no time for is not sent at all, so its outcome is known: nothing changed.
+	private ObjectRightsSaveResult SendSave(JsonObject payload, CreatioRequestOptions requestOptions) {
 		if (requestOptions.Deadline is { IsSpent: true }) {
 			return new ObjectRightsSaveResult("the call's time limit was spent before the save, so it was not sent");
 		}
@@ -308,6 +362,70 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 		}
 		return null;
 	}
+
+	// The full planned rule list. A rule the plan keeps is the read node itself, so a field the projection does not know
+	// round-trips; a changed rule is a copy of its read node with the levels and the flag replaced; a new rule is built
+	// from the plan. A rule the plan dropped is simply not in the list, which deletes it (the save replaces the list).
+	private static JsonArray BuildRecordRules(JsonObject node, IReadOnlyList<DefaultRecordRule> planned) {
+		List<(JsonObject Node, DefaultRecordRule Read)> read = ReadRecordRuleNodes(node)
+			.Select(rule => (rule, ProjectRecordRule(rule)))
+			.ToList();
+		JsonArray rules = new();
+		foreach (DefaultRecordRule rule in planned) {
+			int index = read.FindIndex(entry => entry.Read.SamePairAs(rule));
+			JsonObject ruleNode = index >= 0
+				? read[index].Node.DeepClone().AsObject()
+				: new JsonObject {
+					["authorSysAdminUnit"] = new JsonObject { ["id"] = rule.AuthorId.ToString() },
+					["granteeSysAdminUnit"] = new JsonObject { ["id"] = rule.GranteeId.ToString() }
+				};
+			// Only what the plan changes is written: a field the change does not touch stays exactly as read.
+			DefaultRecordRule readRule = index >= 0 ? read[index].Read : null;
+			foreach (RecordOperation operation in RecordRightNames.AllOperations) {
+				if (readRule is null || readRule.LevelOf(operation) != rule.LevelOf(operation)) {
+					ruleNode[LevelField(operation)] = (int)rule.LevelOf(operation);
+				}
+			}
+			if (readRule is null || readRule.DoNotApplyForManager != rule.DoNotApplyForManager) {
+				ruleNode["doNotApplyForManager"] = rule.DoNotApplyForManager;
+			}
+			if (index >= 0) {
+				read.RemoveAt(index);
+			}
+			rules.Add(ruleNode);
+		}
+		return rules;
+	}
+
+	// Every default record rule, in the order the service returned it. A missing level is "not set"; a stored number
+	// outside 0..2 is kept as it is, so the planner can refuse to send it back. A level field the plan does not change is
+	// never written (BuildRecordRules), so whatever the service stored there stays as it was.
+	private static List<DefaultRecordRule> ProjectRecordRules(JsonObject node) =>
+		ReadRecordRuleNodes(node).Select(ProjectRecordRule).ToList();
+
+	private static IEnumerable<JsonObject> ReadRecordRuleNodes(JsonObject node) =>
+		(node[RecordRulesField] as JsonArray)?.OfType<JsonObject>() ?? Enumerable.Empty<JsonObject>();
+
+	private static DefaultRecordRule ProjectRecordRule(JsonObject rule) =>
+		new(UnitId(rule["authorSysAdminUnit"]), Str(rule["authorSysAdminUnit"]?["name"]),
+			UnitId(rule["granteeSysAdminUnit"]), Str(rule["granteeSysAdminUnit"]?["name"]),
+			Level(rule, RecordOperation.Read), Level(rule, RecordOperation.Edit), Level(rule, RecordOperation.Delete),
+			Flag(rule, "doNotApplyForManager"));
+
+	private static Guid UnitId(JsonNode unit) => Guid.TryParse(Str(unit?["id"]), out Guid id) ? id : Guid.Empty;
+
+	private static RecordRightLevel Level(JsonObject rule, RecordOperation operation) =>
+		rule[LevelField(operation)] is JsonValue value && value.TryGetValue(out int level)
+			? (RecordRightLevel)level
+			: RecordRightLevel.NotSet;
+
+	// The wire names of the three record levels.
+	private static string LevelField(RecordOperation operation) => operation switch {
+		RecordOperation.Read => "readRightLevel",
+		RecordOperation.Edit => "editRightLevel",
+		RecordOperation.Delete => "deleteRightLevel",
+		_ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+	};
 
 	// A failure is never reported with an empty message: an empty string would read as "no error" to a caller that
 	// checks for null, and as nothing at all to the operator. The platform's text is rendered on one line.

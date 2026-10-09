@@ -6,7 +6,7 @@ Object rights
 
 ## Name
 
-get-object-rights - read object operation permissions (read/create/edit/delete per role) for an object
+get-object-rights - read object operation permissions (read/create/edit/delete per role) and record permissions for an object
 
 ## Description
 
@@ -50,10 +50,18 @@ that cannot be enumerated, is reported with a warning. A read that times out sto
 against the same stand would most likely wait as long — and the objects not read yet are named, to be read one by
 one. When the named object's read times out, its connected objects are not listed at all.
 
+Each object also gets its **record layer**: whether "Use record permissions" is ON, and every default record rule —
+records created by the author get read / edit / delete at a level (granted, or delegated) for the grantee, plus
+"do not apply for manager: true|false". Rules stored while record permissions are OFF are listed as not in effect; ON with no rule
+means every user sees only the records they create. `--grantee` and `--author` filter the rules. For the named object
+the number of existing records is reported (counted under the calling account) — the fact a user needs before
+deciding to run `apply-default-record-rights`; it is not counted when record permissions are OFF and no rule is
+stored, since there is nothing to apply. Change the record layer with `set-default-record-rights`.
+
 ## Synopsis
 
 ```bash
-clio get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAdminUnitId>] [--include-connected] -e <environment>
+clio get-object-rights --entity-schema-name <EntitySchemaName> [--grantee <SysAdminUnitId>] [--author <SysAdminUnitId>] [--include-connected] -e <environment>
 ```
 
 ## Options
@@ -64,7 +72,10 @@ The object to read: its code (entity schema name), or its title when no object h
 
 --grantee GUID
 Optional SysAdminUnit id (role or user): show its row and the rows above it (every row when it has none or when the
-object is not administered). Omit to list every row.
+object is not administered). Omit to list every row. Also filters the default record rules by their grantee.
+
+--author GUID
+Optional SysAdminUnit id (role or user): list only the default record rules whose author it is.
 
 --include-connected
 Also read the root object's own lookup objects. Security and system objects are skipped with a warning.

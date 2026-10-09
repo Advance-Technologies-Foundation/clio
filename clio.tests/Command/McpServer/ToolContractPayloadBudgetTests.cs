@@ -81,10 +81,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-99741: set-object-rights and get-object-rights are two more long-tail tools. Measured 47257
 	// bytes on the default surface with them registered as well (469 bytes for the two); next 256-byte step is
 	// 47360 (185).
+	// Re-pinned for ENG-100406: set-default-record-rights and apply-default-record-rights are two more long-tail tools.
+	// Measured 47768 bytes on the default surface with them registered (511 bytes for the two, the first sentence of
+	// get-object-rights unchanged); next 256-byte step is 47872 (187).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 185 * 256;
+	private const int MaxCompactIndexSerializedBytes = 187 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

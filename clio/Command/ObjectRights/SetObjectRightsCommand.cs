@@ -122,7 +122,8 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			options.EnableOperationPermissions, options.DisableOperationPermissions);
 		// A call that only turns the switch names no grantee: there is no row of a role to change, so none is looked up.
 		if (!request.SwitchOnly) {
-			if (!TryResolveGranteeName(grantee, requestOptions, out string granteeName)) {
+			if (!ObjectRightsCommandInput.TryResolveUnitName(_granteeLookup, grantee, "grantee", requestOptions, _logger,
+				out string granteeName)) {
 				return 1;
 			}
 			request = request with { GranteeName = granteeName };
@@ -147,13 +148,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			WriteFacts(facts);
 			return 0;
 		}
-		switch (ConfirmApply(options, change, facts)) {
+		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, "set-object-rights",
+					"object permissions", change.Summary, facts, "Object-permissions change cancelled.")) {
 			case ConfirmDecision.Cancelled:
 				return 0;
 			case ConfirmDecision.Refused:
 				return 1;
 		}
-		if (!HasTimeToSave(requestOptions, change)) {
+		if (!ObjectRightsCommandInput.HasTimeToSave(requestOptions, change.SchemaName, _logger)) {
 			return 1;
 		}
 		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
@@ -295,43 +297,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		schemaName = resolution.Code;
 		before = resolution.ByCode;
 		return true;
-	}
-
-	// The grantee must exist: granting to an unknown id would change the object for a principal nobody holds and
-	// still report "granted".
-	private bool TryResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions, out string granteeName) {
-		try {
-			granteeName = _granteeLookup.ResolveGranteeName(grantee, requestOptions);
-		}
-		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
-			granteeName = null;
-			_logger.WriteError($"Error: could not check grantee {grantee}: {ObjectRightsSupport.DisplayFailure(ex)}");
-			return false;
-		}
-		if (granteeName is null) {
-			_logger.WriteError($"Error: grantee {grantee} was not found in SysAdminUnit. Nothing was changed — pass the "
-				+ "id of an existing role or user.");
-			return false;
-		}
-		return true;
-	}
-
-	// The save is sent only while the call's deadline leaves time for it AND for the read-back after it: a save that
-	// started later could still be in flight — or unverified — when the caller's deadline ends the call, and its
-	// outcome would then be lost. Refused before anything is sent, so nothing has changed.
-	private bool HasTimeToSave(CreatioRequestOptions requestOptions, Change change) {
-		if (requestOptions.Deadline is not { } deadline) {
-			return true;
-		}
-		TimeSpan needed = TimeSpan.FromMilliseconds(2.0 * requestOptions.TimeOut);
-		if (deadline.Remaining >= needed) {
-			return true;
-		}
-		_logger.WriteError($"Error: {change.Label}: the reads before the save took most of the call's time limit "
-			+ $"of {deadline.Budget.TotalSeconds:0} s: {deadline.Remaining.TotalSeconds:0} s are left, and the save and "
-			+ $"the read-back need up to {needed.TotalSeconds:0} s. The save was not sent — nothing was changed. Re-run "
-			+ "the call.");
-		return false;
 	}
 
 	private static string RefusalMessage(Change change) {
@@ -561,34 +526,5 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		operations = parsed.Distinct().OrderBy(op => op).ToArray();
 		return true;
-	}
-
-	// Destructive gate, mirroring other destructive clio commands: --confirm applies without a prompt; without
-	// it an interactive run asks y/n, and a non-interactive run refuses (rather than silently applying). On MCP the
-	// host approval is the gate and the tool passes --confirm.
-	private ConfirmDecision ConfirmApply(SetObjectRightsOptions options, Change change, IReadOnlyList<string> facts) {
-		if (options.Confirm) {
-			return ConfirmDecision.Approved;
-		}
-		if (!_console.IsInteractive) {
-			_logger.WriteError("Error: set-object-rights is destructive and needs confirmation. Re-run with --confirm to "
-				+ $"apply the change (or --preview to see it first): {change.Summary}");
-			return ConfirmDecision.Refused;
-		}
-		_logger.WriteWarning($"About to change object permissions: {change.Summary}");
-		foreach (string fact in facts) {
-			_logger.WriteWarning($"  {fact}");
-		}
-		if (!_console.Prompt("Apply this change?")) {
-			_logger.WriteInfo("Object-permissions change cancelled.");
-			return ConfirmDecision.Cancelled;
-		}
-		return ConfirmDecision.Approved;
-	}
-
-	private enum ConfirmDecision {
-		Approved,
-		Cancelled,
-		Refused
 	}
 }

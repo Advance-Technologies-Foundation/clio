@@ -1,0 +1,60 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    apply-default-record-rights - Apply an object's default record rules to its existing records
+
+SYNOPSIS
+    apply-default-record-rights --entity-schema-name <EntitySchemaName> [--wait true|false] [--timeout-seconds <N>] [--confirm] [OPTIONS]
+
+DESCRIPTION
+    Starts the platform's "Update record permissions" (the process
+    ObjectRecordRightsActualizationProcess) once for ONE object: the record rights that came from
+    default rules are deleted and the current default rules are applied to every existing record.
+    Rights granted by hand (set-record-rights) stay.
+
+    Run it only when the user decides to: the run is heavy on large tables (Creatio Academy:
+    minutes or more; run it at low load). Before asking, the command and set-default-record-rights
+    report the number of existing records.
+
+    It is refused when the object's record permissions are OFF. The launch is sent once and never
+    retried: a retry would start a second run. With --wait (the default) the command follows the run
+    in its SysProcessLog row until it completes, fails, or --timeout-seconds pass. A run still going
+    then is reported as "still running" with its process id and exit code 0: do NOT start it again,
+    check SysProcessLog (Id = the process id) later.
+
+    DESTRUCTIVE and not idempotent: every call starts a run. In a non-interactive run it refuses
+    unless --confirm is passed; in an interactive run it asks for confirmation. On MCP the host's
+    approval of the call is the confirmation.
+
+OPTIONS
+    --entity-schema-name
+        The object whose existing records get the current default rules. Required.
+
+    --wait
+        true (default): wait for the run to end. false: start it and return the process id.
+
+    --timeout-seconds
+        How long to wait, in seconds (default 300). On MCP the default is 60 and the whole call ends after
+        about 100 s; a longer run is reported as still running.
+
+    --confirm
+        Confirm the run without a prompt.
+
+    -e, --environment
+        Name of the registered environment.
+
+EXIT CODES
+    0   The run completed, is still running (reported with its process id), was started but its status
+        could not be read (reported as such, with the process id), was queued without an
+        id, or the prompt was cancelled.
+    1   An input was invalid, confirmation was missing in a non-interactive run, the object could not
+        be read, its record permissions are OFF, the run could not be started, or it ended in error
+        or was cancelled.
+
+EXAMPLES
+    Apply the rules to existing records and wait up to 10 minutes:
+        clio apply-default-record-rights --entity-schema-name UsrOrder --timeout-seconds 600 --confirm -e production
+
+    Start the run and return at once:
+        clio apply-default-record-rights --entity-schema-name UsrOrder --wait false --confirm -e production
