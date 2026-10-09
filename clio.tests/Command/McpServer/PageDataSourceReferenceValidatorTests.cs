@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Clio.Command;
@@ -89,7 +90,7 @@ public sealed class PageDataSourceReferenceValidatorTests {
 			.And.Contain("attribute 'UsrName'", because: "the error must name a binding that points at it")
 			.And.Contain("element 'Feed'", because: "a viewConfigDiff dataSourceName is a reference too")
 			.And.Contain("Mobile Designer", because: "the mobile remedy names the mobile designer")
-			.And.Contain("do not re-run with validate=false",
+			.And.Contain(PageDataSourceReferenceValidator.NoBypassNote,
 				because: "update-page appends a generic validate=false hint, and taking it here saves the page without its data source");
 	}
 
@@ -726,5 +727,219 @@ public sealed class PageDataSourceReferenceValidatorTests {
 		// Assert
 		result.ContentOk.Should().BeFalse(because: "the base has no PDS, so the data-source check still rejects the body");
 		baseReads.Should().Be(1, because: "both checks need the base and must share a single get-page read");
+	}
+
+	[Test]
+	[Description("A remove runs before an insert, so removing and re-inserting the same data source keeps it declared.")]
+	public void Validate_RemoveThenInsertSameName_StaysDeclared() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "insert", "path": ["dataSources"], "propertyName": "PDS", "values": { "type": "crt.EntityDataSource" } }, { "operation": "remove", "path": ["dataSources", "PDS"] } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": {} } }""");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"the differ removes PDS first and the insert puts it back. Errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("An insert into [\"dataSources\"] over a base without a dataSources object is a no-op in the differ.")]
+	public void Validate_InsertIntoMissingDataSources_DeclaresNothing() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "insert", "path": ["dataSources"], "propertyName": "PDS", "values": { "type": "crt.EntityDataSource" } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "there is no dataSources object to insert into")
+			.Which.Should().Contain("'PDS'", because: "the error names the data source the insert failed to declare");
+	}
+
+	[Test]
+	[Description("A root merge that creates dataSources lets a later insert into it declare a data source.")]
+	public void Validate_RootMergeCreatesDataSourcesThenInsert_Declares() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "insert", "path": ["dataSources"], "propertyName": "PDS", "values": { "type": "crt.EntityDataSource" } }, { "operation": "merge", "path": [], "values": { "dataSources": {} } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"merges run before inserts, so dataSources exists when PDS is inserted. Errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("A remove with properties [\"dataSources\"] at the root drops every declared data source, the base's included.")]
+	public void Validate_RemovePropertiesAtRoot_ClearsDeclarations() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "remove", "path": [], "properties": ["dataSources"] } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": {} } }""");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the root dataSources key is removed")
+			.Which.Should().Contain("'PDS'", because: "the error names the data source the remove dropped");
+	}
+
+	[Test]
+	[Description("A remove with properties but no path is a no-op in the differ, so it removes nothing.")]
+	public void Validate_RemovePropertiesWithoutPath_IsNoOp() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "remove", "properties": ["dataSources"] } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": {} } }""");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"an operation with neither name nor path is skipped by the differ. Errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("A set on [\"dataSources\", X] over a base without a dataSources object declares nothing, like an insert there.")]
+	public void Validate_SetBelowMissingDataSources_DeclaresNothing() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "set", "path": ["dataSources", "PDS"], "values": { "type": "crt.EntityDataSource" } } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.Errors.Should().ContainSingle(because: "the set addresses a dataSources object that does not exist")
+			.Which.Should().Contain("'PDS'", because: "the error names the data source the set failed to declare");
+	}
+
+	[Test]
+	[Description("A set runs after a remove with properties, so it declares the data source the remove dropped.")]
+	public void Validate_SetAfterRemoveProperties_RedeclaresSource() {
+		// Arrange
+		string body = MobileBodyWithoutDataSource.Replace("\"modelConfigDiff\": []",
+			"""
+			"modelConfigDiff": [ { "operation": "set", "path": ["dataSources", "PDS"], "values": { "type": "crt.EntityDataSource" } }, { "operation": "remove", "path": ["dataSources"], "properties": ["PDS"] } ]
+			""");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "PDS": {} } }""");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"the set is applied last and puts PDS back. Errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[TestCase("")]
+	[TestCase("[]")]
+	[TestCase("not json")]
+	[Description("A base that is present but is not a JSON object passes with a warning that it could not be read.")]
+	public void Validate_UnreadableBase_PassesWithWarning(string baseModelConfig) {
+		// Arrange
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(MobileBodyWithoutDataSource, () => baseModelConfig);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "an unreadable base must not turn into a false rejection");
+		result.Warnings.Should().ContainSingle(because: "the skipped check must be visible")
+			.Which.Should().Contain("could not be read", because: "the base was supplied but could not be parsed");
+	}
+
+	[Test]
+	[Description("A full viewModelConfig next to a non-empty viewModelConfigDiff is ignored, so its bindings are not references.")]
+	public void Validate_FullViewModelConfigNextToNonEmptyDiff_IsIgnored() {
+		// Arrange
+		string body = WebBody(viewModelConfig: GeneratedWebViewModelConfig,
+			viewModelConfigDiff: """[ { "operation": "merge", "path": ["attributes"], "values": { "UsrFlag": { "value": true } } } ]""",
+			modelConfigDiff: "[]");
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"the bundle builder applies the diff and ignores the full viewModelConfig. Errors: {string.Join("; ", result.Errors)}");
+	}
+
+	[Test]
+	[Description("A runtime macro in a viewConfigDiff dataSourceName is not a data-source reference.")]
+	public void Validate_MacroDataSourceNameInViewConfigDiff_IsNotAReference() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [ { "operation": "merge", "name": "Feed", "values": { "dataSourceName": "#PrimaryDataSourceName()#" } } ],
+			  "viewModelConfigDiff": [], "modelConfigDiff": [] }
+			""";
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		bool needsBase = validator.NeedsResolvedBase(body);
+		SchemaValidationResult result = validator.Validate(body, () => "{}");
+
+		// Assert
+		needsBase.Should().BeFalse(because: "the macro resolves at render time, so nothing needs the inherited base");
+		result.IsValid.Should().BeTrue(because: "a macro names no key in dataSources");
+	}
+
+	[Test]
+	[Description("A real Mobile Designer body (root merge, merge into dataSources, list data sources, relationPath PDS.Id) passes over the template base.")]
+	public void Validate_DesignerSavedMobileBody_IsValidWithoutWarnings() {
+		// Arrange
+		string body = File.ReadAllText(Path.Combine(
+			TestContext.CurrentContext.TestDirectory, "Command", "McpServer", "Fixtures", "UsrLeadsMobileFormPage.designer-body.json"));
+		PageDataSourceReferenceValidator validator = CreateValidator();
+
+		// Act
+		SchemaValidationResult result = validator.Validate(body, () => """{ "dataSources": { "AttachmentListDS": {} } }""");
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: $"a body the designer saved declares every data source it binds. Errors: {string.Join("; ", result.Errors)}");
+		result.Warnings.Should().BeEmpty(because: "the base was read, so the check ran completely");
+	}
+
+	[Test]
+	[Description("An empty resolved base (no template) is applied as is: a path-diff insert into an array only a template would own fails, instead of passing against a seeded stub.")]
+	public async Task RunAsync_EmptyResolvedBase_PathDiffInsertIntoMissingArray_Fails() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "insert", "path": ["attributes","Items","modelConfig","filterAttributes"],
+				"values": { "name": "QuickFilter_x_Items" } } ] }
+			""";
+
+		// Act
+		PageSyncValidationResult result = await MobilePageValidation.RunAsync(
+			body,
+			new MobileValidationCatalogs(Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>()),
+			CreateValidator(),
+			resolveTemplateBase: () => ("{}", "{}"));
+
+		// Assert
+		result.ContentOk.Should().BeFalse(because: "a page with no template has no filterAttributes array to append to");
+		result.Errors.Should().Contain(e => e.Contains("cannot be applied by the Creatio differ"),
+			because: "the apply oracle reports the differ's own failure");
 	}
 }

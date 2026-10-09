@@ -276,6 +276,26 @@ public sealed class ValidatePageToolTests {
 			because: "a green validate-page must not be read as proof that PDS is declared");
 	}
 
+	[Test]
+	[Description("validate-page has no base: a mobile body whose binding only the template could declare passes with a warning that the check did not run.")]
+	public async System.Threading.Tasks.Task ValidatePage_MobileBodyNeedingTheBase_WarnsThatTheCheckDidNotRun() {
+		// Arrange
+		const string body = """
+			{ "viewConfigDiff": [], "modelConfigDiff": [],
+			  "viewModelConfigDiff": [ { "operation": "merge", "path": ["attributes"], "values": {
+				"UsrName": { "modelConfig": { "path": "PDS.UsrName" } } } } ] }
+			""";
+
+		// Act
+		PageValidateResponse response = await CreateTool().ValidatePage(new PageValidateArgs(Body: body));
+
+		// Assert
+		response.Valid.Should().BeTrue(
+			because: $"the mobile template may declare PDS, and validate-page cannot read it. Errors: {string.Join("; ", response.Validation.Errors ?? [])}");
+		response.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("no inherited modelConfig is available"),
+			because: "the mobile path must say the check did not run, as the web path does");
+	}
+
 	private static PageValidateTool CreateTool(IFileSystem? fileSystem = null) => new(
 		Substitute.For<IMobileComponentInfoCatalog>(),
 		Substitute.For<IComponentInfoCatalog>(),

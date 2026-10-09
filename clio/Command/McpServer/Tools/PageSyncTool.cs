@@ -524,8 +524,9 @@ public sealed class PageSyncTool(
 	// Resolves each pending page's validation base BEFORE the per-tenant lock, so the locked save loop
 	// does no network I/O. A page is read only when the mobile apply oracle (a path diff without an inline base) or
 	// the data-source check (a binding to a data source the body does not declare, web or mobile) needs the base;
-	// other bodies are skipped. Best-effort: a failed resolution is omitted. A page whose oracle needed the base is
-	// marked degraded; the data-source check reports its own skip as a validation warning.
+	// other bodies are skipped. Best-effort: a failed resolution is kept as (null, null), so the data-source check
+	// reports a base it could not read rather than one it never had. A page whose oracle needed the base is also
+	// marked degraded.
 	// <para>
 	// The reads run SEQUENTIALLY here (one get-page per qualifying page). This is an accepted trade-off,
 	// not an oversight: the count is bounded by the batch's pending pages that actually need a base
@@ -553,9 +554,8 @@ public sealed class PageSyncTool(
 				new PageMergedConfigContext(
 					commandResolver, page.SchemaName, environmentName,
 					Uri: null, Login: null, Password: null, Mode: "replace", Logger: logger));
-			if (vmc is not null || mc is not null) {
-				bases[index] = (vmc, mc);
-			} else if (oracleNeedsBase) {
+			bases[index] = (vmc, mc);
+			if (vmc is null && mc is null && oracleNeedsBase) {
 				// The oracle NEEDS an external base but resolution failed (read/auth error). Record it so the page's
 				// per-page result carries a warning: without this the body would be validated against the permissive
 				// seeded stub and a not-a-container error could pass unnoticed — a degraded validation must not read
@@ -662,8 +662,8 @@ public sealed class PageSyncTool(
 			// through here.
 			SchemaValidationService.TryParseResources(page.Resources, out Dictionary<string, string>? mobileResources, out _);
 			// The apply-oracle base was resolved OFF the lock (ExecuteSyncBatch, replace semantics); hand it to the
-			// oracle as a no-network delegate so the locked path issues zero get-page reads. A null base means the
-			// page needs none (or resolution failed) and the oracle seeds its own.
+			// oracle as a no-network delegate so the locked path issues zero get-page reads. No base means the page
+			// needs none; a failed read arrives as (null, null), and the oracle then seeds its own.
 			Func<(string ViewModelConfigJson, string ModelConfigJson)>? resolveBase =
 				preResolvedValidationBase is { } validationBase ? () => (validationBase.Vmc, validationBase.Mc) : null;
 			validationResult = MobilePageValidation
@@ -696,7 +696,7 @@ public sealed class PageSyncTool(
 					Error = "Client-side validation failed: " +
 						string.Join("; ", validationResult.Errors ?? Array.Empty<string>())
 				};
-			// The base was pre-resolved off the lock; a null base means none was needed or the read failed.
+			// The base was pre-resolved off the lock; no base means none was needed, a null Mc that the read failed.
 			SchemaValidationResult dataSourceResult = dataSourceValidator.Validate(
 				page.Body, preResolvedValidationBase is { } webBase ? () => webBase.Mc : null);
 			validationResult = AppendCommandWarnings(validationResult, dataSourceResult.Warnings);

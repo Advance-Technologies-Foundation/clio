@@ -58,9 +58,10 @@ public sealed class PageUpdateTool(
 	// description or the curated contract. Every failure the flag would actually have skipped names it.
 	// Only content failures carry the hint - the structural floor (markers, JS syntax, mobile JSON shape)
 	// is not bypassable, so advertising the flag there would be a false lead.
-	private static PageUpdateResponse WithEscapeHatchHint(PageUpdateResponse failure) {
+	internal static PageUpdateResponse WithEscapeHatchHint(PageUpdateResponse failure) {
 		if (failure?.Error == null ||
-			failure.Error.Contains(PageUpdateCommand.ValidationEscapeHatchHint, StringComparison.Ordinal)) {
+			failure.Error.Contains(PageUpdateCommand.ValidationEscapeHatchHint, StringComparison.Ordinal) ||
+			failure.Error.Contains(PageDataSourceReferenceValidator.NoBypassNote, StringComparison.Ordinal)) {
 			return failure;
 		}
 		failure.Error += PageUpdateCommand.ValidationEscapeHatchHint;

@@ -121,4 +121,12 @@ internal sealed record PageMergedConfigContext(
 	// which the write overwrites). The resolver translates this to the get-page ExcludeOwnBody option.
 	string Mode,
 	// Optional logger: when supplied, the resolver records a warning if the base could not be resolved.
-	Clio.Common.ILogger Logger = null);
+	Clio.Common.ILogger Logger = null) {
+
+	// The generated ToString would print Password.
+	private bool PrintMembers(System.Text.StringBuilder builder) {
+		builder.Append($"SchemaName = {SchemaName}, Environment = {Environment}, Uri = {Uri}, Login = {Login}, ")
+			.Append($"Password = {(Password is null ? "" : "***")}, Mode = {Mode}");
+		return true;
+	}
+}

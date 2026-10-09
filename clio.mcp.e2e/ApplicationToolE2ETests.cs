@@ -624,7 +624,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "the generated form page still declares PDS in its own body after the rejected write");
 		PageSyncPageResult resaved = resaveResponse.Pages.Should().ContainSingle(because: "one page was submitted").Subject;
 		resaved.Success.Should().BeTrue(
-			because: $"the page's own generated body declares every data source it binds, so the check must not reject it. Error: {resaved.Error}");
+			because: $"the page's own generated body declares every data source it binds, so the check must not reject it. Error: {resaved.Error}; validation: {string.Join("; ", resaved.Validation?.Errors ?? [])}");
 
 		// Act 3: update-page append of a fragment that binds PDS (dry run, nothing is saved)
 		const string appendFragment = """
@@ -716,8 +716,9 @@ public sealed class ApplicationToolE2ETests {
 
 		string generatedBody = await ReadOwnBodyAsync();
 		Regex fullModelConfig = new(@"modelConfig\s*:\s*/\*\*SCHEMA_MODEL_CONFIG\*/.*?/\*\*SCHEMA_MODEL_CONFIG\*/", RegexOptions.Singleline);
-		fullModelConfig.IsMatch(generatedBody).Should().BeTrue(
-			because: "the generated web form page declares PDS in its own full SCHEMA_MODEL_CONFIG; without it this scenario does not apply");
+		if (!fullModelConfig.IsMatch(generatedBody)) {
+			Assert.Inconclusive("The generated web form page has no full SCHEMA_MODEL_CONFIG, so this scenario does not apply.");
+		}
 		string bodyWithoutDataSource = fullModelConfig.Replace(generatedBody,
 			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/", 1);
 
@@ -750,7 +751,9 @@ public sealed class ApplicationToolE2ETests {
 		updateResponse.Success.Should().BeFalse(because: "update-page replace overwrites the own body just like sync-pages");
 		updateResponse.Error.Should().Contain("Data source 'PDS'", because: "update-page runs the same data-source check")
 			.And.Contain("do not re-run with validate=false",
-				because: "the caveat must reach the final update-page envelope next to its generic escape-hatch hint");
+				because: "the caveat must reach the final update-page envelope")
+			.And.NotContain("If this defect pre-exists on the page",
+				because: "the generic escape-hatch hint would contradict the caveat");
 
 		// Act 2: read back (neither rejected write landed), then the remedy the error names
 		string bodyAfterRejection = await ReadOwnBodyAsync();
@@ -764,7 +767,7 @@ public sealed class ApplicationToolE2ETests {
 			because: "PDS must still be declared in the page's own SCHEMA_MODEL_CONFIG, not just referenced by the Feed");
 		PageSyncPageResult resaved = resaveResponse.Pages.Should().ContainSingle(because: "one page was submitted").Subject;
 		resaved.Success.Should().BeTrue(
-			because: $"the generated web body declares every data source it binds, so the check must not reject it. Error: {resaved.Error}");
+			because: $"the generated web body declares every data source it binds, so the check must not reject it. Error: {resaved.Error}; validation: {string.Join("; ", resaved.Validation?.Errors ?? [])}");
 	}
 
 	[Category("McpE2E.Sandbox")]

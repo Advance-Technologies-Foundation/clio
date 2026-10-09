@@ -43,6 +43,10 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 	private const int MaxErrors = 10;
 	private const int MaxEchoLength = 300;
 
+	/// <summary>Closes a data-source rejection; update-page skips its generic validate=false hint when it is present.</summary>
+	internal const string NoBypassNote = "Unless the page already lacked these data sources before your edit, do not " +
+		"re-run with validate=false: that saves the page with these bindings unresolved.";
+
 	/// <inheritdoc />
 	public SchemaValidationResult Validate(string body, Func<string> resolveTemplateModelConfig) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -74,6 +78,9 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		}
 		if (undeclared.Count > MaxErrors) {
 			result.Errors.Add($"{undeclared.Count - MaxErrors} more undeclared data sources are not listed.");
+		}
+		if (result.Errors.Count > 0) {
+			result.Errors[^1] += " " + NoBypassNote;
 		}
 		result.IsValid = result.Errors.Count == 0;
 		return result;
@@ -219,7 +226,7 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 		ApplyRemoves(ops, declared);
 		ApplyInserts(ops, declared, dataSourcesExist);
 		ApplyRemoveProperties(ops, declared);
-		ApplySets(ops, declared);
+		ApplySets(ops, declared, dataSourcesExist);
 		return declared;
 	}
 
@@ -262,21 +269,21 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 			List<string> path = PathOf(operation);
 			if (path is [DataSources]) {
 				declared.ExceptWith(removedKeys);
-			} else if (path.Count == 0 && removedKeys.Contains(DataSources)) {
+			} else if (IsRootOperation(operation) && removedKeys.Contains(DataSources)) {
 				declared.Clear();
 			}
 		}
 	}
 
 	// A set removes the addressed element and inserts its values in the same place: on ["dataSources"] the values
-	// replace the whole set, on ["dataSources", X] they replace X, which stays declared.
-	private static void ApplySets(List<JObject> ops, HashSet<string> declared) {
+	// replace the whole set, on ["dataSources", X] they replace X, which stays declared if dataSources exists.
+	private static void ApplySets(List<JObject> ops, HashSet<string> declared, bool dataSourcesExist) {
 		foreach (JObject operation in ops.Where(op => KindOf(op) == "set" && op[Values] is JObject)) {
 			List<string> path = PathOf(operation);
 			if (path is [DataSources]) {
 				declared.Clear();
 				AddKeys((JObject)operation[Values], declared);
-			} else if (path is [DataSources, { } replacedName]) {
+			} else if (dataSourcesExist && path is [DataSources, { } replacedName]) {
 				declared.Add(replacedName);
 			}
 		}
@@ -323,20 +330,18 @@ internal sealed class PageDataSourceReferenceValidator(IPageSchemaBodyParser par
 			? $" and {referrers.Count - MaxReferrersPerError} more"
 			: string.Empty;
 		string head = $"Data source '{Sanitize(dataSource)}' is referenced by {Sanitize(shown)}{more}, but ";
-		string tail = " Unless the page already lacked this data source before your edit, do not re-run with " +
-			"validate=false: that saves the page with these bindings unresolved.";
 		return isMobile
 			? head + "neither the body's modelConfigDiff nor the page's inherited modelConfig declares it, so these " +
 				"bindings resolve to nothing (Mobile Designer shows \"Column removed\"). A replace write (sync-pages, " +
 				"update-page mode=replace) overwrites the page's own modelConfigDiff: carry the dataSources and " +
 				"primaryDataSourceName operations over from get-page raw.body, or add fields with update-page " +
-				"mode=append." + tail
+				"mode=append."
 			: head + "neither the body's SCHEMA_MODEL_CONFIG / SCHEMA_MODEL_CONFIG_DIFF nor the page's inherited " +
 				"modelConfig declares it, so these bindings resolve to nothing in Freedom UI Designer. A replace write " +
 				"(sync-pages, update-page mode=replace) overwrites the page's own body: keep its SCHEMA_MODEL_CONFIG " +
 				"section from get-page raw.body. A non-empty SCHEMA_MODEL_CONFIG_DIFF makes SCHEMA_MODEL_CONFIG " +
 				"ignored, so a diff-form body must carry the dataSources and primaryDataSourceName operations " +
-				"instead; update-page mode=append works only on a page whose current body is in diff form." + tail;
+				"instead; update-page mode=append works only on a page whose current body is in diff form.";
 	}
 
 	// Body-sourced text reaches the MCP transcript; a control, line-separator or bidi character could forge a

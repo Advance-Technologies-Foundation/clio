@@ -146,4 +146,21 @@ public sealed class PageUpdateToolDataSourceTests {
 		warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("were not checked"),
 			because: "a fail-open pass must be visible in the update-page response, not only in the log");
 	}
+
+	[Test]
+	[Description("A data-source rejection carries its own validate=false caveat, so update-page does not add the generic hint that contradicts it.")]
+	public void WithEscapeHatchHint_DataSourceRejection_KeepsOnlyItsOwnCaveat() {
+		// Arrange
+		PageUpdateTool tool = BuildTool(CreateGetCommand());
+		PageUpdateOptions options = new() { SchemaName = SchemaName, Body = BodyWithoutDataSource, Environment = "dev" };
+		(PageUpdateResponse failure, IReadOnlyList<string> _) = tool.ValidateBody(options, requestedVersion: null);
+
+		// Act
+		PageUpdateResponse hinted = PageUpdateTool.WithEscapeHatchHint(failure);
+
+		// Assert
+		hinted.Error.Should().Contain(PageDataSourceReferenceValidator.NoBypassNote, because: "the rejection keeps its own caveat")
+			.And.NotContain(PageUpdateCommand.ValidationEscapeHatchHint,
+				because: "the generic re-run hint would contradict the caveat");
+	}
 }

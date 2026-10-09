@@ -1241,8 +1241,10 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		response.Pages.Should().ContainSingle(because: "the batch had one page")
-			.Which.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("were not checked"),
-				because: "the data-source check fails open without a base, and the agent must learn that it did not run");
+			.Which.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("could not be read"),
+				because: "the data-source check fails open without a base, and the agent must learn that it did not run")
+			.And.NotContain(w => w.Contains("update-page and sync-pages check them"),
+				because: "sync-pages tried to read the base, so it must not promise a check it just skipped");
 	}
 
 	private const string WebBodyBindingPds = "define('UsrPdsRepro_FormPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
@@ -1303,8 +1305,10 @@ public sealed class PageSyncToolTests {
 
 		// Assert
 		response.Pages.Should().ContainSingle(because: "the batch had one page")
-			.Which.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("were not checked"),
-				because: "a fail-open pass on a web page must be visible, as it is on a mobile one");
+			.Which.Validation.Warnings.Should().Contain(w => w.Contains("PDS") && w.Contains("could not be read"),
+				because: "a fail-open pass on a web page must be visible, as it is on a mobile one")
+			.And.NotContain(w => w.Contains("update-page and sync-pages check them"),
+				because: "sync-pages tried to read the base, so it must not promise a check it just skipped");
 	}
 
 	[Test]
