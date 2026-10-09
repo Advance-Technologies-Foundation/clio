@@ -414,12 +414,38 @@ public class DescribeProcessResult {
 	public int? LegacyMethodCount { get; set; }
 
 	/// <summary>
+	/// Process tracing, reported by the server ONLY while it is on: an absent block means runs of the process are
+	/// not traced. The switch is a platform user property on the version family's root, so a version reports
+	/// the root's state.
+	/// </summary>
+	[JsonPropertyName("tracing")]
+	public DescribedProcessTracing Tracing { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The tracing state of a described process: present only while every run stores its parameter values in the
+/// process log (<c>SysPrcElementTraceLog</c>).
+/// </summary>
+public sealed class DescribedProcessTracing {
+
+	/// <summary>Always <c>true</c>: the server omits the whole block while tracing is off.</summary>
+	[JsonPropertyName("enabled")]
+	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// The last day runs are traced (<c>yyyy-MM-dd</c>), after which the platform switches tracing off by itself;
+	/// <c>null</c> when the environment's <c>ProcessParameterTracingDisableTimeoutDays</c> is 0 and it never does.
+	/// </summary>
+	[JsonPropertyName("turnOffDate")]
+	public string TurnOffDate { get; set; }
 }
 
 /// <summary>One member of the described process's version family.</summary>

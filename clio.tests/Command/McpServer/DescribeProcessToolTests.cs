@@ -398,4 +398,21 @@ public sealed class DescribeProcessToolTests {
 			return 0;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe contract names the tracing block and says it is present ONLY while tracing is on (ENG-102111): without that sentence an absent key reads as 'unknown' rather than 'not traced'.")]
+	public void DescribeProcessTool_ShouldDescribeTheTracingBlock() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		bool namesTheBlock = toolText.Contains("tracing {enabled, turnOffDate} ONLY while process tracing is on");
+
+		// Assert
+		namesTheBlock.Should().BeTrue(because: "a caller reads the tracing state from this block");
+		toolText.Should().Contain("absent = runs are not traced",
+			because: "the meaning of an absent key has to be stated, since the server omits the block while off");
+	}
+
 }
