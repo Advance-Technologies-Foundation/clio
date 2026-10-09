@@ -379,7 +379,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
 		GetAdministratedObject = 113,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 114
+		SaveAdministratedObject = 114,
+
+		/// <summary>
+		///     Reads whether the site runs in file design mode (file system mode): the platform flag that decides
+		///     whether the site reads package content from <c>Terrasoft.Configuration/Pkg</c>.
+		/// </summary>
+		GetIsFileDesignMode = 115
 
 	}
 
@@ -507,6 +513,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
+		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
