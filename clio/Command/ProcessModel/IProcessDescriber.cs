@@ -445,7 +445,7 @@ public sealed class DescribedProcessTracing {
 	/// The last day runs are traced (<c>yyyy-MM-dd</c>), after which the platform switches tracing off by itself.
 	/// <c>null</c> in two OPPOSITE cases: the environment's <c>ProcessParameterTracingDisableTimeoutDays</c> is 0, so
 	/// it never switches off; or the switch-on date could not be read, so the date is unknown and the platform's next
-	/// nightly run may switch it off. The warning of the write that switched it on says which.
+	/// nightly run may switch it off. The setting tells them apart: 0 is the first case, above 0 the second.
 	/// </summary>
 	[JsonPropertyName("turnOffDate")]
 	public string TurnOffDate { get; set; }

@@ -179,6 +179,30 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A layout refusal comes BEFORE the save, so it names no schema: it is still relayed as the question it is - the elements plus the re-send offer - and the warnings of an edit that was never saved are not. Pins the other side of the schemaUId condition, which a flipped test would turn into a silently dropped question (ENG-102111).")]
+	public void ModifyProcess_ShouldRelayTheLayoutQuestion_AndNoWarnings_WhenNothingWasSaved() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"appliedOperations\":1,"
+			+ "\"errorMessage\":\"This edit re-draws the diagram.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"],"
+			+ "\"layoutChange\":{\"reason\":\"redraw\",\"elements\":[\"Calc\"]}}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the edit was refused")
+			.Which.Message;
+		message.Should().Contain("ASK THE USER",
+			because: "nothing was saved, so the refusal is a question the caller has to relay");
+		message.Should().NotContain("needs a compile",
+			because: "warnings of an edit that was never saved would describe a state that does not exist");
+	}
+
+	[Test]
 	[Description("A failed edit whose failure blames no single operation says nothing about an index. The server sends no index when the failure came after the operation loop, and an older CrtProcessBuilder never sends the field - both mean 'no operation is to blame', so inventing 'index 0' from a missing value would recreate the exact ambiguity the split removed.")]
 	public void ModifyProcess_ShouldNotInventAnIndex_WhenTheServerReportsNone() {
 		// Arrange
