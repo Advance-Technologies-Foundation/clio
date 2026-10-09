@@ -140,7 +140,10 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 				// deepmerge reads Object.keys of the target, which throws for undefined or null even with empty values.
 				throw MergeException(JsonDiffApplierResources.MergeTargetUnresolved, config, JsonDiffApplierMergeFailure.TargetUnresolved);
 			case { Type: JTokenType.String } text when text.Value<string>().Length > 0:
-				// deepmerge takes the string's indexes as keys, and writing them back to the string throws.
+			case { Type: JTokenType.Date }:
+				// deepmerge takes the string's indexes as keys, and writing them back to the string throws. A date-like
+				// string reaches here as JTokenType.Date (the body parser reads dates), but it is a non-empty string to
+				// the client.
 				throw MergeException(JsonDiffApplierResources.MergeTargetNotObject, config, JsonDiffApplierMergeFailure.TargetNotObject);
 			default:
 				if (values.Count > 0) {

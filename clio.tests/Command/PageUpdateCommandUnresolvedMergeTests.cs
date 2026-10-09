@@ -321,4 +321,29 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 		response.Warnings.Should().Contain(w => w.StartsWith("modelConfigDiff merge at path"),
 			because: "the merge check still ran on the shared read");
 	}
+
+	[Test]
+	[Description("The config-merge check covers web pages only: a mobile page is saved without the check even when its merge would throw in the web runtime.")]
+	public void TryUpdatePage_ShouldSkipConfigMergeCheck_WhenPageIsMobile() {
+		// Arrange
+		_hierarchy.GetParentSchemas(Arg.Any<string>(), "pkg").Returns([
+			new PageDesignerHierarchySchema { UId = Uid, Name = "UsrPage", PackageUId = "pkg", SchemaType = 10 },
+			new PageDesignerHierarchySchema {
+				UId = "base", Name = "Base", SchemaType = 10,
+				Body = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}"
+			}
+		]);
+		string body = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":" + ThrowingMerge + "}";
+		PageUpdateOptions options = new() { SchemaName = "UsrPage", Mode = "replace", Validate = false, Body = body };
+
+		// Act
+		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the web config-merge check does not apply to mobile pages: " + response.Error);
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("merge at path"),
+			because: "no config-merge finding is produced for a mobile page");
+		_client.Received(1).ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
 }

@@ -271,7 +271,8 @@ public sealed class JsonPathDiffApplierTests {
 	[TestCase("""{ "attributes": { "A": { "_id": "Root" } } }""", """{ "operation": "merge", "path": ["Root", "missing"], "values": { "x": 1 } }""", JsonDiffApplierMergeFailure.TargetUnresolved)]
 	[TestCase("""{ "attributes": { "A": { "_id": "Root" } } }""", """{ "operation": "merge", "path": ["Root", "missing"], "values": {} }""", JsonDiffApplierMergeFailure.TargetUnresolved)]
 	[TestCase("""{ "attributes": { "A": "s" } }""", """{ "operation": "merge", "path": ["attributes", "A"], "values": {} }""", JsonDiffApplierMergeFailure.TargetNotObject)]
-	[Description("GH-1753: a merge the client throws on carries the cause, so a caller reports it instead of guessing it from the operation; an undefined target and a non-empty string target throw even with empty values, as deepmerge does.")]
+	[TestCase("""{ "attributes": { "A": "2026-10-08T00:00:00" } }""", """{ "operation": "merge", "path": ["attributes", "A"], "values": {} }""", JsonDiffApplierMergeFailure.TargetNotObject)]
+	[Description("GH-1753: a merge the client throws on carries the cause, so a caller reports it instead of guessing it from the operation; an undefined target and a non-empty string target (a date-like one too) throw even with empty values, as deepmerge does.")]
 	public void Merge_ShouldReportWhyItThrows(string source, string merge, JsonDiffApplierMergeFailure expected) {
 		// Act
 		System.Action act = () => new JsonPathDiffApplier().Apply(JToken.Parse(source), (JArray)JToken.Parse($"[{merge}]"));
