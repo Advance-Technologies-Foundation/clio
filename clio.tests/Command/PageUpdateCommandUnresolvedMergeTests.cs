@@ -1,6 +1,9 @@
 using System;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,6 +118,8 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 		result.Should().BeFalse(because: "a merge the runtime throws on makes the page fail to build");
 		response.Error.Should().StartWith("modelConfigDiff merge at path [\"dataSources\",\"PDS\",\"config\"]",
 			because: "the caller must learn which merge breaks the page");
+		response.Error.Contains(PageUpdateCommand.ConfigMergeAppendModeHint).Should().Be(mode == "append",
+			because: "append keeps the stored config diffs, so only replace can remove a merge that is already stored");
 		_client.DidNotReceive().ExecutePostRequest(Arg.Is<string>(x => x.EndsWith("SaveSchema")), Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
@@ -155,6 +160,36 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 		result.Should().BeTrue(because: "a dry run reports instead of refusing: " + response.Error);
 		response.Warnings.Should().Contain(w => w.Contains("breaks the page"),
 			because: "the dry run must tell the caller that the save would be rejected");
+		response.Warnings.Contains(PageUpdateCommand.ConfigMergeAppendModeHint).Should().Be(mode == "append",
+			because: "the dry run gives the same append-mode remedy the rejected save would give");
+	}
+
+	[Test]
+	[Description("sync-pages keeps the warnings a rejected save carries: a page rejected for a throwing config merge still reports the advisory about a second merge whose path does not exist.")]
+	public async Task SyncPages_ShouldKeepCommandWarnings_WhenConfigMergeRejectsTheSave() {
+		// Arrange
+		string modelConfigDiff = "[" + ThrowingMerge.Trim('[', ']') + "," + UnresolvedMerge.Trim('[', ']') + "]";
+		IToolCommandResolver resolver =
+			Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(_command);
+		var fileSystem = new MockFileSystem();
+		var tool = new PageSyncTool(resolver, fileSystem,
+			Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(),
+			new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		var args = new PageSyncArgs("dev",
+			[new PageSyncPageInput("UsrPage", Body(modelConfigDiff))], Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult page = response.Pages.Single();
+		page.Success.Should().BeFalse(because: "the throwing merge rejects the save");
+		page.Error.Should().Contain("breaks the page", because: "the error names the throwing merge");
+		page.Validation.Should().NotBeNull(because: "the per-page envelope carries the command's warnings");
+		page.Validation.Warnings.Should().Contain(w => w.StartsWith("modelConfigDiff merge at path [\"dataSources\",\"UsrNewDS\"]"),
+			because: "the advisory about the second merge must not be dropped by the rejection");
 	}
 
 	[TestCase("replace")]
@@ -211,7 +246,7 @@ public sealed class PageUpdateCommandUnresolvedMergeTests {
 	[Description("An HTTP timeout of the hierarchy read surfaces as TaskCanceledException; it must not fail the save, because no caller cancellation can reach this synchronous path.")]
 	public void TryUpdatePage_ShouldSave_WhenHierarchyReadTimesOut() {
 		// Arrange
-		_hierarchy.GetParentSchemas(Uid, "pkg").Throws(new System.Threading.Tasks.TaskCanceledException("request timed out"));
+		_hierarchy.GetParentSchemas(Uid, "pkg").Throws(new TaskCanceledException("request timed out"));
 		PageUpdateOptions options = new() { SchemaName = "UsrPage", TargetSchemaUId = Uid, Body = Body(UnresolvedMerge) };
 
 		// Act

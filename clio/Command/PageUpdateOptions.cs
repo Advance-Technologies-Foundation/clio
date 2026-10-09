@@ -453,7 +453,8 @@
 				BuildProjectedLossWarnings(prepared.Projection),
 				prepared.DowngradeWarnings,
 				prepared.InertWarnings,
-				ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport));
+				WithAppendModeHint(ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport), options,
+					prepared.ConfigMergeReport.Errors.Count > 0));
 			return true;
 		}
 
@@ -470,7 +471,7 @@
 				// Nothing is written, but the other findings for this body still hold: keep them beside the error.
 				response = new PageUpdateResponse {
 					Success = false,
-					Error = string.Join(Environment.NewLine, prepared.ConfigMergeReport.Errors),
+					Error = string.Join(Environment.NewLine, WithAppendModeHint(prepared.ConfigMergeReport.Errors, options)),
 					Warnings = CombineWarnings(
 						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
 						prepared.ConfigMergeReport.Warnings)
@@ -614,6 +615,21 @@
 		// say what would happen. The errors come first, because each of them would stop the save.
 		private static IReadOnlyList<string> ConfigMergeWarningsForDryRun(PageConfigMergeReport report) =>
 			[.. report.Errors, .. report.Warnings];
+
+		internal const string ConfigMergeAppendModeHint =
+			"In append mode the page's stored viewModelConfigDiff/modelConfigDiff operations are kept and the new ones "
+			+ "are added after them, so if this merge is already in the stored body, save the page with mode replace to "
+			+ "fix or remove it.";
+
+		/// <summary>
+		/// Append concatenates the config diffs, so a throwing merge that is already stored rejects every later
+		/// append save, and "fix the path" or "remove the operation" can only be done with mode replace.
+		/// </summary>
+		private static IReadOnlyList<string> WithAppendModeHint(
+			IReadOnlyList<string> findings, PageUpdateOptions options, bool hasErrors = true) =>
+			hasErrors && findings.Count > 0 && IsAppendMode(options)
+				? [.. findings, ConfigMergeAppendModeHint]
+				: findings;
 
 		/// <summary>
 		/// Whether the caller asked for the incoming body to be merged with the schema's current body

@@ -42,7 +42,8 @@ an operation from an earlier save or a parent change, and refusing it would bloc
 save of that page. The check needs the parent schemas. On the normal path it reuses the hierarchy
 that context resolution already read. On the `target-schema-uid` path it reads them itself
 (`GetDesignPackageUId` + `GetParentSchemas`), and on the create-replacing path with `GetParentSchemas`.
-That happens only when the body has a merge with a non-root path, and the read is shared with the
+That happens only when the body has a merge other than `path: []` with object `values` (a merge
+without `path`, or `path: []` with non-object `values`, also triggers it), and the read is shared with the
 `parentName` check through `EditableSchemaContext.InheritedHierarchy`. A read failure becomes a "could
 not check" warning, never a failed save. That includes a timeout surfacing as `TaskCanceledException`,
 since no cancellation token reaches this path. A falsy value at the path (`null`, `false`, `0`, `""`)
