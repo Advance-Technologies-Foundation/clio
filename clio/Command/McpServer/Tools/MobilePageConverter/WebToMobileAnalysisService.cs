@@ -280,8 +280,16 @@ public static partial class WebToMobileAnalysisService {
 		// names BECAUSE their removals are layout cleanup, and if WalkConsumers ever learns to descend
 		// menuItems (see the excluded-components-phase-b knowledge record, which anticipates exactly that),
 		// a dead action's attributes SHOULD go with it — that removal is genuine loss.
+		//
+		// The two request collectors are threaded in for ONE branch of the pass: a carried node the
+		// nested-component veto exempts stays on the page, and the entry-graph twin of that node reaches
+		// ProcessEventBindings, which strips a dead binding and records it. The pass mints the same records
+		// for it, so the SAME page does not report differently depending on whether the mobile registry
+		// declares crt.MenuItem. Only for a node it KEEPS — one it removes is reported as a droppedElements
+		// entry naming the request, exactly as the walk's leaf drop reports the entry-graph shape of it.
 		ApplyComponentRemovals(
-			elementMap, requestMap, mobileRequestTypes, actionComponentProperties, componentRemovals);
+			elementMap, requestMap, mobileRequestTypes, actionComponentProperties, componentRemovals,
+			droppedRequests, flaggedRequests);
 
 		// Deterministic empty-container removal: a converter-created layout container whose items
 		// receive NO surviving child is converted to a drop, bottom-up so emptiness cascades. Deliberately

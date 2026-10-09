@@ -257,8 +257,23 @@ finding, unlike the empty-container and exclusion passes: it removes no element 
 nothing to reconcile.
 
 The two traversal shapes must report IDENTICALLY. Which one runs depends on whether the published registry declares
-`crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That is why the pass mints no
-`droppedRequests` record: the walk does not on the entry-graph path, so neither does it on the carried one.
+`crt.MenuItem` — invisible on the caller's page, so it must not reach the caller's report. That one rule decides both
+answers about `droppedRequests`, and they differ by branch:
+
+- a component the pass REMOVES mints none. The walk's leaf drop takes the entry-graph shape of that component off the
+  page before `ProcessEventBindings` ever sees it, so that side reports one `droppedElements` entry naming the request
+  and no binding record; the carried side matches it.
+- a component the pass KEEPS mints one. The entry-graph shape of a node the nested-component veto exempts — a submenu
+  owner whose own click is dead but whose menu is alive — does reach `ProcessEventBindings`, which strips the dead
+  binding and records it. `ProcessCarriedEventBindings` is that twin for the carried shape: unsupported is stripped and
+  recorded as `drop-request-unsupported`, unmapped is kept and recorded as `flag-request-unmapped`, and the unknown
+  branch does not consult the registry precisely because the twin does not either. Before it, such a node shipped its
+  dead action inside its owner's `values` named by no field of the response — the ENG-96178 defect itself, surviving in
+  the submenu case.
+
+A carried node's SUPPORTED request is still carried untouched, which is the rest of that older gap: no rename to the
+mobile request name, no `paramMap`, no navigation-target probe and no `convertedRequests` record. Only the last two cost
+anything today, since the shipped rules declare neither a rename nor a `paramMap`.
 
 **Page business rules** (add-on metadata, read by `PageBusinessRuleProbe`): an action converts only for elements that
 survive (`merge`/`insert`), names remapped web → mobile. Condition operand paths are remapped from the source DS column
