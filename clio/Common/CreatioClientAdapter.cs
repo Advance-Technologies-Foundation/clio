@@ -265,6 +265,14 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 	/// <inheritdoc />
 	public async Task<byte[]> ExecuteGetRequestBoundedAsync(string url, long maxBytes,
 		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
+		BoundedGetResponse response = await ExecuteGetResponseBoundedAsync(
+			url, maxBytes, requestTimeout, cancellationToken).ConfigureAwait(false);
+		return response.Body;
+	}
+
+	/// <inheritdoc />
+	public async Task<BoundedGetResponse> ExecuteGetResponseBoundedAsync(string url, long maxBytes,
+		int requestTimeout = 100_000, CancellationToken cancellationToken = default) {
 		// The transfer runs through the ONE configured, authenticated client. DownloadFileByGetBoundedAsync
 		// issues its request with HttpCompletionOption.ResponseHeadersRead and copies the body incrementally
 		// to disk, so it streams exactly like a hand-built transport would - while keeping everything a
@@ -299,7 +307,12 @@ public class CreatioClientAdapter : IOwnedApplicationClient {
 			using HttpResponseMessage response = await Client
 				.DownloadFileByGetBoundedAsync(url, scratch, maxBytes, requestTimeout, deadline.Token)
 				.ConfigureAwait(false);
-			return await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
+			byte[] body = await File.ReadAllBytesAsync(scratch, cancellationToken).ConfigureAwait(false);
+			return new BoundedGetResponse(
+				(int)response.StatusCode,
+				response.Content?.Headers.ContentType?.MediaType,
+				response.RequestMessage?.RequestUri,
+				body);
 		}
 		// Translated at the boundary: callers of IApplicationClient must not have to reference the transport
 		// package to catch its exception type, and ResponseTooLargeException is what the OData tools already

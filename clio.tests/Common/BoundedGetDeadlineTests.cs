@@ -5,11 +5,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Common;
 using Creatio.Client;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 /// <summary>
@@ -25,6 +28,39 @@ using NUnit.Framework;
 [TestFixture]
 [Property("Module", "Common")]
 internal sealed class BoundedGetDeadlineTests {
+	[Test]
+	[Category("Unit")]
+	[Description("Returns status, media type, final URI and the bounded body from the existing authenticated streaming transport.")]
+	public async Task BoundedGetResponse_ShouldPreserveResponseMetadata_AndBoundedBody() {
+		// Arrange
+		const string url = "https://creatio.example/rest/Test";
+		ICreatioClientTransport transport = Substitute.For<ICreatioClientTransport>();
+		transport.DownloadFileByGetBoundedAsync(
+			url,
+			Arg.Any<string>(),
+			64 * 1024,
+			4_000,
+			Arg.Any<CancellationToken>()).Returns(call => {
+				File.WriteAllBytes(call.ArgAt<string>(1), Encoding.UTF8.GetBytes("ready"));
+				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Accepted) {
+					Content = new StringContent(string.Empty, Encoding.UTF8, "text/plain"),
+					RequestMessage = new HttpRequestMessage(HttpMethod.Get, url)
+				});
+			});
+		using CreatioClientAdapter adapter = new(transport, reauthExecutor: null);
+
+		// Act
+		BoundedGetResponse response = await adapter.ExecuteGetResponseBoundedAsync(
+			url, 64 * 1024, 4_000, CancellationToken.None);
+
+		// Assert
+		response.StatusCode.Should().Be(202);
+		response.MediaType.Should().Be("text/plain");
+		response.FinalUri.Should().Be(url);
+		Encoding.UTF8.GetString(response.Body).Should().Be("ready");
+		await transport.Received(1).DownloadFileByGetBoundedAsync(
+			url, Arg.Any<string>(), 64 * 1024, 4_000, Arg.Any<CancellationToken>());
+	}
 
 	private const int DeadlineMs = 500;
 	private const long Ceiling = 64L * 1024 * 1024;

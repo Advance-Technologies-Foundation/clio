@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Net.Http;
+using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace Clio.Tests.Package.NuGet;
@@ -10,6 +14,22 @@ namespace Clio.Tests.Package.NuGet;
 [Property("Module", "Package")]
 [Category("Unit")]
 public class CreatioSdkOnlineTests {
+	[Test]
+	[Description("Reports an unavailable optional SDK catalog as a warning so create-workspace can remain a successful MCP command.")]
+	public void ReportVersionsUnavailable_ShouldWarnWithoutLoggingAnError() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+
+		// Act
+		CreatioSdkOnline.ReportVersionsUnavailable(logger, new HttpRequestException("network unavailable"));
+
+		// Assert
+		logger.Received(1).WriteWarning(CreatioSdkOnline.VersionsUnavailableMessage);
+		logger.DidNotReceive().WriteError(Arg.Any<string>());
+		logger.ReceivedCalls().Select(call => string.Join(" ", call.GetArguments())).Should()
+			.NotContain(message => message.Contains("network unavailable"),
+				because: "a successful workspace command must not copy transport exception details into its transcript");
+	}
 
 	[Test]
 	[Description("Parses a well-formed NuGet registration response into a descending-sorted version list.")]

@@ -59,9 +59,17 @@ namespace Clio.Project.NuGet
 
 				_versions = ParseVersionsFromNugetJson(json);
 			} catch (Exception e) {
-				logger.WriteError($"Error while getting Creatio SDK versions from NuGet: {e.Message}");
+				ReportVersionsUnavailable(logger, e);
 				_versions = new List<Version>();
 			}
+		}
+
+		/// <summary>
+		/// Reports that the optional online SDK catalog is unavailable without turning a successful caller
+		/// such as workspace creation into a failed structured command result.
+		/// </summary>
+		internal static void ReportVersionsUnavailable(ILogger logger, Exception _) {
+			logger.WriteWarning(VersionsUnavailableMessage);
 		}
 
 		/// <summary>

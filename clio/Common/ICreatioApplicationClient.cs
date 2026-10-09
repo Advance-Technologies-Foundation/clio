@@ -55,6 +55,16 @@ public interface ICreatioApplicationClient : IApplicationClient {
 			$"{GetType().Name} does not implement a streamed GET. Use a client that overrides "
 			+ $"{nameof(ExecuteGetRequestBoundedAsync)}.");
 
+	/// <summary>
+	/// Executes the same bounded authenticated GET while retaining the response metadata needed to verify
+	/// an HTTP endpoint.
+	/// </summary>
+	Task<BoundedGetResponse> ExecuteGetResponseBoundedAsync(string url, long maxBytes,
+		int requestTimeout = 100_000, CancellationToken cancellationToken = default) =>
+		throw new NotSupportedException(
+			$"{GetType().Name} does not implement a streamed GET response. Use a client that overrides "
+			+ $"{nameof(ExecuteGetResponseBoundedAsync)}.");
+
 	/// <summary>Executes a cancellation-aware POST and transfers response ownership to the caller.</summary>
 	Task<HttpResponseMessage> ExecutePostRequestAsync(string url, string requestData,
 		int requestTimeout = 100_000, int maxAttempts = 1, int delaySec = 1,
@@ -78,3 +88,10 @@ public interface ICreatioApplicationClient : IApplicationClient {
 /// <summary>An application client whose creator transfers ownership to the caller.</summary>
 /// <remarks>Dispose the client after the operation completes.</remarks>
 public interface IOwnedApplicationClient : ICreatioApplicationClient, IDisposable { }
+
+/// <summary>Bounded authenticated GET body and the response metadata required for endpoint verification.</summary>
+public sealed record BoundedGetResponse(
+	int StatusCode,
+	string? MediaType,
+	Uri? FinalUri,
+	byte[] Body);
