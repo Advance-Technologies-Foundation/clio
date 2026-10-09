@@ -1,11 +1,13 @@
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.Telemetry;
 using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +25,7 @@ public sealed class GuidanceGetToolTests {
 	private IKnowledgeGuidanceSource _source;
 	private IKnowledgeBundleActivator _activator;
 	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
+	private ServedContentMeter _meter;
 	private GuidanceGetTool _tool;
 
 	[SetUp]
@@ -39,10 +42,12 @@ public sealed class GuidanceGetToolTests {
 			"sha256:policy",
 			new KnowledgeFeedbackApprovalView("sha256:policy"),
 			"approved"));
+		_meter = new ServedContentMeter();
 		ServiceCollection services = new();
 		services.AddSingleton(_source);
 		services.AddSingleton(_activator);
 		services.AddSingleton(_feedbackPolicyService);
+		services.AddSingleton<IServedContentMeter>(_meter);
 		services.AddTransient<GuidanceGetTool>();
 		_container = services.BuildServiceProvider();
 		_tool = _container.GetRequiredService<GuidanceGetTool>();
@@ -325,4 +330,116 @@ public sealed class GuidanceGetToolTests {
 			because: "an ungated type is enabled whatever a leftover feature key says on disk - the Beta testers who turned the flag off are exactly the people most likely to try GA first");
 		settingsRepository.DidNotReceive().IsFeatureEnabled("mobile-page-converter");
 	}
+
+	[Test]
+	[Description("Meters a served first-party article as one read at the size the agent receives, with the clio library version that served it (ENG-100157).")]
+	public async Task GetGuidance_ShouldMeterTheServedArticle_WhenTheArticleIsActive() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"creatio-curated",
+			CuratedKnowledgeSourceDefaults.LibraryId,
+			"1.16.2",
+			"routing",
+			"topic.routing",
+			42,
+			"sha256:verified",
+			null);
+		_source.FindByName("routing").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("routing", "docs://mcp/guides/routing", "Routing guidance - `rule` \"quoted\".\n"),
+			42,
+			provenance));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("routing"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "a served article is content this session served");
+		served.GuidanceReads.Should().Be(1,
+			because: "one article was served");
+		served.GuidanceRereads.Should().Be(0,
+			because: "it was the first read of that article");
+		served.GuidanceBytes.Should().Be(McpResultBytes(response),
+			because: "the count is the size of the result text the agent reads, serialized with the MCP result options");
+		served.GuidanceLibraryVersion.Should().Be("1.16.2",
+			because: "the clio library generation that served the article is what tells a before from an after");
+	}
+
+	[Test]
+	[Description("Counts a partner or customer article but never records its library version, which its owner chose and may carry their name (ENG-100157).")]
+	public async Task GetGuidance_ShouldNotRecordTheLibraryVersion_WhenTheLibraryIsNotClios() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"partner",
+			"com.example.partner",
+			"2.0.0-acme-bank",
+			"guide.item",
+			"topic.shared",
+			42,
+			"sha256:verified",
+			null);
+		_source.FindByName("partner-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("partner-guide", "docs://partner/guides/guide", "Partner guidance.\n"),
+			42,
+			provenance));
+
+		// Act
+		await _tool.GetGuidance(new GuidanceGetArgs("partner-guide"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "a partner article is still content this session served");
+		served.GuidanceReads.Should().Be(1,
+			because: "the read itself is clio's own count");
+		served.GuidanceLibraryVersion.Should().BeNull(
+			because: "a third-party library version is customer-authored data and must never reach telemetry");
+	}
+
+	[Test]
+	[Description("Counts a second read of the same article as a re-read, the trace a context compaction leaves (ENG-100157).")]
+	public async Task GetGuidance_ShouldCountAReread_WhenTheSameArticleIsServedTwice() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("synthetic-guide", "docs://synthetic/guides/guide", "Synthetic delivery fixture.\n"),
+			1));
+
+		// Act
+		await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+		await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "two articles were served");
+		served.GuidanceReads.Should().Be(2,
+			because: "both responses served the article");
+		served.GuidanceRereads.Should().Be(1,
+			because: "the second response served an article the session already had");
+	}
+
+	[Test]
+	[Description("Meters the bytes of a refusal without counting it as a read, since it served no article (ENG-100157).")]
+	public async Task GetGuidance_ShouldMeterBytesWithoutARead_WhenTheGuideIsUnknown() {
+		// Arrange
+		_source.FindByName("missing-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("missing-guide"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown guide is refused");
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "the refusal and its list of available guides still reached the agent's context");
+		served.GuidanceReads.Should().Be(0,
+			because: "a refusal served no article");
+		served.GuidanceBytes.Should().Be(McpResultBytes(response),
+			because: "the refusal's text is part of what the session cost");
+	}
+
+	private static long McpResultBytes(GuidanceGetResponse response) =>
+		Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response, Clio.BindingsModule.CreateMcpSerializerOptions()));
 }
