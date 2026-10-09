@@ -411,7 +411,7 @@ public sealed class DescribeProcessToolTests {
 
 		// Assert
 		namesTheBlock.Should().BeTrue(because: "a caller reads the tracing state from this block");
-		toolText.Should().Contain("absent = runs are not traced",
+		toolText.Should().Contain("absent = runs are not traced; rarely, the switch could not be read",
 			because: "the meaning of an absent key has to be stated, since the server omits the block while off");
 	}
 

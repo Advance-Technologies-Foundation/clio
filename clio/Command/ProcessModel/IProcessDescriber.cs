@@ -415,7 +415,7 @@ public class DescribeProcessResult {
 
 	/// <summary>
 	/// Process tracing, reported by the server ONLY while it is on: an absent block means runs of the process are
-	/// not traced. The switch is a platform user property on the version family's root, so a version reports
+	/// not traced (or, rarely, that the server could not read the switch and logged it). The switch is a platform user property on the version family's root, so a version reports
 	/// the root's state.
 	/// </summary>
 	[JsonPropertyName("tracing")]

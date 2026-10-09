@@ -15,7 +15,7 @@ not carry it either (source-read, not measured). The runtime reads the running s
 the family root, so the root's switch traces every version. Switching it off writes `False` and keeps the row
 (measured 2026-10-09 on d_krestov_n, .NET Framework); the platform's daily `ProcessTracingDisablerJob` writes the same
 `False` once `ProcessParameterTracingDisableTimeoutDays` days have passed since the switch-on (0 = never). The trace
-itself lands in `SysPrcElementTraceLog`, two rows per executed element.
+itself lands in `SysPrcElementTraceLog`, two rows per executed task (events write none).
 
 **Why it is this way** — the platform models tracing as an environment-local, temporary diagnostic, not as part of the
 process definition. clio reaches it only through CrtProcessBuilder (1.6.6.92+): `isTracing` on create, `setTracing`

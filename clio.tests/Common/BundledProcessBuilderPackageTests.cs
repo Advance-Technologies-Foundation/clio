@@ -1661,6 +1661,27 @@ public class BundledProcessBuilderPackageTests {
 		return description.Description;
 	}
 
+	[Test]
+	[Description("clio advertises process tracing in three contracts and TYPES its describe block, all hand-mirrored across two repositories (ENG-102111): an archive whose names drifted would drop isTracing on a build and answer success, refuse setTracing as unknown, or report every process as untraced. Each member is asserted on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheTracingWireNamesClioAdvertises() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "BuildProcessRequest", "isTracing").Should().BeTrue(
+			because: "create-business-process advertises the isTracing descriptor field");
+		DeclaresMemberOn(archive, "ProcessOperationDescriptor", "enabled").Should().BeTrue(
+			because: "modify-business-process advertises setTracing's 'enabled' argument");
+		archive.Should().Contain("SetTracing = \"setTracing\"",
+			because: "the operation token clio advertises must be the one the package dispatches");
+		DeclaresMemberOn(archive, "DescribeProcessResponse", "tracing").Should().BeTrue(
+			because: "DescribeProcessResult reads the tracing block off this member");
+		foreach (string member in new[] { "enabled", "turnOffDate" }) {
+			DeclaresMemberOn(archive, "DescribeProcessTracing", member).Should().BeTrue(
+				because: $"DescribedProcessTracing reads '{member}'");
+		}
+	}
+
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector
@@ -1688,27 +1709,4 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	#endregion
-
-
-	[Test]
-	[Description("clio advertises process tracing in three contracts and TYPES its describe block, all hand-mirrored across two repositories (ENG-102111): an archive whose names drifted would drop isTracing on a build and answer success, refuse setTracing as unknown, or report every process as untraced. Each member is asserted on its NAMED type.")]
-	public void BundledArchive_ShouldDeclareTheTracingWireNamesClioAdvertises() {
-		// Arrange
-		string archive = ReadBundledArchiveAsText();
-
-		// Act & Assert
-		DeclaresMemberOn(archive, "BuildProcessRequest", "isTracing").Should().BeTrue(
-			because: "create-business-process advertises the isTracing descriptor field");
-		DeclaresMemberOn(archive, "ProcessOperationDescriptor", "enabled").Should().BeTrue(
-			because: "modify-business-process advertises setTracing's 'enabled' argument");
-		archive.Should().Contain("SetTracing = \"setTracing\"",
-			because: "the operation token clio advertises must be the one the package dispatches");
-		DeclaresMemberOn(archive, "DescribeProcessResponse", "tracing").Should().BeTrue(
-			because: "DescribeProcessResult reads the tracing block off this member");
-		foreach (string member in new[] { "enabled", "turnOffDate" }) {
-			DeclaresMemberOn(archive, "DescribeProcessTracing", member).Should().BeTrue(
-				because: $"DescribedProcessTracing reads '{member}'");
-		}
-	}
-
 }

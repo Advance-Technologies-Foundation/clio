@@ -33,6 +33,7 @@ public sealed class ProcessTracingToolE2ETests {
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
+	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 	private const string WrittenAgainst = "1.6.6.92";
 
 	[Test]
@@ -69,6 +70,10 @@ public sealed class ProcessTracingToolE2ETests {
 				because: "the warning names the setting that switches tracing off by itself");
 			tracedGraph.Tracing.Should().NotBeNull(because: "a process built with isTracing:true is traced");
 			tracedGraph.Tracing!.Enabled.Should().BeTrue(because: "the block is reported only while tracing is on");
+			if (tracedGraph.Tracing.TurnOffDate != null) {
+				tracedGraph.Tracing.TurnOffDate.Should().MatchRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+					because: "the last traced day travels as an invariant yyyy-MM-dd date");
+			}
 			SerializeToolText(switchedOff).Should().Contain("\"exit-code\":0",
 				because: "a setTracing-only batch is a complete, valid edit");
 			untracedGraph.Tracing.Should().BeNull(
@@ -79,7 +84,7 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: setTracing without 'enabled' is refused with the server's reason and nothing changes (ENG-102111). Switching tracing OFF is a real request, so a missing value cannot be read as false; the refusal arrives through clio unchanged. Needs CrtProcessBuilder 1.6.6.92 on the stand.")]
+	[Description("Over the real MCP path: setTracing without 'enabled' is refused with the server's reason and nothing changes (ENG-102111). The process is created TRACED, so a refusal that wrongly switched it off - the misreading of a missing value as false this rule exists to prevent - would show as a missing block. Needs CrtProcessBuilder 1.6.6.92 on the stand.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process refuses setTracing without enabled")]
 	public async Task SetTracing_Should_BeRefused_WhenEnabledIsMissing() {
@@ -88,7 +93,7 @@ public sealed class ProcessTracingToolE2ETests {
 		string processName = $"UsrClioBpTracingRefuseE2e{Guid.NewGuid():N}";
 		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildTracedDescriptor(processName, isTracing: false)
+			["descriptor"] = BuildTracedDescriptor(processName)
 		});
 		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), WrittenAgainst);
 		SerializeToolText(created).Should().Contain("created (UId:",
@@ -105,7 +110,41 @@ public sealed class ProcessTracingToolE2ETests {
 			// Assert
 			SerializeToolText(refused).Should().Contain("'setTracing' requires 'enabled'",
 				because: "the server's refusal names the missing argument");
-			graph.Tracing.Should().BeNull(because: "a refused request changes nothing, and the process started untraced");
+			graph.Tracing.Should().NotBeNull(because: "a refused request changes nothing, and the process started traced");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
+	[Description("Over the real MCP path: modify-business-process-as-new-version refuses a setTracing without 'enabled' BEFORE anything is cloned, so no version is created (ENG-102111). This covers the version route without leaving an undeletable version on the stand: the refusal fires in front of the clone. Needs CrtProcessBuilder 1.6.6.92 on the stand.")]
+	[AllureTag(NewVersionToolName)]
+	[AllureName("modify-business-process-as-new-version refuses setTracing without enabled and creates no version")]
+	public async Task SetTracing_Should_BeRefusedBeforeAVersionExists_OnTheVersionRoute() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string processName = $"UsrClioBpTracingVersionE2e{Guid.NewGuid():N}";
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildTracedDescriptor(processName, isTracing: false)
+		});
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), WrittenAgainst);
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			// Act
+			CallToolResult refused = await CallToolAsync(context, NewVersionToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = "[ { \"op\": \"setTracing\" } ]"
+			});
+			DescribeProcessResult graph = ParseDescribeResult(await DescribeAsync(context, processName));
+
+			// Assert
+			SerializeToolText(refused).Should().Contain("'setTracing' requires 'enabled'",
+				because: "the version route refuses the same malformed switch the in-place route does");
+			(graph.Versions ?? new List<DescribedProcessVersion>()).Count(member => !member.IsRoot).Should().Be(0,
+				because: "the refusal fires before the clone, so the family still holds only the root");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
