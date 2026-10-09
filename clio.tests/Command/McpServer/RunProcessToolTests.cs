@@ -908,29 +908,25 @@ public sealed class RunProcessToolTests {
 	[Description("ENG-102333 round 3: when the deadline answers not-started while the launch is still being prepared, the preparation that finishes afterwards reaches the launch and does not send the RunProcess request.")]
 	public async Task RunProcess_Should_Not_Send_The_Launch_After_Answering_NotStarted() {
 		// Arrange
-		BlockedLaunch blocked = BuildBlockedLaunch();
+		using BlockedLaunch blocked = BuildBlockedLaunch();
 		RunProcessTool tool = new(ConsoleLogger.Instance, blocked.Resolver) {
 			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
 		};
 
-		try {
-			// Act
-			RunProcessResponse response = await tool.RunProcess(
-				new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
-			blocked.Release.Set();
-			bool reachedLaunch = blocked.ReachedLaunch.Wait(TimeSpan.FromSeconds(10));
-			Thread.Sleep(500);
+		// Act
+		RunProcessResponse response = await tool.RunProcess(
+			new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" });
+		blocked.Release.Set();
+		bool finished = blocked.Finished.Wait(TimeSpan.FromSeconds(10));
 
-			// Assert
-			response.Status.Should().Be(RunProcessTool.NotStartedStatus,
-				because: "the model was still being read when the deadline answered");
-			reachedLaunch.Should().BeTrue(because: "the detached preparation went on to the launch once released");
-			blocked.Posted.Should().BeEmpty(
-				because: "the answer said nothing was launched, so the request must never go");
-		}
-		finally {
-			blocked.Release.Set();
-		}
+		// Assert
+		response.Status.Should().Be(RunProcessTool.NotStartedStatus,
+			because: "the model was still being read when the deadline answered");
+		finished.Should().BeTrue(because: "the detached launch ends once its model read is released");
+		blocked.ReachedLaunch.IsSet.Should().BeTrue(
+			because: "the detached preparation went on to the launch, so the gate - not an earlier failure - stopped it");
+		blocked.Posted.Should().BeEmpty(
+			because: "the answer said nothing was launched, so the request must never go");
 	}
 
 	[Test]
@@ -938,44 +934,74 @@ public sealed class RunProcessToolTests {
 	[Description("ENG-102333 round 3 (review): a call its client cancels before any answer does not launch afterwards - its caller got no answer and may call again, which would be a second run.")]
 	public async Task RunProcess_Should_Not_Launch_After_Its_Call_Was_Cancelled() {
 		// Arrange
-		BlockedLaunch blocked = BuildBlockedLaunch();
+		using BlockedLaunch blocked = BuildBlockedLaunch();
 		RunProcessTool tool = new(ConsoleLogger.Instance, blocked.Resolver) {
 			ResponseDeadlineOverride = TimeSpan.FromSeconds(30)
 		};
 		using CancellationTokenSource cancellation = new(TimeSpan.FromMilliseconds(100));
+		OperationCanceledException? cancelled = null;
 
+		// Act
 		try {
-			// Act
-			Func<Task> call = () => tool.RunProcess(
-				new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" },
+			await tool.RunProcess(new RunProcessArgs { ProcessName = ProcessCode, EnvironmentName = "dev" },
 				cancellationToken: cancellation.Token);
-			await call.Should().ThrowAsync<OperationCanceledException>(
-				because: "a cancelled call ends without an answer");
-			blocked.Release.Set();
-			bool reachedLaunch = blocked.ReachedLaunch.Wait(TimeSpan.FromSeconds(10));
-			Thread.Sleep(500);
+		}
+		catch (OperationCanceledException exception) {
+			cancelled = exception;
+		}
+		blocked.Release.Set();
+		bool finished = blocked.Finished.Wait(TimeSpan.FromSeconds(10));
 
-			// Assert
-			reachedLaunch.Should().BeTrue(because: "the detached preparation went on to the launch once released");
-			blocked.Posted.Should().BeEmpty(
-				because: "nobody is waiting for that launch any more, so it must not start");
-		}
-		finally {
-			blocked.Release.Set();
-		}
+		// Assert
+		cancelled.Should().NotBeNull(because: "a cancelled call ends without an answer");
+		finished.Should().BeTrue(because: "the detached launch ends once its model read is released");
+		blocked.ReachedLaunch.IsSet.Should().BeTrue(
+			because: "the detached preparation went on to the launch, so the gate - not an earlier failure - stopped it");
+		blocked.Posted.Should().BeEmpty(
+			because: "nobody is waiting for that launch any more, so it must not start");
 	}
 
+	// The parts of a launch whose model read blocks until Release is set. ReachedLaunch is set when the command builds
+	// the launch URL, right before it claims the gate; Finished is set when the command's TryRun returns, so a test
+	// can wait for the detached launch to end instead of sleeping; Posted records every RunProcess request sent.
 	private sealed record BlockedLaunch(
 		IToolCommandResolver Resolver,
 		ManualResetEventSlim Release,
 		ManualResetEventSlim ReachedLaunch,
-		List<string> Posted);
+		ManualResetEventSlim Finished,
+		List<string> Posted) : IDisposable {
 
-	// A launch whose model read blocks until Release is set; ReachedLaunch is set when the command builds the launch
-	// URL, right before it claims the gate, and Posted records every RunProcess request that was sent.
+		public void Dispose() {
+			Release.Set();
+			Release.Dispose();
+			ReachedLaunch.Dispose();
+			Finished.Dispose();
+		}
+	}
+
+	// Signals when TryRun returns: the detached work's last step that could send a request.
+	private sealed class SignallingRunProcessCommand(
+		IProcessModelGenerator generator,
+		IApplicationClient applicationClient,
+		IServiceUrlBuilder serviceUrlBuilder,
+		IProcessRunLogReader processRunLogReader,
+		ManualResetEventSlim finished)
+		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ConsoleLogger.Instance) {
+
+		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
+			try {
+				return base.TryRun(options, out response);
+			}
+			finally {
+				finished.Set();
+			}
+		}
+	}
+
 	private static BlockedLaunch BuildBlockedLaunch() {
 		ManualResetEventSlim release = new(false);
 		ManualResetEventSlim reachedLaunch = new(false);
+		ManualResetEventSlim finished = new(false);
 		List<string> posted = [];
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
@@ -1001,12 +1027,12 @@ public sealed class RunProcessToolTests {
 				reachedLaunch.Set();
 				return "ServiceModel/ProcessEngineService.svc/RunProcess";
 			});
-		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder, NothingLogged(),
-			ConsoleLogger.Instance);
+		RunProcessCommand command = new SignallingRunProcessCommand(generator, applicationClient, serviceUrlBuilder,
+			NothingLogged(), finished);
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant");
 		resolver.Resolve<RunProcessCommand>(Arg.Any<RunProcessOptions>()).Returns(command);
-		return new BlockedLaunch(resolver, release, reachedLaunch, posted);
+		return new BlockedLaunch(resolver, release, reachedLaunch, finished, posted);
 	}
 
 	[Test]
@@ -1016,13 +1042,14 @@ public sealed class RunProcessToolTests {
 		// Arrange
 		Harness harness = BuildHarness(MigratorSignature());
 		RunProcessLaunchGate gate = new();
-		gate.TryWithdraw().Should().BeTrue(because: "an open gate can be withdrawn");
+		bool withdrawn = gate.TryWithdraw();
 		RunProcessOptions options = new() { ProcessName = ProcessCode, LaunchGate = gate };
 
 		// Act
 		bool launched = harness.Command.TryRun(options, out RunProcessResponse response);
 
 		// Assert
+		withdrawn.Should().BeTrue(because: "an open gate can be withdrawn");
 		launched.Should().BeFalse(because: "nothing was launched");
 		response.Status.Should().Be("not-started", because: "the answer already said nothing was launched");
 		harness.PostedBodies.Should().BeEmpty(
