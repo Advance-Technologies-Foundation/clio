@@ -83,8 +83,8 @@ internal static class McpProgressHeartbeat {
 	/// result and now returns the in-progress envelope. The parent's bound on one sticky call moves with
 	/// this value (<c>McpWorkerCallDispatcher.DefaultStickyCallBudget</c>). It is measured from the start
 	/// of the race, which is why the restart tools race their restart request too, not only the readiness
-	/// wait; the parent's queueing and the worker's spawn are not counted. run-process does not use it
-	/// (<c>RunProcessTool.RunProcessResponseDeadline</c>).
+	/// wait; the parent's queueing and the worker's spawn are not counted. run-process uses it as well, behind a
+	/// gate that records whether its launch request was sent (<c>RunProcessLaunchGate</c>).
 	/// </para>
 	/// </remarks>
 	internal static readonly TimeSpan DefaultResponseDeadline =
