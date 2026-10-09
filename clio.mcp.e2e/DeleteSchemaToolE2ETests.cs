@@ -91,12 +91,21 @@ public sealed class DeleteSchemaToolE2ETests : McpContractFixtureBase {
 			AllureApi.Step($"Assert the package files are reported for file system mode '{fileSystemMode}'", () => {
 				if (string.Equals(fileSystemMode, "on", StringComparison.OrdinalIgnoreCase)) {
 					// "No folders ... were found (searched: ...)" also names the folder, so it must not satisfy this.
-					output.Should().Contain(message => message.Value != null
-						&& message.Value.Contains($"Schemas/{schemaName}/")
-						&& ((message.MessageType == LogDecoratorType.Info
-								&& message.Value.StartsWith("Removed from package folder", StringComparison.Ordinal))
-							|| message.MessageType == LogDecoratorType.Warning),
-						because: "in file system mode the schema folder is either removed or named as left behind");
+					bool removed = output.Any(message => message.MessageType == LogDecoratorType.Info
+						&& message.Value != null
+						&& message.Value.StartsWith("Removed from package folder", StringComparison.Ordinal)
+						&& message.Value.Contains($"Schemas/{schemaName}/"));
+					CommandLogMessageEnvelope? leftBehind = output.FirstOrDefault(message =>
+						message.MessageType == LogDecoratorType.Warning
+						&& message.Value != null
+						&& message.Value.Contains($"Schemas/{schemaName}/"));
+					if (!removed && leftBehind is not null) {
+						// The runner may not reach the site folder; the fallback warning is correct, but it does not
+						// prove the removal, so the run is not counted as a pass.
+						Assert.Inconclusive($"The schema folder was named as left behind instead of removed: {leftBehind.Value}");
+					}
+					removed.Should().BeTrue(because: "in file system mode the schema folder is removed from the package");
+					leftBehind.Should().BeNull(because: "a removed schema folder must not also be reported as left behind");
 					return;
 				}
 				output.Should().NotContain(message => message.MessageType == LogDecoratorType.Warning
