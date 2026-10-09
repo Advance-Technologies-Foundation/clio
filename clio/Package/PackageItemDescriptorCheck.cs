@@ -35,6 +35,12 @@ public sealed record PackageItemFolderWithoutDescriptor(string FolderPath, IRead
 		}
 	}
 
+	/// <summary>
+	/// Gets whether the folder holds nothing but operating system metadata such as <c>.DS_Store</c>: a leftover of
+	/// an element whose own files are gone, so there is no descriptor to restore and the folder can be deleted.
+	/// </summary>
+	public bool HoldsOnlyOperatingSystemFiles => Files.All(IsOperatingSystemFile);
+
 	private static bool IsOperatingSystemFile(string file) {
 		string fileName = file[(file.LastIndexOf('/') + 1)..];
 		return OperatingSystemFileNames.Contains(fileName, StringComparer.OrdinalIgnoreCase);

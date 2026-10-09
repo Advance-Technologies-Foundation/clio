@@ -60,6 +60,9 @@ NOTES
       only Localization files, delete the folder
           git leaves these behind when a data binding is deleted: it removes
           the tracked files and keeps the ignored per-culture files.
+      only operating system files, delete the folder
+          the folder holds only files such as .DS_Store, so there is no
+          element to restore.
       element files, restore descriptor.json
           the element is still there; deleting the folder can remove it from
           the environment on the next install.

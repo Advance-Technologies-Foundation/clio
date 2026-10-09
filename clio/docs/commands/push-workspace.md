@@ -88,6 +88,8 @@ Each folder carries a verdict:
 - `only Localization files, delete the folder` — git leaves such a folder behind
   when a data binding is deleted: it removes the tracked files and keeps the
   ignored per-culture `Localization/data.<culture>.json` files.
+- `only operating system files, delete the folder` — the folder holds nothing but
+  files such as `.DS_Store` or `Thumbs.db`, so there is no element to restore.
 - `element files, restore descriptor.json` — the element is still there and only
   its descriptor is missing. Restore it, for example from git; deleting the folder
   can remove the element from the environment on the next install.

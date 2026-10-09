@@ -195,4 +195,24 @@ public sealed class PackageItemDescriptorCheckTests {
 		onlyMetadataVerdict.Should().BeFalse("because a folder with no Localization file is not the leftover shape this verdict describes");
 	}
 
+
+	[Test]
+	[Description("A folder holding only operating system metadata is a leftover with nothing to restore, so the refusal tells the user to delete it.")]
+	public void HoldsOnlyOperatingSystemFiles_ShouldMarkAMetadataOnlyFolderAsALeftover() {
+		// Arrange
+		PackageItemFolderWithoutDescriptor onlyMetadata = new("Data/Lookup_Status", [".DS_Store", "Localization/Thumbs.db"]);
+		PackageItemFolderWithoutDescriptor withLocalization = new("Data/Lookup_Status", [".DS_Store", "Localization/data.en-US.json"]);
+
+		// Act
+		PackageItemDescriptorMissingException exception = new([onlyMetadata]);
+
+		// Assert
+		onlyMetadata.HoldsOnlyOperatingSystemFiles.Should().BeTrue("because Finder and Explorer files are not part of any element");
+		withLocalization.HoldsOnlyOperatingSystemFiles.Should().BeFalse("because a Localization file is part of the binding");
+		exception.Message.Should().Contain("only operating system files, delete the folder",
+			"because there is no descriptor to restore for a folder that holds no element files");
+		exception.Message.Should().NotContain("element files, restore descriptor.json",
+			"because telling the user to restore a descriptor for a metadata-only folder is wrong advice");
+	}
+
 }
