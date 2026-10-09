@@ -427,6 +427,27 @@ public sealed class PageGetCommandSlotlessPlacementTests {
 	}
 
 	[Test]
+	[Description("Only the slotless placement the differ rejects is skipped and reported; a slotless insert the differ accepts (an unresolved parentName goes to the root) stays in the bundle without a warning.")]
+	public void TryGetPage_ShouldSkipOnlyTheRejectedPlacement_WhenAnotherSlotlessPlacementIsAccepted() {
+		// Arrange
+		string headDiff = "[{\"operation\":\"move\",\"name\":\"Profile\",\"parentName\":\"Feed\",\"index\":0},"
+			+ "{\"operation\":\"insert\",\"name\":\"Extra\",\"parentName\":\"Nowhere\",\"values\":{}}]";
+		PageGetCommand command = CreateCommand(headDiff);
+		var options = new PageGetOptions { SchemaName = SchemaName, Environment = "dev" };
+
+		// Act
+		bool ok = command.TryGetPage(options, out PageGetResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the rejected move is recovered: " + response.Error);
+		response.Warnings.Should().ContainSingle(because: "only the operation the differ rejected was skipped")
+			.Which.Should().Contain("(move 'Profile')", because: "the warning names the rejected operation");
+		JArray view = JArray.Parse(response.Bundle.ViewConfig.ToJsonString());
+		FindElement(view, "Extra").Should().NotBeNull(
+			because: "an operation the differ accepts must not disappear from the resolved bundle");
+	}
+
+	[Test]
 	[Description("A page with no placement without a slot reads exactly as before, with no warnings.")]
 	public void TryGetPage_ShouldNotWarn_WhenEveryPlacementNamesItsSlot() {
 		// Arrange
