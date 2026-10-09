@@ -126,7 +126,6 @@
   "toolsWithoutFixtures": [
       "clio/Command/McpServer/Tools/ClientUnitSchemaCreateTool.cs",
       "clio/Command/McpServer/Tools/ClientUnitSchemaUpdateTool.cs",
-      "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
       "clio/Command/McpServer/Tools/GetTelemetryConsentTool.cs",
       "clio/Command/McpServer/Tools/InstallGateTool.cs",
       "clio/Command/McpServer/Tools/ListCreatioBuildsTool.cs",

@@ -37,6 +37,26 @@ both the C# package assembly and the Angular client bundle. Specifically it:
 > Building the bundle requires **Node.js + npm** on the machine; the JavaScript SDK shells out to
 > `npm` but does not install Node itself.
 
+### Template selection (`--version`)
+
+| `--version` | Template used |
+|---|---|
+| omitted, or `8.3.4` and later (including `10.x`) | current template (`ui-project` / `ui-project-Empty`) |
+| `8.0.10` up to `8.3.3` | legacy template `ui/8.0.10` |
+| `8.0.8` – `8.0.9` | legacy template `ui/8.0.8` |
+| `8.0.3` – `8.0.7` | legacy template `ui/8.0.3` |
+| below `8.0.3`, or not a version, such as `ten` or `10` | rejected before any package or project is created |
+
+A two-part version is compared as `.0`: `8.3` means `8.3.0` and selects `ui/8.0.10`.
+
+Every template writes the bundle to `packages/<package-name>/Files/src/js/<name>`. On success the
+command prints the template it used and the `@creatio-devkit/common` range written to
+`package.json`, for example:
+
+```text
+UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.
+```
+
 ## Aliases
 
 `create-ui-project`, `createup`, `new-ui`, `ui`, `uiproject`
@@ -58,7 +78,7 @@ Name
 
 ```bash
 --version <VALUE>
-Creatio version
+Creatio version used to select the UI project template. Omitted, or 8.3.4 and later, uses the current template; older versions use the closest legacy template
 --empty
 Create empty package
 --package <VALUE>

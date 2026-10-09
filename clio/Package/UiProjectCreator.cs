@@ -28,10 +28,19 @@ namespace Clio.Package
 		/// <param name="packageName">Creatio package that receives the compiled bundle.</param>
 		/// <param name="vendorPrefix">Lowercase Creatio vendor prefix.</param>
 		/// <param name="isEmpty">Whether to use the empty UI project template.</param>
-		/// <param name="creatioVersion">Optional Creatio version used to select a compatible template.</param>
+		/// <param name="creatioVersion">
+		/// Optional Creatio version used to select the template. An omitted version, or one at or above the
+		/// lowest version the current templates target, selects the current template; an older version
+		/// selects the closest legacy template under <c>tpl/ui/&lt;version&gt;</c>. The selected template and
+		/// the <c>@creatio-devkit/common</c> range it declares are reported through the logger.
+		/// </param>
 		/// <param name="enableDownloadPackage">
 		/// Callback that decides whether an environment package should be downloaded when no local package exists.
 		/// </param>
+		/// <exception cref="ArgumentException">
+		/// <paramref name="projectName"/> is not snake_case, or <paramref name="creatioVersion"/> is not a valid
+		/// version or is older than every shipped template. Both are detected before anything is written.
+		/// </exception>
 		void Create(string projectName, string packageName, string vendorPrefix, bool isEmpty, string creatioVersion,
 			Func<string, bool> enableDownloadPackage);
 
@@ -78,6 +87,23 @@ namespace Clio.Package
 		private const string OversizedDescriptorReason = "package descriptor exceeds the {0}-byte size limit";
 		private const string StagingCleanupFailureDataKey = "UiProjectStagingCleanupFailure";
 		private const long MaxPackageDescriptorBytes = 1024 * 1024;
+		private const string FullTemplateFolderName = "ui-project";
+		private const string EmptyTemplateFolderName = "ui-project-Empty";
+
+		/// <summary>Template group that holds the legacy per-version snapshots (<c>tpl/ui/&lt;version&gt;</c>).</summary>
+		private const string LegacyTemplateGroup = "ui";
+		private const string PackageJsonFileName = "package.json";
+		private const string DevkitPackageName = "@creatio-devkit/common";
+		private const string InvalidCreatioVersionMessage =
+			"Creatio version '{0}' is not a valid version. Use major.minor[.build[.revision]], for example 10.0.0.";
+		private const string UnsupportedCreatioVersionMessage =
+			"Creatio version '{0}' is not supported: the oldest UI project template targets Creatio {1}.";
+		private const string CurrentTemplateReportMessage =
+			"UI project template: {0} (current template, targets Creatio {1} and later); requested Creatio version: {2}; {3}: {4}.";
+		private const string LegacyTemplateReportMessage =
+			"UI project template: {0}/{1}/{2} (legacy template for Creatio {1}); requested Creatio version: {3}; {4}: {5}.";
+		private const string NotSpecifiedValue = "not specified";
+		private const string UnknownValue = "unknown";
 
 		#endregion
 
@@ -92,6 +118,15 @@ namespace Clio.Package
 		private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 		private static readonly Regex ProjectNamePattern = new("^([0-9a-z_]+)$", RegexOptions.Compiled, RegexTimeout);
 
+		/// <summary>
+		/// Lowest Creatio version the current templates (<c>tpl/ui-project</c>, <c>tpl/ui-project-Empty</c>)
+		/// target. They implement the lazy remote-entry contract (<c>RemoteEntryDefinition</c>) introduced in
+		/// <c>@creatio-devkit/common</c> 0.834.0, which ships with Creatio 8.3.4. The snapshots under
+		/// <c>tpl/ui/&lt;version&gt;</c> serve only Creatio versions below this one, so a newer requested
+		/// version (10.x included) must never fall back to them.
+		/// </summary>
+		private static readonly Version CurrentTemplateMinimumCreatioVersion = new(8, 3, 4);
+
 		private readonly EnvironmentSettings _environmentSettings;
 		private readonly IWorkspace _workspace;
 		private readonly IApplicationPackageListProvider _applicationPackageListProvider;
@@ -102,6 +137,7 @@ namespace Clio.Package
 		private readonly IWorkingDirectoriesProvider _workingDirectoriesProvider;
 		private readonly IFileSystem _fileSystem;
 		private readonly ISolutionCreator _solutionCreator;
+		private readonly ILogger _logger;
 
 		#endregion
 
@@ -111,7 +147,7 @@ namespace Clio.Package
 			IApplicationPackageListProvider applicationPackageListProvider, IPackageCreator packageCreator,
 			IPackageDownloader packageDownloader, IWorkspacePathBuilder workspacePathBuilder,
 			ITemplateProvider templateProvider, IWorkingDirectoriesProvider workingDirectoriesProvider,
-			IFileSystem fileSystem, ISolutionCreator solutionCreator) {
+			IFileSystem fileSystem, ISolutionCreator solutionCreator, ILogger logger) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			workspace.CheckArgumentNull(nameof(workspace));
 			applicationPackageListProvider.CheckArgumentNull(nameof(applicationPackageListProvider));
@@ -121,6 +157,7 @@ namespace Clio.Package
 			workingDirectoriesProvider.CheckArgumentNull(nameof(workingDirectoriesProvider));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			solutionCreator.CheckArgumentNull(nameof(solutionCreator));
+			logger.CheckArgumentNull(nameof(logger));
 			_environmentSettings = environmentSettings;
 			_workspace = workspace;
 			_applicationPackageListProvider = applicationPackageListProvider;
@@ -131,6 +168,7 @@ namespace Clio.Package
 			_workingDirectoriesProvider = workingDirectoriesProvider;
 			_fileSystem = fileSystem;
 			_solutionCreator = solutionCreator;
+			_logger = logger;
 		}
 
 		#endregion
@@ -270,17 +308,91 @@ namespace Clio.Package
 			new(string.Format(CultureInfo.InvariantCulture, InvalidExistingPackageMessage, packagePath, reason),
 				innerException);
 
-		private void CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
-			string creatioVersion) {
+		/// <summary>
+		/// Resolves the legacy template snapshot for <paramref name="creatioVersion"/>, or <see langword="null"/>
+		/// when the current template applies (no version, or a version at or above
+		/// <see cref="CurrentTemplateMinimumCreatioVersion"/>).
+		/// </summary>
+		private Version ResolveLegacyTemplateVersion(string creatioVersion) {
+			if (string.IsNullOrWhiteSpace(creatioVersion)) {
+				return null;
+			}
+			if (!Version.TryParse(creatioVersion.Trim(), out Version requestedVersion)) {
+				// No paramName: the message is printed as-is by the CLI, where the option is --version.
+				throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
+					InvalidCreatioVersionMessage, creatioVersion));
+			}
+			if (requestedVersion >= CurrentTemplateMinimumCreatioVersion) {
+				return null;
+			}
+			List<Version> legacyVersions = _templateProvider.GetTemplateDirectories(LegacyTemplateGroup)
+				.Select(Path.GetFileName)
+				.Select(name => Version.TryParse(name, out Version version) ? version : null)
+				.Where(version => version is not null)
+				.ToList();
+			Version compatibleVersion = legacyVersions.Where(version => version <= requestedVersion).Max();
+			if (compatibleVersion is null) {
+				Version oldestVersion = legacyVersions.Count > 0 ? legacyVersions.Min() : CurrentTemplateMinimumCreatioVersion;
+				throw new ArgumentException(string.Format(CultureInfo.InvariantCulture,
+					UnsupportedCreatioVersionMessage, creatioVersion, oldestVersion));
+			}
+			return compatibleVersion;
+		}
+
+		/// <summary>
+		/// Reports which template produced the project and the <c>@creatio-devkit/common</c> range it declares,
+		/// so a caller that asked for a specific Creatio version sees the mapping instead of only "Done".
+		/// </summary>
+		private void ReportSelectedTemplate(string projectName, string templateFolderName, string creatioVersion,
+			Version legacyTemplateVersion) {
+			string requestedVersion = string.IsNullOrWhiteSpace(creatioVersion) ? NotSpecifiedValue : creatioVersion.Trim();
+			string devkitRange = ReadDeclaredDevkitRange(Path.Combine(ProjectsPath, projectName, PackageJsonFileName));
+			string message = legacyTemplateVersion is null
+				? string.Format(CultureInfo.InvariantCulture, CurrentTemplateReportMessage, templateFolderName,
+					CurrentTemplateMinimumCreatioVersion, requestedVersion, DevkitPackageName, devkitRange)
+				: string.Format(CultureInfo.InvariantCulture, LegacyTemplateReportMessage, LegacyTemplateGroup,
+					legacyTemplateVersion, templateFolderName, requestedVersion, DevkitPackageName, devkitRange);
+			_logger.WriteInfo(message);
+		}
+
+		/// <summary>
+		/// Best-effort read of the devkit range for the report only: the project is already in place, so a
+		/// failure here must never fail the command.
+		/// </summary>
+		private string ReadDeclaredDevkitRange(string packageJsonPath) {
+			try {
+				if (!_fileSystem.ExistsFile(packageJsonPath)) {
+					return UnknownValue;
+				}
+				JsonNode devkitNode = JsonNode.Parse(_fileSystem.ReadAllText(packageJsonPath))?["dependencies"]?[DevkitPackageName];
+				return devkitNode is JsonValue devkitValue && devkitValue.TryGetValue(out string range)
+					&& !string.IsNullOrWhiteSpace(range)
+						? range
+						: UnknownValue;
+			} catch (JsonException) {
+				return UnknownValue;
+			} catch (InvalidOperationException) {
+				// The JSON root or "dependencies" is not an object.
+				return UnknownValue;
+			} catch (IOException) {
+				return UnknownValue;
+			} catch (UnauthorizedAccessException) {
+				return UnknownValue;
+			}
+		}
+
+		private string CreateProject(string projectName, string packageName, string vendorPrefix, bool isEmpty,
+			Version legacyTemplateVersion) {
 			_fileSystem.CreateDirectoryIfNotExists(ProjectsPath);
 			string projectPath = Path.Combine(ProjectsPath, projectName);
 			string stagingPath = Path.Combine(ProjectsPath, $".{projectName}.{Guid.NewGuid():N}.tmp");
-			string templateFolderName = isEmpty ? "ui-project-Empty" : "ui-project";
+			string templateFolderName = isEmpty ? EmptyTemplateFolderName : FullTemplateFolderName;
 			try {
-				if(string.IsNullOrWhiteSpace(creatioVersion)) {
+				if (legacyTemplateVersion is null) {
 					_templateProvider.CopyTemplateFolder(templateFolderName, stagingPath);
-				}else {
-					_templateProvider.CopyTemplateFolder(templateFolderName, stagingPath, creatioVersion, "ui");
+				} else {
+					_templateProvider.CopyTemplateFolder(templateFolderName, stagingPath,
+						legacyTemplateVersion.ToString(), LegacyTemplateGroup);
 				}
 				UpdateTemplateInfo(stagingPath, projectName, packageName, vendorPrefix);
 				_fileSystem.GetDirectoryInfo(stagingPath).MoveTo(projectPath);
@@ -294,6 +406,7 @@ namespace Clio.Package
 				}
 				throw;
 			}
+			return templateFolderName;
 		}
 
 		/// <summary>
@@ -376,6 +489,9 @@ namespace Clio.Package
 			string creatioVersion, Func<string, bool> enableDownloadPackage) {
 			CheckCorrectProjectName(projectName);
 			CheckProjectDoesNotExist(projectName);
+			// Resolve the template before any package is created or downloaded, so an invalid or
+			// unsupported version fails without leaving a half-scaffolded workspace behind.
+			Version legacyTemplateVersion = ResolveLegacyTemplateVersion(creatioVersion);
 			if (ReuseLocalPackageIfValid(packageName)) {
 				_workspace.AddPackageIfNeeded(packageName);
 			} else {
@@ -388,8 +504,9 @@ namespace Clio.Package
 					CreatePackage(packageName);
 				}
 			}
-			CreateProject(projectName, packageName, vendorPrefix, isEmpty, creatioVersion);
+			string templateFolderName = CreateProject(projectName, packageName, vendorPrefix, isEmpty, legacyTemplateVersion);
 			IntegrateEsprojIntoSolution(projectName, packageName);
+			ReportSelectedTemplate(projectName, templateFolderName, creatioVersion, legacyTemplateVersion);
 		}
 
 		#endregion

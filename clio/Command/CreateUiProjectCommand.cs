@@ -16,7 +16,7 @@ public class CreateUiProjectOptions : EnvironmentOptions {
 	#region Properties: Public
 
 	[Option("version", Required = false, Default = "",
-		HelpText = "Creatio version")]
+		HelpText = "Creatio version used to select the UI project template. Omitted, or 8.3.4 and later, uses the current template; older versions use the closest legacy template")]
 	public string CreatioVersion { get; set; }
 
 	[Option("empty", Required = false, Default = false,
