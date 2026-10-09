@@ -76,12 +76,17 @@ public sealed class PackageItemDescriptorMissingException : Exception {
 
 	// Each folder carries its own verdict, so a reader does not have to apply the rule above to the file list.
 	private static string DescribeFolder(PackageItemFolderWithoutDescriptor folder) {
-		string advice = folder.HoldsOnlyOperatingSystemFiles
-			? "only operating system files, delete the folder"
-			: folder.HoldsOnlyLocalization
-				? "only Localization files, delete the folder"
-				: "element files, restore descriptor.json";
-		return $"{folder.FolderPath} ({DescribeFiles(folder.Files)}; {advice})";
+		return $"{folder.FolderPath} ({DescribeFiles(folder.Files)}; {DescribeAdvice(folder)})";
+	}
+
+	private static string DescribeAdvice(PackageItemFolderWithoutDescriptor folder) {
+		if (folder.HoldsOnlyOperatingSystemFiles) {
+			return "only operating system files, delete the folder";
+		}
+		if (folder.HoldsOnlyLocalization) {
+			return "only Localization files, delete the folder";
+		}
+		return "element files, restore descriptor.json";
 	}
 
 	private static string DescribeFiles(IReadOnlyList<string> files) {
