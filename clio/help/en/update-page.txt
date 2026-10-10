@@ -214,10 +214,14 @@ DESCRIPTION
     false-conflict. A small race window between the check and the save remains
 	(last write wins).
 
-	A write redirected with --target-package-uid or --target-schema-uid skips the
-	on-disk baseline and does not refresh meta.json. A caller-supplied checksum is
-	still compared with the resolved target; a mismatch remains a conflict. With no
-	explicit checksum, the redirected write proceeds unchecked and reports a warning.
+	With --target-package-uid or --target-schema-uid, the on-disk baseline applies
+	only when the target resolves to the page it was captured for: the same editable
+	schema, or, when get-page recorded no editable schema yet, the same design
+	package (--target-package-uid only). A target that resolves elsewhere is a
+	redirect: the baseline is not used and meta.json is not refreshed. A
+	caller-supplied checksum is still compared with the resolved target; a mismatch
+	remains a conflict. With no applicable baseline and no explicit checksum, the
+	write proceeds unchecked and the warning says why.
 
 	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the

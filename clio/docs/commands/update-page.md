@@ -280,9 +280,8 @@ baseline that may be stale or anchored to a different directory and would then r
 conflict that never happened. After a successful save with an armed baseline the on-disk
 baseline is refreshed automatically, so consecutive updates in the same session do not
 false-conflict. A small race window between the check and the save remains (last write
-wins). A save redirected with `--target-package-uid` / `--target-schema-uid` is the
-exception on both counts: nothing is armed from `.clio-pages` and nothing is written back
-to it (see below).
+wins). A save with `--target-package-uid` / `--target-schema-uid` uses the `.clio-pages`
+baseline only when the target resolves to the page that baseline describes (see below).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
 value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
@@ -308,21 +307,26 @@ Two scope limits worth knowing before you rely on the pin:
   fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
   compares against the `.clio-pages` baseline and has `--force` as its only escape. The
   remedy on this page is `update-page`-only.
-- **A redirected save skips only the on-disk baseline.** When `update-page` is called with
-  `--target-package-uid` or `--target-schema-uid`, the write goes to a schema other than the
-  automatically resolved editable one, while both baseline sources describe that resolved
-  schema: `get-page` has no target arguments, so the `.clio-pages` baseline — and any
-  `checksum` copied out of a `get-page` response — is about the schema clio would have
-  written without the redirect. The guard therefore reads no baseline and arms no disk-derived
-  identity. An explicit `checksum` is retained and compared with the resolved target after
-  hierarchy resolution; a mismatch is refused as a conflict, which protects a target-package-uid
-  save that names an existing package and fails safe when the pin came from another schema. The
-  response carries a warning that the disk baseline was skipped. With no explicit pin the save is
-  unchecked, so there is no "re-run get-page and retry" loop and no reason to reach for `--force`.
-  Because nothing from disk is armed, the post-save
-  refresh leaves `meta.json` alone as well: writing the redirected schema's UId and checksum
-  into a baseline keyed by schema name corrupted the non-redirected schema's baseline and
-  produced a false `schema-uid-mismatch` on the next ordinary save.
+- **A selector is not by itself a redirect.** `get-page` has no target arguments, so the
+  `.clio-pages` baseline, and any `checksum` copied out of a `get-page` response, describes the
+  schema clio resolves automatically. When `update-page` is called with `--target-package-uid` or
+  `--target-schema-uid`, nothing is armed from disk before the target is resolved. The baseline is
+  carried instead and applied once the target turns out to be the page it describes: the same
+  editable schema (matched by schema UId), or, for a baseline that recorded no editable schema
+  yet, the same design package `get-page` resolved (`--target-package-uid` only, matched by
+  package UId). GUIDs are compared by value, so letter case and braces do not matter. Such a save
+  is checked like a save without the selector, including `schema-created-externally`, and
+  refreshes `meta.json` afterwards. A target that resolves elsewhere is a real redirect: the
+  baseline is not used, and `meta.json` is left alone, because writing the redirected schema's
+  UId and checksum into a baseline keyed by schema name corrupted the baseline of the
+  automatically resolved schema and produced a false `schema-uid-mismatch` on the next ordinary
+  save. An explicit `checksum` is kept and compared with the resolved target in every case; a
+  mismatch is refused as a conflict. The response carries a warning that says the baseline
+  applies only if the target resolves to the page it describes. When nothing on disk can be
+  matched to the target, the warning says the check did not run and why: no baseline was found
+  for this page, environment and anchor (then the same save without the selector is unchecked
+  too), or the baseline recorded no editable schema and the selector cannot be matched to its
+  design package. Neither case is a reason to reach for `--force`.
 
 A `checksum-mismatch` response returns the server's current value as
 `conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /

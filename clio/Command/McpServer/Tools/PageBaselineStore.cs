@@ -147,6 +147,26 @@ internal static class PageBaselineStore {
 		IFileSystem fileSystem,
 		IInterprocessFileGate gate,
 		string metaFilePath,
+		out string warning) =>
+		TryReadMetaFile(fileSystem, gate, metaFilePath, out warning)?.Baseline;
+
+	/// <summary>
+	/// Reads the whole <c>meta.json</c> model, both the <c>page</c> block and the <c>baseline</c> block, from
+	/// <paramref name="metaFilePath"/>. Has the same absence, gating and failure rules as
+	/// <see cref="TryReadBaseline"/>, which returns only the <c>baseline</c> block of this read.
+	/// </summary>
+	/// <remarks>
+	/// The selector path needs the <c>page</c> block too. A baseline that recorded NO editable schema has no
+	/// schema UId to compare a target with. The design package that <c>get-page</c> resolved, which is stored
+	/// only in <c>page.designPackageUId</c>, is then the only thing a <c>target-package-uid</c> can be
+	/// compared with.
+	/// </remarks>
+	/// <param name="warning">Set exactly as by <see cref="TryReadBaseline"/>.</param>
+	/// <returns>The deserialized file, or <c>null</c> when it is missing or could not be read.</returns>
+	internal static PageMetaFileModel TryReadMetaFile(
+		IFileSystem fileSystem,
+		IInterprocessFileGate gate,
+		string metaFilePath,
 		out string warning) {
 		warning = null;
 		if (string.IsNullOrWhiteSpace(metaFilePath)
@@ -158,13 +178,12 @@ internal static class PageBaselineStore {
 			return null;
 		}
 		try {
-			return RunGated<PageBaselineInfo>(gate, fileSystem, metaFilePath, () => {
+			return RunGated<PageMetaFileModel>(gate, fileSystem, metaFilePath, () => {
 				if (!fileSystem.File.Exists(metaFilePath)) {
 					return null;
 				}
 				string json = fileSystem.File.ReadAllText(metaFilePath);
-				PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(json);
-				return meta?.Baseline;
+				return JsonSerializer.Deserialize<PageMetaFileModel>(json);
 			});
 		} catch (Exception ex) {
 			warning = $"External-modification detection is DISARMED for this page: the conflict baseline "
@@ -180,7 +199,7 @@ internal static class PageBaselineStore {
 	/// either side is NOT a match — the conflict check is then skipped, because a baseline from a
 	/// different environment is not evidence of an external modification.
 	/// </summary>
-	internal static bool MatchesEnvironment(PageBaselineInfo baseline, string environmentName, string uri) {
+	internal static bool MatchesEnvironment([NotNullWhen(true)] PageBaselineInfo baseline, string environmentName, string uri) {
 		if (baseline is null) {
 			return false;
 		}
