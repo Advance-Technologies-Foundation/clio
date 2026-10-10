@@ -286,6 +286,80 @@ public class FileDesignModePackagesTests {
 		_logger.DidNotReceive().WriteError(Arg.Any<string>());
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("GetIsFileDesignModeEnabled returns the state the environment reported, read with one bounded request and no retries.")]
+	public void GetIsFileDesignModeEnabled_ShouldReturnReportedState_WithOneBoundedRequest(bool enabled) {
+		// Arrange
+		_applicationClient
+			.ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("state-response");
+		_jsonConverter.DeserializeObject<BoolResponse>("state-response")
+			.Returns(new BoolResponse { Success = true, Value = enabled });
+
+		// Act
+		bool? result = _sut.GetIsFileDesignModeEnabled();
+
+		// Assert
+		result.Should().Be(enabled, because: "the reported state is passed through unchanged");
+		_applicationClient.Received(1).ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty,
+			Arg.Is<int>(timeout => timeout != Timeout.Infinite), 1, Arg.Any<int>());
+		_logger.ReceivedCalls().Should().BeEmpty(
+			because: "the caller decides what to tell the user, so the read itself writes nothing to the log");
+	}
+
+	[Test]
+	[Description("GetIsFileDesignModeEnabled returns null instead of false when the environment answers with success false.")]
+	public void GetIsFileDesignModeEnabled_ShouldReturnNull_WhenTheEnvironmentRefusesTheRead() {
+		// Arrange
+		_applicationClient
+			.ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("state-response");
+		_jsonConverter.DeserializeObject<BoolResponse>("state-response")
+			.Returns(new BoolResponse { Success = false, Value = false });
+
+		// Act
+		bool? result = _sut.GetIsFileDesignModeEnabled();
+
+		// Assert
+		result.Should().BeNull(
+			because: "a refused read says nothing about the mode, and reporting it as disabled would hide the warning");
+	}
+
+	[Test]
+	[Description("GetIsFileDesignModeEnabled returns null and does not throw when the request fails in transport.")]
+	public void GetIsFileDesignModeEnabled_ShouldReturnNull_WhenTheRequestThrows() {
+		// Arrange
+		_applicationClient
+			.ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+
+		// Act
+		System.Func<bool?> act = () => _sut.GetIsFileDesignModeEnabled();
+
+		// Assert
+		act.Should().NotThrow(
+			because: "the caller has already committed a write and must not fail, or it would retry a non-idempotent change");
+		act().Should().BeNull(because: "a failed read is an unknown state");
+	}
+
+	[Test]
+	[Description("GetIsFileDesignModeEnabled returns null when the answer is not a BoolResponse, for example an HTML error page.")]
+	public void GetIsFileDesignModeEnabled_ShouldReturnNull_WhenTheAnswerCannotBeParsed() {
+		// Arrange
+		_applicationClient
+			.ExecutePostRequest(GetIsFileDesignModeUrl, string.Empty, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html>error</html>");
+		_jsonConverter.DeserializeObject<BoolResponse>("<html>error</html>")
+			.Returns(_ => throw new Newtonsoft.Json.JsonReaderException("Unexpected character"));
+
+		// Act
+		bool? result = _sut.GetIsFileDesignModeEnabled();
+
+		// Assert
+		result.Should().BeNull(because: "an unreadable answer is an unknown state, not an exception");
+	}
+
 	#endregion
 
 }
