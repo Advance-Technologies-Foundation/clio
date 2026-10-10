@@ -27,6 +27,14 @@ clio merge-workspaces --help
 Display canonical options and usage examples
 ```
 
+## Notes
+
+Packing stops when a folder under `Schemas/` or `Data/` of any package has no
+`descriptor.json`, because Creatio would reject the installation with
+`Invalid descriptor`. The error names the full local path of each such folder; see
+[push-workspace](push-workspace.md#folders-without-descriptorjson) for what to do
+with it.
+
 ## See Also
 
 create-workspace - Create a workspace

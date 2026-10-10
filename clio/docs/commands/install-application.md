@@ -50,7 +50,9 @@ Name (pos. 0)            Application package path or name
 0    Application installed successfully. Schemas the platform skipped because they
      were modified on the environment are reported as [WAR] warnings and keep this
      code, provided nothing else in the run failed.
-1    General installation failure
+1    General installation failure, or an application FOLDER refused before
+     upload because a folder under Schemas/ or Data/ has no descriptor.json
+     (the error names each such folder)
 5    Creatio reported InvalidGZipArchiveException for an invalid or corrupted GZip archive
 ```
 

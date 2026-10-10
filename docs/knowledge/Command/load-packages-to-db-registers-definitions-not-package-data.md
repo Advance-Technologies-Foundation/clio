@@ -17,7 +17,9 @@ report. Data installation lives on a different service — `PackageInstaller` po
 `PackageInstallerService.svc/InstallPackage` with `installPackageData`, surfaced as
 `push-pkg --install-package-data`. On an FSM environment, where the shipped workspace template forbids
 `push-workspace`, the operation that applies a binding row is `create-data-binding-db` /
-`upsert-data-binding-row-db`, which write the live row and register it in the package.
+`upsert-data-binding-row-db`, which write the live row and register it in the package — in the
+database only; the package folder on disk gets it from `pkg-to-file-system`
+([`platform/fsm-binding-saves-reach-the-database-only.md`](../platform/fsm-binding-saves-reach-the-database-only.md)).
 
 Until this record's change `LoadPackagesToStorage` returned `void` and reported every failure through
 `ILogger.WriteLine`, so `pkg-to-db` and `pkg-to-file-system` exited 0 in all four branches: success,
