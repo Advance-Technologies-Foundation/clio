@@ -6,6 +6,7 @@ using MicrosoftIO = System.IO.Abstractions;
 using System.IO.Compression;
 using System.Linq;
 using Clio.Common;
+using Clio.Package;
 
 namespace Clio
 {
@@ -127,6 +128,33 @@ namespace Clio
 		}
 
 
+		/// <summary>
+		/// Refuses to pack a package that Creatio would reject with "Invalid descriptor" (issue #1749).
+		/// </summary>
+		/// <param name="packagePath">Package folder the command was given; the error names folders inside it.</param>
+		/// <param name="tempPath">Folder the package elements were copied to.</param>
+		/// <param name="files">The files about to be packed, after <c>.clioignore</c> filtering.</param>
+		/// <remarks>
+		/// The check reads the final file list rather than the package folder, so it sees exactly what the platform
+		/// will see: an empty folder, or one whose files are ignored, is not packed and is not reported.
+		/// </remarks>
+		private void EnsureElementFoldersHaveDescriptors(string packagePath, string tempPath,
+				IEnumerable<string> files) {
+			IReadOnlyList<PackageItemFolderWithoutDescriptor> folders = PackageItemDescriptorCheck
+				.FindFoldersWithoutDescriptor(files.Select(file => _msFileSystem.Path.GetRelativePath(tempPath, file)));
+			if (folders.Count == 0) {
+				return;
+			}
+			// Full path: a relative package path (push-pkg UsrPkg) would otherwise name a folder relative to the
+			// working directory of clio, which an MCP host or a script cannot locate.
+			string packageContentPath =
+				_msFileSystem.Path.GetFullPath(_packageUtilities.GetPackageContentFolderPath(packagePath));
+			throw new PackageItemDescriptorMissingException(folders.Select(folder => folder with {
+				FolderPath = _msFileSystem.Path.Combine(
+					[packageContentPath, .. folder.FolderPath.Split('/')])
+			}));
+		}
+
 		private static void CheckZipPackagesArgument(string sourceGzipFilesFolderPaths, 
 				string destinationArchiveFileName) {
 			sourceGzipFilesFolderPaths.CheckArgumentNullOrWhiteSpace(nameof(sourceGzipFilesFolderPaths));
@@ -216,25 +244,38 @@ namespace Clio
 				SearchOption.AllDirectories);
 		}
 
+		/// <inheritdoc />
 		public void Pack(string packagePath, string packedPackagePath, bool skipPdb, bool overwrite = true) {
 			CheckPackArgument(packagePath, packedPackagePath);
-			_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				_packageUtilities.CopyPackageElements(packagePath, tempPath, overwrite);
-				var files = GetAllFiles(tempPath, skipPdb, packagePath);
+				List<string> files = GetAllFiles(tempPath, skipPdb, packagePath).ToList();
+				EnsureElementFoldersHaveDescriptors(packagePath, tempPath, files);
+				// Only after the check: a refused package must leave a previously built archive in place.
+				_fileSystem.CheckOrDeleteExistsFile(packedPackagePath, overwrite);
 				_compressionUtilities.PackToGZip(files, tempPath, packedPackagePath);
 			}); 
 		}
 
+		/// <inheritdoc />
 		public void Pack(string sourcePath, string destinationPath, IEnumerable<string> names, bool skipPdb, 
 				bool overwrite = true) {
 			_workingDirectoriesProvider.CreateTempDirectory(tempPath => {
 				sourcePath ??= Environment.CurrentDirectory;
+				List<PackageItemFolderWithoutDescriptor> foldersWithoutDescriptor = [];
 				foreach (var name in names)
 				{
 					var currentSourcePath = Path.Combine(sourcePath, name);
 					var currentDestinationPath = Path.Combine(tempPath, name + ".gz");
-					Pack(currentSourcePath, currentDestinationPath, skipPdb, overwrite);
+					try {
+						Pack(currentSourcePath, currentDestinationPath, skipPdb, overwrite);
+					} catch (PackageItemDescriptorMissingException exception) {
+						// Keep packing: one run names the folders of every package, as push-workspace does.
+						foldersWithoutDescriptor.AddRange(exception.Folders);
+					}
+				}
+				if (foldersWithoutDescriptor.Count > 0) {
+					throw new PackageItemDescriptorMissingException(foldersWithoutDescriptor);
 				}
 				ZipFile.CreateFromDirectory(tempPath, destinationPath);
 			});
