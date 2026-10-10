@@ -322,6 +322,7 @@
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
 				out PageAppendProjection projection, out response)) return false;
+			if (!TryValidatePlacementSlots(bodyToWrite, IsAppendMode(options), out response)) return false;
 			if (!TryValidateParents(bodyToWrite, context, out response)) return false;
 			// Captured BEFORE UpdateSchemaBody overwrites `body` with the resolved one.
 			IReadOnlyList<string> downgradeWarnings =
@@ -334,6 +335,21 @@
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
 				downgradeWarnings, inertWarnings, captionGateFailure);
 			return true;
+		}
+
+		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
+		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
+		// neither render nor be read back by get-page.
+		private static bool TryValidatePlacementSlots(string body, bool isAppend, out PageUpdateResponse response) {
+			response = null;
+			SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+			if (slotResult.IsValid) return true;
+			response = new PageUpdateResponse {
+				Success = false,
+				Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors)
+					+ (isAppend ? PlacementSlotFailureHint : string.Empty)
+			};
+			return false;
 		}
 
 		private bool TryValidateParents(string body, EditableSchemaContext context, out PageUpdateResponse response) {
@@ -377,6 +393,7 @@
 			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
 			if (!IsAppendMode(options)) {
+				if (!TryValidatePlacementSlots(options.Body, isAppend: false, out response)) return false;
 				if (!TryValidateParents(options.Body, context, out response)) return false;
 				// Parent references require the target hierarchy even during a dry run. No schema is saved.
 				// Caption checks remain fragment-scoped because replace does not fetch localizableStrings.
@@ -1308,6 +1325,16 @@
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
 		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>Prefix of the mandatory GH-1752 rejection: an insert/move with a parentName but no propertyName.</summary>
+		internal const string PlacementSlotFailurePrefix = "Body places an element without a slot: ";
+
+		// The check runs on the body that would be WRITTEN. In append mode that is the stored body merged with
+		// the fragment, so the operation (and its index) may come from the page as an older clio saved it.
+		private const string PlacementSlotFailureHint =
+			" In append mode the index counts the stored body merged with your fragment: an operation already "
+			+ "stored on the page is fixed by appending the same operation with its propertyName, or by saving "
+			+ "the corrected get-page body in replace mode.";
 
 		/// <summary>
 		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at

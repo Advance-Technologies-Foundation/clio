@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json;
 using Clio.Common;
 using CommandLine;
+using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// Options for the <c>get-page</c> command.
@@ -150,8 +151,8 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 
 			PageDesignerHierarchySchema currentSchema = hierarchy[0];
 
-			var parts = BuildBundleParts(hierarchy);
-			PageBundleInfo bundle = _bundleBuilder.Build(parts);
+			List<PageSchemaBundlePart> parts = BuildBundle(
+				BuildBundleParts(hierarchy), out PageBundleInfo bundle, out IReadOnlyList<string> resolutionWarnings);
 			var schemaChain = BuildSchemaChain(hierarchy);
 			string designPackageName = PageSchemaMetadataHelper.QueryPackageName(
 				_applicationClient, _serviceUrlBuilder, designPackageUId);
@@ -207,6 +208,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 				Editable = editableInfo,
 				BaseViewModelConfig = baseViewModelConfig,
 				BaseModelConfig = baseModelConfig,
+				Warnings = resolutionWarnings,
 				Error = null
 			};
 			return true;
@@ -245,6 +247,71 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 			designPackageUId = null;
 		}
 		return string.IsNullOrWhiteSpace(designPackageUId) ? fallbackPackageUId : designPackageUId;
+	}
+
+	/// <summary>
+	/// Builds the merged bundle strictly, with one narrow recovery (GH-1752): when the strict build fails with the
+	/// differ's not-a-container rejection of a <c>viewConfigDiff</c> insert/move that names a <c>parentName</c> but
+	/// no <c>propertyName</c> — a shape that older clio versions saved — it builds again without the operation the
+	/// rejection names and reports it, repeating while the next failure is another such rejection, so the page can
+	/// still be read and its body repaired through clio. Slotless operations the differ does not reject stay in the
+	/// chain. Any other failure, including one that remains after the skip, reaches the strict handler unchanged.
+	/// </summary>
+	/// <param name="parts">The hierarchy parts, current page first.</param>
+	/// <param name="bundle">The merged bundle.</param>
+	/// <param name="warnings">One advisory per skipped operation; <c>null</c> when nothing was skipped.</param>
+	/// <returns>The parts the bundle was built from, so a second build over the same chain resolves too.</returns>
+	private List<PageSchemaBundlePart> BuildBundle(
+		List<PageSchemaBundlePart> parts, out PageBundleInfo bundle, out IReadOnlyList<string> warnings) {
+		List<string> skipped = [];
+		List<PageSchemaBundlePart> current = parts;
+		while (true) {
+			try {
+				bundle = _bundleBuilder.Build(current);
+				break;
+			} catch (JsonDiffApplierException ex) {
+				// Each pass removes at least one operation, so the loop ends.
+				if (!TryWithoutRejectedPlacements(current, ex.Message, skipped,
+						out List<PageSchemaBundlePart> reduced)) {
+					throw;
+				}
+				current = reduced;
+			}
+		}
+		foreach (string warning in skipped) {
+			_logger.WriteWarning(warning);
+		}
+		warnings = skipped.Count > 0 ? skipped : null;
+		return current;
+	}
+
+	// Only the rejection a slotless placement itself causes is recovered, and only the placement it names is
+	// skipped. A chain that fails for another reason (a cycle, a merge without values, an insert into an undeclared
+	// slot) stays a strict failure even when it also carries such a placement. Returns false when nothing matches.
+	private static bool TryWithoutRejectedPlacements(
+		List<PageSchemaBundlePart> parts, string rejectionMessage, List<string> skipped,
+		out List<PageSchemaBundlePart> reduced) {
+		bool removedAny = false;
+		List<PageSchemaBundlePart> result = new(parts.Count);
+		foreach (PageSchemaBundlePart part in parts) {
+			List<SlotlessPlacement> rejected = PagePlacementSlotValidation.Find(part.ParsedBody.ViewConfigDiff)
+				.Where(placement => PagePlacementSlotValidation.IsRejectionOf(placement, rejectionMessage))
+				.ToList();
+			if (rejected.Count == 0) {
+				result.Add(part);
+				continue;
+			}
+			removedAny = true;
+			HashSet<int> skippedIndexes = rejected.Select(placement => placement.Index).ToHashSet();
+			JArray kept = new(((JArray)part.ParsedBody.ViewConfigDiff)
+				.Where((_, index) => !skippedIndexes.Contains(index))
+				.Select(operation => operation.DeepClone()));
+			skipped.AddRange(rejected.Select(placement =>
+				PagePlacementSlotValidation.DescribeSkipped(part.Schema.Name, part.Schema.PackageName, placement)));
+			result.Add(new PageSchemaBundlePart(part.Schema, part.ParsedBody.WithViewConfigDiff(kept)));
+		}
+		reduced = result;
+		return removedAny;
 	}
 
 	/// <summary>

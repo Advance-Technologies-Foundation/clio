@@ -41,7 +41,7 @@ public sealed class PageValidateTool(
 		BudgetPolicy = McpToolBudgetPolicy.None,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Validates a Freedom UI page body without saving. " + PageBodyAstLinter.DesignerSafetySummary + "Checks web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget config. Never rejects a data-source binding: one the body leaves undeclared only warns; update-page and sync-pages check it. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
+	[Description("Validates a Freedom UI page body without saving. " + PageBodyAstLinter.DesignerSafetySummary + "Checks insert/move propertyName slots, web parent references (known-containers), markers, JS syntax, field/column bindings, handlers, converters, and validators; mobile disallowed constructs, diff application, `type` placement, Scaffold slot merges, action-button placement, and metric-widget config. Never rejects a data-source binding: one the body leaves undeclared only warns; update-page and sync-pages check it. Accepts inline body or local-stdio get-page files.bodyFile via body-file; inline wins. Run before update-page. See get-guidance page-schema-converters, page-schema-handlers, page-schema-validators, or mobile-page-modification.")]
 	public async Task<PageValidateResponse> ValidatePage(
 		[Description("Parameters: body or body-file; optional resources and version")]
 		[Required] PageValidateArgs args,
@@ -52,28 +52,8 @@ public sealed class PageValidateTool(
 			return inputFailure;
 		}
 		string body = resolvedBody;
-		// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
-		// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
-		// insert) to the caller for analysis — no heuristic body normalization.
 		if (PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
-			SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
-			// No base: validate-page has no schema/environment identity, so the apply-oracle seeds its own base.
-			PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
-				body, new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, args.Version),
-				dataSourceValidator, mobileResources, cancellationToken: cancellationToken).ConfigureAwait(false);
-			// Run-process button structure is a purely offline check (no environment), and validate-page is the
-			// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
-			// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile
-			// apply-oracle does not cover it, so fold it in here for the mobile body too.
-			SchemaValidationResult mobileRunProcessResult =
-				SchemaValidationService.ValidateRunProcessButtonStructure(body);
-			if (!mobileRunProcessResult.IsValid) {
-				mobileResult = FoldInContentErrors(mobileResult, mobileRunProcessResult);
-			}
-			return new PageValidateResponse {
-				Valid = mobileResult.ContentOk,
-				Validation = mobileResult
-			};
+			return await ValidateMobileAsync(body, args, cancellationToken).ConfigureAwait(false);
 		}
 		PageSyncValidationResult result = Validate(body, args.Resources);
 		// Registry-driven chart-widget validation needs the (async, version-scoped) component catalog,
@@ -88,6 +68,11 @@ public sealed class PageValidateTool(
 			SchemaValidationService.ValidateRunProcessButtonStructure(body);
 		if (!runProcessResult.IsValid) {
 			result = FoldInContentErrors(result, runProcessResult);
+		}
+		// GH-1752: the mandatory placement-slot rule of the save path (PageUpdateCommand).
+		SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+		if (!slotResult.IsValid) {
+			result = FoldInContentErrors(result, slotResult);
 		}
 		// No environment here, so no inherited base: the check cannot reject, it only warns about bindings the body
 		// does not declare itself.
@@ -109,6 +94,37 @@ public sealed class PageValidateTool(
 		return new PageValidateResponse {
 			Valid = result.MarkersOk && result.JsSyntaxOk && result.ContentOk,
 			Validation = result
+		};
+	}
+
+	// Mobile path: MobilePageValidation.RunAsync applies the diff sections through the faithful client-engine
+	// clones (JsonDiffApplier / JsonPathDiffApplier) and returns any differ exception (e.g. a not-a-container
+	// insert) to the caller for analysis — no heuristic body normalization.
+	private async Task<PageValidateResponse> ValidateMobileAsync(
+		string body, PageValidateArgs args, CancellationToken cancellationToken) {
+		SchemaValidationService.TryParseResources(args.Resources, out Dictionary<string, string>? mobileResources, out _);
+		// No base: validate-page has no schema/environment identity, so the apply-oracle seeds its own base.
+		PageSyncValidationResult mobileResult = await MobilePageValidation.RunAsync(
+			body, new MobileValidationCatalogs(mobileComponentCatalog, webComponentCatalog, args.Version),
+			dataSourceValidator, mobileResources, cancellationToken: cancellationToken).ConfigureAwait(false);
+		// Run-process button structure is a purely offline check (no environment), and validate-page is the
+		// pre-flight the agent runs before update-page — so it must reach the same structural gate update-page
+		// applies, otherwise a green validate-page misreads as "the button is wired" (ENG-95822). The mobile
+		// apply-oracle does not cover it, so fold it in here for the mobile body too.
+		SchemaValidationResult mobileRunProcessResult =
+			SchemaValidationService.ValidateRunProcessButtonStructure(body);
+		if (!mobileRunProcessResult.IsValid) {
+			mobileResult = FoldInContentErrors(mobileResult, mobileRunProcessResult);
+		}
+		// GH-1752: the mandatory placement-slot rule of the save path (PageUpdateCommand). The mobile
+		// apply-oracle cannot see it: against its empty base a move of a template element moves nothing.
+		SchemaValidationResult mobileSlotResult = PagePlacementSlotValidation.Validate(body);
+		if (!mobileSlotResult.IsValid) {
+			mobileResult = FoldInContentErrors(mobileResult, mobileSlotResult);
+		}
+		return new PageValidateResponse {
+			Valid = mobileResult.ContentOk,
+			Validation = mobileResult
 		};
 	}
 

@@ -226,6 +226,13 @@ name instead of trying to edit a non-existent local `insert`.
   guards the metric/chart-widget-title case (a title such as
   `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
   otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
+- **A placement that names a parent must name its slot** (web and mobile, also with `validate: false`).
+  An `insert` or `move` with a `parentName` but no `propertyName` is **rejected** before saving. The
+  Creatio differ places the element into the parent's `propertyName` slot (usually `"items"`); without
+  it the platform refuses the page (`Item "<parent>" is not a container for other items`) and `get-page`
+  cannot resolve it. Without a `parentName` the element goes to the root list and needs no slot. A page
+  saved this way by an older clio still reads back: `get-page` resolves it without that operation and
+  names it in `warnings`, so the body can be fixed and saved again.
 
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.

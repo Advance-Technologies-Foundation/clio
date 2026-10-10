@@ -56,6 +56,15 @@ DESCRIPTION
     to get-page and update-page when you keep the page files outside the
     auto-detected workspace root.
 
+    A schema chain that the Creatio differ rejects fails get-page with an error
+    that names the page. One shape is read anyway so the page can be repaired:
+    a viewConfigDiff "insert" or "move" with a parentName but no propertyName
+    (older clio versions saved it). get-page then resolves the bundle without
+    that operation and returns a "warnings" entry naming the schema, the
+    operation index and the fix; raw.body (body.js) still contains the
+    operation. Add the parent's slot (e.g. "propertyName": "items") or remove
+    the operation, then save with update-page.
+
 SYNOPSIS
     clio get-page [options]
 

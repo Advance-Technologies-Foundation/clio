@@ -177,6 +177,17 @@ public sealed class PageGetResponse {
 	public JsonObject BaseModelConfig { get; init; }
 
 	/// <summary>
+	/// Advisories about a page that was read but could not be resolved exactly as stored — today only a
+	/// <c>viewConfigDiff</c> insert/move with a <c>parentName</c> and no <c>propertyName</c>, which the Creatio
+	/// differ rejects and which get-page therefore skips so the page can still be read and repaired (GH-1752).
+	/// <c>null</c> when there is nothing to report.
+	/// </summary>
+	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
+
+	/// <summary>
 	/// Gets or sets the error message for failed requests.
 	/// </summary>
 	[JsonProperty("error")]
