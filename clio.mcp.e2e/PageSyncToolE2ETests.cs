@@ -1809,6 +1809,81 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("Issue #1740: once a sync-pages save has registered an inserted button's caption key through `resources`, the next sync-pages save of the same body WITHOUT `resources` reports no dangling-binding warning for it, while a key registered nowhere is still reported.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages does not warn about a caption key already registered on the schema")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) a save inserts a button whose caption binds a fixed, non-Usr key and registers it via `resources`; (2) the same body is saved again without `resources` and must not warn that the key 'will not be registered' - the false warning of issue #1740; (3) a save binding a key registered nowhere must still name it in a warning or the refusal, so the silence in (2) is not a disabled check. The original body is restored with force:true in cleanup.")]
+	public async Task PageSyncTool_Should_Not_Warn_About_A_Caption_Key_Already_Registered_On_The_Schema() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages caption-key test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-caption-key-").FullName;
+		// NOT Usr-prefixed: a Usr key is auto-derived and would never warn. The registered key is fixed so
+		// repeated runs reuse one stored entry instead of growing the shared seeded page.
+		const string registeredKey = PersistedCaptionProbeKey;
+		string neverRegisteredKey = $"E2EMissingCaption{Guid.NewGuid().ToString("N")[..8]}_caption";
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await ReadSeededPageAsync(context, environmentName, sessionDir);
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			PageSyncResponse registeringSave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, BodyWithSyncCaptionButton(originalBody, registeredKey),
+				checksum: null, force: true, resources: "{\"" + registeredKey + "\": \"E2E caption\"}");
+			registeringSave.Pages.Should().ContainSingle().Which.Success.Should().BeTrue(
+				because: $"the caption key is supplied in `resources`, so the save must go through. Error: {registeringSave.Pages.FirstOrDefault()?.Error}");
+
+			// Act
+			PageSyncResponse layoutOnlySave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, BodyWithSyncCaptionButton(originalBody, registeredKey),
+				checksum: null, force: true);
+			PageSyncResponse missingKeySave = await SyncSeededPageAsync(
+				context, environmentName, sessionDir, BodyWithSyncCaptionButton(originalBody, neverRegisteredKey),
+				checksum: null, force: true);
+
+			// Assert
+			PageSyncPageResult layoutOnly = layoutOnlySave.Pages.Should().ContainSingle().Subject;
+			layoutOnly.Success.Should().BeTrue(
+				because: $"a re-save of an already-saved body must succeed. Error: {layoutOnly.Error}");
+			(layoutOnly.Validation?.Warnings ?? []).Should().NotContain(
+				warning => warning.Contains(registeredKey) && warning.Contains("will not be registered"),
+				because: "the key is stored on the schema and renders at runtime, so the warning is the false positive of issue #1740");
+			PageSyncPageResult missingKey = missingKeySave.Pages.Should().ContainSingle().Subject;
+			IEnumerable<string> missingKeyMessages = (missingKey.Validation?.Warnings ?? [])
+				.Append(missingKey.Error ?? string.Empty);
+			missingKeyMessages.Should().Contain(
+				message => message.Contains(neverRegisteredKey),
+				because: "a key registered nowhere still renders raw, so sync-pages must keep reporting it");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageSyncResponse restore = await SyncSeededPageAsync(context, environmentName, sessionDir, originalBody, checksum: null, force: true);
+				restore.Success.Should().BeTrue(because: "the E2E test must restore the shared seeded page body that later tests rely on");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	/// <summary>
+	/// Caption key the issue #1740 probes register on the seeded page. Kept fixed - and equal to the one in
+	/// <c>PageUpdateToolE2ETests</c> - so repeated runs reuse one stored entry instead of growing the page.
+	/// </summary>
+	private const string PersistedCaptionProbeKey = "E2ECaptionProbe_caption";
+
+	/// <summary>
+	/// Returns <paramref name="body"/> with one inserted button whose caption binds <paramref name="resourceKey"/>,
+	/// the shape the inserted-widget-caption check reports on (mirrors <c>PageUpdateToolE2ETests.BodyWithCaptionButton</c>).
+	/// </summary>
+	private static string BodyWithSyncCaptionButton(string body, string resourceKey) => ReplaceEmptyMarker(
+		body, "SCHEMA_VIEW_CONFIG_DIFF",
+		"[{\"operation\":\"insert\",\"name\":\"E2ECaptionKeyButton\"," +
+		"\"values\":{\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings." + resourceKey + "\"}," +
+		"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
+
 	private async Task<PageGetResponse> ReadSeededPageAsync(
 		ArrangeContext context, string environmentName, string sessionDir) {
 		CallToolResult getResult = await context.Session.CallToolAsync(

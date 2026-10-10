@@ -93,7 +93,8 @@ When `validate` is `true` (the default), the body is checked client-side before 
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as `$Resources.Strings.<Key>` or
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
+  `resources`, is not already stored on the schema or declared by a schema of its designer hierarchy,
+  is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
   metric/chart-widget-title case (`#ResourceString(IndicatorWidget_<slug>_title)#` is registered only
   when passed in `resources`; otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 
@@ -215,10 +216,11 @@ were added during save.
 is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
 whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
 because the count covers new declarations, not value updates. Other cultures and resource identities
-are preserved. The validation gate honours this: a label bound to
-a key that is only persisted on the schema is accepted without being repeated. The lookup costs one
-extra schema read and is paid ONLY when a label-resource check has already rejected the body, so a
-clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
+are preserved. The validation gate honours this: a label or an inserted widget caption bound to
+a key that is only persisted on the schema, or declared by a schema of its designer hierarchy, is
+accepted without being repeated and is not reported as a dangling binding. The lookup costs one
+extra schema read and is paid ONLY when a label-resource or widget-caption check has already flagged
+the body, so a clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
 stricter verdict stands and the page result carries a warning naming the reason.
 
 Resource saves also return a workspace-capture warning. Preserve local edits, capture the affected

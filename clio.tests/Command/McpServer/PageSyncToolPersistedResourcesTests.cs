@@ -351,4 +351,80 @@ public sealed class PageSyncToolPersistedResourcesTests {
 			warning => warning.Contains("Persisted resource keys could not be read"),
 			because: "the reason must be visible on the page result, not only in a log the MCP caller never sees");
 	}
+	/// <summary>A body that inserts one button whose caption binds <paramref name="resourceKey"/>.</summary>
+	private static string BuildButtonCaptionPageBody(string resourceKey) =>
+		BuildDiffBackedPageBody(
+			"[{\"operation\":\"insert\",\"name\":\"ProbeButton\",\"values\":{\"type\":\"crt.Button\","
+			+ "\"caption\":\"$Resources.Strings." + resourceKey + "\"}}]",
+			"[]");
+
+	[Test]
+	[Description("Issue #1740: sync-pages does not warn about an inserted widget caption whose key is already stored on the schema and is not repeated in `resources` - the layout-only re-save that reported one false dangling-binding warning per registered key.")]
+	public async Task SyncPages_ShouldNotWarnAboutTheCaption_WhenItsKeyIsOnlyPersistedOnTheSchema() {
+		// Arrange
+		StubSchemaWithPersistedKeys("ProbeButton_caption");
+		PageSyncTool tool = CreateTool();
+		PageSyncArgs args = BuildArgs(
+			new PageSyncPageInput(SchemaName, BuildButtonCaptionPageBody("ProbeButton_caption")));
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
+		page.Success.Should().BeTrue(
+			because: "the save gate accepts a caption whose key the schema stores, and sync-pages must agree with it");
+		(page.Validation?.Warnings ?? Array.Empty<string>()).Should().NotContain(
+			warning => warning.Contains("will not be registered"),
+			because: "the key renders at runtime, so the warning would be false and would bury the real ones");
+	}
+
+	[Test]
+	[Description("Issue #1740: sync-pages still reports an inserted widget caption whose key is neither sent nor stored, and the save gate still refuses the page.")]
+	public async Task SyncPages_ShouldWarnAndRefuse_WhenTheCaptionKeyIsNeitherSentNorPersisted() {
+		// Arrange
+		StubSchemaWithPersistedKeys("ProbeButton_caption");
+		PageSyncTool tool = CreateTool();
+		PageSyncArgs args = BuildArgs(
+			new PageSyncPageInput(SchemaName, BuildButtonCaptionPageBody("NeverRegistered_caption")));
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
+		(page.Validation?.Warnings ?? Array.Empty<string>()).Should().Contain(
+			warning => warning.Contains("will not be registered") && warning.Contains("NeverRegistered_caption"),
+			because: "a genuinely missing key renders raw, which is what the pre-flight warning exists to report");
+		page.Success.Should().BeFalse(
+			because: "the authoritative save gate refuses a caption bound to a key nobody registers");
+	}
+
+	[Test]
+	[Description("Issue #1740: sync-pages resolves a caption key that only a parent level of the resolved designer hierarchy declares - GetSchema omits such keys, they render at runtime, and the save gate accepts them, so the pre-flight must not warn either.")]
+	public async Task SyncPages_ShouldNotWarnAboutTheCaption_WhenItsKeyIsDeclaredOnlyByAParentLevel() {
+		// Arrange
+		StubSchemaWithPersistedKeys();
+		_hierarchyClient.GetParentSchemas(SchemaUId, "test-pkg-uid").Returns([
+			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" },
+			new PageDesignerHierarchySchema {
+				UId = "bbbbbbbb-cccc-dddd-eeee-ffffffffffff", Name = "ParentTemplate", PackageUId = "parent-pkg-uid",
+				LocalizableStrings = [new Newtonsoft.Json.Linq.JObject { ["name"] = "ParentButton_caption" }]
+			}
+		]);
+		PageSyncTool tool = CreateTool();
+		PageSyncArgs args = BuildArgs(
+			new PageSyncPageInput(SchemaName, BuildButtonCaptionPageBody("ParentButton_caption")));
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult page = response.Pages.Should().ContainSingle().Subject;
+		page.Success.Should().BeTrue(
+			because: "the parent level declares the key, so the save gate accepts the caption");
+		(page.Validation?.Warnings ?? Array.Empty<string>()).Should().NotContain(
+			warning => warning.Contains("will not be registered"),
+			because: "the pre-flight reads the same stored-plus-hierarchy key set the save accepts");
+	}
 }

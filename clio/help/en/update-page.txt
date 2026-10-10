@@ -179,7 +179,9 @@ DESCRIPTION
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
       $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
-      is not registered via --resources and is not Usr*/DS-bound. A metric title
+      is not registered via --resources, is not already stored on the schema or
+      declared by a schema of its designer hierarchy, and is not Usr*/DS-bound.
+      A metric title
       #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
       pass it in --resources; otherwise it renders raw.
     - Resource keys already stored on the schema count as registered: a later save
@@ -284,10 +286,10 @@ DESCRIPTION
     is unaffected - it writes verbatim, so there is nothing to project. It is
     NOT an offline check: resolving the schema context still queries the server
     before either mode is chosen. What it skips is the designer GetSchema fetch
-    of the current body. Trade-off: its caption
-    check resolves only against the resources you pass, so it is weaker than
-    the save's. The same projection is returned on a real append
-    save.
+    of the current body. Its caption check resolves against the body and the
+    resources you pass first; only a still-unresolved caption makes it read the
+    keys the schema stores plus those of its designer hierarchy (the set the
+    save accepts). The same projection is returned on a real append save.
     appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
     append unconditionally and cannot lose an entry. Handlers are NOT covered:
     they dedupe by request, and the merge drops every current handler whose

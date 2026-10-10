@@ -222,8 +222,11 @@ name instead of trying to edit a non-existent local `insert`.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `--resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio auto-derives. This
-  guards the metric/chart-widget-title case (a title such as
+  `--resources`, is not already stored in the target schema's `localizableStrings` (on the first save
+  into a package: in the schema it replaces, whose strings the save copies) or declared by a level of
+  the designer hierarchy clio resolved for the page (not with `--target-schema-uid`), is not a DS-bound
+  attribute, and is not a `Usr`-prefixed key clio auto-derives. A layout-only re-save therefore does not
+  have to repeat keys an earlier save registered. This guards the metric/chart-widget-title case (a title such as
   `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
   otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 
@@ -436,9 +439,11 @@ Three consequences worth knowing:
   check — do not plan a workflow around it running without a server. Resolving the schema context
   happens before either mode is chosen and still queries `SysSchema`, the design package and the
   parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
-  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
-  is that its caption check can only resolve against the resources you pass, so it is weaker than
-  the save's — the one place a replace dry run can still differ from its save.
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. Its caption
+  check first resolves against the body and the resources you pass; only when a binding is still
+  unresolved does it read the keys the schema already stores (one `GetSchema`) together with the keys
+  of its designer hierarchy, the same set the save accepts. A body whose captions all resolve from the
+  body or `--resources` still costs no designer read.
 
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.

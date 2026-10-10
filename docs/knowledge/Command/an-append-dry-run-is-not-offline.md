@@ -82,10 +82,11 @@ runs before either mode is chosen and already reaches the server, so a replace d
 offline operation. What it skips is `TryCompleteDryRun`'s designer `GetSchema` of the current body —
 precisely what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts for its body without parent references, and no more. Explicit web parent references additionally require the inherited designer hierarchy, including on replace dry runs (GH-1640). Do not
 widen that test's name into a claim that the path runs without a server; a caller who plans an
-offline workflow on it will find one that cannot run. The cost of that guarantee is the one
-divergence left: a replace dry run's caption check resolves only against the explicitly passed
-resources, so it is weaker than the save's. Closing it would mean fetching the current body there
-too, which is a product decision.
+offline workflow on it will find one that cannot run. Its caption check does not fetch the body
+either: it resolves against the body and the passed resources first, and only for a binding still
+unresolved reads the stored keys plus the resolved hierarchy's keys through
+`IPersistedResourceKeyReader` (GH-1740) - the same key set the save gate accepts. Skipping that
+read makes a layout-only re-save warn once for every key an earlier save registered.
 
 **Why it is this way** — a dry run exists to answer "what will this write do?", and in append mode
 that question cannot be answered without the server's body: the written body is a function of both

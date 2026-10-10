@@ -834,7 +834,8 @@ public sealed class PageSyncTool(
 
 	/// <summary>
 	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
-	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection or an
+	/// unresolved widget-caption binding.
 	/// </summary>
 	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
 	/// <param name="schemaName">The page whose schema is read.</param>
@@ -1067,9 +1068,9 @@ public sealed class PageSyncTool(
 	/// <param name="resources">The page's <c>resources</c> argument.</param>
 	/// <param name="persistedResourceKeysProvider">
 	/// Supplies the resource keys already persisted on the target schema. Invoked ONLY for an unresolved
-	/// label-resource rejection — the one verdict a persisted key can change — so a clean body never pays
-	/// the round-trip. Pass <see langword="null"/> from a caller that must stay offline; that only makes
-	/// the verdict stricter.
+	/// label-resource rejection or an unresolved widget-caption binding — the verdicts a persisted key can
+	/// change — so a clean body never pays the round-trip. Pass <see langword="null"/> from a caller that must
+	/// stay offline; that only makes the verdict stricter.
 	/// </param>
 	/// <returns>The per-page validation envelope.</returns>
 	private static PageSyncValidationResult ValidateBody(
@@ -1095,8 +1096,11 @@ public sealed class PageSyncTool(
 		(SchemaValidationResult fieldResult, SchemaValidationResult insertSelfConsistencyResult) =
 			RunFieldLabelResourceValidation(
 				contentResult, body, explicitResources, persistedResourceKeysProvider);
+		// The same provider resolves widget captions: a key the schema already stores or inherits is not a
+		// dangling binding just because this call does not repeat it in `resources` (issue #1740).
 		SchemaValidationResult widgetCaptionResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
+			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+				body, explicitResources, persistedResourceKeysProvider));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateLocalizableTextLiterals(body));
 		SchemaValidationResult handlerResult = RunContentValidation(
@@ -1145,8 +1149,9 @@ public sealed class PageSyncTool(
 			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
-		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (the pre-flight has no schema
-		// context); surface it as a warning. The authoritative hard gate runs at save time via TryUpdatePage.
+		// Widget-caption resolvability is a PRE-FLIGHT heuristic here (body, `resources`, and the schema's stored
+		// and inherited keys when a provider is given); surface it as a warning. The authoritative hard gate runs
+		// at save time via TryUpdatePage.
 		if (!widgetCaptionResult.IsValid) {
 			warnings.AddRange(widgetCaptionResult.Errors);
 		}

@@ -1786,6 +1786,86 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("Issue #1740: once a real save has registered an inserted button's caption key through `resources`, a replace dry run of the same body WITHOUT `resources` reports no dangling-binding warning for it, while a key registered nowhere is still reported.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page dry run does not warn about a caption key already registered on the schema")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave on a real stand: (1) a real save inserts a button whose caption binds a run-unique, non-Usr key and registers it via `resources`; (2) a replace dry run of the same body without `resources` must not warn that the key 'will not be registered' - the false warning of issue #1740; (3) a dry run binding a key registered nowhere must still warn and name it, so the silence in (2) is not a disabled check. The original body is restored with force=true in cleanup.")]
+	public async Task PageUpdateTool_Should_Not_Warn_About_A_Caption_Key_Already_Registered_On_The_Schema() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive update-page caption-key test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		// NOT Usr-prefixed: a Usr key is auto-derived and would never warn, which would make the dry-run
+		// assertion vacuous. The registered key is FIXED: a localizableStrings entry cannot be removed through
+		// update-page, so a run-unique key would leave one more resource string on the shared seeded page on
+		// every run. The never-registered key is only dry-run, never saved, so it can stay run-unique.
+		string registeredKey = PersistedCaptionProbeKey;
+		string neverRegisteredKey = $"E2EMissingCaption{Guid.NewGuid().ToString("N")[..8]}_caption";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-caption-key-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse firstGet = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			firstGet.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page '{savePage}' before the caption probes. Error: {firstGet.Error}");
+			originalBody = await File.ReadAllTextAsync(firstGet.Files.BodyFile);
+			PageUpdateResponse registeringSave = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithCaptionButton(originalBody, registeredKey),
+				environmentName, sessionDir, force: true,
+				resources: $"{{\"{registeredKey}\":\"E2E caption\"}}");
+			registeringSave.Success.Should().BeTrue(
+				because: $"the caption key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
+
+			// Act
+			PageUpdateResponse layoutOnlyDryRun = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithCaptionButton(originalBody, registeredKey),
+				environmentName, sessionDir, force: true, dryRun: true);
+			PageUpdateResponse missingKeyDryRun = await UpdatePageAsync(
+				arrangeContext, savePage, BodyWithCaptionButton(originalBody, neverRegisteredKey),
+				environmentName, sessionDir, force: true, dryRun: true);
+
+			// Assert
+			layoutOnlyDryRun.Success.Should().BeTrue(
+				because: $"a dry run of an already-saved body must succeed. Error: {layoutOnlyDryRun.Error}");
+			(layoutOnlyDryRun.Warnings ?? []).Should().NotContain(
+				warning => warning.Contains(registeredKey) && warning.Contains("will not be registered"),
+				because: "the key is stored on the schema and renders at runtime, so the warning is the false positive of issue #1740");
+			(missingKeyDryRun.Warnings ?? []).Should().Contain(
+				warning => warning.Contains(neverRegisteredKey) && warning.Contains("will not be registered"),
+				because: "a key registered nowhere still renders raw, so the dry run must keep reporting it");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, sessionDir, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	/// <summary>
+	/// Caption key the issue #1740 probes register on the seeded page. Kept fixed - and equal to the one in
+	/// <c>PageSyncToolE2ETests</c> - so repeated runs reuse one stored entry instead of growing the page.
+	/// </summary>
+	private const string PersistedCaptionProbeKey = "E2ECaptionProbe_caption";
+
+	/// <summary>
+	/// Returns <paramref name="originalBody"/> with one inserted button whose caption binds
+	/// <paramref name="resourceKey"/>, placed into the page's (empty) <c>SCHEMA_VIEW_CONFIG_DIFF</c>.
+	/// </summary>
+	private static string BodyWithCaptionButton(string originalBody, string resourceKey) => ReplaceEmptyMarker(
+		originalBody,
+		"SCHEMA_VIEW_CONFIG_DIFF",
+		"[{\"operation\":\"insert\",\"name\":\"E2ECaptionKeyButton\"," +
+		"\"values\":{\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings." + resourceKey + "\"}," +
+		"\"parentName\":\"MainContainer\",\"propertyName\":\"items\",\"index\":0}]");
+
 	/// <summary>
 	/// Returns <paramref name="originalBody"/> with a single container insert placed into its (empty)
 	/// <c>SCHEMA_VIEW_CONFIG_DIFF</c>, so consecutive saves submit genuinely different bodies and each one
@@ -2050,7 +2130,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		bool? force = null,
 		string? mode = null,
 		string? checksum = null,
-		string? resources = null) {
+		string? resources = null,
+		bool? dryRun = null) {
 		Dictionary<string, object?> args = new() {
 			["schema-name"] = schemaName,
 			["body"] = body,
@@ -2068,6 +2149,9 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 		}
 		if (resources is not null) {
 			args["resources"] = resources;
+		}
+		if (dryRun == true) {
+			args["dry-run"] = true;
 		}
 		CallToolResult result = await arrangeContext.Session.CallToolAsync(
 			ToolName,
