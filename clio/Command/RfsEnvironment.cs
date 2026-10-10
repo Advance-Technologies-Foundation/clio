@@ -12,6 +12,9 @@ namespace Clio.Command;
 /// </summary>
 public class RfsEnvironment {
 	private sealed record PackageIdentity(string Name, Guid UId);
+	private sealed record RuntimeOutputTree(
+		IReadOnlyCollection<DirectoryInfo> Directories,
+		IReadOnlyCollection<FileInfo> Files);
 
 	#region Fields: Private
 
@@ -117,6 +120,91 @@ public class RfsEnvironment {
 		if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) {
 			throw new InvalidOperationException(
 				$"Package runtime output must not contain symbolic links or reparse points: {entry.FullName}.");
+		}
+	}
+
+	private static RuntimeOutputTree ReadPhysicalRuntimeOutputTree(string outputPath) {
+		RejectLinkPath(outputPath);
+		if (File.Exists(outputPath)) {
+			throw new InvalidOperationException(
+				$"Repository package runtime output path is not a directory: {outputPath}.");
+		}
+		if (!Directory.Exists(outputPath)) {
+			return new RuntimeOutputTree([], []);
+		}
+
+		List<DirectoryInfo> directories = [];
+		List<FileInfo> files = [];
+		ReadPhysicalRuntimeOutputDirectory(new DirectoryInfo(outputPath), directories, files);
+		return new RuntimeOutputTree(directories, files);
+	}
+
+	private static void RejectLinkPath(string path) {
+		FileSystemInfo entry = new FileInfo(path);
+		if (entry.LinkTarget is not null) {
+			throw new InvalidOperationException(
+				$"Package runtime output must not contain symbolic links or reparse points: {path}.");
+		}
+	}
+
+	private static void ReadPhysicalRuntimeOutputDirectory(
+		DirectoryInfo directory,
+		ICollection<DirectoryInfo> directories,
+		ICollection<FileInfo> files) {
+		RejectReparsePoint(directory);
+		directories.Add(directory);
+		foreach (FileSystemInfo entry in directory.EnumerateFileSystemInfos()) {
+			RejectReparsePoint(entry);
+			if (entry is DirectoryInfo childDirectory) {
+				ReadPhysicalRuntimeOutputDirectory(childDirectory, directories, files);
+			}
+			else if (entry is FileInfo file) {
+				files.Add(file);
+			}
+		}
+	}
+
+	private static IReadOnlyCollection<RuntimeOutputTree> ReadPhysicalRuntimeOutputTrees(
+		string repositoryPackagePath) {
+		string filesPath = Path.Combine(repositoryPackagePath, "Files");
+		RejectLinkPath(filesPath);
+		if (File.Exists(filesPath)) {
+			throw new InvalidOperationException(
+				$"Repository package Files path is not a directory: {filesPath}.");
+		}
+		if (!Directory.Exists(filesPath)) {
+			return [];
+		}
+
+		RejectReparsePoint(new DirectoryInfo(filesPath));
+		return [
+			ReadPhysicalRuntimeOutputTree(Path.Combine(filesPath, "Bin")),
+			ReadPhysicalRuntimeOutputTree(Path.Combine(filesPath, "obj"))
+		];
+	}
+
+	private static void NormalizeRuntimeOutputPermissions(
+		IReadOnlyCollection<RuntimeOutputTree> outputTrees) {
+		if (OperatingSystem.IsWindows()) {
+			return;
+		}
+
+		const UnixFileMode directoryPermissions = UnixFileMode.GroupRead
+			| UnixFileMode.GroupWrite
+			| UnixFileMode.GroupExecute
+			| UnixFileMode.SetGroup;
+		const UnixFileMode filePermissions = UnixFileMode.GroupRead | UnixFileMode.GroupWrite;
+		foreach (RuntimeOutputTree outputTree in outputTrees) {
+			foreach (DirectoryInfo directory in outputTree.Directories) {
+				File.SetUnixFileMode(
+					directory.FullName,
+					File.GetUnixFileMode(directory.FullName) | directoryPermissions);
+			}
+			foreach (FileInfo file in outputTree.Files) {
+				File.SetUnixFileMode(
+					file.FullName,
+					File.GetUnixFileMode(file.FullName) | filePermissions);
+			}
 		}
 	}
 
@@ -285,8 +373,11 @@ public class RfsEnvironment {
 			ValidateRepositoryContentPath(
 				repositoryPackageFolder.FullName,
 				repositoryPackageContentFolderPath);
+			IReadOnlyCollection<RuntimeOutputTree> repositoryOutputTrees =
+				ReadPhysicalRuntimeOutputTrees(repositoryPackageContentFolderPath);
 			if (environmentPackageDirectory != null) {
 				if (IsExistingLinkToRepository(environmentPackageDirectory, repositoryPackageContentFolderPath)) {
+					NormalizeRuntimeOutputPermissions(repositoryOutputTrees);
 					continue;
 				}
 				RejectReparsePoint(environmentPackageDirectory);
@@ -297,7 +388,12 @@ public class RfsEnvironment {
 				PreserveRuntimeOutput(
 					environmentPackageDirectory.FullName,
 					repositoryPackageContentFolderPath);
+				NormalizeRuntimeOutputPermissions(
+					ReadPhysicalRuntimeOutputTrees(repositoryPackageContentFolderPath));
 				environmentPackageDirectory.Delete(true);
+			}
+			else {
+				NormalizeRuntimeOutputPermissions(repositoryOutputTrees);
 			}
 			_fileSystem.CreateDirectorySymLink(environmentPackageDirectoryPath, repositoryPackageContentFolderPath);
 		}
