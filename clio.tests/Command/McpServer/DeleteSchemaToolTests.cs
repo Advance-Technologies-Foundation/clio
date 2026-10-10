@@ -1,6 +1,7 @@
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
+using Clio.Package;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
@@ -80,7 +81,8 @@ public class DeleteSchemaToolTests {
 				Substitute.For<IServiceUrlBuilder>(),
 				Substitute.For<IWorkspacePathBuilder>(),
 				Substitute.For<IJsonConverter>(),
-				Substitute.For<IFileSystem>()) {
+				Substitute.For<IFileSystem>(),
+				Substitute.For<IDeletedItemFileCleaner>()) {
 		}
 
 		public override int Execute(DeleteSchemaOptions options) {

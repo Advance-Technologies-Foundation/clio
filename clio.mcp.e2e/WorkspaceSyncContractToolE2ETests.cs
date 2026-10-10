@@ -107,6 +107,35 @@ public sealed class WorkspaceSyncContractToolE2ETests : McpContractFixtureBase {
 		AssertPushWorkspaceContractAdvertisesSkipBackup(contracts);
 	}
 
+	[Test]
+	[Description("Issue #1749: starts the real clio MCP server, fetches the push-workspace full contract via get-tool-contract, and verifies it tells agents that a Schemas/Data folder without descriptor.json fails the push before anything is installed.")]
+	[AllureTag(PushToolName)]
+	[AllureName("Push workspace contract advertises the descriptor.json pre-flight")]
+	[AllureDescription("Uses the get-tool-contract full contract of the real clio MCP server to verify that push-workspace documents the refusal of Schemas/<Name>/ and Data/<Name>/ folders without descriptor.json, so an agent deletes the leftover instead of retrying the push.")]
+	public async Task PushWorkspace_Tool_Should_Advertise_Descriptor_Preflight() {
+		// Arrange
+		await using ArrangeContext arrangeContext = Arrange();
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { PushToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		string description = contracts.Tools!.Single(tool => tool.Name == PushToolName).Description;
+		description.Should().Contain("descriptor.json",
+			because: "agents must learn that a folder without descriptor.json fails the push");
+		description.Should().Contain("installs nothing",
+			because: "agents must know the refusal happens before the environment is changed");
+	}
+
 	private WorkspaceSyncArrangeContext ArrangeInvalidEnvironment(string toolPrefix) {
 		string rootDirectory = CreateFixtureDirectory($"workspace-sync-{toolPrefix}");
 		string workspacePath = Path.Combine(rootDirectory, "workspace");
