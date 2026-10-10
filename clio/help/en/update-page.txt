@@ -255,6 +255,23 @@ DESCRIPTION
       between your fragment and the server's body.
       Advisory only: a parent schema inserting the same name can make the
       transform apply after all, and clio cannot see the replacing chain.
+    - Warned: a viewModelConfigDiff or modelConfigDiff merge whose "path" does
+      not exist in the config the parent schemas and the body's earlier merges
+      produce, for example path ["dataSources","NewDS"] for a new data source or
+      a nested key the parent data source does not have. The differ skips such a
+      merge, so it is saved but has no effect. Merge into an existing parent
+      instead (path ["dataSources"] with the new key inside values, or path []).
+      "attributes" and "dataSources" always exist at runtime, even on a blank
+      page, so merging into them is safe.
+      clio checks this against the page's real parent schemas, on save and on
+      --dry-run; the save still succeeds.
+    - Rejected: a viewModelConfigDiff or modelConfigDiff merge the runtime
+      throws on, so the page fails to build: a path that ends on a single value
+      (for example "isCollection"), a path whose first segment matches an
+      element _id but whose rest does not exist under it, or no "values" (or
+      "values": null) on a target that exists. The save fails, nothing is
+      written, and the error names each such merge. --dry-run reports it as a
+      warning that says the merge "breaks the page".
 
     APPEND DRY RUN:
     In append mode --dry-run resolves the current server body, computes the

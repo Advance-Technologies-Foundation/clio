@@ -258,11 +258,17 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return `warnings`. Every entry is informational only — the
-schema save already succeeded, so never retry on a warning. Today they cover the live
+Successful saves may also return `warnings`. When `success` is true every entry is
+informational only — the schema save already succeeded, so never retry on a warning. A
+rejected save (`success: false`) can carry `warnings` too; nothing was written. On a
+`--dry-run`, a config merge the runtime throws on is listed as a warning that says it
+"breaks the page", and the real save of the same body is rejected (see "Config merges into
+a missing path"). Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
 `merge`/`move`/`remove`, an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes"), and — on `append` — an
+for the same component name cancels it (see "Write modes"), a `viewModelConfigDiff` /
+`modelConfigDiff` `merge` whose `path` does not resolve (see "Config merges into a missing
+path"), and — on `append` — an
 existing operation the merge could not preserve because your fragment superseded an
 identity the page carried more than once. That last one names the component and tells you
 to re-read with `get-page`, because it is the one case where appending removes something
@@ -387,6 +393,38 @@ parent schema that inserts the same name puts the component in the base and can 
 apply after all. A `--dry-run` reports it too, against the body that would actually be written — so
 in append mode it sees pairs formed between your fragment and the server's body, not only pairs
 inside your fragment.
+
+### Config merges into a missing path
+
+A `viewModelConfigDiff` or `modelConfigDiff` `merge` is addressed by `path`. The platform differ walks
+that path through the config built from the parent schemas and the merges that come before it in the
+same body. If a segment does not exist, the differ skips the merge. It does not create the
+missing key. The body is saved with the operation in it, but the operation has no effect.
+Typical shapes:
+
+- a new data source written as `path: ["dataSources", "NewDS"]`. The key does not exist yet;
+- `path: ["dependencies"]` on a page whose chain has no `dependencies` yet;
+- a nested key that the parent schema's data source or attribute does not have, for example
+  `path: ["dataSources", "AttachmentListDS", "config", "sortingConfig"]`;
+- a nested merge placed before the merge that creates its target. Merges run in array order.
+
+`update-page` resolves the page's real parent schemas and applies the body's config diffs to that
+config the way the platform does. For every merge that would be skipped, the response gets an advisory
+`warnings` entry naming the section and the path, and the save still succeeds. To
+add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
+with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
+always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
+them is safe. A merge whose path ends on an array, or whose `values` is an array, a string, a number
+or a boolean, is reported the same way, with its own reason.
+
+A merge the runtime throws on makes the page fail to build, so it rejects the save: `success` is
+false, nothing is written, `error` names each such merge on its own line, and the other warnings
+for the body are still returned. A `--dry-run` lists the same merges as warnings that say the merge
+"breaks the page". The cases are a path that ends on a single value, such as `isCollection`; a path
+whose first segment matches an element `_id` but whose rest does not exist under it; and a merge
+with no `values` or `values: null` on a target that exists. If the parent schemas cannot be read for
+this check, the response says the check did not run, and the save is not blocked. If an operation
+that is not a merge makes the differ throw, the merges are still checked and one warning says so.
 
 ### What a `--dry-run` tells you about an append
 

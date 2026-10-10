@@ -20,6 +20,23 @@ internal static class PageBundleMergeHelpers {
 		return result;
 	}
 
+	/// <summary>
+	/// Applies one schema layer's <c>viewModelConfig</c> / <c>modelConfig</c> section on top of the config the
+	/// layers below it produced: the layer's diff when it has one, otherwise a deep merge of its full config.
+	/// The single owner of that rule, shared by the page bundle and the update-page merge check, so the two
+	/// cannot resolve one chain differently.
+	/// </summary>
+	/// <exception cref="JsonDiffApplierException">The applied layer did not resolve to an object, which a
+	/// server-valid chain never produces.</exception>
+	public static JObject ApplyConfigLayer(IJsonDiffApplier applier, JObject current, JToken diff, JToken config) {
+		if (diff is not JArray { Count: > 0 } operations) {
+			return DeepMerge(current, config as JObject ?? new JObject());
+		}
+		JToken applied = applier.Apply(current, operations);
+		return applied as JObject ?? throw new JsonDiffApplierException(
+			$"Resolved config was {applied?.Type.ToString() ?? "null"}, expected JObject.");
+	}
+
 	public static void MergeInPlace(JObject target, JObject next) {
 		if (target is null || next is null) {
 			return;

@@ -72,6 +72,9 @@ public class JsonDiffApplier : IJsonDiffApplier {
 	protected JToken _sourceObject;
 	private JObject _rootWrapper;
 	private JsonApplierOperationsOptions _operationsOptions;
+
+	/// <summary>The options of the <see cref="Apply"/> call in progress; <c>null</c> outside it.</summary>
+	protected JsonApplierOperationsOptions OperationsOptions => _operationsOptions;
 	private Dictionary<string, JsonApplierAliasInfo> _aliases;
 
 	/// <param name="disableApplyMoveIfIndirectParentMoved">Mirrors the client
@@ -159,7 +162,7 @@ public class JsonDiffApplier : IJsonDiffApplier {
 	};
 
 	// Mirrors JS `!value` falsiness for required-parameter presence checks.
-	private static bool IsFalsy(JToken token) {
+	protected static bool IsFalsy(JToken token) {
 		if (token is null || token.Type is JTokenType.Null or JTokenType.Undefined) {
 			return true;
 		}
@@ -275,7 +278,13 @@ public class JsonDiffApplier : IJsonDiffApplier {
 
 	private void ApplyOperations(JArray operations) {
 		SplittedOperations splitted = GetSplittedOperations(operations);
-		ApplyOperationGroup(op => Merge(op), splitted.Merge);
+		List<JObject> unresolvedMerges = ApplyOperationGroup(op => Merge(op), splitted.Merge);
+		// The platform differ discards this list. Clio may observe it (GH-1753); observing changes nothing applied.
+		if (_operationsOptions?.UnresolvedMerges is { } unresolvedMergeSink) {
+			foreach (JObject unresolvedMerge in unresolvedMerges) {
+				unresolvedMergeSink.Add(unresolvedMerge);
+			}
+		}
 		ApplyChangePositionOperationGroup(splitted.Remove, splitted.Insert, splitted.Move);
 		ApplyOperationGroup(op => Remove(op), splitted.RemoveProperties);
 		ApplyOperationGroup(op => Set(op), splitted.Set);
@@ -829,11 +838,50 @@ public sealed class JsonApplierOperationsOptions {
 	public bool RejectUnresolvedParents { get; set; }
 
 	public bool ApplyMoveIfIndirectParentMoved { get; init; }
+
+	/// <summary>Clio diagnostic sink: when set, receives a copy of every <c>merge</c> operation the differ
+	/// skipped because its target did not resolve. The platform interpreter drops these silently; the sink only
+	/// observes them and never changes what is applied. Defaults to <c>null</c> (no observation).</summary>
+	public ICollection<JObject> UnresolvedMerges { get; init; }
+
+	/// <summary>Clio diagnostic sink: when set, receives a copy of every path-addressed <c>merge</c> whose target
+	/// is an array. The client reports such a merge as applied, but the keys it sets on the array are lost, so it
+	/// changes nothing. Observation only. Defaults to <c>null</c> (no observation).</summary>
+	public ICollection<JObject> ArrayTargetMerges { get; init; }
 }
 
 /// <summary>Error thrown by <see cref="JsonDiffApplier"/>, mirroring the client <c>new Error(...)</c> throws.</summary>
 public sealed class JsonDiffApplierException : Exception {
 	public JsonDiffApplierException(string message) : base(message) { }
+
+	/// <summary>Creates the exception for a path-addressed <c>merge</c> the client throws on.</summary>
+	/// <param name="message">The differ message.</param>
+	/// <param name="mergeFailure">Why the merge throws.</param>
+	public JsonDiffApplierException(string message, JsonDiffApplierMergeFailure mergeFailure) : base(message) {
+		MergeFailure = mergeFailure;
+	}
+
+	/// <summary>Why a <c>merge</c> threw; <see cref="JsonDiffApplierMergeFailure.None"/> for every other throw.</summary>
+	public JsonDiffApplierMergeFailure MergeFailure { get; }
+}
+
+/// <summary>Why the path-addressed differ throws on a <c>merge</c>, mirroring the client's strict-mode
+/// <c>TypeError</c>s. Lets a caller report the real cause instead of guessing it from the operation's shape.</summary>
+public enum JsonDiffApplierMergeFailure {
+
+	/// <summary>Not a merge failure.</summary>
+	None,
+
+	/// <summary>The target resolves, but <c>values</c> is missing or <c>null</c> (<c>Object.keys</c> throws).</summary>
+	ValuesMissing,
+
+	/// <summary>The target is a single value, so setting the merged keys on it throws.</summary>
+	TargetNotObject,
+
+	/// <summary>The first path segment matched an element <c>_id</c>, but the rest of the path does not resolve,
+	/// so the client merges into <c>undefined</c> and throws.</summary>
+	TargetUnresolved
+
 }
 
 /// <summary>Shared wording for a strict page-bundle resolution failure so every entry point (get-page,
@@ -853,4 +901,7 @@ public static class JsonDiffApplierResources {
 	public const string NotContainerItemInsertException = "Item \"{0}\" is not a container for other items";
 	public const string ItemWithItemsPropertyMergeException = "Item \"{0}\" should not contain parameter \"{1}\"";
 	public const string ItemNameAlreadyExists = "Item with value \"{0}\" of the \"name\" parameter already exists";
+	public const string MergeValuesMissing = "Merge into \"{0}\" has no \"values\": cannot convert undefined or null to object";
+	public const string MergeTargetNotObject = "Merge into \"{0}\" cannot set properties: the value at that path is not an object";
+	public const string MergeTargetUnresolved = "Merge into \"{0}\" cannot read its target: the path after the element matched by its first segment does not resolve";
 }
