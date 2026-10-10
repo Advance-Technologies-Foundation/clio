@@ -170,6 +170,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-99970 (the get-target-package routing sentence, "Take packageName from get-target-package.",
 	// placed second so a shortened contract keeps it) adds about 42 bytes to create-business-process; under
 	// the 137 * 256 ceiling that leaves it well inside, so the sentence needs no swap.
+	//
+	// ENG-102111 (2026-10-09, process tracing) added the setTracing operation to modify-business-process,
+	// isTracing to create-business-process and the tracing block to describe-business-process, each naming
+	// get-guidance name=process-tracing for the costs rather than carrying them. Modify paid by SWAP: the
+	// sentence saying removeFlow's refusal ships from CrtProcessBuilder 1.6.0.10 and what happens below it was
+	// dead once the floor reached 1.6.6.92, since clio refuses such an environment up front. Re-measured by
+	// lowering the ceiling: modify-business-process 35048, create-business-process 35027,
+	// describe-business-process 33463 - 24 and 45 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	[Test]

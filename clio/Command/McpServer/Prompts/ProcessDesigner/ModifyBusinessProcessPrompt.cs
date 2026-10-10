@@ -28,7 +28,7 @@ public static class ModifyBusinessProcessPrompt {
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
 		 `setParameter`, `removeParameter`, `setFilter`, `clearFilter`, `setSignal`, `setElement`,
-		 `setFlowResults`, `setConnections`, or `clearConnections`
+		 `setFlowResults`, `setConnections`, `clearConnections`, or `setTracing`
 		 — plus that op's arguments (the element / parameter / mapping / filter / signal shapes match a build,
 		 so an `addElement` for a Pre-configured page or an Open edit page uses `type:"preconfiguredPage"` /
 		 `type:"openEditPage"` with its block: a generic `userTask` cannot carry either block, and one naming
@@ -144,6 +144,9 @@ public static class ModifyBusinessProcessPrompt {
 		 (nothing is saved). Example — switch a process to start on record save: `removeElement` the start event,
 		 `addElement` a `signalStart`, then `addFlow` from it to the first task. Confirm destructive removals
 		 (`removeElement` / `removeFlow` / `removeParameter` / `clearConnections`) with the user before proceeding.
+		 `setTracing` (`enabled`: true | false) switches process tracing for the process and every version of it:
+		 a traced run stores every parameter value, record data included, so read
+		 `get-guidance name=process-tracing`, tell the user, and switch it off once the run is diagnosed.
 		 Confirm access-rights changes the same way: a `setElement` carrying ANY `accessRights` block changes who
 		 can reach live records - an `add` widens access to everyone it names, and a `remove` entry or a
 		 collection cleared with `[]` revokes or drops record permissions, and the element has NO output to

@@ -244,7 +244,11 @@ namespace Clio.Command;
 // path on a column the read does not load green, reading EMPTY at run time - the defect this raise closes.
 // Convergence refuses everything below the bundled archive anyway; this floor is the gate in its degraded modes
 // (an unreadable archive, a pre-release version). 1.6.6.77 is the first archive with both.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.77",
+// Raised to 1.6.6.92 by ENG-102111: process tracing - the build's `isTracing` and the `setTracing` operation. An
+// older server DISCARDS `isTracing` and answers success, so the process is built untraced and nothing says so, and
+// refuses `setTracing` as an unsupported operation, which reads as a clio fault. 1.6.6.92 is the first archive
+// with both.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.92",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
@@ -344,7 +348,13 @@ public sealed class CreateBusinessProcessService(
 		BuildProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("BuildProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			throw new InvalidOperationException(result.ErrorMessage ?? "BuildProcess failed.");
+			// A failure that still names the schema came AFTER the save: today only a tracing switch that failed
+			// behind a created process (ENG-102111). The process exists, so the build's warnings still apply - a
+			// compile its script task owes must not vanish with the failure.
+			string warnings = !string.IsNullOrWhiteSpace(result.SchemaUId) && result.Warnings is { Count: > 0 }
+				? " " + string.Join(" ", result.Warnings)
+				: string.Empty;
+			throw new InvalidOperationException((result.ErrorMessage ?? "BuildProcess failed.") + warnings);
 		}
 
 		return new CreateBusinessProcessResult(result.SchemaName, result.SchemaUId, result.Warnings);

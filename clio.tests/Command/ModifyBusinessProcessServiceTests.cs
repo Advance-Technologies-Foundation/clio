@@ -152,6 +152,57 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A failure that still names the schema came AFTER the save - the tracing switch failed behind a saved edit (ENG-102111). The edit exists, so the layout report is relayed as the elements it touched, never as the re-send offer, which would invite repeating a batch that is already saved; and the edit's warnings travel with the error.")]
+	public void ModifyProcess_ShouldReportTheSavedEditsLayoutAndWarnings_WhenTheFailureCameAfterTheSave() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"schemaName\":\"UsrProc\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"appliedOperations\":1,\"failedOperationIndex\":1,"
+			+ "\"errorMessage\":\"The edit WAS saved, but switching process tracing failed.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"],"
+			+ "\"layoutChange\":{\"reason\":\"redraw\",\"elements\":[\"Calc\"]}}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the tracing switch failed")
+			.Which.Message;
+		message.Should().Contain("Affected elements: Calc.",
+			because: "the saved edit's layout report still names what moved");
+		message.Should().NotContain("ASK THE USER",
+			because: "the edit is saved, so offering to re-send the same operations would apply them twice");
+		message.Should().Contain("Script task 'Calc' needs a compile.",
+			because: "the warnings describe an edit that exists");
+	}
+
+	[Test]
+	[Description("A layout refusal comes BEFORE the save, so it names no schema: it is still relayed as the question it is - the elements plus the re-send offer - and the warnings of an edit that was never saved are not. Pins the other side of the schemaUId condition, which a flipped test would turn into a silently dropped question (ENG-102111).")]
+	public void ModifyProcess_ShouldRelayTheLayoutQuestion_AndNoWarnings_WhenNothingWasSaved() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"appliedOperations\":1,"
+			+ "\"errorMessage\":\"This edit re-draws the diagram.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"],"
+			+ "\"layoutChange\":{\"reason\":\"redraw\",\"elements\":[\"Calc\"]}}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the edit was refused")
+			.Which.Message;
+		message.Should().Contain("ASK THE USER",
+			because: "nothing was saved, so the refusal is a question the caller has to relay");
+		message.Should().NotContain("needs a compile",
+			because: "warnings of an edit that was never saved would describe a state that does not exist");
+	}
+
+	[Test]
 	[Description("A failed edit whose failure blames no single operation says nothing about an index. The server sends no index when the failure came after the operation loop, and an older CrtProcessBuilder never sends the field - both mean 'no operation is to blame', so inventing 'index 0' from a missing value would recreate the exact ambiguity the split removed.")]
 	public void ModifyProcess_ShouldNotInventAnIndex_WhenTheServerReportsNone() {
 		// Arrange

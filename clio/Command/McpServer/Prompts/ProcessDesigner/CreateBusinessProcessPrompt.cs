@@ -37,6 +37,8 @@ public static class CreateBusinessProcessPrompt {
 		 and the server refuses a bad one rather than storing it;
 		 (3) supply a JSON descriptor with `name`
 		 (unique schema code), `caption`, `packageName`{(string.IsNullOrWhiteSpace(packageName) ? "" : $" (override: `{packageName}`)")} and the `elements` / `flows` / `parameters` / `mappings` arrays.
+		 Add `isTracing: true` only when the user wants runs traced to diagnose them: every traced run stores
+		 every parameter value (read `get-guidance name=process-tracing`).
 		 To run the process when a record is added/changed/deleted, use a `signalStart` element (the platform-native
 		 trigger), not a page save handler; add `changedColumns` to fire an `on:modified` trigger only when specific
 		 columns change, and/or a `filter` to fire only for matching records. To send an email, add a `sendEmail`

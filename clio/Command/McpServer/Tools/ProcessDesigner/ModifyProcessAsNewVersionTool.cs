@@ -46,7 +46,10 @@ public class ModifyProcessAsNewVersionTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	// Destructive=false is the substantive claim here, not a formality: this operation never opens, saves or
 	// activates the source. Everything it writes goes to a clone, and what the environment executes is unchanged
-	// when it returns — so a caller gated on destructive consent must not be stopped by it.
+	// when it returns — so a caller gated on destructive consent must not be stopped by it. The one live effect is
+	// a setTracing beside real edits (ENG-102111): it switches tracing for the whole family at once, the running
+	// version included, so the description tells the caller to put that to the user first - it changes what each
+	// run records, not which version runs.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "
@@ -80,13 +83,13 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.77 or newer — an older package is refused up front, naming the "
+		 + "environment at CrtProcessBuilder 1.6.6.92 or newer — an older package is refused up front, naming the "
 		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
-		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30, to 1.6.6.40 and to 1.6.6.77 for the same reason "
+		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30, to 1.6.6.40, to 1.6.6.77 and to 1.6.6.92 for the same reason "
 		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
 		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
 		 + "server silently discards while "
-		 + "answering success, and this route runs NO read-back check that could tell you.) After a successful save the version normally stays INTERPRETED and "
+		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits setTracing switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "

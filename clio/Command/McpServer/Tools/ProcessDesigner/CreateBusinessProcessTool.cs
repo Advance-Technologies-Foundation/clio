@@ -304,8 +304,8 @@ public class CreateBusinessProcessTool(
 		 + "(another element's output, + sourceColumn for one column of its record), processParameter, value, or "
 		 + "expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.77 (for "
-		 + "the meta-path checks, sourceColumn, scriptTask, usings[], methods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.92 (for "
+		 + "isTracing, the meta-path checks, sourceColumn, scriptTask, usings[], methods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
 		 + "NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one, and .44 is simply the first archive carrying that "
 		 + "AND the ENG-96325 lookup-constant contract. Below .41 a refused formula still fails, "
@@ -343,7 +343,8 @@ public class CreateBusinessProcessTool(
 		 + "grammar. The server serializes the platform filter; never hand-write filter JSON. Read get-guidance "
 		 + "name=process-modeling FIRST — the full descriptor contract. The formula and subProcess blocks are "
 		 + "owned by get-guidance name=process-element-catalog; accessRights by name=process-access-rights; an "
-		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas. Use "
+		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas; top-level "
+		 + "isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing. Use "
 		 + "list-user-tasks to discover valid userTaskName values (not for PreconfiguredPageUserTask or "
 		 + "OpenEditPageUserTask: build those as preconfiguredPage / openEditPage). Requires the ProcessDesignService "
 		 + "(CrtProcessBuilder) package; install with install-process-builder. A process with no scriptTask or methods is "
@@ -415,7 +416,8 @@ public sealed record CreateBusinessProcessArgs(
 	// same JSON keeps working. McpToolArgumentSupport.TryReadJsonDocumentArgument says why (ENG-100153).
 	[property: JsonPropertyName("descriptor")]
 	[property: Description("The process descriptor as a JSON object (name, caption, packageName, elements[], "
-		+ "flows[], parameters[], mappings[], usings[], methods). A string holding the same JSON is also accepted.")]
+		+ "flows[], parameters[], mappings[], usings[], methods, isTracing). A string holding the same JSON is also "
+		+ "accepted.")]
 	[property: Required]
 	JsonElement Descriptor,
 
