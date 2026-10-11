@@ -32,6 +32,7 @@
 		private readonly ISqlScriptExecutor _scriptExecutor;
 		private readonly IServiceUrlBuilder _serviceUrlBuilder;
 		private readonly IPackageLockManager _packageLockManager;
+		private readonly IDesignNodeSessionGuard _designNodeSessionGuard;
 		protected readonly ILogger _logger;
 		private readonly IApplication _application;
 		private string _reportPath;
@@ -49,7 +50,8 @@
 		public BasePackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 			IApplicationClientFactory applicationClientFactory, IApplication application,
 			IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager) {
+			IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager,
+			IDesignNodeSessionGuard designNodeSessionGuard) {
 			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			applicationClientFactory.CheckArgumentNull(nameof(applicationClientFactory));
 			application.CheckArgumentNull(nameof(application));
@@ -58,6 +60,7 @@
 			serviceUrlBuilder.CheckArgumentNull(nameof(serviceUrlBuilder));
 			fileSystem.CheckArgumentNull(nameof(fileSystem));
 			logger.CheckArgumentNull(nameof(logger));
+			designNodeSessionGuard.CheckArgumentNull(nameof(designNodeSessionGuard));
 			_applicationLogProvider = applicationLogProvider;
 			_environmentSettings = environmentSettings;
 			_applicationClientFactory = applicationClientFactory;
@@ -68,6 +71,7 @@
 			_fileSystem = fileSystem;
 			_logger = logger;
 			_packageLockManager = packageLockManager;
+			_designNodeSessionGuard = designNodeSessionGuard;
 		}
 
 		#endregion
@@ -118,24 +122,23 @@
 			}
 		}
 
-		private string UploadPackage(string filePath, EnvironmentSettings environmentSettings) {
+		private string UploadPackage(IApplicationClient session, string filePath,
+			EnvironmentSettings environmentSettings) {
 			_logger.WriteLine("Uploading...");
 			FileInfo fileInfo = new FileInfo(filePath);
 			string packageName = fileInfo.Name;
-			using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			applicationClient.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
+			session.UploadFile(GetCompleteUrl(UploadUrl, environmentSettings), filePath);
 			_logger.WriteLine("Uploaded");
 			return packageName;
 		}
 
-		private bool CreateBackupPackage(string packageCode, string filePath,
+		private bool CreateBackupPackage(IApplicationClient session, string packageCode, string filePath,
 			EnvironmentSettings environmentSettings) {
 			try {
 				_logger.WriteLine("Backup process...");
 				FileInfo fileInfo = new FileInfo(filePath);
 				string zipPackageName = fileInfo.Name;
-				using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-				applicationClient.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" + packageCode +
+				session.ExecutePostRequest(GetCompleteUrl(BackupUrl, environmentSettings), "{\"Name\":\"" + packageCode +
 						"\",\"Code\":\"" + packageCode +
 						"\",\"ZipPackageName\":\"" + zipPackageName +
 						"\",\"LastUpdate\":0}")
@@ -147,8 +150,8 @@
 			}
 		}
 
-		protected virtual string GetInstallLog(EnvironmentSettings environmentSettings) {
-			return _applicationLogProvider.GetInstallationLog(environmentSettings);
+		protected virtual string GetInstallLog(IApplicationClient session, EnvironmentSettings environmentSettings) {
+			return _applicationLogProvider.GetInstallationLog(session, environmentSettings);
 		}
 
 		private string GetLogDiff(string currentLog, string completeLog) {
@@ -158,12 +161,12 @@
 				: ((completeLog.Length > currentLog.Length) ? completeLog.Substring(currentLog.Length) : String.Empty);
 		}
 
-		private string ListenForLogs(CancellationToken cancellationToken, EnvironmentSettings environmentSettings,
-			string initialLogContent) {
+		private string ListenForLogs(CancellationToken cancellationToken, IApplicationClient session,
+			EnvironmentSettings environmentSettings, string initialLogContent) {
 			var currentLogContent = initialLogContent ?? string.Empty;
 			while (!cancellationToken.IsCancellationRequested) {
 				try {
-					var completeLog = GetInstallLog(environmentSettings);
+					var completeLog = GetInstallLog(session, environmentSettings);
 					var output = GetLogDiff(currentLogContent, completeLog);
 					if (!string.IsNullOrWhiteSpace(output)) {
 						_logger.Write(output);
@@ -260,13 +263,12 @@
 
 		protected abstract string GetRequestData(string fileName, PackageInstallOptions packageInstallOptions);
 
-		private string InstallPackageOnServer(string fileName, EnvironmentSettings environmentSettings,
-			PackageInstallOptions packageInstallOptions) {
+		private string InstallPackageOnServer(IApplicationClient session, string fileName,
+			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			string installUrl = packageInstallOptions == null
 				? InstallUrl
 				: InstallWithOptionsUrl;
-			using IOwnedApplicationClient applicationClient = CreateApplicationClient(environmentSettings);
-			return applicationClient.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
+			return session.ExecutePostRequest(GetCompleteUrl(installUrl, environmentSettings),
 				GetRequestData(fileName, packageInstallOptions), Timeout.Infinite);
 		}
 
@@ -299,25 +301,26 @@
 			return null;
 		}
 
-		private (bool, string) InstallPackageOnServerWithLogListener(string fileName,
+		private (bool, string) InstallPackageOnServerWithLogListener(IApplicationClient session, string fileName,
 			EnvironmentSettings environmentSettings, PackageInstallOptions packageInstallOptions) {
 			_logger.WriteLine($"Install {fileName} ...");
 			_logger.WriteLine("Installation log:");
-			var initialInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
+			var initialInstallLog = GetInstallLog(session, environmentSettings) ?? string.Empty;
 			using var cancellationTokenSource = new CancellationTokenSource();
 			var log = initialInstallLog;
 			var task = Task.Factory.StartNew(
-				() => log = ListenForLogs(cancellationTokenSource.Token, environmentSettings, initialInstallLog));
+				() => log = ListenForLogs(cancellationTokenSource.Token, session, environmentSettings,
+					initialInstallLog));
 			string result;
 			try {
-				result = InstallPackageOnServer(fileName, environmentSettings, packageInstallOptions);
+				result = InstallPackageOnServer(session, fileName, environmentSettings, packageInstallOptions);
 			}
 			finally {
 				cancellationTokenSource.Cancel();
 				task.GetAwaiter().GetResult();
 			}
 			BaseResponse response = JsonConvert.DeserializeObject<BaseResponse>(result);
-			var completeInstallLog = GetInstallLog(environmentSettings) ?? string.Empty;
+			var completeInstallLog = GetInstallLog(session, environmentSettings) ?? string.Empty;
 			var currentInstallLog = GetLogDiff(initialInstallLog, completeInstallLog);
 			bool successLog = true;
 			if (CheckLogsOnSuccessMessage) {
@@ -343,25 +346,32 @@
 			return (success, completeInstallLog);
 		}
 
+		// One session carries every request of the installation. Installation state (uploaded archive, temp
+		// files, log) is kept per node, and on a web farm only a session holding StickySession is routed to the
+		// design node - so the guard obtains the cookie before the first upload chunk, and upload, backup,
+		// install, log reads and restart all reuse that session instead of logging in again on a common node.
 		private (bool, string) InstallPackedPackage(string filePath, EnvironmentSettings environmentSettings,
 			PackageInstallOptions packageInstallOptions, bool createBackup) {
-			string packageName = UploadPackage(filePath, environmentSettings);
+			using IOwnedApplicationClient session = CreateApplicationClient(environmentSettings);
+			_designNodeSessionGuard.Prepare(session, environmentSettings);
+			string packageName = UploadPackage(session, filePath, environmentSettings);
 			string packageCode = packageName.Split('.')[0];
 			_logger.WriteInfo($"{environmentSettings.Uri}");
-			if (createBackup && !CreateBackupPackage(packageCode, filePath, environmentSettings)) {
+			if (createBackup && !CreateBackupPackage(session, packageCode, filePath, environmentSettings)) {
 				return (false, "Dont created backup.");
 			}
 			if (!createBackup) {
 				_logger.WriteInfo("Package backup skipped.");
 			}
 			(bool success, string logText) =
-				InstallPackageOnServerWithLogListener(packageName, environmentSettings, packageInstallOptions);
+				InstallPackageOnServerWithLogListener(session, packageName, environmentSettings,
+					packageInstallOptions);
 			if (DeveloperModeEnabled(environmentSettings)) {
 				UnlockMaintainerPackageInternal(environmentSettings);
 			}
-			if (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore) {
+			if (success && (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore)) {
 				try {
-					_application.Restart();
+					_application.Restart(session, environmentSettings);
 				} catch (Exception ex) {
 					_logger.WriteLine($"Error while restarting application: {ex.Message}");
 				}

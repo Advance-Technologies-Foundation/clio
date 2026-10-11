@@ -52,9 +52,10 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 	}
 
 	[Test]
-	[Description("Execute should install the bundled cliogate package and restart the application after success.")]
+	[Description("Execute should install the bundled cliogate package and restart a .NET Framework application after success.")]
 	public void Execute_ShouldInstallCliogateAndRestartApplication() {
 		// Arrange
+		EnvironmentSettings.IsNetCore = false;
 		string expectedPackagePath = Path.Combine(ClioRoot, "cliogate", "cliogate.gz");
 		EnvironmentSettings capturedEnvironmentSettings = null;
 		_packageInstaller
@@ -108,6 +109,31 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 				call.GetMethodInfo().Name == nameof(IPackageInstaller.Install)
 				&& call.GetArguments().FirstOrDefault() as string == expectedPackagePath)
 			.Should().Be(1, because: "netcore environments should install the bundled cliogate_netcore package");
+	}
+
+	[Test]
+	[Description("ENG-102757: on .NET the installer already restarted Creatio through the installation session, so install-gate does not restart it again through another session.")]
+	public void Execute_ShouldNotRestartAgain_WhenEnvironmentIsNetCore() {
+		// Arrange
+		EnvironmentSettings.IsNetCore = true;
+		_packageInstaller
+			.Install(
+				Arg.Any<string>(),
+				Arg.Any<EnvironmentSettings>(),
+				packageInstallOptions: null,
+				reportPath: null,
+				createBackup: true)
+			.Returns(true);
+
+		// Act
+		int result = _command.Execute(new InstallGateOptions());
+
+		// Assert
+		result.Should().Be(0, because: "successful netcore package installation should make install-gate succeed");
+		_application.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
+			.Should().Be(0,
+				because: "a second restart would log in again and, on a web farm, land on a common node");
 	}
 
 	[Test]

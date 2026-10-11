@@ -3,8 +3,17 @@ using System;
 
 namespace Clio.Package
 {
+	/// <summary>Reads the package installation log of a Creatio environment.</summary>
 	public interface IApplicationLogProvider {
-		string GetInstallationLog(EnvironmentSettings environmentSettings);
+
+		/// <summary>Reads the installation log through the session of the running installation.</summary>
+		/// <param name="applicationClient">
+		/// The client of the installation. The log is kept per node, so on a web farm only the session that
+		/// installs the package reads the log of the node that runs the installation.
+		/// </param>
+		/// <param name="environmentSettings">The environment the package is installed into.</param>
+		/// <returns>The log content, or an empty string when the log could not be read.</returns>
+		string GetInstallationLog(IApplicationClient applicationClient, EnvironmentSettings environmentSettings);
 	}
 
 	public class ApplicationLogProvider: IApplicationLogProvider
@@ -14,22 +23,17 @@ namespace Clio.Package
 		protected string GetCompleteUrl(string url, EnvironmentSettings environmentSettings) =>
 	_serviceUrlBuilder.Build(url, environmentSettings);
 
-		public ApplicationLogProvider(IApplicationClientFactory applicationClientFactory, IServiceUrlBuilder serviceUrlBuilder)
+		public ApplicationLogProvider(IServiceUrlBuilder serviceUrlBuilder)
         {
-			_applicationClientFactory = applicationClientFactory;
 			_serviceUrlBuilder = serviceUrlBuilder;
 		}
 
-        private IApplicationClientFactory _applicationClientFactory;
 		private IServiceUrlBuilder _serviceUrlBuilder;
 
-		private IOwnedApplicationClient CreateApplicationClient(EnvironmentSettings environmentSettings) =>
-	_applicationClientFactory.CreateOwnedClient(environmentSettings);
-
-		public string GetInstallationLog(EnvironmentSettings environmentSetting) {
+		public string GetInstallationLog(IApplicationClient applicationClient,
+			EnvironmentSettings environmentSetting) {
 			try {
-				using IOwnedApplicationClient applicationClientForLog = CreateApplicationClient(environmentSetting);
-				return applicationClientForLog.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSetting));
+				return applicationClient.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSetting));
 			} catch (Exception) { }
 			return String.Empty;
 		}

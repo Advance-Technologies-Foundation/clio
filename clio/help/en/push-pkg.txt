@@ -9,6 +9,31 @@ DESCRIPTION
     push-pkg command can be used in CI/CD pipeline or in development
     when you need install package to a web application (website).
 
+WEB FARMS
+    On a Creatio web farm whose gateway sends only requests that carry the
+    StickySession cookie to the design node (for example a Kubernetes
+    deployment managed by Creatio Control Plane), register the environment on
+    the shared application URL. clio runs the installation - upload, backup,
+    install, installation log and restart - in one session, and obtains
+    StickySession before the first upload, so these requests reach the design
+    node. The user needs the CanManageSolution operation permission.
+    Compilation requested with --force-compilation and the developer-mode
+    package unlock run in sessions of their own and are not covered.
+
+    On a web farm only the design node may change during an installation. When
+    the session holds StickySession, clio asks the design-node probe before
+    uploading: if the probe confirms the design node, the installation runs; if
+    it does not - the gateway sends the session to a common node, or the design
+    node is down - the command stops before uploading anything and exits with
+    code 1, naming the HTTP status the probe answered. A Creatio version without
+    the probe (HTTP 404) gets a warning and the installation continues.
+    Publishing and rolling out the installed version to the common nodes
+    remains a Control Plane step.
+
+    On .NET Creatio, and when developer mode is on, clio restarts the
+    application after a successful installation. A failed installation does
+    not restart it.
+
 SYNOPSIS
     clio push-pkg <PACKAGE_NAME>
 

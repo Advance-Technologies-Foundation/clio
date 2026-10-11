@@ -379,7 +379,16 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
 		GetAdministratedObject = 113,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 114
+		SaveAdministratedObject = 114,
+
+		/// <summary>
+		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
+		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
+		/// </summary>
+		GetCurrentUserInfo = 115,
+
+		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
+		DesignReady = 116
 
 	}
 
@@ -507,6 +516,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
+		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
+		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
