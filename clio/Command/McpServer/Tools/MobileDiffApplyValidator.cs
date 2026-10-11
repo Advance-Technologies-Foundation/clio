@@ -17,7 +17,7 @@ namespace Clio.Command.McpServer.Tools;
 /// The path-addressed diffs (<c>viewModelConfigDiff</c> / <c>modelConfigDiff</c>) are applied against a base
 /// resolved in this priority: (1) a <c>viewModelConfig</c> / <c>modelConfig</c> base object the body itself
 /// carries; (2) the target page's merged config, when the caller can supply it (<c>update-page</c> /
-/// <c>sync-pages</c> resolve it — see <c>MobilePageMergedConfigResolver</c> — mode-aware: replace excludes the
+/// <c>sync-pages</c> resolve it — see <c>PageMergedConfigResolver</c> — mode-aware: replace excludes the
 /// page's own body, which the write overwrites; append includes it) — this is the faithful runtime base, so an
 /// <c>insert</c> that appends to an array the TEMPLATE owns (e.g. a converted quick filter appended to
 /// <c>Items.modelConfig.filterAttributes</c>) resolves and validates; (3) otherwise an empty
@@ -63,7 +63,7 @@ internal static class MobileDiffApplyValidator {
 	/// <para>
 	/// The provided delegate is the one thing that may throw: a cancellation (<see cref="OperationCanceledException"/>)
 	/// it raises during resolution is NOT swallowed — it propagates out of this method, mirroring
-	/// <c>MobilePageMergedConfigResolver</c>'s deliberate rethrow-on-cancellation contract (a cancelled validation
+	/// <c>PageMergedConfigResolver</c>'s deliberate rethrow-on-cancellation contract (a cancelled validation
 	/// must not silently degrade to the seeded base). Every other resolver/apply failure is still swallowed and the
 	/// section treated as valid.
 	/// </para>

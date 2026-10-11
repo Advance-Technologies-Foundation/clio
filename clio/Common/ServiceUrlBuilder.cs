@@ -382,13 +382,19 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		SaveAdministratedObject = 114,
 
 		/// <summary>
+		///     Reads whether the site runs in file design mode (file system mode): the platform flag that decides
+		///     whether the site reads package content from <c>Terrasoft.Configuration/Pkg</c>.
+		/// </summary>
+		GetIsFileDesignMode = 115,
+
+		/// <summary>
 		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
 		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
 		/// </summary>
-		GetCurrentUserInfo = 115,
+		GetCurrentUserInfo = 116,
 
 		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
-		DesignReady = 116
+		DesignReady = 117
 
 	}
 
@@ -516,6 +522,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
+		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
 		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
 		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 	};

@@ -1,6 +1,7 @@
 using System;
 using Clio.Command;
 using Clio.Common;
+using Clio.Package;
 using Clio.Workspaces;
 using FluentAssertions;
 using NSubstitute;
@@ -123,5 +124,27 @@ public class PushWorkspaceCommandTests : BaseCommandTests<PushWorkspaceCommandOp
 		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 		_inspector.DidNotReceive().Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>());
 		_workspace.DidNotReceive().Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
+	}
+
+	[Test]
+	[Description("Issue #1749: when packing refuses a Schemas/Data folder without descriptor.json, push-workspace exits 1 and writes only the refusal text, without the exception type name.")]
+	public void Execute_ShouldWriteOnlyTheRefusal_WhenPackingFindsAFolderWithoutDescriptor() {
+		// Arrange
+		PackageItemDescriptorMissingException refusal = new([
+			new PackageItemFolderWithoutDescriptor("/ws/packages/UsrPkg/Data/Lookup_Status", ["Localization/data.en-US.json"])
+		]);
+		_inspector.Inspect(Arg.Any<System.Collections.Generic.IEnumerable<string>>()).Returns([]);
+		_workspace.When(workspace => workspace.Install(Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>()))
+			.Do(_ => throw refusal);
+
+		// Act
+		int exitCode = _command.Execute(new PushWorkspaceCommandOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "nothing was installed");
+		_logger.Received(1).WriteError(refusal.Message);
+		_logger.Received(1).WriteError(Arg.Any<string>());
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(line => line.Contains(nameof(PackageItemDescriptorMissingException))));
+		_logger.DidNotReceive().WriteInfo("Done");
 	}
 }

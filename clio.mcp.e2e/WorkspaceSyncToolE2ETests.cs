@@ -96,6 +96,40 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Issue #1749: pushes a workspace whose package keeps a Data/<Binding>/ folder holding only Localization files through MCP and verifies the push stops before installing, names the folder's local path, and the package never reaches the environment.")]
+	[AllureTag(PushToolName)]
+	[AllureTag(PackageListToolName)]
+	[AllureName("Push workspace refuses a data binding folder without descriptor.json before installing")]
+	[AllureDescription("Adds a Data/<Binding>/Localization/data.en-US.json leftover with no descriptor.json to a fresh workspace package, invokes push-workspace through MCP, and verifies exit code 1, an Error message naming the folder, and that list-packages does not return the package.")]
+	public async Task PushWorkspace_ShouldRefuseBeforeInstall_WhenDataBindingFolderHasNoDescriptor() {
+		// Arrange
+		await using WorkspaceSyncArrangeContext arrangeContext = await ArrangeSandboxWorkspaceAsync();
+		string strayFolderRelativePath = Path.Combine(arrangeContext.PackageName, "Data", "UsrStrayBinding");
+		string localizationFolder = Path.Combine(arrangeContext.WorkspacePath, "packages", strayFolderRelativePath,
+			"Localization");
+		Directory.CreateDirectory(localizationFolder);
+		await File.WriteAllTextAsync(Path.Combine(localizationFolder, "data.en-US.json"), "{}");
+
+		// Act
+		WorkspaceCommandActResult pushResult = await ActWorkspaceCommandAsync(arrangeContext, PushToolName, arrangeContext.WorkspacePath);
+		PackageListActResult packageListResult = await ActGetPkgListAsync(arrangeContext, arrangeContext.PackageName);
+
+		// Assert
+		AssertToolCallFailed(pushResult);
+		AssertCommandExitCode(pushResult, 1, "Creatio would reject the archive, so push-workspace must fail before installing it");
+		AssertIncludesErrorMessageContaining(pushResult, strayFolderRelativePath,
+			"the refusal must name the folder to delete, not only its last path segment");
+		AssertIncludesErrorMessageContaining(pushResult, "only Localization files, delete the folder",
+			"a folder holding only Localization files is a deleted binding's leftover");
+		pushResult.Execution.Output.Should().NotContain(message =>
+			message.Value != null && message.Value.ToString()!.Contains("Installing workspace packages using", StringComparison.Ordinal),
+			because: "the refusal happens while packing, before the installer is ever called; without the pre-flight the platform would also reject the archive, so only this message proves the order");
+		packageListResult.Packages.Should().NotContain(package => package.Name == arrangeContext.PackageName,
+			because: "the refusal happens before upload, so the package must not reach the environment");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates a workspace and package with the real clio CLI, restores the configured package through MCP, and verifies its metadata while unrelated package content is preserved.")]
 	[AllureTag(PushToolName)]
 	[AllureTag(RestoreToolName)]
@@ -416,6 +450,20 @@ public sealed class WorkspaceSyncToolE2ETests : McpContractFixtureBase {
 		actResult.Execution.Output.Should().NotBeNullOrEmpty(
 			because: "failed command execution should emit human-readable diagnostics");
 		actResult.Execution.Output!.Should().Contain(message => message.MessageType == LogDecoratorType.Error,
+			because: because);
+	}
+
+	[AllureStep("Assert execution includes an Error message with the expected text")]
+	private static void AssertIncludesErrorMessageContaining(
+		WorkspaceCommandActResult actResult,
+		string expectedText,
+		string because) {
+		actResult.Execution.Output.Should().NotBeNullOrEmpty(
+			because: "failed command execution should emit human-readable diagnostics");
+		actResult.Execution.Output!.Should().Contain(message =>
+			message.MessageType == LogDecoratorType.Error &&
+			message.Value != null &&
+			message.Value.ToString()!.Contains(expectedText, StringComparison.Ordinal),
 			because: because);
 	}
 

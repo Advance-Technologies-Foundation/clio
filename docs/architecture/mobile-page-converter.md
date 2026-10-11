@@ -360,7 +360,7 @@ Invariants the caller must not violate are checked by the write/validate path, n
 | A second `crt.Scaffold` — anywhere in an insert/set's `values` subtree, or an insert named `Scaffold` — is rejected; `merge` onto `Scaffold` is allowed | `SchemaValidationService.ValidateMobileSingleScaffoldRoot` |
 | A `merge` whose `values` author children into a slot is rejected — children are authored with `insert`/`set` | `SchemaValidationService.ValidateMobileMergeSlotAuthoring` |
 | Type in neither registry → warning naming `get-component-info schema-type=mobile` | `SchemaValidationService` |
-| The diff is **applied** through the client-engine clones (`JsonDiffApplier`, `JsonPathDiffApplier`); the differ's own exception is returned. Path-diff base: body's own base → target page merged config (`MobilePageMergedConfigResolver`) → empty base seeded at every insert path | `MobileDiffApplyValidator` (`validate-page`, `update-page`, `sync-pages`) |
+| The diff is **applied** through the client-engine clones (`JsonDiffApplier`, `JsonPathDiffApplier`); the differ's own exception is returned. Path-diff base: body's own base → target page merged config (`PageMergedConfigResolver`) → empty base seeded at every insert path | `MobileDiffApplyValidator` (`validate-page`, `update-page`, `sync-pages`) |
 
 ---
 

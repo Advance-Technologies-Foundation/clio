@@ -2505,7 +2505,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{ "operation": "merge", "name": "UsrName", "values": { "label": "$Resources.Strings.UsrName" } }]""",
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
@@ -2529,7 +2529,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			handlers: """[{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { const x = $context["UsrMode"]; return next?.handle(request); } }]""");
 		PageValidateArgs args = new(body);
@@ -2550,7 +2550,7 @@ public class PageToolsTests
 		// Arrange
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>());
+		PageValidateTool tool = new(mobileCatalog, webCatalog, Substitute.For<System.IO.Abstractions.IFileSystem>(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewConfigDiff: """
 				[
@@ -3005,7 +3005,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		PageUpdateArgs args = new("UsrTest_FormPage", bodyWithBadJson);
 
@@ -3034,7 +3034,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		// The actual broken body from the ENG-89796 production incident: `await X = Y`
 		// — `await` is an expression and cannot be an assignment target.
 		string incidentBody = "define(\"Bad_FormPage\", [], function() {\n" +
@@ -3090,7 +3090,7 @@ public class PageToolsTests
 			command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 	}
 
 	[Test]
@@ -3213,7 +3213,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"$Resources.Strings.UsrUpperCaseValidator_Message"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -3248,7 +3248,7 @@ public class PageToolsTests
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"UpperCase":{"type":"usr.UpperCase","params":{"message":"#ResourceString(UsrUpperCaseValidator_Message)#"}}}}}}""",
 			validators: """{"usr.UpperCase":{"validator":function(config){return function(control){return null;}},"params":[{"name":"message"}],"async":false}}""");
@@ -3274,7 +3274,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			handlers: """{ request: "crt.HandleViewModelInitRequest", handler: async (request, next) => { await next?.handle(request); } }""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true);
@@ -3305,7 +3305,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			handlers: """[{ handler: async (request, next) => { await next?.handle(request); } }]""");
 		PageUpdateArgs args = new("UsrHandlerShape_FormPage", body, null, true);
@@ -3335,7 +3335,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrName","values":{"type":"crt.Input","control":"$UsrName"}}]""",
 			viewModelConfig: """{"attributes":{"UsrName":{"modelConfig":{"path":"PDS.UsrName"},"validators":{"NameMaxLength":{"type":"crt.MaxLength","params":{"max":4}}}}}}""");
@@ -3367,7 +3367,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string body = CreatePageBody(
 			viewConfigDiff: """[{"operation":"insert","name":"UsrCode","values":{"type":"crt.Input","control":"$UsrCode","validators":[{"id":"usr.MaxLengthFromSysSettingValidator","params":{"settingCode":"MaxProcessLoopCount","message":"Too long"}}]}}]""",
 			viewModelConfig: """{"attributes":{"UsrCode":{"modelConfig":{"path":"PDS.UsrCode"}}}}""",
@@ -3437,7 +3437,7 @@ public class PageToolsTests
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -3483,7 +3483,7 @@ public class PageToolsTests
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -3528,7 +3528,7 @@ public class PageToolsTests
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -3577,7 +3577,7 @@ public class PageToolsTests
 		MockFileSystem fileSystem = new();
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader());
+		PageSyncTool tool = new(commandResolver, fileSystem, mobileCatalog, webCatalog, new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageSyncArgs args = new(
 			"local",
 			[
@@ -6017,7 +6017,7 @@ public class PageToolsTests
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
 		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog,
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string fullConfigBody = "define(\"UsrX_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 			"viewModelConfig: /**SCHEMA_VIEW_MODEL_CONFIG*/{}/**SCHEMA_VIEW_MODEL_CONFIG*/, " +
@@ -6063,7 +6063,7 @@ public class PageToolsTests
 			.Returns(System.Text.Json.JsonSerializer.Serialize(new { success = true }));
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string mobileBody = """
 			{
 			  "viewConfigDiff": [],
@@ -6110,7 +6110,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageUpdateArgs args = new("UsrTest_FormPage");
 
 		// Act
@@ -6137,7 +6137,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string bodyWithBadJson = CreatePageBody(viewConfigDiff: "[{ bad json }]");
 		string tempFile = Path.Combine(Path.GetTempPath(), $"clio-bodyfile-{Path.GetRandomFileName()}.js");
 		File.WriteAllText(tempFile, bodyWithBadJson);
@@ -6175,7 +6175,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
 		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
-		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+		PageUpdateTool tool = new(command, logger, commandResolver, mobileCatalog, webCatalog, new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		string missingPath = Path.Combine(Path.GetTempPath(), $"clio-missing-{Path.GetRandomFileName()}.js");
 		PageUpdateArgs args = new("UsrTest_FormPage", BodyFile: missingPath);
 
@@ -6372,7 +6372,7 @@ public class PageToolsTests
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		return new PageUpdateTool(command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(), Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader());
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 	}
 
 	[Test]

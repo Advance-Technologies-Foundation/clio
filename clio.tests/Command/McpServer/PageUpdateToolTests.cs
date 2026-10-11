@@ -92,7 +92,7 @@ public sealed class PageUpdateToolTests {
 			command, logger, _commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			_resolverFactory, settingsRepository);
 	}
 
@@ -275,7 +275,7 @@ public sealed class PageUpdateToolTests {
 			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog());
 		PageUpdateTool tool = new(
 			_command, Substitute.For<ILogger>(), _commandResolver, mobileCatalog, _webComponentCatalog,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			_resolverFactory, Substitute.For<ISettingsRepository>());
 		string mobileBody = MobileFieldBindingDeclaredInputsTests.Body(
 			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
@@ -370,7 +370,7 @@ public sealed class PageUpdateToolTests {
 	}
 
 	[Test]
-	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> templateBaseContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
+	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> PageMergedConfigContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
 	public async Task UpdatePage_ThreadsMode_IntoGetPageExcludeOwnBody() {
 		// A mobile body whose viewModelConfigDiff needs an external base, so the oracle resolves it (invokes get-page).
 		const string mobileBody =

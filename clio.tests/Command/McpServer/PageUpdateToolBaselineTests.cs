@@ -87,7 +87,7 @@ public sealed class PageUpdateToolBaselineTests
 			command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			new PageBaselineGuard(_fileSystem), new PersistedResourceKeyReader(),
+			new PageBaselineGuard(_fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			resolverFactory, settingsRepository);
 	}
 

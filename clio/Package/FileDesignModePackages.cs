@@ -66,9 +66,37 @@ namespace Clio.Package
 
 	#endregion
 
+	#region Interface: IFileDesignModeStateReader
+
+	/// <summary>
+	/// Reads the file system development mode (FSM) state of an environment, and nothing else. Kept apart
+	/// from <see cref="IFileDesignModePackages"/> so a caller that only reports the state cannot reach the
+	/// package loads, which overwrite one storage from the other.
+	/// </summary>
+	public interface IFileDesignModeStateReader
+	{
+		/// <summary>
+		/// Reads whether file system development mode is enabled on the environment, with one bounded
+		/// request and no retries.
+		/// </summary>
+		/// <remarks>
+		/// Meant for a caller that has already changed the environment and only needs the state to tell
+		/// the user something. It writes nothing to the log, and a transport, server or parse failure is
+		/// returned as <see langword="null"/> rather than thrown; only fatal conditions and programming
+		/// errors (<see cref="System.NullReferenceException"/> and the like) propagate.
+		/// </remarks>
+		/// <returns>
+		/// <see langword="true"/> or <see langword="false"/> as the environment reported it;
+		/// <see langword="null"/> when the request failed or the answer could not be read.
+		/// </returns>
+		bool? GetIsFileDesignModeEnabled();
+	}
+
+	#endregion
+
 	#region Interface: IPackagesToFileSystemLoader
 
-	public interface IFileDesignModePackages
+	public interface IFileDesignModePackages : IFileDesignModeStateReader
 	{
 
 		#region Methods: Public
@@ -137,6 +165,11 @@ namespace Clio.Package
 		private const int maxRequestAttempts = 30;
 
 		private const int delayBetweenRetryAttemptsSec = 3;
+
+		// A single state read after a write the caller has already made. The endpoint only returns a
+		// configuration flag, so a short bound is enough, and a stalled answer cannot hold a command (or an
+		// MCP batch that reads it once per operation) that has nothing left to do.
+		private const int fileDesignModeStateReadTimeoutMs = 10_000;
 
 		#endregion
 
@@ -250,6 +283,21 @@ namespace Clio.Package
 		/// <inheritdoc />
 		public FileDesignModeLoadResult LoadPackagesToDb() =>
 			LoadPackagesToStorage(_loadPackagesToDbUrl, "database");
+
+		/// <inheritdoc />
+		public bool? GetIsFileDesignModeEnabled() {
+			try {
+				string responseFromServer = _applicationClient.ExecutePostRequest(_getIsFileDesignModeUrl,
+					string.Empty, fileDesignModeStateReadTimeoutMs);
+				BoolResponse response = _jsonConverter.DeserializeObject<BoolResponse>(responseFromServer);
+				return response is { Success: true } ? response.Value : null;
+			} catch (Exception exception) when (exception is not (OutOfMemoryException or StackOverflowException
+				or AccessViolationException or NullReferenceException or IndexOutOfRangeException)) {
+				// The callers have already committed a change when they ask. Failing them here would make
+				// them retry a write that is not idempotent, so an unreadable state is reported as unknown.
+				return null;
+			}
+		}
 
 		public SetFileDesignModeResult SetFileDesignMode(bool isFileDesignMode) {
 			string payload = "{\"isFileDesignMode\":" + (isFileDesignMode ? "true" : "false") + "}";

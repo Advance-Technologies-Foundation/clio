@@ -136,7 +136,7 @@
             "Clio.Tests.Command.McpServer.McpHttpServerCommandTests",
             "Clio.Tests.Command.McpServer.McpToolArgsWireContractTests",
             "Clio.Tests.Command.McpServer.McpToolCompatibilityCatalogTests",
-            "Clio.Tests.Command.McpServer.MobilePageMergedConfigResolverTests",
+            "Clio.Tests.Command.McpServer.PageMergedConfigResolverTests",
             "Clio.Tests.Command.McpServer.OAuthConfigurationToolsTests",
             "Clio.Tests.Command.McpServer.ODataDeleteToolTests",
             "Clio.Tests.Command.McpServer.ODataUpdateToolTests",
