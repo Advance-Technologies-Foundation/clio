@@ -207,6 +207,51 @@ public sealed class SubProcessElementToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, ONE modify-business-process batch that first re-points the reader of a sub-process element's output and then retargets the element is REFUSED, naming the reader the request started with. The guard used to scan the live schema at the retarget's turn, where the first operation had left nothing to find, so the retarget replaced the parameters the reader depended on. The refused batch saves nothing: the element still calls the original process.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a retarget whose reader was re-pointed earlier in the same batch")]
+	public async Task ModifyBusinessProcess_Should_RefuseARetarget_WhenTheReaderWasRepointedEarlierInTheSameBatch() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		string calleeName = $"UsrClioBpSubBatchCallee{Guid.NewGuid():N}";
+		string otherName = $"UsrClioBpSubBatchOther{Guid.NewGuid():N}";
+		string callerName = $"UsrClioBpSubBatchCaller{Guid.NewGuid():N}";
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(calleeName), "called process");
+		await ArrangeProcessAsync(context, BuildCalleeDescriptor(otherName), "second called process");
+		await ArrangeProcessAsync(context, BuildReadingCallerDescriptor(callerName, calleeName),
+			"calling process whose parameter reads the element's output");
+
+		// Act
+		CallToolResult callResult = await ModifyAsync(context, callerName, $$"""
+			[ { "op": "addMapping",
+			    "mapping": { "targetProcessParameter": "CopiedApproval", "value": "false" } },
+			  { "op": "setElement", "elementName": "SubProcess1",
+			    "elementUpdate": { "subProcess": { "processName": "{{otherName}}" } } } ]
+			""");
+
+		// Assert
+		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(callResult);
+		envelope.ExitCode.Should().NotBe(0,
+			because: "the reader existed when the request started, and re-pointing it earlier in the SAME batch "
+				+ "must not be a way past the retarget guard");
+		string refusal = string.Join(Environment.NewLine, envelope.Output!.Select(message => message.Value));
+		refusal.Should().Contain("cannot be pointed at",
+			because: "the batch has to fail on the retarget guard, not on some unrelated error");
+		refusal.Should().Contain("process parameter 'CopiedApproval' reads from it, or did when this request started",
+			because: "the refusal names the reader as the request found it - the live schema no longer shows it");
+		refusal.Should().Contain("SEPARATE, earlier call",
+			because: "the caller has to be told the removal belongs in its own call, or following the advice inside "
+				+ "the same batch is refused again");
+		DescribedElement element = (await DescribeAsync(context, callerName)).Elements
+			.Single(candidate => candidate.Name == "SubProcess1");
+		element.SubProcess.Should().NotBeNull(
+			because: "a null here is the silent-drop signature, and dereferencing it below would hide the real "
+				+ "assertion");
+		element.SubProcess!.Process.Should().Be(calleeName,
+			because: "a refused batch saves nothing, so the element still calls the process it called");
+	}
+
+	[Test]
 	[Description("ENG-100077: after a caption-only change on the called process, ONE resync of the caller stores the called process's CURRENT caption. Read from SysLocalizableValue, not from describe: every read re-synchronizes, so describe can show a caption the database does not hold. Before the fix the package's save left the callee's resource cache holding the pre-edit captions and this row stayed one save behind.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process resync stores the called process's current caption")]
@@ -477,6 +522,33 @@ public sealed class SubProcessElementToolE2ETests {
 		  "mappings": [
 		    { "elementName": "SubProcess1", "elementParameter": "OrderId",
 		      "processParameter": "OrderToCheck" }
+		  ]
+		}
+		""";
+
+	// The caller with a process parameter that READS the element's synced output - the reader the retarget guard
+	// protects. Nothing declares Approved on the caller: it exists only because selecting the called process
+	// copied it onto the element.
+	private static string BuildReadingCallerDescriptor(string processName, string calleeName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP SubProcess reader E2E",
+		  "packageName": "Custom",
+		  "parameters": [ { "name": "CopiedApproval", "type": "Boolean", "direction": "Out" } ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "SubProcess1", "type": "subProcess", "caption": "Call the order process",
+		      "subProcess": { "processName": "{{calleeName}}" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "SubProcess1" },
+		    { "source": "SubProcess1", "target": "EndEvent1" }
+		  ],
+		  "mappings": [
+		    { "targetProcessParameter": "CopiedApproval",
+		      "sourceElement": "SubProcess1", "sourceElementParameter": "Approved" }
 		  ]
 		}
 		""";
