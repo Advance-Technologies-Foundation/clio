@@ -28,6 +28,7 @@ internal static class ProcessToolArgumentAliases {
 	private const string ProcessNameKey = "process-name";
 	private const string ProcessUidKey = "process-uid";
 	private const string ProcessCaptionKey = "process-caption";
+	private const string CaptionKey = "caption";
 	private const string ElementsKey = "elements";
 	private const string FlowsKey = "flows";
 
@@ -82,7 +83,7 @@ internal static class ProcessToolArgumentAliases {
 		["processcaption"] = ProcessCaptionKey,
 		["processtitle"] = ProcessCaptionKey,
 		["title"] = ProcessCaptionKey,
-		["caption"] = ProcessCaptionKey,
+		[CaptionKey] = ProcessCaptionKey,
 		["displayname"] = ProcessCaptionKey
 	};
 
@@ -178,7 +179,7 @@ internal static class ProcessToolArgumentAliases {
 	// The top-level fields of a process descriptor, canonical spelling, keyed by Normalize()d form.
 	private static readonly Dictionary<string, string> DescriptorFields = new(StringComparer.Ordinal) {
 		["name"] = "name",
-		["caption"] = "caption",
+		[CaptionKey] = CaptionKey,
 		["packagename"] = "packageName",
 		[ElementsKey] = ElementsKey,
 		[FlowsKey] = FlowsKey,
@@ -214,30 +215,39 @@ internal static class ProcessToolArgumentAliases {
 			List<string> clash = wrappers.Concat(flat).ToList();
 			return new CreateResolution(args, warnings, AmbiguousDescriptor(clash));
 		}
-		JsonElement descriptor;
-		HashSet<string> consumed;
-		if (wrappers.Count == 1) {
-			string key = wrappers[0];
-			descriptor = bag[key];
-			consumed = [key];
-			warnings.Add(AcceptedNote(key, "descriptor"));
-		} else {
-			JsonObject wrapped = [];
-			consumed = [];
-			foreach (string key in flat) {
-				wrapped[DescriptorFields[Normalize(key)]] = JsonNode.Parse(bag[key].GetRawText());
-				consumed.Add(key);
-			}
-			descriptor = JsonDocument.Parse(wrapped.ToJsonString()).RootElement.Clone();
-			warnings.Add("Descriptor fields (" + string.Join(", ", flat.Select(key =>
-					$"'{McpToolArgumentSupport.DescribeCallerKey(key)}'")) + ") were wrapped into 'descriptor'; "
-				+ "send them inside 'descriptor' in future calls.");
+		(JsonElement descriptor, HashSet<string> consumed) = wrappers.Count == 1
+			? TakeWrappedDescriptor(bag, wrappers[0], warnings)
+			: WrapFlatDescriptor(bag, flat, warnings);
+		return new CreateResolution(
+			args with { Descriptor = descriptor, ExtensionData = RemainingBag(bag, consumed) },
+			warnings, null);
+	}
+
+	private static (JsonElement Descriptor, HashSet<string> Consumed) TakeWrappedDescriptor(
+		Dictionary<string, JsonElement> bag, string key, List<string> warnings) {
+		warnings.Add(AcceptedNote(key, "descriptor"));
+		return (bag[key], [key]);
+	}
+
+	private static (JsonElement Descriptor, HashSet<string> Consumed) WrapFlatDescriptor(
+		Dictionary<string, JsonElement> bag, List<string> flat, List<string> warnings) {
+		JsonObject wrapped = [];
+		HashSet<string> consumed = [];
+		foreach (string key in flat) {
+			wrapped[DescriptorFields[Normalize(key)]] = JsonNode.Parse(bag[key].GetRawText());
+			consumed.Add(key);
 		}
+		warnings.Add("Descriptor fields (" + string.Join(", ", flat.Select(key =>
+				$"'{McpToolArgumentSupport.DescribeCallerKey(key)}'")) + ") were wrapped into 'descriptor'; "
+			+ "send them inside 'descriptor' in future calls.");
+		return (JsonDocument.Parse(wrapped.ToJsonString()).RootElement.Clone(), consumed);
+	}
+
+	private static Dictionary<string, JsonElement>? RemainingBag(
+		Dictionary<string, JsonElement> bag, HashSet<string> consumed) {
 		Dictionary<string, JsonElement> remaining = bag.Where(pair => !consumed.Contains(pair.Key))
 			.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-		return new CreateResolution(
-			args with { Descriptor = descriptor, ExtensionData = remaining.Count == 0 ? null : remaining },
-			warnings, null);
+		return remaining.Count == 0 ? null : remaining;
 	}
 
 	private static string AmbiguousDescriptor(IReadOnlyList<string> keys) =>
@@ -259,7 +269,7 @@ internal static class ProcessToolArgumentAliases {
 	// Descriptor fields that carry no graph information; tolerated inside a wrapper so a create-business-process
 	// descriptor can be validated as it is.
 	private static readonly HashSet<string> NonGraphDescriptorFields = new(StringComparer.Ordinal) {
-		"name", "caption", "packagename", "parameters", "mappings", "usings", "methods", "istracing", "description"
+		"name", CaptionKey, "packagename", "parameters", "mappings", "usings", "methods", "istracing", "description"
 	};
 
 	/// <summary>
@@ -289,53 +299,17 @@ internal static class ProcessToolArgumentAliases {
 		}
 
 		Dictionary<string, JsonElement> source = [];
-		HashSet<string> consumed = [];
-		string origin;
-		if (wrappers.Count == 1) {
-			string key = wrappers[0];
-			origin = McpToolArgumentSupport.DescribeCallerKey(key);
-			JsonElement value = bag[key];
-			if (value.ValueKind == JsonValueKind.String) {
-				try {
-					using JsonDocument parsed = JsonDocument.Parse(value.GetString() ?? string.Empty);
-					value = parsed.RootElement.Clone();
-				} catch (JsonException) {
-					return Refuse(args, warnings, $"'{origin}' is a string that is not valid JSON.");
-				}
-			}
-			if (value.ValueKind != JsonValueKind.Object) {
-				return Refuse(args, warnings, $"'{origin}' must be a JSON object holding 'nodes' and 'edges'.");
-			}
-			List<string> foreign = [];
-			foreach (JsonProperty property in value.EnumerateObject()) {
-				string normalized = Normalize(property.Name);
-				if (normalized is "nodes" or ElementsKey or "edges" or FlowsKey) {
-					if (!source.TryAdd(normalized, property.Value)) {
-						return Refuse(args, warnings, $"'{origin}' repeats '{property.Name}'.");
-					}
-				} else if (!NonGraphDescriptorFields.Contains(normalized)) {
-					foreign.Add($"'{McpToolArgumentSupport.DescribeCallerKey(property.Name)}'");
-				}
-			}
-			if (foreign.Count > 0) {
-				return Refuse(args, warnings,
-					$"Unknown keys inside '{origin}': {McpToolArgumentSupport.JoinCallerKeys(foreign)}. "
-					+ "Valid: nodes, edges (or the elements and flows of a descriptor).");
-			}
-			consumed.Add(key);
-			warnings.Add($"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level "
-				+ "in future calls.");
-		} else {
-			origin = string.Join(" and ", flat.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'"));
-			foreach (string key in flat) {
-				string normalized = Normalize(key);
-				if (!source.TryAdd(normalized, bag[key])) {
-					return Refuse(args, warnings, $"{origin} repeats '{key}'.");
-				}
-				consumed.Add(key);
-			}
-			warnings.Add($"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
+		string? error = wrappers.Count == 1
+			? ReadWrapperGraph(bag, wrappers[0], source, out string wrapperOrigin)
+			: ReadFlatGraph(bag, flat, source, out wrapperOrigin);
+		string origin = wrapperOrigin;
+		if (error is not null) {
+			return Refuse(args, warnings, error);
 		}
+		HashSet<string> consumed = [.. (wrappers.Count == 1 ? wrappers : flat)];
+		warnings.Add(wrappers.Count == 1
+			? $"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level in future calls."
+			: $"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
 
 		if (source.ContainsKey("nodes") && source.ContainsKey(ElementsKey)
 			|| source.ContainsKey("edges") && source.ContainsKey(FlowsKey)) {
@@ -347,14 +321,57 @@ internal static class ProcessToolArgumentAliases {
 			if (edgeError is not null) {
 				return Refuse(args, warnings, edgeError);
 			}
-			Dictionary<string, JsonElement> remaining = bag.Where(pair => !consumed.Contains(pair.Key))
-				.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
 			return new GraphResolution(
-				args with { Nodes = nodes, Edges = edges, ExtensionData = remaining.Count == 0 ? null : remaining },
+				args with { Nodes = nodes, Edges = edges, ExtensionData = RemainingBag(bag, consumed) },
 				warnings, null);
 		} catch (JsonException exception) {
 			return Refuse(args, warnings, $"{origin} is not a valid graph: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
 		}
+	}
+
+	/// <summary>Reads the graph members of a wrapper (<c>graph</c>, <c>descriptor</c>, ...) into <paramref name="source"/>; returns a refusal or null.</summary>
+	private static string? ReadWrapperGraph(
+		Dictionary<string, JsonElement> bag, string key, Dictionary<string, JsonElement> source, out string origin) {
+		origin = McpToolArgumentSupport.DescribeCallerKey(key);
+		JsonElement value = bag[key];
+		if (value.ValueKind == JsonValueKind.String) {
+			try {
+				using JsonDocument parsed = JsonDocument.Parse(value.GetString() ?? string.Empty);
+				value = parsed.RootElement.Clone();
+			} catch (JsonException) {
+				return $"'{origin}' is a string that is not valid JSON.";
+			}
+		}
+		if (value.ValueKind != JsonValueKind.Object) {
+			return $"'{origin}' must be a JSON object holding 'nodes' and 'edges'.";
+		}
+		List<string> foreign = [];
+		foreach (JsonProperty property in value.EnumerateObject()) {
+			string normalized = Normalize(property.Name);
+			if (normalized is "nodes" or ElementsKey or "edges" or FlowsKey) {
+				if (!source.TryAdd(normalized, property.Value)) {
+					return $"'{origin}' repeats '{property.Name}'.";
+				}
+			} else if (!NonGraphDescriptorFields.Contains(normalized)) {
+				foreign.Add($"'{McpToolArgumentSupport.DescribeCallerKey(property.Name)}'");
+			}
+		}
+		return foreign.Count == 0
+			? null
+			: $"Unknown keys inside '{origin}': {McpToolArgumentSupport.JoinCallerKeys(foreign)}. "
+				+ "Valid: nodes, edges (or the elements and flows of a descriptor).";
+	}
+
+	/// <summary>Reads flat top-level <c>elements</c>/<c>flows</c> into <paramref name="source"/>; returns a refusal or null.</summary>
+	private static string? ReadFlatGraph(
+		Dictionary<string, JsonElement> bag, List<string> flat, Dictionary<string, JsonElement> source, out string origin) {
+		origin = string.Join(" and ", flat.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'"));
+		foreach (string key in flat) {
+			if (!source.TryAdd(Normalize(key), bag[key])) {
+				return $"{origin} repeats '{key}'.";
+			}
+		}
+		return null;
 	}
 
 	private static GraphResolution Refuse(ValidateProcessGraphArgs args, List<string> warnings, string error) =>

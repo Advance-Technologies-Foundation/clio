@@ -172,10 +172,8 @@ internal static class ExecuteEsqQueryHints {
 	}
 
 	private static int? ReadRowCount(Match match) {
-		string raw = match.Groups["top"].Success ? match.Groups["top"].Value
-			: match.Groups["limit"].Success ? match.Groups["limit"].Value
-			: string.Empty;
-		return raw.Length == 0 ? null : int.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
+		Group group = match.Groups["top"].Success ? match.Groups["top"] : match.Groups["limit"];
+		return group.Success ? int.Parse(group.Value, System.Globalization.CultureInfo.InvariantCulture) : null;
 	}
 
 	private static string? ReadTable(string raw) {
