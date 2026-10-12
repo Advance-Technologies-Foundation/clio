@@ -47,26 +47,32 @@ internal static class ODataWriteArgumentAliases {
 		IReadOnlyList<string> aliases,
 		bool canonicalSupplied,
 		bool rowsFileSupplied) {
-		List<string> used = extensionData is null
-			? []
-			: extensionData.Keys.Where(key => aliases.Contains(key, StringComparer.OrdinalIgnoreCase)).ToList();
+		if (extensionData is null) {
+			return new Resolution(null, extensionData, null, null);
+		}
+		List<string> used = extensionData.Keys.Where(key => aliases.Contains(key, StringComparer.OrdinalIgnoreCase)).ToList();
 		if (used.Count == 0) {
 			return new Resolution(null, extensionData, null, null);
 		}
 		List<string> shown = used.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'").ToList();
 		if (canonicalSupplied || rowsFileSupplied || used.Count > 1) {
-			string? other = canonicalSupplied ? $"'{canonical}'" : rowsFileSupplied ? "'rows-file'" : null;
+			string? other = null;
+			if (canonicalSupplied) {
+				other = $"'{canonical}'";
+			} else if (rowsFileSupplied) {
+				other = "'rows-file'";
+			}
 			string together = string.Join(" and ", other is null ? shown : shown.Prepend(other));
 			return new Resolution(null, extensionData, null,
 				$"Ambiguous payload: {together} were all supplied, and they name the same thing. "
 				+ $"Send the payload once, as '{canonical}'. Nothing was written.");
 		}
 		string alias = used[0];
-		Dictionary<string, JsonElement> remaining = extensionData!
+		Dictionary<string, JsonElement> remaining = extensionData
 			.Where(pair => pair.Key != alias)
 			.ToDictionary(pair => pair.Key, pair => pair.Value);
 		return new Resolution(
-			extensionData![alias].Clone(),
+			extensionData[alias].Clone(),
 			remaining.Count == 0 ? null : remaining,
 			$"Argument '{McpToolArgumentSupport.DescribeCallerKey(alias)}' was accepted as '{canonical}'; "
 			+ $"use '{canonical}' in future calls.",

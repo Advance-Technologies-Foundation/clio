@@ -147,7 +147,7 @@ public sealed class ODataCreateTool(
 			args.Rows is not null, !string.IsNullOrWhiteSpace(args.RowsFile));
 		if (payloadAlias.Warning is not null) {
 			args = args with {
-				Rows = WrapSingleObject(payloadAlias.Value!.Value),
+				Rows = WrapSingleObject(payloadAlias.Value.GetValueOrDefault()),
 				ExtensionData = payloadAlias.Remaining
 			};
 		}

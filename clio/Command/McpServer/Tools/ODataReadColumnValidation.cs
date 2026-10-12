@@ -80,14 +80,14 @@ internal static class ODataReadColumnValidation {
 		if (shape is null) {
 			return null;
 		}
-		List<(Reference Reference, string Name)> unknown = FindUnknown(shape, references, entity);
+		List<(Reference Reference, string Name)> unknown = FindUnknown(shape, references);
 		if (unknown.Count > 0 && fromCache) {
 			// The metadata may have been fetched before a column was added; one refresh decides, and a
 			// failed refresh keeps the verdict of the shape that was already trusted.
 			ODataFieldValidation.EntityShape? refreshed = Fetch(client, urlBuilder, entity, key);
 			if (refreshed is not null) {
 				shape = refreshed;
-				unknown = FindUnknown(shape, references, entity);
+				unknown = FindUnknown(shape, references);
 			}
 		}
 		return unknown.Count == 0 ? null : BuildFailure(shape, unknown, entity);
@@ -120,25 +120,20 @@ internal static class ODataReadColumnValidation {
 				}
 			}
 		}
-		foreach (ODataFilterCondition? condition in (args.Filters?.All ?? []).Concat(args.Filters?.Any ?? [])) {
-			if (condition is not null && !string.IsNullOrWhiteSpace(condition.Field)) {
-				references.Add(new Reference("filters", condition.Field.Trim(), false));
-			}
+		foreach (ODataFilterCondition condition in (args.Filters?.All ?? []).Concat(args.Filters?.Any ?? [])
+			.Where(c => c is not null && !string.IsNullOrWhiteSpace(c.Field))) {
+			references.Add(new Reference("filters", condition.Field.Trim(), false));
 		}
 		return references;
 	}
 
 	private static List<(Reference, string)> FindUnknown(ODataFieldValidation.EntityShape shape,
-		List<Reference> references, string entity) {
-		List<(Reference, string)> unknown = [];
-		HashSet<(string, string)> seen = [];
-		foreach (Reference reference in references) {
-			if (!IsKnown(shape, reference) && seen.Add((reference.Argument, reference.Path))) {
-				unknown.Add((reference, reference.Path));
-			}
-		}
-		return unknown;
-	}
+		List<Reference> references) =>
+		references
+			.Where(reference => !IsKnown(shape, reference))
+			.DistinctBy(reference => (reference.Argument, reference.Path))
+			.Select(reference => (reference, reference.Path))
+			.ToList();
 
 	/// <summary>
 	/// A single segment must be a property or navigation of the entity (a navigation only, for expand).
@@ -211,18 +206,7 @@ internal static class ODataReadColumnValidation {
 			subject = segments[0];
 			lookupForms = segments.Length == 1 || segments.Length == 2;
 		}
-		List<(int Tier, int Distance, string Name)> ranked = [];
-		foreach (string candidate in pool) {
-			(int, int)? score = Score(subject, candidate);
-			string? stripped = StripEntityPrefix(subject, entity);
-			if (stripped is not null && Score(stripped, candidate) is (int, int) strippedScore
-				&& (score is null || strippedScore.CompareTo(score.Value) < 0)) {
-				score = strippedScore;
-			}
-			if (score is { } value) {
-				ranked.Add((value.Item1, value.Item2, candidate));
-			}
-		}
+		List<(int Tier, int Distance, string Name)> ranked = RankCandidates(pool, subject, entity);
 		List<string> result = [];
 		if (lookupForms && prefix.Length == 0) {
 			AddLookupForm(shape, reference, subject, result);
@@ -235,6 +219,23 @@ internal static class ODataReadColumnValidation {
 			}
 		}
 		return result.Take(MaxSuggestions).ToList();
+	}
+
+	private static List<(int Tier, int Distance, string Name)> RankCandidates(HashSet<string> pool, string subject,
+		string entity) {
+		List<(int Tier, int Distance, string Name)> ranked = [];
+		foreach (string candidate in pool) {
+			(int, int)? score = Score(subject, candidate);
+			string? stripped = StripEntityPrefix(subject, entity);
+			if (stripped is not null && Score(stripped, candidate) is (int, int) strippedScore
+				&& (score is null || strippedScore.CompareTo(score.Value) < 0)) {
+				score = strippedScore;
+			}
+			if (score is { } value) {
+				ranked.Add((value.Item1, value.Item2, candidate));
+			}
+		}
+		return ranked;
 	}
 
 	/// <summary>The <c>&lt;Name&gt;Id</c> and <c>&lt;Name&gt;/Id</c> forms of one lookup, in either direction.</summary>
