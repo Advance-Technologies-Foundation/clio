@@ -111,6 +111,8 @@ internal static class ToolContractShortForm {
 	/// <summary>
 	/// The <c>modify-business-process</c> operations. One entry per <c>op</c> token the bundled CrtProcessBuilder
 	/// accepts, each starting with the token, so a new server operation without a shape fails the drift test.
+	/// The braces hold wire names only, and together they are every member of the server's operation descriptor
+	/// besides <c>op</c>, under the same test.
 	/// </summary>
 	internal static readonly IReadOnlyList<string> ModifyOperationShape = [
 		"addElement {element}",

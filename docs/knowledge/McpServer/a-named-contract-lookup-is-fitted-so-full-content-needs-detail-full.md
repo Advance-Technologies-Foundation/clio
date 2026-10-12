@@ -58,8 +58,9 @@ MEASURED against the budget:
   pins the all-short outcome and the over-budget floor, so a change to either is a visible decision. The
   shape's lists are held to the args records and to the bundled CrtProcessBuilder's `Operations.All`,
   `BuildProcessRequest`, `ProcessElementDescriptor`, `ProcessFlowDescriptor`,
-  `ProcessParameterDescriptor` and `ProcessMappingDescriptor` by `ToolContractShortFormTests`, so a new
-  server operation, field or element block fails the unit lane until it is shaped.
+  `ProcessParameterDescriptor`, `ProcessMappingDescriptor` and `ProcessOperationDescriptor` by
+  `ToolContractShortFormTests`, so a new server operation, field or element block fails the unit lane until
+  it is shaped.
 
 Known gap, by decision: ordinary imperatives - "do NOT run compile-creatio", "Do NOT remove the flow and
 add a plain one", "do not paraphrase" - are NOT markers and are dropped from the process contracts' short
@@ -88,3 +89,13 @@ reply over 19 000 bytes on the wire, which
 a change that keeps one of the seven whole, or brings their floor back under Fit's budget, is reported by
 `GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`,
 so the trade is re-decided rather than drifting.
+
+Both budgets are nearly spent (October 2026): the full `modify-business-process` contract is about 2 bytes
+under the per-contract ceiling in `ToolContractPayloadBudgetTests`, and the seven-contract reply about 225
+bytes under 19 000 on the wire. The next sentence on that tool pays by a swap, as the ceiling's comment
+records for earlier tickets, and the order to cut in is: provenance first (version floors, history, which
+archive a rule arrived in), then text a process guide already owns (per-element reference, the detail of a
+refusal message). Never cut a sentence carrying a `SafetyDuty` marker, a refusal the caller has to act on, or
+a consent flag such as `confirm-layout-change`. An unmarked sentence past the kept lead never reaches a short
+form, so it costs the per-contract ceiling only; the lead, a marked sentence or a field description costs the
+seven-contract reply as well.

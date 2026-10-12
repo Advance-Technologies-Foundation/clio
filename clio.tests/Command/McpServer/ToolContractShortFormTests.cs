@@ -543,6 +543,27 @@ public sealed class ToolContractShortFormTests {
 				because: "agents reach for removeMapping; the shape must say re-mapping overwrites instead");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The fields inside the modify-business-process operation braces, with the op key the shape states once for all, are exactly the members of the bundled CrtProcessBuilder's operation descriptor, so a renamed or new operation field fails here as an unshaped op token does (ENG-102797).")]
+	public void ModifyCallShape_Should_NameExactlyTheOperationFieldsTheBundledServerDeclares() {
+		// Arrange
+		string archive = BundledProcessBuilderSource.ReadAsText();
+
+		// Act
+		IReadOnlyList<string> members = BundledProcessBuilderSource.DataMemberNames(archive, "ProcessOperationDescriptor");
+		string[] shaped = [
+			"op", .. WireNames(ToolContractShortForm.ModifyOperationShape.Select(OperationFields)).Distinct()
+		];
+
+		// Assert
+		members.Should().Contain("enabled",
+			because: "anti-vacuity: the operation descriptor was read, and it carries the newest operation's field");
+		shaped.Should().BeEquivalentTo(members,
+			because: "an operation field missing from the shape is one an agent can only find in detail=full, and a "
+				+ "shaped field the server lacks is one it ignores or refuses");
+	}
+
 	[TestCase("BuildProcessRequest", "isTracing")]
 	[TestCase("ProcessElementDescriptor", "scriptTask")]
 	[TestCase("ProcessFlowDescriptor", "results")]
@@ -652,6 +673,11 @@ public sealed class ToolContractShortFormTests {
 
 	// The wire name an operation entry starts with: "addFlow {source, ..." names addFlow.
 	private static string LeadingWireName(string shapeEntry) => LeadingWireNamePattern.Match(shapeEntry).Value;
+
+	// The fields an operation entry puts in braces, leaving the prose after them out: "addMapping {mapping}
+	// (there is no removeMapping: ...)" holds the field mapping and no field named removeMapping.
+	private static string OperationFields(string shapeEntry) =>
+		shapeEntry[(shapeEntry.IndexOf('{') + 1)..shapeEntry.IndexOf('}')];
 
 	// Every wire name in a list of shape entries. Outside parentheses an entry holds wire names and punctuation
 	// only ("parameters[]?", "condition? | results?", "sourceElement+sourceElementParameter+sourceColumn?"); a

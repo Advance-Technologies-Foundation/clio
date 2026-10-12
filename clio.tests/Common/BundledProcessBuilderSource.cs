@@ -48,7 +48,10 @@ internal static class BundledProcessBuilderSource {
 	/// this could quietly widen into a whole-archive search are closed: the region name is matched WITH its line
 	/// terminator, so a later <c>#region Class: &lt;Name&gt;V2</c> cannot be found by a prefix search for
 	/// &lt;Name&gt;; and an UNTERMINATED region answers null rather than taking the rest of the archive as its
-	/// window, where a member on any later type would satisfy the probe.
+	/// window, where a member on any later type would satisfy the probe. The region ends at the
+	/// <c>#endregion</c> that balances it, not the first one: a nested region such as <c>#region Properties</c>
+	/// would otherwise cut the window short, and a drift test would then report the members after it as fields
+	/// the server lacks, blaming the shape instead of this reader.
 	/// </remarks>
 	internal static string? ClassRegion(string archive, string typeName) {
 		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
@@ -58,8 +61,19 @@ internal static class BundledProcessBuilderSource {
 		if (start < 0) {
 			return null;
 		}
-		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
+		int end = BalancingEndRegion(archive, start);
 		return end < 0 ? null : archive[start..end];
+	}
+
+	private static int BalancingEndRegion(string archive, int regionStart) {
+		int depth = 0;
+		foreach (Match directive in RegionDirective.Matches(archive, regionStart)) {
+			depth += directive.Groups["end"].Success ? -1 : 1;
+			if (depth == 0) {
+				return directive.Index;
+			}
+		}
+		return -1;
 	}
 
 	/// <summary>
@@ -105,6 +119,9 @@ internal static class BundledProcessBuilderSource {
 	// Up to the name's closing quote, so a member declared with EmitDefaultValue = false counts too.
 	private static readonly Regex DataMemberName = new(@"\[DataMember\(Name = ""(?<name>[^""]+)""",
 		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+
+	private static readonly Regex RegionDirective = new(@"#(?<end>end)?region\b", RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	private static readonly Regex OperationConstant = new(@"public const string (?<id>\w+) = ""(?<token>[^""]+)"";",
 		RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
