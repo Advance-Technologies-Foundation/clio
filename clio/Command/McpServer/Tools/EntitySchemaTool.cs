@@ -106,6 +106,8 @@ public sealed class CreateEntitySchemaTool(
 		}
 	}
 
+	private const string TitleLocalizationsArgument = "title-localizations";
+
 	/// <summary>
 	/// The required arguments of <c>create-entity-schema</c> the call lacks. The title counts as supplied when
 	/// <c>title-localizations</c> is non-empty or the legacy <c>title</c> is present, because the localization
@@ -113,7 +115,7 @@ public sealed class CreateEntitySchemaTool(
 	/// </summary>
 	internal static List<string> MissingCreateArguments(CreateEntitySchemaArgs? args) {
 		if (args is null) {
-			return ["environment-name", "package-name", "schema-name", "title-localizations"];
+			return ["environment-name", "package-name", "schema-name", TitleLocalizationsArgument];
 		}
 		List<string> missing = [];
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
@@ -127,7 +129,7 @@ public sealed class CreateEntitySchemaTool(
 		}
 		if ((args.TitleLocalizations is null || args.TitleLocalizations.Count == 0)
 			&& string.IsNullOrWhiteSpace(args.LegacyTitle)) {
-			missing.Add("title-localizations");
+			missing.Add(TitleLocalizationsArgument);
 		}
 		return missing;
 	}

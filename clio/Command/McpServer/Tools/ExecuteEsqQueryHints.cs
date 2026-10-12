@@ -34,26 +34,26 @@ internal static class ExecuteEsqQueryHints {
 	private static readonly string[] LimitKeys = ["rowcount", "top", "limit", "take", "maxrows"];
 	private static readonly string[] SqlKeys = ["sql", "sqlquery", "sqltext", "statement"];
 
-	private static readonly Regex Identifier = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+	private static readonly Regex Identifier = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	private static readonly Regex GuidLiteral = new(
 		@"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
-	private static readonly Regex SqlStart = new(@"^\s*(select|with)\b", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+	private static readonly Regex SqlStart = new(@"^\s*(select|with)\b", RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
 	private static readonly Regex SelectShape = new(
 		@"^\s*select\s+(?:top\s+(?<top>\d+)\s+)?(?<cols>.+?)\s+from\s+(?<table>\S+?)"
 		+ @"(?:\s+where\s+(?<where>.+?))?(?:\s+limit\s+(?<limit>\d+))?\s*;?\s*$",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
+		RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant);
 
 	private static readonly Regex Unsupported = new(
 		@"\b(join|group\s+by|order\s+by|having|union|distinct|offset|fetch|into)\b|[()]|--|/\*|;\s*\S",
-		RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+		RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
 	private static readonly Regex EqualityTerm = new(
 		@"^\s*\[?(?<col>[A-Za-z_][A-Za-z0-9_]*)\]?\s*=\s*(?<val>'(?:[^']|'')*'|-?\d+)\s*$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	/// <summary>A hint to return in place of running the call.</summary>
 	/// <param name="Message">What was wrong and what the shape is; goes ahead of the usual shape example.</param>
@@ -146,21 +146,36 @@ internal static class ExecuteEsqQueryHints {
 		}
 		List<(string Column, JsonElement Value)> filters = [];
 		if (match.Groups["where"].Success) {
-			foreach (string term in Regex.Split(match.Groups["where"].Value, @"\s+and\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)) {
-				Match equality = EqualityTerm.Match(term);
-				if (!equality.Success) {
+			foreach (string term in AndSeparator.Split(match.Groups["where"].Value)) {
+				if (TryReadEqualityTerm(term) is not { } filter) {
 					return new Hint(SqlPrefix + " Only 'column = value' terms joined by AND are translated.", null);
 				}
-				string literal = equality.Groups["val"].Value;
-				filters.Add((equality.Groups["col"].Value, literal.StartsWith('\'')
-					? JsonSerializer.SerializeToElement(literal[1..^1].Replace("''", "'", StringComparison.Ordinal))
-					: JsonSerializer.SerializeToElement(long.Parse(literal, System.Globalization.CultureInfo.InvariantCulture))));
+				filters.Add(filter);
 			}
 		}
-		int? rowCount = match.Groups["top"].Success ? int.Parse(match.Groups["top"].Value, System.Globalization.CultureInfo.InvariantCulture)
-			: match.Groups["limit"].Success ? int.Parse(match.Groups["limit"].Value, System.Globalization.CultureInfo.InvariantCulture)
-			: null;
-		return Suggest(SqlPrefix, table, columns, filters, rowCount);
+		return Suggest(SqlPrefix, table, columns, filters, ReadRowCount(match));
+	}
+
+	private static readonly Regex AndSeparator = new(
+		@"\s+and\s+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
+	private static (string Column, JsonElement Value)? TryReadEqualityTerm(string term) {
+		Match equality = EqualityTerm.Match(term);
+		if (!equality.Success) {
+			return null;
+		}
+		string literal = equality.Groups["val"].Value;
+		JsonElement value = literal.StartsWith('\'')
+			? JsonSerializer.SerializeToElement(literal[1..^1].Replace("''", "'", StringComparison.Ordinal))
+			: JsonSerializer.SerializeToElement(long.Parse(literal, System.Globalization.CultureInfo.InvariantCulture));
+		return (equality.Groups["col"].Value, value);
+	}
+
+	private static int? ReadRowCount(Match match) {
+		string raw = match.Groups["top"].Success ? match.Groups["top"].Value
+			: match.Groups["limit"].Success ? match.Groups["limit"].Value
+			: string.Empty;
+		return raw.Length == 0 ? null : int.Parse(raw, System.Globalization.CultureInfo.InvariantCulture);
 	}
 
 	private static string? ReadTable(string raw) {
@@ -176,13 +191,7 @@ internal static class ExecuteEsqQueryHints {
 		string? schema = SchemaKeys.Where(flat.ContainsKey)
 			.Select(key => flat[key].ValueKind == JsonValueKind.String ? flat[key].GetString() : null)
 			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
-		string? columnKey = ColumnKeys.FirstOrDefault(flat.ContainsKey);
-		List<string>? columns = null;
-		if (columnKey is not null && flat[columnKey].ValueKind == JsonValueKind.Array) {
-			columns = flat[columnKey].EnumerateArray()
-				.Select(item => item.ValueKind == JsonValueKind.String ? item.GetString()!.Trim() : string.Empty)
-				.ToList();
-		}
+		List<string>? columns = ReadColumnNames(flat);
 		List<(string Column, JsonElement Value)>? filters = [];
 		if (FilterKeys.FirstOrDefault(flat.ContainsKey) is { } filterKey) {
 			filters = flat[filterKey].ValueKind == JsonValueKind.Object
@@ -198,9 +207,29 @@ internal static class ExecuteEsqQueryHints {
 			&& columns is { Count: > 0 } && columns.All(column => Identifier.IsMatch(column))
 			&& filters is not null;
 		return safe
-			? Suggest(FlatPrefix, schema!, columns!, filters!, rowCount)
+			? Suggest(FlatPrefix, schema, columns, filters, rowCount)
 			: new Hint(FlatPrefix + " The top-level values are not a single schema name with a plain list of column "
 				+ "names and simple equality filters, so no query is suggested.", null);
+	}
+
+	private static List<string>? ReadColumnNames(Dictionary<string, JsonElement> flat) {
+		string? columnKey = ColumnKeys.FirstOrDefault(flat.ContainsKey);
+		if (columnKey is null || flat[columnKey].ValueKind != JsonValueKind.Array) {
+			return null;
+		}
+		return flat[columnKey].EnumerateArray()
+			.Select(item => item.ValueKind == JsonValueKind.String ? (item.GetString() ?? string.Empty).Trim() : string.Empty)
+			.ToList();
+	}
+
+	private static SelectQueryHelper.SelectQueryFilterDefinition ToFilterDefinition((string Column, JsonElement Value) filter) {
+		if (filter.Value.ValueKind == JsonValueKind.Number) {
+			return new SelectQueryHelper.SelectQueryFilterDefinition(
+				filter.Column, filter.Value.GetInt64(), SelectQueryHelper.IntDataValueType);
+		}
+		string text = filter.Value.GetString() ?? string.Empty;
+		int dataType = GuidLiteral.IsMatch(text) ? SelectQueryHelper.GuidDataValueType : SelectQueryHelper.TextDataValueType;
+		return new SelectQueryHelper.SelectQueryFilterDefinition(filter.Column, text, dataType);
 	}
 
 	private static List<(string Column, JsonElement Value)>? ReadEqualityObject(JsonElement filters) {
@@ -224,16 +253,7 @@ internal static class ExecuteEsqQueryHints {
 		int rowCount = requestedRows ?? DefaultRowCount;
 		List<SelectQueryHelper.SelectQueryColumnDefinition> columnDefinitions =
 			columns.Distinct(StringComparer.Ordinal).Select(column => new SelectQueryHelper.SelectQueryColumnDefinition(column, column)).ToList();
-		List<SelectQueryHelper.SelectQueryFilterDefinition> filterDefinitions = filters
-			.Select(filter => filter.Value.ValueKind == JsonValueKind.Number
-				? new SelectQueryHelper.SelectQueryFilterDefinition(
-					filter.Column, filter.Value.GetInt64(), SelectQueryHelper.IntDataValueType)
-				: new SelectQueryHelper.SelectQueryFilterDefinition(
-					filter.Column, filter.Value.GetString()!,
-					GuidLiteral.IsMatch(filter.Value.GetString()!)
-						? SelectQueryHelper.GuidDataValueType
-						: SelectQueryHelper.TextDataValueType))
-			.ToList();
+		List<SelectQueryHelper.SelectQueryFilterDefinition> filterDefinitions = filters.Select(ToFilterDefinition).ToList();
 		JsonElement query = JsonSerializer.SerializeToElement(
 			SelectQueryHelper.BuildSelectQuery(schema, columnDefinitions, filterDefinitions, rowCount));
 		return new Hint(prefix + " The equivalent query is returned in 'suggested-query' - send it as 'query' to run "

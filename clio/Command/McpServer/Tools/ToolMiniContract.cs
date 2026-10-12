@@ -18,6 +18,8 @@ namespace Clio.Command.McpServer.Tools;
 /// </remarks>
 internal static class ToolMiniContract {
 
+	private const string RegisteredEnvironmentLine = "environment-name (registered environment)";
+
 	/// <summary>Upper bound for one rendered mini-contract, in characters (about 1.5 KB of ASCII).</summary>
 	internal const int MaxLength = 1500;
 
@@ -51,10 +53,10 @@ internal static class ToolMiniContract {
 	/// <param name="exampleArgs">A minimal valid argument object.</param>
 	internal static string Build(
 		string toolName, IReadOnlyList<string> missing, IReadOnlyList<string> required, string exampleArgs) {
+		string noun = missing.Count == 1 ? "argument" : "arguments";
 		string lead = missing.Count == 0
 			? $"{toolName} was called with no arguments."
-			: $"{toolName}: missing required {(missing.Count == 1 ? "argument" : "arguments")} "
-				+ string.Join(", ", missing.Select(name => $"'{name}'")) + ".";
+			: $"{toolName}: missing required {noun} " + string.Join(", ", missing.Select(name => $"'{name}'")) + ".";
 		string text = $"{lead} Required: {string.Join("; ", required)}. Minimal valid arguments: {exampleArgs}";
 		return text.Length <= MaxLength ? text : text[..MaxLength];
 	}
@@ -78,7 +80,7 @@ internal static class ToolMiniContract {
 		missing,
 		[
 			"name (display name)", "code (business part of the app code; the schema prefix is added for you)",
-			"environment-name (registered environment)"
+			RegisteredEnvironmentLine
 		],
 		CreateAppExample);
 
@@ -86,7 +88,7 @@ internal static class ToolMiniContract {
 	internal static string ForCreateBusinessProcess(IReadOnlyList<string> missing) => Build("create-business-process",
 		missing,
 		[
-			"environment-name (registered environment)",
+			RegisteredEnvironmentLine,
 			"descriptor (JSON object: name, caption, packageName, elements[], flows[]); read get-guidance name=process-modeling for the rest"
 		],
 		CreateBusinessProcessExample);
@@ -95,7 +97,7 @@ internal static class ToolMiniContract {
 	internal static string ForModifyBusinessProcess(IReadOnlyList<string> missing) => Build("modify-business-process",
 		missing,
 		[
-			"environment-name (registered environment)", "process-name OR process-uid (exactly one)",
+			RegisteredEnvironmentLine, "process-name OR process-uid (exactly one)",
 			"operations (JSON array of {op, ...} objects)"
 		],
 		ModifyBusinessProcessExample);
@@ -104,7 +106,7 @@ internal static class ToolMiniContract {
 	internal static string ForCreateEntitySchema(IReadOnlyList<string> missing) => Build("create-entity-schema",
 		missing,
 		[
-			"environment-name (registered environment)", "package-name (existing package)",
+			RegisteredEnvironmentLine, "package-name (existing package)",
 			"schema-name (with the environment's prefix)", "title-localizations (object with an en-US value)",
 			"columns (optional)"
 		],

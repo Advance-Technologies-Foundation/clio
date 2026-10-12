@@ -25,14 +25,20 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// </remarks>
 internal static class ProcessToolArgumentAliases {
 
+	private const string ProcessNameKey = "process-name";
+	private const string ProcessUidKey = "process-uid";
+	private const string ProcessCaptionKey = "process-caption";
+	private const string ElementsKey = "elements";
+	private const string FlowsKey = "flows";
+
 	private static readonly JsonSerializerOptions NestedOptions = new() { PropertyNameCaseInsensitive = true };
 
 	private static readonly Regex GuidPattern = new(
 		@"^\{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}?$",
-		RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	private static readonly Regex IdentifierPattern = new(
-		@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+		@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	/// <summary>
 	/// Lower-cases a key and drops <c>-</c> and <c>_</c>, so <c>process-name</c>, <c>process_name</c> and
@@ -64,26 +70,33 @@ internal static class ProcessToolArgumentAliases {
 
 	// Synonyms whose meaning does not depend on the value. Keys are Normalize()d.
 	private static readonly Dictionary<string, string> DescribeSpecificAliases = new(StringComparer.Ordinal) {
-		["processname"] = "process-name",
-		["processcode"] = "process-name",
-		["schemaname"] = "process-name",
-		["code"] = "process-name",
-		["processuid"] = "process-uid",
-		["uid"] = "process-uid",
-		["processid"] = "process-uid",
-		["schemauid"] = "process-uid",
-		["id"] = "process-uid",
-		["processcaption"] = "process-caption",
-		["processtitle"] = "process-caption",
-		["title"] = "process-caption",
-		["caption"] = "process-caption",
-		["displayname"] = "process-caption"
+		["processname"] = ProcessNameKey,
+		["processcode"] = ProcessNameKey,
+		["schemaname"] = ProcessNameKey,
+		["code"] = ProcessNameKey,
+		["processuid"] = ProcessUidKey,
+		["uid"] = ProcessUidKey,
+		["processid"] = ProcessUidKey,
+		["schemauid"] = ProcessUidKey,
+		["id"] = ProcessUidKey,
+		["processcaption"] = ProcessCaptionKey,
+		["processtitle"] = ProcessCaptionKey,
+		["title"] = ProcessCaptionKey,
+		["caption"] = ProcessCaptionKey,
+		["displayname"] = ProcessCaptionKey
 	};
 
 	// Generic keys: which identity they mean is decided by the VALUE (a GUID, an identifier, or text).
 	private static readonly HashSet<string> DescribeGenericAliases = new(StringComparer.Ordinal) {
 		"name", "process"
 	};
+
+	private static string TargetByShape(string text) {
+		if (GuidPattern.IsMatch(text)) {
+			return ProcessUidKey;
+		}
+		return IdentifierPattern.IsMatch(text) ? ProcessNameKey : ProcessCaptionKey;
+	}
 
 	/// <summary>Resolves <c>name</c>-style synonyms of the process identity for <c>describe-business-process</c>.</summary>
 	/// <param name="args">The bound arguments; its overflow bag is what is inspected.</param>
@@ -106,10 +119,7 @@ internal static class ProcessToolArgumentAliases {
 				// Not a usable identity: leave it in the bag so the ordinary unknown-argument refusal names it.
 				continue;
 			}
-			string target = generic
-				? (GuidPattern.IsMatch(text.Trim()) ? "process-uid"
-					: IdentifierPattern.IsMatch(text.Trim()) ? "process-name" : "process-caption")
-				: DescribeSpecificAliases[normalized];
+			string target = generic ? TargetByShape(text.Trim()) : DescribeSpecificAliases[normalized];
 			if (!found.TryGetValue(target, out List<(string, string, bool)>? list)) {
 				list = [];
 				found[target] = list;
@@ -121,8 +131,8 @@ internal static class ProcessToolArgumentAliases {
 		}
 		foreach ((string target, List<(string Key, string Value, bool ByShape)> list) in found) {
 			bool canonicalSupplied = target switch {
-				"process-name" => !string.IsNullOrWhiteSpace(args.ProcessName),
-				"process-uid" => !string.IsNullOrWhiteSpace(args.ProcessUid),
+				ProcessNameKey => !string.IsNullOrWhiteSpace(args.ProcessName),
+				ProcessUidKey => !string.IsNullOrWhiteSpace(args.ProcessUid),
 				_ => !string.IsNullOrWhiteSpace(args.ProcessCaption)
 			};
 			if (canonicalSupplied || list.Count > 1) {
@@ -138,8 +148,8 @@ internal static class ProcessToolArgumentAliases {
 			(string key, string value, bool byShape) = list[0];
 			consumed.Add(key);
 			resolved = target switch {
-				"process-name" => resolved with { ProcessName = value },
-				"process-uid" => resolved with { ProcessUid = value },
+				ProcessNameKey => resolved with { ProcessName = value },
+				ProcessUidKey => resolved with { ProcessUid = value },
 				_ => resolved with { ProcessCaption = value }
 			};
 			warnings.Add(byShape
@@ -170,8 +180,8 @@ internal static class ProcessToolArgumentAliases {
 		["name"] = "name",
 		["caption"] = "caption",
 		["packagename"] = "packageName",
-		["elements"] = "elements",
-		["flows"] = "flows",
+		[ElementsKey] = ElementsKey,
+		[FlowsKey] = FlowsKey,
 		["parameters"] = "parameters",
 		["mappings"] = "mappings",
 		["usings"] = "usings",
@@ -193,7 +203,7 @@ internal static class ProcessToolArgumentAliases {
 		bool descriptorSupplied = args.Descriptor.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null);
 		List<string> wrappers = bag.Keys.Where(key => DescriptorWrapperAliases.Contains(Normalize(key))).ToList();
 		List<string> flat = bag.Keys.Where(key => DescriptorFields.ContainsKey(Normalize(key))).ToList();
-		bool flatIsDescriptor = flat.Any(key => Normalize(key) == "elements");
+		bool flatIsDescriptor = flat.Any(key => Normalize(key) == ElementsKey);
 		if (wrappers.Count == 0 && !(flatIsDescriptor && !descriptorSupplied)) {
 			if (flatIsDescriptor) {
 				return new CreateResolution(args, warnings, AmbiguousDescriptor(flat));
@@ -265,7 +275,7 @@ internal static class ProcessToolArgumentAliases {
 			return new GraphResolution(args, warnings, null);
 		}
 		List<string> wrappers = bag.Keys.Where(key => GraphWrapperAliases.Contains(Normalize(key))).ToList();
-		List<string> flat = bag.Keys.Where(key => Normalize(key) is "elements" or "flows").ToList();
+		List<string> flat = bag.Keys.Where(key => Normalize(key) is ElementsKey or FlowsKey).ToList();
 		if (wrappers.Count == 0 && flat.Count == 0) {
 			return new GraphResolution(args, warnings, null);
 		}
@@ -299,7 +309,7 @@ internal static class ProcessToolArgumentAliases {
 			List<string> foreign = [];
 			foreach (JsonProperty property in value.EnumerateObject()) {
 				string normalized = Normalize(property.Name);
-				if (normalized is "nodes" or "elements" or "edges" or "flows") {
+				if (normalized is "nodes" or ElementsKey or "edges" or FlowsKey) {
 					if (!source.TryAdd(normalized, property.Value)) {
 						return Refuse(args, warnings, $"'{origin}' repeats '{property.Name}'.");
 					}
@@ -327,8 +337,8 @@ internal static class ProcessToolArgumentAliases {
 			warnings.Add($"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
 		}
 
-		if (source.ContainsKey("nodes") && source.ContainsKey("elements")
-			|| source.ContainsKey("edges") && source.ContainsKey("flows")) {
+		if (source.ContainsKey("nodes") && source.ContainsKey(ElementsKey)
+			|| source.ContainsKey("edges") && source.ContainsKey(FlowsKey)) {
 			return Refuse(args, warnings, $"{origin} carries both 'nodes' and 'elements' (or 'edges' and 'flows'); send one.");
 		}
 		try {
@@ -358,7 +368,7 @@ internal static class ProcessToolArgumentAliases {
 				? JsonSerializer.Deserialize<List<ProcessGraphNodeArg>>(nodes.GetRawText(), NestedOptions)
 				: throw new JsonException("'nodes' must be an array.");
 		}
-		if (!source.TryGetValue("elements", out JsonElement elements)) {
+		if (!source.TryGetValue(ElementsKey, out JsonElement elements)) {
 			return null;
 		}
 		if (elements.ValueKind != JsonValueKind.Array) {
@@ -370,7 +380,7 @@ internal static class ProcessToolArgumentAliases {
 			.Select(element => element.ValueKind == JsonValueKind.Object
 				? new ProcessGraphNodeArg(ReadString(element, "name"), ReadString(element, "type"))
 				: null)
-			.ToList()!;
+			.ToList();
 	}
 
 	private static List<ProcessGraphEdgeArg>? ReadEdges(Dictionary<string, JsonElement> source, out string? error) {
@@ -380,7 +390,7 @@ internal static class ProcessToolArgumentAliases {
 				? JsonSerializer.Deserialize<List<ProcessGraphEdgeArg>>(edges.GetRawText(), NestedOptions)
 				: throw new JsonException("'edges' must be an array.");
 		}
-		if (!source.TryGetValue("flows", out JsonElement flows)) {
+		if (!source.TryGetValue(FlowsKey, out JsonElement flows)) {
 			return null;
 		}
 		if (flows.ValueKind != JsonValueKind.Array) {
@@ -389,7 +399,7 @@ internal static class ProcessToolArgumentAliases {
 		List<ProcessGraphEdgeArg> result = [];
 		foreach (JsonElement flow in flows.EnumerateArray()) {
 			if (flow.ValueKind != JsonValueKind.Object) {
-				result.Add(null!);
+				result.Add(null);
 				continue;
 			}
 			string[]? results = null;
@@ -399,7 +409,7 @@ internal static class ProcessToolArgumentAliases {
 					error = "A flow's 'results' must be an array of strings.";
 					return null;
 				}
-				results = resultsElement.EnumerateArray().Select(item => item.GetString()!).ToArray();
+				results = resultsElement.EnumerateArray().Select(item => item.GetString()).ToArray();
 			}
 			result.Add(new ProcessGraphEdgeArg(
 				ReadString(flow, "source"),
