@@ -636,4 +636,29 @@ public class ModifyBusinessProcessToolTests {
 				+ "is why no message reaching an agent may name the server's wire spelling. If this ever starts "
 				+ "binding, the two names have been merged and the relay sentence can be reconsidered");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The modify contract and its prompt offer setTracing with its one argument and send the caller to process-tracing (ENG-102111): a traced run stores every parameter value, so the always-loaded text must name the switch AND where its costs are explained, or an agent switches it on without telling the user.")]
+	public void ModifyBusinessProcess_Description_ShouldOfferSetTracingAndRouteToItsGuide() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		description.Should().Contain("setTracing (enabled:true|false): process tracing, on the version root",
+			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
+		description.Should().Contain("get-guidance name=process-tracing",
+			because: "the data and volume costs live in the guide, and the contract must route there");
+		description.Should().Contain("this clio requires 1.6.6.92, for setTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal that setTracing raised");
+		prompt.Should().Contain("`clearConnections`, or `setTracing`",
+			because: "the prompt's operation list must match its tool's contract");
+		prompt.Should().Contain("`get-guidance name=process-tracing`, tell the user",
+			because: "the prompt must make the agent explain the cost before switching tracing on");
+	}
+
 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Text.Json.Serialization;
@@ -11,6 +12,7 @@ using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
+using Clio.Common.Telemetry;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -62,6 +64,27 @@ public sealed class ToolContractGetToolTests {
 		string description = result.Tools!.Single().Description;
 		description.Should().Contain("InstallType 1", because: "the agent must know the package will not be editable");
 		description.Should().Contain("create-package", because: "the agent needs the tool that creates an editable package");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1749: the curated push-workspace contract tells agents that a Schemas/Data folder without descriptor.json fails the push before anything is installed, and what to do about it.")]
+	public void PushWorkspaceContract_ShouldDescribeTheDescriptorPreflight() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PushWorkspaceTool.PushWorkspaceToolName]));
+
+		// Assert
+		string description = result.Tools!.Single().Description;
+		description.Should().Contain("descriptor.json", because: "the agent must learn which folders fail the push");
+		description.Should().Contain("installs nothing", because: "the agent must know the environment was not changed");
+		description.Should().Contain("only Localization files, delete the folder",
+			because: "the agent needs the remedy for a leftover rather than a retry of the same push");
+		description.Should().Contain("restore its descriptor.json and do not delete it",
+			because: "deleting a folder that still holds the element can remove the element from the environment");
 	}
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
@@ -4479,4 +4502,30 @@ public sealed class ToolContractGetToolTests {
 		contract.Preconditions.Should().NotBeNullOrEmpty(
 			because: "the Freedom-UI-web-only precondition must travel with the contract - a Classic page has to be migrated first and an already-mobile page is rejected");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Meters every get-tool-contract response, a named batch and the compact index alike, at the size the agent receives (ENG-100157).")]
+	public void GetToolContracts_ShouldMeterEveryResponse_WhenAMeterIsSupplied() {
+		// Arrange
+		ServedContentMeter meter = new();
+		ToolContractGetTool tool = new(null, meter);
+
+		// Act
+		ToolContractGetResponse named = tool.GetToolContracts(new ToolContractGetArgs([SendTelemetryTool.ToolName]));
+		ToolContractGetResponse index = tool.GetToolContracts();
+
+		// Assert
+		meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "contract responses are content this session served");
+		served.ContractReads.Should().Be(2,
+			because: "both responses reached the agent");
+		served.ContractBytes.Should().Be(McpResultBytes(named) + McpResultBytes(index),
+			because: "the count is the size of the result text the agent reads, serialized with the MCP result options");
+		served.GuidanceReads.Should().Be(0,
+			because: "a contract read is not a guidance read");
+	}
+
+	private static long McpResultBytes(ToolContractGetResponse response) =>
+		Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response, Clio.BindingsModule.CreateMcpSerializerOptions()));
 }

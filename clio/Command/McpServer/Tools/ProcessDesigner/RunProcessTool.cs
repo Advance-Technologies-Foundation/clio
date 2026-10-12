@@ -15,8 +15,8 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 
 // Deliberately NOT [RequiresPackage]-gated, unlike the rest of this folder: the endpoint is built
 // into every Creatio, so a gate would only break consumers. Does not extend BaseTool
-// because its work can outlive the response deadline, and that path holds the per-tenant monitor for the
-// whole call — same shape as CompileCreatioTool.
+// because its work can outlive the response deadline, and that path pins its session container for the
+// whole run rather than taking the per-tenant monitor — same shape as CompileCreatioTool.
 [McpServerToolType]
 public sealed class RunProcessTool(
 	ILogger logger,
@@ -39,40 +39,84 @@ public sealed class RunProcessTool(
 
 	internal const string StillRunningStatus = "still-running";
 
+	/// <summary>The status of an answer whose launch request was never sent; the platform's refusals share it.</summary>
+	internal const string NotStartedStatus = RunProcessCommand.NotStartedStatus;
+
 	/// <summary>
-	/// run-process's own response deadline: the 150 s every long tool had before ENG-102333, NOT the shared
-	/// <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/>.
+	/// run-process's response deadline: the shared <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/>, so the
+	/// answer reaches a client that gives up at 60 s first.
 	/// </summary>
 	/// <remarks>
 	/// <para>
-	/// run-process runs in a per-call worker that the parent kills once the call answers, and the parent's budget for
-	/// that worker (120 s) is below this value, so in worker mode the "still running" answer is unreachable and a run
-	/// that outlives the budget ends in the parent's budget error, as it always has.
+	/// It was 150 s until ENG-102333 round 3. The answer at the deadline said "launched and still running" whatever
+	/// the call had reached, and logging in and resolving the model can take most of a minute on a busy or reloading
+	/// environment, so a 45 s answer could have claimed a launch that had not been sent. Held to 150 s, though, the
+	/// call made Claude Code desktop give up at 60 s and restart the MCP server, which killed every other call in
+	/// flight - a compile's worker among them (QA). <see cref="RunProcessLaunchGate"/> now records whether the launch
+	/// request was sent, so the answer is exact either way: not-started when it was not, and it never will be;
+	/// still-running when it was.
 	/// </para>
 	/// <para>
-	/// The shared 45 s default must not reach this tool. Its "still running" note tells the agent the process was
-	/// launched and must not be re-run, but nothing records whether the RunProcess request had been sent by then: a
-	/// cold worker spends seconds on its login, and right after a compile the application can hang requests for
-	/// 44 s. Answered before the request left, the note would claim a launch the parent's kill then prevents. Making
-	/// run-process answer before a 60 s client gives up needs a record of whether the launch was sent.
+	/// The accepted cost: a synchronous run that takes 45-150 s used to answer with its verdict and result-parameter
+	/// values, and now answers still-running on every client, with no handle to poll. A client that waits longer gets
+	/// them back by raising <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c>.
+	/// </para>
+	/// <para>
+	/// run-process is not in the worker cohort (<c>McpWorkerCohort</c>), so it runs in the MCP server process and
+	/// <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> applies to it as to the other tools that race it. Past the deadline the work
+	/// carries on detached: a sent request waits for the platform's answer, which is discarded; a withdrawn one stops
+	/// at the gate. Were it ever moved into a per-call worker, the parent would kill the worker after the answer and
+	/// the gate would keep the answer exact; the per-call budget is above this deadline, so the answer stays
+	/// reachable there too.
 	/// </para>
 	/// </remarks>
-	internal static readonly TimeSpan RunProcessResponseDeadline = TimeSpan.FromSeconds(150);
+	internal static TimeSpan RunProcessResponseDeadline => McpProgressHeartbeat.DefaultResponseDeadline;
 
 	// Test seam; null in production, where RunProcessResponseDeadline applies.
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
 
-	internal static string BuildStillRunningNote(string processName) =>
-		$"'{processName}' was launched and is still running server-side (the MCP response deadline was "
-		+ "reached first). This is NOT a failure and NOT a success — clio has no verdict. The platform "
+	/// <summary>
+	/// The note of an answer given at the response deadline after the launch request was sent.
+	/// </summary>
+	/// <remarks>
+	/// "Sent" is not "ran": the answer cannot see whether the environment took the request, and a request that dies
+	/// with its connection - the MCP server restarted, or, in a worker, the parent's kill - can be dropped while the
+	/// environment still has it queued. So the note names the time the request left and sends the agent to evidence
+	/// that can tell, and to the user when there is none. The time is this host's UTC, and SysProcessLog read through
+	/// OData can label the environment user's local time as UTC (measured on CompilationHistory, see
+	/// <c>docs/knowledge/platform/dataservice-returns-datetimes-in-the-session-zone.md</c>), so the note does not let
+	/// a time comparison alone attribute a row to this launch.
+	/// </remarks>
+	internal static string BuildStillRunningNote(string processName, DateTime sentUtc) =>
+		$"The launch request for '{processName}' was sent at "
+		+ sentUtc.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)
+		+ " and had not been answered when the MCP response deadline was reached. This is NOT a failure and NOT "
+		+ "a success — clio has no verdict, and cannot say whether the environment started the run. The platform "
 		+ "exposes no handle for an in-flight synchronous run: the process id only exists in the RunProcess "
 		+ "response, and the SysProcessLog row is buffered and written when the run ends, so there is "
 		+ "nothing to poll yet. Do NOT re-run this process to find out — a second launch duplicates the "
 		+ "work. Judge the outcome from the process's own effects, or from a later SysProcessLog read "
-		+ "(odata-read on SysProcessLog, newest row for this process).";
+		+ "(odata-read on SysProcessLog, newest row for this process). Its times can come back in the environment "
+		+ "user's time zone even when marked Z, so a row's time alone cannot tie it to this launch: if neither its "
+		+ "effects nor such a row certainly shows this run, tell the user the outcome is unconfirmed and ask before "
+		+ "launching it again.";
 
-	// A launch can outlive the MCP response deadline and holds the per-tenant monitor for the whole call, so a
-	// wedged run wedges the host: the boundary belongs in a worker. PerCall with no family because the platform
+	/// <summary>
+	/// The error of an answer given at the response deadline before the launch request was sent.
+	/// </summary>
+	/// <remarks>
+	/// Exact, not a guess: the answer claimed <see cref="RunProcessLaunchGate"/> first, so the request is never sent.
+	/// </remarks>
+	internal static string BuildNotLaunchedError(string processName) =>
+		$"'{processName}' was not launched: preparing the launch (logging in, reading the process and its "
+		+ "parameters from the environment) did not finish within the MCP response deadline, so the launch request "
+		+ "was never sent and nothing ran. The environment is answering slowly - for example while it reloads after a "
+		+ "compile or a restart - so wait a minute before calling run-process again; if that call is not launched "
+		+ "either, tell the user the environment is not answering instead of calling again.";
+
+	// A launch can outlive the MCP response deadline and pins its session container for the whole run, so a
+	// wedged run holds the host's resources: the boundary belongs in a worker. Declared only - run-process is not in
+	// the shipped worker cohort, so on stdio it still runs in the server process. PerCall with no family because the platform
 	// exposes no handle for an in-flight synchronous run (see BuildStillRunningNote), so there is no status
 	// poller for a sticky worker to serve. ParentKillDefault is safe here: the process runs server-side in
 	// Creatio, so killing the worker abandons the wait, it does not abort the process.
@@ -86,7 +130,9 @@ public sealed class RunProcessTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
 	[Description(
 		"Run (launch) a Creatio business process; resolve its CODE and parameter codes with get-process-signature "
-		+ "first, and read the outcome from `status`. VERSIONS: a code names ONE version, because every saved "
+		+ "first, and read the outcome from `status`. The call answers by the MCP response deadline (45 s by default): "
+		+ "a run that has not ended by then answers `still-running` with no verdict and no result-parameter values - "
+		+ "do not re-run it - and a launch whose request was not sent yet answers `not-started` (nothing ran). VERSIONS: a code names ONE version, because every saved "
 		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
 		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
 		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
@@ -125,7 +171,8 @@ public sealed class RunProcessTool(
 			Login = args.Login,
 			Password = args.Password,
 			// The same deadline the race below uses, so a failed run's log read never outlives it.
-			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? RunProcessResponseDeadline)
+			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? RunProcessResponseDeadline),
+			LaunchGate = new RunProcessLaunchGate()
 		};
 
 		try {
@@ -137,10 +184,23 @@ public sealed class RunProcessTool(
 				deadline: ResponseDeadlineOverride ?? RunProcessResponseDeadline,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		}
+		catch (OperationCanceledException) {
+			// The caller stopped waiting (notifications/cancelled, or the server shutting down) before any answer. A
+			// launch nobody waits for must not start afterwards: its caller, left without an answer, may well call
+			// again, and that would be a second run. A request already sent cannot be taken back.
+			options.LaunchGate.TryWithdraw();
+			throw;
+		}
 		catch (McpResponseDeadlineExceededException) {
+			if (options.LaunchGate.TryWithdraw()) {
+				return new RunProcessResponse {
+					Status = NotStartedStatus,
+					Error = BuildNotLaunchedError(args.ProcessName)
+				};
+			}
 			return new RunProcessResponse {
 				Status = StillRunningStatus,
-				Warnings = [BuildStillRunningNote(args.ProcessName)]
+				Warnings = [BuildStillRunningNote(args.ProcessName, options.LaunchGate.SentUtc ?? DateTime.UtcNow)]
 			};
 		}
 	}
@@ -200,7 +260,8 @@ public sealed record RunProcessArgs {
 
 	[JsonPropertyName("result-parameters")]
 	[Description("Codes of the parameters to read back after the run; a non-empty list forces a "
-		+ "background-mode process to run synchronously.")]
+		+ "background-mode process to run synchronously. The values come back only when the run ends within the "
+		+ "MCP response deadline.")]
 	public string[]? ResultParameters { get; init; }
 
 	[JsonPropertyName("timeout")]

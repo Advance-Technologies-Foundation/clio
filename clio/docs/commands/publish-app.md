@@ -98,4 +98,12 @@ Callback process name
 Path to the application root folder
 ```
 
+## Notes
+
+Packing stops when a folder under `Schemas/` or `Data/` of any package has no
+`descriptor.json`, because Creatio would reject the installation with
+`Invalid descriptor`. The error names the full local path of each such folder; see
+[push-workspace](push-workspace.md#folders-without-descriptorjson) for what to do
+with it.
+
 - [Clio Command Reference](../../Commands.md#publish-app)
