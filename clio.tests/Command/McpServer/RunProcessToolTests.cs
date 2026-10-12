@@ -93,8 +93,9 @@ public sealed class RunProcessToolTests {
 		versionLibReader ??= ActiveVersion();
 		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder,
 			processRunLogReader ?? NothingLogged(), versionLibReader, ConsoleLogger.Instance,
-			runMonitor ?? Substitute.For<IProcessRunMonitor>(), recordWatcher ?? Substitute.For<ICreatedRecordWatcher>(),
-			recordCleaner ?? Substitute.For<ICreatedRecordCleaner>()) { Sleep = _ => { } };
+			new RunVerificationServices(runMonitor ?? Substitute.For<IProcessRunMonitor>(),
+				recordWatcher ?? Substitute.For<ICreatedRecordWatcher>(),
+				recordCleaner ?? Substitute.For<ICreatedRecordCleaner>())) { Sleep = _ => { } };
 		return new Harness(command, applicationClient, serviceUrlBuilder, versionLibReader, bodies, timeouts, attempts);
 	}
 
@@ -376,8 +377,8 @@ public sealed class RunProcessToolTests {
 			.Returns("""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true}""");
 		IProcessVersionLibReader reader = ActiveVersion();
 		RunProcessCommand command = new(generator, applicationClient, Substitute.For<IServiceUrlBuilder>(),
-			NothingLogged(), reader, ConsoleLogger.Instance, Substitute.For<IProcessRunMonitor>(),
-			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>());
+			NothingLogged(), reader, ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
+			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>()));
 
 		// Act
 		command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
@@ -1324,8 +1325,8 @@ public sealed class RunProcessToolTests {
 		IProcessRunLogReader processRunLogReader,
 		ManualResetEventSlim finished)
 		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ActiveVersion(),
-			ConsoleLogger.Instance, Substitute.For<IProcessRunMonitor>(), Substitute.For<ICreatedRecordWatcher>(),
-			Substitute.For<ICreatedRecordCleaner>()) {
+			ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
+				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>())) {
 
 		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 			try {

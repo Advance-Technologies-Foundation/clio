@@ -166,10 +166,12 @@ public class RunProcessCommand(
 	IProcessRunLogReader processRunLogReader,
 	IProcessVersionLibReader versionLibReader,
 	ILogger logger,
-	IProcessRunMonitor runMonitor,
-	ICreatedRecordWatcher recordWatcher,
-	ICreatedRecordCleaner recordCleaner)
+	IRunVerificationServices verification)
 	: Command<RunProcessOptions> {
+
+	private readonly IProcessRunMonitor runMonitor = verification.Monitor;
+	private readonly ICreatedRecordWatcher recordWatcher = verification.Watcher;
+	private readonly ICreatedRecordCleaner recordCleaner = verification.Cleaner;
 
 	internal const int DefaultWaitTimeoutSeconds = 20;
 	internal const int MaxWaitTimeoutSeconds = 300;
@@ -314,7 +316,7 @@ public class RunProcessCommand(
 				DateTimeOffset.UtcNow.AddMilliseconds(CaptureBudgetMs));
 		}
 
-		TryLaunch(options, model, values, out response);
+		Launch(options, model, values, out response);
 		Verify(options, response, baseline);
 		return response.Error is null;
 	}
@@ -471,7 +473,7 @@ public class RunProcessCommand(
 			while (DateTimeOffset.UtcNow < until) {
 				ProcessRunState state = runMonitor.Read(processId, RequestBudget(options.ResponseDeadline));
 				if (state.IsTerminal) {
-					response.Status = ResolveStatusName(state.StatusValue!.Value);
+					response.Status = ResolveStatusName(state.StatusValue ?? ErrorStatus);
 					response.WaitingOn = null;
 					(response.Warnings ??= []).Add("cleanup cancelled the still-running run before deleting what it created.");
 					return;
@@ -496,7 +498,7 @@ public class RunProcessCommand(
 		return (int)Math.Clamp(left, 1_000, VerificationRequestMs);
 	}
 
-	private bool TryLaunch(RunProcessOptions options, ProcessModel.ProcessModel model,
+	private void Launch(RunProcessOptions options, ProcessModel.ProcessModel model,
 		ProcessStartArgs.ParameterValues[] values, out RunProcessResponse response) {
 		ProcessStartArgs args = new() {
 			SchemaName = model.Code,
@@ -514,7 +516,7 @@ public class RunProcessCommand(
 				Status = NotStartedStatus,
 				Error = $"'{model.Code}' was not launched: the MCP call was answered or cancelled before the launch request was sent."
 			};
-			return false;
+			return;
 		}
 		// Read alongside the launch, never ahead of it: before the gate it would spend the response deadline that
 		// decides whether anything is launched at all. The tool reads the same task for a still-running answer.
@@ -529,7 +531,7 @@ public class RunProcessCommand(
 			// The request was sent, so the answer still names the version it carried.
 			response = Failure("The launch returned an empty response");
 			response.VersionName = model.Code;
-			return false;
+			return;
 		}
 
 		ProcessStartResponse platformResponse;
@@ -539,7 +541,7 @@ public class RunProcessCommand(
 		catch (StjJsonException e) {
 			response = Failure($"The launch returned a response clio could not read: {e.Message}");
 			response.VersionName = model.Code;
-			return false;
+			return;
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
@@ -547,9 +549,6 @@ public class RunProcessCommand(
 		// the same remaining response deadline. The version read has been in flight since the POST.
 		AddLoggedError(platformResponse, response, options.ResponseDeadline);
 		AddVersion(response, model.Code, AwaitVersionFacts(versionFacts, options.ResponseDeadline));
-		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
-		// and a failed run would otherwise both exit 0.
-		return response.Error is null;
 	}
 
 	// The version read is a courtesy on top of the launch: a failure of any kind - the reader's own guard does not

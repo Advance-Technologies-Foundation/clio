@@ -48,6 +48,8 @@ internal sealed class CreatedRecordWatcher(
 	private const int MaxKnownIds = 500;
 
 	private const string CreatedOnColumn = "CreatedOn";
+	private const string ExpressionTypeKey = "expressionType";
+	private const string ColumnPathKey = "columnPath";
 	// Aliased so it can never collide with a title column called CreatedBy.
 	private const string CreatedByAlias = "ClioCreatedBy";
 
@@ -147,7 +149,7 @@ internal sealed class CreatedRecordWatcher(
 	private static JObject BuildNewestQuery(string entity) {
 		JObject columns = new() {
 			[CreatedOnColumn] = new JObject {
-				["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = CreatedOnColumn },
+				["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
 				["orderDirection"] = OrderDescending,
 				["orderPosition"] = 0
 			}
@@ -160,7 +162,7 @@ internal sealed class CreatedRecordWatcher(
 		JObject columns = new() {
 			["Id"] = ClassicEntitySchemaQuery.Column("Id"),
 			[CreatedOnColumn] = new JObject {
-				["expression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = CreatedOnColumn },
+				["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
 				["orderDirection"] = OrderAscending,
 				["orderPosition"] = 0
 			}
@@ -183,9 +185,9 @@ internal sealed class CreatedRecordWatcher(
 	// parameters in the session time zone, so the round trip compares like with like. An unquoted value is refused.
 	private static JObject AtOrAfter(string baseline) => new() {
 		["filterType"] = 1, ["comparisonType"] = GreaterOrEqual, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = CreatedOnColumn },
+		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
 		["rightExpression"] = new JObject {
-			["expressionType"] = 2,
+			[ExpressionTypeKey] = 2,
 			["parameter"] = new JObject {
 				["dataValueType"] = DateTimeDataValueType,
 				["value"] = JsonConvert.SerializeObject(baseline)
@@ -198,9 +200,9 @@ internal sealed class CreatedRecordWatcher(
 		try {
 			JObject filter = new() {
 				["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
-				["leftExpression"] = new JObject { ["expressionType"] = 0, ["columnPath"] = "Id" },
+				["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" },
 				["rightExpression"] = new JObject {
-					["expressionType"] = 1, ["functionType"] = MacrosFunctionType, ["macrosType"] = CurrentUserContactMacro
+					[ExpressionTypeKey] = 1, ["functionType"] = MacrosFunctionType, ["macrosType"] = CurrentUserContactMacro
 				}
 			};
 			JArray rows = Select(ClassicEntitySchemaQuery.Query("Contact",

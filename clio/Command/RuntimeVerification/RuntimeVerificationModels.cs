@@ -129,3 +129,21 @@ public sealed class WatchOutcome {
 	/// <summary>One line per entity that could not be watched or read in full.</summary>
 	public List<string> Warnings { get; } = [];
 }
+
+/// <summary>The runtime-verification services run-process uses, grouped so its constructor stays small.</summary>
+public interface IRunVerificationServices {
+
+	/// <summary>Reads and cancels a process run.</summary>
+	IProcessRunMonitor Monitor { get; }
+
+	/// <summary>Diffs watched entities before and after a run.</summary>
+	ICreatedRecordWatcher Watcher { get; }
+
+	/// <summary>Deletes what a run created.</summary>
+	ICreatedRecordCleaner Cleaner { get; }
+}
+
+internal sealed record RunVerificationServices(
+	IProcessRunMonitor Monitor,
+	ICreatedRecordWatcher Watcher,
+	ICreatedRecordCleaner Cleaner) : IRunVerificationServices;

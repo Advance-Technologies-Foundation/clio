@@ -35,6 +35,7 @@ public interface IProcessRunMonitor {
 internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
 	: IProcessRunMonitor {
 
+	private const string ErrorDescriptionColumn = "ErrorDescription";
 	private const int GuidDataValueType = 0;
 	private const int IntegerDataValueType = 4;
 	private const int RunningStatusValue = 1;
@@ -46,7 +47,7 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 		JArray rootRows = Select(ClassicEntitySchemaQuery.Query("SysProcessLog",
 			new JObject {
 				["StatusValue"] = ClassicEntitySchemaQuery.Column("Status.Value"),
-				["ErrorDescription"] = ClassicEntitySchemaQuery.Column("ErrorDescription")
+				[ErrorDescriptionColumn] = ClassicEntitySchemaQuery.Column(ErrorDescriptionColumn)
 			},
 			ClassicEntitySchemaQuery.Group(("byId", ClassicEntitySchemaQuery.Eq("Id", id, GuidDataValueType))),
 			1), timeoutMs);
@@ -55,7 +56,7 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 			return new ProcessRunState(false, null, null, []);
 		}
 		int? status = root["StatusValue"]?.Type == JTokenType.Integer ? root["StatusValue"].Value<int>() : null;
-		string error = FirstLine(root["ErrorDescription"]?.ToString())
+		string error = FirstLine(root[ErrorDescriptionColumn]?.ToString())
 			?? (status == ErrorStatusValue ? ReadSubProcessError(id, timeoutMs) : null);
 		IReadOnlyList<WaitingElement> waiting = status == RunningStatusValue ? ReadWaitingElements(id, timeoutMs) : [];
 		return new ProcessRunState(true, status, error, waiting);
@@ -80,13 +81,13 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 	private string ReadSubProcessError(string rootId, int timeoutMs) {
 		try {
 			JArray rows = Select(ClassicEntitySchemaQuery.Query("SysProcessLog",
-				new JObject { ["ErrorDescription"] = ClassicEntitySchemaQuery.Column("ErrorDescription") },
+				new JObject { [ErrorDescriptionColumn] = ClassicEntitySchemaQuery.Column(ErrorDescriptionColumn) },
 				ClassicEntitySchemaQuery.Group(
 					("byRoot", ClassicEntitySchemaQuery.Eq("RootId", rootId, GuidDataValueType)),
 					("failed", ClassicEntitySchemaQuery.Eq("Status.Value", ErrorStatusValue.ToString(),
 						IntegerDataValueType))),
 				5), timeoutMs);
-			return rows.Select(row => FirstLine(row["ErrorDescription"]?.ToString()))
+			return rows.Select(row => FirstLine(row[ErrorDescriptionColumn]?.ToString()))
 				.FirstOrDefault(line => line is not null);
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
