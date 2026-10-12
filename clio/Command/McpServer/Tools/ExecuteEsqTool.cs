@@ -67,6 +67,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	internal static ExecuteEsqResponse Run(
 		IToolCommandResolver commandResolver, ExecuteEsqArgs args, long maxResponseBytes, bool suggestFileTwin) {
 		try {
+			// ENG-103025: SQL text, or the schema/columns/filters spread over the top level, is answered with the
+			// exact shape and - where the mapping is trivially safe - the equivalent query, never executed.
+			if (ExecuteEsqQueryHints.TryBuild(args.Query, args.ExtensionData) is { } hint) {
+				return ExecuteEsqResponse.Failure(hint.Message + QueryShapeExample) with {
+					SuggestedQuery = hint.SuggestedQuery
+				};
+			}
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError + QueryShapeExample);
 			}
@@ -335,6 +342,14 @@ public record ExecuteEsqArgs {
 	[JsonPropertyName("timeout")]
 	[Description("Request timeout in milliseconds. Range: 1000-120000. Default: 30000.")]
 	public int? Timeout { get; init; }
+
+	/// <summary>
+	/// Top-level keys that bind to no declared argument - most often <c>sql</c>, <c>schema-name</c> or
+	/// <c>columns</c>. Read only to answer a call that has no usable <c>query</c> (ENG-103025); a call that does
+	/// carry one still ignores them, exactly as before.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>
@@ -373,7 +388,12 @@ public sealed record ExecuteEsqResponse(
 	[property: JsonPropertyName("output-file")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Absolute path of the file the rows were written to. Present only on an execute-esq-to-file success.")]
-	string? OutputFile = null) {
+	string? OutputFile = null,
+
+	[property: JsonPropertyName("suggested-query")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Failure only: the SelectQuery equivalent of the SQL text or top-level columns the call carried, ready to resend as 'query'. It was NOT executed.")]
+	JsonElement? SuggestedQuery = null) {
 
 	/// <summary>
 	/// Recovery hint attached to every failure so a caller that guessed the ESQ format is pointed at the guidance.

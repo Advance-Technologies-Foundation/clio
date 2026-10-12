@@ -168,7 +168,10 @@ public sealed class InstallProcessBuilderTool(
 				+ $"{InstallProcessBuilderToolName} again: while this one runs a second call is refused, and it "
 				+ "would only trigger another configuration build. Wait, then retry the process-designer tool "
 				+ "that sent you here — its package gate IS the confirmation, and it refuses again if the "
-				+ "install did not take.");
+				+ "install did not take. That retry is the poll: there is no status tool, and no fixed sleep is "
+				+ "needed before it. This call already waited out the response deadline "
+				+ $"({McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar} on the clio server raises it for a "
+				+ "client that allows a longer call).");
 		}
 	}
 

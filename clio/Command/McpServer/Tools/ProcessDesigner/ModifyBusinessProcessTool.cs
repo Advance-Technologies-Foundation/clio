@@ -377,15 +377,29 @@ public class ModifyBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: a refusal for a missing environment, process or operations keeps its text and exit code and
+		// gains the required arguments and a minimal valid call after it.
+		List<string> missing = [];
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			missing.Add("environment-name");
+		}
+		if (string.IsNullOrWhiteSpace(args.ProcessName) && string.IsNullOrWhiteSpace(args.ProcessUid)) {
+			missing.Add("process-name or process-uid");
+		}
+		if (McpToolArgumentSupport.IsAbsentJsonDocument(args.Operations)) {
+			missing.Add("operations");
+		}
+		string contract = missing.Count > 0 ? ToolMiniContract.ForModifyBusinessProcess(missing) : string.Empty;
+
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
 		if (targetError is not null) {
-			return targetError;
+			return contract.Length > 0 ? ToolMiniContract.Decorate(targetError, contract) : targetError;
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
 				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
-			return operationsRefusal;
+			return contract.Length > 0 ? ToolMiniContract.Decorate(operationsRefusal, contract) : operationsRefusal;
 		}
 
 		ModifyBusinessProcessOptions options = new() {

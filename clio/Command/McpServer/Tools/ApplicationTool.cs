@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
@@ -247,12 +248,23 @@ public sealed class ApplicationCreateTool(
 	];
 
 	private static void ValidateCreateArgs(ApplicationCreateArgs args) {
+		// ENG-103025: a probe with {} or without a name or code is answered with the required arguments and a
+		// minimal valid call instead of a bare "name is required."
+		if (args is null) {
+			throw new ArgumentException(ToolMiniContract.ForCreateApp([]));
+		}
+
+		List<string> missing = [];
 		if (string.IsNullOrWhiteSpace(args.Name)) {
-			throw new ArgumentException("name is required.");
+			missing.Add("name");
 		}
 
 		if (string.IsNullOrWhiteSpace(args.Code)) {
-			throw new ArgumentException("code is required.");
+			missing.Add("code");
+		}
+
+		if (missing.Count > 0) {
+			throw new ArgumentException(ToolMiniContract.ForCreateApp(missing));
 		}
 
 		string effectiveTemplate = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();

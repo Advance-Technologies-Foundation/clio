@@ -373,6 +373,14 @@ public class CreateBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: a descriptor sent under a synonym (process, definition, ...) or spread over the top level
+		// (name, caption, elements, flows, ...) runs and says so; an ambiguous combination is refused unbuilt.
+		ProcessToolArgumentAliases.CreateResolution aliases = ProcessToolArgumentAliases.ResolveCreate(args);
+		if (aliases.Error is not null) {
+			return CommandExecutionResult.FromValidationError(aliases.Error);
+		}
+		args = aliases.Args;
+
 		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
 		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
 			args.ExtensionData, ValidArgsHint);
@@ -380,13 +388,24 @@ public class CreateBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
+		// ENG-103025: an empty call, or one missing the environment or the descriptor, keeps its refusal and exit
+		// code and gains the required arguments and a minimal valid call after it.
+		List<string> missing = [];
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			missing.Add("environment-name");
+		}
+		if (McpToolArgumentSupport.IsAbsentJsonDocument(args.Descriptor)) {
+			missing.Add("descriptor");
+		}
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return ToolMiniContract.Decorate(
+				CommandExecutionResult.FromError("environment-name is required and cannot be empty."),
+				ToolMiniContract.ForCreateBusinessProcess(missing));
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Descriptor, JsonValueKind.Object,
 				"descriptor", out string descriptorJson, out CommandExecutionResult? descriptorRefusal)) {
-			return descriptorRefusal;
+			return ToolMiniContract.Decorate(descriptorRefusal, ToolMiniContract.ForCreateBusinessProcess(missing));
 		}
 
 		CreateBusinessProcessOptions options = new() {
@@ -399,7 +418,8 @@ public class CreateBusinessProcessTool(
 		// then warns that the process cannot run "until the configuration is compiled", and the gate drops the
 		// note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options);
-		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(
+			result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote(), aliases.Warnings);
 	}
 }
 
