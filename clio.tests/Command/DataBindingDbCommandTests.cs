@@ -30,6 +30,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	private IApplicationClient _applicationClient = null!;
 	private ILogger _logger = null!;
 	private IApplicationPackageListProvider _packageListProvider = null!;
+	private IFileDesignModeStateReader _fileDesignModeStateReader = null!;
 	private string _bindingLookupResponseJson = string.Empty;
 	private string _boundSchemaDataItemsJson = "[]";
 	private string _existingEntityNamesJson = """{"rows":[],"success":true}""";
@@ -51,6 +52,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		});
 		_schemaResponseJson = SchemaResponseJson;
 		_entityIdProbeResponseJson = null;
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(false);
 	}
 
 	public override void TearDown() {
@@ -58,6 +60,7 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_applicationClient.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 		_packageListProvider.ClearReceivedCalls();
+		_fileDesignModeStateReader.ClearReceivedCalls();
 	}
 
 	protected override MockFileSystem CreateFs() {
@@ -98,10 +101,136 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData)
 			.Returns("http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/GetBoundSchemaData");
 
+		_fileDesignModeStateReader = Substitute.For<IFileDesignModeStateReader>();
+
 		containerBuilder.AddTransient(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _logger);
 		containerBuilder.AddTransient(_ => _packageListProvider);
 		containerBuilder.AddTransient(_ => serviceUrlBuilder);
+		containerBuilder.AddTransient(_ => _fileDesignModeStateReader);
+	}
+
+	[Test]
+	[Description("Warns after create-data-binding-db in file system development mode that the binding exists only in the database, names the package folder that lacks it and the pkg-to-file-system command, and still exits 0 (GitHub #1747).")]
+	public void CreateDataBindingDb_Should_Warn_That_Package_Folder_Lacks_Binding_When_File_Design_Mode_Is_Enabled() {
+		// Arrange
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(true);
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"Row from db tool"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "the binding was saved; the warning reports where it is missing and must not turn the write into a failure that callers would retry");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("File system development mode is enabled")
+			&& message.Contains("'UsrRemoteBinding'")
+			&& message.Contains($"'{PackageName}'")
+			&& message.Contains("created in the database only")
+			&& message.Contains($"Pkg/{PackageName}/Data/UsrRemoteBinding")
+			&& message.Contains("ships it without this binding")
+			&& message.Contains("clio pkg-to-file-system -e <environment>")
+			&& message.Contains("clio-run with command pkg-to-file-system")));
+		_fileDesignModeStateReader.Received(1).GetIsFileDesignModeEnabled();
+	}
+
+	[Test]
+	[Description("Does not warn after create-data-binding-db when the environment reports file system development mode as disabled, because the package folder on disk is not the source of the package there.")]
+	public void CreateDataBindingDb_Should_Not_Warn_When_File_Design_Mode_Is_Disabled() {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"Row from db tool"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the binding is saved normally");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Warns conditionally after create-data-binding-db when the file system development mode state cannot be read, instead of staying silent, and still exits 0.")]
+	public void CreateDataBindingDb_Should_Warn_Conditionally_When_File_Design_Mode_State_Is_Unknown() {
+		// Arrange
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns((bool?)null);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			BindingName = "UsrRemoteBinding",
+			RowsJson = """[{"values":{"Name":"Row from db tool"}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unreadable mode must not fail a binding that was saved");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("could not read whether file system development mode is enabled")
+			&& message.Contains($"Pkg/{PackageName}/Data/UsrRemoteBinding")
+			&& message.Contains("pkg-to-file-system")));
+	}
+
+	[Test]
+	[Description("Warns after upsert-data-binding-row-db in file system development mode, because the re-saved binding reaches the database only.")]
+	public void UpsertDataBindingRowDb_Should_Warn_That_Package_Folder_Lacks_Change_When_File_Design_Mode_Is_Enabled() {
+		// Arrange
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(true);
+		UpsertDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			ValuesJson = $$"""{"Id":"{{ExistingRowId}}","Name":"Renamed row"}"""
+		};
+
+		// Act
+		int result = _upsertCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the row and the binding were saved");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("re-saved in the database only")
+			&& message.Contains($"Pkg/{PackageName}/Data/SysSettings")
+			&& message.Contains("carries the binding as the last export wrote it")
+			&& message.Contains("pkg-to-file-system")));
+	}
+
+	[Test]
+	[Description("Warns after remove-data-binding-row-db deletes the last bound row in file system development mode that the package folder on disk still carries the binding.")]
+	public void RemoveDataBindingRowDb_Should_Warn_That_Package_Folder_Still_Has_Binding_When_File_Design_Mode_Is_Enabled() {
+		// Arrange
+		_fileDesignModeStateReader.GetIsFileDesignModeEnabled().Returns(true);
+		RemoveDataBindingRowDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			BindingName = "SysSettings",
+			KeyValue = ExistingRowId.ToString()
+		};
+
+		// Act
+		int result = _removeCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the row and the binding registration were removed");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("removed from the database only")
+			&& message.Contains($"(Pkg/{PackageName}/Data/SysSettings) was not updated")
+			&& message.Contains("pkg-to-file-system")));
 	}
 
 	[Test]

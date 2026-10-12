@@ -11,6 +11,17 @@ namespace Clio.Command.McpServer.Prompts;
 [McpServerPromptType, Description("Prompts for creating and mutating DB-first package data bindings")]
 public static class DataBindingDbPrompt {
 	/// <summary>
+	/// What happens to a DB-first binding change on an environment in file system development mode, where the
+	/// package folder on disk, not the database, is what gets committed.
+	/// </summary>
+	private const string FileSystemModeNote =
+		"On an environment in file system development mode the binding change reaches the database only, and the " +
+		"result carries a warning. `" + LoadPackagesTool.LoadPackagesToFileSystemToolName + "` (through `" +
+		ClioRunTool.ToolName + "`) writes it into the package folder on disk, but it rewrites every package folder " +
+		"from the database and removes on-disk items the database does not have, so confirm with the user before " +
+		"running it, and run it before committing that folder or running `" + LoadPackagesTool.LoadPackagesToDbToolName + "`.";
+
+	/// <summary>
 	/// Builds a prompt for creating a DB-first data binding.
 	/// </summary>
 	[McpServerPrompt(Name = CreateDataBindingDbTool.CreateDataBindingDbToolName),
@@ -36,6 +47,7 @@ public static class DataBindingDbPrompt {
 		 Unrelated runtime-only columns are not blockers, but explicitly requested unsupported runtime columns still fail.
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 		 To sync the result to a local workspace after the DB write, use `restore-workspace` separately.
+		 {FileSystemModeNote}
 		 """;
 
 	/// <summary>
@@ -59,6 +71,7 @@ public static class DataBindingDbPrompt {
 		 SaveSchema metadata is rebuilt from the primary key plus the columns present in the bound rows and the requested upsert payload.
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
 		 To sync the result to a local workspace after the DB write, use `restore-workspace` separately.
+		 {FileSystemModeNote}
 		 """;
 
 	/// <summary>
@@ -81,5 +94,6 @@ public static class DataBindingDbPrompt {
 		 When the last bound row is removed, the tool also deletes the package schema data record from the remote DB.
 		 When rows remain, SaveSchema metadata is rebuilt from the primary key plus the columns present in the remaining bound rows.
 		 After the remote mutation, read back from Creatio instead of treating the request payload or install log as proof.
+		 {FileSystemModeNote}
 		 """;
 }

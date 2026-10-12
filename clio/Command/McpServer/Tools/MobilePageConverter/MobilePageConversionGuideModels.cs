@@ -437,10 +437,11 @@ public static class ReasonCodes {
 
 	// ── Why a request was KEPT but needs review ──────
 	/// <summary>
-	/// The request is in neither the conversion map nor the mobile request registry, so the binding was kept
-	/// VERBATIM
-	/// for manual verification — the component works, the action may or may not. Params: NONE — the record's
-	/// own <c>request</c> field names it.
+	/// The request is NOT IN THE CONVERSION MAP, so the binding was kept VERBATIM for manual verification —
+	/// the component works, the action may or may not. The mobile request registry is deliberately NOT part of
+	/// this test: anything the map does not name is flagged, whether or not the registry publishes it, so a
+	/// flag means "clio has no mapping for this", never "clio established it does not exist". Params: NONE —
+	/// the record's own <c>request</c> field names it.
 	/// </summary>
 	public const string FlagRequestUnmapped = "flag-request-unmapped";
 

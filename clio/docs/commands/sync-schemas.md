@@ -338,6 +338,16 @@ Seed-data (`seed-rows`) dedups **by `Name`**. A row is replay-safe only when the
 are non-convergent — a stable-`Id`, no-`Name` row PK-conflicts on replay. Re-running a batch whose
 seed rows carry a `Name` skips the already-present rows and creates no duplicates.
 
+## File System Development Mode
+
+`create-lookup` (its `Lookups` registration, the `Lookup_<name>` data binding) and seed rows (from
+`seed-rows` or a `seed-data` operation) are written as package data bindings. In file system development
+mode, or when that mode cannot be read, the platform saves them to the database only, and the package
+folder on disk gets no `Data/<binding>` folder. The operation still succeeds, and its `messages` carry a
+warning naming `Pkg/<package>/Data/<binding>` and `clio pkg-to-file-system`, which writes them to disk.
+That command rewrites every package folder from the database, so commit on-disk work first, and run it
+before the next `pkg-to-db`.
+
 ## Response
 
 ```json

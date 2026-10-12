@@ -5,6 +5,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.ProcessModel;
 using Clio.Command.StartProcess;
 using Clio.Common;
@@ -26,9 +28,63 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 
 	public int TimeoutSeconds { get; set; }
 
-	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running, so the read of
+	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running or not-started, so the read of
 	// a failed run's log gets only what is left. Null on a path with no such deadline.
 	internal DateTimeOffset? ResponseDeadline { get; set; }
+
+	// Set by the MCP tool: decides, with the tool's deadline answer, whether the launch request is sent at all. Null
+	// on a path with no response deadline, which always sends.
+	internal RunProcessLaunchGate LaunchGate { get; set; }
+
+	// Set by the command when it sends the launch: the version read running alongside it, so the tool's
+	// still-running answer can name the version too. Null until then.
+	internal Task<ProcessVersionFacts> VersionFacts { get; set; }
+}
+
+/// <summary>
+/// Decides, once, between sending a run-process launch request and answering that nothing was launched.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The MCP tool answers at its response deadline while the launch carries on detached in the server process. Before
+/// ENG-102333 the answer was "launched and still running" whatever the launch had reached, so it was held back to
+/// 150 s - long enough that a client giving up at 60 s restarted the MCP server instead. Resolving the model
+/// and logging in come first and can take most of a minute on a busy or reloading environment, so "the request was
+/// sent" is the one fact the answer can rest on, and this gate makes it exact: whichever side claims the gate first
+/// wins, so a request is never sent after the answer said it was not.
+/// </para>
+/// <para>
+/// A sent request still does not prove a launch: a request the environment had only queued can be dropped with its
+/// connection when the MCP server restarts. The answer says so. A caller that cancels its call withdraws the gate
+/// too, so a launch nobody is waiting for never starts afterwards.
+/// </para>
+/// </remarks>
+internal sealed class RunProcessLaunchGate {
+
+	private const int Open = 0;
+	private const int Sent = 1;
+	private const int Withdrawn = 2;
+
+	private int _state = Open;
+	private long _sentUtcTicks;
+
+	/// <summary>Gets when the launch request was sent, or <see langword="null"/> when it was not.</summary>
+	internal DateTime? SentUtc => Volatile.Read(ref _state) == Sent
+		? new DateTime(Interlocked.Read(ref _sentUtcTicks), DateTimeKind.Utc)
+		: null;
+
+	/// <summary>Claims the gate for sending the launch request.</summary>
+	/// <param name="nowUtc">The time the request is sent.</param>
+	/// <returns><see langword="true"/> to send it; <see langword="false"/> when the answer already said nothing was launched.</returns>
+	internal bool TryMarkSent(DateTime nowUtc) {
+		// Written before the exchange, which is a full fence, so a reader that sees Sent sees the time too.
+		Interlocked.Exchange(ref _sentUtcTicks, nowUtc.Ticks);
+		return Interlocked.CompareExchange(ref _state, Sent, Open) == Open;
+	}
+
+	/// <summary>Claims the gate for an answer that says nothing was launched.</summary>
+	/// <returns><see langword="true"/> when the request had not been sent, and now never will be.</returns>
+	internal bool TryWithdraw() => Interlocked.CompareExchange(ref _state, Withdrawn, Open) == Open;
 }
 
 public sealed class RunProcessResponse {
@@ -43,6 +99,23 @@ public sealed class RunProcessResponse {
 	[JsonProperty("processId")]
 	[System.Text.Json.Serialization.JsonPropertyName("processId")]
 	public string ProcessId { get; set; }
+
+	// The code the call named and the launch request carried - the version a synchronous run executes (a queued one
+	// is re-resolved by the platform; see the warnings). Null when the call was rejected before a request was sent.
+	[JsonProperty("versionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("versionName")]
+	public string VersionName { get; set; }
+
+	// Whether the process library reports that version as the family's active one. Null when it could not be
+	// established - never read as "active".
+	[JsonProperty("isActiveVersion")]
+	[System.Text.Json.Serialization.JsonPropertyName("isActiveVersion")]
+	public bool? IsActiveVersion { get; set; }
+
+	// The code of the version the platform's own triggers start, when it could be established.
+	[JsonProperty("activeVersionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("activeVersionName")]
+	public string ActiveVersionName { get; set; }
 
 	[JsonProperty("resultParameterValues")]
 	[System.Text.Json.Serialization.JsonPropertyName("resultParameterValues")]
@@ -63,6 +136,7 @@ public class RunProcessCommand(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessRunLogReader processRunLogReader,
+	IProcessVersionLibReader versionLibReader,
 	ILogger logger)
 	: Command<RunProcessOptions> {
 
@@ -78,7 +152,9 @@ public class RunProcessCommand(
 	};
 
 	private const string QueuedBackgroundStatus = "queued-background";
-	private const string NotStartedStatus = "not-started";
+	internal const string NotStartedStatus = "not-started";
+	// Answered by the tool at its response deadline: the launch was sent, and there is no verdict.
+	internal const string StillRunningStatus = "still-running";
 
 	private const int InactiveStatus = 0;
 	private const int ErrorStatus = 3;
@@ -104,13 +180,22 @@ public class RunProcessCommand(
 	private const int MinimumLogReadMs = 1_000;
 
 	internal static string BuildMissingCompiledMethodHint(string processCode) =>
-		" This is most often a script task saved since the active version of the process run as "
-		+ $"'{processCode}' was last compiled - run-process runs the active version whatever code it is given - so the "
-		+ "compiled code does not have it "
+		$" This is most often a script task saved since '{processCode}' was last compiled, so the compiled code "
+		+ "does not have it "
 		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
 		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
 		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
-		+ "process-name set to the active version (describe-business-process names it).";
+		+ $"process-name set to '{processCode}'.";
+
+	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
+	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.
+	internal static string BuildNotActiveVersionNote(string processCode, string activeVersionName,
+		bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but it is NOT the active version of its process: the platform's own "
+		+ "triggers, schedules and sub-process calls start "
+		+ (string.IsNullOrWhiteSpace(activeVersionName) ? "the active version" : DescribeSchemaName(activeVersionName))
+		+ ". Such a run verifies a version without activating it; activating it is a separate step "
+		+ "(set-active-business-process-version), taken only when the user asks for it.";
 
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
@@ -178,14 +263,31 @@ public class RunProcessCommand(
 			Result = options.ResultParameters?.ToArray()
 		};
 
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+		// RunSpecifiedProcessVersion, not RunProcess: RunProcess resolves the code to the family's ACTIVE version, so
+		// a run "of" a new version silently executed the previous one (ENG-101880). For the active version's own
+		// code the two run the same schema. See docs/knowledge/platform/runprocess-runs-the-active-version.md
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion);
+		if (options.LaunchGate is not null && !options.LaunchGate.TryMarkSent(DateTime.UtcNow)) {
+			// The MCP answer already told the caller nothing was launched; sending now would make that false.
+			response = new RunProcessResponse {
+				Status = NotStartedStatus,
+				Error = $"'{model.Code}' was not launched: the MCP call was answered or cancelled before the launch request was sent."
+			};
+			return false;
+		}
+		// Read alongside the launch, never ahead of it: before the gate it would spend the response deadline that
+		// decides whether anything is launched at all. The tool reads the same task for a still-running answer.
+		Task<ProcessVersionFacts> versionFacts = StartVersionRead(model.Id);
+		options.VersionFacts = versionFacts;
 		// maxAttempts stays 1: idempotency belongs to the specific process, not to this transport, so a
 		// retry can duplicate work.
 		string rawResponse = applicationClient.ExecutePostRequest(url, StjSerializer.Serialize(args),
 			ResolveRequestTimeout(options.TimeoutSeconds), maxAttempts: 1);
 
 		if (string.IsNullOrWhiteSpace(rawResponse)) {
-			response = Failure("RunProcess returned an empty response");
+			// The request was sent, so the answer still names the version it carried.
+			response = Failure("The launch returned an empty response");
+			response.VersionName = model.Code;
 			return false;
 		}
 
@@ -194,16 +296,110 @@ public class RunProcessCommand(
 			platformResponse = StjSerializer.Deserialize<ProcessStartResponse>(rawResponse);
 		}
 		catch (StjJsonException e) {
-			response = Failure($"RunProcess returned a response clio could not read: {e.Message}");
+			response = Failure($"The launch returned a response clio could not read: {e.Message}");
+			response.VersionName = model.Code;
 			return false;
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
+		// The failure-cause log read first: it is worth more than the version facts, and both are paid for out of
+		// the same remaining response deadline. The version read has been in flight since the POST.
 		AddLoggedError(platformResponse, response, options.ResponseDeadline);
+		AddVersion(response, model.Code, AwaitVersionFacts(versionFacts, options.ResponseDeadline));
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
 	}
+
+	// The version read is a courtesy on top of the launch: a failure of any kind - the reader's own guard does not
+	// cover an authentication or ATF expression exception - leaves the facts unestablished, never the launch undone.
+	private Task<ProcessVersionFacts> StartVersionRead(Guid schemaUId) =>
+		Task.Run(() => {
+			try {
+				return versionLibReader.Read(schemaUId.ToString("D"));
+			}
+			catch (Exception exception) when (exception is not OutOfMemoryException) {
+				return new ProcessVersionFacts { Warning = $"the version read failed ({exception.GetType().Name})" };
+			}
+		});
+
+	// Waits for the version read within what is left of the response deadline, as the log read does; null when the
+	// read has not answered by then.
+	internal static ProcessVersionFacts AwaitVersionFacts(Task<ProcessVersionFacts> read, DateTimeOffset? deadline) {
+		// A read that has already answered costs nothing to use, however little of the deadline is left.
+		if (read.IsCompletedSuccessfully) {
+			return read.Result;
+		}
+		int? waitMs = ResolveLogReadTimeout(deadline, DateTimeOffset.UtcNow);
+		return waitMs is not null && read.Wait(Math.Min(waitMs.Value, VersionReadWaitMs)) ? read.Result : null;
+	}
+
+	// The reader's own budget is 10 s; waiting past it gains nothing.
+	private const int VersionReadWaitMs = 11_000;
+
+	// Names the version the call launched, and whether the process library reports it as the active one. A refusal
+	// gets the facts but no note, since nothing ran. An unestablished flag is said too: the base name runs the family
+	// root, so "which version ran" is not something a caller can assume.
+	internal static void AddVersion(RunProcessResponse response, string processCode, ProcessVersionFacts facts) {
+		response.VersionName = processCode;
+		// "Active" counts only when the library names the family's one active member: two members flagged active
+		// leave ActiveVersionName null, and the runtime then picks between them by a key the view does not expose.
+		bool? standing = facts?.IsActiveVersion == true && string.IsNullOrWhiteSpace(facts.ActiveVersionName)
+			? null
+			: facts?.IsActiveVersion;
+		response.IsActiveVersion = standing;
+		response.ActiveVersionName = facts?.ActiveVersionName;
+		if (response.Status == NotStartedStatus) {
+			return;
+		}
+		// A still-running answer has no verdict, so its notes say the version was launched, not that it ran.
+		bool verdictPending = response.Status == StillRunningStatus;
+		string note = (standing, response.Status == QueuedBackgroundStatus) switch {
+			(true, _) => null,
+			(false, true) => BuildQueuedNotActiveVersionNote(processCode),
+			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName, verdictPending),
+			(null, true) => BuildQueuedUnknownVersionNote(processCode) + DescribeReadWarning(facts),
+			(null, false) => BuildUnknownVersionNote(processCode, verdictPending) + DescribeReadWarning(facts)
+		};
+		if (note is not null) {
+			(response.Warnings ??= []).Add(note);
+		}
+	}
+
+	// A schema name is stored text the server returns, so one that is not a plain code is fenced before it reaches an
+	// agent - the same rule CompileBusinessProcessCommand applies to the names it echoes.
+	private static string DescribeSchemaName(string name) =>
+		SchemaCode.IsMatch(name) ? $"'{name}'" : UntrustedText.Fenced(name);
+
+	private static readonly System.Text.RegularExpressions.Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
+		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	// Why the standing is unknown, as the reader put it; fenced, since it can quote server text.
+	private static string DescribeReadWarning(ProcessVersionFacts facts) {
+		string fenced = UntrustedText.Fenced(facts?.Warning);
+		return fenced is null ? string.Empty : $" The version read reported: {fenced}.";
+	}
+
+	private static string RanOrLaunched(bool verdictPending) => verdictPending ? "was launched" : "ran as asked";
+
+	internal static string BuildUnknownVersionNote(string processCode, bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but whether it is the active version of its process could not be "
+		+ "established, so this answer cannot say whether the platform's own triggers run the same version; "
+		+ "describe-business-process reports isActiveVersion and activeVersionName.";
+
+	internal static string BuildQueuedUnknownVersionNote(string processCode) =>
+		$"The platform queued this run, and whether '{processCode}' is the active version of its process could not "
+		+ "be established: its background queue starts the ACTIVE version, so if this one is not active, the launch "
+		+ "ran another version. Check with describe-business-process; to run this version for certain, launch it "
+		+ "with result-parameters, which makes the run synchronous.";
+
+	// The platform's background queue re-resolves a queued run to the ACTIVE version (StartProcessCommandConsumer
+	// reads GetActiveVersionItemByUId), so a queued run is not evidence that this version ran. Traced in source, not
+	// measured: no stand has answered queued-background to this route yet.
+	internal static string BuildQueuedNotActiveVersionNote(string processCode) =>
+		$"'{processCode}' is NOT the active version of its process, and the platform queued this run: its background "
+		+ "queue starts the ACTIVE version, so this launch may not have run the version you named. To run this "
+		+ "version, launch it again with result-parameters, which makes the run synchronous.";
 
 	// A run that failed inside an element - a script that threw, a formula that could not be computed - comes back
 	// with only "check the process log" and no errorCode: the platform swallows the element's exception before
@@ -261,7 +457,7 @@ public class RunProcessCommand(
 	// docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md
 	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
-			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
+			return new RunProcessResponse { Error = "The launch returned an empty response" };
 		}
 
 		(string errorCode, string errorMessage) = ReadErrorInfo(platformResponse.ErrorInfo);

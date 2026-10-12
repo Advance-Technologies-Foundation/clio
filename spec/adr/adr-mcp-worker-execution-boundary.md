@@ -447,7 +447,7 @@ session lose their in-flight calls too. Two changes answer it, and a third was r
   deliberately NOT lowered:
   - the read-response deadline (120 s, `adr-read-only-mcp-response-deadline.md`): a read that hits it is lost,
     not continued, so lowering it would fail reads that take 45-60 s and succeed today;
-  - `run-process` (150 s, `RunProcessTool.RunProcessResponseDeadline`): it runs in a per-call worker that the
+  - `run-process` (150 s, `RunProcessTool.RunProcessResponseDeadline`; superseded in round 3, below): it runs in a per-call worker that the
     parent kills after the answer, and its "still running, do not re-run" note would be false if it arrived
     before the RunProcess request had been sent - which nothing records today. Below the parent's 120 s
     per-call budget that answer stays unreachable, as before;
@@ -457,13 +457,41 @@ session lose their in-flight calls too. Two changes answer it, and a third was r
   times are in the session's zone, and converted with that session's offset from `GetApplicationInfo`. OData
   was tried first and rejected: the platform labels whatever the entity layer returns as UTC, and one stand
   returned true UTC and, after an application restart, local time with a `Z`. The read is abandoned after
-  25 s, login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
+  25 s (40 s since round 3), login included, so the answer still beats a 60 s client; an environment-name that does not resolve is
   reported as such rather than as a read to retry. One row is not a finished compile - a compile writes a row as
   each project ends - so agents are told it has finished only once its newest row is over seven minutes old (the runtime reload lands about two minutes after the last row; seven is the five-minute quiet window clio's own compile uses when it sees no reload, plus two minutes for a slower reload and for skew between the clio host's clock and the environment's), that a restart resting on these rows alone needs the user's confirmation, and that a
   compile which wrote no row ends in asking the user, never in a compile of their own;
 - persisting the operation registry outside the server process was rejected: the worker that waits for the
   result dies with the server, so a persisted record could only say "started, outcome unknown" and would
   still need the history to resolve it.
+
+ENG-102333 round 3 (2026-10-09, QA re-test on Claude Code desktop) found the restart is caused by ANY call that runs
+past 60 s, not only by a slow compile: another agent's calls - most likely `run-process`, then at 150 s - restarted
+the shared server and killed a compile's sticky worker mid-compile. A server killed about 55 s after
+`compile-creatio` was called left no compilation-history row at all: on that stand the first project started 50-80 s
+after the call. So:
+
+- `run-process` answers at the shared response deadline. The bullet above was wrong about where it runs: it is not
+  in the worker cohort, so it runs in the server process and its 150 s answer was reachable. A launch gate
+  (`RunProcessLaunchGate`) is claimed once, either by the command right before the RunProcess request or by the
+  deadline answer: `not-started` means the request was never sent and never will be; `still-running` names the time it
+  was sent and says clio cannot tell whether the environment started the run. The accepted cost: a synchronous run of
+  45-150 s used to answer with its verdict and result-parameter values and now answers still-running on every client,
+  with no handle to poll; a client that waits longer gets them back by raising `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`;
+- `compile-creatio`'s in-progress answer no longer says "accepted": at the deadline the request may not have reached
+  the environment, and even a sent one proves nothing - only a history row does. It carries `started-utc`, the time
+  the agent compares rows with;
+- a not-found answer no longer calls a compile with no row since the call "still running", and no longer sends the
+  agent to `last-compilation-log` for it: with no row since the call that undated verdict can only be an earlier
+  compile's, which QA's agent read as its own success. After ten minutes (a package or process-name compile) or about
+  20 (a full one) such a compile is treated as not run and the user decides;
+- the history read is bounded at 40 s, up from 25 s: the first poll after a server restart logs in from a fresh
+  worker and often ran out on a busy stand.
+
+Deliberately NOT done, by the owner's decision on 2026-10-09: bounding every other tool. Reads keep their 120 s
+deadline, a per-call worker its 120 s budget, and most in-process write tools have no bound at all, so a client
+that gives up at 60 s can still restart the server through them. A universal bound would have to exempt ClioRing
+(`clientInfo.name = "clio-ring"`), whose deploy, uninstall and workflow runs go through `clio-run` and take minutes.
 
 When `mcp-http` returns (stage 5), a kept worker no longer ends with its caller, so its lifetime must be bounded
 by the credential's validity - `StickyWorkerLifetimeBound.Resolve` already takes it.

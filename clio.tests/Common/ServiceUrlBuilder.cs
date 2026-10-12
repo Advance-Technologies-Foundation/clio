@@ -191,6 +191,9 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/0/rest/ProcessDesignService/CompileProcess");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/rest/ProcessDesignService/CompileProcess");
+			// ENG-101880: run-process launches the named version through the version-pinned route.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion, "https://localhost/0/ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion, "https://localhost/ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
 			// ENG-90576 (localize-page): page designer schema read/save and the post-save script-cache reset.

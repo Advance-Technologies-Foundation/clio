@@ -65,7 +65,11 @@ EXIT CODES
         both named on the closing lines. A run that skipped a locally modified
         schema AND failed to compile also lands here: --continue-if-error is on by
         default, so one archive can carry both, and the closing line then names the
-        compiler diagnostic.
+        compiler diagnostic. A package FOLDER whose Schemas/ or Data/ holds a
+        folder without descriptor.json is refused before upload, with the full
+        local path of each such folder and whether to delete it (only
+        Localization files) or restore its descriptor.json; Creatio would
+        reject it with "Invalid descriptor".
 
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
