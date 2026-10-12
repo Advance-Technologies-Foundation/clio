@@ -150,7 +150,8 @@ public sealed class PageUpdateTool(
 			// ENG-103023: what the save wrote, so confirming it needs no get-page.
 			if (!options.DryRun) {
 				response.Digest = PageWriteDigest.TryBuild(options.Body,
-					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate);
+					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate,
+					response.AppendProjection);
 			}
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is

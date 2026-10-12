@@ -156,6 +156,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
 		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
@@ -212,6 +213,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
 		DescribedFlow toA = described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndA");
@@ -300,6 +302,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
 		described.Flows.Should().Contain(flow => flow.Source == "Decide" && flow.Target == "EndC",
@@ -341,6 +344,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
 		described.Flows.Single(f => f.Source == "Decide" && f.Target == "EndB").Kind.Should().Be("conditional",
@@ -381,6 +385,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		describeJson.Should().Contain("signalstart",
@@ -511,6 +516,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			});
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
@@ -600,6 +606,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		DescribedParameter category = described.Parameters.Single(parameter => parameter.Name == "DefaultCategory");
@@ -625,6 +632,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedParameter after = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			})).Parameters.Single(parameter => parameter.Name == "DefaultCategory");
 		after.Value.Should().BeEquivalentTo(ToDoActivityCategoryId,
@@ -660,6 +668,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		afterSet.Should().Contain("ClioModifyFilterProbe",
@@ -678,6 +687,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string afterClear = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		afterClear.Should().NotContain("ClioModifyFilterProbe",
@@ -763,6 +773,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		afterSet.Should().Contain("changedColumns",
@@ -783,6 +794,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string afterClear = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		afterClear.Should().NotContain("changedColumns",
@@ -815,6 +827,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string afterSet = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		afterSet.Should().Contain("2026-05-01",
@@ -856,6 +869,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		DescribedElement signalStart = described.Elements.Single(element => element.Name == "SignalStart1");
@@ -893,6 +907,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribeProcessResult graph = ParseDescribeGraph(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");
@@ -1060,6 +1075,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			string target) {
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
 		return described.Flows.Single(f => f.Source == "Approve" && f.Target == target);
@@ -1159,6 +1175,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "the refusal must also say WHY the payload is required, not only which field");
 		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}))
 			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!.EditMode.Should().Be("edit",
@@ -1175,6 +1192,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedOpenEditPage block = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processName
 				}))
 			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
@@ -1198,6 +1216,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedOpenEditPage before = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processName
 				}))
 			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
@@ -1224,6 +1243,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedOpenEditPage after = ParseDescribeResult(
 				await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processName
 				}))
 			.Elements.Single(element => element.Name == "OpenPage1").OpenEditPage!;
@@ -1399,6 +1419,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processName) =>
 		await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
+			["mode"] = "full",
 			["process-name"] = processName
 		});
 
@@ -1566,6 +1587,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<string> ReadFilterExpressionAsync(ArrangeContext context, string processName,
 			string elementName) =>
 		ParseDescribeResult(await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}))
 			.Elements.Single(element => element.Name == elementName)
@@ -1607,6 +1629,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "setElement on an existing element must apply without a transport error");
 		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}))
 			.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeFalse(
@@ -1623,6 +1646,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		onResult.IsError.Should().NotBeTrue(because: "the reverse setElement must apply too");
 		ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}))
 			.Elements.Single(element => element.Name == "SignalStart1").UseBackgroundMode.Should().BeTrue(
@@ -1751,6 +1775,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			});
 
@@ -1892,6 +1917,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			});
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
@@ -2012,6 +2038,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			});
 		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(describeResult);
@@ -2176,6 +2203,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribedParameter amount = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			})).Parameters.Single(p => p.Name == "Amount");
 		amount.Source.Should().Be("ConstValue",
@@ -2211,6 +2239,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		describeJson.Should().Contain("How much to charge the customer",
@@ -2245,6 +2274,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		string describeJson = JsonSerializer.Serialize(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		describeJson.Should().Contain("Note added via the addParameter op",
@@ -2296,6 +2326,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
+			["mode"] = "full",
 			["process-name"] = processName
 		});
 		DescribeProcessResult described = ParseDescribeResult(describeResult);
@@ -2445,6 +2476,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeProcessTool.ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		// ParseDescribeResult already throws unless the process reads back (proving it survived); assert a DISCRIMINATING
@@ -2806,6 +2838,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		await ModifyExpectingSuccessAsync(context, processName, MapOutputsDownstreamOperations());
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
+			["mode"] = "full",
 			["process-name"] = processName
 		});
 		DescribeProcessResult described = ParseDescribeResult(describeResult);
@@ -3223,6 +3256,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processName
 				}));
 			described.Elements.Should().NotContain(element => element.Name == "PrePage1",
@@ -3267,6 +3301,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 				new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processName
 				}));
 			described.Elements.Should().NotContain(element => element.Name == "Ask1",
@@ -3570,6 +3605,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<DescribedElement> ReadTaskAsync(ArrangeContext context, string processName) {
 		CallToolResult callResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
+			["mode"] = "full",
 			["process-name"] = processName
 		});
 		DescribeProcessResult described = ParseDescribeResult(callResult);
@@ -3745,6 +3781,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	private static async Task<DescribeProcessResult> DescribeSchemaReferenceProcessAsync(ArrangeContext context,
 		string processName) =>
 		ParseDescribeResult(await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+			["mode"] = "full",
 			["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 		}));
 

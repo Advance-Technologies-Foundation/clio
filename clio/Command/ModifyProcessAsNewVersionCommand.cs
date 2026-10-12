@@ -392,7 +392,7 @@ public class ModifyProcessAsNewVersionCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			ReportDigest(result, source);
+			ReportDigest(options, result, source);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -402,7 +402,8 @@ public class ModifyProcessAsNewVersionCommand(
 
 	// The new version's summary and what it changed against its source, so the caller need not describe it to
 	// confirm the save (ENG-103023). After the write landed, so nothing here may change the exit code.
-	private void ReportDigest(ModifyProcessAsNewVersionResult result, ErrorOr<DescribeProcessResult> source) {
+	private void ReportDigest(ModifyProcessAsNewVersionOptions options, ModifyProcessAsNewVersionResult result,
+		ErrorOr<DescribeProcessResult> source) {
 		bool hasUid = Guid.TryParse(result.VersionSchemaUId, out _);
 		if (!hasUid && string.IsNullOrWhiteSpace(result.VersionName)) {
 			logger.WriteWarning("The version was saved, but the environment named no version to summarize. "
@@ -411,7 +412,10 @@ public class ModifyProcessAsNewVersionCommand(
 		}
 		ErrorOr<DescribeProcessResult> saved = ProcessWriteDigest.Read(processDescriber,
 			new ProcessIdentity(hasUid ? null : result.VersionName, hasUid ? result.VersionSchemaUId : null, null));
-		ProcessWriteDigest.Report(logger, saved, source);
+		// The new version has no earlier state of its own: the change list is relative to the version it was cut from.
+		string sourceName = source.IsError ? null : source.Value?.Name;
+		ProcessWriteDigest.Report(logger, saved, source,
+			changesAgainst: $"the source version '{sourceName ?? options.ProcessName ?? options.ProcessUid}'");
 	}
 }
 

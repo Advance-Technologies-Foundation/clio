@@ -150,6 +150,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = $"{processName}Custom1"
 			});
 		JsonSerializer.Serialize(describeResult).Should().Contain("RecordId",
@@ -240,6 +241,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = $"{processName}Custom1"
 			});
 		JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);

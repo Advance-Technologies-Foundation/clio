@@ -243,7 +243,7 @@ public static class FlowLabelExpectation {
 			+ "read-back reports a flow's endpoints as element NAMES, so there is nothing to compare. A "
 			+ "CrtProcessBuilder that PREDATES the flow label discards it silently, and this read-back "
 			+ "is the only signal that it did. Re-send the same operation naming the SOURCE and TARGET "
-			+ "elements, or re-read the process with describe-business-process, before reporting the label "
+			+ "elements, or re-read the process with describe-business-process mode=full, before reporting the label "
 			+ "as applied.";
 	}
 
@@ -304,7 +304,7 @@ public static class FlowLabelExpectation {
 				+ $"{DescribeDifference(different)}. The package version is NOT the cause here - one that "
 				+ "discards the field leaves nothing rather than something else - so the label reached the "
 				+ "server and came back changed: the process was edited elsewhere between the write and this "
-				+ "read, or the text was normalised on the way in. Re-read it with describe-business-process "
+				+ "read, or the text was normalised on the way in. Re-read it with describe-business-process mode=full "
 				+ "and re-apply only if the drawn text is not what the diagram should say.");
 		}
 
@@ -338,7 +338,7 @@ public static class FlowLabelExpectation {
 			+ $"{Describe(expected)} landed: "
 			+ $"{reason}. The operation itself succeeded. A CrtProcessBuilder that PREDATES the flow label "
 			+ "discards the field silently, and this read-back is the only signal that it did — re-read the "
-			+ "process with describe-business-process before reporting the labels as applied.";
+			+ "process with describe-business-process mode=full before reporting the labels as applied.";
 	}
 
 	/// <summary>

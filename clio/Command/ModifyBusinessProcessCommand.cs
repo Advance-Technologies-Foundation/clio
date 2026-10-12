@@ -484,7 +484,7 @@ public class ModifyBusinessProcessCommand(
 				saved = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			} catch (Exception verification) {
 				logger.WriteWarning(
-					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process before reporting a grant or revoke as applied.");
+					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
 			// The digest rides the SAME read-back as the guards (ENG-103023).
 			if (saved is { } readBack) {

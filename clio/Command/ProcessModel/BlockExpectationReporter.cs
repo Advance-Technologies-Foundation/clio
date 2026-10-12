@@ -117,7 +117,8 @@ internal static class BlockExpectationReporter {
 		return $"Could not read back the record filter this edit changed on the {subject} '{elements}': "
 			+ $"{reason}. The operation itself succeeded. If any of those is a Change access rights element, "
 			+ "note that CLEARING its record filter makes it apply the permission change to EVERY record of "
-			+ "its object — re-read the process with describe-business-process before reporting the change as "
+			+ "its object — re-read the process with describe-business-process mode=full (or element=<name>) before "
+			+ "reporting the change as "
 			+ "applied.";
 	}
 
@@ -132,7 +133,7 @@ internal static class BlockExpectationReporter {
 		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
 			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
 			+ "were actually written — the element has no output parameters. Re-read the process with "
-			+ "describe-business-process before reporting a grant or revoke as applied.";
+			+ "describe-business-process mode=full before reporting a grant or revoke as applied.";
 	}
 
 	private static void Warn(ILogger logger, string? warning) {

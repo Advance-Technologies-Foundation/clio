@@ -76,4 +76,22 @@ public sealed class PageWriteDigestTests {
 		digest.Basis.Should().Be("body", because: "a replace write's body is the whole own layer");
 		unreadable.Should().BeNull(because: "a digest never fails a write; an unparseable body yields none");
 	}
+
+	[Test]
+	[Description("Returns no digest for an append whose merged viewConfigDiff was never written back, so the fragment's components are not reported as written; an applied merge still gets one.")]
+	public void TryBuild_ShouldReturnNull_WhenTheAppendMergeWasNotApplied() {
+		// Arrange
+		string body = WebBody("[{\"operation\":\"insert\",\"name\":\"Phone\",\"parentName\":\"Main\",\"values\":{\"type\":\"crt.PhoneInput\"}}]");
+
+		// Act
+		PageWriteDigest discarded = PageWriteDigest.TryBuild(body, appendMode: true, validationRan: true,
+			new PageAppendProjection { ViewConfigDiffApplied = false });
+		PageWriteDigest applied = PageWriteDigest.TryBuild(body, appendMode: true, validationRan: true,
+			new PageAppendProjection { ViewConfigDiffApplied = true });
+
+		// Assert
+		discarded.Should().BeNull(because: "the merged viewConfigDiff never reached the page, so nothing it lists was written");
+		applied.Components.Should().Equal(["insert Phone (crt.PhoneInput) in Main"],
+			because: "an applied merge wrote the fragment's components");
+	}
 }

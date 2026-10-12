@@ -439,7 +439,7 @@ public class CreateBusinessProcessCommand(
 				saved = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			} catch (Exception verification) {
 				logger.WriteWarning(
-					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process before reporting a grant or revoke as applied.");
+					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
 			// The digest rides the SAME read-back as the guards (ENG-103023), so a create reads the process once.
 			if (saved is { } readBack) {

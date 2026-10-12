@@ -24,8 +24,9 @@ public sealed record PageWriteDigest {
 	public string Validation { get; init; }
 
 	/// <summary>
-	/// What <see cref="Components"/> lists: <c>fragment</c> (an append write, so these are exactly the incoming
-	/// operations merged into the page) or <c>body</c> (a replace write, so these are the own body's operations,
+	/// What <see cref="Components"/> lists: <c>fragment</c> (an append write, so these are the incoming fragment's
+	/// operations as sent - the response's <c>appendProjection</c> says which of them the merge collapsed into a
+	/// later entry of the same fragment) or <c>body</c> (a replace write, so these are the own body's operations,
 	/// which now ARE the page's own layer).
 	/// </summary>
 	[JsonPropertyName("basis")]
@@ -58,8 +59,17 @@ public sealed record PageWriteDigest {
 	/// <param name="body">The body the write sent.</param>
 	/// <param name="appendMode">Whether the write merged the body as a fragment.</param>
 	/// <param name="validationRan">Whether the content validation chain ran.</param>
+	/// <param name="appendProjection">
+	/// What the append merge did, or <c>null</c>. When it reports the merged <c>viewConfigDiff</c> was never
+	/// written back (<see cref="PageAppendProjection.ViewConfigDiffApplied"/> false), the fragment's components
+	/// did not reach the page, so no digest is returned rather than one that lists them as written.
+	/// </param>
 	/// <returns>The digest, or <c>null</c>.</returns>
-	internal static PageWriteDigest TryBuild(string body, bool appendMode, bool validationRan) {
+	internal static PageWriteDigest TryBuild(string body, bool appendMode, bool validationRan,
+		PageAppendProjection appendProjection = null) {
+		if (appendMode && appendProjection is { ViewConfigDiffApplied: false }) {
+			return null;
+		}
 		List<PageOperationInfo> operations;
 		Dictionary<string, int> otherSections = new(StringComparer.Ordinal);
 		try {

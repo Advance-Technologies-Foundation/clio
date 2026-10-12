@@ -53,6 +53,10 @@ internal static class ProcessDigest {
 		"activeVersionSource", "versions", "versionsTruncatedAt", "versionReadWarning"
 	];
 
+	// Tracing is a platform user property on the version family's root, which the platform's nightly job switches
+	// off by itself: family state, like the version facts, that changes while this schema's content does not.
+	private static readonly string[] FamilyStateMembers = ["tracing"];
+
 	// The server re-derives the whole layout on every save, so the diagram members would mark every element
 	// of a process as changed by an edit that touched one of them.
 	private static readonly string[] ElementLayoutMembers = ["position", "size"];
@@ -60,7 +64,7 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// A short content checksum of the graph: 12 hex characters of SHA-256 over the compact JSON of everything
-	/// except the version-family facts, the schema's own name and UId, every member named <c>uid</c> (element
+	/// except the version-family facts and tracing state, the schema's own name and UId, every member named <c>uid</c> (element
 	/// and parameter identities), and the diagram layout.
 	/// </summary>
 	/// <remarks>
@@ -72,7 +76,7 @@ internal static class ProcessDigest {
 	/// <returns>The checksum, lower-case hex.</returns>
 	internal static string Checksum(DescribeProcessResult result) {
 		JsonObject graph = ToNode(result);
-		foreach (string member in VersionFactMembers.Concat(["name", SchemaUIdMember])) {
+		foreach (string member in VersionFactMembers.Concat(FamilyStateMembers).Concat(["name", SchemaUIdMember])) {
 			graph.Remove(member);
 		}
 		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
@@ -142,8 +146,12 @@ internal static class ProcessDigest {
 	/// <param name="checksum">The process's <see cref="Checksum"/>.</param>
 	/// <returns>The element view, or an empty object.</returns>
 	internal static JsonObject BuildElement(DescribeProcessResult result, string elementName, string checksum) {
+		string wanted = elementName?.Trim();
+		// An exact match first, so two elements whose names differ only in case resolve to the one asked for.
 		DescribedElement element = result.Elements?.FirstOrDefault(candidate =>
-			string.Equals(candidate?.Name, elementName?.Trim(), StringComparison.OrdinalIgnoreCase));
+				string.Equals(candidate?.Name, wanted, StringComparison.Ordinal))
+			?? result.Elements?.FirstOrDefault(candidate =>
+				string.Equals(candidate?.Name, wanted, StringComparison.OrdinalIgnoreCase));
 		if (element is null) {
 			return new JsonObject();
 		}
@@ -195,8 +203,8 @@ internal static class ProcessDigest {
 		Diff(changes, "elements",
 			Keyed(before.Elements, element => element.Name, element => Canonical(element, ElementLayoutMembers)),
 			Keyed(after.Elements, element => element.Name, element => Canonical(element, ElementLayoutMembers)));
-		Diff(changes, "flows",
-			KeyedFlows(before.Flows), KeyedFlows(after.Flows));
+		(List<DescribedFlow> flowsBefore, List<DescribedFlow> flowsAfter) = WithoutUnchangedFlows(before.Flows, after.Flows);
+		Diff(changes, "flows", KeyedFlows(flowsBefore), KeyedFlows(flowsAfter));
 		Diff(changes, "parameters",
 			Keyed(before.Parameters, parameter => parameter.Name, parameter => Canonical(parameter, [])),
 			Keyed(after.Parameters, parameter => parameter.Name, parameter => Canonical(parameter, [])));
@@ -319,8 +327,9 @@ internal static class ProcessDigest {
 		new(flows.Select(flow => JsonSerializer.SerializeToNode(flow, DescribeProcessCommand.OutputOptions))
 			.ToArray());
 
+	// Flow endpoints carry the element's name verbatim, so they are matched exactly to the element resolved above.
 	private static bool IsNamed(string value, string name) =>
-		string.Equals(value, name, StringComparison.OrdinalIgnoreCase);
+		string.Equals(value, name, StringComparison.Ordinal);
 
 	private static JsonObject ToNode(DescribeProcessResult result) =>
 		JsonSerializer.SerializeToNode(result, DescribeProcessCommand.OutputOptions) as JsonObject ?? new JsonObject();
@@ -373,6 +382,26 @@ internal static class ProcessDigest {
 			}
 		}
 		return keyed;
+	}
+
+	// Pairs off flows whose content is identical in both reads before the rest are keyed by endpoint pair, so that
+	// removing one of two parallel flows between the same elements reports that flow as removed, rather than the
+	// survivor as changed and the second ordinal as removed.
+	private static (List<DescribedFlow> Before, List<DescribedFlow> After) WithoutUnchangedFlows(
+		IEnumerable<DescribedFlow> before, IEnumerable<DescribedFlow> after) {
+		List<(DescribedFlow Flow, string Content)> remaining = (after ?? []).Where(flow => flow is not null)
+			.Select(flow => (flow, Canonical(flow, FlowLayoutMembers))).ToList();
+		List<DescribedFlow> changedBefore = [];
+		foreach (DescribedFlow flow in (before ?? []).Where(flow => flow is not null)) {
+			string content = Canonical(flow, FlowLayoutMembers);
+			int match = remaining.FindIndex(candidate => string.Equals(candidate.Content, content, StringComparison.Ordinal));
+			if (match >= 0) {
+				remaining.RemoveAt(match);
+			} else {
+				changedBefore.Add(flow);
+			}
+		}
+		return (changedBefore, remaining.Select(candidate => candidate.Flow).ToList());
 	}
 
 	// A flow has no address of its own on the write path - it is named by its endpoint pair - so it is keyed

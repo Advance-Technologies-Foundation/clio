@@ -128,7 +128,7 @@ public sealed class ProcessDigestTests {
 	}
 
 	[Test]
-	[Description("Keeps the checksum stable across a layout change and a different version standing, and moves it when an element's content changes - so equal checksums mean equal content.")]
+	[Description("Keeps the checksum stable across a layout change, a different version standing and a tracing switch, and moves it when an element's content changes - so equal checksums mean equal content.")]
 	public void Checksum_ShouldIgnoreLayoutAndVersionFacts_AndTrackContent() {
 		// Arrange
 		DescribeProcessResult original = LoadFixture(LargeFixture);
@@ -137,6 +137,7 @@ public sealed class ProcessDigestTests {
 		relaidOut.Flows[0].Geometry = null;
 		relaidOut.IsActiveVersion = true;
 		relaidOut.Versions = [];
+		relaidOut.Tracing = new DescribedProcessTracing { Enabled = true, TurnOffDate = "2026-10-20" };
 		DescribeProcessResult edited = LoadFixture(LargeFixture);
 		edited.Elements.First(element => element.Name == "ComposeTaskTitle").Caption = "Compose another title";
 
@@ -148,7 +149,7 @@ public sealed class ProcessDigestTests {
 		// Assert
 		before.Should().MatchRegex("^[0-9a-f]{12}$", because: "the checksum is short lower-case hex");
 		afterLayout.Should().Be(before,
-			because: "the server re-derives layout on every save and version facts belong to the family");
+			because: "the server re-derives layout on every save, and version facts and tracing belong to the family");
 		afterEdit.Should().NotBe(before, because: "a content change has to show in the checksum");
 	}
 
@@ -184,6 +185,50 @@ public sealed class ProcessDigestTests {
 		Names(changes, "parametersAdded").Should().Equal(["ManagerParameter"], because: "a parameter was added");
 		none.Should().BeEmpty(
 			because: "two reads of the same content differ in nothing, even when a saved copy carries fresh element UIds");
+	}
+
+	[Test]
+	[Description("Removing the first of two parallel conditional flows between the same elements reports that flow as removed, and does not report the surviving flow as changed.")]
+	public void BuildChanges_ShouldPairParallelFlowsByContent() {
+		// Arrange
+		DescribeProcessResult before = new() {
+			Flows = [
+				new DescribedFlow { Source = "Gateway", Target = "Task", Kind = "conditional", Condition = "[#A#] > 1" },
+				new DescribedFlow { Source = "Gateway", Target = "Task", Kind = "conditional", Condition = "[#B#] > 2" }
+			]
+		};
+		DescribeProcessResult after = new() {
+			Flows = [new DescribedFlow { Source = "Gateway", Target = "Task", Kind = "conditional", Condition = "[#B#] > 2" }]
+		};
+
+		// Act
+		JsonObject changes = ProcessDigest.BuildChanges(before, after);
+
+		// Assert
+		Names(changes, "flowsRemoved").Should().Equal(["Gateway -> Task [conditional, condition]"],
+			because: "exactly one of the two parallel flows was removed");
+		changes.ContainsKey("flowsChanged").Should().BeFalse(because: "the surviving flow is unchanged");
+		changes.ContainsKey("flowsAdded").Should().BeFalse(because: "nothing was added");
+	}
+
+	[Test]
+	[Description("element=<name> prefers the element whose name matches exactly, and lists only that element's flows when another element's name differs only in case.")]
+	public void BuildElement_ShouldPreferTheExactNameAndItsOwnFlows() {
+		// Arrange
+		DescribeProcessResult process = new() {
+			Elements = [new DescribedElement { Name = "task" }, new DescribedElement { Name = "Task" }],
+			Flows = [
+				new DescribedFlow { Source = "Start", Target = "task" },
+				new DescribedFlow { Source = "Start", Target = "Task" }
+			]
+		};
+
+		// Act
+		JsonObject view = ProcessDigest.BuildElement(process, "Task", "c");
+
+		// Assert
+		view["element"]!["name"]!.GetValue<string>().Should().Be("Task", because: "the exact name wins");
+		view["flowsIn"]!.AsArray().Should().ContainSingle(because: "only the flow into this element is its own");
 	}
 
 	[TestCase(null, null, null, "A -> B")]

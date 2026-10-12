@@ -104,6 +104,7 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		JsonObject describedVersion = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = versionName
 			}));
 		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
@@ -111,6 +112,7 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		describedRoot["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
@@ -174,6 +176,7 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		JsonObject describedRoot = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			}));
 		describedRoot["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
@@ -181,6 +184,7 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 		JsonObject describedVersion = DescribedProcessGraph.Read(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = versionName
 			}));
 		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(

@@ -758,6 +758,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 	private static async Task<DescribeProcessResult> DescribeAsync(ArrangeContext context, string processName) =>
 		ParseDescribeGraph(await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
+			["mode"] = "full",
 			["process-name"] = processName
 		}));
 
@@ -870,6 +871,7 @@ public sealed class SubProcessMultiInstanceToolE2ETests {
 		McpCommandExecutionParser.Extract(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = processName
 			})).ExitCode;
 

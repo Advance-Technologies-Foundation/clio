@@ -228,6 +228,8 @@ public sealed class ModifyProcessAsNewVersionCommandTests {
 		digest["summary"]!["elements"]!.AsArray().Should().HaveCount(2, because: "the summary is of the resulting version");
 		digest["changes"]!["elementsRemoved"]!.AsArray().Select(node => node!.GetValue<string>())
 			.Should().Equal(["Old"], because: "the new version is compared with its source");
+		digest["changesAgainst"]!.GetValue<string>().Should().StartWith("the source version",
+			because: "a new version has no earlier state of its own, so the digest names what the changes are relative to");
 	}
 
 	// The source, read before the write.

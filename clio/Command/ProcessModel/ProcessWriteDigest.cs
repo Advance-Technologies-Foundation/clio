@@ -16,8 +16,14 @@ namespace Clio.Command.ProcessModel;
 /// </remarks>
 internal static class ProcessWriteDigest {
 
-	/// <summary>The culture every digest read uses: the one describe-business-process defaults to.</summary>
-	internal const string DigestCulture = "en-US";
+	/// <summary>
+	/// The culture every digest read uses: none, so the server resolves captions and flow labels in the profile
+	/// culture - the one the write itself stored them in. The configuration guards compare flow labels on this
+	/// SAME read, and an explicit en-US read of a label written under another profile culture comes back empty,
+	/// which the label guard would report as a dropped label. The checksum is therefore comparable with a later
+	/// describe taken in the profile culture (en-US profiles: describe's default).
+	/// </summary>
+	internal const string DigestCulture = null;
 
 	/// <summary>Reads a process for the digest, as a best-effort read that never throws.</summary>
 	/// <param name="describer">The describer.</param>
@@ -27,7 +33,7 @@ internal static class ProcessWriteDigest {
 	internal static ErrorOr<DescribeProcessResult> Read(IProcessDescriber describer, ProcessIdentity identity,
 		bool includeVersionFacts = false) {
 		try {
-			// en-US, describe-business-process's own default, so the digest checksum equals a later describe's.
+			// The profile culture, as the guards' read-back always used: see DigestCulture.
 			ErrorOr<DescribeProcessResult> read = describer.Describe(identity, DigestCulture, includeVersionFacts,
 				bestEffort: true);
 			if (read.IsError) {
