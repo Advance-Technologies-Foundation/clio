@@ -91,21 +91,23 @@ internal sealed class GuidanceGetTool {
 	private static string? FirstPartyLibraryVersion(GuidanceArticle? article) =>
 		article is { LibraryId: CuratedKnowledgeSourceDefaults.LibraryId } ? article.LibraryVersion : null;
 
+	private static (string? Name, string? AliasHint) ResolveEffectiveName(GuidanceGetArgs args) {
+		if (!string.IsNullOrWhiteSpace(args.Name) || args.ExtensionData is null) {
+			return (args.Name, null);
+		}
+		foreach (string key in args.ExtensionData.Keys.Where(k => LegacyAliases.ContainsKey(k))) {
+			JsonElement value = args.ExtensionData[key];
+			if (value.ValueKind == JsonValueKind.String) {
+				return (value.GetString(), $"Accepted '{key}' as 'name' (rename to 'name' in future calls).");
+			}
+		}
+		return (args.Name, null);
+	}
+
 	private GuidanceGetResponse ResolveGuidance(GuidanceGetArgs args) {
 		try {
 			KnowledgeFeedbackGuidancePolicy feedbackPolicy = CreateFeedbackPolicy();
-			string? effectiveName = args.Name;
-			string? aliasHint = null;
-			if (string.IsNullOrWhiteSpace(effectiveName) && args.ExtensionData is not null) {
-				foreach (string key in args.ExtensionData.Keys.Where(k => LegacyAliases.ContainsKey(k))) {
-					JsonElement value = args.ExtensionData[key];
-					if (value.ValueKind == JsonValueKind.String) {
-						effectiveName = value.GetString();
-						aliasHint = $"Accepted '{key}' as 'name' (rename to 'name' in future calls).";
-						break;
-					}
-				}
-			}
+			(string? effectiveName, string? aliasHint) = ResolveEffectiveName(args);
 			bool catalogRequested = string.IsNullOrWhiteSpace(effectiveName)
 				|| CatalogKeywords.Contains(effectiveName.Trim());
 			if (catalogRequested) {
