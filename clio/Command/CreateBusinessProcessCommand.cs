@@ -434,11 +434,19 @@ public class CreateBusinessProcessCommand(
 			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
 			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
 			// re-applied replace on modify.
+			ErrorOr<DescribeProcessResult>? saved = null;
 			try {
-				WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+				saved = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			} catch (Exception verification) {
 				logger.WriteWarning(
 					$"The process was created, but verifying its configuration failed: {verification.Message}. Re-read it with describe-business-process before reporting a grant or revoke as applied.");
+			}
+			// The digest rides the SAME read-back as the guards (ENG-103023), so a create reads the process once.
+			if (saved is { } readBack) {
+				ProcessWriteDigest.Report(logger, readBack);
+			} else if (string.IsNullOrWhiteSpace(result.SchemaName)) {
+				logger.WriteWarning("The process was created, but the environment named no process to summarize. "
+					+ "describe-business-process mode=summary confirms the saved state.");
 			}
 			return 0;
 		} catch (Exception exception) {
@@ -458,8 +466,12 @@ public class CreateBusinessProcessCommand(
 	// exception. The trade is deliberate - one extra read buys the only signal that a label landed, which
 	// is what lets the package floor stay where it is - but it has a visible cost worth stating: a describe
 	// that fails for reasons of its own now emits "Could not verify ..." on a build where the caller
-	// previously saw a clean success. A descriptor with no blocks AND no labels still short-circuits.
-	private void WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options, string? schemaName) {
+	// previously saw a clean success. A descriptor with no blocks AND no labels used to short-circuit here; since
+	// ENG-103023 the read-back always runs, because the same read is the post-write summary the caller gets
+	// instead of a describe of its own - the guards below still run only when the descriptor asked for them.
+	// Returns the read-back for the digest, or null when there was nothing to read back.
+	private ErrorOr<DescribeProcessResult>? WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options,
+		string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromDescriptor(options.DescriptorJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
 		// from the SAME read-back rather than a second one - the describe below is the expensive
@@ -470,23 +482,24 @@ public class CreateBusinessProcessCommand(
 		// declares no `label` member on a flow and discards it, silently, on a build that answers success.
 		IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels =
 			FlowLabelExpectation.FromDescriptor(options.DescriptorJson);
-		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
-			return;
-		}
+		bool guarded = !(intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0);
 
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			// Nothing to read back against. Silence here would be indistinguishable from a verified success.
 			const string noName = "the operation returned no process name to read back";
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noName);
 			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noName);
-			return;
+			return null;
 		}
 
-		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
-		// ATF session and two DataService round-trips per create, on a write path, for values it discards.
-		ErrorOr<DescribeProcessResult> described =
-			processDescriber.Describe(new ProcessIdentity(schemaName, null, null), null,
-				includeVersionFacts: false, bestEffort: true);
+		// Version facts are not read: the guards consume elements[] only and the digest names the version from
+		// the build result, and asking for them would buy an ATF session and two DataService round-trips per
+		// create, on a write path.
+		ErrorOr<DescribeProcessResult> described = ProcessWriteDigest.Read(processDescriber,
+			new ProcessIdentity(schemaName, null, null));
+		if (!guarded) {
+			return described;
+		}
 		if (described.IsError) {
 			// An unreadable description is not evidence of a drop, so this never fails the command. It is not
 			// silence either when access rights were requested: that guard is the only automated check that a
@@ -495,7 +508,7 @@ public class CreateBusinessProcessCommand(
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, described.FirstError.Description);
 			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
 				described.FirstError.Description);
-			return;
+			return described;
 		}
 
 		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
@@ -518,6 +531,7 @@ public class CreateBusinessProcessCommand(
 		}
 
 		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
+		return described;
 	}
 }
 

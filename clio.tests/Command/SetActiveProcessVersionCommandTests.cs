@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json.Nodes;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -27,6 +29,7 @@ public sealed class SetActiveProcessVersionCommandTests {
 	private const string VersionUid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55";
 
 	private ISetActiveProcessVersionService _service;
+	private IProcessDescriber _describer;
 	private ILogger _logger;
 	private SetActiveProcessVersionCommand _command;
 
@@ -34,12 +37,20 @@ public sealed class SetActiveProcessVersionCommandTests {
 	public void Setup() {
 		_service = Substitute.For<ISetActiveProcessVersionService>();
 		_logger = Substitute.For<ILogger>();
-		_command = new SetActiveProcessVersionCommand(_service, _logger);
+		// The post-write digest (ENG-103023) reads the process back; a readable process keeps the digest out of
+		// the warning channel these tests count.
+		_describer = Substitute.For<IProcessDescriber>();
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [], Parameters = []
+			});
+		_command = new SetActiveProcessVersionCommand(_service, _describer, _logger);
 	}
 
 	[TearDown]
 	public void TearDown() {
 		_service.ClearReceivedCalls();
+		_describer.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
@@ -238,4 +249,43 @@ public sealed class SetActiveProcessVersionCommandTests {
 			message.Contains("UsrSampleProcessCustom1")));
 	}
 
+
+	[Test]
+	[Description("ENG-103023: the success path reports the resulting version's summary and what it changes against the previously active version.")]
+	public void Execute_ShouldReportDigestAgainstThePreviouslyActiveVersion_OnSuccess() {
+		// Arrange
+		_service.SetActiveVersion("sandbox", Arg.Any<SetActiveProcessVersionRequest>()).Returns(new SetActiveProcessVersionResult(VersionName, VersionUid, 0));
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(BeforeRead(), DigestProcess("Start", "New"), DigestProcess("Start", "Old"));
+
+		// Act
+		int result = _command.Execute(ByName());
+
+		// Assert
+		result.Should().Be(0, because: "the write succeeded");
+		JsonNode digest = JsonNode.Parse(DigestLine())!;
+		digest["summary"]!["elements"]!.AsArray().Should().HaveCount(2, because: "the summary is of the resulting version");
+		digest["changesAgainst"]!.GetValue<string>().Should().Contain("UsrSampleProcess",
+			because: "the change list says which version it is relative to");
+		digest["changes"]!["elementsAdded"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Equal(["New"], because: "the activated version differs from the one that ran by this element");
+	}
+
+	// The read before activation: its version facts name the version that ran until now.
+	private static DescribeProcessResult BeforeRead() => new() {
+		Name = VersionName, SchemaUId = VersionUid, Elements = [], Flows = [], Parameters = [],
+		ActiveVersionSchemaUId = "99999999-2222-3333-4444-555555555555", ActiveVersionName = "UsrSampleProcess"
+	};
+
+	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {
+		Name = "UsrSampleProcess", SchemaUId = "uid",
+		Elements = [.. elements.Select(name => new DescribedElement { Name = name, BuildType = "formulatask" })],
+		Flows = elements.Length > 1 ? [new DescribedFlow { Source = elements[0], Target = elements[1] }] : [],
+		Parameters = []
+	};
+
+	private string DigestLine() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+		.Select(call => call.GetArguments()[0] as string)
+		.SingleOrDefault(text => text != null && text.StartsWith("{\"summary\""));
 }

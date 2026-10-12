@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -194,7 +195,17 @@ public sealed class ServerProcessDescriber(
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
 			PackageName = member.PackageName,
-			Enabled = member.Enabled
+			Enabled = member.Enabled,
+			ModifiedOn = FormatModifiedOn(member.ModifiedOn)
+		};
+
+	// UTC with a Z when the reader knows the zone; a value of unspecified kind is written without one rather than
+	// being stamped with a zone nobody established.
+	private static string FormatModifiedOn(DateTime? modifiedOn) =>
+		modifiedOn switch {
+			null => null,
+			{ Kind: DateTimeKind.Unspecified } value => value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+			{ } value => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
 		};
 
 	/// <summary>The describe request payload, plus the process-library row the caption arm resolved.</summary>
@@ -510,6 +521,13 @@ public sealed class DescribedProcessVersion {
 	/// </summary>
 	[JsonPropertyName("enabled")]
 	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// When this version was last saved, in UTC (<c>Z</c>) when the zone is known, or absent when the library
+	/// reported none (ENG-103023).
+	/// </summary>
+	[JsonPropertyName("modifiedOn")]
+	public string ModifiedOn { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>

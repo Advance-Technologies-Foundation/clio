@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Nodes;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -27,9 +28,14 @@ public sealed class CreateBusinessProcessCommandTests {
 	[SetUp]
 	public void Setup() {
 		_createBusinessProcessService = Substitute.For<ICreateBusinessProcessService>();
-		// The command reads the saved process back to catch a server that discarded an email block while
-		// answering success. These descriptors carry no email block, so the substitute is never consulted.
+		// The command reads the saved process back - for the configuration guards, and since ENG-103023 on every
+		// success for the post-write summary. A readable empty process is the default; a test that exercises a
+		// guard configures its own read-back.
 		_processDescriber = Substitute.For<IProcessDescriber>();
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [], Parameters = []
+			});
 		_logger = Substitute.For<ILogger>();
 		_command = new CreateBusinessProcessCommand(_createBusinessProcessService, _processDescriber, _logger);
 	}
@@ -61,7 +67,7 @@ public sealed class CreateBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -112,7 +118,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -138,7 +144,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -166,7 +172,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -195,14 +201,14 @@ public sealed class CreateBusinessProcessCommandTests {
 		CreateBusinessProcessOptions options = new() { Environment = "sandbox", DescriptorJson = descriptor };
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [] });
 
 		// Act
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
 	}
 
 	[Test]
@@ -250,7 +256,7 @@ public sealed class CreateBusinessProcessCommandTests {
 			Arg.Is<CreateBusinessProcessRequest>(request =>
 				request.DescriptorJson == SampleDescriptor &&
 				request.PackageNameOverride == "MyApp"));
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("UsrSampleProcess")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("Process 'UsrSampleProcess' created")));
 	}
 
 	[Test]
@@ -339,7 +345,7 @@ public sealed class CreateBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The saved flow comes back with NO label - what a package below the capability version leaves behind
 		// after answering success.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes" }]
@@ -354,7 +360,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		// Assert
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about a build that SUCCEEDED, never a failure");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
 		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
 			because: "the caller has to be told which label is not drawn, by the only handle they have on the "
 				+ "flow");
@@ -374,7 +380,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// The saved flow comes back carrying exactly the label that was sent: the ordinary, healthy outcome.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -406,7 +412,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the request timed out"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -424,4 +430,41 @@ public sealed class CreateBusinessProcessCommandTests {
 				+ "the caveat actionable");
 	}
 
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103023: a successful build reports the summary of the created process from the same read-back the guards use - one read, no change list (there is nothing before a create).")]
+	public void Execute_ShouldReportTheCreatedProcessSummary_OnSuccess() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "End"));
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", DescriptorJson = SampleDescriptor, PackageName = "MyApp"
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the build succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		JsonNode digest = JsonNode.Parse(DigestLine())!;
+		digest["summary"]!["flows"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Equal(["Start -> End"], because: "the summary lists the saved flows");
+		digest["summary"]!["checksum"].Should().NotBeNull(because: "the checksum lets a later read be compared");
+		digest["changes"].Should().BeNull(because: "a create has nothing to compare with");
+	}
+
+	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {
+		Name = "UsrSampleProcess", SchemaUId = "uid",
+		Elements = [.. elements.Select(name => new DescribedElement { Name = name, BuildType = "formulatask" })],
+		Flows = elements.Length > 1 ? [new DescribedFlow { Source = elements[0], Target = elements[1] }] : [],
+		Parameters = []
+	};
+
+	private string DigestLine() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+		.Select(call => call.GetArguments()[0] as string)
+		.SingleOrDefault(text => text != null && text.StartsWith("{\"summary\""));
 }

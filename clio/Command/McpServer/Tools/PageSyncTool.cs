@@ -778,7 +778,7 @@ public sealed class PageSyncTool(
 			// and rejected for a key this save just created.
 			persistedResourceKeyReader.Invalidate(updateOptions);
 			if (opOptions.Verify && opOptions.GetCommand != null)
-				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
+				return VerifySavedPage(page, opOptions, updateResponse, validationResult, updateOptions.Body);
 			if (refreshBaseline || updateOptions.ConditionalBaselineApplied) {
 				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
 				// rather than turning this page's result into a failure (ENG-95262 AC-02).
@@ -792,7 +792,9 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				ResourcesRegistered = updateResponse.ResourcesRegistered
+				ResourcesRegistered = updateResponse.ResourcesRegistered,
+				// The body as SAVED - after the before-save preprocessing - which is what update-page digests too.
+				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate)
 			};
 		} catch (Exception ex) {
 			return new PageSyncPageResult {
@@ -905,7 +907,8 @@ public sealed class PageSyncTool(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions,
 		PageUpdateResponse updateResponse,
-		PageSyncValidationResult validationResult) {
+		PageSyncValidationResult validationResult,
+		string savedBody) {
 		PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
 		opOptions.GetCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
 		if (!getResponse.Success) {
@@ -931,7 +934,8 @@ public sealed class PageSyncTool(
 			Validation = validationResult,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
 			Page = getResponse.Page,
-			VerifiedBodyFile = verifiedBodyFile
+			VerifiedBodyFile = verifiedBodyFile,
+			Digest = PageWriteDigest.TryBuild(savedBody ?? page.Body, appendMode: false, opOptions.Validate)
 		};
 	}
 
@@ -1394,6 +1398,14 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string VerifiedBodyFile { get; init; }
+
+	/// <summary>
+	/// The post-write digest (ENG-103023): the components this page's save wrote and whether content validation
+	/// passed. Present on a saved page only.
+	/// </summary>
+	[JsonPropertyName("digest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageWriteDigest Digest { get; init; }
 
 	/// <summary>
 	/// <c>true</c> when this page's save was blocked because the schema was modified outside the

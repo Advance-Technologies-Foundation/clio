@@ -459,6 +459,10 @@ public class ModifyBusinessProcessCommand(
 				throw new InvalidOperationException("An operations array is required.");
 			}
 
+			// Read BEFORE the write so the digest can say what the edit changed (ENG-103023). Best-effort: a failed
+			// read only costs the change list, never the edit.
+			ErrorOr<DescribeProcessResult> before = ProcessWriteDigest.Read(processDescriber,
+				new ProcessIdentity(hasName ? options.ProcessName : null, hasUid ? options.ProcessUid : null, null));
 			ModifyBusinessProcessResult result = modifyBusinessProcessService.ModifyProcess(
 				options.Environment,
 				new ModifyBusinessProcessRequest(options.ProcessName, options.ProcessUid, options.OperationsJson,
@@ -475,11 +479,16 @@ public class ModifyBusinessProcessCommand(
 			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
 			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
 			// re-applied replace on modify.
+			ErrorOr<DescribeProcessResult>? saved = null;
 			try {
-				WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
+				saved = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName);
 			} catch (Exception verification) {
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process before reporting a grant or revoke as applied.");
+			}
+			// The digest rides the SAME read-back as the guards (ENG-103023).
+			if (saved is { } readBack) {
+				ProcessWriteDigest.Report(logger, readBack, before);
 			}
 			return 0;
 		} catch (Exception exception) {
@@ -502,7 +511,12 @@ public class ModifyBusinessProcessCommand(
 	// including the visible cost: a describe that fails for reasons of its own now emits "Could not verify
 	// ..." where the caller previously saw a clean success. An array with no blocks AND no labels still
 	// short-circuits and pays nothing.
-	private void WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options, string? schemaName) {
+	//
+	// Since ENG-103023 the read-back always runs, because it is also the post-write summary: the guards below
+	// still run only when the operations asked for them. Returns the read-back for the digest, or null when
+	// there was no identity to read back by.
+	private ErrorOr<DescribeProcessResult>? WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options,
+		string? schemaName) {
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
 		// from the SAME read-back rather than a second one - the describe below is the expensive
@@ -532,9 +546,7 @@ public class ModifyBusinessProcessCommand(
 		// A setFilter/clearFilter carries no block, so it used to return here - and clearing the filter on a
 		// Change access rights element is the single most dangerous edit this surface offers, because it moves
 		// the element from narrowing to acting on EVERY record of its object. Read back for those too.
-		if (intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0) {
-			return;
-		}
+		bool guarded = !(intent.IsEmpty && expectedApproval.Count == 0 && expectedLabels.Count == 0);
 
 		// The caller identifies the process by name OR uid, and an older CrtProcessBuilder may omit SchemaName
 		// from the result, so falling back to the name alone would report "could not verify" for a modify-by-uid
@@ -545,20 +557,22 @@ public class ModifyBusinessProcessCommand(
 			const string noIdentity = "the edit returned no process identity to read back";
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noIdentity);
 			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noIdentity);
-			return;
+			return null;
 		}
 
 		// Version facts are not read: this read-back consumes elements[] only, and asking for them would buy an
 		// ATF session and two DataService round-trips per edit, on a write path, for values it discards.
-		ErrorOr<DescribeProcessResult> described = processDescriber.Describe(
-			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null), null,
-			includeVersionFacts: false, bestEffort: true);
+		ErrorOr<DescribeProcessResult> described = ProcessWriteDigest.Read(processDescriber,
+			new ProcessIdentity(string.IsNullOrWhiteSpace(code) ? null : code, options.ProcessUid, null));
+		if (!guarded) {
+			return described;
+		}
 		if (described.IsError) {
 			BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent,
 				described.FirstError.Description);
 			BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels,
 				described.FirstError.Description);
-			return;
+			return described;
 		}
 
 		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
@@ -570,6 +584,7 @@ public class ModifyBusinessProcessCommand(
 		}
 
 		BlockExpectationReporter.ReportFlowLabels(logger, described.Value, expectedLabels);
+		return described;
 	}
 }
 

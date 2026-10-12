@@ -197,7 +197,7 @@ internal static class ProcessDesignerE2EArrange {
 			message["value"] is JsonValue value && value.TryGetValue(out string? line) ? line : string.Empty));
 	}
 
-	/// <summary>Reads a process back by code through <c>describe-business-process</c>.</summary>
+	/// <summary>Reads a process back by code through <c>describe-business-process</c>, in full.</summary>
 	internal static async Task<CallToolResult> DescribeAsync(ProcessDesignerArrangeContext context,
 			string processCode) =>
 		await context.Session.CallToolAsync(
@@ -205,7 +205,10 @@ internal static class ProcessDesignerE2EArrange {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
-					["process-name"] = processCode
+					["process-name"] = processCode,
+					// The fixtures assert on the whole graph; without a mode a large one comes back as the
+					// summary (ENG-103023).
+					["mode"] = "full"
 				}
 			},
 			context.CancellationTokenSource.Token);

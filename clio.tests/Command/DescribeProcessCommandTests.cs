@@ -700,4 +700,118 @@ public sealed class DescribeProcessCommandTests {
 			Flows = [],
 			Parameters = []
 		};
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103023: a describe without a mode answers a graph over the threshold with the summary - mode named, how to get more stated - and the whole MCP reply stays far below the ~20 KB spill line; the captured 17-element process was ~29 K chars in full.")]
+	public void BuildReply_ShouldDefaultToSummary_WhenTheFullGraphIsOverTheThreshold() {
+		// Arrange
+		DescribeProcessResult process = Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.LargeFixture);
+		DescribeProcessCommand.OmitDecodedFilterPayloads(process);
+		string full = DescribeProcessCommand.BuildReply(process, "full", null, out _);
+
+		// Act
+		string reply = DescribeProcessCommand.BuildReply(process, null, null, out string refusal);
+		long wireBefore = Clio.Command.McpServer.McpResultSize.Of(
+			new Clio.Command.McpServer.Tools.CommandExecutionResult(0, [new InfoMessage(full)]));
+		long wireAfter = Clio.Command.McpServer.McpResultSize.Of(
+			new Clio.Command.McpServer.Tools.CommandExecutionResult(0, [new InfoMessage(reply)]));
+		TestContext.Out.WriteLine($"wire bytes: full {wireBefore}, default {wireAfter}");
+
+		// Assert
+		refusal.Should().BeNull(because: "a default describe is always answerable");
+		full.Length.Should().BeGreaterThan(Clio.Command.ProcessModel.ProcessDigest.AutoSummaryThresholdChars,
+			because: "anti-vacuity: the fixture must be over the threshold for this test to mean anything");
+		JsonNode summary = JsonNode.Parse(reply)!;
+		summary["mode"]!.GetValue<string>().Should().Be("summary", because: "the reply must say which mode was used");
+		summary["more"]!.GetValue<string>().Should().Contain("mode=full").And.Contain("element=<name>",
+			because: "the reply must say how to get more");
+		summary["fullChars"]!.GetValue<int>().Should().Be(full.Length, because: "the caller can see what full costs");
+		wireAfter.Should().BeLessThan(4_096, because: "the summary reply must stay far below the spill line");
+		wireBefore.Should().BeGreaterThan(19_000, because: "anti-vacuity: the full reply of this capture spilled");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103023 backward compatibility: an explicit mode=full is byte-for-byte the graph describe wrote before modes existed, and a default that picks full (the graph fits) is that same text with a leading mode member.")]
+	public void BuildReply_ShouldKeepFullByteIdentical_AndLabelTheDefaultFull() {
+		// Arrange
+		DescribeProcessResult process = Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture);
+		DescribeProcessCommand.OmitDecodedFilterPayloads(process);
+		string legacy = System.Text.Json.JsonSerializer.Serialize(process, DescribeProcessCommand.OutputOptions);
+
+		// Act
+		string explicitFull = DescribeProcessCommand.BuildReply(process, "FULL", null, out _);
+		string defaultReply = DescribeProcessCommand.BuildReply(process, null, null, out _);
+		string explicitSummary = DescribeProcessCommand.BuildReply(process, "summary", null, out _);
+
+		// Assert
+		explicitFull.Should().Be(legacy, because: "an explicit full caller must receive exactly what it did before");
+		defaultReply.Should().Be("{\"mode\":\"full\"," + legacy[1..],
+			because: "a graph under the threshold is returned whole, labelled with the mode that was chosen");
+		JsonNode.Parse(explicitSummary)!["mode"]!.GetValue<string>().Should().Be("summary",
+			because: "an explicit summary is honoured whatever the size");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103023: mode=versions returns the version standing and family list, with no graph.")]
+	public void BuildReply_ShouldReturnTheVersionList_WhenModeIsVersions() {
+		// Arrange
+		DescribeProcessResult process = Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.LargeFixture);
+
+		// Act
+		JsonNode reply = JsonNode.Parse(DescribeProcessCommand.BuildReply(process, "versions", null, out _))!;
+
+		// Assert
+		reply["mode"]!.GetValue<string>().Should().Be("versions", because: "the reply names its mode");
+		reply["versions"]!.AsArray().Should().HaveCount(3, because: "the captured family has three members");
+		reply["activeVersionName"]!.GetValue<string>().Should().Be("UsrReqHnd0925170438ReqHandlingCustom1",
+			because: "the version view names what runs");
+		reply["checksum"].Should().NotBeNull(because: "the version view carries the read schema's checksum");
+		reply["elements"].Should().BeNull(because: "the version view carries no graph");
+	}
+
+	[TestCase("bogus", null)]
+	[TestCase("element", null)]
+	[TestCase("full", "ReadContact")]
+	[Category("Unit")]
+	[Description("ENG-103023: refuses an unknown mode, element mode without a name, and an element combined with another mode - before any read of the environment.")]
+	public void Execute_ShouldRefuseABadModeWithoutReading(string mode, string element) {
+		// Arrange
+		DescribeProcessOptions options = new() {
+			Environment = "dev", ProcessName = "UsrProcess", Mode = mode, Element = element
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "a malformed mode request is the caller's error");
+		_describer.DidNotReceiveWithAnyArgs().Describe(default, default);
+		_logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains("mode")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103023: element=<name> for a name the process lacks fails and lists the names it has, so the next call can be right.")]
+	public void Execute_ShouldListTheElements_WhenTheRequestedElementIsMissing() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
+				Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture));
+
+		// Act
+		int result = _command.Execute(new DescribeProcessOptions {
+			Environment = "dev", ProcessName = "UsrProcess", Element = "NoSuchStep"
+		});
+
+		// Assert
+		result.Should().Be(1, because: "there is no such element to return");
+		_logger.Received(1).WriteError(Arg.Is<string>(text => text.Contains("NoSuchStep")
+			&& text.Contains("ReadContact")));
+	}
 }

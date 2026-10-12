@@ -68,7 +68,9 @@ public sealed class PageGetTool(
 			// the prior WriteFilesAndCompact behavior.
 			return new PageGetResponse {
 				Success = true,
-				Page = written.Page.ForResponse(args.IncludeOperations),
+				// ENG-103023: the operation list is opt-in. A page's own body routinely names dozens of
+				// components, meta.json (files.metaFile) carries them all, and the reply carries the counts.
+				Page = written.Page.ForResponse(args.IncludeOperations ?? false),
 				Editable = written.Editable,
 				Files = written.Files
 			};
@@ -90,6 +92,6 @@ public sealed record PageGetArgs(
 	string? OutputDirectory = null,
 
 	[property: JsonPropertyName("include-operations")]
-	[property: Description("false replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts (count per operation type); meta.json keeps the full list.")]
+	[property: Description("true lists page.ownBodySummary.viewConfigDiffOps; default gives viewConfigDiffOpCounts (count per operation type). meta.json keeps the full list.")]
 	bool? IncludeOperations = null
 ) : ConnectionArgsBase;

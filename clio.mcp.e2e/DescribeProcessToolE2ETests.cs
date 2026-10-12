@@ -212,6 +212,48 @@ public sealed class DescribeProcessToolE2ETests {
 		});
 	}
 
+	[Test]
+	[Description("ENG-103023: over the real MCP path, mode=summary, mode=versions and element=<name> each answer with the mode they name, the summary and version views stay far below the ~20 KB spill line, and an explicit mode=full is still the whole graph.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process answers summary, versions, element and full modes")]
+	[AllureDescription("Describes the configured sandbox process four times - summary, versions, the first element by name, and full - and asserts each reply names its mode, the compact replies are under 8 KB on the wire, and full carries the element graph.")]
+	public async Task DescribeProcess_Should_AnswerEachMode_ForKnownProcess() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		Dictionary<string, object?> Args(string key, string value) => new() {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = context.ProcessCode,
+			[key] = value
+		};
+
+		// Act
+		CallToolResult summaryResult = await CallToolAsync(context, Args("mode", "summary"));
+		CallToolResult versionsResult = await CallToolAsync(context, Args("mode", "versions"));
+		CallToolResult fullResult = await CallToolAsync(context, Args("mode", "full"));
+		JsonObject summary = ReadDescribedGraph(summaryResult);
+		JsonObject versions = ReadDescribedGraph(versionsResult);
+		JsonObject full = ReadDescribedGraph(fullResult);
+		string firstElement = full["elements"]!.AsArray()[0]!["name"]!.GetValue<string>();
+		CallToolResult elementResult = await CallToolAsync(context, Args("element", firstElement));
+		JsonObject element = ReadDescribedGraph(elementResult);
+
+		// Assert
+		summary["mode"]!.GetValue<string>().Should().Be("summary", because: "the reply names its mode");
+		summary["elements"]!.AsArray().Count.Should().BeGreaterThan(0, because: "the summary lists the elements");
+		summary["checksum"].Should().NotBeNull(because: "the summary carries the content checksum");
+		versions["mode"]!.GetValue<string>().Should().Be("versions", because: "the reply names its mode");
+		versions["versions"].Should().NotBeNull(because: "the version view lists the family");
+		element["mode"]!.GetValue<string>().Should().Be("element", because: "the reply names its mode");
+		element["element"]!["name"]!.GetValue<string>().Should().Be(firstElement,
+			because: "the element view returns the element that was asked for");
+		full["elements"]!.AsArray()[0]!["buildType"].Should().NotBeNull(
+			because: "an explicit full is the whole graph, as before ENG-103023");
+		foreach (CallToolResult compact in new[] { summaryResult, versionsResult }) {
+			JsonSerializer.Serialize(compact).Length.Should().BeLessThan(8_192,
+				because: "the compact views exist to stay far below the spill line");
+		}
+	}
+
 	// One reader for all three process-designer fixtures: the escaping trap it exists for caught the two
 	// siblings that hand-rolled a substring check instead.
 	private static JsonObject ReadDescribedGraph(CallToolResult callResult) =>
@@ -220,7 +262,12 @@ public sealed class DescribeProcessToolE2ETests {
 	private static IEnumerable<int?> VersionNumbers(JsonObject graph) =>
 		graph["versions"]!.AsArray().Select(member => (int?)member!["version"]?.GetValue<int>());
 
+	// The fixtures above assert on the whole graph, so they ask for it: without a mode a graph over 15000
+	// characters comes back as the summary (ENG-103023). The mode tests pass their own mode.
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
+		if (!args.ContainsKey("mode") && !args.ContainsKey("element")) {
+			args["mode"] = "full";
+		}
 		IReadOnlyCollection<string> toolNames =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		toolNames.Should().Contain(ToolName,

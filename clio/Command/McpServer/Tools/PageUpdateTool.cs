@@ -147,6 +147,11 @@ public sealed class PageUpdateTool(
 		// in one place rather than making the two write tools differ on when a cache entry survives.
 		if (response.Success) {
 			persistedResourceKeyReader.Invalidate(options);
+			// ENG-103023: what the save wrote, so confirming it needs no get-page.
+			if (!options.DryRun) {
+				response.Digest = PageWriteDigest.TryBuild(options.Body,
+					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate);
+			}
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
 		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their

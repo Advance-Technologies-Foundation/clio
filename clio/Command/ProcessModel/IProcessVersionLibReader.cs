@@ -61,6 +61,12 @@ public sealed record ProcessVersionFamilyMember {
 	/// enable/disable on the root schema, so every member of a family reports the same value.
 	/// </summary>
 	public bool Enabled { get; init; }
+
+	/// <summary>
+	/// When this member's schema was last saved, as the process library reports it, or <c>null</c> when the view
+	/// gave none. Read from the same row as the rest, so it costs no query of its own.
+	/// </summary>
+	public DateTime? ModifiedOn { get; init; }
 }
 
 /// <summary>
@@ -502,7 +508,9 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 				&& packageNames.TryGetValue(p.PackageUId, out string name)
 					? name
 					: null,
-			Enabled = p.Enabled
+			Enabled = p.Enabled,
+			// default(DateTime) is what an unread column binds to; publishing it would date a version to year 1.
+			ModifiedOn = p.ModifiedOn == default ? null : p.ModifiedOn
 		};
 
 	private static ProcessVersionFacts ReadFailed(Exception e) =>
