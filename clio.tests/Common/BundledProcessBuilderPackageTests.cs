@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
-using System.Text;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -513,10 +511,7 @@ public class BundledProcessBuilderPackageTests {
 
 	#region Properties: Private
 
-	private static string BundledArchivePath => Path.Combine(
-		AppContext.BaseDirectory,
-		BundledPackages.ProcessBuilderPackageName,
-		BundledPackages.ProcessBuilderArchiveFileName);
+	private static string BundledArchivePath => BundledProcessBuilderSource.ArchivePath;
 
 	#endregion
 
@@ -539,22 +534,10 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	/// <summary>
-	/// Decompresses the archive and returns it as text. The stream is clio's own package format and
-	/// carries binary members, so only file CONTENT that happens to be UTF-8 (the JSON descriptors, the C#
-	/// sources, the csproj) is searchable here.
+	/// The archive as text; <see cref="BundledProcessBuilderSource.ReadAsText"/> says what that can and cannot
+	/// answer. Use <see cref="ReadBundledArchiveEntryNames"/> for anything about a path.
 	/// </summary>
-	/// <remarks>
-	/// Entry PATHS are NOT searchable and never were: the container stores them UTF-16LE. Use
-	/// <see cref="ReadBundledArchiveEntryNames"/> for anything about a path, and treat a hit found here as
-	/// evidence about a file's contents only.
-	/// </remarks>
-	private static string ReadBundledArchiveAsText() {
-		using FileStream compressed = File.OpenRead(BundledArchivePath);
-		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
-		using MemoryStream buffer = new();
-		decompressor.CopyTo(buffer);
-		return Encoding.UTF8.GetString(buffer.ToArray());
-	}
+	private static string ReadBundledArchiveAsText() => BundledProcessBuilderSource.ReadAsText();
 
 	// True when <paramref name="typeName"/>'s OWN declaration carries the `label` DataMember. The
 	// archive ships SOURCE and every contract type sits in its own `#region Class: <Name>` block, so the
@@ -573,21 +556,8 @@ public class BundledProcessBuilderPackageTests {
 	// Generalised from the label probe: the same window, asked about any wire name. The diagram members
 	// arrived needing that question about three more types, and a second copy of the region arithmetic is a
 	// second place for the unterminated-region hole to be reintroduced.
-	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) {
-		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
-		if (start < 0) {
-			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
-		}
-
-		if (start < 0) {
-			return false;
-		}
-
-		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
-		// Up to the name's closing quote, so a member declared with EmitDefaultValue = false counts too.
-		return end >= 0
-			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\"", StringComparison.Ordinal);
-	}
+	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) =>
+		BundledProcessBuilderSource.DataMemberNames(archive, typeName).Contains(dataMemberName, StringComparer.Ordinal);
 
 	/// <summary>
 	/// Reads the shipped version the way production does — through the real

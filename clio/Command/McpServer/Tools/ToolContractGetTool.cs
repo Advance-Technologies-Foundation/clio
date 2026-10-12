@@ -1431,6 +1431,7 @@ internal static class ToolContractCatalog {
 			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
 			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
 			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
+			+ "The short create-business-process and modify-business-process contracts also carry a SHAPE block: the descriptor fields and element blocks, or every operation with its fields. "
 			+ "Pass detail=full with tool-names to get every named contract complete, or detail=short to get them all short.",
 			new ToolInputSchemaContract(
 				[],
