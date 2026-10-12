@@ -77,7 +77,7 @@ public sealed class McpHttpHybridSessionModeE2ETests {
 			modernContracts.Success.Should().BeTrue(
 				because: "the modern request must complete while the legacy stateful session remains alive"));
 		AllureApi.Step("Assert modern contract call returns compact index", () =>
-			modernContracts.Index.Should().NotBeNullOrEmpty(
+			modernContracts.ToolIndex.Should().NotBeNullOrEmpty(
 				because: "a modern client with no legacy identity must receive the compact discovery index"));
 		AllureApi.Step("Assert modern contract call excludes legacy full tools", () =>
 			modernContracts.Tools.Should().BeNullOrEmpty(
@@ -103,7 +103,7 @@ public sealed class McpHttpHybridSessionModeE2ETests {
 				contracts.Tools.Should().NotBeNullOrEmpty(
 					because: "the CAADT-compatible mcp_client identity must retain its full legacy no-names response shape"));
 			AllureApi.Step($"Assert legacy compact index remains suppressed {phase}", () =>
-				contracts.Index.Should().BeNullOrEmpty(
+				contracts.ToolIndex.Should().BeNullOrEmpty(
 					because: "the legacy session must not inherit the modern client's compact-index response shape"));
 		}
 	}

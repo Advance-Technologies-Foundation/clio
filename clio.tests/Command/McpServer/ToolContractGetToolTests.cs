@@ -257,6 +257,12 @@ public sealed class ToolContractGetToolTests {
 	private static ToolContractGetTool BuildToolWithRegistry() {
 		return new ToolContractGetTool(BuildInvokerRegistry());
 	}
+
+	// The per-tool flags (resident, destructive, contract-available, aliases) are asserted on the object index;
+	// since ENG-102796 a no-names call returns it only for this detail value, and lines by default.
+	private static readonly ToolContractGetArgs IndexEntriesArgs = new(Detail: ToolContractCatalog.IndexEntriesDetail);
+
+	private static string ToolIndexLineName(string line) => line[..line.IndexOfAny([' ', ':'])];
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for get-tool-contract.")]
@@ -805,6 +811,8 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful bootstrap lookup should not return a structured error");
 		result.Index.Should().BeNull(
 			because: "detail=full preserves the legacy behavior and must not emit the compact index alongside the full contracts");
+		result.ToolIndex.Should().BeNull(
+			because: "detail=full must not emit the line index alongside the full contracts either");
 		result.Tools.Should().NotBeNull(
 			because: "the detail=full bootstrap response should include the canonical full contract set");
 		result.Tools!.Select(contract => contract.Name).Should().Contain([
@@ -835,7 +843,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns a compact index of all canonical tools (names + one-line purpose, Tools null) when the request omits tool names and detail.")]
+	[Description("Returns the compact index of all canonical tools as one tool-index line per tool plus a legend (Tools and Index null) when the request omits tool names and detail.")]
 	public void ToolContractGet_Should_Return_Compact_Index_When_Request_Is_Empty() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -850,8 +858,49 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful index lookup should not return a structured error");
 		result.Tools.Should().BeNull(
 			because: "the compact index must NOT pay for the heavy full contracts — that is the whole point of defer_loading");
-		result.Index.Should().NotBeNullOrEmpty(
+		result.Index.Should().BeNull(
+			because: "the per-tool objects are ~47 KB and spill in an agent CLI; the default reply carries only the line index");
+		result.Legend.Should().NotBeNullOrWhiteSpace(
+			because: "the (R)/(D) markers on each line mean nothing to an agent without the legend beside them");
+		result.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "the no-args default must populate the compact index so an agent can see what tools exist");
+		result.ToolIndex!.Select(ToolIndexLineName).Should().Contain([
+				GuidanceGetTool.ToolName,
+				ExecuteEsqTool.ToolName,
+				SettingsHealthTool.ToolName,
+				ApplicationGetListTool.ApplicationGetListToolName,
+				CreateEntityBusinessRuleTool.BusinessRuleCreateToolName,
+				PageSyncTool.ToolName,
+				PageUpdateTool.ToolName,
+				ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+				SchemaNamePrefixTool.GetSchemaNamePrefixToolName
+			],
+			because: "the line index must cover the same canonical tool surface the object index does");
+		result.ToolIndex!.Select(ToolIndexLineName).Should().NotContain(ToolContractGetTool.ToolName,
+			because: "get-tool-contract should not index itself in the default discovery set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("detail=index-entries returns the compact index as per-tool objects under index (names, one-line purpose, flags), without the line index or the legend - the shape the index had before the line form became the default.")]
+	public void ToolContractGet_Should_Return_Index_Objects_When_Detail_Is_IndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
+
+		// Assert
+		result.Success.Should().BeTrue(
+			because: "detail=index-entries is a valid discovery call");
+		result.Tools.Should().BeNull(
+			because: "the object index must not pay for the heavy full contracts either");
+		result.ToolIndex.Should().BeNull(
+			because: "a caller that asked for the objects parses them and gains nothing from a second copy of the index as lines");
+		result.Legend.Should().BeNull(
+			because: "the legend explains the line markers and travels only with the lines");
+		result.Index.Should().NotBeNullOrEmpty(
+			because: "detail=index-entries must populate the object index so a program can read the per-tool flags");
 		result.Index!.Select(entry => entry.Name).Should().Contain([
 				GuidanceGetTool.ToolName,
 				ExecuteEsqTool.ToolName,
@@ -876,7 +925,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Returns the compact index (Index populated, Tools null) when called with a null args object, proving the no-arguments discovery call is null-safe and yields the index path.")]
+	[Description("Returns the compact line index (ToolIndex populated, Tools null) when called with a null args object, proving the no-arguments discovery call is null-safe and yields the index path.")]
 	public void ToolContractGet_Should_Return_Compact_Index_When_Args_Is_Null() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -893,10 +942,128 @@ public sealed class ToolContractGetToolTests {
 			because: "a successful index lookup should not return a structured error");
 		result.Tools.Should().BeNull(
 			because: "the no-arguments call must yield the compact index, not the heavy full contracts");
-		result.Index.Should().NotBeNullOrEmpty(
+		result.ToolIndex.Should().BeEquivalentTo(tool.GetToolContracts(new ToolContractGetArgs()).ToolIndex,
+			options => options.WithStrictOrdering(),
 			because: "a null args object must resolve to the same compact index as an omitted-tool-names call");
-		result.Index!.Select(entry => entry.Name).Should().NotContain(ToolContractGetTool.ToolName,
+		result.ToolIndex!.Select(ToolIndexLineName).Should().NotContain(ToolContractGetTool.ToolName,
 			because: "get-tool-contract should not index itself in the default discovery set");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Every tool-index line renders its object-index entry: 'name (R)(D) [aka ...]: purpose', markers only for resident and destructive tools, in the same order as the object index.")]
+	public void ToolContractGet_Should_Render_Each_Index_Entry_As_One_Line() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+
+		// Act
+		ToolContractGetResponse lines = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse objects = tool.GetToolContracts(IndexEntriesArgs);
+
+		// Assert
+		lines.ToolIndex.Should().HaveSameCount(objects.Index!,
+			because: "both shapes enumerate the same tool universe, one line per object");
+		lines.ToolIndex!.Select(ToolIndexLineName).Should().Equal(objects.Index!.Select(entry => entry.Name),
+			because: "the lines keep the ordinal name order the object index is pinned to, so the prefix stays stable for prompt caching");
+		lines.ToolIndex.Should().Equal(objects.Index!.Select(ToolContractCatalog.BuildToolIndexLine),
+			because: "the default reply must be exactly the object index rendered line by line, not a separately built list that can drift from it");
+		string listApps = lines.ToolIndex!.Single(line => ToolIndexLineName(line) == ApplicationGetListTool.ApplicationGetListToolName);
+		listApps.Should().StartWith(ApplicationGetListTool.ApplicationGetListToolName + " (R): ",
+			because: "list-apps is resident and read-only, so it carries (R) and no (D)");
+		string addDependency = lines.ToolIndex!.Single(line =>
+			ToolIndexLineName(line) == AddPackageDependencyTool.AddPackageDependencyToolName);
+		addDependency.Should().StartWith(AddPackageDependencyTool.AddPackageDependencyToolName + ": ",
+			because: "add-package-dependency is a non-destructive long-tail tool, so its line carries no marker and is reached through clio-run");
+		string stopCreatio = lines.ToolIndex!.Single(line => ToolIndexLineName(line) == "stop-creatio");
+		stopCreatio.Should().StartWith("stop-creatio (D): ",
+			because: "stop-creatio is a destructive long-tail tool, so it carries (D) and no (R)");
+		lines.ToolIndex!.Should().Contain(line => line.Contains(" (R)(D): ", StringComparison.Ordinal),
+			because: "a resident destructive tool carries both markers, (R) first, so the legend's 'name (R)(D)' order holds");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase(true, " (D): ", TestName = "ToolIndexLine_DestructiveTool_IsMarked")]
+	[TestCase(null, " (D): ", TestName = "ToolIndexLine_UnknownDestructiveHint_IsMarkedFailClosed")]
+	[TestCase(false, "probe-tool: ", TestName = "ToolIndexLine_NonDestructiveTool_IsNotMarked")]
+	[Description("A tool-index line carries (D) when the tool is destructive AND when its destructive hint is unknown (no invoker registry): the marker fails closed, as the named path's ResolveDestructive(...) ?? true does, so an unknown tool never reads as safe.")]
+	public void BuildToolIndexLine_ShouldMarkDestructive_FailingClosed_WhenHintIsUnknown(
+		bool? destructive, string expectedFragment) {
+		// Arrange
+		ToolContractIndexEntry entry = new("probe-tool", "Probes something.", ContractAvailable: true,
+			Resident: false, Destructive: destructive);
+
+		// Act
+		string line = ToolContractCatalog.BuildToolIndexLine(entry);
+
+		// Assert
+		line.Should().Contain(expectedFragment,
+			because: "only a tool KNOWN to be non-destructive may drop the (D) marker; an unknown hint is treated as destructive");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A tool with a deprecated alias keeps it on its tool-index line, so an agent holding the old name from guidance finds the tool instead of concluding it is gone.")]
+	public void ToolContractGet_Should_Keep_Deprecated_Aliases_On_The_Index_Line() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		KeyValuePair<string, IReadOnlyList<string>> seeded = McpToolCompatibilityCatalog.SeedAliasesByCanonical.First();
+
+		// Act
+		string line = tool.GetToolContracts(new ToolContractGetArgs()).ToolIndex!
+			.Single(item => ToolIndexLineName(item) == seeded.Key);
+
+		// Assert
+		line.Should().Contain($" [aka {string.Join(", ", seeded.Value)}]: ",
+			because: $"'{seeded.Key}' has deprecated names that still resolve, and the line index is where an agent looks for them");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCase("Short purpose.", "Short purpose.", TestName = "ToolIndexPurpose_ShortPurposeIsKept")]
+	[TestCase("Exactly forty-eight characters long, no cut here",
+		"Exactly forty-eight characters long, no cut here", TestName = "ToolIndexPurpose_AtTheLimitIsKept")]
+	[TestCase("Builds a business process on a Creatio environment from a descriptor.",
+		"Builds a business process on a Creatio…", TestName = "ToolIndexPurpose_CutAtTheLastWordThatFits")]
+	[TestCase("Reads one record, then returns its columns, related rows and rights.",
+		"Reads one record, then returns its columns…", TestName = "ToolIndexPurpose_TrailingPunctuationIsDropped")]
+	[TestCase("Supercalifragilisticexpialidocious-and-a-very-long-identifier-that-has-no-space",
+		"Supercalifragilisticexpialidocious-and-a-very-l…", TestName = "ToolIndexPurpose_OneLongWordIsCutInside")]
+	[Description("A tool-index purpose is cut to at most 48 characters, ellipsis included, at the last word boundary that leaves room for the ellipsis, without a dangling separator before it.")]
+	public void CutToolIndexPurpose_ShouldCutAtAWordBoundary_WhenPurposeIsLongerThanTheLimit(
+		string purpose, string expected) {
+		// Arrange
+		// (synthetic purpose supplied by the test case)
+
+		// Act
+		string cut = ToolContractCatalog.CutToolIndexPurpose(purpose);
+
+		// Assert
+		cut.Should().Be(expected,
+			because: "a purpose cut mid-word or ending in ', …' reads as noise; the cut is at the last whole word");
+		cut.Length.Should().BeLessThanOrEqualTo(ToolContractCatalog.MaxToolIndexPurposeLength,
+			because: "the 48-character cap includes the ellipsis, which is what keeps the line index under the inline budget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The legend explains the line format and both markers, and keeps the 'resident=true' wording the core-rules guidance (mirrored verbatim in another repository) relies on.")]
+	public void ToolContractGet_Should_Explain_The_Line_Markers_In_The_Legend() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		string? legend = tool.GetToolContracts(new ToolContractGetArgs()).Legend;
+
+		// Assert
+		legend.Should().Contain("(R) = resident, resident=true in detail=index-entries",
+			because: "core-rules tells agents resident tools are the ones with resident=true in this index, and that sentence is mirrored verbatim elsewhere; the legend keeps it true without editing either copy");
+		legend.Should().Contain("(D) = destructive",
+			because: "an agent must be able to tell from the line alone that a tool changes or deletes data");
+		legend.Should().Contain("clio-run",
+			because: "a tool without (R) is not in tools/list and is reachable only through the clio-run executor");
+		legend.Should().Contain(ToolContractCatalog.IndexEntriesDetail,
+			because: "a caller that needs the flags as data must learn from the reply itself how to ask for the objects");
 	}
 
 	[Test]
@@ -907,7 +1074,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -927,7 +1094,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -949,7 +1116,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -967,7 +1134,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -985,7 +1152,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -1018,7 +1185,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -3274,7 +3441,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Success.Should().BeTrue(
@@ -3302,7 +3469,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -3331,7 +3498,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -3357,7 +3524,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -3379,7 +3546,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse result = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		result.Index.Should().NotBeNullOrEmpty(
@@ -3502,7 +3669,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse index = tool.GetToolContracts(IndexEntriesArgs);
 		string[] missing = McpToolSchemaCatalog.RegisteredToolNames
 			.Except(index.Index!.Select(entry => entry.Name), StringComparer.OrdinalIgnoreCase)
 			.ToArray();
@@ -3540,7 +3707,7 @@ public sealed class ToolContractGetToolTests {
 			because: "with a null registry BuildSuggestions draws its pool from McpToolSchemaCatalog.RegisteredToolNames, so the near-miss surfaces the real uncurated name");
 
 		// Act - compact index.
-		ToolContractGetResponse index = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse index = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert - present in the index via the schema-catalog union.
 		index.Index!.Select(entry => entry.Name).Should().Contain(toolName,
@@ -3810,7 +3977,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
 			null, registry, detail: null, legacyNoNamesFullShape: true);
 		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
-			null, registry, detail: null, legacyNoNamesFullShape: false);
+			null, registry, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: false);
 
 		// Assert
 		legacyFullResult.Success.Should().BeTrue(
@@ -3858,9 +4025,9 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
 			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: true);
 		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
-			null, mixedToggleRegistry, detail: null, legacyNoNamesFullShape: false);
+			null, mixedToggleRegistry, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: false);
 		ToolContractGetResponse allEnabledIndexResult = ToolContractCatalog.GetContracts(
-			null, allEnabledRegistry, detail: null, legacyNoNamesFullShape: false);
+			null, allEnabledRegistry, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: false);
 
 		// Assert
 		IReadOnlyList<string> legacyNames = legacyFullResult.Tools!.Select(tool => tool.Name).ToList();
@@ -3890,7 +4057,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetResponse legacyFullResult = ToolContractCatalog.GetContracts(
 			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: true);
 		ToolContractGetResponse indexResult = ToolContractCatalog.GetContracts(
-			null, toolInvokerRegistry: null, detail: null, legacyNoNamesFullShape: false);
+			null, toolInvokerRegistry: null, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: false);
 
 		// Assert
 		legacyFullResult.Success.Should().BeTrue(
@@ -3910,7 +4077,7 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ToolContractCatalog.GetContracts(legacyNoNamesFullShape:false) - the default, non-legacy-client path - keeps the ENG-90312 compact-index behavior unchanged: Index populated, Tools null.")]
+	[Description("ToolContractCatalog.GetContracts(legacyNoNamesFullShape:false) - the default, non-legacy-client path - returns the compact index (as tool-index lines since ENG-102796), never full contracts.")]
 	public void ToolContractCatalog_GetContracts_Should_ReturnCompactIndex_When_LegacyFlagFalse() {
 		// Arrange
 		McpToolInvokerRegistry registry = BuildInvokerRegistry();
@@ -3922,10 +4089,32 @@ public sealed class ToolContractGetToolTests {
 		// Assert
 		result.Success.Should().BeTrue(
 			because: "a no-names, non-full-detail, non-legacy request is a valid discovery call");
-		result.Index.Should().NotBeNullOrEmpty(
+		result.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "the default non-legacy no-names request must still return the compact index (ENG-90312 behavior, unaffected by ENG-93885)");
 		result.Tools.Should().BeNull(
 			because: "the default non-legacy no-names request must not pay for full contracts");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("detail=index-entries returns the object index even for the legacy stdio client, as detail=full does: an explicit detail value names the shape it wants, and client detection only decides the default.")]
+	public void ToolContractCatalog_GetContracts_IndexEntries_Should_BeUnaffected_By_LegacyFlag() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildInvokerRegistry();
+
+		// Act
+		ToolContractGetResponse legacyTrue = ToolContractCatalog.GetContracts(
+			null, registry, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: true);
+		ToolContractGetResponse legacyFalse = ToolContractCatalog.GetContracts(
+			null, registry, detail: ToolContractCatalog.IndexEntriesDetail, legacyNoNamesFullShape: false);
+
+		// Assert
+		legacyTrue.Tools.Should().BeNull(
+			because: "an explicit detail=index-entries request is not the legacy client's default no-names call");
+		legacyTrue.Index.Should().NotBeNullOrEmpty(
+			because: "the legacy client asking for detail=index-entries must get the object index, and two empty indexes would make the comparison below vacuous");
+		legacyTrue.Index.Should().BeEquivalentTo(legacyFalse.Index, options => options.WithStrictOrdering(),
+			because: "the legacy flag must not change what an explicit detail=index-entries request returns");
 	}
 
 	[Test]
@@ -4032,6 +4221,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy stdio client's ClientInfo must be detected end-to-end so the no-names call returns full tool contracts, not the compact index");
 		result.Index.Should().BeNull(
 			because: "the legacy client's full-shape response must not also carry the compact index");
+		result.ToolIndex.Should().BeNull(
+			because: "the legacy client's full-shape response must not carry the line index either");
 	}
 
 	[Test]
@@ -4321,7 +4512,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Act
 		string purpose = ToolContractCatalog.BuildPurpose(description);
-		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+		ToolContractIndexEntry entry = tool.GetToolContracts(IndexEntriesArgs).Index!.Single(item => item.Name == toolName);
 
 		// Assert
 		// The falsifying assertion, and it must be the one under Assert: `purpose` is what the splitter
@@ -4407,7 +4598,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractIndexEntry entry = tool.GetToolContracts().Index!.Single(item => item.Name == toolName);
+		ToolContractIndexEntry entry = tool.GetToolContracts(IndexEntriesArgs).Index!.Single(item => item.Name == toolName);
 
 		// Assert
 		entry.Purpose.Should().Be(expectedPurpose,
@@ -4422,7 +4613,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractIndexEntry[] entries = tool.GetToolContracts().Index!.ToArray();
+		ToolContractIndexEntry[] entries = tool.GetToolContracts(IndexEntriesArgs).Index!.ToArray();
 
 		// Assert
 		entries.Should().NotBeEmpty(
@@ -4451,7 +4642,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = new(registry);
 
 		// Act
-		ToolContractGetResponse response = tool.GetToolContracts(new ToolContractGetArgs());
+		ToolContractGetResponse response = tool.GetToolContracts(IndexEntriesArgs);
 
 		// Assert
 		ToolContractIndexEntry entry = response.Index.SingleOrDefault(item =>

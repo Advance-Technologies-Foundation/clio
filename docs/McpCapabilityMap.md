@@ -24,8 +24,9 @@ Since the lazy-schema split (ENG-90312, PR #743) `tools/list` advertises only th
 is discovered through `get-tool-contract`, not `tools/list`:
 
 - `~27` resident tools in `tools/list` (see `McpCoreToolProfile`)
-- the full invokable catalog (~138 tools) indexed by `get-tool-contract` (each entry carries `resident`
-  and `destructive` flags, plus `aliases` when a legacy name maps to it); a named lookup is FITTED to one
+- the full invokable catalog (~138 tools) indexed by `get-tool-contract`: by default one `tool-index` line per
+  tool with `(R)` / `(D)` markers and `[aka …]` for a legacy name, and as objects with the `resident`,
+  `destructive` and `aliases` fields for `detail: "index-entries"` (ENG-102796); a named lookup is FITTED to one
   inline reply, returning the largest contracts in a short form (`detail: "short"`) unless the caller
   passes `detail: "full"` (ENG-100154, `ToolContractShortForm`)
 - `67` prompts

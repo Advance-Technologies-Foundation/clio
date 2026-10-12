@@ -27,10 +27,10 @@ namespace Clio.Tests.Command.McpServer;
 /// <para>
 /// These ratchets do not shrink anything. They make growth a decision defended at review — raising a
 /// ceiling here is the moment to ask whether the text belongs in a <c>[Description]</c> at all — rather
-/// than an accident nobody measures. Both ceilings follow the <see cref="McpProfileGatingTests"/>
+/// than an accident nobody measures. The ceilings follow the <see cref="McpProfileGatingTests"/>
 /// convention when one has to move: re-pin to the MEASURED size rounded up to the next 256 bytes, never
 /// to the next whole kilobyte, so the ratchet keeps ratcheting instead of handing the surface silent
-/// room. Both also measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
+/// room. All of them measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
 /// for the same reason that fixture does.
 /// </para>
 /// <para>
@@ -84,7 +84,27 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
+	// Since ENG-102796 this ceiling covers the OBJECT index, which a no-names call returns only for
+	// detail=index-entries (ClioRing asks for it); the default reply is the line index below.
 	private const int MaxCompactIndexSerializedBytes = 185 * 256;
+
+	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
+	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
+	// index above is ~47 KB and Copilot CLI spills any tool result past ~20 KB to a file the agent then reads
+	// back in pieces, which it did 15 times in one CAADT release build. Unlike the object index, this ceiling
+	// has a hard upper bound: SpillLineBytes. It follows the next-256 convention rather than the object index's
+	// three-tools-of-slack deviation: a new tool already re-pins that ceiling, so this one moving with it adds no
+	// review, and every re-pin is then a moment to read the distance left to SpillLineBytes. Measured 17636
+	// bytes for 228 tools on the default surface (about 75 bytes a line; 216 of the 228 purposes are cut); next
+	// 256-byte step is 17664 (69). The same reply is 16871 bytes on the wire, where the MCP result encoder writes
+	// the ellipsis and the legend's quotes unescaped - so the spill line is about 30 tools away for an agent
+	// (2129 bytes at ~72 a line) and about 18 for this conservative measure.
+	private const int MaxToolIndexSerializedBytes = 69 * 256;
+
+	// The largest reply this ceiling may ever reach: below the smallest spill observed in the CAADT transcripts
+	// (~20.7 KB, Copilot CLI) with room for the MCP envelope. Raising MaxToolIndexSerializedBytes past it brings
+	// the read-back back; cut the purpose length or the legend instead.
+	private const int SpillLineBytes = 19_000;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -182,7 +202,7 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The compact discovery index returned by a no-arguments get-tool-contract call stays within its byte budget, ratcheting the cost every long-tail discovery call pays.")]
+	[Description("The compact discovery index returned by a no-arguments get-tool-contract call - one line per tool plus the legend - stays within its byte budget, which sits below the size at which an agent CLI spills a tool result to a file.")]
 	public void GetToolContracts_ShouldKeepCompactIndexSerializedSizeWithinBudget_WhenCalledWithoutToolNames() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
@@ -192,10 +212,31 @@ public sealed class ToolContractPayloadBudgetTests {
 		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
 
 		// Assert
-		response.Index.Should().NotBeNullOrEmpty(
+		response.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "a no-arguments call is the discovery entry point and must answer with the compact index");
+		payloadBytes.Should().BeLessThanOrEqualTo(MaxToolIndexSerializedBytes,
+			because: $"the line index is paid on every discovery call, and every session makes one; measured {payloadBytes} bytes against the {MaxToolIndexSerializedBytes}-byte ceiling. Past {SpillLineBytes} bytes it spills to a file in an agent CLI - shorten the purpose cut or the legend before raising this");
+		MaxToolIndexSerializedBytes.Should().BeLessThanOrEqualTo(SpillLineBytes,
+			because: "a ceiling raised past the spill line would let the index grow back into the read-back it was cut to remove");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The object index returned for detail=index-entries - the shape ClioRing parses - stays within its byte budget, ratcheting the per-tool flags it carries.")]
+	public void GetToolContracts_ShouldKeepIndexEntriesSerializedSizeWithinBudget_WhenDetailIsIndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(
+			new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail));
+		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
+
+		// Assert
+		response.Index.Should().NotBeNullOrEmpty(
+			because: "detail=index-entries must answer with the per-tool objects");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxCompactIndexSerializedBytes,
-			because: $"the compact index is paid on every long-tail discovery call; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
+			because: $"the object index grows by tool count like the line index does; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
 	}
 
 	[Test]
@@ -210,7 +251,7 @@ public sealed class ToolContractPayloadBudgetTests {
 		// CanonicalToolNames, the CURATED catalog only, and would drop every uncurated tool, which is where
 		// the unbounded [Description] attributes actually live.)
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? [])
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? [])
 			.Select(entry => entry.Name)
 			.ToArray();
 
@@ -253,7 +294,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	public void GetToolContracts_ShouldFitEverySingleToolLookupInline_WhenDetailIsOmitted() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		(string Name, int Bytes, string? Detail)[] replies = toolNames

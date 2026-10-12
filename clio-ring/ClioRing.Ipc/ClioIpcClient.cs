@@ -185,18 +185,19 @@ public sealed class ClioIpcClient : IClioIpcClient {
 			return _catalogCache;
 		}
 
-		// Newer clio returns the compact index for bare {}; older builds require the {"args":{}} wrapper.
-		// Try the documented shape first, then fall back so the proof works across clio versions.
-		ClioToolCallResult result = await CallToolAsync("get-tool-contract", "{}", cancellationToken).ConfigureAwait(false);
+		ClioToolCallResult result = await CallToolAsync("get-tool-contract", CatalogRequest, cancellationToken)
+			.ConfigureAwait(false);
 		(IReadOnlyList<ClioCatalogEntry> entries, bool modern) = ParseCatalog(result.RawText);
-		if (entries.Count == 0) {
-			result = await CallToolAsync("get-tool-contract", "{\"args\":{}}", cancellationToken).ConfigureAwait(false);
-			(entries, modern) = ParseCatalog(result.RawText);
-		}
 		LastCatalogIsModern = modern;
 		_catalogCache = entries;
 		return entries;
 	}
+
+	// One request serves every clio Ring can launch, because Ring is not upgraded together with it. A clio that
+	// answers {} with one text line per tool (ENG-102796) returns the per-tool objects only for detail=index-entries;
+	// an older clio ignores an unknown detail value - its no-names branch returns the object index for any detail
+	// other than "full" - so it returns the same objects. The args wrapper is the shape every clio build accepts.
+	private const string CatalogRequest = "{\"args\":{\"detail\":\"index-entries\"}}";
 
 	/// <inheritdoc />
 	public async Task<ClioToolCallResult> GetToolContractAsync(string name, CancellationToken cancellationToken = default) {
@@ -536,8 +537,9 @@ public sealed class ClioIpcClient : IClioIpcClient {
 
 	// Returns the parsed entries and whether they came from the modern compact "index" shape (with
 	// safety flags). The old "tools" shape (or an empty/unparseable payload) is reported as not-modern
-	// so the UI can surface an "incompatible clio" state instead of a silent partial catalog.
-	private static (IReadOnlyList<ClioCatalogEntry> Entries, bool Modern) ParseCatalog(string rawText) {
+	// so the UI can surface an "incompatible clio" state instead of a silent partial catalog. The
+	// "tool-index" text lines a newer clio returns for bare {} carry no parseable flags and parse as empty.
+	internal static (IReadOnlyList<ClioCatalogEntry> Entries, bool Modern) ParseCatalog(string rawText) {
 		if (string.IsNullOrWhiteSpace(rawText)) {
 			return (Array.Empty<ClioCatalogEntry>(), false);
 		}

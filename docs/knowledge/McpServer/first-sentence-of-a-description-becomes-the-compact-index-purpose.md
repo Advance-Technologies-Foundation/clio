@@ -11,7 +11,9 @@ date: 2026-09-13
 ---
 
 **What is true** — `ToolContractCatalog.BuildPurpose` distils the compact-index entry for a tool from
-the **first sentence** of its description, capped at 120 characters. The compact index is the only
+the **first sentence** of its description, capped at 120 characters; the default no-names reply shows only
+the first 48 of them, on the tool's `tool-index` line (see
+[[tool-contract-index-is-lines-by-default-objects-on-request]]). The compact index is the only
 discovery surface a non-resident tool has: it is absent from `tools/list`, so an agent looking for a
 capability reads these one-liners and nothing else. A description that opens with a safety warning
 therefore advertises the warning, not the tool.
@@ -49,7 +51,8 @@ straight from source and applied the distillation to it — which is right only 
 On that basis `compile-creatio` was reported defective and its attribute was edited; in fact it has a
 curated contract, so its index line was already "Recompiles a registered Creatio environment and forces
 a runtime reload." and the edit changed nothing observable. Review caught it. Measure the SERVED
-purpose (`GetToolContracts().Index`), never the attribute, or the curated tools lie to you.
+purpose (`GetToolContracts(new ToolContractGetArgs(Detail: "index-entries")).Index`), never the attribute, or
+the curated tools lie to you.
 
 The property is now enforced, not merely recorded: `ToolContractGetToolTests` drives `BuildPurpose`
 directly over synthetic input (each abbreviation, the whole-token guard, case, start- and
