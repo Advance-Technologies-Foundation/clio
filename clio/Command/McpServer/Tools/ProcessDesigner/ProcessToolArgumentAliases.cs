@@ -356,11 +356,12 @@ internal static class ProcessToolArgumentAliases {
 			return $"'{origin}' must be a JSON object holding 'nodes' and 'edges'.";
 		}
 		List<JsonProperty> properties = value.EnumerateObject().ToList();
-		foreach (JsonProperty property in properties.Where(item => IsGraphMember(Normalize(item.Name)))) {
-			if (!source.TryAdd(Normalize(property.Name), property.Value)) {
-				return $"'{origin}' repeats '{property.Name}'.";
-			}
+		List<JsonProperty> members = properties.Where(item => IsGraphMember(Normalize(item.Name))).ToList();
+		IGrouping<string, JsonProperty>? repeated = members.GroupBy(item => Normalize(item.Name)).FirstOrDefault(group => group.Count() > 1);
+		if (repeated is not null) {
+			return $"'{origin}' repeats '{repeated.ElementAt(1).Name}'.";
 		}
+		members.ForEach(item => source[Normalize(item.Name)] = item.Value);
 		List<string> foreign = properties
 			.Where(item => !IsGraphMember(Normalize(item.Name)) && !NonGraphDescriptorFields.Contains(Normalize(item.Name)))
 			.Select(item => $"'{McpToolArgumentSupport.DescribeCallerKey(item.Name)}'")
@@ -377,11 +378,11 @@ internal static class ProcessToolArgumentAliases {
 	private static string? ReadFlatGraph(
 		Dictionary<string, JsonElement> bag, List<string> flat, Dictionary<string, JsonElement> source, out string origin) {
 		origin = string.Join(" and ", flat.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'"));
-		foreach (string key in flat) {
-			if (!source.TryAdd(Normalize(key), bag[key])) {
-				return $"{origin} repeats '{key}'.";
-			}
+		IGrouping<string, string>? repeated = flat.GroupBy(Normalize).FirstOrDefault(group => group.Count() > 1);
+		if (repeated is not null) {
+			return $"{origin} repeats '{repeated.ElementAt(1)}'.";
 		}
+		flat.ForEach(key => source[Normalize(key)] = bag[key]);
 		return null;
 	}
 
