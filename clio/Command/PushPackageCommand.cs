@@ -176,6 +176,13 @@
 				}
 				return success ? 0 : 1;
 			}
+			catch (PackageItemDescriptorMissingException e)
+			{
+				// A pre-flight refusal from packing a package folder: the message names every folder to fix, so
+				// the type name and stack trace written below for unexpected failures would only bury it.
+				_logger.WriteError(e.Message);
+				return 1;
+			}
 			catch (Exception e)
 			{
 				string message = string.IsNullOrWhiteSpace(e.Message)
