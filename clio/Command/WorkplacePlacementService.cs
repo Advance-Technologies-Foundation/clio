@@ -590,10 +590,8 @@ internal sealed class WorkplacePlacementService(
 	internal static string BuildBindingSuffix(string name, string fallback) {
 		static string Clean(string value) {
 			StringBuilder builder = new();
-			foreach (char character in value ?? string.Empty) {
-				if (char.IsAsciiLetterOrDigit(character)) {
-					builder.Append(character);
-				}
+			foreach (char character in (value ?? string.Empty).Where(char.IsAsciiLetterOrDigit)) {
+				builder.Append(character);
 			}
 			return builder.ToString();
 		}

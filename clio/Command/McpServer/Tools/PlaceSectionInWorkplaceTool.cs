@@ -21,6 +21,8 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 	/// <summary>Stable MCP tool name.</summary>
 	internal const string ToolName = "place-section-in-workplace";
 
+	private const string SectionCodeArgument = "section-code";
+
 	private const string ValidFields =
 		"Valid: environment-name, package-name, section-code, workplace-name, client-type, roles, " +
 		"remove-from-my-applications, position, mode.";
@@ -30,10 +32,10 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 			["packageName"] = "package-name",
 			["package_name"] = "package-name",
 			["package"] = "package-name",
-			["sectionCode"] = "section-code",
-			["section_code"] = "section-code",
-			["code"] = "section-code",
-			["app-code"] = "section-code",
+			["sectionCode"] = SectionCodeArgument,
+			["section_code"] = SectionCodeArgument,
+			["code"] = SectionCodeArgument,
+			["app-code"] = SectionCodeArgument,
 			["workplaceName"] = "workplace-name",
 			["workplace_name"] = "workplace-name",
 			["workplace"] = "workplace-name",
