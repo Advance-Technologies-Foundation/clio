@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using Clio.Common;
 using System.Text.Json;
@@ -36,6 +37,10 @@ public sealed record ODataWriteResponse(
 	/// <summary>Observed write boundary and safe retry context.</summary>
 	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public DataWriteDiagnostic? Diagnostic { get; init; }
+
+	/// <summary>Notes that did not stop the call, for example that a synonym of data was accepted.</summary>
+	[JsonPropertyName("warnings"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Warnings { get; init; }
 
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);

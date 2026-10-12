@@ -2485,7 +2485,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. When a response is too large to return inline, call odata-read-to-file, which takes the same query arguments plus a required output-file. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id).",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. When a response is too large to return inline, call odata-read-to-file, which takes the same query arguments plus a required output-file. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id). Before sending, those names are also checked against the entity's OData metadata: an unknown name fails locally with error-code invalid-query, the closest valid names (at most 3 each) in unknown-members and the entity's column count in valid-column-count, and nothing is sent; when the metadata cannot be fetched the query is sent unchecked.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2524,7 +2524,9 @@ internal static class ToolContractCatalog {
 				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity."),
 				Field(ODataReadErrorCodeFieldName, StringType,
 					"Machine-readable failure classification when success is false; absent on success. Branch on this rather than on the wording of 'error'."),
-				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription)
+				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription),
+				Field("unknown-members", ArrayType, "Present when the query was rejected before any request because select, filter-field, expand or order-by names are not on the entity: each item has argument, name and up to 3 closest valid names in suggestions."),
+				Field("valid-column-count", NumberType, "Number of columns the entity has; present together with unknown-members.")
 			),
 			ODataReadErrorContract,
 			[
@@ -2791,7 +2793,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id.",
+			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id. The synonyms payload, values, body and data are accepted for rows (a single object becomes one row) and named in warnings; one of them together with rows or rows-file is rejected as ambiguous.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2834,6 +2836,7 @@ internal static class ToolContractCatalog {
 			ODataUpdateTool.ToolName,
 			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; provide the fields inline in data " +
 			"or place the JSON object in rows-file for a large payload. Only supplied fields change. " +
+			"The synonyms values, payload, body and fields are accepted for data and named in warnings; one of them together with data or rows-file is rejected as ambiguous. " +
 			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
 			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
@@ -2857,6 +2860,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the updated record."),
+				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
@@ -7018,6 +7022,7 @@ internal static class ToolContractCatalog {
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
+				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);
