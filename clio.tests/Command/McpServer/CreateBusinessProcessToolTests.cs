@@ -387,4 +387,26 @@ public class CreateBusinessProcessToolTests {
 				because: "the same inversion in the future tense - both phrasings reached shipped text before");
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract, its descriptor argument and its prompt name the isTracing field and route to process-tracing (ENG-102111): an agent that does not know the field opens the designer for a checkbox, and one that does not know the costs switches it on by default.")]
+	public void CreateBusinessProcessTool_ShouldOfferIsTracingAndRouteToItsGuide() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
+			because: "the always-loaded description must name the field and the guide that explains its costs");
+		toolDescription.Should().Contain("this clio requires 1.6.6.92 (for isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal isTracing raised");
+		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
+			because: "the prompt must keep tracing a diagnostic, never a default");
+	}
+
 }
