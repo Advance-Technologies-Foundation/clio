@@ -33,5 +33,5 @@ designer, which is the one place a user deliberately runs a version before activ
 **What breaks if you ignore it** — switching run-process back to `RunProcess` (for example to "keep the base
 name launching the active version") makes a run of a new version silently execute the previous one: a caller
 verifies the old logic, sees a plausible value and activates code that never ran (ENG-101880, reproduced twice).
-The base name now runs the family ROOT; a caller who wants what the environment runs launches
+The base name runs the family ROOT; a caller who wants what the environment runs launches
 `activeVersionName`.

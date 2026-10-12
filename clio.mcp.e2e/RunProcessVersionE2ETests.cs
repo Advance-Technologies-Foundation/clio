@@ -77,9 +77,12 @@ public sealed class RunProcessVersionE2ETests {
 		newVersion.Warnings.Should().Contain(w => w.Contains("NOT the active version"),
 			because: "a caller must hear that what ran is not what the environment runs");
 
+		root.Error.Should().BeNull(because: $"the active root must launch cleanly. Error: {root.Error}");
 		Convert.ToInt32(root.ResultParameterValues!["Marker"].ToString()).Should().Be(100 + Seed,
 			because: "the active version's own code runs the active version, exactly as before");
+		root.VersionName.Should().Be(processName, because: "the answer names the version that ran");
 		root.IsActiveVersion.Should().BeTrue(because: "the root is the active member of this family");
+		root.ActiveVersionName.Should().Be(processName, because: "the root is the version the environment runs");
 		root.Warnings.Should().BeEmpty(because: "running the active version needs no caveat");
 	}
 
