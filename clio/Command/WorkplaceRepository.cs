@@ -92,6 +92,7 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	: IWorkplaceRepository {
 
 	private const string IdColumn = "Id";
+	private const string PackageNameAlias = "PackageName";
 
 	/// <summary>
 	/// Platform-seeded client type ids, used when the name does not match because the profile culture translates
@@ -174,9 +175,9 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	/// <inheritdoc />
 	public IReadOnlyList<string> FindPackagesShippingBinding(string bindingName) {
 		return Select("SysPackageSchemaData",
-				[new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName")],
+				[new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", PackageNameAlias)],
 				[TextFilter("Name", bindingName)])
-			.Select(row => ReadString(row, "PackageName"))
+			.Select(row => ReadString(row, PackageNameAlias))
 			.Where(name => !string.IsNullOrWhiteSpace(name))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToArray();
@@ -186,11 +187,11 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	public IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName) {
 		return Select("SysPackageSchemaData",
 				[
-					new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", PackageNameAlias),
 					Column("Name")
 				],
 				[TextFilter("SysSchema.Name", entitySchemaName)])
-			.Select(row => new PackageBindingRecord(ReadString(row, "PackageName"), ReadString(row, "Name")))
+			.Select(row => new PackageBindingRecord(ReadString(row, PackageNameAlias), ReadString(row, "Name")))
 			.Where(binding => !string.IsNullOrWhiteSpace(binding.PackageName)
 				&& !string.IsNullOrWhiteSpace(binding.BindingName))
 			.Distinct()
