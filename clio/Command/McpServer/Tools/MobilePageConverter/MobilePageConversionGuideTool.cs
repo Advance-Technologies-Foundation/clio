@@ -83,9 +83,9 @@ public class MobilePageConversionGuideTool {
 	[Description(
 		"Detect a page's source type and return an advisory mobile-conversion GUIDE. Supported source type today: "
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
-		+ "supported. Supported TARGET canvas today: Mobile (phone). The guide DOES bake medium/large "
-		+ "(tablet/desktop) breakpoints into adaptiveLayout, but tablet output stays EXPERIMENTAL - it is not "
-		+ "covered by the converter's supported scope, so verify it on a tablet before relying on it. "
+		+ "supported. Supported TARGET canvases: phone (small) and tablet (medium = large), both baked into "
+		+ "adaptiveLayout. Known tablet limits: rows in neighbouring columns do not line up on the device, and a "
+		+ "list nested inside a wrapper keeps one column. "
 		+ "ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
 		+ "validate-page. The guide carries FACTS about this page and no prose: the rules are enforced by "

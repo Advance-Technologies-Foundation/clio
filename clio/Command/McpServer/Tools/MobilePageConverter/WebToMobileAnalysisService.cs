@@ -5061,9 +5061,15 @@ public static partial class WebToMobileAnalysisService {
 
 	// ── Adaptive (per-breakpoint) layout proposal ──────────────────────────────────────────────
 
-	/// <summary>Reads an integer property from a Newtonsoft node, or null when absent / non-integer.</summary>
+	/// <summary>Reads an integer property from a Newtonsoft node, or null when absent, non-integer or outside int.</summary>
 	private static int? ReadInt(JObject obj, string prop) =>
-		obj[prop] is { Type: JTokenType.Integer } token ? token.Value<int>() : null;
+		obj[prop] is JValue { Type: JTokenType.Integer } token
+			? token.Value switch {
+				int value => value,
+				long value when value is >= int.MinValue and <= int.MaxValue => (int)value,
+				_ => null
+			}
+			: null;
 
 	/// <summary>
 	/// Captures per element the data the adaptive pass needs: its web <c>layoutConfig</c> (grid placement,
@@ -5226,7 +5232,7 @@ public static partial class WebToMobileAnalysisService {
 			for (int i = 0; i < children.Count; i++) {
 				ElementMapEntry child = children[i];
 				JsonObject stacked = Cell(1, i + 1);
-				JsonObject tabletCell = Cell(tablet.Slots[i], tablet.Rows[i]);
+				JsonObject tabletCell = Cell(tablet.ChildColumns[i], tablet.ChildRows[i]);
 				var adaptive = new JsonObject {
 					["small"] = stacked,
 					["medium"] = tabletCell,
@@ -5254,21 +5260,21 @@ public static partial class WebToMobileAnalysisService {
 				}
 				containerValues["adaptive"] = new JsonObject {
 					["small"] = new JsonObject { ["columns"] = ColumnsNode(StackedColumns) },
-					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Columns) },
-					["large"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Columns) }
+					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Weights) },
+					["large"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Weights) }
 				};
 				// Only an inserted GRID owns its base columns here: a template twin keeps the template's, and the
 				// capture also counts a DataGrid's or a tab's `columns`, which are not track sizes.
 				if (IsInsert(containerEntry)
 					&& string.Equals(containerEntry.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
-					containerValues["columns"] = ColumnsNode(tablet.Columns);
+					containerValues["columns"] = ColumnsNode(tablet.Weights);
 				}
 			}
 
 			groups.Add(new AdaptiveLayoutGroup {
 				ContainerName = container,
 				ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
-					["small"] = StackedColumns, ["medium"] = tablet.Columns, ["large"] = tablet.Columns
+					["small"] = StackedColumns, ["medium"] = tablet.Weights, ["large"] = tablet.Weights
 				},
 				Items = items
 			});
@@ -5281,6 +5287,9 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>Most columns a mobile grid is given on tablet, whatever the web reference row holds.</summary>
 	private const int MobileGridMaxColumns = 12;
+
+	/// <summary>Highest web row read, so shifting rows for stacked children cannot overflow.</summary>
+	private const int MaxWebRow = 1_000_000;
 
 	private static readonly IReadOnlyList<string> StackedColumns = ["1fr"];
 
@@ -5299,7 +5308,7 @@ public static partial class WebToMobileAnalysisService {
 	/// Tablet layout of one grid: the column weights and, per child (same order as the input), its 1-based
 	/// column and row.
 	/// </summary>
-	private sealed record TabletGrid(IReadOnlyList<string> Columns, IReadOnlyList<int> Slots, IReadOnlyList<int> Rows);
+	private sealed record TabletGrid(IReadOnlyList<string> Weights, IReadOnlyList<int> ChildColumns, IReadOnlyList<int> ChildRows);
 
 	/// <summary>
 	/// Derives the tablet grid from the web one. The mobile runtime honours neither span, so column count and
@@ -5422,7 +5431,7 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		JObject lc = name is not null && sourceLayouts.TryGetValue(name, out JObject found) ? found : null;
 		int column = (lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1;
-		int row = Math.Max(1, (lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1);
+		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebRow);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
 		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)));
 	}

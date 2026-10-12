@@ -8744,6 +8744,21 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
+	[Description("A web placement value outside int (a corrupt or hostile page) is read as absent instead of failing the whole conversion: the child falls back to the flow placement and a span of 1.")]
+	public void Analyze_PlacementValueOutsideInt_FallsBackInsteadOfThrowing() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 3000000000, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 99999999999, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"],
+			because: "A's span falls back to 1 and B's row falls back to the flow, so both sit in row 1 side by side");
+		TabletCellOf(guide, "B").Should().Be((2, 1), because: "B's unreadable row falls back to the flow placement");
+	}
+
+	[Test]
 	[Description("The tablet grid never exceeds twelve columns, however many children the reference row holds.")]
 	public void Analyze_ReferenceRowWiderThanTwelve_IsCappedAtTwelveColumns() {
 		// Arrange
