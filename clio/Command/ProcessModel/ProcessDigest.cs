@@ -43,6 +43,7 @@ internal static class ProcessDigest {
 	/// <inheritdoc cref="SummaryMode"/>
 	internal const string ElementMode = "element";
 
+	private const string SchemaUIdMember = "schemaUId";
 	private const string SequenceKind = "sequence";
 	private const string ConditionalKind = "conditional";
 
@@ -71,7 +72,7 @@ internal static class ProcessDigest {
 	/// <returns>The checksum, lower-case hex.</returns>
 	internal static string Checksum(DescribeProcessResult result) {
 		JsonObject graph = ToNode(result);
-		foreach (string member in VersionFactMembers.Concat(["name", "schemaUId"])) {
+		foreach (string member in VersionFactMembers.Concat(["name", SchemaUIdMember])) {
 			graph.Remove(member);
 		}
 		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
@@ -134,23 +135,23 @@ internal static class ProcessDigest {
 
 	/// <summary>
 	/// One element in full - every member describe reports for it, mappings, filters and formulas included -
-	/// with the flows that enter and leave it, or <c>null</c> when the process has no element by that name.
+	/// with the flows that enter and leave it, or an empty object when the process has no element by that name.
 	/// </summary>
 	/// <param name="result">The described process.</param>
 	/// <param name="elementName">The element's name (case-insensitive).</param>
 	/// <param name="checksum">The process's <see cref="Checksum"/>.</param>
-	/// <returns>The element view, or <c>null</c>.</returns>
+	/// <returns>The element view, or an empty object.</returns>
 	internal static JsonObject BuildElement(DescribeProcessResult result, string elementName, string checksum) {
 		DescribedElement element = result.Elements?.FirstOrDefault(candidate =>
 			string.Equals(candidate?.Name, elementName?.Trim(), StringComparison.OrdinalIgnoreCase));
 		if (element is null) {
-			return null;
+			return new JsonObject();
 		}
 		List<DescribedFlow> flows = result.Flows ?? [];
 		return new JsonObject {
 			["mode"] = ElementMode,
 			["name"] = result.Name,
-			["schemaUId"] = result.SchemaUId,
+			[SchemaUIdMember] = result.SchemaUId,
 			["checksum"] = checksum,
 			["element"] = JsonSerializer.SerializeToNode(element, DescribeProcessCommand.OutputOptions),
 			["flowsIn"] = ToArray(flows.Where(flow => IsNamed(flow?.Target, element.Name))),
@@ -169,7 +170,7 @@ internal static class ProcessDigest {
 		JsonObject view = new() {
 			["mode"] = VersionsMode,
 			["name"] = result.Name,
-			["schemaUId"] = result.SchemaUId,
+			[SchemaUIdMember] = result.SchemaUId,
 			["checksum"] = checksum
 		};
 		JsonObject graph = ToNode(result);
@@ -222,8 +223,10 @@ internal static class ProcessDigest {
 		string kind = string.IsNullOrWhiteSpace(flow.Kind) ? SequenceKind : flow.Kind;
 		bool hasCondition = !string.IsNullOrWhiteSpace(flow.Condition);
 		if (string.Equals(kind, ConditionalKind, StringComparison.OrdinalIgnoreCase)) {
-			string decidedBy = flow.BranchesOnActivityResult == true ? "results"
-				: hasCondition ? "condition" : "NO condition";
+			string decidedBy = hasCondition ? "condition" : "NO condition";
+			if (flow.BranchesOnActivityResult == true) {
+				decidedBy = "results";
+			}
 			return $"{line} [{kind}, {decidedBy}]";
 		}
 		if (string.Equals(kind, SequenceKind, StringComparison.OrdinalIgnoreCase)) {
@@ -244,7 +247,7 @@ internal static class ProcessDigest {
 		JsonObject summary = new() {
 			["name"] = result.Name,
 			["caption"] = result.Caption,
-			["schemaUId"] = result.SchemaUId
+			[SchemaUIdMember] = result.SchemaUId
 		};
 		AddIfPresent(summary, "version", result.Version);
 		AddIfPresent(summary, "isActiveVersion", result.IsActiveVersion);

@@ -4711,7 +4711,7 @@ internal static class ToolContractCatalog {
 				EnvironmentNameParameterAlias()
 			],
 			[
-				Default(IncludeOperationsFieldName, "false", "The response counts own-body operations per type by default; pass true for the per-operation list (meta.json always has it).")
+				Default(IncludeOperationsFieldName, BooleanFalseLiteral, "The response counts own-body operations per type by default; pass true for the per-operation list (meta.json always has it).")
 			],
 			[
 				Example("Read an existing FormPage body", new Dictionary<string, object?> {

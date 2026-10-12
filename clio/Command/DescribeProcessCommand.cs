@@ -156,7 +156,7 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 		string checksum = ProcessDigest.Checksum(process);
 		if (!string.IsNullOrWhiteSpace(element)) {
 			JsonObject view = ProcessDigest.BuildElement(process, element, checksum);
-			if (view is null) {
+			if (view.Count == 0) {
 				refusal = $"process '{process.Name}' has no element named '{element.Trim()}'. Elements: "
 					+ string.Join(", ", (process.Elements ?? []).Select(candidate => candidate?.Name)
 						.Where(name => !string.IsNullOrWhiteSpace(name))) + ".";

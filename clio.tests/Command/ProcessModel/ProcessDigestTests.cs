@@ -225,7 +225,7 @@ public sealed class ProcessDigestTests {
 		view["flowsOut"]!.AsArray().Should().HaveCount(2, because: "the gateway has a conditional and a default branch");
 		view["flowsOut"]!.AsArray().OfType<JsonObject>().Should().Contain(flow => flow["condition"] != null,
 			because: "the element view carries flows in full, conditions included");
-		missing.Should().BeNull(because: "an unknown element is the caller's error to report");
+		missing.Should().BeEmpty(because: "an unknown element is the caller's error to report");
 	}
 
 	private static IEnumerable<string> Names(JsonObject changes, string member) =>
