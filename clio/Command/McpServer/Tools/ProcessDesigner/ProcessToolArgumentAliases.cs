@@ -289,32 +289,42 @@ internal static class ProcessToolArgumentAliases {
 		if (wrappers.Count == 0 && flat.Count == 0) {
 			return new GraphResolution(args, warnings, null);
 		}
-		bool canonicalSupplied = args.Nodes is { Count: > 0 } || args.Edges is { Count: > 0 };
-		List<string> clash = wrappers.Concat(flat).ToList();
-		if (canonicalSupplied || wrappers.Count > 1 || (wrappers.Count == 1 && flat.Count > 0)) {
-			return Refuse(args, warnings,
-				"Ambiguous graph: " + string.Join(", ", clash.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'"))
-				+ (canonicalSupplied ? " and 'nodes'/'edges'" : string.Empty)
-				+ " all carry the graph, and they cannot all be it. Send the graph once, as 'nodes' and 'edges'.");
+		string? ambiguity = DescribeGraphAmbiguity(args, wrappers, flat);
+		if (ambiguity is not null) {
+			return Refuse(args, warnings, ambiguity);
 		}
 
 		Dictionary<string, JsonElement> source = [];
 		string? error = wrappers.Count == 1
-			? ReadWrapperGraph(bag, wrappers[0], source, out string wrapperOrigin)
-			: ReadFlatGraph(bag, flat, source, out wrapperOrigin);
-		string origin = wrapperOrigin;
+			? ReadWrapperGraph(bag, wrappers[0], source, out string origin)
+			: ReadFlatGraph(bag, flat, source, out origin);
 		if (error is not null) {
 			return Refuse(args, warnings, error);
 		}
-		HashSet<string> consumed = [.. (wrappers.Count == 1 ? wrappers : flat)];
 		warnings.Add(wrappers.Count == 1
 			? $"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level in future calls."
 			: $"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
-
 		if (source.ContainsKey("nodes") && source.ContainsKey(ElementsKey)
 			|| source.ContainsKey("edges") && source.ContainsKey(FlowsKey)) {
 			return Refuse(args, warnings, $"{origin} carries both 'nodes' and 'elements' (or 'edges' and 'flows'); send one.");
 		}
+		return BuildGraphArgs(args, bag, source, wrappers.Count == 1 ? wrappers : flat, origin, warnings);
+	}
+
+	private static string? DescribeGraphAmbiguity(ValidateProcessGraphArgs args, List<string> wrappers, List<string> flat) {
+		bool canonicalSupplied = args.Nodes is { Count: > 0 } || args.Edges is { Count: > 0 };
+		if (!canonicalSupplied && wrappers.Count <= 1 && !(wrappers.Count == 1 && flat.Count > 0)) {
+			return null;
+		}
+		string clash = string.Join(", ", wrappers.Concat(flat).Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'"));
+		string canonical = canonicalSupplied ? " and 'nodes'/'edges'" : string.Empty;
+		return $"Ambiguous graph: {clash}{canonical} all carry the graph, and they cannot all be it. "
+			+ "Send the graph once, as 'nodes' and 'edges'.";
+	}
+
+	private static GraphResolution BuildGraphArgs(
+		ValidateProcessGraphArgs args, Dictionary<string, JsonElement> bag, Dictionary<string, JsonElement> source,
+		List<string> consumedKeys, string origin, List<string> warnings) {
 		try {
 			List<ProcessGraphNodeArg>? nodes = ReadNodes(source);
 			List<ProcessGraphEdgeArg>? edges = ReadEdges(source, out string? edgeError);
@@ -322,7 +332,7 @@ internal static class ProcessToolArgumentAliases {
 				return Refuse(args, warnings, edgeError);
 			}
 			return new GraphResolution(
-				args with { Nodes = nodes, Edges = edges, ExtensionData = RemainingBag(bag, consumed) },
+				args with { Nodes = nodes, Edges = edges, ExtensionData = RemainingBag(bag, [.. consumedKeys]) },
 				warnings, null);
 		} catch (JsonException exception) {
 			return Refuse(args, warnings, $"{origin} is not a valid graph: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
@@ -345,22 +355,23 @@ internal static class ProcessToolArgumentAliases {
 		if (value.ValueKind != JsonValueKind.Object) {
 			return $"'{origin}' must be a JSON object holding 'nodes' and 'edges'.";
 		}
-		List<string> foreign = [];
-		foreach (JsonProperty property in value.EnumerateObject()) {
-			string normalized = Normalize(property.Name);
-			if (normalized is "nodes" or ElementsKey or "edges" or FlowsKey) {
-				if (!source.TryAdd(normalized, property.Value)) {
-					return $"'{origin}' repeats '{property.Name}'.";
-				}
-			} else if (!NonGraphDescriptorFields.Contains(normalized)) {
-				foreign.Add($"'{McpToolArgumentSupport.DescribeCallerKey(property.Name)}'");
+		List<JsonProperty> properties = value.EnumerateObject().ToList();
+		foreach (JsonProperty property in properties.Where(item => IsGraphMember(Normalize(item.Name)))) {
+			if (!source.TryAdd(Normalize(property.Name), property.Value)) {
+				return $"'{origin}' repeats '{property.Name}'.";
 			}
 		}
+		List<string> foreign = properties
+			.Where(item => !IsGraphMember(Normalize(item.Name)) && !NonGraphDescriptorFields.Contains(Normalize(item.Name)))
+			.Select(item => $"'{McpToolArgumentSupport.DescribeCallerKey(item.Name)}'")
+			.ToList();
 		return foreign.Count == 0
 			? null
 			: $"Unknown keys inside '{origin}': {McpToolArgumentSupport.JoinCallerKeys(foreign)}. "
 				+ "Valid: nodes, edges (or the elements and flows of a descriptor).";
 	}
+
+	private static bool IsGraphMember(string normalized) => normalized is "nodes" or ElementsKey or "edges" or FlowsKey;
 
 	/// <summary>Reads flat top-level <c>elements</c>/<c>flows</c> into <paramref name="source"/>; returns a refusal or null.</summary>
 	private static string? ReadFlatGraph(
