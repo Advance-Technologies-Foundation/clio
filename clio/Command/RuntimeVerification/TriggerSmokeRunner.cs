@@ -277,26 +277,7 @@ internal sealed class TriggerSmokeRunner(
 
 	private void CleanUp(WatchBaseline records, List<CreatedRecord> runs, DateTimeOffset stopAt, TriggerSmokeResult result) {
 		string me = records.CurrentUserContactId;
-		// Only runs this user started: a scheduled run of another user that happened to start in the window is left.
-		List<string> toCancel = result.Processes
-			.Where(run => run.Status == RunningStatus)
-			.Where(run => me is not null && string.Equals(
-				runs.FirstOrDefault(record => record.Id == run.ProcessId)?.CreatedById, me, StringComparison.OrdinalIgnoreCase))
-			.Select(run => run.ProcessId)
-			.ToList();
-		result.Cancelled = [];
-		foreach (string processId in toCancel) {
-			if (Clock() >= stopAt) {
-				result.Warnings.Add($"Run {processId} was not cancelled: the call's time budget ran out.");
-				continue;
-			}
-			if (CancelAndWait(Guid.Parse(processId), result)) {
-				result.Cancelled.Add(processId);
-				result.Processes = result.Processes
-					.Select(run => run.ProcessId == processId ? run with { Status = CancelledStatus, WaitingOn = [] } : run)
-					.ToList();
-			}
-		}
+		CancelOwnRuns(me, runs, stopAt, result);
 		List<CreatedRecord> all = [.. result.Created];
 		if (result.Trigger is not null) {
 			all.Add(result.Trigger);
@@ -318,6 +299,29 @@ internal sealed class TriggerSmokeRunner(
 		if (result.Cleanup.Failed.Count > 0) {
 			result.Warnings.Add($"cleanup left {result.Cleanup.Failed.Count} record(s) in place; cleanup.failed names "
 				+ "each with the reason. Delete them with odata-delete, which explains the refusal.");
+		}
+	}
+
+	// Only runs this user started: a scheduled run of another user that happened to start in the window is left.
+	private void CancelOwnRuns(string me, List<CreatedRecord> runs, DateTimeOffset stopAt, TriggerSmokeResult result) {
+		List<string> toCancel = result.Processes
+			.Where(run => run.Status == RunningStatus)
+			.Where(run => me is not null && string.Equals(
+				runs.FirstOrDefault(record => record.Id == run.ProcessId)?.CreatedById, me, StringComparison.OrdinalIgnoreCase))
+			.Select(run => run.ProcessId)
+			.ToList();
+		result.Cancelled = [];
+		foreach (string processId in toCancel) {
+			if (Clock() >= stopAt) {
+				result.Warnings.Add($"Run {processId} was not cancelled: the call's time budget ran out.");
+				continue;
+			}
+			if (CancelAndWait(Guid.Parse(processId), result)) {
+				result.Cancelled.Add(processId);
+				result.Processes = result.Processes
+					.Select(run => run.ProcessId == processId ? run with { Status = CancelledStatus, WaitingOn = [] } : run)
+					.ToList();
+			}
 		}
 	}
 
