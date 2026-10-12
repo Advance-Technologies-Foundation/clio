@@ -37,7 +37,7 @@ public sealed class RunProcessTool(
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
-	internal const string StillRunningStatus = "still-running";
+	internal const string StillRunningStatus = RunProcessCommand.StillRunningStatus;
 
 	/// <summary>The status of an answer whose launch request was never sent; the platform's refusals share it.</summary>
 	internal const string NotStartedStatus = RunProcessCommand.NotStartedStatus;
@@ -92,7 +92,7 @@ public sealed class RunProcessTool(
 		+ sentUtc.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", System.Globalization.CultureInfo.InvariantCulture)
 		+ " and had not been answered when the MCP response deadline was reached. This is NOT a failure and NOT "
 		+ "a success — clio has no verdict, and cannot say whether the environment started the run. The platform "
-		+ "exposes no handle for an in-flight synchronous run: the process id only exists in the RunProcess "
+		+ "exposes no handle for an in-flight synchronous run: the process id only exists in the launch "
 		+ "response, and the SysProcessLog row is buffered and written when the run ends, so there is "
 		+ "nothing to poll yet. Do NOT re-run this process to find out — a second launch duplicates the "
 		+ "work. Judge the outcome from the process's own effects, or from a later SysProcessLog read "
@@ -133,16 +133,17 @@ public sealed class RunProcessTool(
 		+ "first, and read the outcome from `status`. The call answers by the MCP response deadline (45 s by default): "
 		+ "a run that has not ended by then answers `still-running` with no verdict and no result-parameter values - "
 		+ "do not re-run it - and a launch whose request was not sent yet answers `not-started` (nothing ran). VERSIONS: a code names ONE version, because every saved "
-		+ "version is a separate schema with its own code, and the version the platform's own triggers and "
-		+ "schedules execute is the family's ACTIVE version - which is usually NOT the family root you reach by "
-		+ "the base name. Before launching a process that has versions, read `isActiveVersion` from "
-		+ "describe-business-process and launch the code it reports in `activeVersionName`. Measured: this endpoint "
-		+ "folds a non-active version's code onto the ACTIVE version, so run-process cannot run a version that is "
-		+ "not active - a run 'of' a new version executes the previous one. Pass the active version's code "
-		+ "explicitly; to see a new version run before activating it, the user runs it from the process designer. "
+		+ "version is a separate schema with its own code, and run-process runs EXACTLY the version whose code it "
+		+ "is given, active or not, as the designer's Run does; the answer names it in `versionName` with "
+		+ "`isActiveVersion` and `activeVersionName`. The one exception is a run the platform QUEUES "
+		+ "(`queued-background`): its queue starts the active version, and a warning says so - result-parameters "
+		+ "make the run synchronous. The version the platform's own triggers, schedules and sub-process calls "
+		+ "start is the family's ACTIVE version, usually NOT the family root: the base name runs the ROOT. To run "
+		+ "what the environment runs, launch the code describe-business-process reports in `activeVersionName`. "
+		+ "To verify a new version before activating it, launch its own code: a warning says it is not the active "
+		+ "one, and activating it stays a separate step the user asks for. "
 		+ "A display caption is still refused - launching must name a code "
-		+ "- but the refusal names the code it resolved to, and that IS the active version's code, so the refusal "
-		+ "message is the short path to the right one.")]
+		+ "- but the refusal names the code it resolved to, which is the active version's code.")]
 	public async Task<RunProcessResponse> RunProcess(
 		[Description("run-process parameters")]
 		[Required]
@@ -198,10 +199,15 @@ public sealed class RunProcessTool(
 					Error = BuildNotLaunchedError(args.ProcessName)
 				};
 			}
-			return new RunProcessResponse {
+			RunProcessResponse stillRunning = new() {
 				Status = StillRunningStatus,
 				Warnings = [BuildStillRunningNote(args.ProcessName, options.LaunchGate.SentUtc ?? DateTime.UtcNow)]
 			};
+			// The launched code is known whatever the version read did (TryRun checked it equals the resolved code);
+			// the standing is attached only when the read, running alongside the launch, has answered.
+			RunProcessCommand.AddVersion(stillRunning, args.ProcessName,
+				options.VersionFacts is { IsCompletedSuccessfully: true } facts ? facts.Result : null);
+			return stillRunning;
 		}
 	}
 
