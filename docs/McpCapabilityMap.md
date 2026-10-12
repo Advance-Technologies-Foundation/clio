@@ -787,6 +787,7 @@ What an external AI can practically do here:
 - pre-check a planned process graph for invalid connections (start with an incoming flow, default without a sibling conditional, orphan/unreachable nodes, etc.) before building anything
 - build or edit the supported slice declaratively and verify the result with a describe read-back
 - launch a process and read its verdict (`run-process`), after resolving its parameter codes with `get-process-signature`
+- verify a record-triggered (signal-start) process end to end (`trigger-smoke`, ENG-103024): it creates the triggering record, waits for the runs it starts (new `SysProcessLog` rows), returns `processes` with status, error and `waitingOn`, and the records `created` in the `watch` entities, then cancels the caller's still-running runs and deletes what was created and the trigger, children first, only the caller's own records. run-process cannot fire a signal start.
 - pair with the `process-modeling` guidance (`get-guidance name=process-modeling`) for the element catalog + rules
 
 Companion surfaces (see the `process-modeling` guidance):

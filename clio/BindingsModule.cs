@@ -918,6 +918,7 @@ public class BindingsModule {
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
+		services.AddTransient<TriggerSmokeTool>();
 		services.AddTransient<IEmailTemplateContentService, EmailTemplateContentService>();
 		services.AddTransient<EmailTemplateTool>();
 		services.AddTransient<OpenCfgCommand>();
@@ -1197,6 +1198,7 @@ public class BindingsModule {
 		services.AddTransient<ICreatedRecordCleaner, CreatedRecordCleaner>();
 		services.AddTransient<IRunVerificationServices, RunVerificationServices>();
 		services.AddTransient<IRecordDeletionService, RecordDeletionService>();
+		services.AddTransient<ITriggerSmokeRunner, TriggerSmokeRunner>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
