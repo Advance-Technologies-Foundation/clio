@@ -385,7 +385,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     Reads whether the site runs in file design mode (file system mode): the platform flag that decides
 		///     whether the site reads package content from <c>Terrasoft.Configuration/Pkg</c>.
 		/// </summary>
-		GetIsFileDesignMode = 115
+		GetIsFileDesignMode = 115,
+
+		/// <summary>
+		///     Starts the process version the request names, never substituting the family's active version - the
+		///     route the process designer's Run uses. <see cref="RunProcess"/> runs the active version whatever
+		///     version it is given.
+		/// </summary>
+		RunSpecifiedProcessVersion = 116
 
 	}
 
@@ -514,6 +521,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
+		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
