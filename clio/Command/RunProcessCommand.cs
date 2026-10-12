@@ -153,6 +153,8 @@ public class RunProcessCommand(
 
 	private const string QueuedBackgroundStatus = "queued-background";
 	internal const string NotStartedStatus = "not-started";
+	// Answered by the tool at its response deadline: the launch was sent, and there is no verdict.
+	internal const string StillRunningStatus = "still-running";
 
 	private const int InactiveStatus = 0;
 	private const int ErrorStatus = 3;
@@ -187,8 +189,9 @@ public class RunProcessCommand(
 
 	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
 	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.
-	internal static string BuildNotActiveVersionNote(string processCode, string activeVersionName) =>
-		$"'{processCode}' ran as asked, but it is NOT the active version of its process: the platform's own "
+	internal static string BuildNotActiveVersionNote(string processCode, string activeVersionName,
+		bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but it is NOT the active version of its process: the platform's own "
 		+ "triggers, schedules and sub-process calls start "
 		+ (string.IsNullOrWhiteSpace(activeVersionName) ? "the active version" : DescribeSchemaName(activeVersionName))
 		+ ". Such a run verifies a version without activating it; activating it is a separate step "
@@ -296,8 +299,10 @@ public class RunProcessCommand(
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
-		AddVersion(response, model.Code, AwaitVersionFacts(versionFacts, options.ResponseDeadline));
+		// The failure-cause log read first: it is worth more than the version facts, and both are paid for out of
+		// the same remaining response deadline. The version read has been in flight since the POST.
 		AddLoggedError(platformResponse, response, options.ResponseDeadline);
+		AddVersion(response, model.Code, AwaitVersionFacts(versionFacts, options.ResponseDeadline));
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
@@ -335,12 +340,14 @@ public class RunProcessCommand(
 		if (response.Status == NotStartedStatus) {
 			return;
 		}
+		// A still-running answer has no verdict, so its notes say the version was launched, not that it ran.
+		bool verdictPending = response.Status == StillRunningStatus;
 		string note = (facts?.IsActiveVersion, response.Status == QueuedBackgroundStatus) switch {
 			(true, _) => null,
 			(false, true) => BuildQueuedNotActiveVersionNote(processCode),
-			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName),
+			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName, verdictPending),
 			(null, true) => BuildQueuedUnknownVersionNote(processCode),
-			(null, false) => BuildUnknownVersionNote(processCode)
+			(null, false) => BuildUnknownVersionNote(processCode, verdictPending)
 		};
 		if (note is not null) {
 			(response.Warnings ??= []).Add(note);
@@ -355,8 +362,10 @@ public class RunProcessCommand(
 	private static readonly System.Text.RegularExpressions.Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
 		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
-	internal static string BuildUnknownVersionNote(string processCode) =>
-		$"'{processCode}' ran as asked, but whether it is the active version of its process could not be "
+	private static string RanOrLaunched(bool verdictPending) => verdictPending ? "was launched" : "ran as asked";
+
+	internal static string BuildUnknownVersionNote(string processCode, bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but whether it is the active version of its process could not be "
 		+ "established, so this answer cannot say whether the platform's own triggers run the same version; "
 		+ "describe-business-process reports isActiveVersion and activeVersionName.";
 
@@ -430,7 +439,7 @@ public class RunProcessCommand(
 	// docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md
 	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
-			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
+			return new RunProcessResponse { Error = "The launch returned an empty response" };
 		}
 
 		(string errorCode, string errorMessage) = ReadErrorInfo(platformResponse.ErrorInfo);

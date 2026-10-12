@@ -37,7 +37,7 @@ public sealed class RunProcessTool(
 	/// </remarks>
 	internal const string NullArgsError = "args is required: the call carried no argument object. " + ValidArgsHint;
 
-	internal const string StillRunningStatus = "still-running";
+	internal const string StillRunningStatus = RunProcessCommand.StillRunningStatus;
 
 	/// <summary>The status of an answer whose launch request was never sent; the platform's refusals share it.</summary>
 	internal const string NotStartedStatus = RunProcessCommand.NotStartedStatus;
@@ -203,10 +203,10 @@ public sealed class RunProcessTool(
 				Status = StillRunningStatus,
 				Warnings = [BuildStillRunningNote(args.ProcessName, options.LaunchGate.SentUtc ?? DateTime.UtcNow)]
 			};
-			// The version read runs alongside the launch; when it has answered, a long run still names its version.
-			if (options.VersionFacts is { IsCompletedSuccessfully: true } facts) {
-				RunProcessCommand.AddVersion(stillRunning, args.ProcessName, facts.Result);
-			}
+			// The launched code is known whatever the version read did (TryRun checked it equals the resolved code);
+			// the standing is attached only when the read, running alongside the launch, has answered.
+			RunProcessCommand.AddVersion(stillRunning, args.ProcessName,
+				options.VersionFacts is { IsCompletedSuccessfully: true } facts ? facts.Result : null);
 			return stillRunning;
 		}
 	}

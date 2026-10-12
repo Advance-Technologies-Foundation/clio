@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using System.Collections.Generic;
 using System.Text.Json;
@@ -200,6 +201,28 @@ public sealed class RunProcessToolTests {
 		launched.Should().BeTrue(because: "the version read is a courtesy on top of the launch");
 		harness.PostedBodies.Should().ContainSingle(because: "the launch request is sent whatever the read did");
 		response.IsActiveVersion.Should().BeNull(because: "a failed read establishes nothing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A still-running answer has no verdict, so its version notes say the version was launched, never that it ran as asked.")]
+	public void AddVersion_Should_Not_Claim_A_Run_For_A_Still_Running_Answer() {
+		// Arrange
+		RunProcessResponse notActive = new() { Status = RunProcessCommand.StillRunningStatus };
+		RunProcessResponse unknown = new() { Status = RunProcessCommand.StillRunningStatus };
+
+		// Act
+		RunProcessCommand.AddVersion(notActive, ProcessCode, NotActive());
+		RunProcessCommand.AddVersion(unknown, ProcessCode, null);
+
+		// Assert
+		notActive.Warnings.Should().ContainSingle(w => w.Contains("was launched") && w.Contains("NOT the active version"),
+			because: "the version standing is still worth saying while the run has no verdict");
+		unknown.Warnings.Should().ContainSingle(w => w.Contains("was launched"),
+			because: "an unfinished version read still yields a note that the standing is unknown");
+		notActive.Warnings.Concat(unknown.Warnings).Should().NotContain(w => w.Contains("ran as asked"),
+			because: "the still-running note says clio cannot tell whether the run started, and this must not contradict it");
+		unknown.VersionName.Should().Be(ProcessCode, because: "the launched code is known even without version facts");
 	}
 
 	[Test]
