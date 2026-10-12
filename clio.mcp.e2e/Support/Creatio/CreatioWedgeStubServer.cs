@@ -79,7 +79,10 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	private const string ResetPath = "/reset";
 	private const string ControlPath = "/control";
 	private const string PingPathSuffix = "/ping";
-	private const string RunProcessPathMarker = "ProcessEngineService.svc/RunProcess";
+	// Both launch routes: run-process sends RunSpecifiedProcessVersion since ENG-101880, and a marker naming only
+	// RunProcess would count nothing and let the "no launch was sent" assertion pass vacuously.
+	private static readonly string[] RunProcessPathMarkers =
+		["ProcessEngineService.svc/RunProcess", "ProcessEngineService.svc/RunSpecifiedProcessVersion"];
 
 	/// <summary>Name of the forms-auth session cookie clio's application client harvests.</summary>
 	private const string SessionCookieName = ".ASPXAUTH";
@@ -267,7 +270,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 	}
 
 	/// <summary>
-	/// Number of <c>ProcessEngineService.svc/RunProcess</c> launch requests received since the last reset: what
+	/// Number of process launch requests (<c>RunProcess</c> or <c>RunSpecifiedProcessVersion</c>) received since the last reset: what
 	/// shows that a run-process call never sent its launch.
 	/// </summary>
 	public int RunProcessCount {
@@ -385,7 +388,7 @@ internal sealed class CreatioWedgeStubServer : IAsyncDisposable {
 				return;
 			}
 
-			if (path.Contains(RunProcessPathMarker, StringComparison.Ordinal)) {
+			if (Array.Exists(RunProcessPathMarkers, marker => path.Contains(marker, StringComparison.Ordinal))) {
 				lock (_sync) {
 					_runProcessCount++;
 				}
