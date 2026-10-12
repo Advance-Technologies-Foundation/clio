@@ -147,6 +147,9 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 	[Description("Execute should return failure and skip restart when cliogate installation fails.")]
 	public void Execute_ShouldReturnFailureAndSkipRestart_WhenPackageInstallFails() {
 		// Arrange
+		// The fixture shares one EnvironmentSettings instance; .NET Framework is the only runtime on which
+		// the command restarts by itself, so it is the one that proves a failed installation does not restart.
+		EnvironmentSettings.IsNetCore = false;
 		_packageInstaller
 			.Install(
 				Arg.Any<string>(),

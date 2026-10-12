@@ -163,6 +163,81 @@ internal class PackageInstallerTests : BaseClioModuleTests
 			because: "without a restart there is nothing to wait for");
 	}
 
+	[Test]
+	[Description("ENG-102757 EC-4: a restart whose answer is lost (a connection reset by the stopping node) may still have happened, so the installation still waits for the restarted design node and still succeeds.")]
+	public void Install_ShouldStillWaitForTheDesignNode_WhenTheRestartCallFails() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(installResponse: "{\"success\":true}");
+		arrangement.Application
+			.When(application => application.Restart(arrangement.Session, arrangement.EnvironmentSettings))
+			.Do(_ => throw new System.Net.Http.HttpRequestException("connection reset"));
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeTrue(because: "the package is installed; only the restart answer was lost");
+		arrangement.Logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteLine))
+			.Select(call => (string)call.GetArguments()[0])
+			.Should().Contain(line => line.Contains("Error while restarting application"),
+				because: "the arranged restart failure must actually have been raised and reported");
+		CallsTo(arrangement.Guard, nameof(IDesignNodeSessionGuard.WaitForRestartedDesignNode)).Should().Be(1,
+			because: "the next installation must not start on a design node that may be stopping");
+	}
+
+	[Test]
+	[Description("ENG-102757: a failure while waiting for the restarted design node is reported as a warning and does not fail an installation that already succeeded.")]
+	public void Install_ShouldWarnAndSucceed_WhenWaitingForTheDesignNodeFails() {
+		// Arrange
+		InstallerArrangement arrangement = ArrangeInstaller(installResponse: "{\"success\":true}");
+		arrangement.Guard
+			.When(guard => guard.WaitForRestartedDesignNode(arrangement.Session, arrangement.EnvironmentSettings))
+			.Do(_ => throw new System.Net.Http.HttpRequestException("gateway unreachable"));
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().BeTrue(because: "the package is installed before the wait starts");
+		arrangement.Logger.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteWarning))
+			.Select(call => (string)call.GetArguments()[0])
+			.Should().ContainSingle(because: "the operator must learn that the design node was not confirmed")
+			.Which.Should().Contain("Could not wait for the design node",
+				because: "the warning names the step that failed");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("ENG-102757: on .NET Framework the restart that developer mode asks for goes through the installation session and is followed by the wait for the design node, but only after a successful installation.")]
+	public void Install_ShouldRestartThroughTheSessionAndWait_WhenDeveloperModeIsOnOnNetFramework(bool succeeds) {
+		// Arrange
+		InstallerArrangement arrangement =
+			ArrangeInstaller(installResponse: succeeds ? "{\"success\":true}" : "{\"success\":false}");
+		arrangement.EnvironmentSettings.IsNetCore = false;
+		arrangement.EnvironmentSettings.DeveloperModeEnabled = true;
+		int expectedCalls = succeeds ? 1 : 0;
+
+		// Act
+		bool result = arrangement.Installer.Install(arrangement.PackagePath, arrangement.EnvironmentSettings);
+
+		// Assert
+		result.Should().Be(succeeds, because: "the installation service decides the outcome");
+		CallsTo(arrangement.Application, nameof(IApplication.Restart)).Should().Be(expectedCalls,
+			because: "developer mode restarts .NET Framework after a successful installation only");
+		CallsTo(arrangement.Guard, nameof(IDesignNodeSessionGuard.WaitForRestartedDesignNode)).Should().Be(expectedCalls,
+			because: "every restart is followed by the wait for the restarted design node");
+		if (succeeds) {
+			// The order matters and NSubstitute's InOrder check cannot carry a reason: the wait must follow the
+			// restart it waits for, through the same session.
+			Received.InOrder(() => {
+				arrangement.Application.Restart(arrangement.Session, arrangement.EnvironmentSettings);
+				arrangement.Guard.WaitForRestartedDesignNode(arrangement.Session, arrangement.EnvironmentSettings);
+			});
+		}
+	}
+
 	private static int CallsTo(object substitute, string methodName) =>
 		substitute.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == methodName);
@@ -186,14 +261,15 @@ internal class PackageInstallerTests : BaseClioModuleTests
 			.Returns(callInfo => callInfo.ArgAt<string>(0));
 		IApplication application = Substitute.For<IApplication>();
 		IDesignNodeSessionGuard guard = Substitute.For<IDesignNodeSessionGuard>();
+		ILogger logger = Substitute.For<ILogger>();
 		PackageInstaller installer = new(logProvider, constructorSettings, clientFactory, application,
 			Substitute.For<IPackageArchiver>(), Substitute.For<ISqlScriptExecutor>(), serviceUrlBuilder,
-			new FileSystem(FileSystem), Substitute.For<ILogger>(), Substitute.For<IPackageLockManager>(), guard);
+			new FileSystem(FileSystem), logger, Substitute.For<IPackageLockManager>(), guard);
 		return new InstallerArrangement(installer, environmentSettings, packagePath, session, clientFactory,
-			logProvider, application, guard);
+			logProvider, application, guard, logger);
 	}
 
 	private sealed record InstallerArrangement(PackageInstaller Installer, EnvironmentSettings EnvironmentSettings,
 		string PackagePath, IOwnedApplicationClient Session, IApplicationClientFactory ClientFactory,
-		IApplicationLogProvider LogProvider, IApplication Application, IDesignNodeSessionGuard Guard);
+		IApplicationLogProvider LogProvider, IApplication Application, IDesignNodeSessionGuard Guard, ILogger Logger);
 }

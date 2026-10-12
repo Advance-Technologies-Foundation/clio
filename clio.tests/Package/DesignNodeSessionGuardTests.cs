@@ -399,6 +399,26 @@ internal sealed class DesignNodeSessionGuardTests {
 	}
 
 	[Test]
+	[Description("A single failed probe while the design node still answers (one connection reset while it drains) is not taken for the stop: the shutdown watch restarts its count and ends only after two answers in a row that do not confirm the design node.")]
+	public void WaitForRestartedDesignNode_ShouldNotTakeASingleFailedProbeForTheStop() {
+		// Arrange
+		ArrangeCookies(Cookie("StickySession"));
+		ArrangeDesignProbeSequence((HttpStatusCode.OK, DesignNodeConfirmation), (null, null),
+			(HttpStatusCode.OK, DesignNodeConfirmation), (null, null), (HttpStatusCode.OK, DesignNodeConfirmation),
+			(HttpStatusCode.ServiceUnavailable, GatewayNoServerPage),
+			(HttpStatusCode.ServiceUnavailable, GatewayNoServerPage), (HttpStatusCode.OK, DesignNodeConfirmation));
+
+		// Act
+		_guard.WaitForRestartedDesignNode(_session, _environmentSettings);
+
+		// Assert
+		SessionCallsTo(nameof(ICreatioApplicationClient.ExecuteGetRequestAsync)).Should().Be(8,
+			because: "the confirmations after each single failure keep the watch going until the node really stops");
+		LoggedWith(nameof(ILogger.WriteInfo)).Last().Should().Be(DesignNodeSessionGuard.BackAfterRestartMessage,
+			because: "the node is reported back only after it was seen stopped and confirmed again");
+	}
+
+	[Test]
 	[Description("A restart too quick to observe (the design node never stops answering) ends the wait after the one-minute shutdown window with the design node confirmed.")]
 	public void WaitForRestartedDesignNode_ShouldEndAfterTheShutdownWindow_WhenTheDesignNodeNeverStopsAnswering() {
 		// Arrange

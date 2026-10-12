@@ -370,20 +370,19 @@
 				UnlockMaintainerPackageInternal(environmentSettings);
 			}
 			if (success && (DeveloperModeEnabled(environmentSettings) || environmentSettings.IsNetCore)) {
-				bool restarted = false;
 				try {
 					_application.Restart(session, environmentSettings);
-					restarted = true;
 				} catch (Exception ex) {
 					_logger.WriteLine($"Error while restarting application: {ex.Message}");
 				}
-				if (restarted) {
-					try {
-						_designNodeSessionGuard.WaitForRestartedDesignNode(session, environmentSettings);
-					} catch (Exception ex) {
-						_logger.WriteWarning(
-							$"Could not wait for the design node of the web farm after the restart: {ex.Message}");
-					}
+				// A restart whose answer was lost (a connection reset by the stopping node) still happened, so the
+				// wait runs either way. Outside a web farm it returns at once; on a farm whose design node never
+				// stopped it ends with the confirmation after the shutdown window.
+				try {
+					_designNodeSessionGuard.WaitForRestartedDesignNode(session, environmentSettings);
+				} catch (Exception ex) {
+					_logger.WriteWarning(
+						$"Could not wait for the design node of the web farm after the restart: {ex.Message}");
 				}
 			}
 			return (success, logText);
