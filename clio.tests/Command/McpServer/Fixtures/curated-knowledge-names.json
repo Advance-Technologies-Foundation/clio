@@ -1,11 +1,12 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.121",
-  "sequence": 1015121000,
+  "libraryVersion": "1.15.124",
+  "sequence": 1015124000,
   "availableNames": [
     "administration",
     "agent-execution",
     "app-modeling",
+    "app-modeling-details",
     "application-listener",
     "atf-repository-dev",
     "atf-repository-model-management",
@@ -28,6 +29,7 @@
     "creatio.administration",
     "creatio.agent-execution",
     "creatio.app-modeling",
+    "creatio.app-modeling-details",
     "creatio.application-listener",
     "creatio.atf-repository-dev",
     "creatio.atf-repository-model-management",
@@ -67,6 +69,7 @@
     "creatio.esq.filters.backend",
     "creatio.esq.filters.frontend",
     "creatio.existing-app-maintenance",
+    "creatio.existing-app-maintenance-details",
     "creatio.external-organizations",
     "creatio.feature-toggle",
     "creatio.feature-toggle-tests",
@@ -120,6 +123,7 @@
     "creatio.process-formulas",
     "creatio.process-formulas-details",
     "creatio.process-modeling",
+    "creatio.process-modeling-details",
     "creatio.process-naming",
     "creatio.process-open-edit-page",
     "creatio.process-open-edit-page-details",
@@ -160,6 +164,7 @@
     "creatio.websocket-messaging",
     "creatio.when-to-use-requests",
     "creatio.workplaces",
+    "creatio.workplaces-details",
     "custom-mcp-tools",
     "dashboard-and-home-page-layout",
     "dashboard-creation",
@@ -181,6 +186,7 @@
     "esq-filters-backend",
     "esq-filters-frontend",
     "existing-app-maintenance",
+    "existing-app-maintenance-details",
     "external-organizations",
     "feature-toggle",
     "feature-toggle-tests",
@@ -233,6 +239,7 @@
     "process-formulas",
     "process-formulas-details",
     "process-modeling",
+    "process-modeling-details",
     "process-naming",
     "process-open-edit-page",
     "process-open-edit-page-details",
@@ -272,7 +279,8 @@
     "virtual-entities",
     "websocket-messaging",
     "when-to-use-requests",
-    "workplaces"
+    "workplaces",
+    "workplaces-details"
   ],
   "featureGatedNames": []
 }
