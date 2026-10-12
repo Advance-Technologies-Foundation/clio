@@ -112,14 +112,15 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 	}
 
 	[Test]
-	[Description("ENG-102757: on .NET the installer already restarted Creatio through the installation session, so install-gate does not restart it again through another session.")]
+	[Description("ENG-102757: on .NET the installer restarts Creatio through the installation session, so install-gate hands it .NET settings and does not restart it again through another session.")]
 	public void Execute_ShouldNotRestartAgain_WhenEnvironmentIsNetCore() {
 		// Arrange
 		EnvironmentSettings.IsNetCore = true;
+		EnvironmentSettings capturedEnvironmentSettings = null;
 		_packageInstaller
 			.Install(
 				Arg.Any<string>(),
-				Arg.Any<EnvironmentSettings>(),
+				Arg.Do<EnvironmentSettings>(settings => capturedEnvironmentSettings = settings),
 				packageInstallOptions: null,
 				reportPath: null,
 				createBackup: true)
@@ -130,6 +131,12 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 
 		// Assert
 		result.Should().Be(0, because: "successful netcore package installation should make install-gate succeed");
+		capturedEnvironmentSettings.Should().NotBeNull(
+			because: "install-gate passes its own copy of the environment settings to the package installer");
+		capturedEnvironmentSettings!.IsNetCore.Should().BeTrue(
+			because: "the installer restarts Creatio only for .NET settings, and install-gate no longer restarts .NET itself");
+		capturedEnvironmentSettings.DeveloperModeEnabled.Should().BeFalse(
+			because: "cliogate installation should not unlock maintainer packages through developer mode");
 		_application.ReceivedCalls()
 			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
 			.Should().Be(0,

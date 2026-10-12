@@ -31,9 +31,9 @@ namespace Clio.Package
 		private IServiceUrlBuilder _serviceUrlBuilder;
 
 		public string GetInstallationLog(IApplicationClient applicationClient,
-			EnvironmentSettings environmentSetting) {
+			EnvironmentSettings environmentSettings) {
 			try {
-				return applicationClient.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSetting));
+				return applicationClient.ExecuteGetRequest(GetCompleteUrl(InstallLogUrl, environmentSettings));
 			} catch (Exception) { }
 			return String.Empty;
 		}

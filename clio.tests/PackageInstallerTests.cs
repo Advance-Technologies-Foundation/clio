@@ -81,7 +81,7 @@ internal class PackageInstallerTests : BaseClioModuleTests
 	}
 
 	[Test]
-	[Description("ENG-102757: upload, backup, install, log reads and restart of one installation all go through one session, prepared by the design-node guard before the upload.")]
+	[Description("ENG-102757: upload, backup, install, log reads and restart of one installation all go through one session, prepared by the design-node guard before the upload and followed by the wait for the restarted design node.")]
 	public void Install_ShouldRunEveryStepThroughOneSession_WhenInstallingAPackage() {
 		// Arrange
 		InstallerArrangement arrangement = ArrangeInstaller(installResponse: "{\"success\":true}");
@@ -104,11 +104,27 @@ internal class PackageInstallerTests : BaseClioModuleTests
 			.Should().NotBeEmpty(because: "the installation log is read during the installation")
 			.And.OnlyContain(client => ReferenceEquals(client, arrangement.Session),
 				because: "the log is kept per node, so it must be read through the installation session");
-		arrangement.Application.ReceivedCalls()
+		object[] restartArguments = arrangement.Application.ReceivedCalls()
 			.Where(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
-			.Select(call => call.GetArguments().FirstOrDefault())
-			.Should().Equal([arrangement.Session],
-				because: "the restart must reach the node that installed the package, through the same session");
+			.Select(call => call.GetArguments())
+			.Should().ContainSingle(because: "a successful .NET installation restarts the application once")
+			.Subject;
+		restartArguments[0].Should().BeSameAs(arrangement.Session,
+			because: "the restart must reach the node that installed the package, through the same session");
+		restartArguments[1].Should().BeSameAs(arrangement.EnvironmentSettings,
+			because: "the restart targets the environment of this installation, not the one the installer was built with");
+		arrangement.Guard.ReceivedCalls()
+			.Where(call => call.GetMethodInfo().Name == nameof(IDesignNodeSessionGuard.Prepare))
+			.Select(call => call.GetArguments()[1])
+			.Should().ContainSingle(because: "the session is prepared once per installation")
+			.Which.Should().BeSameAs(arrangement.EnvironmentSettings,
+				because: "the warm-up and the design-node probe must target the environment the package goes to");
+		// The installation must not return while the restarted design node of a web farm is still going down,
+		// or the next installation of the pipeline starts on it; InOrder cannot carry a reason.
+		Received.InOrder(() => {
+			arrangement.Application.Restart(arrangement.Session, arrangement.EnvironmentSettings);
+			arrangement.Guard.WaitForRestartedDesignNode(arrangement.Session, arrangement.EnvironmentSettings);
+		});
 	}
 
 	[Test]
@@ -143,6 +159,8 @@ internal class PackageInstallerTests : BaseClioModuleTests
 		result.Should().BeFalse(because: "the installation service reported a failure");
 		CallsTo(arrangement.Application, nameof(IApplication.Restart)).Should().Be(0,
 			because: "a failed installation must not restart the application");
+		CallsTo(arrangement.Guard, nameof(IDesignNodeSessionGuard.WaitForRestartedDesignNode)).Should().Be(0,
+			because: "without a restart there is nothing to wait for");
 	}
 
 	private static int CallsTo(object substitute, string methodName) =>
@@ -152,7 +170,10 @@ internal class PackageInstallerTests : BaseClioModuleTests
 	private InstallerArrangement ArrangeInstaller(string installResponse) {
 		string packagePath = "T:\\Package.gz";
 		FileSystem.AddFile(packagePath, new System.IO.Abstractions.TestingHelpers.MockFileData(new byte[0]));
-		EnvironmentSettings environmentSettings = new() { IsNetCore = true };
+		// The installer is built for one environment and installs into another, the way WorkspaceInstaller and
+		// apply-environment-manifest use it, so a step that reads the constructor's settings is caught.
+		EnvironmentSettings constructorSettings = new() { IsNetCore = true, Uri = "http://constructor-environment" };
+		EnvironmentSettings environmentSettings = new() { IsNetCore = true, Uri = "http://install-environment" };
 		IOwnedApplicationClient session = Substitute.For<IOwnedApplicationClient>();
 		session.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(installResponse);
 		IApplicationClientFactory clientFactory = Substitute.For<IApplicationClientFactory>();
@@ -165,7 +186,7 @@ internal class PackageInstallerTests : BaseClioModuleTests
 			.Returns(callInfo => callInfo.ArgAt<string>(0));
 		IApplication application = Substitute.For<IApplication>();
 		IDesignNodeSessionGuard guard = Substitute.For<IDesignNodeSessionGuard>();
-		PackageInstaller installer = new(logProvider, environmentSettings, clientFactory, application,
+		PackageInstaller installer = new(logProvider, constructorSettings, clientFactory, application,
 			Substitute.For<IPackageArchiver>(), Substitute.For<ISqlScriptExecutor>(), serviceUrlBuilder,
 			new FileSystem(FileSystem), Substitute.For<ILogger>(), Substitute.For<IPackageLockManager>(), guard);
 		return new InstallerArrangement(installer, environmentSettings, packagePath, session, clientFactory,

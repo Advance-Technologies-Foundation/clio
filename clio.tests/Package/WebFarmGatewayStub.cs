@@ -40,9 +40,9 @@ internal enum WebFarmGatewayMode {
 /// <remarks>
 /// It reproduces only the platform and gateway rules the package installation depends on, each confirmed in
 /// the platform sources: the login response does not carry <c>StickySession</c>; the cookie (empty value) is
-/// appended to the response of the first authenticated request of a session; the gateway routes on the
-/// cookie's presence alone; <c>PackageInstallation</c> temp files are per pod; <c>/api/Probes/DesignReady</c>
-/// is anonymous and answers 200 only on the design node.
+/// appended to the response of the first authenticated request of a session; <c>0/ping</c> (.NET Framework)
+/// starts no session; the gateway routes on the cookie's presence alone; <c>PackageInstallation</c> temp files
+/// are per pod; <c>/api/Probes/DesignReady</c> is anonymous and answers 200 only on the design node.
 /// </remarks>
 internal sealed class WebFarmGatewayStub : IDisposable {
 
@@ -64,17 +64,41 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 	private const string CsrfToken = "stub-csrf-token";
 	private const int WorkerCount = 2;
 
+	// The JSON fault Creatio answers with HTTP 401 when the session behind .ASPXAUTH is gone.
+	private const string AuthenticationFailedBody =
+		"{\"Message\":\"Authentication failed.\",\"StackTrace\":null,"
+		+ "\"ExceptionType\":\"System.Security.Authentication.AuthenticationException\"}";
+
+	private static readonly TimeSpan InstallHoldLimit = TimeSpan.FromSeconds(10);
+
+	// How a restarted design pod looked through the gateway on a local Control Plane runtime: it still answers
+	// right after RestartApp, then the gateway has no live design server for a while.
+	private const int DesignRequestsAnsweredAfterRestart = 2;
+	private const int DesignRequestsRefusedAfterRestart = 3;
+	private const string GatewayNoServerPage =
+		"<html><body><h1>503 Service Unavailable</h1>No server is available to handle this request.</body></html>";
+
 	#endregion
 
 	#region Fields: Private
 
 	private readonly WebFarmGatewayMode _mode;
+	private readonly string _expireSessionOnceAt;
+	private readonly bool _holdInstallUntilLogPoll;
+	private readonly bool _restartStopsDesign;
 	private readonly HttpListener _listener;
 	private readonly CancellationTokenSource _stopping = new();
+	private readonly ManualResetEventSlim _logPolledDuringInstall = new(false);
 	private readonly object _sync = new();
 	private readonly Dictionary<string, Dictionary<string, byte[]>> _uploads = new();
 	private readonly Dictionary<string, StringBuilder> _logs = new();
+	private readonly HashSet<string> _validAuthTokens = new(StringComparer.Ordinal);
 	private readonly List<string> _requests = [];
+	private int _designUnavailableProbesLeft;
+	private bool _sessionExpired;
+	private bool _installInFlight;
+	private int _designUpAfterRestartLeft;
+	private int _designDownAfterRestartLeft;
 	private int _roundRobin;
 	private int _loginCount;
 
@@ -84,8 +108,29 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 
 	/// <summary>Starts the stub on a free loopback port.</summary>
 	/// <param name="mode">Routing and cookie behaviour to emulate.</param>
-	public WebFarmGatewayStub(WebFarmGatewayMode mode) {
+	/// <param name="expireSessionOnceAt">
+	/// Path suffix whose first authenticated request finds its session gone: the stub revokes the session's
+	/// <c>.ASPXAUTH</c> and answers 401, so the client has to log in again in the middle of the installation.
+	/// </param>
+	/// <param name="designUnavailableProbes">
+	/// How many design-node probes the gateway answers 503 first, as it does while the design pod restarts.
+	/// </param>
+	/// <param name="holdInstallUntilLogPoll">
+	/// Whether <c>InstallPackage</c> answers only after an installation-log poll arrived while it was in flight
+	/// (bounded), so the poll is known to overlap the installation request on the same session.
+	/// </param>
+	/// <param name="restartStopsDesign">
+	/// Whether <c>RestartApp</c> takes the design pod down the way a real restart does: the pod still answers the
+	/// next two requests, then the gateway refuses the following design requests with its own 503 page. Requests
+	/// it refuses are recorded as served by <c>design (down)</c>.
+	/// </param>
+	public WebFarmGatewayStub(WebFarmGatewayMode mode, string expireSessionOnceAt = null,
+		int designUnavailableProbes = 0, bool holdInstallUntilLogPoll = false, bool restartStopsDesign = false) {
 		_mode = mode;
+		_expireSessionOnceAt = expireSessionOnceAt;
+		_designUnavailableProbesLeft = designUnavailableProbes;
+		_holdInstallUntilLogPoll = holdInstallUntilLogPoll;
+		_restartStopsDesign = restartStopsDesign;
 		int port = FreePort();
 		Url = $"http://127.0.0.1:{port}";
 		_listener = new HttpListener();
@@ -118,6 +163,9 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 			}
 		}
 	}
+
+	/// <summary>Whether an installation-log poll arrived while <c>InstallPackage</c> was in flight.</summary>
+	public bool LogPolledDuringInstall => _logPolledDuringInstall.IsSet;
 
 	#endregion
 
@@ -200,25 +248,38 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 		string pod = RoutePod(cookies);
 		string path = request.Url!.AbsolutePath;
 		byte[] body = ReadBody(request);
+		if (IsDesignDownAfterRestart(pod)) {
+			lock (_sync) {
+				_requests.Add($"{request.HttpMethod} {path} -> {pod} (down)");
+			}
+			Write(response, 503, GatewayNoServerPage, "text/html");
+			return;
+		}
 		lock (_sync) {
 			_requests.Add($"{request.HttpMethod} {path} -> {pod}");
 		}
 		if (path.EndsWith("/AuthService.svc/Login", StringComparison.OrdinalIgnoreCase)) {
+			string authToken = Guid.NewGuid().ToString("N");
 			lock (_sync) {
 				_loginCount++;
+				_validAuthTokens.Add(authToken);
 			}
-			response.Headers.Add("Set-Cookie", $"{AuthCookieName}={Guid.NewGuid():N}; path=/; httponly");
+			response.Headers.Add("Set-Cookie", $"{AuthCookieName}={authToken}; path=/; httponly");
 			response.Headers.Add("Set-Cookie", $"{CsrfCookieName}={CsrfToken}; path=/");
 			Write(response, 200, "{\"Code\":0,\"Message\":\"\"}");
 			return;
 		}
 		if (path.EndsWith("/api/Probes/DesignReady", StringComparison.OrdinalIgnoreCase)) {
-			bool isDesign = IsDesignNode(pod);
-			Write(response, isDesign ? 200 : 503, $"{{\"isDesignNode\":{isDesign.ToString().ToLowerInvariant()}}}");
+			AnswerDesignProbe(response, pod);
 			return;
 		}
-		if (!cookies.ContainsKey(AuthCookieName)) {
-			Write(response, 401, "unauthorized");
+		if (path.EndsWith("/0/ping", StringComparison.OrdinalIgnoreCase)) {
+			// PingService is a plain IHttpHandler without session state: it never starts a session.
+			Write(response, 200, string.Empty);
+			return;
+		}
+		if (!HasValidSession(cookies) || ExpiresSessionNow(cookies, path)) {
+			Write(response, 401, AuthenticationFailedBody);
 			return;
 		}
 		if (_mode != WebFarmGatewayMode.SingleNode && !cookies.ContainsKey(StickySessionCookieName)) {
@@ -226,6 +287,78 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 			response.Headers.Add("Set-Cookie", $"{StickySessionCookieName}=; path=/; samesite=none; httponly");
 		}
 		Dispatch(request, response, pod, path, body);
+	}
+
+	private void AnswerDesignProbe(HttpListenerResponse response, string pod) {
+		bool isDesign = IsDesignNode(pod);
+		if (isDesign) {
+			lock (_sync) {
+				if (_designUnavailableProbesLeft > 0) {
+					_designUnavailableProbesLeft--;
+					isDesign = false;
+				}
+			}
+			if (!isDesign) {
+				// HAProxy's own answer while the design backend has no live server.
+				Write(response, 503, "No server is available to handle this request.", "text/html");
+				return;
+			}
+		}
+		Write(response, isDesign ? 200 : 503, $"{{\"isDesignNode\":{isDesign.ToString().ToLowerInvariant()}}}");
+	}
+
+	private bool IsDesignDownAfterRestart(string pod) {
+		if (!IsDesignNode(pod)) {
+			return false;
+		}
+		lock (_sync) {
+			if (_designUpAfterRestartLeft > 0) {
+				_designUpAfterRestartLeft--;
+				return false;
+			}
+			if (_designDownAfterRestartLeft > 0) {
+				_designDownAfterRestartLeft--;
+				return true;
+			}
+			return false;
+		}
+	}
+
+	private bool HasValidSession(IReadOnlyDictionary<string, string> cookies) {
+		if (!cookies.TryGetValue(AuthCookieName, out string authToken)) {
+			return false;
+		}
+		lock (_sync) {
+			return _validAuthTokens.Contains(authToken);
+		}
+	}
+
+	private bool ExpiresSessionNow(IReadOnlyDictionary<string, string> cookies, string path) {
+		if (_expireSessionOnceAt is null || !path.EndsWith(_expireSessionOnceAt, StringComparison.OrdinalIgnoreCase)) {
+			return false;
+		}
+		lock (_sync) {
+			if (_sessionExpired) {
+				return false;
+			}
+			_sessionExpired = true;
+			_validAuthTokens.Remove(cookies[AuthCookieName]);
+			return true;
+		}
+	}
+
+	private string HoldAndInstall(string pod, string fileName) {
+		if (!_holdInstallUntilLogPoll) {
+			return Install(pod, fileName);
+		}
+		lock (_sync) {
+			_installInFlight = true;
+		}
+		_logPolledDuringInstall.Wait(InstallHoldLimit);
+		lock (_sync) {
+			_installInFlight = false;
+		}
+		return Install(pod, fileName);
 	}
 
 	private void Dispatch(HttpListenerRequest request, HttpListenerResponse response, string pod, string path,
@@ -238,14 +371,23 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 		} else if (path.EndsWith("/PackageInstallerService.svc/CreateBackup", StringComparison.OrdinalIgnoreCase)) {
 			Write(response, 200, "{\"success\":true}");
 		} else if (path.EndsWith("/PackageInstallerService.svc/InstallPackage", StringComparison.OrdinalIgnoreCase)) {
-			Write(response, 200, Install(pod, Encoding.UTF8.GetString(body).Trim('"')));
+			Write(response, 200, HoldAndInstall(pod, Encoding.UTF8.GetString(body).Trim('"')));
 		} else if (path.EndsWith("/PackageInstallerService.svc/GetLogFile", StringComparison.OrdinalIgnoreCase)) {
 			string log;
 			lock (_sync) {
 				log = _logs.TryGetValue(pod, out StringBuilder builder) ? builder.ToString() : string.Empty;
+				if (_installInFlight) {
+					_logPolledDuringInstall.Set();
+				}
 			}
 			Write(response, 200, log, "text/plain");
 		} else if (path.EndsWith("/AppInstallerService.svc/RestartApp", StringComparison.OrdinalIgnoreCase)) {
+			if (_restartStopsDesign && IsDesignNode(pod)) {
+				lock (_sync) {
+					_designUpAfterRestartLeft = DesignRequestsAnsweredAfterRestart;
+					_designDownAfterRestartLeft = DesignRequestsRefusedAfterRestart;
+				}
+			}
 			Write(response, 200, "{\"success\":true}");
 		} else {
 			Write(response, 404, "not found");
@@ -343,6 +485,9 @@ internal sealed class WebFarmGatewayStub : IDisposable {
 		}
 		((IDisposable)_listener).Dispose();
 		_stopping.Dispose();
+		// Releases a handler still holding InstallPackage before the event goes away under it.
+		_logPolledDuringInstall.Set();
+		_logPolledDuringInstall.Dispose();
 	}
 
 	#endregion

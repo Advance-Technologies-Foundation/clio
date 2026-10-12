@@ -7,7 +7,7 @@ applies-to:
   - clio/WebApplication/Application.cs
   - clio/Command/InstallGateCommand.cs
 ticket: ENG-102757
-date: 2026-10-09
+date: 2026-10-12
 ---
 
 **What is true** — the Control Plane gateway's only rule is `req.cook(StickySession) -m found` → design
@@ -18,7 +18,10 @@ Session_Start` on .NET Framework, both gated on `WebFarmEnabled && UseStickySess
 `PackageInstallation` temp files and the installation log are per node. `creatio.client` sends no
 request between login and the first real one on .NET (its post-login `0/ping` is .NET Framework only
 and starts no session there either). Installer services are read-only session state, so concurrent log
-polling in the same session is not serialized behind `InstallPackage`.
+polling in the same session is not serialized behind `InstallPackage`. `creatio.client` 2.1.0 recovers
+an expired forms session inside the same `CookieContainer` and expires only `.ASPXAUTH`, `CRT_CSRF` and
+`BPMCSRF`, so the re-login and every later request keep `StickySession`; bearer and OAuth
+client-credentials requests use that container too.
 
 **Why it is this way** — the routing is designed around a browser, which has made many requests before
 it installs anything.

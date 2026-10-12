@@ -28,15 +28,23 @@ their own and are not covered.
 
 On a web farm only the design node may change during an installation. When the
 session holds `StickySession`, clio asks the design-node probe before uploading:
-if the probe confirms the design node, the installation runs; if it does not -
-the gateway sends the session to a common node, or the design node is down - the
-command stops before uploading anything and exits with code `1`, naming the HTTP
-status the probe answered. A Creatio version without the probe (HTTP 404) gets a
-warning and the installation continues. Publishing and rolling out the installed
-version to the common nodes remains a Control Plane step.
+if the probe confirms the design node, the installation runs. While the gateway
+itself answers that the design node is unavailable (HTTP 502, 503 or 504 - for
+example while it restarts after the previous installation), clio waits for it for
+up to 5 minutes and reports the wait once a minute. Any other answer - a common
+node answering the probe, a missing probe (HTTP 404), or a design node that did
+not come back in time - stops the command before anything is uploaded, with exit
+code `1` and the HTTP status the probe answered (or that it got no answer). A request that should start the
+session but does not succeed is reported as a warning. Publishing and rolling out
+the installed version to the common nodes remains a Control Plane step.
 
 On .NET Creatio, and when developer mode is on, clio restarts the application
-after a successful installation. A failed installation does not restart it.
+after a successful installation. A failed installation does not restart it. On a
+web farm clio then waits, for up to 5 minutes, until the restarted design node
+has gone down and answers again, so the next command of a pipeline can start
+right away. A design node not seen going down within a minute is accepted as soon
+as it answers; one that is not back within 5 minutes gets a warning, and the
+command still succeeds.
 
 ## Synopsis
 
