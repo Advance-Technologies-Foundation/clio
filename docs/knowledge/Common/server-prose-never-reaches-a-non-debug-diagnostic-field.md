@@ -68,8 +68,10 @@ a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stay
 
 **The JSON shape is the fallback path, not an edge case, and `CredentialPairRegex` cannot reach it.**
 Issue #1505 measured the leak in serialized JSON (`{"password":"s3cr3t","server":"db.internal"}`), and
-`SelectQueryHelper` uses `response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body
-becomes the exception message whenever `errorInfo.message` is absent. `CredentialPairRegex` needs
+`SelectQueryHelper.DescribeServerFailure` falls back to `responseJson` when `errorInfo.message` is blank, so the raw JSON body
+becomes the exception message whenever `errorInfo.message` is absent or blank (ENG-102683). Since the PR #1782 review that
+fallback goes through `UntrustedText.Fenced` (scrubbed, flattened, capped, fenced), because the same message reaches MCP
+envelopes; the transient classifier reads the unredacted body, so the fence cannot hide a retry marker. `CredentialPairRegex` needs
 `\b(key)\b\s*[=:]` and the key's own closing quote sits between the key and the colon, so it never
 matches that shape — and it is deliberately NOT loosened to tolerate the quote: it rewrites its match
 as `key=[redacted]`, which would cost the document its quotes and leave the JSON unparseable. The
