@@ -133,6 +133,47 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A failure that still names the created schema came after the save - the tracing switch failed behind a created process (ENG-102111) - so the build's warnings travel with the error: the process exists, and a compile its script task owes must not vanish with the failure.")]
+	public void BuildProcess_ShouldRelayTheBuildWarnings_WhenTheFailureCameAfterTheSave() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":false,\"schemaName\":\"UsrSampleProcess\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\","
+			+ "\"errorMessage\":\"Process 'UsrSampleProcess' WAS created, but switching process tracing on failed.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"]}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the tracing switch the caller asked for failed")
+			.Which.Message.Should().Contain("WAS created", because: "the server's own sentence leads the message")
+			.And.Contain("Script task 'Calc' needs a compile.",
+				because: "the warning describes a process that exists, and dropping it hides the compile it owes");
+	}
+
+	[Test]
+	[Description("A failure that names no schema leaves nothing behind, so it relays no warnings even if a server sent some: they would describe a build that was rolled back.")]
+	public void BuildProcess_ShouldNotRelayWarnings_WhenNothingWasCreated() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"{\"BuildProcessResult\":{\"success\":false,\"errorMessage\":\"Package 'Custom' was not found.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"]}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the build failed")
+			.Which.Message.Should().NotContain("needs a compile",
+				because: "a rolled-back build owes nothing, so its warnings would describe a state that does not exist");
+	}
+
+	[Test]
 	[Description("Surfaces the server's errorMessage as an exception when the BuildProcess result reports success=false.")]
 	public void BuildProcess_ShouldThrowWithServerMessage_WhenSuccessFalse() {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();

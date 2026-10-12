@@ -2338,4 +2338,31 @@ public sealed class ServerProcessDescriberTests {
 		subProcess.AsObject().ContainsKey("multiInstanceOptions").Should().BeFalse(
 			because: "and the absent block stays absent on the wire, not an empty object");
 	}
+
+	[Test]
+	[Description("Deserializes the tracing block by name, and leaves it null when the server omits it (ENG-102111). CrtProcessBuilder reports tracing ONLY while it is on, so the absent key is the 'not traced' answer and must not be invented; the present block has to survive re-serialization, which drops a member the DTO does not declare.")]
+	public void Describe_ShouldReadTheTracingBlock_WhenServerReportsItAndNullWhenItDoesNot() {
+		// Arrange - a traced and an untraced process, reported the way CrtProcessBuilder 1.6.6.92 writes them
+		IApplicationClient tracedClient = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrTraced\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[],\"tracing\":{\"enabled\":true,\"turnOffDate\":\"2026-10-14\"}}}");
+		IApplicationClient untracedClient = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrPlain\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[]}}");
+
+		// Act
+		ErrorOr<DescribeProcessResult> traced =
+			CreateDescriber(tracedClient).Describe(new ProcessIdentity("UsrTraced", null, null), null);
+		ErrorOr<DescribeProcessResult> untraced =
+			CreateDescriber(untracedClient).Describe(new ProcessIdentity("UsrPlain", null, null), null);
+
+		// Assert
+		traced.IsError.Should().BeFalse(because: "the response is a valid graph");
+		traced.Value.Tracing.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		traced.Value.Tracing.Enabled.Should().BeTrue(because: "the block is only sent while tracing is on");
+		traced.Value.Tracing.TurnOffDate.Should().Be("2026-10-14",
+			because: "the last traced day is what tells a caller when the platform switches tracing off");
+		untraced.Value.Tracing.Should().BeNull(because: "an absent block means runs are not traced");
+	}
+
 }
