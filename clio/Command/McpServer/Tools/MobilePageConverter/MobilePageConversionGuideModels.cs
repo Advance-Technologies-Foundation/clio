@@ -1240,7 +1240,7 @@ public sealed class MobilePageConversionGuide {
 	/// <summary>
 	/// The responsive layout applied to each MULTI-column mobile grid container: the grid columns per
 	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = one weighted column per child of
-	/// the web grid's fullest row, or 1 when a list spans past its column) and which cell each child occupies.
+	/// the web grid's fullest row, the columns a wider list covers merged into one) and which cell each child occupies.
 	/// Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present

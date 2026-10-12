@@ -5226,7 +5226,7 @@ public static partial class WebToMobileAnalysisService {
 			for (int i = 0; i < children.Count; i++) {
 				ElementMapEntry child = children[i];
 				JsonObject stacked = Cell(1, i + 1);
-				JsonObject tabletCell = tablet.IsStacked ? Cell(1, i + 1) : Cell(tablet.Slots[i], cells[i].Row);
+				JsonObject tabletCell = Cell(tablet.Slots[i], tablet.Rows[i]);
 				var adaptive = new JsonObject {
 					["small"] = stacked,
 					["medium"] = tabletCell,
@@ -5285,9 +5285,9 @@ public static partial class WebToMobileAnalysisService {
 	private static readonly IReadOnlyList<string> StackedColumns = ["1fr"];
 
 	/// <summary>
-	/// Mobile list types. A list that spans past its tablet slot on the web stacks the whole grid instead: the
-	/// runtime draws each column as an independent stack and ignores spans, so the list could only ever be one
-	/// slot wide.
+	/// Mobile list types. A list that spans past its tablet slot on the web merges the slots it covers into one
+	/// column: the runtime draws each column as an independent stack and ignores spans, so otherwise the list
+	/// could only ever be one slot wide.
 	/// </summary>
 	private static readonly HashSet<string> MobileListComponentTypes =
 		new(StringComparer.OrdinalIgnoreCase) { "crt.List", "crt.FileList" };
@@ -5297,18 +5297,19 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Tablet layout of one grid: the column weights and, per child (same order as the input), its 1-based
-	/// column. <see cref="IsStacked"/> means the grid stacks like the phone, and <see cref="Slots"/> is unused.
+	/// column and row.
 	/// </summary>
-	private sealed record TabletGrid(IReadOnlyList<string> Columns, IReadOnlyList<int> Slots, bool IsStacked);
+	private sealed record TabletGrid(IReadOnlyList<string> Columns, IReadOnlyList<int> Slots, IReadOnlyList<int> Rows);
 
 	/// <summary>
 	/// Derives the tablet grid from the web one. The mobile runtime honours neither span, so column count and
 	/// widths both come from ONE web row — the reference row, the row with the most children (lowest row on a
-	/// tie): one column per child (capped at <see cref="MobileGridMaxColumns"/>), weighted by its <c>colSpan</c>
-	/// reduced by the GCD. The children's start columns become slot boundaries, and every child lands in the last
-	/// slot whose boundary does not exceed its own start column; a collision within one row moves right, else to
-	/// the nearest free slot on the left. Unused web width (gaps, an empty trailing column) is dropped on purpose,
-	/// while the first boundary is 1 so every child has a slot.
+	/// tie): one slot per child (capped at <see cref="MobileGridMaxColumns"/>), weighted by its <c>colSpan</c>.
+	/// The children's start columns become slot boundaries, and every child lands in the last slot whose boundary
+	/// does not exceed its own start column. A list outside the reference row that spans past its slot merges
+	/// every slot it covers into one column, summing their weights; a wider field just takes its slot. Weights are
+	/// reduced by their GCD. Unused web width (gaps, an empty trailing column) is dropped on purpose, while the
+	/// first boundary is 1 so every child has a slot.
 	/// </summary>
 	private static TabletGrid BuildTabletGrid(IReadOnlyList<ElementMapEntry> children, IReadOnlyList<WebCell> cells) {
 		int referenceRow = cells
@@ -5321,26 +5322,39 @@ public static partial class WebToMobileAnalysisService {
 			.OrderBy(c => c.Column)
 			.Take(MobileGridMaxColumns)
 			.ToList();
-
-		int divisor = reference.Aggregate(0, (acc, c) => Gcd(acc, c.Span));
-		List<string> columns = reference.Select(c => $"{c.Span / divisor}fr").ToList();
 		int[] boundaries = reference.Select(c => c.Column).ToArray();
 		boundaries[0] = 1;
+		int[] slots = cells.Select(c => SlotOf(boundaries, c.Column)).ToArray();
 
-		var slots = new int[cells.Count];
+		var joinsNext = new bool[boundaries.Length];
 		for (int i = 0; i < cells.Count; i++) {
-			int slot = SlotOf(boundaries, cells[i].Column);
-			bool spansPastSlot = slot + 1 < boundaries.Length
-				&& cells[i].Column + cells[i].Span - 1 >= boundaries[slot + 1];
-			if (cells[i].Row != referenceRow
-				&& spansPastSlot
-				&& MobileListComponentTypes.Contains(children[i].MobileType ?? string.Empty)) {
-				return new TabletGrid(StackedColumns, [], IsStacked: true);
+			if (cells[i].Row == referenceRow
+				|| !MobileListComponentTypes.Contains(children[i].MobileType ?? string.Empty)) {
+				continue;
 			}
-			slots[i] = slot;
+			int lastSlot = SlotOf(boundaries, cells[i].Column + cells[i].Span - 1);
+			for (int k = slots[i]; k < lastSlot; k++) {
+				joinsNext[k] = true;
+			}
 		}
-		ResolveRowCollisions(cells, slots, boundaries.Length);
-		return new TabletGrid(columns, slots.Select(s => s + 1).ToList(), IsStacked: false);
+		var columnOfSlot = new int[boundaries.Length];
+		for (int k = 1; k < boundaries.Length; k++) {
+			columnOfSlot[k] = columnOfSlot[k - 1] + (joinsNext[k - 1] ? 0 : 1);
+		}
+		int columnCount = columnOfSlot[^1] + 1;
+		var weights = new int[columnCount];
+		var slotsPerColumn = new int[columnCount];
+		for (int k = 0; k < boundaries.Length; k++) {
+			weights[columnOfSlot[k]] += reference[k].Span;
+			slotsPerColumn[columnOfSlot[k]]++;
+		}
+		int divisor = weights.Aggregate(0, Gcd);
+		List<string> columns = weights.Select(w => $"{w / divisor}fr").ToList();
+
+		int[] childColumns = slots.Select(s => columnOfSlot[s]).ToArray();
+		bool[] isMergedColumn = slotsPerColumn.Select(n => n > 1).ToArray();
+		(int[] placedColumns, int[] placedRows) = PlaceInRows(cells, childColumns, isMergedColumn);
+		return new TabletGrid(columns, placedColumns, placedRows);
 
 		static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
 	}
@@ -5357,25 +5371,42 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
-	/// Within each web row, moves a child whose slot is already taken to the next free slot on the right, else
-	/// to the nearest free one on the left; a row with more children than slots leaves the surplus where it is.
+	/// Gives every child its own 1-based tablet cell, web rows in order. Within a web row a child whose column is
+	/// taken moves to the next free column on the right, else to the nearest free one on the left, never into a
+	/// MERGED column, which belongs to the list it was merged for; a child of a merged column, or one with no free
+	/// column left, goes to a new row below instead, and every later web row moves down with it. Two children in
+	/// one cell would overlap on the designer canvas.
 	/// </summary>
-	private static void ResolveRowCollisions(IReadOnlyList<WebCell> cells, int[] slots, int slotCount) {
-		foreach (IGrouping<int, int> row in Enumerable.Range(0, cells.Count).GroupBy(i => cells[i].Row)) {
-			var taken = new HashSet<int>();
-			foreach (int i in row.OrderBy(i => cells[i].Column)) {
-				if (taken.Add(slots[i])) {
-					continue;
+	private static (int[] Columns, int[] Rows) PlaceInRows(
+		IReadOnlyList<WebCell> cells, int[] childColumns, bool[] isMergedColumn) {
+		var columns = new int[cells.Count];
+		var rows = new int[cells.Count];
+		int rowShift = 0;
+		foreach (IGrouping<int, int> webRow in Enumerable.Range(0, cells.Count)
+			.GroupBy(i => cells[i].Row)
+			.OrderBy(g => g.Key)) {
+			var lines = new List<HashSet<int>> { new() };
+			foreach (int i in webRow.OrderBy(i => cells[i].Column)) {
+				int column = childColumns[i];
+				if (lines[0].Contains(column) && !isMergedColumn[column]) {
+					column = Enumerable.Range(column + 1, Math.Max(0, isMergedColumn.Length - column - 1))
+						.Concat(Enumerable.Range(0, column).Reverse())
+						.FirstOrDefault(c => !lines[0].Contains(c) && !isMergedColumn[c], column);
 				}
-				int free = Enumerable.Range(slots[i] + 1, Math.Max(0, slotCount - slots[i] - 1))
-					.Concat(Enumerable.Range(0, slots[i]).Reverse())
-					.FirstOrDefault(s => !taken.Contains(s), -1);
-				if (free >= 0) {
-					slots[i] = free;
-					taken.Add(free);
+				int line = 0;
+				while (line < lines.Count && lines[line].Contains(column)) {
+					line++;
 				}
+				if (line == lines.Count) {
+					lines.Add([]);
+				}
+				lines[line].Add(column);
+				columns[i] = column + 1;
+				rows[i] = webRow.Key + rowShift + line;
 			}
+			rowShift += lines.Count - 1;
 		}
+		return (columns, rows);
 	}
 
 	/// <summary>
@@ -5391,9 +5422,9 @@ public static partial class WebToMobileAnalysisService {
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		JObject lc = name is not null && sourceLayouts.TryGetValue(name, out JObject found) ? found : null;
 		int column = (lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1;
-		int row = (lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1;
+		int row = Math.Max(1, (lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
-		return new WebCell(column, row, Math.Max(1, span));
+		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)));
 	}
 
 	/// <summary>A JSON array of the given column track sizes.</summary>

@@ -8595,7 +8595,58 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("A file list that spans past its tablet slot stacks the tablet grid exactly like a converted data grid does: crt.FileList is a list too.")]
+	[Description("A list that spans past its slot merges only the slots it covers: in a three-column grid a list across web columns 1-2 gets one 2fr column, the child above it in web column 2 stacks in that column instead of taking web column 3's place, and web column 3 keeps a column of its own.")]
+	public void Analyze_ListSpanningTwoOfThreeSlots_MergesOnlyTheSlotsItCovers() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
+			    "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
+			    "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TypeOf(Element(guide, "Audience")).Should().Be("crt.List", because: "the rule must actually map the grid to a list");
+		TabletColumnsOf(guide).Should().Equal(["2fr", "1fr"],
+			because: "the list's two slots merge into one column carrying both weights, and the third slot stays");
+		TabletCellOf(guide, "A").Should().Be((1, 1), because: "A starts the merged column");
+		TabletCellOf(guide, "B").Should().Be((1, 2),
+			because: "B shares the merged column with A, so it stacks below A rather than taking C's column");
+		TabletCellOf(guide, "C").Should().Be((2, 1), because: "web column 3 keeps a column of its own");
+		TabletCellOf(guide, "Audience").Should().Be((1, 3),
+			because: "the list sits in the merged column below the rows above it");
+	}
+
+	[Test]
+	[Description("A field displaced by a collision never takes the column merged for a list: it goes to a new row below, and the list keeps the merged column in its own web row.")]
+	public void Analyze_DisplacedField_DoesNotTakeAListsMergedColumn() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 4, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "F1", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "F2", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 2, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
+			    "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
+			    "layoutConfig": { "column": 3, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"],
+			because: "A's slot weighs 2 and the list merges B's and C's slots into another 2");
+		TabletCellOf(guide, "C").Should().Be((2, 2),
+			because: "B and C share the merged column, so C stacks below B and every later web row moves down one");
+		TabletCellOf(guide, "Audience").Should().Be((2, 3), because: "the list keeps the column merged for it");
+		TabletCellOf(guide, "F1").Should().Be((1, 3), because: "F1 is first into the first column");
+		TabletCellOf(guide, "F2").Should().Be((1, 4),
+			because: "F2 collides with F1 and must not take the list's merged column, so it goes to a new row");
+	}
+
+	[Test]
+	[Description("A file list that spans past its tablet slot merges the slots it covers exactly like a converted data grid does: crt.FileList is a list too.")]
 	public void Analyze_FileListSpanningPastItsSlot_StacksTheTabletGrid() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
@@ -8639,7 +8690,7 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Control for the stacking rule: a FIELD that spans past its slot keeps the tablet columns and sits in its own slot — stacking every form that has one full-width field would cost the side-by-side layout of the whole grid.")]
+	[Description("Control for the list merge rule: a FIELD that spans past its slot keeps the tablet columns and sits in its own slot — merging the columns under every full-width field would cost the side-by-side layout of the whole form.")]
 	public void Analyze_FieldSpanningPastItsSlot_KeepsTheTabletColumns() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
@@ -8671,6 +8722,25 @@ public sealed class WebToMobileConversionServiceTests {
 		TabletCellOf(guide, "D").Should().Be((2, 2), because: "slot 1 is taken, so D moves right");
 		TabletCellOf(guide, "E").Should().Be((2, 3), because: "E is first into slot 2");
 		TabletCellOf(guide, "F").Should().Be((1, 3), because: "slot 2 is taken and nothing is free on the right, so F moves left");
+	}
+
+	[Test]
+	[Description("A web colSpan wider than the web grid is clamped to it before it weights a column, so a hostile or corrupt span can neither overflow the weight sum nor produce a zero or negative weight.")]
+	public void Analyze_OversizedColSpan_IsClampedToTheWebGridWidth() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1073741824, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1073741824, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1073741824, "rowSpan": 1 } },
+			  { "name": "D", "type": "crt.Input", "layoutConfig": { "column": 4, "row": 1, "colSpan": 1073741824, "rowSpan": 1 } },
+			  { "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
+			    "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
+			    "layoutConfig": { "column": 1, "row": 2, "colSpan": 4, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr"],
+			because: "four clamped spans merged under the list sum to 16, not to an overflowed zero");
 	}
 
 	[Test]

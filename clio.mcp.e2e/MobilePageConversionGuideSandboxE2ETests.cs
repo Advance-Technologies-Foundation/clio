@@ -719,7 +719,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94835 end to end: every adaptive grid the guide reports carries the tablet layout the mobile runtime can render — medium equals large, the phone is one column, every tablet column is an integer <n>fr weight (a minmax() or a space-separated string renders as an equal or a single column), the container's own values carry exactly the reported weights, and every child's tablet column exists; a stacked tablet grid places each child exactly as the phone does.")]
+	[Description("ENG-94835 end to end: every adaptive grid the guide reports carries the tablet layout the mobile runtime can render — medium equals large, the phone is one column, every tablet column is an integer <n>fr weight (a minmax() or a space-separated string renders as an equal or a single column), the container's own values carry exactly the reported weights, and every child's tablet column exists with a span of 1.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns runtime-renderable tablet grid weights")]
 	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server until one converts with an adaptiveLayout, then checks every group against its container's and children's serialized values. No seeded page with a multi-column grid degrades to Ignore; a conversion failure always fails the test.")]
@@ -793,11 +793,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				medium["column"]!.GetValue<int>().Should().BeInRange(1, tablet.Count,
 					because: $"'{item.Name}' must sit in a tablet column of '{group.ContainerName}', or the runtime "
 						+ "drops it to the bottom of a round-robin column");
-				if (tablet.Count == 1) {
-					medium.ToJsonString().Should().Be(item.LayoutConfigAdaptive["small"]!.ToJsonString(),
-						because: $"a one-column tablet grid places '{item.Name}' exactly as the phone does");
-				}
+				medium["colSpan"]!.GetValue<int>().Should().Be(1,
+					because: $"'{item.Name}': the runtime honours no span, so a placement never claims one");
 			}
+			group.Items
+				.Select(i => (i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>(),
+					i.LayoutConfigAdaptive["medium"]!["row"]!.GetValue<int>()))
+				.Should().OnlyHaveUniqueItems(
+					because: $"'{group.ContainerName}': two children in one tablet cell overlap on the designer canvas");
 		}
 	}
 
