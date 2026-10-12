@@ -402,6 +402,8 @@ This area gives the AI a clean application-level view of the platform.
   Uninstall an application by name or code.
 - `install-application`
   Install an application package into a target environment.
+- `place-section-in-workplace`
+  Place an app section in a navigation workplace (`SysWorkplace`) and grant roles access (`SysAdminUnitInWorkplace`) in one call, replacing the manual three-table recipe. `mode` chooses `existing`, `new` (refused when the name is taken), `none` (report only) or, omitted, reuse-or-create; by default the section's `My applications` placement is moved rather than duplicated. Every row is written live and bound into the package as a data binding (the workplace with `Type`, `LoaderId` and client type read back), and `section-workplaces` reports where the section is afterwards. Destructive (it changes navigation and visibility) but idempotent; it never deletes a row.
 - `add-custom-logging`
   Configure package-specific NLog file routing in a registered local Net8 or .NET Framework installation. Reads the package's generated `Constants.LoggerName`, validates and rollback-protects both NLog file updates, and restarts Creatio only when explicitly requested.
 - `add-package-dependency`
