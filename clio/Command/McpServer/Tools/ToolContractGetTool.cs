@@ -554,6 +554,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
+	private const string DetailFieldName = "detail";
 	private const string DryRunFieldName = "dry-run";
 	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
@@ -1517,7 +1518,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
-					Field("detail", StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
+					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1538,17 +1539,17 @@ internal static class ToolContractCatalog {
 			[
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
 				Example("Return the compact index as per-tool objects with the resident and destructive flags", new Dictionary<string, object?> {
-					["detail"] = IndexEntriesDetail
+					[DetailFieldName] = IndexEntriesDetail
 				}),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
-					["detail"] = ToolContractShortForm.FullDetail
+					[DetailFieldName] = ToolContractShortForm.FullDetail
 				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				}),
 				Example("Return one short contract's complete form, examples included", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "create-business-process" },
-					["detail"] = ToolContractShortForm.FullDetail
+					[DetailFieldName] = ToolContractShortForm.FullDetail
 				})
 			],
 			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for their contracts before execution (detail=full when a short form is not enough)."),
