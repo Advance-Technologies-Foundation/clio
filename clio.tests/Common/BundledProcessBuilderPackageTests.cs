@@ -287,7 +287,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"0B09E65DA8A178293A022FE4A8299EE98AF7A4871904D3AF39C07191F802BBDE";
+		"FC3DB08BEE542A044137BD00E0F1AA200735CEDC597B07D3ECC895CFE161A8F9";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +315,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.91";
+	private const string ExpectedArchiveVersion = "1.6.6.93";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +327,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "980e9c0378f47330069e0e65a024e6a6ff54abc3";
+	private const string ExpectedProducingCommit = "2fc627fd89a0e958c18cf9a943a352a141ef8f37";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +353,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791468946000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791562939000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1661,6 +1661,27 @@ public class BundledProcessBuilderPackageTests {
 		return description.Description;
 	}
 
+	[Test]
+	[Description("clio advertises process tracing in three contracts and TYPES its describe block, all hand-mirrored across two repositories (ENG-102111): an archive whose names drifted would drop isTracing on a build and answer success, refuse setTracing as unknown, or report every process as untraced. Each member is asserted on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheTracingWireNamesClioAdvertises() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "BuildProcessRequest", "isTracing").Should().BeTrue(
+			because: "create-business-process advertises the isTracing descriptor field");
+		DeclaresMemberOn(archive, "ProcessOperationDescriptor", "enabled").Should().BeTrue(
+			because: "modify-business-process advertises setTracing's 'enabled' argument");
+		archive.Should().Contain("SetTracing = \"setTracing\"",
+			because: "the operation token clio advertises must be the one the package dispatches");
+		DeclaresMemberOn(archive, "DescribeProcessResponse", "tracing").Should().BeTrue(
+			because: "DescribeProcessResult reads the tracing block off this member");
+		foreach (string member in new[] { "enabled", "turnOffDate" }) {
+			DeclaresMemberOn(archive, "DescribeProcessTracing", member).Should().BeTrue(
+				because: $"DescribedProcessTracing reads '{member}'");
+		}
+	}
+
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector
@@ -1688,5 +1709,4 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	#endregion
-
 }
