@@ -338,7 +338,7 @@ public class RunProcessCommand(
 		string note = (facts?.IsActiveVersion, response.Status == QueuedBackgroundStatus) switch {
 			(true, _) => null,
 			(false, true) => BuildQueuedNotActiveVersionNote(processCode),
-			(false, false) => BuildNotActiveVersionNote(processCode, facts.ActiveVersionName),
+			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName),
 			(null, true) => BuildQueuedUnknownVersionNote(processCode),
 			(null, false) => BuildUnknownVersionNote(processCode)
 		};
