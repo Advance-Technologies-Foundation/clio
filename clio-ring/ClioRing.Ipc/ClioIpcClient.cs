@@ -197,7 +197,7 @@ public sealed class ClioIpcClient : IClioIpcClient {
 	// answers {} with one text line per tool (ENG-102796) returns the per-tool objects only for detail=index-entries;
 	// an older clio ignores an unknown detail value - its no-names branch returns the object index for any detail
 	// other than "full" - so it returns the same objects. The args wrapper is the shape every clio build accepts.
-	private const string CatalogRequest = "{\"args\":{\"detail\":\"index-entries\"}}";
+	internal const string CatalogRequest = "{\"args\":{\"detail\":\"index-entries\"}}";
 
 	/// <inheritdoc />
 	public async Task<ClioToolCallResult> GetToolContractAsync(string name, CancellationToken cancellationToken = default) {
@@ -535,10 +535,16 @@ public sealed class ClioIpcClient : IClioIpcClient {
 		};
 	}
 
-	// Returns the parsed entries and whether they came from the modern compact "index" shape (with
-	// safety flags). The old "tools" shape (or an empty/unparseable payload) is reported as not-modern
-	// so the UI can surface an "incompatible clio" state instead of a silent partial catalog. The
-	// "tool-index" text lines a newer clio returns for bare {} carry no parseable flags and parse as empty.
+	/// <summary>
+	/// Returns the parsed entries and whether they came from the modern compact "index" shape (with
+	/// safety flags). The old "tools" shape (or an empty/unparseable payload) is reported as not-modern
+	/// so the UI can surface an "incompatible clio" state instead of a silent partial catalog. The
+	/// "tool-index" text lines a newer clio returns for bare {} carry no parseable flags and parse as empty.
+	/// </summary>
+	/// <remarks>
+	/// <c>destructive</c> counts as true unless it is literally false: clio writes null when it cannot tell, and
+	/// Ring enables Run for a non-destructive entry, so an unknown flag must not read as safe.
+	/// </remarks>
 	internal static (IReadOnlyList<ClioCatalogEntry> Entries, bool Modern) ParseCatalog(string rawText) {
 		if (string.IsNullOrWhiteSpace(rawText)) {
 			return (Array.Empty<ClioCatalogEntry>(), false);
@@ -565,7 +571,8 @@ public sealed class ClioIpcClient : IClioIpcClient {
 					Purpose = ReadString(item, "purpose") ?? ReadString(item, "description") ?? string.Empty,
 					ContractAvailable = ReadBool(item, "contract-available", "contractAvailable"),
 					Resident = ReadBool(item, "resident"),
-					Destructive = ReadBool(item, "destructive")
+					Destructive = !(item.TryGetProperty("destructive", out JsonElement destructive)
+						&& destructive.ValueKind == JsonValueKind.False)
 				});
 			}
 			return (entries, fromIndex);

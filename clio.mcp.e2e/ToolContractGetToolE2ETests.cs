@@ -453,8 +453,9 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				because: "both shapes enumerate the same tools in the same ordinal order"));
 		AllureApi.Step("Assert a resident tool carries (R)", () =>
 			lines.ToolIndex!.Single(line => ToolIndexLineName(line) == ApplicationGetListTool.ApplicationGetListToolName)
-				.Should().StartWith(ApplicationGetListTool.ApplicationGetListToolName + " (R)",
-					because: "list-apps is resident in tools/list on the real server, which is what (R) tells an agent"));
+				.Should().StartWith(ApplicationGetListTool.ApplicationGetListToolName + " (R): ",
+					because: "list-apps is resident in tools/list and read-only on the real server, so its line carries (R) and "
+						+ "no (D); a server that lost its invoker registry would mark every line (D)"));
 		AllureApi.Step("Assert a long-tail tool carries no (R)", () =>
 			lines.ToolIndex!.Single(line => ToolIndexLineName(line) == SchemaSyncTool.ToolName)
 				.Should().NotContain("(R)",

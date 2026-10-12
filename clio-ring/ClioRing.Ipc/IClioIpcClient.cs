@@ -47,7 +47,7 @@ public interface IClioIpcClient : IAsyncDisposable {
 	/// <summary>
 	/// Fetches the full command catalog via <c>get-tool-contract</c> without tool names, as per-tool objects
 	/// (<c>detail=index-entries</c>, which an older clio ignores while returning the same objects) — the complete
-	/// ~140-tool surface, not the resident <c>tools/list</c> subset. Connects first if needed.
+	/// ~230-tool surface, not the resident <c>tools/list</c> subset. Connects first if needed.
 	/// </summary>
 	Task<IReadOnlyList<ClioCatalogEntry>> GetCatalogAsync(CancellationToken cancellationToken = default);
 

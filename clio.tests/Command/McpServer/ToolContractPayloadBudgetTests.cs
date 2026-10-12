@@ -92,19 +92,19 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
 	// index above is ~47 KB and Copilot CLI spills any tool result past ~20 KB to a file the agent then reads
 	// back in pieces, which it did 15 times in one CAADT release build. Unlike the object index, this ceiling
-	// has a hard upper bound: SpillLineBytes. It follows the next-256 convention rather than the object index's
+	// has a hard upper bound: MaxInlineWireReplyBytes, the inline limit below. It follows the next-256 convention rather than the object index's
 	// three-tools-of-slack deviation: a new tool already re-pins that ceiling, so this one moving with it adds no
-	// review, and every re-pin is then a moment to read the distance left to SpillLineBytes. Measured 17636
+	// review, and every re-pin is then a moment to read the distance left to that limit. Measured 17636
 	// bytes for 228 tools on the default surface (about 75 bytes a line; 216 of the 228 purposes are cut); next
 	// 256-byte step is 17664 (69). The same reply is 16871 bytes on the wire, where the MCP result encoder writes
 	// the ellipsis and the legend's quotes unescaped - so the spill line is about 30 tools away for an agent
 	// (2129 bytes at ~72 a line) and about 18 for this conservative measure.
-	private const int MaxToolIndexSerializedBytes = 69 * 256;
-
-	// The largest reply this ceiling may ever reach: below the smallest spill observed in the CAADT transcripts
-	// (~20.7 KB, Copilot CLI) with room for the MCP envelope. Raising MaxToolIndexSerializedBytes past it brings
-	// the read-back back; cut the purpose length or the legend instead.
-	private const int SpillLineBytes = 19_000;
+	//
+	// Re-pinned to 70 * 256 = 17920 before the first release, by a legend sentence rather than a tool: the review
+	// found that "(D) = destructive" read as "a line without (D) is read-only", which install-gate and reg-web-app
+	// (destructive=false, both write) contradict, so the legend now says a line without (D) can still write.
+	// Measured 17675 for the same 228 tools; the reply on the wire stays about 2 KB under the spill line.
+	private const int MaxToolIndexSerializedBytes = 70 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -227,8 +227,8 @@ public sealed class ToolContractPayloadBudgetTests {
 		response.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "a no-arguments call is the discovery entry point and must answer with the compact index");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxToolIndexSerializedBytes,
-			because: $"the line index is paid on every discovery call, and every session makes one; measured {payloadBytes} bytes against the {MaxToolIndexSerializedBytes}-byte ceiling. Past {SpillLineBytes} bytes it spills to a file in an agent CLI - shorten the purpose cut or the legend before raising this");
-		MaxToolIndexSerializedBytes.Should().BeLessThanOrEqualTo(SpillLineBytes,
+			because: $"the line index is paid on every discovery call, and every session makes one; measured {payloadBytes} bytes against the {MaxToolIndexSerializedBytes}-byte ceiling. Past {MaxInlineWireReplyBytes} bytes it spills to a file in an agent CLI - shorten the purpose cut or the legend before raising this");
+		MaxToolIndexSerializedBytes.Should().BeLessThanOrEqualTo(MaxInlineWireReplyBytes,
 			because: "a ceiling raised past the spill line would let the index grow back into the read-back it was cut to remove");
 	}
 

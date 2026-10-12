@@ -13,6 +13,7 @@ namespace ClioRing.Tests;
 /// request without names, or from the oldest builds with the full <c>tools</c> shape.
 /// </summary>
 [TestFixture]
+[Category("Unit")]
 public sealed class ClioIpcCatalogTests {
 	// Shaped like clio's reply to detail=index-entries, and like an older clio's reply to any no-names request.
 	private const string ObjectIndexReply =
@@ -26,6 +27,14 @@ public sealed class ClioIpcCatalogTests {
 		"{\"success\":true,\"tools\":null,\"error\":null,\"index\":null,"
 		+ "\"legend\":\"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to 48 characters.\","
 		+ "\"tool-index\":[\"list-apps (R): Lists installed applications.\",\"stop-creatio (D): Stops Creatio instance by environment name\"]}";
+
+	// An object index whose entries carry no usable destructive flag: null, as clio writes when it cannot tell, and
+	// absent altogether.
+	private const string UnknownDestructiveReply =
+		"{\"success\":true,\"index\":["
+		+ "{\"name\":\"install-gate\",\"purpose\":\"Installs cliogate.\",\"contract-available\":true,\"resident\":false,\"destructive\":null},"
+		+ "{\"name\":\"reg-web-app\",\"purpose\":\"Registers an environment.\",\"contract-available\":true,\"resident\":false}"
+		+ "]}";
 
 	private const string OldestFullToolsReply =
 		"{\"success\":true,\"tools\":[{\"name\":\"list-apps\",\"description\":\"Lists installed applications.\"}]}";
@@ -79,5 +88,36 @@ public sealed class ClioIpcCatalogTests {
 			because: "the full tools shape still names the tools");
 		modern.Should().BeFalse(
 			because: "without the safety flags Ring must not present the catalog as the modern one");
+	}
+
+	[Test]
+	[Description("An entry whose destructive flag is null or absent parses as destructive, so Ring asks before running it rather than treating an unknown flag as safe.")]
+	public void ParseCatalog_ShouldTreatAnUnknownDestructiveFlagAsDestructive_WhenTheFlagIsNullOrAbsent() {
+		// Arrange
+		// (reply literal above)
+
+		// Act
+		(IReadOnlyList<ClioCatalogEntry> entries, _) = ClioIpcClient.ParseCatalog(UnknownDestructiveReply);
+
+		// Assert
+		entries.Should().HaveCount(2, because: "anti-vacuity: both entries were parsed");
+		entries.Should().OnlyContain(entry => entry.Destructive,
+			because: "Ring enables Run without confirmation only for a tool clio reports as not destructive, and an "
+				+ "unknown flag is not that report");
+	}
+
+	[Test]
+	[Description("The catalog request Ring sends asks for the object index explicitly, so a clio whose default no-names reply is text lines still returns the per-tool flags; reverting to a bare {} would leave Ring with an empty catalog.")]
+	public void CatalogRequest_ShouldAskForTheObjectIndex() {
+		// Arrange
+		// (constant under test)
+
+		// Act
+		string request = ClioIpcClient.CatalogRequest;
+
+		// Assert
+		request.Should().Be("{\"args\":{\"detail\":\"index-entries\"}}",
+			because: "index-entries is the only no-names request a lines-by-default clio answers with objects, and the "
+				+ "args wrapper is the shape every clio build accepts");
 	}
 }

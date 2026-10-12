@@ -263,6 +263,7 @@ public sealed class ToolContractGetToolTests {
 	private static readonly ToolContractGetArgs IndexEntriesArgs = new(Detail: ToolContractCatalog.IndexEntriesDetail);
 
 	private static string ToolIndexLineName(string line) => line[..line.IndexOfAny([' ', ':'])];
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable MCP tool name for get-tool-contract.")]
@@ -1059,7 +1060,10 @@ public sealed class ToolContractGetToolTests {
 		legend.Should().Contain("(R) = resident, resident=true in detail=index-entries",
 			because: "core-rules tells agents resident tools are the ones with resident=true in this index, and that sentence is mirrored verbatim elsewhere; the legend keeps it true without editing either copy");
 		legend.Should().Contain("(D) = destructive",
-			because: "an agent must be able to tell from the line alone that a tool changes or deletes data");
+			because: "an agent must be able to tell from the line alone that a tool may delete or overwrite data");
+		legend.Should().Contain("a line without (D) can still write",
+			because: "the flag is the MCP destructive hint, and tools such as install-gate write with it false; a legend "
+				+ "that defined only (D) would let an agent read every other line as read-only");
 		legend.Should().Contain("clio-run",
 			because: "a tool without (R) is not in tools/list and is reachable only through the clio-run executor");
 		legend.Should().Contain(ToolContractCatalog.IndexEntriesDetail,
@@ -3988,6 +3992,8 @@ public sealed class ToolContractGetToolTests {
 			because: "every legacy full-shape entry must carry a real input schema, not a stub");
 		legacyFullResult.Index.Should().BeNull(
 			because: "the legacy full-shape response must not also carry the compact index");
+		legacyFullResult.ToolIndex.Should().BeNull(
+			because: "the legacy full-shape response must not carry the line form of the compact index either");
 		indexResult.Index.Should().NotBeNullOrEmpty(
 			because: "the same registry with legacyNoNamesFullShape=false must still yield the ordinary compact index");
 
@@ -4066,6 +4072,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the legacy client must still receive a full tools array when no invoker registry is available");
 		legacyFullResult.Index.Should().BeNull(
 			because: "the legacy full-shape response must not also carry the compact index on the no-registry path");
+		legacyFullResult.ToolIndex.Should().BeNull(
+			because: "the legacy full-shape response must not carry the line index on the no-registry path either");
 		indexResult.Index.Should().NotBeNullOrEmpty(
 			because: "the compact index must still be built from the reflection catalog when no invoker registry is available");
 
@@ -4137,6 +4145,8 @@ public sealed class ToolContractGetToolTests {
 			because: "detail=full never carries the compact index, regardless of legacyNoNamesFullShape");
 		legacyFalse.Index.Should().BeNull(
 			because: "detail=full never carries the compact index, regardless of legacyNoNamesFullShape");
+		new[] { legacyTrue.ToolIndex, legacyFalse.ToolIndex }.Should().AllSatisfy(lines => lines.Should().BeNull(
+			because: "detail=full never carries the line index either, regardless of legacyNoNamesFullShape"));
 		legacyTrue.Tools.Should().NotBeNullOrEmpty(
 			because: "detail=full must still return the curated full-contract set when legacyNoNamesFullShape is true");
 		legacyTrue.Tools!.Select(tool => tool.Name).Should().BeEquivalentTo(

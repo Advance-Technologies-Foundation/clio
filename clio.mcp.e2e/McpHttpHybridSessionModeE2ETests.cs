@@ -102,9 +102,12 @@ public sealed class McpHttpHybridSessionModeE2ETests {
 			AllureApi.Step($"Assert legacy full tools remain available {phase}", () =>
 				contracts.Tools.Should().NotBeNullOrEmpty(
 					because: "the CAADT-compatible mcp_client identity must retain its full legacy no-names response shape"));
-			AllureApi.Step($"Assert legacy compact index remains suppressed {phase}", () =>
+			AllureApi.Step($"Assert legacy compact index remains suppressed {phase}", () => {
+				contracts.Index.Should().BeNullOrEmpty(
+					because: "the legacy CAADT client crashes on the object index, so the legacy session must never receive it");
 				contracts.ToolIndex.Should().BeNullOrEmpty(
-					because: "the legacy session must not inherit the modern client's compact-index response shape"));
+					because: "the legacy session must not inherit the modern client's compact-index response shape");
+			});
 		}
 	}
 

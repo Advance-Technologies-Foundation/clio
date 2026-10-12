@@ -7,7 +7,7 @@ applies-to:
   - clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs
   - clio.mcp.e2e/ToolContractGetToolE2ETests.cs
 ticket: ENG-96389
-date: 2026-09-13
+date: 2026-10-12
 ---
 
 **What is true** — `ToolContractCatalog.BuildPurpose` distils the compact-index entry for a tool from
@@ -61,6 +61,14 @@ pairwise unique; `clio.mcp.e2e/ToolContractGetToolE2ETests` re-asserts the survi
 uniqueness over the real stdio server. `BuildPurpose` is `internal` rather than `private` for that
 first reason — routing the rules through production prose would let a reword silently delete the
 coverage.
+
+The uniqueness holds for the 120-character purpose, which `detail=index-entries` serves. The default
+`tool-index` line cuts it to 48 characters, and there five pairs come out identical (measured 2026-10-12):
+the two `clear-redis-db-by-*` tools, the two `download-configuration-by-*`, the two
+`link-from-repository-by-*`, `install-dashboards-migrator` / `install-process-builder` and
+`get-component-info-to-file` / `get-request-info-to-file`. That is accepted: each pair differs in its tool
+NAME, which is on the same line, and keeping 48 characters is what keeps the reply inline. A pair whose
+names do not tell them apart has to fix the first 48 characters of its purpose.
 
 Related: `ToolContractPayloadBudgetTests` ratchets the SIZE of these payloads. It bounds growth and
 says nothing about whether a purpose reads correctly — a different guard for a different failure. See

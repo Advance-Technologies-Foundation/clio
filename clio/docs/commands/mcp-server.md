@@ -189,7 +189,7 @@ clio mcp-server
 Start the same MCP server using the short alias.
 
 Use your MCP client to call get-tool-contract {}.
-Discover what tools exist with a compact index - one line per tool, "name (R)(D): purpose" with the markers explained by a legend - without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"index-entries"} for the same index as objects with the resident and destructive flags, or {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
+Discover what tools exist with a compact index - one line per tool, "name (R)(D) [aka old-name]: purpose" with the purpose cut to 48 characters and the markers explained by a legend - without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"index-entries"} for the same index as objects with the resident and destructive flags, or {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
 
 Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-app-info","get-page","sync-pages"]}.
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
