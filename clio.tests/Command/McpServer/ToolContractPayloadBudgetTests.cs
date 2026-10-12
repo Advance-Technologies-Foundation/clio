@@ -180,6 +180,18 @@ public sealed class ToolContractPayloadBudgetTests {
 	// describe-business-process 33463 - 24 and 45 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
+	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
+	// options (McpResultSize: McpResultJsonEncoder, nulls omitted) - against 19 000 bytes, the inline limit the
+	// CAADT release gate is budgeted against. Copilot CLI returned results of up to ~19.8 KB inline and spilled
+	// ~20.7 KB and over to a file in release build 16156272 and the ENG-99970 A/B on creatio_3 (October 2026); the
+	// 21.3 KB that InlineReplyBudgetBytes cites is the smallest spill the earlier ENG-100154 transcripts happened
+	// to contain, inside the same bracket. The bundle is NOT held to InlineReplyBudgetBytes: Fit measures with the
+	// default encoder, which escapes for HTML and writes every null, so it overstates the wire size - by about
+	// 1 KB here - and keeps fitting conservative. ENG-102797 spends that difference: the short create- and
+	// modify-business-process contracts carry their call shapes, so Fit's measure of this bundle stays over
+	// 18 432 even all short (pinned below) while the reply the agent receives stays inline.
+	private const int MaxInlineWireReplyBytes = 19_000;
+
 	[Test]
 	[Category("Unit")]
 	[Description("The compact discovery index returned by a no-arguments get-tool-contract call stays within its byte budget, ratcheting the cost every long-tail discovery call pays.")]
@@ -278,7 +290,7 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default (ENG-100154).")]
+	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default, measured as it goes on the wire (ENG-100154, ENG-102797).")]
 	public void GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
@@ -290,20 +302,20 @@ public sealed class ToolContractPayloadBudgetTests {
 
 		// Act
 		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
-		int replyBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply));
+		long replyBytes = McpResultSize.Of(reply);
 
 		// Assert
 		reply.Tools.Should().HaveCount(processTools.Length,
 			because: "fitting shortens contracts, it never drops one the caller asked for");
-		replyBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
+		replyBytes.Should().BeLessThanOrEqualTo(MaxInlineWireReplyBytes,
 			because: $"this exact request answered with well over 100 KB before ENG-100154 and was grepped back in "
-				+ $"pieces through the shell; measured {replyBytes} bytes");
+				+ $"pieces through the shell; measured {replyBytes} bytes on the wire");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The seven process-designer contracts still fit one inline reply when every one of them is short and their shared error codes are carried once - the floor fitting can reach, so growth in their kept text is caught here before the default reply stops fitting.")]
-	public void GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget() {
+	[Description("The ENG-102797 trade, pinned: the default lookup of the seven process-designer contracts returns every one of them short - the floor, as it did before the call shapes - and, with both process-write shapes, Fit's own measure of that floor is over its budget, so Fit stops for want of anything left to cut rather than because the reply fits. A change that keeps one of the seven whole, or that brings the floor back under Fit's budget, fails here, so the trade is re-decided instead of drifting. The wire size of that reply is the guard above.")]
+	public void GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
 		string[] processTools = [
@@ -311,21 +323,23 @@ public sealed class ToolContractPayloadBudgetTests {
 			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
 			"set-active-business-process-version"
 		];
-		ToolContractDefinition[] full = [.. tool.GetToolContracts(
-			new ToolContractGetArgs(processTools, ToolContractShortForm.FullDetail)).Tools!];
 
 		// Act
-		// A measure that never fits shortens every contract; destructive leads are the longer, conservative case.
-		ToolContractDefinition[] floor = [.. ToolContractShortForm.Fit(full, _ => int.MaxValue, _ => true)];
-		int floorBytes = ToolContractShortForm.MeasureBytes(new ToolContractGetResponse(true, Tools: floor));
-		ToolContractDefinition largest = floor.MaxBy(ToolContractShortForm.MeasureBytes)!;
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
+		string[] shortened = [.. reply.Tools!
+			.Where(contract => contract.Detail == ToolContractShortForm.ShortDetail)
+			.Select(contract => contract.Name)];
+		int fitMeasure = ToolContractShortForm.MeasureBytes(reply);
 
 		// Assert
-		floorBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
-			because: $"with nothing left to cut the seven short forms measure {floorBytes} bytes; the largest kept form is "
-				+ $"{largest.Name} at {ToolContractShortForm.MeasureBytes(largest)} bytes. Trim the kept text of the "
-				+ "contract you lengthened (its lead, a safety-marked sentence, a field's first sentence) - do not raise "
-				+ "the budget, which sits below the 21.3 KB a Copilot CLI tool result spills to a file at");
+		shortened.Should().BeEquivalentTo(processTools,
+			because: "Fit shortens the largest contract first and needs all seven short to get as close to its "
+				+ "budget as it can; every short form keeps its safety duties, and a contract kept whole here would "
+				+ "be a change in what this bundle costs on the wire");
+		fitMeasure.Should().BeGreaterThan(ToolContractShortForm.InlineReplyBudgetBytes,
+			because: $"Fit measures the all-short reply at {fitMeasure} bytes with the default encoder: the call "
+				+ "shapes spend Fit's margin over the wire size. If this fails the bundle fits Fit's budget again, and "
+				+ "the CallShapes remarks, InlineReplyBudgetBytes and the knowledge record about fitting must say so");
 	}
 
 	[Test]
