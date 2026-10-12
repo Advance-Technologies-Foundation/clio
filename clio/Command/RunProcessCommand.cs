@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Clio.Command.ProcessModel;
+using Clio.Command.RuntimeVerification;
 using Clio.Command.StartProcess;
 using Clio.Common;
 using ErrorOr;
@@ -27,6 +28,18 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 	public IReadOnlyList<string> ResultParameters { get; set; }
 
 	public int TimeoutSeconds { get; set; }
+
+	// ENG-103024: a run the platform answers `running` (parked on a user task, a timer, a signal wait or a background
+	// element) is polled until it ends or WaitTimeoutSeconds pass. False keeps the launch-only answer.
+	public bool Wait { get; set; } = true;
+
+	public int WaitTimeoutSeconds { get; set; } = RunProcessCommand.DefaultWaitTimeoutSeconds;
+
+	// Entities diffed before and after the run; what appeared in them is reported in `created`.
+	public IReadOnlyList<string> Watch { get; set; }
+
+	// Deletes what `created` lists after reporting it, cancelling a still-running run first.
+	public bool Cleanup { get; set; }
 
 	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running or not-started, so the read of
 	// a failed run's log gets only what is left. Null on a path with no such deadline.
@@ -121,6 +134,21 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("resultParameterValues")]
 	public Dictionary<string, object> ResultParameterValues { get; set; }
 
+	// The elements a run that is still running is parked on, after the wait.
+	[JsonProperty("waitingOn")]
+	[System.Text.Json.Serialization.JsonPropertyName("waitingOn")]
+	public List<WaitingElement> WaitingOn { get; set; }
+
+	// Records that appeared in the watched entities during the run. Null when nothing was watched.
+	[JsonProperty("created")]
+	[System.Text.Json.Serialization.JsonPropertyName("created")]
+	public List<CreatedRecord> Created { get; set; }
+
+	// What cleanup deleted and what it could not. Null when cleanup was not asked for or nothing ran.
+	[JsonProperty("cleanup")]
+	[System.Text.Json.Serialization.JsonPropertyName("cleanup")]
+	public CleanupReport Cleanup { get; set; }
+
 	[JsonProperty("warnings")]
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
 	public List<string> Warnings { get; set; } = [];
@@ -137,8 +165,29 @@ public class RunProcessCommand(
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessRunLogReader processRunLogReader,
 	IProcessVersionLibReader versionLibReader,
-	ILogger logger)
+	ILogger logger,
+	IProcessRunMonitor runMonitor,
+	ICreatedRecordWatcher recordWatcher,
+	ICreatedRecordCleaner recordCleaner)
 	: Command<RunProcessOptions> {
+
+	internal const int DefaultWaitTimeoutSeconds = 20;
+	internal const int MaxWaitTimeoutSeconds = 300;
+	internal const int MaxWatchedEntities = 5;
+
+	// Each verification request is bounded by this, and by what is left of the response deadline.
+	private const int VerificationRequestMs = 10_000;
+	private const int PollIntervalMs = 1_000;
+	private const int CancelWaitMs = 10_000;
+	private const int CaptureBudgetMs = 12_000;
+
+	// Reserved out of the response deadline for what follows the wait, so the answer carries it.
+	private const int WaitReserveMs = 3_000;
+	private const int CollectReserveMs = 6_000;
+	private const int CleanupReserveMs = 15_000;
+
+	// Test seam: how the wait sleeps between polls.
+	internal Action<int> Sleep { get; set; } = Thread.Sleep;
 
 	// Code 2 is `Done` in Terrasoft.Core.Process.ProcessStatus but `Completed` in the SysProcessStatus
 	// lookup a polled SysProcessLog points at, so a caller comparing the two matches on the lookup name.
@@ -157,6 +206,7 @@ public class RunProcessCommand(
 	internal const string StillRunningStatus = "still-running";
 
 	private const int InactiveStatus = 0;
+	private const int RunningStatus = 1;
 	private const int ErrorStatus = 3;
 
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
@@ -223,6 +273,11 @@ public class RunProcessCommand(
 			response = Failure("process-name is required");
 			return false;
 		}
+		string verificationError = ValidateVerificationOptions(options);
+		if (verificationError is not null) {
+			response = Failure(verificationError);
+			return false;
+		}
 
 		ErrorOr<ProcessModel.ProcessModel> resolved = generator.Generate(new GenerateProcessModelCommandOptions {
 			Code = options.ProcessName,
@@ -252,7 +307,193 @@ public class RunProcessCommand(
 			return false;
 		}
 
-		return TryLaunch(options, model, values, out response);
+		WatchBaseline baseline = null;
+		if (options.Watch is { Count: > 0 }) {
+			// Bounded so the baseline cannot spend the response time the launch itself needs.
+			baseline = recordWatcher.Capture(options.Watch, RequestBudget(options.ResponseDeadline),
+				DateTimeOffset.UtcNow.AddMilliseconds(CaptureBudgetMs));
+		}
+
+		TryLaunch(options, model, values, out response);
+		Verify(options, response, baseline);
+		return response.Error is null;
+	}
+
+	// Rejected before anything is read or launched.
+	internal static string ValidateVerificationOptions(RunProcessOptions options) {
+		if (options.WaitTimeoutSeconds is < 0 or > MaxWaitTimeoutSeconds) {
+			return $"wait-timeout must be between 0 and {MaxWaitTimeoutSeconds} seconds.";
+		}
+		IReadOnlyList<string> watch = options.Watch ?? [];
+		if (watch.Count > MaxWatchedEntities) {
+			return $"watch takes at most {MaxWatchedEntities} entities.";
+		}
+		string invalid = watch.FirstOrDefault(name => !CreatedRecordWatcher.IsValidEntityName(name));
+		if (watch.Count > 0 && (invalid is not null || watch.Any(string.IsNullOrWhiteSpace))) {
+			return $"watch must list entity schema names (letters, digits, underscore); '{invalid}' is not one.";
+		}
+		if (options.Cleanup && watch.Count == 0) {
+			return "cleanup deletes only what the run created in the watched entities, so it needs watch: list the "
+				+ "entities the process creates records in (for example [\"Activity\"]).";
+		}
+		return null;
+	}
+
+	// ENG-103024: waits for a parked run, reports what it created in the watched entities, and cleans up.
+	private void Verify(RunProcessOptions options, RunProcessResponse response, WatchBaseline baseline) {
+		bool launched = response.Status is not null && response.Status != NotStartedStatus;
+		if (!launched) {
+			return;
+		}
+		Guid.TryParse(response.ProcessId, out Guid processId);
+		if (options.Wait && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
+			WaitForRun(options, response, processId);
+		}
+		if (baseline is null) {
+			return;
+		}
+		WatchOutcome outcome = recordWatcher.Collect(baseline, RequestBudget(options.ResponseDeadline));
+		response.Created = outcome.Created;
+		(response.Warnings ??= []).AddRange(outcome.Warnings);
+		if (options.Cleanup) {
+			CleanUp(options, response, processId, baseline);
+		}
+	}
+
+	private void WaitForRun(RunProcessOptions options, RunProcessResponse response, Guid processId) {
+		int reserveMs = WaitReserveMs
+			+ (options.Watch is { Count: > 0 } ? CollectReserveMs : 0)
+			+ (options.Cleanup ? CleanupReserveMs : 0);
+		DateTimeOffset until = DateTimeOffset.UtcNow.AddSeconds(options.WaitTimeoutSeconds);
+		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-reserveMs) < until) {
+			until = deadline.AddMilliseconds(-reserveMs);
+		}
+		ProcessRunState state = null;
+		try {
+			// Read, then sleep only while time is left, so the state reported is the last one read.
+			while (true) {
+				state = runMonitor.Read(processId, RequestBudget(options.ResponseDeadline));
+				int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
+				if (state.IsTerminal || leftMs <= 0) {
+					break;
+				}
+				Sleep(Math.Min(PollIntervalMs, leftMs));
+			}
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
+				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name)
+				+ $". Read SysProcessLog row {processId} for the outcome.");
+			return;
+		}
+		ApplyRunState(response, state, options.WaitTimeoutSeconds);
+	}
+
+	internal static void ApplyRunState(RunProcessResponse response, ProcessRunState state, int waitTimeoutSeconds) {
+		if (state is null || !state.Found || state.StatusValue is null) {
+			(response.Warnings ??= []).Add($"The run answered `running`, but its SysProcessLog row "
+				+ $"{response.ProcessId} could not be read while waiting, so no later status is known. Read that row "
+				+ "later instead of re-running the process.");
+			return;
+		}
+		response.Status = ResolveStatusName(state.StatusValue.Value);
+		if (state.StatusValue == ErrorStatus) {
+			response.Error = DescribeFailure(null, state.ErrorSummary, response.VersionName);
+			return;
+		}
+		if (state.IsTerminal) {
+			return;
+		}
+		response.WaitingOn = state.WaitingOn.Count > 0 ? [.. state.WaitingOn] : null;
+		string elements = state.WaitingOn.Count == 0
+			? "no element is logged as running yet"
+			: "it is parked on " + string.Join(", ", state.WaitingOn.Select(DescribeWaitingElement));
+		(response.Warnings ??= []).Add($"The run is still running after waiting up to {waitTimeoutSeconds} s: {elements}. "
+			+ "This is NOT a failure. A user task (for example a Perform task that created an activity) waits for a "
+			+ "person to complete it and never ends on its own, so judge the run by `created` and `waitingOn` rather "
+			+ "than by waiting longer. A timer or background element ends by itself: read SysProcessLog row "
+			+ $"{response.ProcessId} later instead of re-running the process.");
+	}
+
+	private static string DescribeWaitingElement(WaitingElement element) {
+		string caption = UntrustedText.Fenced(element.Caption) ?? "an unnamed element";
+		return element.Type is null ? caption : $"{caption} ({element.Type})";
+	}
+
+	private void CleanUp(RunProcessOptions options, RunProcessResponse response, Guid processId, WatchBaseline baseline) {
+		List<CreatedRecord> created = response.Created ?? [];
+		string me = baseline.CurrentUserContactId;
+		List<CreatedRecord> mine = me is null
+			? []
+			: created.Where(record => string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase)).ToList();
+		// Past the response deadline the tool has already answered still-running, so a cancel or a delete made now
+		// would happen without the caller ever being told. Nothing is done instead.
+		DateTimeOffset? stopAt = options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs);
+		if (stopAt is not null && DateTimeOffset.UtcNow >= stopAt) {
+			response.Cleanup = new CleanupReport { Skipped = created };
+			(response.Warnings ??= []).Add("cleanup did nothing: too little of the response time was left to cancel "
+				+ "and delete safely. cleanup.skipped lists the records; delete them with odata-delete.");
+			return;
+		}
+		// A record a parked run still uses ("being used in a process" - the activity of a Perform task) cannot be
+		// deleted, so a running run is cancelled first - but only when there is something of the caller's to delete.
+		if (mine.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
+			CancelRun(options, response, processId);
+		}
+		Dictionary<string, IReadOnlyCollection<string>> references = baseline.Entities
+			.Where(watch => watch.Error is null)
+			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.Ordinal);
+		response.Cleanup = recordCleaner.Delete(mine, references, RequestBudget(options.ResponseDeadline), stopAt)
+			?? new CleanupReport();
+		response.Cleanup.Skipped = created.Except(mine).ToList();
+		if (response.Cleanup.Skipped.Count > 0) {
+			(response.Warnings ??= []).Add(me is null
+				? "cleanup deleted nothing: the calling user's contact could not be read, so no record could be shown "
+					+ "to be the caller's own. cleanup.skipped lists them."
+				: $"cleanup left {response.Cleanup.Skipped.Count} record(s) created in the same window by another "
+					+ "user; cleanup.skipped lists them. A record created meanwhile under the SAME login (another "
+					+ "session of the same user) cannot be told apart and is deleted.");
+		}
+		if (response.Cleanup.Failed.Count > 0) {
+			(response.Warnings ??= []).Add($"cleanup left {response.Cleanup.Failed.Count} record(s) in place; "
+				+ "cleanup.failed names each with the reason.");
+		}
+	}
+
+	private void CancelRun(RunProcessOptions options, RunProcessResponse response, Guid processId) {
+		try {
+			string error = runMonitor.Cancel(processId, RequestBudget(options.ResponseDeadline));
+			if (!string.IsNullOrEmpty(error)) {
+				(response.Warnings ??= []).Add($"The still-running run was not cancelled before cleanup: {error}.");
+				return;
+			}
+			DateTimeOffset until = DateTimeOffset.UtcNow.AddMilliseconds(CancelWaitMs);
+			while (DateTimeOffset.UtcNow < until) {
+				ProcessRunState state = runMonitor.Read(processId, RequestBudget(options.ResponseDeadline));
+				if (state.IsTerminal) {
+					response.Status = ResolveStatusName(state.StatusValue!.Value);
+					response.WaitingOn = null;
+					(response.Warnings ??= []).Add("cleanup cancelled the still-running run before deleting what it created.");
+					return;
+				}
+				Sleep(PollIntervalMs);
+			}
+			(response.Warnings ??= []).Add("cleanup asked the platform to cancel the still-running run, but it had not "
+				+ "stopped after 10 s; records it still uses may refuse deletion.");
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			(response.Warnings ??= []).Add("The still-running run could not be cancelled before cleanup: "
+				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
+		}
+	}
+
+	// Each verification request may spend VerificationRequestMs, but never past the response deadline.
+	private static int RequestBudget(DateTimeOffset? responseDeadline) {
+		if (responseDeadline is null) {
+			return VerificationRequestMs;
+		}
+		double left = (responseDeadline.Value - DateTimeOffset.UtcNow).TotalMilliseconds;
+		return (int)Math.Clamp(left, 1_000, VerificationRequestMs);
 	}
 
 	private bool TryLaunch(RunProcessOptions options, ProcessModel.ProcessModel model,

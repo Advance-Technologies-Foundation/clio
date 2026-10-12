@@ -24,6 +24,7 @@ using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
+using Clio.Command.RuntimeVerification;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Branding;
 using Clio.Command.Theming;
@@ -1191,6 +1192,9 @@ public class BindingsModule {
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
 		services.AddTransient<IProcessRunLogReader, ProcessRunLogReader>();
+		services.AddTransient<IProcessRunMonitor, ProcessRunMonitor>();
+		services.AddTransient<ICreatedRecordWatcher, CreatedRecordWatcher>();
+		services.AddTransient<ICreatedRecordCleaner, CreatedRecordCleaner>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();

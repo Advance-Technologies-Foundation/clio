@@ -25,7 +25,7 @@ public sealed class RunProcessTool(
 	internal const string ToolName = "run-process";
 
 	/// <summary>The canonical field list echoed back when an unknown argument key is refused (ENG-98566).</summary>
-	internal const string ValidArgsHint = "Valid: environment-name, process-name, parameters, result-parameters, timeout, uri, login, password.";
+	internal const string ValidArgsHint = "Valid: environment-name, process-name, parameters, result-parameters, timeout, wait, wait-timeout, watch, cleanup, uri, login, password.";
 
 	/// <summary>
 	/// Refusal for a call whose whole argument object is absent (ENG-98566, Sonar S2259).
@@ -143,7 +143,13 @@ public sealed class RunProcessTool(
 		+ "To verify a new version before activating it, launch its own code: a warning says it is not the active "
 		+ "one, and activating it stays a separate step the user asks for. "
 		+ "A display caption is still refused - launching must name a code "
-		+ "- but the refusal names the code it resolved to, which is the active version's code.")]
+		+ "- but the refusal names the code it resolved to, which is the active version's code. "
+		+ "VERIFY IN ONE CALL (no sleeps, no hand-written reads): a run the platform answers `running` - parked on a "
+		+ "user task, timer or wait - is polled until it ends or `wait-timeout` passes (`wait: false` returns at once); "
+		+ "an unfinished run names the elements it waits on in `waitingOn`. `watch` lists entities to diff before and "
+		+ "after the run, and `created` returns [{entity, id, title}] of the records that appeared in them. "
+		+ "`cleanup: true` then deletes those of them the caller created, children first, cancelling a still-running "
+		+ "run first.")]
 	public async Task<RunProcessResponse> RunProcess(
 		[Description("run-process parameters")]
 		[Required]
@@ -167,6 +173,10 @@ public sealed class RunProcessTool(
 			Parameters = args.Parameters,
 			ResultParameters = args.ResultParameters,
 			TimeoutSeconds = args.Timeout ?? 0,
+			Wait = args.Wait ?? true,
+			WaitTimeoutSeconds = args.WaitTimeout ?? RunProcessCommand.DefaultWaitTimeoutSeconds,
+			Watch = args.Watch,
+			Cleanup = args.Cleanup ?? false,
 			Environment = args.EnvironmentName,
 			Uri = args.Uri,
 			Login = args.Login,
@@ -274,6 +284,30 @@ public sealed record RunProcessArgs {
 	[Description("HTTP request timeout in seconds; omit for none, which is what a long synchronous process needs. "
 		+ "It bounds the request, not the MCP response.")]
 	public int? Timeout { get; init; }
+
+	[JsonPropertyName("wait")]
+	[Description("Default true: when the platform answers `running` (the run is parked on a user task, a timer, a "
+		+ "signal wait or a background element), poll the run until it ends or wait-timeout passes, and return the "
+		+ "final status, its error, and the elements it still waits on. false answers right after the launch.")]
+	public bool? Wait { get; init; }
+
+	[JsonPropertyName("wait-timeout")]
+	[Description("Seconds to wait for a running run, 0-300, default 20; never past the MCP response deadline.")]
+	public int? WaitTimeout { get; init; }
+
+	[JsonPropertyName("watch")]
+	[Description("Entity names to diff before and after the run, e.g. [\"Activity\"], at most 5. The records "
+		+ "that appeared in them come back in `created` as {entity, id, title}. The platform keeps no list of what "
+		+ "a run created, so only watched entities are reported, and a record another user created at the same "
+		+ "moment is reported too.")]
+	public string[]? Watch { get; init; }
+
+	[JsonPropertyName("cleanup")]
+	[Description("true deletes the records `created` lists after reporting them - only those the calling user "
+		+ "created (another session under the same login cannot be told apart), nothing else - children before the parents they reference, and cancels a still-running run "
+		+ "first. Requires watch. The outcome is in `cleanup` {deleted, failed, skipped}; `deleted` means the record "
+		+ "is gone, also when a cascade removed it first.")]
+	public bool? Cleanup { get; init; }
 
 	[JsonPropertyName("environment-name")]
 	[Description(McpToolDescriptions.EnvironmentName)]

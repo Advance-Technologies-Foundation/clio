@@ -392,7 +392,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     route the process designer's Run uses. <see cref="RunProcess"/> runs the active version whatever
 		///     version it is given.
 		/// </summary>
-		RunSpecifiedProcessVersion = 116
+		RunSpecifiedProcessVersion = 116,
+
+		/// <summary>
+		///     Cancels running process instances. The body is <c>{"processDataIds":"id1;id2"}</c> - ONE string of
+		///     semicolon-separated ids, not a JSON array (an array is accepted with 200 and cancels nothing). The
+		///     cancellation is asynchronous: the SysProcessLog status moves to Canceled shortly after the call.
+		/// </summary>
+		CancelProcessExecution = 117
 
 	}
 
@@ -522,6 +529,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
 		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
+		{KnownRoute.CancelProcessExecution, "ServiceModel/ProcessEngineService.svc/CancelExecution"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

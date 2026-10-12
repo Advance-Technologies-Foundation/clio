@@ -1,0 +1,102 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Clio.Command.McpServer.Tools;
+using Clio.Common;
+
+namespace Clio.Command.RuntimeVerification;
+
+/// <summary>Deletes the records a verified action created, children before the parents they reference.</summary>
+public interface ICreatedRecordCleaner {
+
+	/// <summary>
+	/// Deletes <paramref name="records"/> one by one through OData. An entity whose lookup columns reference another
+	/// entity in the set goes first; within an entity the newest record goes first. A record refused in one pass is
+	/// tried again after the others, while a pass still deletes something.
+	/// </summary>
+	/// <param name="records">The records to delete; nothing else is ever deleted.</param>
+	/// <param name="referencesByEntity">Per entity, the entities its lookup columns reference.</param>
+	/// <param name="timeoutMs">Bound of each request, in milliseconds.</param>
+	/// <param name="stopAt">No request is started at or after this instant; the rest is reported as failed.</param>
+	/// <returns>What was deleted and what was not.</returns>
+	CleanupReport Delete(IReadOnlyList<CreatedRecord> records,
+		IReadOnlyDictionary<string, IReadOnlyCollection<string>> referencesByEntity, int timeoutMs,
+		DateTimeOffset? stopAt = null);
+}
+
+internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
+	: ICreatedRecordCleaner {
+
+	private const int MaxPasses = 3;
+
+	/// <inheritdoc />
+	public CleanupReport Delete(IReadOnlyList<CreatedRecord> records,
+		IReadOnlyDictionary<string, IReadOnlyCollection<string>> referencesByEntity, int timeoutMs,
+		DateTimeOffset? stopAt = null) {
+		CleanupReport report = new();
+		List<CreatedRecord> pending = OrderForDeletion(records, referencesByEntity).ToList();
+		Dictionary<CreatedRecord, string> lastError = [];
+		for (int pass = 0; pass < MaxPasses && pending.Count > 0; pass++) {
+			List<CreatedRecord> refused = [];
+			foreach (CreatedRecord record in pending) {
+				string error = stopAt is not null && DateTimeOffset.UtcNow >= stopAt
+					? "not attempted: the response deadline was reached"
+					: DeleteOne(record, timeoutMs);
+				if (error is null) {
+					report.Deleted.Add(record);
+				}
+				else {
+					lastError[record] = error;
+					refused.Add(record);
+				}
+			}
+			bool progressed = refused.Count < pending.Count;
+			pending = refused;
+			if (!progressed) {
+				break;
+			}
+		}
+		report.Failed.AddRange(pending.Select(record => new CleanupFailure(record.Entity, record.Id, lastError[record])));
+		return report;
+	}
+
+	/// <summary>
+	/// Children first: an entity that references another entity of the set precedes it; within an entity, newest
+	/// first. A reference cycle falls back to the caller's order for the entities in it.
+	/// </summary>
+	internal static IEnumerable<CreatedRecord> OrderForDeletion(IReadOnlyList<CreatedRecord> records,
+		IReadOnlyDictionary<string, IReadOnlyCollection<string>> referencesByEntity) {
+		List<string> entities = records.Select(record => record.Entity).Distinct(StringComparer.Ordinal).ToList();
+		HashSet<string> present = entities.ToHashSet(StringComparer.Ordinal);
+		// Edges child -> parent, self references ignored (handled by the newest-first order inside an entity).
+		Dictionary<string, HashSet<string>> parentsOf = entities.ToDictionary(entity => entity,
+			entity => (referencesByEntity.TryGetValue(entity, out IReadOnlyCollection<string> refs) ? refs : [])
+				.Where(parent => present.Contains(parent) && !string.Equals(parent, entity, StringComparison.Ordinal))
+				.ToHashSet(StringComparer.Ordinal), StringComparer.Ordinal);
+		List<string> ordered = [];
+		HashSet<string> placed = new(StringComparer.Ordinal);
+		while (placed.Count < entities.Count) {
+			// An entity no unplaced entity references can go now: nothing left depends on it.
+			string next = entities.FirstOrDefault(entity => !placed.Contains(entity)
+				&& !entities.Any(other => !placed.Contains(other) && !string.Equals(other, entity, StringComparison.Ordinal)
+					&& parentsOf[other].Contains(entity)));
+			next ??= entities.First(entity => !placed.Contains(entity));
+			ordered.Add(next);
+			placed.Add(next);
+		}
+		return ordered.SelectMany(entity => records
+			.Where(record => string.Equals(record.Entity, entity, StringComparison.Ordinal))
+			.OrderByDescending(record => record.CreatedOn, StringComparer.Ordinal));
+	}
+
+	private string DeleteOne(CreatedRecord record, int timeoutMs) {
+		try {
+			string url = serviceUrlBuilder.Build(ODataKeyFormatter.KeyPath(record.Entity, record.Id));
+			string response = applicationClient.ExecuteDeleteRequest(url, string.Empty, Math.Max(1, timeoutMs));
+			return ODataKeyedWrite.ValidateWriteResponse(response);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return SensitiveErrorTextRedactor.Redact(exception.Message);
+		}
+	}
+}
