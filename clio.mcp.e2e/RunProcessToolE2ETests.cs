@@ -116,6 +116,12 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 			because: "the input value reached the process verbatim and its output came back intact — an "
 				+ "exact round trip is what proves the run really happened, which a status string alone "
 				+ "cannot show");
+		envelope.VersionName.Should().Be(ProcessCode,
+			because: "the answer names the version it launched (ENG-101880 TC-06)");
+		envelope.IsActiveVersion.Should().BeTrue(
+			because: "a single-version process is its own active version, so the standing must not read as unknown (TC-06)");
+		envelope.Warnings.Should().BeNullOrEmpty(
+			because: "running the active version of a process without versions needs no caveat (TC-06)");
 	}
 
 	private static async Task<bool> CanReachEnvironmentAsync(McpE2ESettings settings, string environmentName) =>
