@@ -200,7 +200,11 @@ namespace Clio.Command;
 // path on a column the read does not load green, reading EMPTY at run time - the defect this raise closes.
 // Convergence refuses everything below the bundled archive anyway; this floor is the gate in its degraded modes
 // (an unreadable archive, a pre-release version). 1.6.6.77 is the first archive with both.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.77",
+// Raised to 1.6.6.92 by ENG-102111: process tracing - the build's `isTracing` and the `setTracing` operation. An
+// older server DISCARDS `isTracing` and answers success, so the process is built untraced and nothing says so, and
+// refuses `setTracing` as an unsupported operation, which reads as a clio fault. 1.6.6.92 is the first archive
+// with both.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.92",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -328,25 +332,38 @@ public sealed class ModifyBusinessProcessService(
 		ModifyProcessResultDto result = envelope.Result
 			?? throw new InvalidOperationException("ModifyProcess returned an unexpected response shape.");
 		if (!result.Success) {
-			// Surfaced HERE or nowhere. The success record below cannot carry it (it is only built on success),
-			// and this throw is the only way a refused operation leaves clio — so discarding the index would
-			// leave the caller doing on the client what the server split the field to stop them doing:
-			// bisecting the batch against a live environment. Appended rather than woven in because the
-			// server's own sentence is the primary message and several guards name neither endpoint.
-			string refusedBy = result.FailedOperationIndex.HasValue
-				? $" The operation at index {result.FailedOperationIndex.Value} is the one that refused."
-				: string.Empty;
-			// A layout refusal is not a failure to fix, it is a question to relay, so it leaves by the same
-			// throw wearing the answer's shape: the elements it is about, and the one word that makes it
-			// re-sendable. Without the element list a caller has the server's sentence and no way to tell the
-			// user WHICH parts of their diagram move.
-			string layoutChange = result.LayoutChange?.RelaySentence() ?? string.Empty;
-			throw new InvalidOperationException(
-				(result.ErrorMessage ?? "ModifyProcess failed.") + refusedBy + layoutChange);
+			throw new InvalidOperationException(BuildFailureMessage(result));
 		}
 
 		return new ModifyBusinessProcessResult(result.SchemaName, result.SchemaUId, result.AppliedOperations,
 			result.Warnings);
+	}
+
+	// Surfaced HERE or nowhere. The success record cannot carry a failure (it is only built on success), and the throw
+	// is the only way a refused operation leaves clio — so discarding the index would leave the caller doing on the
+	// client what the server split the field to stop them doing: bisecting the batch against a live environment.
+	// Appended rather than woven in because the server's own sentence is the primary message and several guards name
+	// neither endpoint.
+	private static string BuildFailureMessage(ModifyProcessResultDto result) {
+		string message = result.ErrorMessage ?? "ModifyProcess failed.";
+		if (result.FailedOperationIndex.HasValue) {
+			message += $" The operation at index {result.FailedOperationIndex.Value} is the one that refused.";
+		}
+		// A failure that still names the schema came AFTER the save: today only a tracing switch that failed behind a
+		// saved edit (ENG-102111). The edit exists, so its layout report is a description rather than a question - the
+		// re-send offer would invite repeating a batch that is already saved - and its warnings still apply: a compile
+		// the saved script change owes must not vanish with the failure.
+		bool saved = !string.IsNullOrWhiteSpace(result.SchemaUId);
+		if (result.LayoutChange != null) {
+			// A layout refusal before the save is not a failure to fix but a question to relay: the elements it is
+			// about and the one word that makes it re-sendable. Without the element list a caller has the server's
+			// sentence and no way to tell the user WHICH parts of their diagram move.
+			message += saved ? result.LayoutChange.ElementsClause() : result.LayoutChange.RelaySentence();
+		}
+		if (saved && result.Warnings is { Count: > 0 }) {
+			message += " " + string.Join(" ", result.Warnings);
+		}
+		return message;
 	}
 
 	private static JsonArray ParseOperations(string operationsJson) {
