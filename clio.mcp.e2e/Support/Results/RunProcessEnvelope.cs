@@ -7,4 +7,7 @@ internal sealed record RunProcessEnvelope(
 	[property: JsonPropertyName("processId")] string? ProcessId,
 	[property: JsonPropertyName("resultParameterValues")] Dictionary<string, object>? ResultParameterValues,
 	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings,
-	[property: JsonPropertyName("error")] string? Error);
+	[property: JsonPropertyName("error")] string? Error,
+	[property: JsonPropertyName("versionName")] string? VersionName = null,
+	[property: JsonPropertyName("isActiveVersion")] bool? IsActiveVersion = null,
+	[property: JsonPropertyName("activeVersionName")] string? ActiveVersionName = null);

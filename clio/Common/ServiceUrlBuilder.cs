@@ -388,13 +388,20 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		GetIsFileDesignMode = 115,
 
 		/// <summary>
+		///     Starts the process version the request names, never substituting the family's active version - the
+		///     route the process designer's Run uses. <see cref="RunProcess"/> runs the active version whatever
+		///     version it is given.
+		/// </summary>
+		RunSpecifiedProcessVersion = 116,
+
+		/// <summary>
 		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
 		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
 		/// </summary>
-		GetCurrentUserInfo = 116,
+		GetCurrentUserInfo = 117,
 
 		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
-		DesignReady = 117
+		DesignReady = 118
 
 	}
 
@@ -523,6 +530,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
+		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
 		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
 		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 	};
