@@ -280,9 +280,13 @@ internal sealed class RecordDeletionService(
 		}
 		RuntimeEntitySchemaColumnResult lookup = schema?.Columns
 			.FirstOrDefault(candidate => string.Equals(candidate.Name, column, StringComparison.Ordinal));
-		string kind = lookup?.IsCascade == true ? ReferencingRows.CascadeKind
-			: lookup?.IsRequired == true ? ReferencingRows.OwnedKind
-			: ReferencingRows.LinkedKind;
+		string kind = ReferencingRows.LinkedKind;
+		if (lookup?.IsCascade == true) {
+			kind = ReferencingRows.CascadeKind;
+		}
+		else if (lookup?.IsRequired == true) {
+			kind = ReferencingRows.OwnedKind;
+		}
 		List<string> ids = rows.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList();
 		return new ReferencingRows(entity, column, ids.Take(MaxIdsPerPair).ToList(), ids.Count > MaxIdsPerPair, kind);
 	}

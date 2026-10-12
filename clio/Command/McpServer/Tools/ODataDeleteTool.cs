@@ -38,6 +38,7 @@ public sealed class ODataDeleteTool(
 	};
 
 	private const int RequestTimeoutMs = 30_000;
+	private const string DeleteVerb = "delete";
 	private const int DiagnosisRequestMs = 10_000;
 	private static readonly TimeSpan DiagnosisBudget = TimeSpan.FromSeconds(25);
 
@@ -73,7 +74,7 @@ public sealed class ODataDeleteTool(
 		ODataWriteResponse result = DeleteCore(args, out bool attempted, out bool received);
 		return result with {
 			CorrelationId = correlationId,
-			Diagnostic = result.Plan is not null ? null : DataWriteDiagnostic.Create("delete", args.Entity, null,
+			Diagnostic = result.Plan is not null ? null : DataWriteDiagnostic.Create(DeleteVerb, args.Entity, null,
 				attempted, received, result.Success, result.Error)
 		};
 	}
@@ -89,7 +90,7 @@ public sealed class ODataDeleteTool(
 			string entity = args.Entity.Trim();
 			if (!args.DryRun) {
 				ODataWriteResponse notConfirmed = ODataKeyedWrite.RequireConfirmation(args.Confirm, entity,
-					string.Join(", ", ids), "delete", "deletion");
+					string.Join(", ", ids), DeleteVerb, "deletion");
 				if (notConfirmed is not null) {
 					return notConfirmed;
 				}
@@ -138,7 +139,7 @@ public sealed class ODataDeleteTool(
 		bool hasId = !string.IsNullOrWhiteSpace(args.Id);
 		bool hasIds = args.Ids is { Length: > 0 };
 		if (hasId == hasIds) {
-			ODataWriteResponse invalidEntity = ODataKeyedWrite.ValidateTarget(args.Entity, Guid.Empty.ToString(), "delete");
+			ODataWriteResponse invalidEntity = ODataKeyedWrite.ValidateTarget(args.Entity, Guid.Empty.ToString(), DeleteVerb);
 			return invalidEntity ?? ODataWriteResponse.Failure(hasId
 				? "Pass id or ids, not both."
 				: "id is required and must be a record GUID (or pass ids, up to 50); keyless mass delete is not allowed.");
@@ -148,7 +149,7 @@ public sealed class ODataDeleteTool(
 			return ODataWriteResponse.Failure($"ids takes at most {MaxIds} record GUIDs per call.");
 		}
 		foreach (string candidate in requested) {
-			ODataWriteResponse invalid = ODataKeyedWrite.ValidateTarget(args.Entity, candidate, "delete");
+			ODataWriteResponse invalid = ODataKeyedWrite.ValidateTarget(args.Entity, candidate, DeleteVerb);
 			if (invalid is not null) {
 				return invalid;
 			}
@@ -161,39 +162,50 @@ public sealed class ODataDeleteTool(
 		bool cascade, DateTimeOffset stopAt, ref bool attempted, ref bool received) {
 		List<RecordKey> cascadeDeleted = [];
 		if (cascade) {
-			CascadePlan plan = CollectOwned(service, entity, id, stopAt);
-			if (plan.Refusal is not null) {
-				return new ODataDeleteItemResult(id, false, plan.Refusal, plan.Explanation, plan.Referencing, null);
-			}
-			foreach (RecordKey child in plan.Order) {
-				RecordDeleteOutcome childOutcome = service.Delete(child.Entity, child.Id, RequestTimeoutMs);
-				attempted |= childOutcome.Attempted;
-				received |= childOutcome.Received;
-				if (!childOutcome.Success) {
-					string reason = childOutcome.ServerDetail is null
-						? childOutcome.Error
-						: $"{childOutcome.Error} The server's own reason: {childOutcome.ServerDetail}.";
-					return new ODataDeleteItemResult(id, false,
-						$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {entity}({id}) was "
-						+ $"left in place: {reason}", null, plan.Referencing, cascadeDeleted);
-				}
-				cascadeDeleted.Add(child);
+			ODataDeleteItemResult refused = DeleteOwnedChildren(service, new RecordKey(entity, id), stopAt, cascadeDeleted,
+				ref attempted, ref received);
+			if (refused is not null) {
+				return refused;
 			}
 		}
 		RecordDeleteOutcome outcome = service.Delete(entity, id, RequestTimeoutMs);
 		attempted |= outcome.Attempted;
 		received |= outcome.Received;
+		IReadOnlyList<RecordKey> removed = cascadeDeleted.Count > 0 ? cascadeDeleted : null;
 		if (outcome.Success) {
-			return new ODataDeleteItemResult(id, true, null, null, null, cascadeDeleted.Count > 0 ? cascadeDeleted : null);
+			return new ODataDeleteItemResult(id, true, null, null, null, removed);
 		}
-		// A transport failure has no refusal to explain, and its write may have landed.
-		RecordDeleteDiagnosis diagnosis = outcome.Received
-			? service.Diagnose(entity, id, DiagnosisRequestMs, stopAt)
-			: null;
-		return new ODataDeleteItemResult(id, false, outcome.Error,
-			outcome.Received ? DeleteRefusalText.Explain(entity, id, outcome, diagnosis) : null,
-			diagnosis?.Referencing.Count > 0 ? diagnosis.Referencing : null,
-			cascadeDeleted.Count > 0 ? cascadeDeleted : null);
+		if (!outcome.Received) {
+			// A transport failure has no refusal to explain, and its write may have landed.
+			return new ODataDeleteItemResult(id, false, outcome.Error, null, null, removed);
+		}
+		RecordDeleteDiagnosis diagnosis = service.Diagnose(entity, id, DiagnosisRequestMs, stopAt);
+		return new ODataDeleteItemResult(id, false, outcome.Error, DeleteRefusalText.Explain(entity, id, outcome, diagnosis),
+			diagnosis.Referencing.Count > 0 ? diagnosis.Referencing : null, removed);
+	}
+
+	// Plans the whole tree, then deletes its owned rows deepest first; a refusal or the first failed child is returned.
+	private static ODataDeleteItemResult DeleteOwnedChildren(IRecordDeletionService service, RecordKey target,
+		DateTimeOffset stopAt, List<RecordKey> cascadeDeleted, ref bool attempted, ref bool received) {
+		CascadePlan plan = CollectOwned(service, target.Entity, target.Id, stopAt);
+		if (plan.Refusal is not null) {
+			return new ODataDeleteItemResult(target.Id, false, plan.Refusal, plan.Explanation, plan.Referencing, null);
+		}
+		foreach (RecordKey child in plan.Order) {
+			RecordDeleteOutcome childOutcome = service.Delete(child.Entity, child.Id, RequestTimeoutMs);
+			attempted |= childOutcome.Attempted;
+			received |= childOutcome.Received;
+			if (!childOutcome.Success) {
+				string reason = childOutcome.ServerDetail is null
+					? childOutcome.Error
+					: $"{childOutcome.Error} The server's own reason: {childOutcome.ServerDetail}.";
+				return new ODataDeleteItemResult(target.Id, false,
+					$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
+					+ $"was left in place: {reason}", null, plan.Referencing, cascadeDeleted);
+			}
+			cascadeDeleted.Add(child);
+		}
+		return null;
 	}
 
 	private static ODataDeletePlanItem BuildPlan(IRecordDeletionService service, string entity, string id,
@@ -231,43 +243,48 @@ public sealed class ODataDeleteTool(
 
 	private static (string Refusal, string Explanation) Visit(CascadeWalk walk, RecordKey node,
 		RecordDeleteDiagnosis diagnosis, int depth) {
-		(string entity, string id) = (node.Entity, node.Id);
 		string blocker = DescribeCascadeBlocker(diagnosis);
 		if (blocker is not null) {
-			return ($"cascade refused: {entity}({id}) {blocker}. Nothing was deleted.",
-				DeleteRefusalText.Explain(entity, id, new RecordDeleteOutcome(false, null, null, false, false), diagnosis));
+			return ($"cascade refused: {node.Entity}({node.Id}) {blocker}. Nothing was deleted.",
+				DeleteRefusalText.Explain(node.Entity, node.Id, new RecordDeleteOutcome(false, null, null, false, false),
+					diagnosis));
 		}
 		foreach (ReferencingRows rows in diagnosis.Referencing.Where(rows => rows.Kind == ReferencingRows.OwnedKind)) {
 			if (rows.More) {
 				return ($"cascade refused: more than {RecordDeletionService.MaxIdsPerPair} {rows.Entity} rows reference "
-					+ $"{entity}({id}) through {rows.Column}. Nothing was deleted.", null);
+					+ $"{node.Entity}({node.Id}) through {rows.Column}. Nothing was deleted.", null);
 			}
 			foreach (string childId in rows.Ids) {
-				RecordKey child = new(rows.Entity, childId);
-				if (!walk.Seen.Add(child)) {
-					continue;
-				}
-				RecordDeleteDiagnosis childDiagnosis = walk.Service.Diagnose(child.Entity, child.Id, DiagnosisRequestMs,
-					walk.StopAt);
-				if (depth >= MaxCascadeDepth) {
-					if (childDiagnosis.Referencing.Any(nested => nested.Kind != ReferencingRows.CascadeKind)) {
-						return ($"cascade refused: owned rows go deeper than {MaxCascadeDepth} levels below the record "
-							+ $"({child.Entity}({child.Id}) is itself referenced). Nothing was deleted.", null);
-					}
-				}
-				else {
-					(string nested, string nestedExplanation) = Visit(walk, child, childDiagnosis, depth + 1);
-					if (nested is not null) {
-						return (nested, nestedExplanation);
-					}
-				}
-				walk.Order.Add(child);
-				if (walk.Order.Count > MaxCascadeRows) {
-					return ($"cascade refused: more than {MaxCascadeRows} owned rows. Nothing was deleted.", null);
+				(string refusal, string explanation) = VisitChild(walk, new RecordKey(rows.Entity, childId), depth);
+				if (refusal is not null) {
+					return (refusal, explanation);
 				}
 			}
 		}
 		return (null, null);
+	}
+
+	// One owned child: checked (and, above the depth limit, walked) before it is queued for deletion.
+	private static (string Refusal, string Explanation) VisitChild(CascadeWalk walk, RecordKey child, int depth) {
+		if (!walk.Seen.Add(child)) {
+			return (null, null);
+		}
+		RecordDeleteDiagnosis childDiagnosis = walk.Service.Diagnose(child.Entity, child.Id, DiagnosisRequestMs,
+			walk.StopAt);
+		if (depth < MaxCascadeDepth) {
+			(string nested, string nestedExplanation) = Visit(walk, child, childDiagnosis, depth + 1);
+			if (nested is not null) {
+				return (nested, nestedExplanation);
+			}
+		}
+		else if (childDiagnosis.Referencing.Any(nested => nested.Kind != ReferencingRows.CascadeKind)) {
+			return ($"cascade refused: owned rows go deeper than {MaxCascadeDepth} levels below the record "
+				+ $"({child.Entity}({child.Id}) is itself referenced). Nothing was deleted.", null);
+		}
+		walk.Order.Add(child);
+		return walk.Order.Count > MaxCascadeRows
+			? ($"cascade refused: more than {MaxCascadeRows} owned rows. Nothing was deleted.", null)
+			: (null, null);
 	}
 
 	private static string DescribeCascadeBlocker(RecordDeleteDiagnosis diagnosis) {
