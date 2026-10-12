@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Clio.Command;
+using Clio.Package;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using Clio.UserEnvironment;
@@ -560,6 +561,7 @@ public sealed class ApplicationInfoServiceTests {
 	[Description("ENG-102683 T1: re-sends the installed-application SelectQuery when the server answers success:false with 'Collection was modified', and get-app-info succeeds on the retry.")]
 	public void GetApplicationInfo_Should_Retry_SelectQuery_On_Transient_Server_Failure() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		ConfigureHappyPathResponses();
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
@@ -582,6 +584,7 @@ public sealed class ApplicationInfoServiceTests {
 	[Description("ENG-102683 T2: re-sends RuntimeEntitySchemaRequest when the server answers success:false with 'Collection was modified' outside errorInfo.message, and get-app-info returns the entity.")]
 	public void GetApplicationInfo_Should_Retry_RuntimeEntitySchemaRequest_On_Transient_Server_Failure() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		ConfigureHappyPathResponses();
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),
@@ -648,6 +651,7 @@ public sealed class ApplicationInfoServiceTests {
 	[Description("ENG-102683 T4: a persistent transient SelectQuery failure stops after three sends and the error names the platform text.")]
 	public void GetApplicationInfo_Should_Stop_SelectQuery_Retry_After_Budget_And_Name_Platform_Text() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		ConfigureHappyPathResponses();
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("SelectQuery", StringComparison.Ordinal)),
@@ -670,6 +674,7 @@ public sealed class ApplicationInfoServiceTests {
 	[Description("ENG-102683 T4: a persistent transient RuntimeEntitySchemaRequest failure stops after three sends and the error falls back to the raw body when errorInfo.message is empty.")]
 	public void GetApplicationInfo_Should_Stop_RuntimeEntitySchemaRequest_Retry_After_Budget_And_Name_Raw_Body() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		ConfigureHappyPathResponses();
 		_applicationClient.ExecutePostRequest(
 				Arg.Is<string>(url => url.EndsWith("RuntimeEntitySchemaRequest", StringComparison.Ordinal)),

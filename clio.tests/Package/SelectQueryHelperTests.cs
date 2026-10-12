@@ -62,6 +62,7 @@ public class SelectQueryHelperTests {
 	[Description("Re-sends a SelectQuery whose HTTP-200 body reports a transient server failure, and returns the response of the send that succeeded.")]
 	public void ExecuteSelectQuery_Should_Retry_Transient_Server_Failure() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		_applicationClient.ExecutePostRequest(
 				SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(TransientFailureJson, SuccessJson);
@@ -103,6 +104,7 @@ public class SelectQueryHelperTests {
 	[Description("Gives up after the transient-retry budget is spent and surfaces the server-reported failure text.")]
 	public void ExecuteSelectQuery_Should_Throw_After_Transient_Retry_Budget_Is_Spent() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		_applicationClient.ExecutePostRequest(
 				SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(TransientFailureJson);
@@ -120,9 +122,10 @@ public class SelectQueryHelperTests {
 	}
 
 	[Test]
-	[Description("ENG-102683: treats a blank errorInfo.message as absent, so a transient marker elsewhere in the body is still retried and the final error names the raw body.")]
+	[Description("ENG-102683: treats a blank errorInfo.message as absent, so a transient marker elsewhere in the body is still retried and the final error names the raw body, fenced as untrusted server text.")]
 	public void ExecuteSelectQuery_Should_Classify_And_Report_Raw_Body_When_Error_Message_Is_Blank() {
 		// Arrange
+		using IDisposable noRetryWait = SelectQueryHelper.OverrideRetryWait(_ => { });
 		const string blankMessageJson =
 			"""{"success":false,"errorInfo":{"message":"","stackTrace":"Collection was modified; enumeration operation may not execute."}}""";
 		_applicationClient.ExecutePostRequest(
@@ -135,9 +138,31 @@ public class SelectQueryHelperTests {
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>()
-			.WithMessage("*stackTrace*Collection was modified*",
-				because: "a blank platform message must fall back to the raw body instead of an empty 'SelectQuery failed: '");
+			.WithMessage("*[untrusted-source-text begin]*stackTrace*Collection was modified*[untrusted-source-text end]*",
+				because: "a blank platform message must fall back to the raw body, fenced as server-authored text, instead of an empty 'SelectQuery failed: '");
 		_applicationClient.Received(3).ExecutePostRequest(
+			SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("PR #1782 review: with a blank errorInfo.message, a raw body that names a timeout or deadlock but not the route-table reload marker is a permanent failure - sent once, and the error carries the fenced raw body.")]
+	public void ExecuteSelectQuery_Should_Not_Retry_Blank_Message_Failure_Without_Route_Table_Marker() {
+		// Arrange
+		const string blankMessageJson =
+			"""{"success":false,"errorInfo":{"message":"","errorCode":"SomeError","stackTrace":"at Terrasoft.Core.DB.DBExecutor.set_CommandTimeout(Int32 value)"}}""";
+		_applicationClient.ExecutePostRequest(
+				SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(blankMessageJson);
+
+		// Act
+		Action act = () => SelectQueryHelper.ExecuteSelectQuery<TestSelectResponse>(
+			_applicationClient, _serviceUrlBuilder, new { rootSchemaName = "SysPackage" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>()
+			.WithMessage("*[untrusted-source-text begin]*SomeError*[untrusted-source-text end]*",
+				because: "the final error must still name the raw body, fenced as server-authored text");
+		_applicationClient.Received(1).ExecutePostRequest(
 			SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 

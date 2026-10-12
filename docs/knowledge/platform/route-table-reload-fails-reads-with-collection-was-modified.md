@@ -17,8 +17,12 @@ Any endpoint is affected, `SelectQuery` and `RuntimeEntitySchemaRequest` include
 
 `SelectQueryHelper.ExecuteSelectQuery` re-sends such reads (issue #1119), and
 `SelectQueryHelper.SendWithTransientRetry` gives any other idempotent read the same budget and markers.
-`SelectQueryHelper.DescribeServerFailure` treats a blank `errorInfo.message` as absent and falls back to
-the raw body — otherwise both the transient classifier and the final error see an empty string.
+A blank `errorInfo.message` is treated as absent — otherwise both the transient classifier and the final
+error see an empty string. The two read it differently (PR #1782 review):
+`SelectQueryHelper.IsTransientServerFailure` looks in the unredacted raw body for `Collection was modified`
+ONLY — a permanent failure's stack trace can mention `CommandTimeout` or a deadlock handler, and the full
+marker list would re-send it three times — while `SelectQueryHelper.DescribeServerFailure` puts the raw
+body into the exception message through `UntrustedText.Fenced`, since it is server-authored and unbounded.
 
 **Why it is this way** — the window is milliseconds long and clears on its own, so a bounded re-send of
 a read is the only fix on clio's side; a write must not be re-sent blindly.

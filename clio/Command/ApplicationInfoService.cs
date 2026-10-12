@@ -8,7 +8,6 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Package;
 using Clio.UserEnvironment;
 using Terrasoft.Core.Entities;
-using static Clio.Package.SelectQueryHelper;
 
 namespace Clio.Command;
 
@@ -301,9 +300,8 @@ public sealed class ApplicationInfoService(
 						$"Runtime entity schema request '{entityRow.UId}'",
 						url), body);
 				},
-				answer => answer.Response.Success
-					? null
-					: SelectQueryHelper.DescribeServerFailure(answer.Response.ErrorInfo?.Message, answer.Body));
+				answer => !answer.Response.Success
+					&& SelectQueryHelper.IsTransientServerFailure(answer.Response.ErrorInfo?.Message, answer.Body));
 		if (!response.Success)
 		{
 			throw new InvalidOperationException(
@@ -604,56 +602,56 @@ public sealed class ApplicationInfoService(
 
 	private static object BuildInstalledApplicationsQuery(string? appId, string? appCode)
 	{
-		List<SelectQueryFilterDefinition> filters = [];
+		List<SelectQueryHelper.SelectQueryFilterDefinition> filters = [];
 		if (!string.IsNullOrWhiteSpace(appId))
 		{
-			filters.Add(new SelectQueryFilterDefinition("Id", appId.Trim(), GuidDataValueType));
+			filters.Add(new SelectQueryHelper.SelectQueryFilterDefinition("Id", appId.Trim(), SelectQueryHelper.GuidDataValueType));
 		}
 
 		if (!string.IsNullOrWhiteSpace(appCode))
 		{
-			filters.Add(new SelectQueryFilterDefinition("Code", appCode.Trim(), TextDataValueType));
+			filters.Add(new SelectQueryHelper.SelectQueryFilterDefinition("Code", appCode.Trim(), SelectQueryHelper.TextDataValueType));
 		}
 
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"SysInstalledApp",
 			[
-				new SelectQueryColumnDefinition("Id", "Id"),
-				new SelectQueryColumnDefinition("Code", "Code"),
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("Version", "Version")
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Version", "Version")
 			],
 			filters);
 	}
 
 	private static object BuildApplicationEntitiesQuery(string appId, string packageUId)
 	{
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"ApplicationEntity",
 			[
-				new SelectQueryColumnDefinition("UId", "UId"),
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("Caption", "Caption")
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption")
 			],
 			[
-				new SelectQueryFilterDefinition("Application", appId, GuidDataValueType),
-				new SelectQueryFilterDefinition("Package", packageUId, GuidDataValueType)
+				new SelectQueryHelper.SelectQueryFilterDefinition("Application", appId, SelectQueryHelper.GuidDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Package", packageUId, SelectQueryHelper.GuidDataValueType)
 			]);
 	}
 
 	private static object BuildApplicationPagesQuery(string packageName)
 	{
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"SysSchema",
 			[
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("UId", "UId"),
-				new SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
-				new SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
 			],
 			[
-				new SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", TextDataValueType),
-				new SelectQueryFilterDefinition("SysPackage.Name", packageName, TextDataValueType)
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysPackage.Name", packageName, SelectQueryHelper.TextDataValueType)
 			]);
 	}
 
@@ -682,20 +680,20 @@ public sealed class ApplicationInfoService(
 		};
 	}
 
-	private sealed class SelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class SelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 
 		[JsonPropertyName("rows")]
 		public List<InstalledApplicationDto> Rows { get; set; } = [];
 	}
 
-	private sealed class ApplicationEntitySelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class ApplicationEntitySelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 		[JsonPropertyName("rows")]
 		public List<ApplicationEntityRecordDto> Rows { get; set; } = [];
 	}
 
-	private sealed class ApplicationPageSelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class ApplicationPageSelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 		[JsonPropertyName("rows")]
 		public List<ApplicationPageRecordDto> Rows { get; set; } = [];
@@ -707,7 +705,7 @@ public sealed class ApplicationInfoService(
 		public bool Success { get; set; }
 
 		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
+		public SelectQueryHelper.ErrorInfoDto? ErrorInfo { get; set; }
 
 		[JsonPropertyName("packages")]
 		public List<ApplicationPackageDto> Packages { get; set; } = [];
@@ -719,7 +717,7 @@ public sealed class ApplicationInfoService(
 		public bool Success { get; set; }
 
 		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
+		public SelectQueryHelper.ErrorInfoDto? ErrorInfo { get; set; }
 
 		[JsonPropertyName("schema")]
 		public RuntimeSchemaDto? Schema { get; set; }

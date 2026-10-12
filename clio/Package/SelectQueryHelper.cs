@@ -72,6 +72,27 @@ internal static class SelectQueryHelper
 		"timed out"
 	];
 
+	/// <summary>
+	/// The one transient marker trusted when the platform left <c>errorInfo.message</c> blank.
+	/// </summary>
+	/// <remarks>
+	/// PR #1782 review. With a blank message the only text left is the whole raw body, stack trace included, and a
+	/// permanent failure's stack trace can name <c>CommandTimeout</c> or a deadlock handler without either having
+	/// happened. The blank-message shape measured in ENG-102683 is the route-table reload, so only its marker is
+	/// matched there.
+	/// </remarks>
+	private const string RouteTableReloadMarker = "Collection was modified";
+
+	/// <summary>
+	/// Test-only replacement for the pause between transient re-sends, scoped to the current execution flow.
+	/// </summary>
+	/// <remarks>
+	/// The callers reach <see cref="SendWithTransientRetry{TAnswer}"/> through static call chains, so a parameter
+	/// cannot be threaded down from a test, and test fixtures run in parallel, so a plain static setter would leak
+	/// into other fixtures. An <see cref="AsyncLocal{T}"/> is confined to the test that set it.
+	/// </remarks>
+	private static readonly AsyncLocal<Action<TimeSpan>?> RetryWaitOverride = new();
+
 	internal static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -100,9 +121,8 @@ internal static class SelectQueryHelper
 				// endpoint and the actual body, never as a raw System.Text.Json parser message.
 				return (ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, body, JsonOptions), body);
 			},
-			answer => answer.Response.Success
-				? null
-				: DescribeServerFailure(answer.Response.ErrorInfo?.Message, answer.Body),
+			answer => !answer.Response.Success
+				&& IsTransientServerFailure(answer.Response.ErrorInfo?.Message, answer.Body),
 			allowedAttempts);
 		if (!response.Success)
 		{
@@ -124,58 +144,89 @@ internal static class SelectQueryHelper
 	/// </remarks>
 	/// <typeparam name="TAnswer">The parsed answer of one send.</typeparam>
 	/// <param name="send">Sends the read once and parses the answer.</param>
-	/// <param name="getFailureDetail">Returns <see langword="null"/> for a successful answer, otherwise the failure
-	/// text the server reported (see <see cref="DescribeServerFailure"/>).</param>
+	/// <param name="isTransientFailure">Whether an answer is a server-reported failure a re-send can clear (see
+	/// <see cref="IsTransientServerFailure"/>); <see langword="false"/> for a successful answer.</param>
 	/// <param name="allowedAttempts">Maximum number of sends.</param>
 	/// <returns>The first successful answer, the first non-transient failure, or the last answer once the budget is
 	/// spent.</returns>
 	internal static TAnswer SendWithTransientRetry<TAnswer>(
 		Func<TAnswer> send,
-		Func<TAnswer, string?> getFailureDetail,
+		Func<TAnswer, bool> isTransientFailure,
 		int allowedAttempts = TransientFailureAttempts)
 	{
 		ArgumentNullException.ThrowIfNull(send);
-		ArgumentNullException.ThrowIfNull(getFailureDetail);
+		ArgumentNullException.ThrowIfNull(isTransientFailure);
 		int attempt = 1;
 		while (true)
 		{
 			TAnswer answer = send();
-			string? detail = getFailureDetail(answer);
-			if (detail is null || attempt >= allowedAttempts || !IsTransientFailure(detail))
+			if (attempt >= allowedAttempts || !isTransientFailure(answer))
 			{
 				return answer;
 			}
-			Thread.Sleep(TransientFailureRetryDelay);
+			(RetryWaitOverride.Value ?? Thread.Sleep)(TransientFailureRetryDelay);
 			attempt++;
 		}
 	}
 
 	/// <summary>
-	/// The text that describes a server-reported failure: the platform's <c>errorInfo.message</c>, or the raw
-	/// response body when that message is absent or blank.
+	/// Replaces the pause between transient re-sends for the current execution flow until the returned scope is
+	/// disposed. For tests only, so the retry paths run without real sleeps.
+	/// </summary>
+	/// <param name="wait">Called instead of <see cref="Thread.Sleep(TimeSpan)"/>.</param>
+	/// <returns>A scope that restores the previous behaviour when disposed.</returns>
+	internal static IDisposable OverrideRetryWait(Action<TimeSpan> wait)
+	{
+		ArgumentNullException.ThrowIfNull(wait);
+		Action<TimeSpan>? previous = RetryWaitOverride.Value;
+		RetryWaitOverride.Value = wait;
+		return new RetryWaitScope(previous);
+	}
+
+	private sealed class RetryWaitScope(Action<TimeSpan>? previous) : IDisposable
+	{
+		public void Dispose() => RetryWaitOverride.Value = previous;
+	}
+
+	/// <summary>
+	/// Whether a server-reported failure is one a re-send can clear.
+	/// </summary>
+	/// <remarks>
+	/// Classified on the UNREDACTED server text: <see cref="DescribeServerFailure"/> neutralizes the raw body for
+	/// the message, and a scrubbed or clamped body could lose the marker. With a non-blank <c>errorInfo.message</c>
+	/// every marker in <see cref="TransientFailureMarkers"/> applies to that message; with a blank one only
+	/// <see cref="RouteTableReloadMarker"/> is looked for in the raw body.
+	/// </remarks>
+	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
+	/// <param name="responseJson">The raw response body.</param>
+	/// <returns>True when the failure names a known transient condition.</returns>
+	internal static bool IsTransientServerFailure(string? errorMessage, string responseJson) =>
+		string.IsNullOrWhiteSpace(errorMessage)
+			? !string.IsNullOrEmpty(responseJson)
+				&& responseJson.Contains(RouteTableReloadMarker, StringComparison.OrdinalIgnoreCase)
+			: TransientFailureMarkers.Any(marker =>
+				errorMessage.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The text that describes a server-reported failure for an exception message: the platform's
+	/// <c>errorInfo.message</c>, or the neutralized raw response body when that message is absent or blank.
 	/// </summary>
 	/// <remarks>
 	/// ENG-102683: during a route-table reload the platform answers <c>success: false</c> with an empty
 	/// <c>errorInfo.message</c> and puts "Collection was modified" elsewhere in the body; treating a blank message as
-	/// the detail hid the cause from both the transient classifier and the final error.
+	/// the detail hid the cause from the final error.
+	/// <para>PR #1782 review: the raw body is server-authored and unbounded (a whole stack trace), and the message
+	/// reaches MCP envelopes, so the fallback goes through <see cref="UntrustedText.Fenced"/> - scrubbed, flattened,
+	/// capped and fenced - per <c>docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md</c>.
+	/// The non-blank platform message keeps its existing treatment.</para>
 	/// </remarks>
 	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
 	/// <param name="responseJson">The raw response body.</param>
 	/// <returns>The failure text.</returns>
 	internal static string DescribeServerFailure(string? errorMessage, string responseJson) =>
-		string.IsNullOrWhiteSpace(errorMessage) ? responseJson : errorMessage;
-
-	/// <summary>
-	/// Whether a server-reported SelectQuery failure is one a re-send can clear.
-	/// </summary>
-	/// <param name="detail">The failure text the server reported, or the raw response body.</param>
-	/// <returns>True when the text names a known transient condition.</returns>
-	private static bool IsTransientFailure(string detail)
-	{
-		return !string.IsNullOrEmpty(detail)
-			&& TransientFailureMarkers.Any(marker =>
-				detail.Contains(marker, StringComparison.OrdinalIgnoreCase));
-	}
+		string.IsNullOrWhiteSpace(errorMessage)
+			? UntrustedText.Fenced(responseJson) ?? "the server returned no failure details"
+			: errorMessage;
 
 	/// <summary>
 	/// Builds a SelectQuery whose filters are combined with AND.
