@@ -197,13 +197,13 @@ public sealed class WorkplacePlacementServiceTests {
 	}
 
 	[Test]
-	[Description("Warns that nobody sees the workplace when no role is granted.")]
+	[Description("Warns that nobody sees the workplace when no role is granted and the section is added, not moved.")]
 	public void Place_ShouldWarn_WhenNoRoleIsGranted() {
 		// Arrange
 		_env.SeedMyApplicationsPlacement(bindInPackage: true);
 
 		// Act
-		WorkplacePlacementResult result = _sut.Place(Request(roles: []));
+		WorkplacePlacementResult result = _sut.Place(Request(roles: [], remove: false));
 
 		// Assert
 		result.Roles.Should().BeEmpty(because: "no role was asked for");
@@ -227,18 +227,99 @@ public sealed class WorkplacePlacementServiceTests {
 	}
 
 	[Test]
-	[Description("Warns when a moved placement was not shipped by the target package, because another package may still ship the old workplace.")]
-	public void Place_ShouldWarn_WhenMovedPlacementIsNotBoundInPackage() {
+	[Description("Refuses, before any write, to move the section out of My applications into a workplace no role sees, because that hides the app from everyone.")]
+	public void Place_ShouldThrowBeforeWriting_WhenMoveWouldHideSection() {
 		// Arrange
-		_env.SeedMyApplicationsPlacement(bindInPackage: false);
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+
+		// Act
+		Action act = () => _sut.Place(Request(roles: []));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*hide the app*",
+			because: "a section moved into a workplace without a grant disappears from navigation");
+		_env.Upserts.Should().BeEmpty(because: "the refusal comes before the first write");
+		_env.Placements.Single().WorkplaceId.Should().Be(FakeEnvironment.MyApplicationsId,
+			because: "the section stays in My applications");
+	}
+
+	[Test]
+	[Description("Grants the roles before moving the section, so a failed grant leaves the section in My applications instead of in a workplace nobody sees.")]
+	public void Place_ShouldLeaveSectionInMyApplications_WhenGrantFails() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		_env.FailUpsertOfSchema = WorkplacePlacementService.RoleGrantSchema;
+
+		// Act
+		Action act = () => _sut.Place(Request());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the grant write failed");
+		_env.Placements.Single().WorkplaceId.Should().Be(FakeEnvironment.MyApplicationsId,
+			because: "the placement is moved only after every grant is written");
+	}
+
+	[Test]
+	[Description("Binds a moved placement into the target package when no package ships it yet.")]
+	public void Place_ShouldBindMovedPlacementInPackage_WhenNoPackageShipsIt() {
+		// Arrange
+		Guid row = _env.SeedMyApplicationsPlacement(bindInPackage: false);
 
 		// Act
 		WorkplacePlacementResult result = _sut.Place(Request());
 
 		// Assert
-		result.Section.Action.Should().Be(WorkplacePlacementService.ActionMoved, because: "the row is still moved");
-		result.Warnings.Should().Contain(warning => warning.Contains("still ships the old workplace"),
-			because: "the agent must know another package can undo the move on install");
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionMoved, because: "the row is moved");
+		_env.BoundRow("SysModuleInWorkplace_UsrOrders", row).Should().NotBeNull(
+			because: "the moved row must ship with the package");
+	}
+
+	[Test]
+	[Description("Refuses, before any write, to move a placement another package ships, because installing that package would undo the move; the error names the package.")]
+	public void Place_ShouldThrowBeforeWriting_WhenAnotherPackageShipsThePlacement() {
+		// Arrange
+		Guid row = _env.SeedMyApplicationsPlacement(bindInPackage: false);
+		_env.OtherPackageBindings["SysModuleInWorkplace_UsrOrders"] = ("SysModuleInWorkplace", new() {
+			[row] = new() { ["Id"] = row.ToString(), ["SysWorkplace"] = FakeEnvironment.MyApplicationsId.ToString() }
+		});
+
+		// Act
+		Action act = () => _sut.Place(Request());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage($"*'{FakeEnvironment.OtherPackage}'*",
+			because: "two packages shipping one row with different workplaces is decided by install order");
+		_env.Upserts.Should().BeEmpty(because: "the refusal comes before the first write");
+	}
+
+	[Test]
+	[Description("Adds the section and warns when My applications cannot be identified, instead of silently leaving a second placement.")]
+	public void Place_ShouldWarn_WhenMyApplicationsCannotBeIdentified() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		_env.RenameMyApplications("Мої застосунки", withBinding: false);
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request());
+
+		// Assert
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionCreated,
+			because: "nothing identifies the placement to move");
+		result.Warnings.Should().Contain(warning => warning.Contains("could not be identified"),
+			because: "the caller asked for a move and must learn it did not happen");
+	}
+
+	[Test]
+	[Description("Never names a workplace binding SysWorkplace_MyApps, which identifies My applications.")]
+	public void WorkplaceBindingName_ShouldAvoidMyApplicationsBinding() {
+		// Act
+		string name = WorkplacePlacementService.WorkplaceBindingName("MyApps");
+
+		// Assert
+		name.Should().NotBe(WorkplacePlacementService.MyApplicationsBindingName,
+			because: "a user workplace in that binding would be taken for My applications");
+		WorkplacePlacementService.WorkplaceBindingName("Orders").Should().Be("SysWorkplace_Orders",
+			because: "other names keep the plain form");
 	}
 
 	[Test]
@@ -305,6 +386,24 @@ public sealed class WorkplacePlacementServiceTests {
 		first.Workplace.Created.Should().BeTrue(because: "the name was free");
 		second.Workplace.Id.Should().Be(first.Workplace.Id,
 			because: "a re-run finds its own workplace holding the section instead of refusing");
+	}
+
+	[Test]
+	[Description("mode=new finishes an earlier call that created and bound the workplace but failed before placing the section.")]
+	public void Place_ShouldConverge_WhenModeIsNewAndEarlierRunStoppedBeforePlacing() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		Guid own = _env.SeedWorkplace(WorkplaceName);
+		_env.Bindings["SysWorkplace_Orders"] = ("SysWorkplace", new() {
+			[own] = new() { ["Id"] = own.ToString() }
+		});
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request() with { Mode = "new" });
+
+		// Assert
+		result.Workplace.Id.Should().Be(own, because: "the package already ships this workplace, so it is its own");
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionMoved, because: "the re-run finishes the move");
 	}
 
 	[Test]
@@ -385,6 +484,7 @@ public sealed class WorkplacePlacementServiceTests {
 	/// </summary>
 	private sealed class FakeEnvironment : IWorkplaceRepository, IDataBindingDbService {
 
+		internal const string OtherPackage = "UsrOtherApp";
 		internal static readonly Guid PackageUId = Guid.NewGuid();
 		internal static readonly Guid WebClientTypeId = Guid.NewGuid();
 		internal static readonly Guid SectionId = Guid.NewGuid();
@@ -399,6 +499,9 @@ public sealed class WorkplacePlacementServiceTests {
 		internal List<AdminUnitRecord> AdminUnits { get; } = [new(SalesManagersId, "Sales managers")];
 		internal Dictionary<string, (string Schema, Dictionary<Guid, Dictionary<string, string>> Rows)> Bindings { get; }
 			= new(StringComparer.OrdinalIgnoreCase);
+		internal Dictionary<string, (string Schema, Dictionary<Guid, Dictionary<string, string>> Rows)> OtherPackageBindings { get; }
+			= new(StringComparer.OrdinalIgnoreCase);
+		internal string FailUpsertOfSchema { get; set; }
 		internal List<string> CreatedBindings { get; } = [];
 		internal List<string> Upserts { get; } = [];
 		internal bool FillDefaultsOnInsert { get; set; } = true;
@@ -419,9 +522,12 @@ public sealed class WorkplacePlacementServiceTests {
 			return rowId;
 		}
 
-		internal void RenameMyApplications(string name) {
+		internal void RenameMyApplications(string name, bool withBinding = true) {
 			WorkplaceRecord myApps = GetWorkplace(MyApplicationsId);
 			Workplaces[Workplaces.IndexOf(myApps)] = myApps with { Name = name };
+			if (!withBinding) {
+				return;
+			}
 			Bindings[WorkplacePlacementService.MyApplicationsBindingName] = ("SysWorkplace", new() {
 				[MyApplicationsId] = new() { ["Id"] = MyApplicationsId.ToString() }
 			});
@@ -458,7 +564,13 @@ public sealed class WorkplacePlacementServiceTests {
 		public AdminUnitRecord GetAdminUnit(Guid id) => AdminUnits.FirstOrDefault(a => a.Id == id);
 
 		public IReadOnlyList<string> FindPackagesShippingBinding(string bindingName) =>
-			Bindings.ContainsKey(bindingName) ? ["UsrOtherApp"] : [];
+			Bindings.ContainsKey(bindingName) ? [OtherPackage] : [];
+
+		public IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName) =>
+			Bindings.Where(b => b.Value.Schema == entitySchemaName).Select(b => new PackageBindingRecord(Package, b.Key))
+				.Concat(OtherPackageBindings.Where(b => b.Value.Schema == entitySchemaName)
+					.Select(b => new PackageBindingRecord(OtherPackage, b.Key)))
+				.ToList();
 
 		public IReadOnlyList<string> FindBindingNames(Guid packageUId, string entitySchemaName) =>
 			Bindings.Where(b => b.Value.Schema == entitySchemaName).Select(b => b.Key).ToList();
@@ -472,8 +584,11 @@ public sealed class WorkplacePlacementServiceTests {
 		}
 
 		public void UpsertRow(UpsertDataBindingRowDbOptions options) {
-			Upserts.Add(options.BindingName);
 			var binding = Bindings[options.BindingName];
+			if (binding.Schema == FailUpsertOfSchema) {
+				throw new InvalidOperationException($"Upsert into {options.BindingName} failed.");
+			}
+			Upserts.Add(options.BindingName);
 			Dictionary<string, string> values = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(options.ValuesJson)
 				.ToDictionary(pair => pair.Key, pair => pair.Value.ToString());
 			Guid id = Guid.Parse(values["Id"]);
@@ -517,7 +632,9 @@ public sealed class WorkplacePlacementServiceTests {
 			throw new AssertionException("The placement tool must never delete a row.");
 
 		public BoundBindingProjection ReadBinding(ReadDataBindingDbOptions options) {
-			var binding = Bindings[options.BindingName];
+			var binding = options.PackageName == OtherPackage && OtherPackageBindings.ContainsKey(options.BindingName)
+				? OtherPackageBindings[options.BindingName]
+				: Bindings[options.BindingName];
 			return new BoundBindingProjection(options.BindingName, binding.Schema, Guid.NewGuid(),
 				binding.Rows.Values.Select(row => (IReadOnlyDictionary<string, string>)row).ToList());
 		}

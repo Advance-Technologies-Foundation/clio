@@ -37,6 +37,11 @@ public sealed record WorkplaceJunctionRecord(Guid Id, Guid WorkplaceId, Guid Tar
 /// <param name="Name">Name.</param>
 public sealed record AdminUnitRecord(Guid Id, string Name);
 
+/// <summary>A data binding (<c>SysPackageSchemaData</c>) and the package that ships it.</summary>
+/// <param name="PackageName">Package name.</param>
+/// <param name="BindingName">Binding name.</param>
+public sealed record PackageBindingRecord(string PackageName, string BindingName);
+
 /// <summary>
 /// Read-only access to the navigation workplace tables (<c>SysWorkplace</c>, <c>SysModuleInWorkplace</c>,
 /// <c>SysAdminUnitInWorkplace</c>) and the lookups they reference, for one environment.
@@ -77,6 +82,9 @@ public interface IWorkplaceRepository {
 
 	/// <summary>Lists the names of the packages that ship a data binding with the given name.</summary>
 	IReadOnlyList<string> FindPackagesShippingBinding(string bindingName);
+
+	/// <summary>Lists every data binding, in any package, that ships rows of an entity schema.</summary>
+	IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName);
 }
 
 /// <inheritdoc />
@@ -85,12 +93,25 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 
 	private const string IdColumn = "Id";
 
+	/// <summary>
+	/// Platform-seeded client type ids, used when the name does not match because the profile culture translates
+	/// <c>SysApplicationClientType.Name</c>.
+	/// </summary>
+	private static readonly Dictionary<string, Guid> WellKnownClientTypeIds = new(StringComparer.OrdinalIgnoreCase) {
+		["Web"] = new Guid("195785B4-F55A-4E72-ACE3-6480B54C8FA5")
+	};
+
 	/// <inheritdoc />
 	public Guid? FindClientTypeId(string name) {
-		return Select("SysApplicationClientType", [Column(IdColumn), Column("Name")], [])
+		List<Dictionary<string, JsonElement>> rows = Select("SysApplicationClientType", [Column(IdColumn), Column("Name")], []);
+		Guid? byName = rows
 			.Where(row => string.Equals(ReadString(row, "Name"), name, StringComparison.OrdinalIgnoreCase))
 			.Select(row => (Guid?)ReadGuid(row, IdColumn))
 			.FirstOrDefault();
+		if (byName is not null || !WellKnownClientTypeIds.TryGetValue(name ?? string.Empty, out Guid wellKnown)) {
+			return byName;
+		}
+		return rows.Any(row => ReadGuid(row, IdColumn) == wellKnown) ? wellKnown : null;
 	}
 
 	/// <inheritdoc />
@@ -158,6 +179,21 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 			.Select(row => ReadString(row, "PackageName"))
 			.Where(name => !string.IsNullOrWhiteSpace(name))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToArray();
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName) {
+		return Select("SysPackageSchemaData",
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
+					Column("Name")
+				],
+				[TextFilter("SysSchema.Name", entitySchemaName)])
+			.Select(row => new PackageBindingRecord(ReadString(row, "PackageName"), ReadString(row, "Name")))
+			.Where(binding => !string.IsNullOrWhiteSpace(binding.PackageName)
+				&& !string.IsNullOrWhiteSpace(binding.BindingName))
+			.Distinct()
 			.ToArray();
 	}
 

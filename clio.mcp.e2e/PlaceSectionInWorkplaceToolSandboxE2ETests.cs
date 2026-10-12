@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -81,9 +82,12 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 					because: "the one placement row now belongs to the target workplace");
 		});
 		AllureApi.Step("Assert the workplace binding ships the full column set", () => {
-			foreach (string column in new[] { "LoaderId", "Type", "SysApplicationClientType", "Position", "Name" }) {
-				bindingText.Should().Contain(column, because: $"an install supplies no default for {column}");
-			}
+			// Compare exact column names: a substring check passes "Type" through "SysApplicationClientType".
+			Match columnsLine = Regex.Match(bindingText, @"columns \(\d+\): ([^""\r\n]*)");
+			columnsLine.Success.Should().BeTrue(because: "read-data-binding-db reports the bound columns");
+			string[] columns = columnsLine.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries);
+			columns.Should().Contain(["LoaderId", "Type", "SysApplicationClientType", "Position", "Name"],
+				because: "an install supplies no default for any of these columns");
 		});
 		AllureApi.Step("Assert the second call changed nothing", () => {
 			second.Success.Should().BeTrue(because: second.Error ?? "a re-run with mode=new finds its own workplace");
