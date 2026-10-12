@@ -264,7 +264,8 @@ public sealed class ApplicationCreateTool(
 		}
 
 		if (missing.Count > 0) {
-			throw new ArgumentException(ToolMiniContract.ForCreateApp(missing));
+			// The leading sentence is the refusal create-app always gave; the mini-contract only follows it.
+			throw new ArgumentException($"{missing[0]} is required. {ToolMiniContract.ForCreateApp(missing)}");
 		}
 
 		string effectiveTemplate = string.IsNullOrWhiteSpace(args.TemplateCode) ? "AppFreedomUI" : args.TemplateCode.Trim();

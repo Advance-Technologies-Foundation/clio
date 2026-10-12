@@ -115,12 +115,11 @@ public sealed class CreateEntitySchemaTool(
 	/// </summary>
 	internal static List<string> MissingCreateArguments(CreateEntitySchemaArgs? args) {
 		if (args is null) {
-			return ["environment-name", "package-name", "schema-name", TitleLocalizationsArgument];
+			return ["package-name", "schema-name", TitleLocalizationsArgument];
 		}
+		// environment-name is not checked here: under credential passthrough the caller must omit it, and the
+		// resolver owns that refusal (as for create-app).
 		List<string> missing = [];
-		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-			missing.Add("environment-name");
-		}
 		if (string.IsNullOrWhiteSpace(args.PackageName)) {
 			missing.Add("package-name");
 		}

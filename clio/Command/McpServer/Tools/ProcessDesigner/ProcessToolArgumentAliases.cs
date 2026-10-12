@@ -215,6 +215,12 @@ internal static class ProcessToolArgumentAliases {
 			List<string> clash = wrappers.Concat(flat).ToList();
 			return new CreateResolution(args, warnings, AmbiguousDescriptor(clash));
 		}
+		// Two spellings of one descriptor field (packageName and package_name, elements and Elements) have no single
+		// reading: wrapping both would let one silently overwrite the other.
+		List<string> repeated = flat.GroupBy(Normalize).Where(group => group.Count() > 1).SelectMany(group => group).ToList();
+		if (repeated.Count > 0) {
+			return new CreateResolution(args, warnings, AmbiguousDescriptor(repeated));
+		}
 		(JsonElement descriptor, HashSet<string> consumed) = wrappers.Count == 1
 			? TakeWrappedDescriptor(bag, wrappers[0], warnings)
 			: WrapFlatDescriptor(bag, flat, warnings);

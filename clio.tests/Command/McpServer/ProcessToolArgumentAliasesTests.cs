@@ -159,7 +159,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "two graphs cannot both be the graph, and picking one would be a guess");
-		response.Error.Should().Contain("Ambiguous graph");
+		response.Error.Should().Contain("Ambiguous graph", because: "the graph and the canonical nodes cannot both be meant");
 		response.HasErrors.Should().BeNull(because: "nothing was validated");
 		_resolver.ReceivedCalls().Should().BeEmpty(because: "a caller mistake is answered before any environment is resolved");
 	}
@@ -180,9 +180,9 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 		// Assert
 		first.Success.Should().BeFalse(because: "'graph' and 'process' both claim to be the graph");
-		first.Error.Should().Contain("Ambiguous graph");
+		first.Error.Should().Contain("Ambiguous graph", because: "two wrappers cannot both be the graph");
 		second.Success.Should().BeFalse(because: "'graph' and flat 'elements' both claim to be the graph");
-		second.Error.Should().Contain("Ambiguous graph");
+		second.Error.Should().Contain("Ambiguous graph", because: "a wrapper and flat elements cannot both be the graph");
 	}
 
 	[Test]
@@ -223,7 +223,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 		// Assert
 		response.Success.Should().BeFalse(because: "'process-name' is not an argument of this tool");
-		response.Error.Should().Contain("Unknown args").And.Contain("process-name");
+		response.Error.Should().Contain("Unknown args").And.Contain("process-name", because: "an unrecognised key is still named back to the caller");
 	}
 
 	// ------------------------------------------------------------------------------------------ describe
@@ -271,9 +271,9 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 		// Assert
 		result.ExitCode.Should().Be(0, because: "the synonym has one reading, so the call runs");
-		command.Captured!.ProcessName.Should().Be(name);
-		command.Captured.ProcessUid.Should().Be(uid);
-		command.Captured.ProcessCaption.Should().Be(caption);
+		command.Captured!.ProcessName.Should().Be(name, because: "the synonym is read as process-name");
+		command.Captured.ProcessUid.Should().Be(uid, because: "the synonym is read as process-uid");
+		command.Captured.ProcessCaption.Should().Be(caption, because: "the synonym is read as process-caption");
 		result.Output.Should().Contain(message => message.Value!.ToString()!.Contains(key),
 			because: "the response must echo which spelling was accepted");
 		TextOf(result).Should().Contain("process-",
@@ -297,9 +297,9 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 		// Assert
 		first.ExitCode.Should().Be(1, because: "an ambiguous identity is a caller error");
-		TextOf(first).Should().Contain("Ambiguous process identity");
-		second.ExitCode.Should().Be(1);
-		TextOf(second).Should().Contain("Ambiguous process identity");
+		TextOf(first).Should().Contain("Ambiguous process identity", because: "the canonical identity next to a synonym is ambiguous");
+		second.ExitCode.Should().Be(1, because: "an ambiguous identity is a validation refusal");
+		TextOf(second).Should().Contain("Ambiguous process identity", because: "two synonyms of one identity are ambiguous");
 		command.Captured.Should().BeNull(because: "nothing may be read when the identity is a guess");
 	}
 
@@ -320,7 +320,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 		TextOf(first).Should().Contain("procesName", because: "a typo is not a synonym");
 		TextOf(second).Should().Contain("Unknown args",
 			because: "a non-text identity is left to the ordinary refusal rather than coerced");
-		command.Captured.Should().BeNull();
+		command.Captured.Should().BeNull(because: "nothing is read for an ambiguous identity");
 	}
 
 	// ------------------------------------------------------------------------------------------ create
@@ -364,7 +364,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 		result.ExitCode.Should().Be(0, because: "the synonym is unambiguous");
 		JsonDocument.Parse(command.Captured!.DescriptorJson).RootElement.GetProperty("name").GetString()
 			.Should().Be("UsrDemo", because: "the descriptor reaches the command intact");
-		TextOf(result).Should().Contain($"'{key}' was accepted as 'descriptor'");
+		TextOf(result).Should().Contain($"'{key}' was accepted as 'descriptor'", because: "the response names the canonical argument");
 	}
 
 	[Test]
@@ -382,11 +382,11 @@ public sealed class ProcessToolArgumentAliasesTests {
 		// Assert
 		result.ExitCode.Should().Be(0, because: "flat fields that include elements can only be a descriptor");
 		using JsonDocument built = JsonDocument.Parse(command.Captured!.DescriptorJson);
-		built.RootElement.GetProperty("caption").GetString().Should().Be("Demo");
-		built.RootElement.GetProperty("packageName").GetString().Should().Be("Custom");
-		built.RootElement.GetProperty("elements").GetArrayLength().Should().Be(2);
-		built.RootElement.GetProperty("flows").GetArrayLength().Should().Be(1);
-		TextOf(result).Should().Contain("wrapped into 'descriptor'");
+		built.RootElement.GetProperty("caption").GetString().Should().Be("Demo", because: "the flat caption lands in the descriptor");
+		built.RootElement.GetProperty("packageName").GetString().Should().Be("Custom", because: "the flat packageName lands in the descriptor");
+		built.RootElement.GetProperty("elements").GetArrayLength().Should().Be(2, because: "the flat elements land in the descriptor");
+		built.RootElement.GetProperty("flows").GetArrayLength().Should().Be(1, because: "the flat flows land in the descriptor");
+		TextOf(result).Should().Contain("wrapped into 'descriptor'", because: "the response says the fields were wrapped");
 	}
 
 	[Test]
@@ -399,7 +399,9 @@ public sealed class ProcessToolArgumentAliasesTests {
 			$"{{\"environment-name\":\"dev\",\"descriptor\":{Descriptor},\"process\":{Descriptor}}}",
 			$"{{\"environment-name\":\"dev\",\"descriptor\":{Descriptor},\"elements\":[]}}",
 			$"{{\"environment-name\":\"dev\",\"process\":{Descriptor},\"definition\":{Descriptor}}}",
-			$"{{\"environment-name\":\"dev\",\"process\":{Descriptor},\"caption\":\"x\"}}"
+			$"{{\"environment-name\":\"dev\",\"process\":{Descriptor},\"caption\":\"x\"}}",
+			"{\"environment-name\":\"dev\",\"packageName\":\"PkgA\",\"package_name\":\"PkgB\",\"elements\":[],\"flows\":[]}",
+			"{\"environment-name\":\"dev\",\"elements\":[],\"Elements\":[],\"flows\":[]}"
 		];
 
 		foreach (string body in bodies) {
@@ -408,7 +410,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 
 			// Assert
 			result.ExitCode.Should().Be(1, because: "an ambiguous descriptor is a caller error: " + body);
-			TextOf(result).Should().Contain("Ambiguous descriptor");
+			TextOf(result).Should().Contain("Ambiguous descriptor", because: "a descriptor and flat descriptor fields, or two spellings of one field, cannot both be the process");
 		}
 		command.Captured.Should().BeNull(because: "nothing may be built from a guessed descriptor");
 	}
@@ -426,8 +428,8 @@ public sealed class ProcessToolArgumentAliasesTests {
 		CommandExecutionResult result = tool.CreateBusinessProcess(args);
 
 		// Assert
-		result.ExitCode.Should().Be(1);
-		TextOf(result).Should().Contain("Unknown args");
-		command.Captured.Should().BeNull();
+		result.ExitCode.Should().Be(1, because: "an unrecognised key is refused");
+		TextOf(result).Should().Contain("Unknown args", because: "the unknown key is named back to the caller");
+		command.Captured.Should().BeNull(because: "nothing is built for a refused call");
 	}
 }

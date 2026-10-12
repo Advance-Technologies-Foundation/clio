@@ -78,7 +78,9 @@ internal static class ExecuteEsqQueryHints {
 				sql = text;
 				break;
 			case JsonValueKind.Object:
-				if (HasRootSchemaName(query)) {
+				if (HasRootSchemaName(query) || HasSelectQueryColumns(query)) {
+					// A real SelectQuery (columns.items), even one missing rootSchemaName, keeps the ordinary refusal,
+					// which names the missing rootSchemaName instead of claiming the fields sat at the top level.
 					return null;
 				}
 				// A SelectQuery missing only its root schema, written the flat way: {"schema-name":..,"columns":[..]}.
@@ -102,6 +104,9 @@ internal static class ExecuteEsqQueryHints {
 		bool recognised = SchemaKeys.Concat(ColumnKeys).Concat(FilterKeys).Any(flat.ContainsKey);
 		return recognised ? FromFlat(flat) : null;
 	}
+
+	private static bool HasSelectQueryColumns(JsonElement query) =>
+		query.TryGetProperty("columns", out JsonElement columns) && columns.ValueKind == JsonValueKind.Object;
 
 	private static bool HasRootSchemaName(JsonElement query) =>
 		query.TryGetProperty("rootSchemaName", out JsonElement root)
@@ -137,6 +142,10 @@ internal static class ExecuteEsqQueryHints {
 			return new Hint(SqlPrefix + " 'SELECT *' has no safe SelectQuery equivalent: list the columns you need "
 				+ "(allColumns pulls binary and unrelated fields).", null);
 		}
+		if (match.Groups["top"].Success && match.Groups["limit"].Success) {
+			return new Hint(SqlPrefix + " TOP and LIMIT were both given, so the row cap is ambiguous and no query is "
+				+ "suggested.", null);
+		}
 		string? table = ReadTable(match.Groups["table"].Value);
 		List<string> columns = columnsText.Split(',')
 			.Select(part => part.Trim().Trim('[', ']', '"', '`'))
@@ -165,15 +174,25 @@ internal static class ExecuteEsqQueryHints {
 			return null;
 		}
 		string literal = equality.Groups["val"].Value;
-		JsonElement value = literal.StartsWith('\'')
-			? JsonSerializer.SerializeToElement(literal[1..^1].Replace("''", "'", StringComparison.Ordinal))
-			: JsonSerializer.SerializeToElement(long.Parse(literal, System.Globalization.CultureInfo.InvariantCulture));
-		return (equality.Groups["col"].Value, value);
+		if (literal.StartsWith('\'')) {
+			return (equality.Groups["col"].Value,
+				JsonSerializer.SerializeToElement(literal[1..^1].Replace("''", "'", StringComparison.Ordinal)));
+		}
+		// An integer literal outside the long range is not translated rather than throwing.
+		return long.TryParse(literal, System.Globalization.NumberStyles.AllowLeadingSign,
+			System.Globalization.CultureInfo.InvariantCulture, out long number)
+			? (equality.Groups["col"].Value, JsonSerializer.SerializeToElement(number))
+			: null;
 	}
 
 	private static int? ReadRowCount(Match match) {
 		Group group = match.Groups["top"].Success ? match.Groups["top"] : match.Groups["limit"];
-		return group.Success ? int.Parse(group.Value, System.Globalization.CultureInfo.InvariantCulture) : null;
+		if (!group.Success) {
+			return null;
+		}
+		// A cap beyond int is out of range like any other cap above MaxRowCount: Suggest refuses -1.
+		return int.TryParse(group.Value, System.Globalization.NumberStyles.None,
+			System.Globalization.CultureInfo.InvariantCulture, out int rows) ? rows : -1;
 	}
 
 	private static string? ReadTable(string raw) {
@@ -186,6 +205,13 @@ internal static class ExecuteEsqQueryHints {
 	}
 
 	private static Hint FromFlat(Dictionary<string, JsonElement> flat) {
+		// Two keys for one part (schema-name and table, filters and where, ...) have no single reading: using one
+		// would silently drop the other, for example a filter, and read more rows than meant.
+		string[][] groups = [SchemaKeys, ColumnKeys, FilterKeys, LimitKeys];
+		if (groups.Any(group => group.Count(flat.ContainsKey) > 1)) {
+			return new Hint(FlatPrefix + " Two keys were given for the same part of the query (for example "
+				+ "'filters' and 'where'), so no query is suggested.", null);
+		}
 		string? schema = SchemaKeys.Where(flat.ContainsKey)
 			.Select(key => flat[key].ValueKind == JsonValueKind.String ? flat[key].GetString() : null)
 			.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
@@ -197,9 +223,11 @@ internal static class ExecuteEsqQueryHints {
 				: null;
 		}
 		int? rowCount = null;
-		if (LimitKeys.FirstOrDefault(flat.ContainsKey) is { } limitKey
-			&& flat[limitKey].ValueKind == JsonValueKind.Number && flat[limitKey].TryGetInt32(out int limit)) {
-			rowCount = limit;
+		if (LimitKeys.FirstOrDefault(flat.ContainsKey) is { } limitKey) {
+			// A cap that is not a whole number in int range is refused (-1), never replaced by the default.
+			rowCount = flat[limitKey].ValueKind == JsonValueKind.Number && flat[limitKey].TryGetInt32(out int limit)
+				? limit
+				: -1;
 		}
 		bool safe = schema is not null && Identifier.IsMatch(schema)
 			&& columns is { Count: > 0 } && columns.All(column => Identifier.IsMatch(column))
@@ -255,8 +283,9 @@ internal static class ExecuteEsqQueryHints {
 		JsonElement query = JsonSerializer.SerializeToElement(
 			SelectQueryHelper.BuildSelectQuery(schema, columnDefinitions, filterDefinitions, rowCount));
 		return new Hint(prefix + " The equivalent query is returned in 'suggested-query' - send it as 'query' to run "
-			+ $"it. Check that '{schema}' is the Creatio schema name, and that the filter values' types (inferred from the "
-			+ $"literals) fit their columns. The row cap is {rowCount}"
+			+ $"it. Check that '{schema}' is the Creatio schema name, that each column is an ESQ column name (a lookup is "
+			+ "'Account' or 'Account.Id', not the physical 'AccountId'), and that the filter values' types (inferred from "
+			+ $"the literals) fit their columns. The row cap is {rowCount}"
 			+ (requestedRows is null ? " (default; none was given)." : "."), query);
 	}
 }

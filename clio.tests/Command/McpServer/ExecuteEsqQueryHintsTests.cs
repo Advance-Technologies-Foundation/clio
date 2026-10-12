@@ -53,21 +53,21 @@ public sealed class ExecuteEsqQueryHintsTests {
 		// Assert
 		response.Success.Should().BeFalse(because: "SQL is not run");
 		_client.ReceivedCalls().Should().BeEmpty(because: "a translated query is returned, never auto-executed");
-		response.Error.Should().Contain("SQL text").And.Contain("'query' argument");
+		response.Error.Should().Contain("SQL text").And.Contain("'query' argument", because: "the refusal names SQL as the problem and the 'query' argument as the fix");
 		JsonElement query = response.SuggestedQuery!.Value;
-		query.GetProperty("rootSchemaName").GetString().Should().Be("Contact");
-		query.GetProperty("rowCount").GetInt32().Should().Be(7);
-		query.GetProperty("allColumns").GetBoolean().Should().BeFalse();
+		query.GetProperty("rootSchemaName").GetString().Should().Be("Contact", because: "the table becomes the root schema");
+		query.GetProperty("rowCount").GetInt32().Should().Be(7, because: "LIMIT 7 becomes the row cap");
+		query.GetProperty("allColumns").GetBoolean().Should().BeFalse(because: "only the listed columns are read");
 		query.GetProperty("columns").GetProperty("items").EnumerateObject().Select(p => p.Name)
-			.Should().Equal("Id", "Name");
+			.Should().Equal(["Id", "Name"], because: "the selected columns are carried over in order");
 		JsonElement[] filters = Items(query, "filters");
-		filters.Should().HaveCount(3);
+		filters.Should().HaveCount(3, because: "each equality term becomes one filter");
 		JsonElement text = filters[0].GetProperty("rightExpression").GetProperty("parameter");
 		text.GetProperty("value").GetString().Should().Be("O'Neil", because: "a doubled quote is an escaped quote");
-		text.GetProperty("dataValueType").GetInt32().Should().Be(1);
+		text.GetProperty("dataValueType").GetInt32().Should().Be(1, because: "a quoted literal is a Text value");
 		JsonElement number = filters[1].GetProperty("rightExpression").GetProperty("parameter");
-		number.GetProperty("value").GetInt64().Should().Be(5);
-		number.GetProperty("dataValueType").GetInt32().Should().Be(4);
+		number.GetProperty("value").GetInt64().Should().Be(5, because: "an unquoted literal keeps its number");
+		number.GetProperty("dataValueType").GetInt32().Should().Be(4, because: "an unquoted literal is an Integer value");
 		filters[2].GetProperty("rightExpression").GetProperty("parameter").GetProperty("dataValueType").GetInt32()
 			.Should().Be(0, because: "a quoted GUID is a Guid value");
 	}
@@ -90,7 +90,7 @@ public sealed class ExecuteEsqQueryHintsTests {
 		response.Success.Should().BeTrue(because: "advice the tool would refuse is worse than none");
 		hint.SuggestedQuery!.Value.GetProperty("rowCount").GetInt32().Should().Be(ExecuteEsqQueryHints.DefaultRowCount,
 			because: "no row cap was given, and the default is named in the message");
-		hint.Error.Should().Contain("default");
+		hint.Error.Should().Contain("default", because: "the message says the row cap was defaulted");
 	}
 
 	[TestCase("SELECT * FROM Contact")]
@@ -110,11 +110,11 @@ public sealed class ExecuteEsqQueryHintsTests {
 		ExecuteEsqResponse response = Run($"{{\"environment-name\":\"dev\",\"query\":{Quote(sql)}}}");
 
 		// Assert
-		response.Success.Should().BeFalse();
+		response.Success.Should().BeFalse(because: "a hint is a refusal, not a result");
 		response.SuggestedQuery.Should().BeNull(because: "a wrong guess would run a different read than the one intended");
 		response.Error.Should().Contain("SQL text").And.Contain("rootSchemaName",
 			because: "the exact shape is still given");
-		_client.ReceivedCalls().Should().BeEmpty();
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed for SQL text");
 	}
 
 	[Test]
@@ -125,7 +125,7 @@ public sealed class ExecuteEsqQueryHintsTests {
 		ExecuteEsqResponse response = Run($"{{\"environment-name\":\"dev\",\"sql\":{Quote("SELECT Id, Name FROM dbo.Contact;")}}}");
 
 		// Assert
-		response.SuggestedQuery!.Value.GetProperty("rootSchemaName").GetString().Should().Be("Contact");
+		response.SuggestedQuery!.Value.GetProperty("rootSchemaName").GetString().Should().Be("Contact", because: "dbo. and the trailing semicolon are dropped from the table name");
 	}
 
 	[Test]
@@ -138,13 +138,13 @@ public sealed class ExecuteEsqQueryHintsTests {
 			+ "\"filters\":{\"Name\":\"John\",\"Type\":3},\"row-count\":5}");
 
 		// Assert
-		response.Success.Should().BeFalse();
-		_client.ReceivedCalls().Should().BeEmpty();
+		response.Success.Should().BeFalse(because: "a hint is a refusal, not a result");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed for top-level fields");
 		JsonElement query = response.SuggestedQuery!.Value;
-		query.GetProperty("rootSchemaName").GetString().Should().Be("Contact");
-		query.GetProperty("rowCount").GetInt32().Should().Be(5);
-		Items(query, "filters").Should().HaveCount(2);
-		response.Error.Should().Contain("'query' argument");
+		query.GetProperty("rootSchemaName").GetString().Should().Be("Contact", because: "schema-name becomes the root schema");
+		query.GetProperty("rowCount").GetInt32().Should().Be(5, because: "row-count becomes the row cap");
+		Items(query, "filters").Should().HaveCount(2, because: "each equality entry becomes one filter");
+		response.Error.Should().Contain("'query' argument", because: "the refusal points at the 'query' argument");
 	}
 
 	[Test]
@@ -156,7 +156,7 @@ public sealed class ExecuteEsqQueryHintsTests {
 			"{\"environment-name\":\"dev\",\"query\":{\"schemaName\":\"Account\",\"columns\":[\"Name\"]}}");
 
 		// Assert
-		response.SuggestedQuery!.Value.GetProperty("rootSchemaName").GetString().Should().Be("Account");
+		response.SuggestedQuery!.Value.GetProperty("rootSchemaName").GetString().Should().Be("Account", because: "the flat schemaName completes the query object");
 	}
 
 	[Test]
@@ -193,9 +193,55 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 		// Assert
 		valid.Success.Should().BeTrue(because: "a usable query wins; stray keys never changed that and still do not");
-		empty.Success.Should().BeFalse();
-		empty.SuggestedQuery.Should().BeNull();
-		empty.Error.Should().StartWith("query must be a JSON SelectQuery object.");
+		empty.Success.Should().BeFalse(because: "an empty call is still refused");
+		empty.SuggestedQuery.Should().BeNull(because: "there is nothing to translate");
+		empty.Error.Should().StartWith("query must be a JSON SelectQuery object.", because: "the original refusal text is kept");
+	}
+
+	[TestCase("SELECT Id FROM Contact LIMIT 99999999999")]
+	[TestCase("SELECT Id FROM Contact WHERE Age = 99999999999999999999")]
+	[TestCase("SELECT TOP 5 Id FROM Contact LIMIT 10")]
+	[Category("Unit")]
+	[Description("A row cap or integer literal out of range, or both TOP and LIMIT, gets the SQL refusal and no suggestion instead of an overflow error or a guessed cap.")]
+	public void Execute_ShouldNotSuggest_WhenANumberIsOutOfRangeOrTheCapIsAmbiguous(string sql) {
+		// Act
+		ExecuteEsqResponse response = Run($"{{\"environment-name\":\"dev\",\"query\":{Quote(sql)}}}");
+
+		// Assert
+		response.Error.Should().Contain("SQL text", because: "the caller learns the SQL was the problem, not a .NET overflow");
+		response.SuggestedQuery.Should().BeNull(because: "no single query has the same meaning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two top-level keys for one part of the query, or a row cap that is not a whole number, get no suggestion, so a filter or cap is never silently dropped.")]
+	public void Execute_ShouldNotSuggest_WhenTopLevelKeysConflictOrTheCapIsUnreadable() {
+		// Act
+		ExecuteEsqResponse twoFilters = Run("{\"environment-name\":\"dev\",\"schema-name\":\"Contact\",\"columns\":[\"Id\"],"
+			+ "\"filters\":{\"Name\":\"a\"},\"where\":{\"Type\":1}}");
+		ExecuteEsqResponse twoSchemas = Run(
+			"{\"environment-name\":\"dev\",\"schema-name\":\"Contact\",\"table\":\"Account\",\"columns\":[\"Id\"]}");
+		ExecuteEsqResponse textCap = Run(
+			"{\"environment-name\":\"dev\",\"schema-name\":\"Contact\",\"columns\":[\"Id\"],\"limit\":\"5\"}");
+
+		// Assert
+		new[] { twoFilters, twoSchemas, textCap }.Should().OnlyContain(response => response.SuggestedQuery == null,
+			because: "using one of two keys, or the default cap, would read something other than what was asked");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A SelectQuery object (columns.items) that only lacks rootSchemaName keeps the original refusal naming rootSchemaName, not the top-level hint.")]
+	public void Execute_ShouldKeepTheRootSchemaRefusal_WhenASelectQueryLacksOnlyItsRootSchema() {
+		// Act
+		ExecuteEsqResponse response = Run("{\"environment-name\":\"dev\",\"query\":"
+			+ "{\"columns\":{\"items\":{\"Name\":{\"expression\":{\"columnPath\":\"Name\"}}}},\"rowCount\":5}}");
+
+		// Assert
+		response.Error.Should().NotContain("not at the top level",
+			because: "everything was inside 'query'; only rootSchemaName is missing");
+		response.Error.Should().Contain("rootSchemaName", because: "the refusal names the missing field");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing runs without a root schema");
 	}
 
 	[Test]
@@ -206,6 +252,6 @@ public sealed class ExecuteEsqQueryHintsTests {
 		string json = JsonSerializer.Serialize(Run("{\"environment-name\":\"dev\"}"));
 
 		// Assert
-		json.Should().NotContain("suggested-query");
+		json.Should().NotContain("suggested-query", because: "a null suggestion is omitted from the wire");
 	}
 }

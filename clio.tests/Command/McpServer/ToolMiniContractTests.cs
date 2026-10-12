@@ -66,14 +66,14 @@ public sealed class ToolMiniContractTests {
 			ToolMiniContract.CreateEntitySchemaExample)!;
 
 		// Assert
-		app.Name.Should().NotBeNullOrWhiteSpace();
-		app.Code.Should().NotBeNullOrWhiteSpace();
+		app.Name.Should().NotBeNullOrWhiteSpace(because: "the create-app example must carry a name");
+		app.Code.Should().NotBeNullOrWhiteSpace(because: "the create-app example must carry a code");
 		create.ExtensionData.Should().BeNull(because: "every key of the example is a real argument");
 		McpToolArgumentSupport.TryReadJsonDocumentArgument(create.Descriptor, JsonValueKind.Object, "descriptor",
 			out _, out _).Should().BeTrue(because: "the descriptor example must be accepted as the descriptor");
-		modify.ExtensionData.Should().BeNull();
+		modify.ExtensionData.Should().BeNull(because: "every key of the modify example is a real argument");
 		McpToolArgumentSupport.TryReadJsonDocumentArgument(modify.Operations, JsonValueKind.Array, "operations",
-			out _, out _).Should().BeTrue();
+			out _, out _).Should().BeTrue(because: "the operations example must be accepted as the operations array");
 		CreateEntitySchemaTool.MissingCreateArguments(schema).Should().BeEmpty(
 			because: "the entity-schema example supplies everything the tool requires");
 		Action build = () => CreateEntitySchemaTool.CreateOptions(schema, schema.ParentSchemaName, schema.ExtendParent);
@@ -95,12 +95,14 @@ public sealed class ToolMiniContractTests {
 			new ApplicationCreateArgs("Todo", " "), null!, null!);
 
 		// Assert
-		empty.Success.Should().BeFalse();
+		empty.Success.Should().BeFalse(because: "a call without name and code cannot run");
+		empty.Error.Should().StartWith("name is required.",
+			because: "the refusal create-app always gave still leads, so clients matching it keep working");
 		empty.Error.Should().Contain("missing required arguments 'name', 'code'")
-			.And.Contain("Minimal valid arguments:").And.Contain("\"code\":\"TodoList\"");
+			.And.Contain("Minimal valid arguments:").And.Contain("\"code\":\"TodoList\"", because: "both missing arguments and a runnable example are named");
 		noCode.Error.Should().Contain("missing required argument 'code'").And.NotContain("'name'",
 			because: "only what is actually missing is named");
-		noCode.Error!.Length.Should().BeLessThanOrEqualTo(ToolMiniContract.MaxLength);
+		noCode.Error!.Length.Should().BeLessThanOrEqualTo(ToolMiniContract.MaxLength, because: "the mini-contract stays within its size budget");
 	}
 
 	private sealed class FakeCreateCommand : CreateBusinessProcessCommand {
@@ -137,10 +139,10 @@ public sealed class ToolMiniContractTests {
 		// Assert
 		noEnvironment.ExitCode.Should().Be(-1, because: "the pinned exit code of a missing environment does not change");
 		TextOf(noEnvironment).Should().StartWith("environment-name is required and cannot be empty.")
-			.And.Contain("missing required arguments 'environment-name', 'descriptor'");
-		noDescriptor.ExitCode.Should().Be(1);
+			.And.Contain("missing required arguments 'environment-name', 'descriptor'", because: "the original refusal leads and the mini-contract follows it");
+		noDescriptor.ExitCode.Should().Be(1, because: "the descriptor refusal keeps its exit code");
 		TextOf(noDescriptor).Should().Contain("descriptor is required and cannot be empty.")
-			.And.Contain("missing required argument 'descriptor'").And.Contain("Minimal valid arguments:");
+			.And.Contain("missing required argument 'descriptor'").And.Contain("Minimal valid arguments:", because: "the original refusal leads and the mini-contract follows it");
 		example.ExitCode.Should().Be(0, because: "advice a tool would refuse is worse than none");
 	}
 
@@ -162,14 +164,14 @@ public sealed class ToolMiniContractTests {
 			"{\"environment-name\":\"dev\",\"process-name\":\"UsrP\",\"operations\":{}}")!);
 
 		// Assert
-		empty.ExitCode.Should().Be(-1);
-		TextOf(empty).Should().Contain("environment-name is required").And.Contain("Minimal valid arguments:");
-		noIdentity.ExitCode.Should().Be(-1);
+		empty.ExitCode.Should().Be(-1, because: "the empty-call refusal keeps its exit code");
+		TextOf(empty).Should().Contain("environment-name is required").And.Contain("Minimal valid arguments:", because: "the original refusal leads and the mini-contract follows it");
+		noIdentity.ExitCode.Should().Be(-1, because: "the missing-identity refusal keeps its exit code");
 		TextOf(noIdentity).Should().Contain("one of process-name or process-uid is required.")
-			.And.Contain("missing required argument 'process-name or process-uid'");
-		noOperations.ExitCode.Should().Be(1);
+			.And.Contain("missing required argument 'process-name or process-uid'", because: "the original refusal leads and the mini-contract names the missing identity");
+		noOperations.ExitCode.Should().Be(1, because: "the missing-operations refusal keeps its exit code");
 		TextOf(noOperations).Should().Contain("operations is required and cannot be empty.")
-			.And.Contain("Minimal valid arguments:");
+			.And.Contain("Minimal valid arguments:", because: "the original refusal leads and the mini-contract follows it");
 		TextOf(wrongKind).Should().NotContain("Minimal valid arguments",
 			because: "a value of the wrong kind is not a missing argument, so it gets its own refusal only");
 	}
@@ -190,12 +192,17 @@ public sealed class ToolMiniContractTests {
 			"{\"environment-name\":\"dev\",\"package-name\":\"P\",\"schema-name\":\"UsrX\"}")!);
 
 		// Assert
-		empty.ExitCode.Should().Be(1);
-		TextOf(empty).Should().Contain("missing required arguments 'environment-name', 'package-name', 'schema-name', 'title-localizations'")
-			.And.Contain("Minimal valid arguments:");
-		TextOf(noTitle).Should().Contain("missing required argument 'title-localizations'");
+		empty.ExitCode.Should().Be(1, because: "a call missing its required arguments cannot run");
+		TextOf(empty).Should().Contain("missing required arguments 'package-name', 'schema-name', 'title-localizations'")
+			.And.Contain("Minimal valid arguments:", because: "every missing argument and a runnable example are named");
+		TextOf(noTitle).Should().Contain("missing required argument 'title-localizations'", because: "only the missing title is named");
+		TextOf(empty).Should().NotContain("'environment-name'",
+			because: "under credential passthrough the caller must omit environment-name, so the gate never demands it");
+		CreateEntitySchemaTool.MissingCreateArguments(JsonSerializer.Deserialize<CreateEntitySchemaArgs>(
+				"{\"package-name\":\"P\",\"schema-name\":\"UsrX\",\"title-localizations\":{\"en-US\":\"X\"}}")!)
+			.Should().BeEmpty(because: "a passthrough call without environment-name must reach the resolver");
 		enrichment.ReceivedCalls().Should().BeEmpty(because: "a probe must not cost a Data Forge lookup");
 		resolver.ReceivedCalls().Should().BeEmpty(because: "nothing was resolved for a call that cannot run");
-		TextOf(empty).Length.Should().BeLessThanOrEqualTo(ToolMiniContract.MaxLength);
+		TextOf(empty).Length.Should().BeLessThanOrEqualTo(ToolMiniContract.MaxLength, because: "the mini-contract stays within its size budget");
 	}
 }
