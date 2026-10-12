@@ -1681,7 +1681,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Over the real stdio server, the request measured in the CAADT transcripts - seven process-designer contracts in one call - is answered inside the inline reply budget with every requested contract present (ENG-100154).")]
+	[Description("Over the real stdio server, the request measured in the CAADT transcripts - seven process-designer contracts in one call - is answered inline, within 19 000 bytes of result text, with every requested contract present (ENG-100154, ENG-102797).")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract fits seven process-designer contracts in one inline reply")]
 	public async Task GetToolContracts_ShouldFitSevenProcessDesignerContracts_InOneInlineReply() {
@@ -1707,10 +1707,47 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		AllureApi.Step("Assert every requested contract is returned", () =>
 			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(processTools,
 				because: "fitting shortens contracts, it never drops one"));
+		// The result TEXT as clio writes it is what an agent CLI shows inline or spills, so it is held to the
+		// 19 000-byte inline limit the CAADT release gate is budgeted against (Copilot CLI inlined up to ~19.8 KB
+		// in release build 16156272 and the ENG-99970 A/B), not to InlineReplyBudgetBytes: Fit measures with the
+		// default encoder, which overstates this text by about 1 KB and keeps fitting conservative. The short
+		// create- and modify-business-process call shapes (ENG-102797) spend that difference;
+		// ToolContractPayloadBudgetTests pins what it costs.
 		AllureApi.Step("Assert the reply fits inline", () =>
-			System.Text.Encoding.UTF8.GetByteCount(text).Should().BeLessThanOrEqualTo(
-				ToolContractShortForm.InlineReplyBudgetBytes,
+			System.Text.Encoding.UTF8.GetByteCount(text).Should().BeLessThanOrEqualTo(19_000,
 				because: "this request answered with well over 100 KB before ENG-100154"));
+	}
+
+	[Test]
+	[Description("Over the real stdio server, the default lookup of create-business-process and modify-business-process returns both short, and each short contract carries its call shape - the descriptor fields and element blocks, the operations - whole, so building the call needs no detail=full read (ENG-102797).")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureTag(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
+	[AllureTag(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[AllureName("get-tool-contract short process write contracts carry their call shape")]
+	public async Task GetToolContracts_ShouldCarryTheCallShape_InTheShortProcessWriteContracts() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string[] processWriteTools = [
+			CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			ModifyBusinessProcessTool.ModifyBusinessProcessToolName
+		];
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["tool-names"] = processWriteTools });
+
+		// Assert
+		AllureApi.Step("Assert both contracts are returned", () =>
+			response.Tools!.Select(contract => contract.Name).Should().BeEquivalentTo(processWriteTools,
+				because: "fitting shortens contracts, it never drops one"));
+		foreach (ToolContractDefinition contract in response.Tools!) {
+			AllureApi.Step($"Assert {contract.Name} is short and carries its call shape", () => {
+				contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+					because: "anti-vacuity: the shape rides on the short form, and these contracts are 33 KB in full");
+				contract.Description.Should().Contain(ToolContractShortForm.CallShapes[contract.Name],
+					because: "the shape must survive the real wire path whole, not only the in-process catalog");
+			});
+		}
 	}
 
 	[Test]
