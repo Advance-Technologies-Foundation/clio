@@ -95,6 +95,23 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("processId")]
 	public string ProcessId { get; set; }
 
+	// The code of the version that was launched: exactly the one the call named, never a substitute. Null when the
+	// call was rejected before the code was resolved.
+	[JsonProperty("versionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("versionName")]
+	public string VersionName { get; set; }
+
+	// Whether the process library reports that version as the family's active one. Null when it could not be
+	// established - never read as "active".
+	[JsonProperty("isActiveVersion")]
+	[System.Text.Json.Serialization.JsonPropertyName("isActiveVersion")]
+	public bool? IsActiveVersion { get; set; }
+
+	// The code of the version the platform's own triggers start, when it could be established.
+	[JsonProperty("activeVersionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("activeVersionName")]
+	public string ActiveVersionName { get; set; }
+
 	[JsonProperty("resultParameterValues")]
 	[System.Text.Json.Serialization.JsonPropertyName("resultParameterValues")]
 	public Dictionary<string, object> ResultParameterValues { get; set; }
@@ -114,6 +131,7 @@ public class RunProcessCommand(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IProcessRunLogReader processRunLogReader,
+	IProcessVersionLibReader versionLibReader,
 	ILogger logger)
 	: Command<RunProcessOptions> {
 
@@ -155,13 +173,21 @@ public class RunProcessCommand(
 	private const int MinimumLogReadMs = 1_000;
 
 	internal static string BuildMissingCompiledMethodHint(string processCode) =>
-		" This is most often a script task saved since the active version of the process run as "
-		+ $"'{processCode}' was last compiled - run-process runs the active version whatever code it is given - so the "
-		+ "compiled code does not have it "
+		$" This is most often a script task saved since '{processCode}' was last compiled, so the compiled code "
+		+ "does not have it "
 		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
 		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
 		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
-		+ "process-name set to the active version (describe-business-process names it).";
+		+ $"process-name set to '{processCode}'.";
+
+	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
+	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.
+	internal static string BuildNotActiveVersionNote(string processCode, string activeVersionName) =>
+		$"'{processCode}' ran as asked, but it is NOT the active version of its process: the platform's own "
+		+ "triggers, schedules and sub-process calls start "
+		+ (string.IsNullOrWhiteSpace(activeVersionName) ? "the active version" : $"'{activeVersionName}'")
+		+ ". Such a run verifies a version without activating it; activating it is a separate step "
+		+ "(set-active-business-process-version), taken only when the user asks for it.";
 
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
@@ -229,7 +255,14 @@ public class RunProcessCommand(
 			Result = options.ResultParameters?.ToArray()
 		};
 
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+		// Read before the launch, so even a refusal says which version it was about. The reader never throws for a
+		// transport failure and is bounded; what it cannot establish stays null.
+		ProcessVersionFacts versionFacts = versionLibReader.Read(model.Id.ToString("D"));
+
+		// RunSpecifiedProcessVersion, not RunProcess: RunProcess resolves the code to the family's ACTIVE version, so
+		// a run "of" a new version silently executed the previous one (ENG-101880). For the active version's own
+		// code the two run the same schema. See docs/knowledge/platform/runprocess-runs-the-active-version.md
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion);
 		if (options.LaunchGate is not null && !options.LaunchGate.TryMarkSent(DateTime.UtcNow)) {
 			// The MCP answer already told the caller nothing was launched; sending now would make that false.
 			response = new RunProcessResponse {
@@ -258,11 +291,35 @@ public class RunProcessCommand(
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
+		AddVersion(response, model.Code, versionFacts);
 		AddLoggedError(platformResponse, response, options.ResponseDeadline);
 		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
 		// and a failed run would otherwise both exit 0.
 		return response.Error is null;
 	}
+
+	// Names the version that was launched and, when the process library says so, that it is not the active one. An
+	// unestablished flag adds nothing: the run itself is unaffected, and a warning would only repeat "unknown". A
+	// refusal gets the facts but not the note, which says the version ran.
+	internal static void AddVersion(RunProcessResponse response, string processCode, ProcessVersionFacts facts) {
+		response.VersionName = processCode;
+		response.IsActiveVersion = facts?.IsActiveVersion;
+		response.ActiveVersionName = facts?.ActiveVersionName;
+		if (facts?.IsActiveVersion != false || response.Status == NotStartedStatus) {
+			return;
+		}
+		(response.Warnings ??= []).Add(response.Status == QueuedBackgroundStatus
+			? BuildQueuedNotActiveVersionNote(processCode)
+			: BuildNotActiveVersionNote(processCode, facts.ActiveVersionName));
+	}
+
+	// The platform's background queue re-resolves a queued run to the ACTIVE version (StartProcessCommandConsumer
+	// reads GetActiveVersionItemByUId), so a queued run is not evidence that this version ran. Traced in source, not
+	// measured: no stand has answered queued-background to this route yet.
+	internal static string BuildQueuedNotActiveVersionNote(string processCode) =>
+		$"'{processCode}' is NOT the active version of its process, and the platform queued this run: its background "
+		+ "queue starts the ACTIVE version, so this launch may not have run the version you named. To run this "
+		+ "version, launch it again with result-parameters, which makes the run synchronous.";
 
 	// A run that failed inside an element - a script that threw, a formula that could not be computed - comes back
 	// with only "check the process log" and no errorCode: the platform swallows the element's exception before

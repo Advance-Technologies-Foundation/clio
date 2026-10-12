@@ -44,12 +44,23 @@ public sealed class RunProcessToolTests {
 	private sealed record Harness(
 		RunProcessCommand Command,
 		IApplicationClient ApplicationClient,
+		IServiceUrlBuilder ServiceUrlBuilder,
+		IProcessVersionLibReader VersionLibReader,
 		List<string> PostedBodies,
 		List<int> PostedTimeouts,
 		List<int> PostedAttempts);
 
+	private static IProcessVersionLibReader VersionReader(ProcessVersionFacts facts) {
+		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
+		reader.Read(Arg.Any<string>()).Returns(facts);
+		return reader;
+	}
+
+	private static IProcessVersionLibReader ActiveVersion() =>
+		VersionReader(new ProcessVersionFacts { IsActiveVersion = true, ActiveVersionName = ProcessCode });
+
 	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null,
-			IProcessRunLogReader processRunLogReader = null) {
+			IProcessRunLogReader processRunLogReader = null, IProcessVersionLibReader versionLibReader = null) {
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
 			.Returns(_ => new ProcessModelType(Guid.NewGuid(), ProcessCode) {
@@ -75,9 +86,10 @@ public sealed class RunProcessToolTests {
 		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
 			.Returns("ServiceModel/ProcessEngineService.svc/RunProcess");
 
+		versionLibReader ??= ActiveVersion();
 		RunProcessCommand command = new(generator, applicationClient, serviceUrlBuilder,
-			processRunLogReader ?? NothingLogged(), ConsoleLogger.Instance);
-		return new Harness(command, applicationClient, bodies, timeouts, attempts);
+			processRunLogReader ?? NothingLogged(), versionLibReader, ConsoleLogger.Instance);
+		return new Harness(command, applicationClient, serviceUrlBuilder, versionLibReader, bodies, timeouts, attempts);
 	}
 
 	private static IProcessRunLogReader NothingLogged() {
@@ -91,6 +103,146 @@ public sealed class RunProcessToolTests {
 
 	private static ProcessStartResponse PlatformResponse(string json) =>
 		JsonSerializer.Deserialize<ProcessStartResponse>(json);
+
+	#region Version pinning (ENG-101880)
+
+	private static ProcessVersionFacts NotActive() =>
+		new() { IsActiveVersion = false, ActiveVersionName = "MigrateDashboardsProcessCustom2" };
+
+	[Test]
+	[Category("Unit")]
+	[Description("run-process launches through RunSpecifiedProcessVersion, the route that runs the named version, and never through RunProcess, which runs the family's active version whatever code it is given.")]
+	public void TryRun_Should_Launch_Through_The_Version_Pinned_Route() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+
+		// Assert
+		harness.ServiceUrlBuilder.Received(1).Build(ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion);
+		harness.ServiceUrlBuilder.DidNotReceive().Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+		harness.PostedBodies.Should().ContainSingle(
+			because: "exactly one launch request is sent, through the version-pinned route");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A run of a version that is not the active one names the version that ran, says it is not active, names the active one and warns that the environment's own triggers start the active one.")]
+	public void TryRun_Should_Name_The_Version_And_Warn_When_It_Is_Not_The_Active_One() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(), versionLibReader: VersionReader(NotActive()));
+
+		// Act
+		bool launched = harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode },
+			out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeTrue(because: "running a non-active version is what the caller asked for, not a failure");
+		response.VersionName.Should().Be(ProcessCode, because: "the version that ran is exactly the one named");
+		response.IsActiveVersion.Should().BeFalse(because: "the process library reports another member as active");
+		response.ActiveVersionName.Should().Be("MigrateDashboardsProcessCustom2",
+			because: "the caller needs the code the environment itself runs");
+		response.Warnings.Should().ContainSingle(w => w.Contains("NOT the active version")
+				&& w.Contains("'MigrateDashboardsProcessCustom2'"),
+			because: "a caller who meant 'the process' must hear that triggers and schedules run another version");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A run of the active version reports it as active and adds no version warning.")]
+	public void TryRun_Should_Not_Warn_When_The_Version_Is_The_Active_One() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.IsActiveVersion.Should().BeTrue(because: "the reader reports this version as the active one");
+		response.Warnings.Should().BeEmpty(because: "running the active version needs no caveat");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When the version facts cannot be established the run still goes ahead, the flag stays null rather than reading as active, and no warning repeats the unknown.")]
+	public void TryRun_Should_Leave_The_Flag_Null_When_The_Version_Facts_Are_Not_Established() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(),
+			versionLibReader: VersionReader(new ProcessVersionFacts { Warning = "the process library did not answer" }));
+
+		// Act
+		bool launched = harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode },
+			out RunProcessResponse response);
+
+		// Assert
+		launched.Should().BeTrue(because: "a version read is a courtesy and never blocks the launch");
+		response.IsActiveVersion.Should().BeNull(because: "an unestablished flag must not read as 'active'");
+		response.VersionName.Should().Be(ProcessCode, because: "the launched code is known whatever the reader says");
+		response.Warnings.Should().BeEmpty(because: "the run is unaffected, so 'unknown' is not worth a warning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The version facts are read for the schema the code resolved to, identified by its UId.")]
+	public void TryRun_Should_Read_The_Version_Facts_Of_The_Resolved_Schema() {
+		// Arrange
+		Guid schemaUId = Guid.NewGuid();
+		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
+		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
+			.Returns(_ => new ProcessModelType(schemaUId, ProcessCode) { Parameters = MigratorSignature() });
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(),
+				Arg.Any<int>())
+			.Returns("""{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":2,"success":true}""");
+		IProcessVersionLibReader reader = ActiveVersion();
+		RunProcessCommand command = new(generator, applicationClient, Substitute.For<IServiceUrlBuilder>(),
+			NothingLogged(), reader, ConsoleLogger.Instance);
+
+		// Act
+		command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
+
+		// Assert
+		reader.Received(1).Read(schemaUId.ToString("D"));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A refused launch of a non-active version carries the version facts but not the note that says the version ran.")]
+	public void AddVersion_Should_Not_Say_The_Version_Ran_When_The_Launch_Was_Refused() {
+		// Arrange
+		RunProcessResponse response = new() { Status = RunProcessCommand.NotStartedStatus, Error = "refused" };
+
+		// Act
+		RunProcessCommand.AddVersion(response, ProcessCode, NotActive());
+
+		// Assert
+		response.IsActiveVersion.Should().BeFalse(because: "the facts describe the version whatever the launch did");
+		response.Warnings.Should().BeEmpty(because: "nothing ran, so 'ran as asked' would be false");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A queued run of a non-active version warns that the platform's background queue starts the active version, and points to result-parameters for a synchronous run of the named one.")]
+	public void TryRun_Should_Warn_That_A_Queued_Run_May_Start_The_Active_Version() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(),
+			"""{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":true}""",
+			versionLibReader: VersionReader(NotActive()));
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Status.Should().Be("queued-background", because: "an empty id with success is a queued launch");
+		response.Warnings.Should().Contain(w => w.Contains("background queue starts the ACTIVE version")
+				&& w.Contains("result-parameters"),
+			because: "the queue re-resolves the version, so a queued launch is no evidence the named one ran");
+		response.Warnings.Should().NotContain(w => w.Contains("ran as asked"),
+			because: "a queued run of a non-active version cannot be claimed to have run as asked");
+	}
+
+	#endregion
 
 	#region Pre-call validation
 
@@ -547,8 +699,8 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Error.Should().Contain("compile-creatio with process-name",
 			because: "the full type name is the same missing compiled method as the short one");
-		response.Error.Should().Contain("the active version of the process run as",
-			because: "the code run may not be the active version, so the hint does not call it that");
+		response.Error.Should().Contain($"process-name set to '{ProcessCode}'",
+			because: "run-process runs exactly the version it is given, so that version is the one to compile");
 	}
 
 	[Test]
@@ -986,7 +1138,8 @@ public sealed class RunProcessToolTests {
 		IServiceUrlBuilder serviceUrlBuilder,
 		IProcessRunLogReader processRunLogReader,
 		ManualResetEventSlim finished)
-		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ConsoleLogger.Instance) {
+		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ActiveVersion(),
+			ConsoleLogger.Instance) {
 
 		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 			try {
@@ -1129,7 +1282,7 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The run-process description states that a code names one version, points the caller at the active version, and says - as measured - that a non-active version's code runs the active one, so run-process cannot run a version before it is activated.")]
+	[Description("The run-process description states that a code names one version, that run-process runs exactly that version (ENG-101880), that the base name now runs the root, and points the caller at the active version for what the environment runs.")]
 	public void RunProcessTool_Should_StateTheVersionContract_WhenItsDescriptionIsRead() {
 		// Arrange
 		System.Reflection.MethodInfo method = typeof(RunProcessTool).GetMethod(nameof(RunProcessTool.RunProcess))!;
@@ -1141,9 +1294,13 @@ public sealed class RunProcessToolTests {
 		// Assert
 		description.Should().Contain("activeVersionName",
 			because: "an agent that must launch the running version needs the field naming the code to launch");
-		description.Should().Contain("cannot run a version that is not active",
-			because: "a run 'of' a new version before activation executes the previous one, so an agent that "
-				+ "believes it verified the new code activates a version that never ran (ENG-101880)");
+		description.Should().Contain("runs EXACTLY the version whose code it is given",
+			because: "run-process now launches through the version-pinned route, so a new version can be verified "
+				+ "before it is activated (ENG-101880)");
+		description.Should().Contain("which now runs the ROOT",
+			because: "a caller used to the base name launching the active version must learn it no longer does");
+		description.Should().NotContain("cannot run a version that is not active",
+			because: "the retracted limitation must not survive in the contract");
 		description.Should().Contain("isActiveVersion",
 			because: "the description names the flag to read before launching, so the check is actionable here too");
 	}
