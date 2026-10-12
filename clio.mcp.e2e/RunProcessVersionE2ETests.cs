@@ -34,7 +34,7 @@ public sealed class RunProcessVersionE2ETests {
 	private const int Seed = 7;
 
 	[Test]
-	[Description("run-process launched with the code of a version that is not active runs THAT version - its marker comes back, not the active one's - names it, reports it as not active with the active version's code, and warns; the active version's own code runs the active version with no warning.")]
+	[Description("run-process launched with the code of a version that is not active runs THAT version - its marker comes back, not the active one's - names it, reports it as not active with the active version's code, and warns; the active version's own code runs the active version with no warning; and once the new version is activated, the base name still runs the ROOT (TC-05).")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process runs the non-active version whose code it is given")]
 	public async Task RunProcess_Should_RunTheNamedVersion_WhenItIsNotTheActiveOne() {
@@ -64,6 +64,13 @@ public sealed class RunProcessVersionE2ETests {
 		// Act
 		RunProcessEnvelope newVersion = await RunAsync(context, versionName);
 		RunProcessEnvelope root = await RunAsync(context, processName);
+		string activated = System.Text.Json.JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			"set-active-business-process-version",
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["version-name"] = versionName
+			}));
+		RunProcessEnvelope rootAfterActivation = await RunAsync(context, processName);
 
 		// Assert
 		newVersion.Error.Should().BeNull(because: $"the new version must launch cleanly. Error: {newVersion.Error}");
@@ -84,6 +91,17 @@ public sealed class RunProcessVersionE2ETests {
 		root.IsActiveVersion.Should().BeTrue(because: "the root is the active member of this family");
 		root.ActiveVersionName.Should().Be(processName, because: "the root is the version the environment runs");
 		root.Warnings.Should().BeEmpty(because: "running the active version needs no caveat");
+
+		activated.Should().Contain("is now the actual one", because: "the arrange for the rollback check activates the new version: {0}", activated);
+		rootAfterActivation.Error.Should().BeNull(because: $"the root must still launch. Error: {rootAfterActivation.Error}");
+		Convert.ToInt32(rootAfterActivation.ResultParameterValues!["Marker"].ToString()).Should().Be(100 + Seed,
+			because: "the base name runs the ROOT even when another version is active - before the fix it ran the "
+				+ "active version and answered 200 + Seed (TC-05)");
+		rootAfterActivation.IsActiveVersion.Should().BeFalse(because: "the new version is the active one now");
+		rootAfterActivation.ActiveVersionName.Should().Be(versionName,
+			because: "the answer names the version the environment runs");
+		rootAfterActivation.Warnings.Should().Contain(w => w.Contains("NOT the active version"),
+			because: "running an older version must say the environment runs another one");
 	}
 
 	private static async Task<RunProcessEnvelope> RunAsync(ProcessDesignerArrangeContext context, string code) {

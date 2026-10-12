@@ -285,7 +285,9 @@ public class RunProcessCommand(
 			ResolveRequestTimeout(options.TimeoutSeconds), maxAttempts: 1);
 
 		if (string.IsNullOrWhiteSpace(rawResponse)) {
+			// The request was sent, so the answer still names the version it carried.
 			response = Failure("The launch returned an empty response");
+			response.VersionName = model.Code;
 			return false;
 		}
 
@@ -295,6 +297,7 @@ public class RunProcessCommand(
 		}
 		catch (StjJsonException e) {
 			response = Failure($"The launch returned a response clio could not read: {e.Message}");
+			response.VersionName = model.Code;
 			return false;
 		}
 
@@ -316,13 +319,17 @@ public class RunProcessCommand(
 				return versionLibReader.Read(schemaUId.ToString("D"));
 			}
 			catch (Exception exception) when (exception is not OutOfMemoryException) {
-				return new ProcessVersionFacts { Warning = "the version read failed" };
+				return new ProcessVersionFacts { Warning = $"the version read failed ({exception.GetType().Name})" };
 			}
 		});
 
 	// Waits for the version read within what is left of the response deadline, as the log read does; null when the
 	// read has not answered by then.
-	private static ProcessVersionFacts AwaitVersionFacts(Task<ProcessVersionFacts> read, DateTimeOffset? deadline) {
+	internal static ProcessVersionFacts AwaitVersionFacts(Task<ProcessVersionFacts> read, DateTimeOffset? deadline) {
+		// A read that has already answered costs nothing to use, however little of the deadline is left.
+		if (read.IsCompletedSuccessfully) {
+			return read.Result;
+		}
 		int? waitMs = ResolveLogReadTimeout(deadline, DateTimeOffset.UtcNow);
 		return waitMs is not null && read.Wait(Math.Min(waitMs.Value, VersionReadWaitMs)) ? read.Result : null;
 	}
@@ -335,19 +342,24 @@ public class RunProcessCommand(
 	// root, so "which version ran" is not something a caller can assume.
 	internal static void AddVersion(RunProcessResponse response, string processCode, ProcessVersionFacts facts) {
 		response.VersionName = processCode;
-		response.IsActiveVersion = facts?.IsActiveVersion;
+		// "Active" counts only when the library names the family's one active member: two members flagged active
+		// leave ActiveVersionName null, and the runtime then picks between them by a key the view does not expose.
+		bool? standing = facts?.IsActiveVersion == true && string.IsNullOrWhiteSpace(facts.ActiveVersionName)
+			? null
+			: facts?.IsActiveVersion;
+		response.IsActiveVersion = standing;
 		response.ActiveVersionName = facts?.ActiveVersionName;
 		if (response.Status == NotStartedStatus) {
 			return;
 		}
 		// A still-running answer has no verdict, so its notes say the version was launched, not that it ran.
 		bool verdictPending = response.Status == StillRunningStatus;
-		string note = (facts?.IsActiveVersion, response.Status == QueuedBackgroundStatus) switch {
+		string note = (standing, response.Status == QueuedBackgroundStatus) switch {
 			(true, _) => null,
 			(false, true) => BuildQueuedNotActiveVersionNote(processCode),
 			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName, verdictPending),
-			(null, true) => BuildQueuedUnknownVersionNote(processCode),
-			(null, false) => BuildUnknownVersionNote(processCode, verdictPending)
+			(null, true) => BuildQueuedUnknownVersionNote(processCode) + DescribeReadWarning(facts),
+			(null, false) => BuildUnknownVersionNote(processCode, verdictPending) + DescribeReadWarning(facts)
 		};
 		if (note is not null) {
 			(response.Warnings ??= []).Add(note);
@@ -361,6 +373,12 @@ public class RunProcessCommand(
 
 	private static readonly System.Text.RegularExpressions.Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
 		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	// Why the standing is unknown, as the reader put it; fenced, since it can quote server text.
+	private static string DescribeReadWarning(ProcessVersionFacts facts) {
+		string fenced = UntrustedText.Fenced(facts?.Warning);
+		return fenced is null ? string.Empty : $" The version read reported: {fenced}.";
+	}
 
 	private static string RanOrLaunched(bool verdictPending) => verdictPending ? "was launched" : "ran as asked";
 

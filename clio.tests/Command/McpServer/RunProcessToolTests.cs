@@ -227,6 +227,106 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A family with two members flagged active leaves the active version unnamed; the answer then reports the standing as unknown, with the reader's reason fenced, instead of 'active'.")]
+	public void AddVersion_Should_Not_Report_Active_When_The_Library_Names_No_Single_Active_Member() {
+		// Arrange
+		RunProcessResponse response = new() { Status = "completed" };
+		ProcessVersionFacts facts = new() {
+			IsActiveVersion = true, ActiveVersionName = null, Warning = "two members of the family are flagged active"
+		};
+
+		// Act
+		RunProcessCommand.AddVersion(response, ProcessCode, facts);
+
+		// Assert
+		response.IsActiveVersion.Should().BeNull(
+			because: "with two flagged members the runtime picks between them by a key the view does not expose");
+		response.Warnings.Should().ContainSingle(w => w.Contains("could not be established")
+				&& w.Contains("[untrusted-source-text begin]") && w.Contains("two members"),
+			because: "the caller needs the reason the standing is unknown, fenced as the reader's text");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A version read that has already answered is used however little of the response deadline is left.")]
+	public void AwaitVersionFacts_Should_Use_A_Finished_Read_When_The_Deadline_Is_Nearly_Spent() {
+		// Arrange
+		Task<ProcessVersionFacts> finished = Task.FromResult(NotActive());
+
+		// Act
+		ProcessVersionFacts facts = RunProcessCommand.AwaitVersionFacts(finished, DateTimeOffset.UtcNow.AddMilliseconds(500));
+
+		// Assert
+		facts.Should().NotBeNull(because: "using a read that already answered costs no time at all");
+		facts.IsActiveVersion.Should().BeFalse(because: "dropping it would lose the NOT-active warning");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A version read that hangs does not hold the answer past what is left of the response deadline; the standing is then reported as unknown.")]
+	public void TryRun_Should_Answer_Within_The_Deadline_When_The_Version_Read_Hangs() {
+		// Arrange
+		using ManualResetEventSlim never = new(false);
+		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
+		reader.Read(Arg.Any<string>()).Returns(_ => { never.Wait(TimeSpan.FromSeconds(30)); return NotActive(); });
+		Harness harness = BuildHarness(MigratorSignature(), versionLibReader: reader);
+		RunProcessOptions options = new() {
+			ProcessName = ProcessCode, ResponseDeadline = DateTimeOffset.UtcNow.AddSeconds(5)
+		};
+		System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+
+		// Act
+		harness.Command.TryRun(options, out RunProcessResponse response);
+
+		// Assert
+		clock.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+			because: "the wait is bounded by what is left of the response deadline, not by the reader");
+		response.IsActiveVersion.Should().BeNull(because: "the read had not answered");
+		response.Warnings.Should().ContainSingle(w => w.Contains("could not be established"),
+			because: "an unknown standing is said, since the base name no longer implies the active version");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A failed run's logged exception is read before the version facts are waited for, so a slow version read cannot spend the deadline the failure cause needs.")]
+	public void TryRun_Should_Read_The_Logged_Error_Before_Waiting_For_A_Slow_Version_Read() {
+		// Arrange
+		using ManualResetEventSlim never = new(false);
+		IProcessVersionLibReader versionReader = Substitute.For<IProcessVersionLibReader>();
+		versionReader.Read(Arg.Any<string>()).Returns(_ => { never.Wait(TimeSpan.FromSeconds(30)); return NotActive(); });
+		IProcessRunLogReader logReader = Substitute.For<IProcessRunLogReader>();
+		logReader.ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>()).Returns("System.ArgumentException: Term must be positive");
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"message":"An error has occurred during the process execution. Please check the process log for details"}}""", logReader, versionReader);
+		RunProcessOptions options = new() {
+			ProcessName = ProcessCode, ResponseDeadline = DateTimeOffset.UtcNow.AddSeconds(8)
+		};
+
+		// Act
+		harness.Command.TryRun(options, out RunProcessResponse response);
+
+		// Assert
+		logReader.Received(1).ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
+		response.Error.Should().Contain("Term must be positive",
+			because: "the failure cause is worth more than the version facts and is read first");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A call refused by pre-launch validation never reads the version facts.")]
+	public void TryRun_Should_Not_Read_The_Version_When_Validation_Refuses_The_Call() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature());
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode, Parameters = Values("""{"Nope":"x"}""") },
+			out _);
+
+		// Assert
+		harness.VersionLibReader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A queued run whose version standing is unknown warns that the background queue may have started the active version.")]
 	public void AddVersion_Should_Warn_About_The_Queue_When_The_Standing_Is_Unknown() {
 		// Arrange
@@ -616,6 +716,8 @@ public sealed class RunProcessToolTests {
 		launched.Should().BeFalse(because: "no launch verdict exists when the platform answered nothing");
 		response.Error.Should().Be("The launch returned an empty response",
 			because: "the caller should get the crafted message, not a raw serializer exception");
+		response.VersionName.Should().Be(ProcessCode,
+			because: "the request was sent, so the answer still names the version it carried");
 	}
 
 	#endregion
@@ -1105,6 +1207,9 @@ public sealed class RunProcessToolTests {
 			response.ProcessId.Should().BeNull(
 				because: "the id only exists in the RunProcess response and the log row is written when the run "
 					+ "ends, so there is genuinely no handle to report — reporting a guessed one would be worse");
+			response.VersionName.Should().Be(ProcessCode, because: "the launched code is known whatever the run does");
+			response.IsActiveVersion.Should().BeTrue(
+				because: "the version read runs alongside the launch and had answered long before the deadline");
 			string note = response.Warnings.Should().ContainSingle(because: "the one warning is the still-running note").Subject;
 			note.Should().Contain("Do NOT re-run",
 				because: "a second launch duplicates the work, which is the one thing the caller must not do");
@@ -1282,6 +1387,7 @@ public sealed class RunProcessToolTests {
 		harness.PostedBodies.Should().BeEmpty(
 			because: "sending after the answer said 'not launched' would make that answer false");
 		gate.SentUtc.Should().BeNull(because: "no request left");
+		harness.VersionLibReader.DidNotReceive().Read(Arg.Any<string>());
 	}
 
 	[Test]
