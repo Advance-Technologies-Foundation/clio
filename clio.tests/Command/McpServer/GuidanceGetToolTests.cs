@@ -311,8 +311,32 @@ public sealed class GuidanceGetToolTests {
 		int bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
 		bytes.Should().BeLessThan(GuidanceGetTool.CatalogBudgetBytes,
 			because: "the catalog must fit one inline reply (it replaced a ~8 KB bare-name dump plus a 46 KB fallback)");
-		response.Catalog.Split('\n').Should().HaveCount(FixtureNames().Select(n => n.StartsWith("creatio.") ? n["creatio.".Length..] : n).Distinct().Count(),
-			because: "every guide still gets an entry and creatio. duplicates are collapsed");
+		string[] listed = response.Catalog.Split('\n').Select(line => line.Split(':')[0]).ToArray();
+		listed.Should().OnlyContain(name => FixtureNames().Contains(name),
+			because: "every catalog name must be one get-guidance resolves exactly, never a stripped form");
+		listed.Should().Contain("creatio.esq.filters",
+			because: "a creatio. name without an unprefixed twin is kept as published");
+		listed.Should().NotContain("creatio.business-rules",
+			because: "a creatio. name whose unprefixed twin is published is a duplicate");
+	}
+
+	[Test]
+	[Description("A catalog request with no active guide fails with a typed reason instead of pointing back at name=list.")]
+	public async Task GetGuidance_ShouldNotPointBackAtCatalog_WhenNoGuideIsActive() {
+		// Arrange
+		_source.GetNames().Returns(System.Array.Empty<string>());
+		_source.GetCatalog().Returns(System.Array.Empty<KnowledgeGuidanceDescriptor>());
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there is no catalog to return");
+		response.ErrorCode.Should().Be(KnowledgeGuidanceUnavailableException.ErrorCode,
+			because: "the caller must learn that no guidance is active");
+		response.Error.Should().NotContain("name=list",
+			because: "repeating the same call can never succeed");
+		_source.DidNotReceive().FindByName(Arg.Any<string>());
 	}
 
 	[Test]

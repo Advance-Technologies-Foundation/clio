@@ -88,7 +88,7 @@ public sealed class KnowledgeGuidanceResourceAdapterTests {
 			because: "the refusal has to name the identifier that was not found for the caller to act on it");
 		thrown.Message.Should().Contain("resources/list",
 			because: "the read response carries no candidate list of its own, so it must point at the listing "
-				+ "that does instead of at get-guidance's availableGuides field");
+				+ "that does instead of at get-guidance's catalog");
 	}
 
 	[Test]

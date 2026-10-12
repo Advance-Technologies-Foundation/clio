@@ -120,12 +120,18 @@ internal sealed class GuidanceGetTool {
 						Catalog = catalog
 					};
 				}
-			}
-			if (string.IsNullOrWhiteSpace(effectiveName)) {
+				// No guide is active. Pointing the caller at name=list here would send it in a circle,
+				// so say why the catalog is empty instead.
+				string missingName = string.IsNullOrWhiteSpace(effectiveName)
+					? "Missing required parameter 'name'. "
+					: string.Empty;
 				return new GuidanceGetResponse {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
-					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}, or {\"name\": \"list\"} for the catalog."
+					ErrorCode = KnowledgeGuidanceUnavailableException.ErrorCode,
+					Error = missingName + "No guide catalog is available: no compatible verified knowledge bundle "
+						+ "is active, or every guide it publishes is disabled by a feature toggle.",
+					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic)
 				};
 			}
 			KnowledgeArticleLookup lookup = _guidanceSource.FindByName(effectiveName);
@@ -199,19 +205,31 @@ internal sealed class GuidanceGetTool {
 		"list", "index", "catalog", "help"
 	};
 
-	private static string Canonical(string name) =>
-		name.StartsWith(TopicPrefix, StringComparison.OrdinalIgnoreCase) ? name[TopicPrefix.Length..] : name;
+	/// <summary>
+	/// The published guide names with each <c>creatio.</c> duplicate dropped. A prefixed name is dropped only
+	/// when its unprefixed twin is itself published, so every name returned here resolves through
+	/// <see cref="IKnowledgeGuidanceSource.FindByName"/>, which matches exactly and case-sensitively.
+	/// </summary>
+	private List<string> DistinctGuideNames() {
+		IReadOnlyList<string> names = _guidanceSource.GetNames();
+		HashSet<string> published = names.ToHashSet(StringComparer.Ordinal);
+		return names
+			.Where(name => !(name.StartsWith(TopicPrefix, StringComparison.Ordinal)
+				&& published.Contains(name[TopicPrefix.Length..])))
+			.Distinct(StringComparer.Ordinal)
+			.ToList();
+	}
 
 	/// <summary>
-	/// One <c>name: purpose</c> line per guide, without the <c>creatio.</c> duplicates. Purposes are shortened
+	/// One <c>name: purpose</c> line per guide, without the <c>creatio.</c> duplicates (see <see cref="DistinctGuideNames"/>). Purposes are shortened
 	/// until the whole listing fits <see cref="CatalogEntryBudgetBytes"/>. Null when no guide is active.
 	/// </summary>
 	private string? BuildCatalog() {
 		// GetCatalog also carries reference-role fragments, which are not get-guidance names: keep only guides.
-		HashSet<string> guides = _guidanceSource.GetNames().Select(Canonical).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		HashSet<string> guides = DistinctGuideNames().ToHashSet(StringComparer.Ordinal);
 		var entries = _guidanceSource.GetCatalog()
-			.Where(d => guides.Contains(Canonical(d.Name)))
-			.GroupBy(d => Canonical(d.Name), StringComparer.OrdinalIgnoreCase)
+			.Where(d => guides.Contains(d.Name))
+			.GroupBy(d => d.Name, StringComparer.Ordinal)
 			.Select(g => (Name: g.Key, Purpose: Purpose(g.First())))
 			.OrderBy(e => e.Name, StringComparer.Ordinal)
 			.ToList();
@@ -221,7 +239,8 @@ internal sealed class GuidanceGetTool {
 		string text = string.Empty;
 		foreach (int limit in new[] { 110, 80, 60, 40, 0 }) {
 			text = string.Join('\n', entries.Select(e => FormatEntry(e.Name, e.Purpose, limit)));
-			if (System.Text.Encoding.UTF8.GetByteCount(text) <= CatalogEntryBudgetBytes) {
+			// Measured as the JSON string it is sent as: newlines and non-ASCII characters are escaped there.
+			if (System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(text)) <= CatalogEntryBudgetBytes) {
 				break;
 			}
 		}
@@ -247,10 +266,11 @@ internal sealed class GuidanceGetTool {
 	}
 
 	private string BuildNotFoundMessage(string requested) {
-		string needle = Canonical(requested.Trim()).ToLowerInvariant();
-		List<string> suggestions = _guidanceSource.GetNames()
-			.Select(Canonical)
-			.Distinct(StringComparer.OrdinalIgnoreCase)
+		string trimmed = requested.Trim();
+		string needle = (trimmed.StartsWith(TopicPrefix, StringComparison.OrdinalIgnoreCase)
+			? trimmed[TopicPrefix.Length..]
+			: trimmed).ToLowerInvariant();
+		List<string> suggestions = DistinctGuideNames()
 			.Select(name => (Name: name, Score: Closeness(needle, name.ToLowerInvariant())))
 			.Where(x => x.Score < int.MaxValue)
 			.OrderBy(x => x.Score).ThenBy(x => x.Name, StringComparer.Ordinal)

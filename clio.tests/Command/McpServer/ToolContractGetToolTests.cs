@@ -1287,8 +1287,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "diagnostics" && field.Description.Contains("observed data", StringComparison.Ordinal),
 			because: "an agent reading this field must be told by the contract that its content comes from "
 				+ "the configured repository rather than from clio");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
-			because: "failed lookups should expose recovery names");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "catalog",
+			because: "name=list is how an agent discovers the active guides");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "available-guides",
+			because: "get-guidance no longer returns the unbounded name dump");
 		contract.Examples.Any(example =>
 			example.Arguments.TryGetValue("name", out object? value)
 			&& string.Equals(value?.ToString(), "page-schema-handlers", StringComparison.Ordinal)).Should().BeTrue(
