@@ -250,8 +250,89 @@ public sealed class GuidanceGetToolTests {
 		response.Success.Should().BeFalse(because: "an absent identifier cannot produce an article");
 		response.ErrorCode.Should().Be("guidance-not-found",
 			because: "not-found must remain distinct from bundle unavailability");
-		response.AvailableGuides.Should().Equal(["synthetic-guide"],
-			because: "discovery must return the stable source-owned catalog");
+		response.AvailableGuides.Should().BeNull(
+			because: "the full name dump was replaced by suggestions plus the catalog pointer");
+		response.Error.Should().Contain("name=list",
+			because: "the caller is pointed at the compact catalog");
+	}
+
+	private static string[] FixtureNames() {
+		using JsonDocument doc = JsonDocument.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(
+			NUnit.Framework.TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json")));
+		return doc.RootElement.GetProperty("availableNames").EnumerateArray().Select(n => n.GetString()!).ToArray();
+	}
+
+	private void ArrangeCatalog(string description) {
+		KnowledgeGuidanceDescriptor[] catalog = FixtureNames()
+			.Select(n => new KnowledgeGuidanceDescriptor(n, n, description, "docs://x/" + n, "text/markdown"))
+			.ToArray();
+		_source.GetCatalog().Returns(catalog);
+		_source.GetNames().Returns(FixtureNames());
+	}
+
+	[TestCase("list")]
+	[TestCase("INDEX")]
+	[TestCase("Catalog")]
+	[TestCase("help")]
+	[TestCase(null)]
+	[Description("name=list/index/catalog/help (any case) or no name returns a successful compact catalog.")]
+	public async Task GetGuidance_ShouldReturnCatalog_WhenCatalogKeywordOrNoName(string name) {
+		// Arrange
+		_source.GetNames().Returns(["alpha", "creatio.alpha", "beta"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("reference-fragment", "R", "not a guide", "docs://r", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Alpha purpose. More detail.", "docs://a", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("creatio.alpha", "Alpha", "Alpha purpose. More detail.", "docs://a2", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("beta", "Beta title", "", "docs://b", "text/markdown")
+		]);
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs(name));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a catalog request is not an error");
+		response.Catalog.Should().Be("alpha: Alpha purpose.\nbeta: Beta title",
+			because: "entries are deduplicated, sorted, and carry a one-line purpose");
+		response.Article.Should().BeNull(because: "the catalog is not an article");
+		_source.DidNotReceive().FindByName(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("The serialized catalog reply stays under 15,000 bytes for the pinned guide names even with long purposes.")]
+	public async Task GetGuidance_ShouldStayWithinByteBudget_WhenCatalogIsRequestedForPinnedNames() {
+		// Arrange
+		ArrangeCatalog(new string('x', 400));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		int bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
+		bytes.Should().BeLessThan(GuidanceGetTool.CatalogBudgetBytes,
+			because: "the catalog must fit one inline reply (it replaced a ~8 KB bare-name dump plus a 46 KB fallback)");
+		response.Catalog.Split('\n').Should().HaveCount(FixtureNames().Select(n => n.StartsWith("creatio.") ? n["creatio.".Length..] : n).Distinct().Count(),
+			because: "every guide still gets an entry and creatio. duplicates are collapsed");
+	}
+
+	[Test]
+	[Description("An unknown name returns an error with the closest names and a pointer to the catalog, not a name dump.")]
+	public async Task GetGuidance_ShouldSuggestClosestNames_WhenNameIsUnknown() {
+		// Arrange
+		ArrangeCatalog("p");
+		_source.FindByName("business-rule").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("business-rule"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown guide is still an error");
+		response.ErrorCode.Should().Be("guidance-not-found");
+		response.Error.Should().Contain("business-rules").And.Contain("name=list");
+		response.Error.Split(',').Length.Should().BeLessThanOrEqualTo(GuidanceGetTool.MaxSuggestions,
+			because: "at most a handful of suggestions are offered");
+		response.AvailableGuides.Should().BeNull();
 	}
 
 	[Test]

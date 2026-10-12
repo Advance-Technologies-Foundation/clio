@@ -66,9 +66,9 @@ internal sealed class GuidanceGetTool {
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false)]
-	[Description("Returns a named guidance article from active trusted knowledge, or lists all available guide names when the requested name is unknown.")]
+	[Description("Returns a named guidance article from active trusted knowledge. Name 'list' returns a compact guide catalog.")]
 	public Task<GuidanceGetResponse> GetGuidance(
-		[Description("Parameters: name (required). Use one of the names returned in availableGuides.")]
+		[Description("Parameters: name (required). A guide name, or list for the catalog.")]
 		[Required] GuidanceGetArgs args,
 		CancellationToken cancellationToken = default) {
 		GuidanceGetResponse response = ResolveGuidance(args);
@@ -106,12 +106,24 @@ internal sealed class GuidanceGetTool {
 					}
 				}
 			}
+			bool catalogRequested = string.IsNullOrWhiteSpace(effectiveName)
+				|| CatalogKeywords.Contains(effectiveName.Trim());
+			if (catalogRequested) {
+				string? catalog = BuildCatalog();
+				if (catalog is not null) {
+					return new GuidanceGetResponse {
+						Success = true,
+						FeedbackPolicy = feedbackPolicy,
+						Hint = aliasHint,
+						Catalog = catalog
+					};
+				}
+			}
 			if (string.IsNullOrWhiteSpace(effectiveName)) {
 				return new GuidanceGetResponse {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
-					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}. See availableGuides for valid values.",
-					AvailableGuides = _guidanceSource.GetNames().ToList()
+					Error = "Missing required parameter 'name'. Pass {\"name\": \"<guide>\"}, or {\"name\": \"list\"} for the catalog."
 				};
 			}
 			KnowledgeArticleLookup lookup = _guidanceSource.FindByName(effectiveName);
@@ -140,8 +152,7 @@ internal sealed class GuidanceGetTool {
 					Success = false,
 					FeedbackPolicy = feedbackPolicy,
 					ErrorCode = KnowledgeGuidanceAmbiguousException.ErrorCode,
-					Error = lookup.Diagnostic,
-					AvailableGuides = _guidanceSource.GetNames().ToList()
+					Error = lookup.Diagnostic
 				};
 			}
 			if (lookup.Status == KnowledgeArticleLookupStatus.Unavailable) {
@@ -157,25 +168,123 @@ internal sealed class GuidanceGetTool {
 					// interpolates strings taken out of a remote repository, and this tool is mandatory on
 					// every operation - so raw text here is an injection channel into the first thing an agent
 					// reads. See SensitiveErrorTextRedactor.RedactUntrustedOrNull.
-					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic),
-					AvailableGuides = _guidanceSource.GetNames().ToList()
+					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic)
 				};
 			}
 			return new GuidanceGetResponse {
 				Success = false,
 				FeedbackPolicy = feedbackPolicy,
 				ErrorCode = KnowledgeGuidanceNotFoundException.ErrorCode,
-				Error = $"Unknown guidance '{effectiveName}'. Use one of availableGuides.",
-				AvailableGuides = _guidanceSource.GetNames().ToList()
+				Error = BuildNotFoundMessage(effectiveName)
 			};
 		} catch (Exception ex) {
 			return new GuidanceGetResponse {
 				Success = false,
 				FeedbackPolicy = CreateFeedbackPolicy(),
-				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}."),
-				AvailableGuides = _guidanceSource.GetNames().ToList()
+				Error = SensitiveErrorTextRedactor.Redact($"get-guidance failed: {ex.Message}. Expected args: {{\"name\": \"<guide>\"}}.")
 			};
 		}
+	}
+
+	internal const string CatalogHint = "call get-guidance name=list for the catalog";
+	internal const int MaxSuggestions = 5;
+	/// <summary>Serialized-reply budget for the catalog response; enforced by a unit test.</summary>
+	internal const int CatalogBudgetBytes = 15000;
+	private const int CatalogEntryBudgetBytes = 13000;
+	private const string TopicPrefix = "creatio.";
+
+	private static readonly HashSet<string> CatalogKeywords = new(StringComparer.OrdinalIgnoreCase) {
+		"list", "index", "catalog", "help"
+	};
+
+	private static string Canonical(string name) =>
+		name.StartsWith(TopicPrefix, StringComparison.OrdinalIgnoreCase) ? name[TopicPrefix.Length..] : name;
+
+	/// <summary>
+	/// One <c>name: purpose</c> line per guide, without the <c>creatio.</c> duplicates. Purposes are shortened
+	/// until the whole listing fits <see cref="CatalogEntryBudgetBytes"/>. Null when no guide is active.
+	/// </summary>
+	private string? BuildCatalog() {
+		// GetCatalog also carries reference-role fragments, which are not get-guidance names: keep only guides.
+		HashSet<string> guides = _guidanceSource.GetNames().Select(Canonical).ToHashSet(StringComparer.OrdinalIgnoreCase);
+		var entries = _guidanceSource.GetCatalog()
+			.Where(d => guides.Contains(Canonical(d.Name)))
+			.GroupBy(d => Canonical(d.Name), StringComparer.OrdinalIgnoreCase)
+			.Select(g => (Name: g.Key, Purpose: Purpose(g.First())))
+			.OrderBy(e => e.Name, StringComparer.Ordinal)
+			.ToList();
+		if (entries.Count == 0) {
+			return null;
+		}
+		string text = string.Empty;
+		foreach (int limit in new[] { 110, 80, 60, 40, 0 }) {
+			text = string.Join('\n', entries.Select(e => FormatEntry(e.Name, e.Purpose, limit)));
+			if (System.Text.Encoding.UTF8.GetByteCount(text) <= CatalogEntryBudgetBytes) {
+				break;
+			}
+		}
+		return text;
+	}
+
+	private static string FormatEntry(string name, string purpose, int limit) {
+		if (limit == 0 || purpose.Length == 0) {
+			return name;
+		}
+		string shortPurpose = purpose.Length <= limit ? purpose : purpose[..(limit - 1)].TrimEnd() + "…";
+		return $"{name}: {shortPurpose}";
+	}
+
+	private static string Purpose(KnowledgeGuidanceDescriptor descriptor) {
+		string text = !string.IsNullOrWhiteSpace(descriptor.Description) ? descriptor.Description : descriptor.Title;
+		if (string.IsNullOrWhiteSpace(text) || string.Equals(text, descriptor.Name, StringComparison.Ordinal)) {
+			return string.Empty;
+		}
+		text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+		int end = text.IndexOf(". ", StringComparison.Ordinal);
+		return end > 0 ? text[..(end + 1)] : text;
+	}
+
+	private string BuildNotFoundMessage(string requested) {
+		string needle = Canonical(requested.Trim()).ToLowerInvariant();
+		List<string> suggestions = _guidanceSource.GetNames()
+			.Select(Canonical)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.Select(name => (Name: name, Score: Closeness(needle, name.ToLowerInvariant())))
+			.Where(x => x.Score < int.MaxValue)
+			.OrderBy(x => x.Score).ThenBy(x => x.Name, StringComparer.Ordinal)
+			.Take(MaxSuggestions)
+			.Select(x => x.Name)
+			.ToList();
+		string didYouMean = suggestions.Count == 0 ? string.Empty : $" Closest names: {string.Join(", ", suggestions)}.";
+		return $"Unknown guidance '{requested}'.{didYouMean} To see all guides, {CatalogHint}.";
+	}
+
+	/// <summary>Lower is closer; <see cref="int.MaxValue"/> means not close enough to suggest.</summary>
+	private static int Closeness(string needle, string candidate) {
+		if (needle.Length == 0) {
+			return int.MaxValue;
+		}
+		if (candidate.StartsWith(needle, StringComparison.Ordinal) || needle.StartsWith(candidate, StringComparison.Ordinal)) {
+			return 0;
+		}
+		if (candidate.Contains(needle, StringComparison.Ordinal) || needle.Contains(candidate, StringComparison.Ordinal)) {
+			return 1;
+		}
+		int distance = EditDistance(needle, candidate);
+		return distance <= Math.Max(2, needle.Length / 3) ? distance + 1 : int.MaxValue;
+	}
+
+	private static int EditDistance(string a, string b) {
+		int[] prev = Enumerable.Range(0, b.Length + 1).ToArray();
+		for (int i = 1; i <= a.Length; i++) {
+			int[] cur = new int[b.Length + 1];
+			cur[0] = i;
+			for (int j = 1; j <= b.Length; j++) {
+				cur[j] = Math.Min(Math.Min(cur[j - 1], prev[j]) + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+			}
+			prev = cur;
+		}
+		return prev[b.Length];
 	}
 
 	private KnowledgeFeedbackGuidancePolicy CreateFeedbackPolicy() {
@@ -208,7 +317,7 @@ internal sealed class GuidanceGetTool {
 /// </summary>
 public sealed record GuidanceGetArgs(
 	[property: JsonPropertyName("name")]
-	[property: Description("Stable guidance name. Use one of the names returned in 'availableGuides' when unknown.")]
+	[property: Description("Stable guidance name, or 'list' for the guide catalog.")]
 	string? Name = null
 ) {
 	[JsonExtensionData]
@@ -246,6 +355,11 @@ public sealed class GuidanceGetResponse {
 	[JsonPropertyName("article")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public GuidanceArticle? Article { get; init; }
+
+	/// <summary>One <c>name: purpose</c> line per guide, returned for name=list/index/catalog/help or no name.</summary>
+	[JsonPropertyName("catalog")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Catalog { get; init; }
 
 	[JsonPropertyName("availableGuides")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
