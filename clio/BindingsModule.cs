@@ -1196,6 +1196,7 @@ public class BindingsModule {
 		services.AddTransient<ICreatedRecordWatcher, CreatedRecordWatcher>();
 		services.AddTransient<ICreatedRecordCleaner, CreatedRecordCleaner>();
 		services.AddTransient<IRunVerificationServices, RunVerificationServices>();
+		services.AddTransient<IRecordDeletionService, RecordDeletionService>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();

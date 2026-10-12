@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Clio.Command.McpServer.Tools;
-using Clio.Common;
 
 namespace Clio.Command.RuntimeVerification;
 
@@ -24,8 +22,7 @@ public interface ICreatedRecordCleaner {
 		DateTimeOffset? stopAt = null);
 }
 
-internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder)
-	: ICreatedRecordCleaner {
+internal sealed class CreatedRecordCleaner(IRecordDeletionService deletionService) : ICreatedRecordCleaner {
 
 	private const int MaxPasses = 3;
 
@@ -90,13 +87,10 @@ internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient,
 	}
 
 	private string DeleteOne(CreatedRecord record, int timeoutMs) {
-		try {
-			string url = serviceUrlBuilder.Build(ODataKeyFormatter.KeyPath(record.Entity, record.Id));
-			string response = applicationClient.ExecuteDeleteRequest(url, string.Empty, Math.Max(1, timeoutMs));
-			return ODataKeyedWrite.ValidateWriteResponse(response);
+		RecordDeleteOutcome outcome = deletionService.Delete(record.Entity, record.Id, timeoutMs);
+		if (outcome.Success) {
+			return null;
 		}
-		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			return SensitiveErrorTextRedactor.Redact(exception.Message);
-		}
+		return outcome.ServerDetail is null ? outcome.Error : $"{outcome.Error} The server's own reason: {outcome.ServerDetail}.";
 	}
 }
