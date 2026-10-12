@@ -10,8 +10,8 @@ using ModelContextProtocol.Protocol;
 namespace Clio.Mcp.E2E;
 
 /// <summary>
-/// ENG-103020: odata-read checks select / filter / order-by names against the entity's $metadata and answers
-/// an unknown name locally with the closest valid names, measured against a live Creatio stand.
+/// ENG-103020: odata-read explains an invalid-query rejection by checking select / filter / order-by names against
+/// the entity's $metadata and listing the closest valid names, measured against a live Creatio stand.
 /// </summary>
 [TestFixture]
 [Category("McpE2E.Sandbox")]
@@ -23,7 +23,7 @@ public sealed class ODataReadColumnValidationE2ETests : McpContractFixtureBase {
 	[Test]
 	[AllureTag(ODataReadTool.ToolName)]
 	[AllureName("odata-read suggests ActivityCategoryId for an Activity CategoryId select")]
-	[AllureDescription("Selects the non-existent Activity column CategoryId through the real MCP server and verifies the local invalid-query rejection with the closest valid name.")]
+	[AllureDescription("Selects the non-existent Activity column CategoryId through the real MCP server and verifies the invalid-query rejection carries the closest valid name.")]
 	[Description("odata-read with an unknown Activity column returns invalid-query, unknown-members with ActivityCategoryId suggested and the entity column count.")]
 	public async Task ODataRead_Should_Suggest_ActivityCategoryId_For_Unknown_CategoryId() {
 		// Arrange
@@ -52,8 +52,8 @@ public sealed class ODataReadColumnValidationE2ETests : McpContractFixtureBase {
 			because: "at most three suggestions are reported per name");
 		response.ValidColumnCount.Should().BeGreaterThan(0,
 			because: "the entity's column count is reported next to unknown-members");
-		response.Error.Should().Contain("Nothing was sent to Creatio",
-			because: "the rejection is local, before any query request");
+		response.Error.Should().Contain("Creatio rejected the query",
+			because: "the names are explained after the server rejected the query");
 	}
 
 	[Test]

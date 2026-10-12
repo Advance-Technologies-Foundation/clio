@@ -13,6 +13,9 @@ namespace Clio.Tests.Command.McpServer;
 public sealed class ODataReadColumnValidationTests {
 	private const string ValidBody = "{\"@odata.context\":\"http://creatio/odata/$metadata#Activity\",\"value\":[]}";
 
+	private const string InvalidQueryBody =
+		"{\"error\":{\"code\":\"\",\"message\":\"The query specified in the URI is not valid. Could not find a property named 'X' on type 'Terrasoft.Configuration.OData.Activity'.\"}}";
+
 	private const string Csdl = """
 		<?xml version="1.0" encoding="utf-8" standalone="no"?>
 		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
@@ -40,13 +43,14 @@ public sealed class ODataReadColumnValidationTests {
 		""";
 
 	private IApplicationClient _client;
+	private string _dataBody;
 	private int _dataRequests;
 	private string _metadataBody;
 	private int _metadataRequests;
 
 	[SetUp]
 	public void SetUp() {
-		ODataReadColumnValidation.ClearCache();
+		_dataBody = InvalidQueryBody;
 		_dataRequests = 0;
 		_metadataRequests = 0;
 		_metadataBody = Csdl;
@@ -66,7 +70,7 @@ public sealed class ODataReadColumnValidationTests {
 					return _metadataBody;
 				}
 				_dataRequests++;
-				return ValidBody;
+				return _dataBody;
 			});
 		return new ODataReadTool(resolver, new OperationCorrelationIdProvider(), Substitute.For<ILogger>());
 	}
@@ -87,7 +91,7 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("CategoryId on Activity is rejected locally and ActivityCategoryId is suggested; no data request is sent.")]
+	[Description("When Creatio rejects CategoryId on Activity, the rejection names it and suggests ActivityCategoryId.")]
 	public void Read_Should_Suggest_ActivityCategoryId_For_CategoryId() {
 		// Arrange
 		ODataReadTool tool = BuildTool();
@@ -103,7 +107,8 @@ public sealed class ODataReadColumnValidationTests {
 		response.UnknownMembers[0].Suggestions.Should().Contain("ActivityCategoryId",
 			because: "the valid column contains the unknown name");
 		response.ValidColumnCount.Should().Be(4, because: "Id, CreatedOn, Title, ActivityCategoryId");
-		_dataRequests.Should().Be(0, because: "nothing may be sent to Creatio for an unknown column");
+		_dataRequests.Should().Be(1, because: "the query is sent once and the metadata explains its rejection");
+		_metadataRequests.Should().Be(1, because: "only the rejected query fetches the metadata");
 	}
 
 	[Test]
@@ -121,7 +126,6 @@ public sealed class ODataReadColumnValidationTests {
 		response.UnknownMembers.Should().HaveCount(2, because: "one select name and one filter field are unknown");
 		response.UnknownMembers![0].Suggestions.Should().Contain("Caption", because: "the prefix-stripped name matches");
 		response.UnknownMembers[1].Argument.Should().Be("filters", because: "the filter field is reported as such");
-		_dataRequests.Should().Be(0, because: "the query is refused locally");
 	}
 
 	[Test]
@@ -152,6 +156,8 @@ public sealed class ODataReadColumnValidationTests {
 		// Arrange
 		ODataReadTool tool = BuildTool();
 
+		_dataBody = ValidBody;
+
 		// Act
 		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Id", "ActivityCategoryId", "ActivityCategory/Name"),
 			filters: Filter("ActivityCategory/Id"), orderBy: "CreatedOn desc"));
@@ -159,12 +165,14 @@ public sealed class ODataReadColumnValidationTests {
 		// Assert
 		response.Success.Should().BeTrue(because: "every name is on the entity (CreatedOn is inherited)");
 		_dataRequests.Should().Be(1, because: "a valid query is sent exactly once");
+		_metadataRequests.Should().Be(0,
+			because: "an accepted query must not pay for the multi-megabyte metadata document");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("When the metadata cannot be fetched the query is sent unchecked.")]
-	public void Read_Should_Fall_Back_To_Sending_The_Query_When_Metadata_Is_Unavailable() {
+	[Description("When the metadata cannot be fetched the server's rejection is returned without unknown-members.")]
+	public void Read_Should_Return_The_Server_Rejection_When_Metadata_Is_Unavailable() {
 		// Arrange
 		ODataReadTool tool = BuildTool();
 		_metadataBody = string.Empty;
@@ -173,7 +181,8 @@ public sealed class ODataReadColumnValidationTests {
 		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("CategoryId")));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "an unverifiable name must never block the query: " + response.Error);
+		response.ErrorCode.Should().Be("invalid-query", because: "the server's classification stands");
+		response.UnknownMembers.Should().BeNull(because: "no verdict is possible without the metadata");
 		_dataRequests.Should().Be(1, because: "the query goes out as it did before validation existed");
 	}
 
@@ -189,32 +198,30 @@ public sealed class ODataReadColumnValidationTests {
 		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Whatever")));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "no verdict is possible without the type");
-		_dataRequests.Should().Be(1, because: "the query is sent");
+		response.ErrorCode.Should().Be("invalid-query", because: "the server's classification stands");
+		response.UnknownMembers.Should().BeNull(because: "no verdict is possible without the type");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("Metadata is cached per entity and environment; an unknown name against a cached shape triggers one refresh.")]
-	public void Read_Should_Cache_Metadata_And_Refresh_Once_On_Unknown_Name() {
+	[Description("A two-segment expand must end in a navigation; a mis-cased navigation still gets a member suggestion behind it.")]
+	public void Read_Should_Reject_Expand_Ending_In_A_Column_And_Suggest_Behind_MisCased_Navigation() {
 		// Arrange
 		ODataReadTool tool = BuildTool();
-		tool.Read(Args("Activity", select: Cols("Title")));
-		tool.Read(Args("Activity", select: Cols("Id")));
 
 		// Act
-		int afterValid = _metadataRequests;
-		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Nope")));
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("activitycategory/Nmae"),
+			expand: Cols("ActivityCategory/Name")));
 
 		// Assert
-		afterValid.Should().Be(1, because: "the second valid read reuses the cached shape");
-		_metadataRequests.Should().Be(2, because: "an unknown name against a cached shape refreshes the metadata once");
-		response.Success.Should().BeFalse(because: "the refreshed metadata still lacks the column");
+		response.UnknownMembers.Should().HaveCount(2, because: "the expand path ends in a column and the select member is misspelled");
+		response.UnknownMembers!.Single(m => m.Argument == "select").Suggestions.Should()
+			.Contain("ActivityCategory/Name", because: "the navigation is matched case-insensitively and spelled as the metadata spells it");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("A name that differs from a valid one only by letter case is passed to the server.")]
+	[Description("A name that differs from a valid one only by letter case is never reported as unknown.")]
 	public void Read_Should_Not_Block_Case_Only_Differences() {
 		// Arrange
 		ODataReadTool tool = BuildTool();
@@ -223,7 +230,7 @@ public sealed class ODataReadColumnValidationTests {
 		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("title")));
 
 		// Assert
-		response.Success.Should().BeTrue(because: "case sensitivity is the service's decision");
+		response.UnknownMembers.Should().BeNull(because: "a case-only difference counts as known");
 	}
 
 	[Test]
@@ -238,5 +245,6 @@ public sealed class ODataReadColumnValidationTests {
 
 		// Assert
 		_metadataRequests.Should().Be(0, because: "the multi-megabyte document is only fetched when a name needs checking");
+		_dataRequests.Should().Be(1, because: "the query itself is still sent");
 	}
 }

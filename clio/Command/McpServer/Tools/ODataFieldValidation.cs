@@ -252,10 +252,11 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		int timeoutMs,
-		int attempts) =>
+		int attempts,
+		bool buildShape = false) =>
 		RetryWhileTransient(
 			attempts,
-			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs),
+			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs, buildShape),
 			metadata => metadata.EmptyBody);
 
 	/// <summary>
@@ -295,7 +296,8 @@ internal static class ODataFieldValidation {
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string entity,
-		int timeoutMs) {
+		int timeoutMs,
+		bool buildShape) {
 		string url = urlBuilder.Build("odata/$metadata");
 		string body = client.ExecuteGetRequest(url, timeoutMs, TransportAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
@@ -309,7 +311,9 @@ internal static class ODataFieldValidation {
 				CsdlType? type = ParseCSDLEntity(body, entity, out bool depthExceeded, out Dictionary<string, CsdlType> allTypes);
 				if (type is not null) {
 					return new EntityMetadata(true, type.Properties, type.PropertyTypes, null, null,
-						Shape: BuildShape(type, allTypes));
+						// Only the read-side check reads the shape; the write paths must not pay for walking
+						// every navigation target.
+						Shape: buildShape ? BuildShape(type, allTypes) : null);
 				}
 				if (depthExceeded) {
 					return new EntityMetadata(false, [], [], null,
@@ -527,18 +531,19 @@ internal static class ODataFieldValidation {
 	/// checked one level deep without keeping the whole multi-megabyte document in memory).
 	/// </summary>
 	private static EntityShape BuildShape(CsdlType type, Dictionary<string, CsdlType> types) {
-		Dictionary<string, TypeShape> targets = new(StringComparer.Ordinal);
+		// Case-insensitive throughout: the read-side check treats a case-only difference as known.
+		Dictionary<string, TypeShape> targets = new(StringComparer.OrdinalIgnoreCase);
 		foreach (KeyValuePair<string, string> navigation in type.Navigations) {
 			if (types.TryGetValue(navigation.Value, out CsdlType? target) && CollectInherited(target, types)) {
 				targets[navigation.Key] = new TypeShape(
-					new HashSet<string>(target.Properties, StringComparer.Ordinal),
-					new HashSet<string>(target.Navigations.Keys, StringComparer.Ordinal));
+					new HashSet<string>(target.Properties, StringComparer.OrdinalIgnoreCase),
+					new HashSet<string>(target.Navigations.Keys, StringComparer.OrdinalIgnoreCase));
 			}
 		}
 		return new EntityShape(
 			new TypeShape(
-				new HashSet<string>(type.Properties, StringComparer.Ordinal),
-				new HashSet<string>(type.Navigations.Keys, StringComparer.Ordinal)),
+				new HashSet<string>(type.Properties, StringComparer.OrdinalIgnoreCase),
+				new HashSet<string>(type.Navigations.Keys, StringComparer.OrdinalIgnoreCase)),
 			targets);
 	}
 
@@ -554,7 +559,7 @@ internal static class ODataFieldValidation {
 	internal static EntityShape? TryGetEntityShape(
 		IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity, int timeoutMs) {
 		try {
-			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, timeoutMs, 1);
+			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, timeoutMs, 1, buildShape: true);
 			return metadata.Resolved ? metadata.Shape : null;
 		} catch (Exception) {
 			return null;
