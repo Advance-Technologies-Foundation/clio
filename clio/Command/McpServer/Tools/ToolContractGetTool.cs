@@ -10,6 +10,7 @@ using Clio.Common;
 using Clio.Command.BusinessRules;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
+using Clio.Common.Telemetry;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 
@@ -29,6 +30,7 @@ public sealed class ToolContractGetTool {
 		"Call get-tool-contract with no arguments for a compact index of every tool.";
 
 	private readonly IMcpToolInvokerRegistry? _toolInvokerRegistry;
+	private readonly IServedContentMeter? _servedContentMeter;
 
 	/// <summary>
 	/// Initializes the tool without a registry. Curated contracts and the lossy reflection fallback
@@ -47,8 +49,14 @@ public sealed class ToolContractGetTool {
 	/// The MCP invoker registry; resolved from DI by the SDK per call (may be <c>null</c> in tests that
 	/// only exercise curated contracts).
 	/// </param>
-	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry) {
+	/// <param name="servedContentMeter">
+	/// Counts the contract bytes this session served, for the product telemetry stamp. Optional because the
+	/// count is fail-soft enrichment: without it the contract is served exactly the same, just not counted.
+	/// </param>
+	public ToolContractGetTool(IMcpToolInvokerRegistry? toolInvokerRegistry,
+		IServedContentMeter? servedContentMeter = null) {
 		_toolInvokerRegistry = toolInvokerRegistry;
+		_servedContentMeter = servedContentMeter;
 	}
 
 	/// <summary>
@@ -92,6 +100,15 @@ public sealed class ToolContractGetTool {
 		[Description("Parameters: tool-names (optional array) and detail (optional: index, full or short). Omit entirely for a compact index of all tools; pass tool-names for their contracts; detail=full expands every contract in full.")]
 		ToolContractGetArgs? args = null,
 		RequestContext<CallToolRequestParams>? requestContext = null) {
+		ToolContractGetResponse response = ResolveContracts(args, requestContext);
+		// ENG-100157: metered on the way out, so the index, a fitted batch, a full batch and a refusal are all
+		// counted at their serialized size.
+		_servedContentMeter?.RecordContract(McpResultSize.Of(response));
+		return response;
+	}
+
+	private ToolContractGetResponse ResolveContracts(ToolContractGetArgs? args,
+		RequestContext<CallToolRequestParams>? requestContext) {
 		// A natural no-arguments discovery call (the first call an agent makes) sends no args object at all.
 		// Treat a missing args object exactly like an omitted-tool-names call so it yields the compact index:
 		// new ToolContractGetArgs() has ToolNames=null / Detail=null, which the downstream logic resolves to
@@ -6303,7 +6320,7 @@ internal static class ToolContractCatalog {
 				[EnvironmentNameFieldName],
 				[
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
-					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile keeps running and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
+					Field(PackageNameFieldName, StringType, "Optional package name. When omitted (and process-name is omitted too), runs a full compilation (`clio cc -e ENV_NAME --all`). When provided, recompiles only that single package and waits for the finished build: a C# compile error fails the call (exit-code 1) with the CSxxxx compiler diagnostics, and the new code is not loaded. If the MCP response deadline is reached before the build finishes, the call returns exit-code 0 with an in-progress note and an operation-id instead; the compile has not finished, and `compile-status` then reports its verdict, including a compile failure. A blank value is refused rather than read as omitted. Comma-separated lists are not supported."),
 					Field(CompileProcessNameFieldName, StringType, "Optional business process code. Compiles the package that process is in through CrtProcessBuilder 1.6.6.33+ and answers with the compiler errors, the process's own first - the compile a Script Task or process methods saved by create/modify-business-process need: on Creatio 10.x a package-name compile does not pick such a save up, and a full one takes about 20 minutes. An interpreted process without C# is answered without a compile. Exclusive with package-name.")
 				]),
 			CommandExecutionOutput(),
@@ -6334,7 +6351,7 @@ internal static class ToolContractCatalog {
 			AntiPatterns: [
 				new ToolAntiPattern(
 					$"{CompileCreatioTool.CompileCreatioToolName} → {CompileCreatioTool.CompileCreatioToolName}",
-					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile keeps running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: " + CompileStatusTool.HistoryRuleSummary),
+					"Calling compile-creatio again because your MCP client stopped waiting (for example 'Request timed out') starts a second runtime reload or is refused: the first compile may still be running. Poll `compile-status` with the same environment-name instead. If it answers not-found, it lists the environment's newest compilation-history rows with the time each finished: " + CompileStatusTool.HistoryRuleSummary),
 				new ToolAntiPattern(
 					$"{PageUpdateTool.ToolName} → {CompileCreatioTool.CompileCreatioToolName}",
 					"Freedom UI page bodies are AMD modules served at runtime. `update-page` and `sync-pages` make changes live; running `compile-creatio` afterward forces an unnecessary runtime reload and breaks the active session."),
@@ -6821,7 +6838,8 @@ internal static class ToolContractCatalog {
 			"Pushes the local workspace at workspace-path to the specified Creatio environment using the application installer. " +
 			"A package that does not yet exist in the environment is created locked (InstallType 1, not editable) and registered as an installed application; this tool has no option to install it unlocked. To create a new editable package in the environment use create-package instead. " +
 			"Before installing, it emits one non-blocking warning message per Freedom UI page schema (web or mobile) whose user-visible text (caption, label, title, tooltip, placeholder) is an inline literal - the same text update-page rejects - naming the schema, its package, and the offending <node>.<property> elements; bind the text via $Resources.Strings.<Key> or #ResourceString(<Key>)# to clear it. " +
-			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources).",
+			"A second warning names literal-only properties (e.g. crt.ImageInput.tooltip) bound to a localizable resource, which update-page also rejects because the text renders empty; set them as plain literals (see get-guidance page-schema-resources). " +
+			"Every package is packed before anything is installed: when a Schemas/<Name>/ or Data/<Name>/ folder has no descriptor.json the call fails with exit-code 1 and installs nothing, and the error names each such folder's local path. Creatio would otherwise reject the whole installation with 'Invalid descriptor' naming only the folder's last path segment. Each folder carries a verdict: 'only Localization files, delete the folder' is a deleted data binding's leftover, so delete it; 'element files, restore descriptor.json' means the element is still there, so restore its descriptor.json and do not delete it, because the next install can remove the element.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, WorkspacePathFieldName],
 				[

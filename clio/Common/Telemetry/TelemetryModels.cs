@@ -28,6 +28,25 @@ public sealed record TelemetryEventRequest(
 }
 
 /// <summary>
+/// Running totals of what one clio MCP session served the agent, stamped by clio on the telemetry events
+/// that session records. Never accepted from the caller.
+/// </summary>
+/// <param name="GuidanceReads">Guidance articles served, re-reads included.</param>
+/// <param name="GuidanceRereads">Guidance articles served again after this session had already received them.</param>
+/// <param name="GuidanceBytes">UTF-8 bytes of every <c>get-guidance</c> response, articles and refusals alike.</param>
+/// <param name="ContractReads"><c>get-tool-contract</c> responses served.</param>
+/// <param name="ContractBytes">UTF-8 bytes of every <c>get-tool-contract</c> response.</param>
+/// <param name="GuidanceLibraryVersion">The version of the guidance library that served the latest article, when known.</param>
+public sealed record ServedContentSnapshot(
+	long GuidanceReads,
+	long GuidanceRereads,
+	long GuidanceBytes,
+	long ContractReads,
+	long ContractBytes,
+	string GuidanceLibraryVersion
+);
+
+/// <summary>
 /// Result returned from the telemetry service and MCP tool.
 /// </summary>
 public sealed record TelemetryEventResult(

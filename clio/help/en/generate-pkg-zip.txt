@@ -35,5 +35,13 @@ EXAMPLE
         compress more than one packages to single .gz file if command run from 
         packages containing directory
 
+NOTES
+    The archive is not built when a folder under Schemas/ or Data/ has no
+    descriptor.json, because Creatio would reject its installation with
+    "Invalid descriptor". Every listed package is checked, an existing archive
+    is left in place, and the error names the full local path of each such
+    folder with a verdict: delete a folder that holds only Localization files,
+    restore descriptor.json in a folder that still holds element files.
+
 REPORTING BUGS
     https://github.com/Advance-Technologies-Foundation/clio
