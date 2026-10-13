@@ -39,7 +39,8 @@ public sealed class CreatedRecordCleanerTests {
 				deleted.Add(url);
 				return string.Empty;
 			});
-		return (new CreatedRecordCleaner(client, urlBuilder), client, deleted);
+		return (new CreatedRecordCleaner(new RecordDeletionService(client, urlBuilder,
+			Substitute.For<Clio.Common.EntitySchema.IRuntimeEntitySchemaReader>())), client, deleted);
 	}
 
 	[Test]

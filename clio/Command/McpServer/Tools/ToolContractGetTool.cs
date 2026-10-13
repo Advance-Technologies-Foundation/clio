@@ -538,6 +538,7 @@ internal static class ToolContractCatalog {
 	private const string ApplicationCodeFieldName = "application-code";
 	private const string ApplicationIdFieldName = "application-id";
 	private const string ArrayType = "array";
+	private const string ResultsFieldName = "results";
 	private const string BindingNameFieldName = "binding-name";
 	private const string BooleanFalseLiteral = "false";
 	private const string BooleanType = "boolean";
@@ -3001,21 +3002,33 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataDelete() {
 		return new ToolContractDefinition(
 			ODataDeleteTool.ToolName,
-			"Deletes a single Creatio record through OData v4 (DELETE). Requires the record GUID and confirm=true; never performs a keyless mass delete.",
+			"Deletes Creatio records by GUID through OData v4 (DELETE): one id or up to 50 ids of one entity, with confirm=true; never performs a keyless mass delete. Every refusal is explained: the server's own reason, the rows still referencing the record, a running-process binding, or the rights/event-handler cause. cascade=true also deletes owned children (required lookups) deepest first, after checking the whole tree - a linked row, a live process binding, an unreadable table or a walked row the user cannot read refuses it with nothing deleted; never for a lookup (dictionary) record; it needs the cascade-plan-hash of a dry run and refuses when the plan changed. A refusal the check cannot see in advance (delete rights, an event handler, a row hidden by record rights) can still stop the record after its owned rows went, and cascade-deleted lists them; dry-run=true lists what would be deleted and what blocks it. A record that does not exist is reported not found, never deleted.",
 			new ToolInputSchemaContract(
-				[EntityFieldName, "id", ConfirmFieldName, EnvironmentNameFieldName],
+				[EntityFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
-					Field("id", StringType, "GUID of the record to delete. Required; a keyless mass delete is rejected."),
+					Field("id", StringType, "GUID of the record to delete. Pass id or ids; a keyless mass delete is rejected."),
+					Field("ids", ArrayType, "Up to 50 record GUIDs of the same entity; results reports each."),
+					Field("cascade", BooleanType, "true also deletes owned children - rows whose REQUIRED lookup points at the record - up to 3 levels, 100 rows and 10 ids. The whole tree is checked first; any linked row (optional lookup), live process binding or unreadable table refuses the cascade with nothing deleted. Refused for Contact, Employee, SysAdminUnit and SysUserInRole (as the record or as an owned row) and for any lookup (dictionary) record."),
+					Field("cascade-plan-hash", StringType, "Required with cascade and confirm: the cascade-plan-hash of the dry run of the same entity and ids; nothing is deleted when the recomputed plan differs."),
+					Field("dry-run", BooleanType, "true deletes nothing and needs no confirm; plan lists visibility, referencing rows, what cascade would delete, what the platform deletes with it and what blocks it; with cascade it returns cascade-plan-hash."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
 				[SuccessFalseSignal],
-				Field(SuccessFieldName, BooleanType, "Whether the OData delete succeeded."),
+				Field(SuccessFieldName, BooleanType, "Whether every requested record is gone (dry-run: whether the plan was built)."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
-				Field("id", StringType, "GUID of the deleted record."),
+				Field("id", StringType, "GUID of the deleted record (single id; absent on dry-run)."),
+				Field("explanation", StringType, "Why the record was not deleted; present on every refusal the server answered."),
+				Field("referencing", ArrayType, "Rows still referencing the record: {entity, column, ids, more, kind} with kind owned, linked or cascade."),
+				Field("cascade-deleted", ArrayType, "Owned rows deleted before the record ({entity, id})."),
+				Field("cascade-unconfirmed", ArrayType, "Owned rows whose DELETE got no answer: they may be gone; check with odata-read."),
+				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted} per id."),
+				Field("plan", ArrayType, "With dry-run: one {id, visible, referencing, cascade-would-delete, platform-cascade, cascade-refusal, blocked-because, complete} per id."),
+				Field("cascade-plan-hash", StringType, "With dry-run and cascade: pass it back with confirm to delete exactly this plan."),
+				Field("note", StringType, "With dry-run: rows hidden from the user by record-level rights are not seen by the check."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
@@ -3028,13 +3041,23 @@ internal static class ToolContractCatalog {
 					[EntityFieldName] = ExampleContactSchemaName,
 					["id"] = ExampleLookupValueId,
 					[ConfirmFieldName] = true
+				}),
+				Example("List what deleting an account would take, without deleting", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[EntityFieldName] = "Account",
+					["id"] = ExampleLookupValueId,
+					["cascade"] = true,
+					["dry-run"] = true
 				})
 			],
-			Flow([ODataDeleteTool.ToolName], "Use to remove a single Creatio record identified by its GUID."),
+			Flow([ODataDeleteTool.ToolName], "Use to remove Creatio records identified by their GUIDs."),
 			[
 				Flow(
 					[ODataReadTool.ToolName, ODataDeleteTool.ToolName],
-					"Read to confirm the target record and obtain its Id, then delete by that Id.")
+					"Read to confirm the target record and obtain its Id, then delete by that Id."),
+				Flow(
+					[ODataDeleteTool.ToolName, ODataDeleteTool.ToolName],
+					"On a refusal, read explanation and referencing; with the user's agreement call dry-run with cascade, then cascade with confirm and the dry run's cascade-plan-hash.")
 			],
 			[]);
 	}
@@ -4490,7 +4513,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "Whether every sync-schemas operation succeeded."),
-				Field("results", ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
+				Field(ResultsFieldName, ArrayType, "Per-operation results for the operations that ran, keyed by canonical `type`. Each item carries `type`, `schema-name`, `success`, `status` (completed|failed), `operation-index` (zero-based index into the request operations, or the sentinel `-1` on a WHOLE-CALL rejection, where no operation was examined), an additive `outcome` discriminator (`created` | `reconciled` | `already-satisfied` | `collision`; omitted for seed-data and when null), and — only when the operation was retried for a transient fault — `attempts`. A durable collision — a same-name schema in a DIFFERENT package (except a create-entity op with `extend-parent: true`, where a same-name schema in another package is the replacement target and is classified `created`, not a collision), or a same-package schema whose parent/kind is incompatible with the request — fails that op with `success: false`, `outcome: collision`, a user-friendly `error`, and `collision-info` (the owning package); the batch then stops on first failure. An `update-entity` per-column type collision — an `add` naming a present column of a different type — also fails with `success: false` and `outcome: collision`, but carries no `collision-info` (that block names a colliding schema's package); its `error` names every colliding column and points at the explicit-`modify` remedy. A per-column modify-conflict rejected by the backend is NOT a collision: it fails with `success: false` + `error`, no `collision-info` and no `collision` outcome. Operations that never ran are NOT in this array; see `resume-plan`. The one exception is a WHOLE-CALL rejection - arguments that fail the top-level field-shape check, an omitted or empty `operations` array - where nothing ran at all: `results` then carries a SINGLE entry whose `type` is the tool name `sync-schemas` (not one of the canonical operation types), whose `operation-index` is `-1`, and no `resume-plan` is emitted, because the whole call is resubmitted after the fix."),
 				Field("resume-plan", ObjectType, "Present when the batch aborted before completing, and ALSO on a fully successful batch that deferred an inline seed (the deferred seed-data operations are carried in `operations`) — presence is not equivalent to failure. Carries `instruction`, `failed-operation` (operation-index/type/schema-name/error), `not-run-operation-indexes`, and `operations` — normally the failed operation followed by every not-run operation, echoed in re-submittable input shape. Exception: when the operation failed a FIELD-SHAPE check (an unbindable field name, an unbindable `type`, a missing `schema-name`, or a virtual `create-entity` carrying `seed-rows`) it is deliberately OMITTED from `operations`, because replaying it verbatim would just repeat the rejected payload; `instruction` then tells the caller to correct the field names first and resubmit it alongside the listed operations, and `operations` may be EMPTY when the shape-rejected operation was the last one and nothing was deferred — the plan is still emitted, because `failed-operation` and `not-run-operation-indexes` are what a recovering caller reads. Resubmit resume-plan.operations as a new sync-schemas call for the efficient path; resubmitting the whole batch verbatim is also safe for the convergent schema operations (they replay as already-satisfied/reconciled) but re-runs any seed-data, which is not replay-safe.")
 			),
 			CommonErrorContract,
@@ -7179,7 +7202,7 @@ internal static class ToolContractCatalog {
 			[
 				Field("succeeded", NumberType, "Number of items that succeeded."),
 				Field("failed", NumberType, "Number of items that failed."),
-				Field("results", ArrayType, resultsDescription),
+				Field(ResultsFieldName, ArrayType, resultsDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented the whole batch from running. Note: when the requested environment cannot be resolved (unknown/unreachable), the tool instead returns the standard command-execution envelope (exit-code 1 with execution-log-messages referencing the environment) rather than this batch shape.")
 			]);
 	}
@@ -7198,7 +7221,7 @@ internal static class ToolContractCatalog {
 				Field("unverified", NumberType,
 					"Failed rows whose side effect could NOT be verified (a subset of 'failed'). Non-zero means the "
 					+ "batch must not be blindly re-sent."),
-				Field("results", ArrayType,
+				Field(ResultsFieldName, ArrayType,
 					"Per-row outcomes for every attempted row; each item has index, success, id, error, diagnostic, "
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
 					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
