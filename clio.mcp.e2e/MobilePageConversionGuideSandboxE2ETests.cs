@@ -783,8 +783,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				because: $"'{group.ContainerName}': the runtime turns only an integer <n>fr into a column weight");
 
 			JsonNode? containerColumns = guide.ViewConfigDiff
-				.Single(op => op.Name == group.ContainerName && op.Values?["adaptive"] is not null)
-				.Values!["adaptive"]!["medium"]!["columns"];
+				.Where(op => op.Name == group.ContainerName && op.Values?["adaptive"] is not null)
+				.Should().ContainSingle(
+					because: $"'{group.ContainerName}': an adaptive group's container must carry its own adaptive columns")
+				.Which.Values!["adaptive"]!["medium"]!["columns"];
 			containerColumns!.AsArray().Select(c => c!.GetValue<string>()).Should().Equal(tablet,
 				because: $"'{group.ContainerName}': the reported index must be what the container's values carry");
 

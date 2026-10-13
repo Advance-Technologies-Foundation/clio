@@ -38,7 +38,7 @@ field, which the old one-grid rule left at half width.
 Banding is skipped — the grid falls back to the one-reference-row grid in `BuildTabletGrid` — when the
 container is not an inserted `crt.GridContainer` (a template grid may own children the converter never
 sees, which a one-column container would misplace), a child is a template twin (a merge cannot be
-re-parented), two children of one row overlap, a `rowSpan`-covered row breaks its band,
+re-parented), a child of one row covers another's start column (children that only share a start column are banded and placed side by side), a `rowSpan`-covered row breaks its band,
 or a band has more than 12 start columns. In that fallback only a list (`crt.List`,
 `crt.FileList`) wider than its slot merges the slots it covers; a wide field just takes its slot.
 

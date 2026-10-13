@@ -85,7 +85,7 @@ public class MobilePageConversionGuideTool {
 		+ "Freedom UI WEB (sourceType \"freedom-web\"); any other source type is detected and reported as not yet "
 		+ "supported. Supported TARGET canvases: phone portrait (small) and tablet (medium = large, from 600 dp, "
 		+ "so a phone in landscape gets the tablet columns too), both baked into adaptiveLayout. Known tablet limits: rows in neighbouring columns do not line up on the device, and a "
-		+ "grid that cannot be cut into bands (a template grid, overlapping cells) keeps one set of columns for all its rows. "
+		+ "grid that cannot be cut into bands (a template grid or child, overlapping cells, a rowSpan across bands, more than 12 columns) keeps one set of columns for all its rows. "
 		+ "ADVISORY-ONLY: this tool builds NO page body and writes NOTHING to Creatio or disk — YOU build "
 		+ "the mobile body from the guide, persist it with create-page (mobile template) + update-page, then "
 		+ "validate-page. The guide carries FACTS about this page and no prose: the rules are enforced by "

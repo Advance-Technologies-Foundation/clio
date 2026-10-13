@@ -5328,7 +5328,7 @@ public static partial class WebToMobileAnalysisService {
 	/// Cuts the web grid into horizontal bands of consecutive rows that share one column structure: a row joins
 	/// the current band while no child of the band or the row covers another child's start column. Rows a
 	/// <c>rowSpan</c> covers stay in their band. Returns the child indices of each band, or null when no banding is
-	/// possible — two children of one row overlap, or a spanned row breaks the band's structure.
+	/// possible — a child of one row covers another's start column, or a spanned row breaks the band's structure.
 	/// </summary>
 	private static List<List<int>> SplitIntoBands(IReadOnlyList<WebCell> cells) {
 		var bands = new List<List<int>>();
@@ -5465,8 +5465,8 @@ public static partial class WebToMobileAnalysisService {
 	/// <summary>Most columns a mobile grid is given on tablet, whatever the web reference row holds.</summary>
 	private const int MobileGridMaxColumns = 12;
 
-	/// <summary>Highest web row read, so shifting rows for stacked children cannot overflow.</summary>
-	private const int MaxWebRow = 1_000_000;
+	/// <summary>Highest web row or column read, so the row and column arithmetic cannot overflow; a column past the grid stays distinct.</summary>
+	private const int MaxWebPosition = 1_000_000;
 
 	private static readonly IReadOnlyList<string> StackedColumns = ["1fr"];
 
@@ -5608,11 +5608,11 @@ public static partial class WebToMobileAnalysisService {
 	private static WebCell WebCellOf(
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		JObject lc = name is not null && sourceLayouts.TryGetValue(name, out JObject found) ? found : null;
-		int column = Math.Clamp((lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1, 1, Math.Max(1, cols));
-		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebRow);
+		int column = Math.Clamp((lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1, 1, MaxWebPosition);
+		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebPosition);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
 		int rowSpan = (lc is null ? null : ReadInt(lc, "rowSpan")) ?? 1;
-		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)), Math.Clamp(rowSpan, 1, MaxWebRow));
+		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)), Math.Clamp(rowSpan, 1, MaxWebPosition));
 	}
 
 	/// <summary>A JSON array of the given column track sizes.</summary>
