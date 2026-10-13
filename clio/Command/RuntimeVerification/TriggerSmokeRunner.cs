@@ -384,26 +384,11 @@ internal sealed class TriggerSmokeRunner(
 		while (true) {
 			WatchOutcome outcome = verification.Watcher.Collect(baseline, RequestMs, stopAt);
 			ReadRunFacts(outcome.Created, attribution, stopAt, result);
-			List<CreatedRecord> runs = [];
-			result.Unrelated = [];
-			foreach (CreatedRecord run in outcome.Created) {
-				string reason = ReasonUnrelated(run, attribution);
-				if (reason is null) {
-					runs.Add(run);
-				}
-				else {
-					result.Unrelated.Add(new UnrelatedRun(run.Id, run.Title, reason));
-				}
-			}
+			List<CreatedRecord> runs = Attribute(outcome.Created, attribution, result);
 			// A run is read only while the wait lasts; one not reached keeps its last state, so a busy window cannot
 			// stretch a single poll past the wait.
 			result.Processes = runs.Select(run => CurrentState(run, final, last, until, stopAt)).ToList();
-			foreach (SmokeProcessRun run in result.Processes) {
-				last[run.ProcessId] = run;
-				if (IsFinal(run)) {
-					final[run.ProcessId] = run;
-				}
-			}
+			Remember(result.Processes, final, last);
 			string signature = string.Join("|", result.Processes.Select(run => run.ProcessId + ":" + run.Status + ":"
 				+ IsParked(run)));
 			if (signature != lastSignature) {
@@ -418,6 +403,33 @@ internal sealed class TriggerSmokeRunner(
 				return runs;
 			}
 			Sleep(Math.Min(PollIntervalMs, leftMs));
+		}
+	}
+
+	// The attributable runs; every other run of the window goes to result.Unrelated with its reason.
+	private static List<CreatedRecord> Attribute(IEnumerable<CreatedRecord> created, RunAttribution attribution,
+		TriggerSmokeResult result) {
+		List<CreatedRecord> runs = [];
+		result.Unrelated = [];
+		foreach (CreatedRecord run in created) {
+			string reason = ReasonUnrelated(run, attribution);
+			if (reason is null) {
+				runs.Add(run);
+			}
+			else {
+				result.Unrelated.Add(new UnrelatedRun(run.Id, run.Title, reason));
+			}
+		}
+		return runs;
+	}
+
+	private static void Remember(IEnumerable<SmokeProcessRun> runs, Dictionary<string, SmokeProcessRun> final,
+		Dictionary<string, SmokeProcessRun> last) {
+		foreach (SmokeProcessRun run in runs) {
+			last[run.ProcessId] = run;
+			if (IsFinal(run)) {
+				final[run.ProcessId] = run;
+			}
 		}
 	}
 
