@@ -49,7 +49,9 @@ public sealed class ExecuteEsqToFileTool(IToolCommandResolver commandResolver, I
 		"count instead of the rows. Use it when the rows are too many to read inline; execute-esq is the read-only tool " +
 		"for ordinary queries and takes the same query, environment-name and timeout. The file holds the same JSON rows " +
 		"array execute-esq returns inline (the whole response body when it has no rows array; count is then absent). output-file is required, is confined to the workspace or the OS temp " +
-		"directory, and must not exist yet, so a retry must use a different path. Call get-guidance for 'esq' and " +
+		"directory, and must not exist yet, so a retry must use a different path. It refuses the same queries execute-esq " +
+		"refuses: SQL text (write SQL as read-only), and a SelectQuery with a wrong-shaped or non-SelectQuery part, which " +
+		"is never run without that part. Call get-guidance for 'esq' and " +
 		"'esq-filters' before composing a query.")]
 	public ExecuteEsqResponse ExecuteToFile(
 		[Description("Parameters: query, environment-name, output-file (required); timeout (optional).")]

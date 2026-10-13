@@ -180,7 +180,7 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A call that carries a real query ignores extra top-level keys exactly as before, and an empty call keeps the original refusal.")]
+	[Description("A call that carries a well-formed query runs as before, and an empty call keeps the original refusal.")]
 	public void Execute_ShouldBehaveAsBefore_WhenThereIsNothingToTranslate() {
 		// Arrange
 		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -188,11 +188,11 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 		// Act
 		ExecuteEsqResponse valid = Run(
-			"{\"environment-name\":\"dev\",\"columns\":[\"X\"],\"query\":{\"rootSchemaName\":\"Contact\",\"rowCount\":1}}");
+			"{\"environment-name\":\"dev\",\"timeout\":5000,\"query\":{\"rootSchemaName\":\"Contact\",\"rowCount\":1}}");
 		ExecuteEsqResponse empty = Run("{\"environment-name\":\"dev\"}");
 
 		// Assert
-		valid.Success.Should().BeTrue(because: "a usable query wins; stray keys never changed that and still do not");
+		valid.Success.Should().BeTrue(because: "a well-formed query runs as before");
 		empty.Success.Should().BeFalse(because: "an empty call is still refused");
 		empty.SuggestedQuery.Should().BeNull(because: "there is nothing to translate");
 		empty.Error.Should().StartWith("query must be a JSON SelectQuery object.", because: "the original refusal text is kept");
@@ -253,5 +253,92 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 		// Assert
 		json.Should().NotContain("suggested-query", because: "a null suggestion is omitted from the wire");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("QA ENG-103025: a SelectQuery with columns as an array is refused with the equivalent query, never run with its columns dropped (it returned 525 Id-only rows live).")]
+	public void Execute_ShouldRefuseAndTranslate_WhenSelectQueryColumnsAreAnArray() {
+		// Act
+		ExecuteEsqResponse response = Run(
+			"{\"environment-name\":\"dev\",\"query\":{\"rootSchemaName\":\"Contact\",\"columns\":[\"Name\"]}}");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "running it would silently drop the columns");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed while a part would be lost");
+		response.Error.Should().Contain("'columns' must be an object", because: "the refusal names the wrong part and its shape");
+		JsonElement query = response.SuggestedQuery!.Value;
+		query.GetProperty("rootSchemaName").GetString().Should().Be("Contact", because: "the root schema is kept");
+		query.GetProperty("columns").GetProperty("items").EnumerateObject().Select(p => p.Name)
+			.Should().Equal(["Name"], because: "the array's column becomes a columns.items entry");
+	}
+
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"columns\":{\"Name\":{}}}", "'columns' must be an object")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"filters\":[{\"Name\":\"a\"}]}", "'filters' must be a filter object")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"rowCount\":\"5\"}", "'rowCount' must be a whole number")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"where\":{\"Name\":\"a\"}}", "'where' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"orderBy\":\"Name\"}", "'orderBy' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"sortBy\":\"Name\"}", "'sortBy' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"filters\":{\"filterType\":6,\"items\":[{\"filterType\":1}]}}", "'filters' must be a filter object")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"columns\":[\"Name\"],\"isDistinct\":true}", "no query is suggested")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"columns\":[\"Name\"],\"filters\":{\"filterType\":6,\"logicalOperation\":0}}", "no query is suggested")]
+	[Category("Unit")]
+	[Description("QA ENG-103025: any SelectQuery part Creatio would ignore (wrong-shaped columns, filters or rowCount, or a SQL/OData-style key) is refused, never executed without it.")]
+	public void Execute_ShouldRefuse_WhenASelectQueryPartWouldBeIgnored(string query, string expected) {
+		// Act
+		ExecuteEsqResponse response = Run($"{{\"environment-name\":\"dev\",\"query\":{query}}}");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a part of the query would be lost");
+		response.Error.Should().Contain(expected, because: "the refusal says what is wrong");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA ENG-103025: query parts sent at the top level next to a real query are refused, because running the query would drop them.")]
+	public void Execute_ShouldRefuse_WhenQueryPartsAreAlsoAtTheTopLevel() {
+		// Act
+		ExecuteEsqResponse response = Run(
+			"{\"environment-name\":\"dev\",\"columns\":[\"Name\"],\"query\":{\"rootSchemaName\":\"Contact\",\"rowCount\":1}}");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the top-level columns would be dropped");
+		response.Error.Should().Contain("'columns'", because: "the stray key is named");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed");
+	}
+
+	[TestCase("UPDATE Contact SET Name = 'x' WHERE Id = '0a1b2c3d-1111-2222-3333-444455556666'")]
+	[TestCase("delete from Contact")]
+	[TestCase("INSERT INTO Contact (Name) VALUES ('x')")]
+	[Category("Unit")]
+	[Description("QA ENG-103025: write SQL gets a clear read-only refusal, not a 'not valid JSON' parse error, and is not executed.")]
+	public void Execute_ShouldRefuseWriteSqlAsReadOnly(string sql) {
+		// Act
+		ExecuteEsqResponse viaQuery = Run($"{{\"environment-name\":\"dev\",\"query\":{Quote(sql)}}}");
+		ExecuteEsqResponse viaSqlKey = Run($"{{\"environment-name\":\"dev\",\"sql\":{Quote(sql)}}}");
+
+		// Assert
+		foreach (ExecuteEsqResponse response in new[] { viaQuery, viaSqlKey }) {
+			response.Error.Should().Contain("execute-esq is read-only", because: "the caller learns the tool only reads")
+				.And.NotContain("not valid JSON", because: "the statement is SQL, not malformed JSON");
+			response.SuggestedQuery.Should().BeNull(because: "a write has no SelectQuery equivalent");
+		}
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("Explicit nulls for columns, filters or rowCount ask for nothing, so a query carrying them still runs.")]
+	public void Execute_ShouldRun_WhenOptionalPartsAreExplicitlyNull() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		ExecuteEsqResponse response = Run("{\"environment-name\":\"dev\",\"query\":{\"rootSchemaName\":\"Contact\","
+			+ "\"allColumns\":false,\"columns\":{\"items\":{\"Id\":{\"expression\":{\"expressionType\":0,\"columnPath\":\"Id\"}}}},"
+			+ "\"filters\":null,\"rowsOffset\":0,\"isPageable\":false}}");
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"nothing in the query would be lost: {response.Error}");
 	}
 }

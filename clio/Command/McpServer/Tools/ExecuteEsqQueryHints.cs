@@ -34,6 +34,21 @@ internal static class ExecuteEsqQueryHints {
 	private static readonly string[] LimitKeys = ["rowcount", "top", "limit", "take", "maxrows"];
 	private static readonly string[] SqlKeys = ["sql", "sqlquery", "sqltext", "statement"];
 
+	// Every alias of a query part (schema, columns, filters, row cap, SQL text), Key()-normalized.
+	private static readonly HashSet<string> QueryPartKeys =
+		new(SchemaKeys.Concat(ColumnKeys).Concat(FilterKeys).Concat(LimitKeys).Concat(SqlKeys), StringComparer.Ordinal);
+
+	// The members of Creatio's SelectQuery data contract (Terrasoft.Nui.ServiceModel.DataContract.SelectQuery and
+	// its BaseFilterableQuery/BaseQuery bases), Key()-normalized, plus the serializer's type hints. The DataService
+	// ignores any other member without an error, so a query carrying one would run without that part.
+	private static readonly HashSet<string> SelectQueryMembers = new(StringComparer.Ordinal) {
+		"queryid", "querykind", "columnvalues", "rootschemaname", "operationtype", "includeprocessexecutiondata",
+		"querytype", "filters", "columns", "allcolumns", "serveresqcacheparameters", "ispageable", "isdistinct",
+		"uselocalization", "userecorddeactivation", "rowcount", "conditionalvalues", "ishierarchical",
+		"hierarchicalmaxdepth", "hierarchicalcolumnname", "hierarchicalcolumnvalue", "rowsoffset", "chunksize",
+		"queryoptimize", "usemetrics", "adminunitrolesources", "querysource", "ignoredisplayvalues", "type", "$type"
+	};
+
 	private static readonly Regex Identifier = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	private static readonly Regex GuidLiteral = new(
@@ -41,6 +56,16 @@ internal static class ExecuteEsqQueryHints {
 		RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
 	private static readonly Regex SqlStart = new(@"^\s*(select|with)\b", RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+	private static readonly Regex WriteSqlStart = new(
+		@"^\s*(update|delete|insert|merge|upsert|replace|drop|truncate|alter|create|exec|execute|grant|revoke)\b",
+		RegexOptions.NonBacktracking | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+	// Top-level members of a real SelectQuery whose meaning a translation keeps: anything else on a malformed query
+	// (isDistinct, rowsOffset, isPageable, ...) would be dropped by a suggestion, so none is made.
+	private static readonly HashSet<string> TranslatableSelectQueryKeys = new(StringComparer.Ordinal) {
+		"rootschemaname", "operationtype", "allcolumns", "columns", "filters", "rowcount"
+	};
 
 	private static readonly Regex SelectShape = new(
 		@"^\s*select\s+(?:top\s+(?<top>\d+)\s+)?(?<cols>.+?)\s+from\s+(?<table>\S+?)"
@@ -72,6 +97,9 @@ internal static class ExecuteEsqQueryHints {
 		switch (query.ValueKind) {
 			case JsonValueKind.String:
 				string text = query.GetString() ?? string.Empty;
+				if (WriteSqlStart.IsMatch(text)) {
+					return ReadOnlyRefusal();
+				}
 				if (!SqlStart.IsMatch(text)) {
 					return null;
 				}
@@ -102,7 +130,7 @@ internal static class ExecuteEsqQueryHints {
 			return FromSql(sql);
 		}
 		bool recognised = SchemaKeys.Concat(ColumnKeys).Concat(FilterKeys).Any(flat.ContainsKey);
-		return recognised ? FromFlat(flat) : null;
+		return recognised ? FromFlat(flat, FlatPrefix) : null;
 	}
 
 	private static bool HasSelectQueryColumns(JsonElement query) =>
@@ -112,6 +140,107 @@ internal static class ExecuteEsqQueryHints {
 		query.TryGetProperty("rootSchemaName", out JsonElement root)
 		&& root.ValueKind == JsonValueKind.String
 		&& !string.IsNullOrWhiteSpace(root.GetString());
+
+	/// <summary>
+	/// Checks a <c>query</c> object that names its root schema against the SelectQuery shape, and the call's
+	/// top-level keys for query parts sent next to it. Returns a refusal (with the equivalent query where the
+	/// mapping is safe) when any part would otherwise be silently dropped by the server - for example
+	/// <c>columns</c> sent as an array, which Creatio ignores and answers with Id-only rows - or null when the
+	/// query is well-formed.
+	/// </summary>
+	/// <param name="query">The normalized <c>query</c> object (it has a non-empty <c>rootSchemaName</c>).</param>
+	/// <param name="extensionData">Top-level keys the binder could not bind.</param>
+	internal static Hint? CheckSelectQueryShape(JsonElement query, IReadOnlyDictionary<string, JsonElement>? extensionData) {
+		List<string> stray = (extensionData?.Keys ?? Enumerable.Empty<string>())
+			.Where(key => QueryPartKeys.Contains(Key(key)))
+			.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'")
+			.ToList();
+		if (stray.Count > 0) {
+			return new Hint("query parts were also sent at the top level (" + string.Join(", ", stray)
+				+ "), where execute-esq ignores them, so running 'query' would drop them; nothing was executed. Put every "
+				+ "part inside the 'query' SelectQuery object and send the call once.", null);
+		}
+		List<string> problems = query.EnumerateObject().Select(ShapeProblem).OfType<string>().ToList();
+		if (problems.Count == 0) {
+			return null;
+		}
+		string prefix = "query is not a valid SelectQuery: " + string.Join("; ", problems)
+			+ ". Creatio would ignore those parts and run the rest, so nothing was executed.";
+		Dictionary<string, JsonElement> flat = new(StringComparer.Ordinal);
+		foreach (JsonProperty property in query.EnumerateObject()) {
+			flat[Key(property.Name)] = property.Value;
+		}
+		if (!IsTranslatable(flat)) {
+			return new Hint(prefix + " It also carries parts a translation would drop or misread, so no query is "
+				+ "suggested.", null);
+		}
+		flat.Remove("operationtype");
+		flat.Remove("allcolumns");
+		return FromFlat(flat, prefix);
+	}
+
+	/// <summary>
+	/// A malformed SelectQuery is translated only when every member it has is one the translation keeps, so the
+	/// suggestion reads exactly what was asked: no allColumns, a plain select, and filters (if any) written as a
+	/// flat column-equality object rather than a filter group.
+	/// </summary>
+	private static bool IsTranslatable(Dictionary<string, JsonElement> flat) {
+		if (!flat.Keys.All(key => TranslatableSelectQueryKeys.Contains(key) || QueryPartKeys.Contains(key))) {
+			return false;
+		}
+		if (flat.TryGetValue("allcolumns", out JsonElement all) && all.ValueKind == JsonValueKind.True) {
+			return false;
+		}
+		if (flat.TryGetValue("operationtype", out JsonElement operation)
+			&& !(operation.ValueKind == JsonValueKind.Number && operation.TryGetInt32(out int kind) && kind == 0)) {
+			return false;
+		}
+		return !FilterKeys.Any(key => flat.TryGetValue(key, out JsonElement filters) && IsFilterGroup(filters));
+	}
+
+	private static bool IsFilterGroup(JsonElement filters) =>
+		filters.ValueKind == JsonValueKind.Object
+		&& (filters.TryGetProperty("items", out _) || filters.TryGetProperty("filterType", out _));
+
+	/// <summary>Why one top-level member of a SelectQuery would be ignored or misread, or null when it is fine.</summary>
+	private static string? ShapeProblem(JsonProperty property) {
+		string key = Key(property.Name);
+		JsonElement value = property.Value;
+		string name = McpToolArgumentSupport.DescribeCallerKey(property.Name);
+		if (value.ValueKind == JsonValueKind.Null && SelectQueryMembers.Contains(key)) {
+			// An explicit null asks for nothing, so nothing is lost.
+			return null;
+		}
+		switch (key) {
+			case "columns":
+				return value.ValueKind == JsonValueKind.Object && value.TryGetProperty("items", out JsonElement items)
+					&& items.ValueKind == JsonValueKind.Object
+					? null
+					: $"'{name}' must be an object {{\"items\":{{\"<alias>\":{{\"expression\":{{\"expressionType\":0,\"columnPath\":\"<column>\"}}}}}}}}, not {Describe(value)}";
+			case "filters":
+				return IsFilterGroup(value)
+					&& (!value.TryGetProperty("items", out JsonElement filterItems) || filterItems.ValueKind == JsonValueKind.Object)
+					? null
+					: $"'{name}' must be a filter object {{\"filterType\":6,\"items\":{{\"<key>\":{{...}}}}}}, not {Describe(value)}";
+			case "rowcount":
+				return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _)
+					? null
+					: $"'{name}' must be a whole number, not {Describe(value)}";
+			default:
+				return SelectQueryMembers.Contains(key)
+					? null
+					: $"'{name}' is not a SelectQuery member";
+		}
+	}
+
+	private static string Describe(JsonElement value) => value.ValueKind switch {
+		JsonValueKind.Array => "an array",
+		JsonValueKind.String => "a string",
+		JsonValueKind.Number => "a number",
+		JsonValueKind.Object => "an object without an 'items' map",
+		JsonValueKind.True or JsonValueKind.False => "a boolean",
+		_ => "null"
+	};
 
 	private static string Key(string name) =>
 		name.Replace("-", string.Empty, StringComparison.Ordinal).Replace("_", string.Empty, StringComparison.Ordinal)
@@ -132,7 +261,18 @@ internal static class ExecuteEsqQueryHints {
 		"query is missing: the schema, columns and filters belong inside the 'query' SelectQuery object, not at the top "
 		+ "level; nothing was executed.";
 
+	private static Hint ReadOnlyRefusal() =>
+		new(ReadOnlyMessage, null);
+
+	private const string ReadOnlyMessage =
+		"execute-esq is read-only: it runs a SELECT as a SelectQuery JSON object, and never UPDATE, DELETE, INSERT or any "
+		+ "other write or DDL statement; nothing was executed. To change data use odata-update, odata-delete or "
+		+ "odata-create (or the matching data tool); to read, send a SelectQuery in 'query'.";
+
 	private static Hint FromSql(string sql) {
+		if (WriteSqlStart.IsMatch(sql)) {
+			return ReadOnlyRefusal();
+		}
 		if (Unsupported.IsMatch(sql) || SelectShape.Match(sql) is not { Success: true } match) {
 			return new Hint(SqlPrefix + " This statement is not a single-table SELECT of plain columns with simple "
 				+ "equality filters, so no query is suggested: build the SelectQuery from the shape below.", null);
@@ -204,12 +344,12 @@ internal static class ExecuteEsqQueryHints {
 		return Identifier.IsMatch(name) ? name : null;
 	}
 
-	private static Hint FromFlat(Dictionary<string, JsonElement> flat) {
+	private static Hint FromFlat(Dictionary<string, JsonElement> flat, string prefix) {
 		// Two keys for one part (schema-name and table, filters and where, ...) have no single reading: using one
 		// would silently drop the other, for example a filter, and read more rows than meant.
 		string[][] groups = [SchemaKeys, ColumnKeys, FilterKeys, LimitKeys];
 		if (groups.Any(group => group.Count(flat.ContainsKey) > 1)) {
-			return new Hint(FlatPrefix + " Two keys were given for the same part of the query (for example "
+			return new Hint(prefix + " Two keys were given for the same part of the query (for example "
 				+ "'filters' and 'where'), so no query is suggested.", null);
 		}
 		string? schema = SchemaKeys.Where(flat.ContainsKey)
@@ -233,8 +373,8 @@ internal static class ExecuteEsqQueryHints {
 			&& columns is { Count: > 0 } && columns.All(column => Identifier.IsMatch(column))
 			&& filters is not null;
 		return safe
-			? Suggest(FlatPrefix, schema, columns, filters, rowCount)
-			: new Hint(FlatPrefix + " The top-level values are not a single schema name with a plain list of column "
+			? Suggest(prefix, schema, columns, filters, rowCount)
+			: new Hint(prefix + " The values are not a single schema name with a plain list of column "
 				+ "names and simple equality filters, so no query is suggested.", null);
 	}
 

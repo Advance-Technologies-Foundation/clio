@@ -47,7 +47,10 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +
 		"easy to mis-guess: call get-guidance for 'esq' and 'esq-filters' before composing a query. " +
 		"A requested column whose columnPath does not resolve fails the call (success:false) instead of being " +
-		"silently dropped from the rows. DataService responses larger than the fixed MCP-safe budget fail with " +
+		"silently dropped from the rows. A query whose columns, filters or rowCount have the wrong shape (for example " +
+		"columns as an array) or that carries non-SelectQuery parts (where, orderBy, ...) is refused, never run without " +
+		"them; where the mapping is safe the equivalent query is returned in suggested-query. Read-only: write SQL " +
+		"(UPDATE, DELETE, ...) is refused. DataService responses larger than the fixed MCP-safe budget fail with " +
 		"error-class=result-too-large; select explicit columns, lower rowCount, or page the query.")]
 	public ExecuteEsqResponse Execute(
 		[Description("Parameters: query, environment-name (required); timeout (optional).")]
@@ -70,9 +73,7 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			// ENG-103025: SQL text, or the schema/columns/filters spread over the top level, is answered with the
 			// exact shape and - where the mapping is trivially safe - the equivalent query, never executed.
 			if (ExecuteEsqQueryHints.TryBuild(args.Query, args.ExtensionData) is { } hint) {
-				return ExecuteEsqResponse.Failure(hint.Message + QueryShapeExample) with {
-					SuggestedQuery = hint.SuggestedQuery
-				};
+				return FromHint(hint);
 			}
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError + QueryShapeExample);
@@ -82,6 +83,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 				|| string.IsNullOrWhiteSpace(rootSchema.GetString())) {
 				return ExecuteEsqResponse.Failure(
 					"query must be a SelectQuery object with a non-empty 'rootSchemaName'." + QueryShapeExample);
+			}
+			// QA ENG-103025: a SelectQuery whose columns are an array (or any part Creatio would silently ignore) ran and
+			// returned Id-only rows. Refuse it, with the equivalent query where that is safe, instead of losing parts.
+			if (ExecuteEsqQueryHints.CheckSelectQueryShape(query, args.ExtensionData) is { } shapeHint) {
+				return FromHint(shapeHint);
 			}
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 				return ExecuteEsqResponse.Failure("environment-name is required.");
@@ -115,6 +121,9 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	private static ExecuteEsqResponse FromHint(ExecuteEsqQueryHints.Hint hint) =>
+		ExecuteEsqResponse.Failure(hint.Message + QueryShapeExample) with { SuggestedQuery = hint.SuggestedQuery };
 
 	private static bool TryNormalizeQuery(JsonElement query, out JsonElement normalized, out string error) {
 		error = string.Empty;

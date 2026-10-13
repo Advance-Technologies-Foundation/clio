@@ -122,6 +122,37 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 		text.Should().Contain("buildType", because: "the structured graph, not an error, came back");
 	}
 
+	[Test]
+	[AllureTag("create-business-process")]
+	[AllureName("create-business-process refuses a nested descriptor next to other fields")]
+	[AllureDescription("QA ENG-103025: descriptor{name, descriptor{...}} has two candidate processes; the call is refused and nothing is built.")]
+	[Description("QA ENG-103025: create-business-process with a nested 'descriptor' next to other descriptor fields is refused as ambiguous before anything is built.")]
+	public async Task CreateBusinessProcess_Should_Refuse_Ambiguous_Nested_Descriptor() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await arrange.Session.CallDestructiveAsync(
+			"create-business-process",
+			new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["descriptor"] = new Dictionary<string, object?> {
+					["name"] = "UsrClioE2eNestedOuter",
+					["descriptor"] = new Dictionary<string, object?> {
+						["name"] = "UsrClioE2eNestedInner", ["caption"] = "x", ["packageName"] = "Custom",
+						["elements"] = Array.Empty<object>(), ["flows"] = Array.Empty<object>()
+					}
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		string text = string.Concat(result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		text.Should().Contain("Ambiguous descriptor", because: "two candidate process objects have no single reading");
+		text.Should().Contain("Nothing was built", because: "the refusal happens before any write");
+	}
+
 	private static async Task<string> ResolveEnvironmentAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		return await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,

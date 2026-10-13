@@ -432,4 +432,62 @@ public sealed class ProcessToolArgumentAliasesTests {
 		TextOf(result).Should().Contain("Unknown args", because: "the unknown key is named back to the caller");
 		command.Captured.Should().BeNull(because: "nothing is built for a refused call");
 	}
+	[TestCase("descriptor")]
+	[TestCase("process")]
+	[Category("Unit")]
+	[Description("QA ENG-103025: a descriptor wrapped twice ({\"descriptor\":{\"descriptor\":{...}}}) is unwrapped and built, with a warning.")]
+	public void CreateBusinessProcess_ShouldUnwrap_ADoubleWrappedDescriptor(string innerKey) {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+		CreateBusinessProcessArgs args = Bind<CreateBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"descriptor\":{{\"{innerKey}\":{Descriptor}}}}}");
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(args);
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "a wrapper that is the descriptor's only member has one reading");
+		JsonDocument.Parse(command.Captured!.DescriptorJson).RootElement.GetProperty("name").GetString()
+			.Should().Be("UsrDemo", because: "the inner object is the process");
+		TextOf(result).Should().Contain($"'descriptor' held only '{innerKey}'", because: "the warning names the wrapper the caller actually sent")
+			.And.Contain("the inner object was used", because: "the caller learns the canonical shape");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA ENG-103025: a nested descriptor next to other fields is refused unbuilt as ambiguous.")]
+	public void CreateBusinessProcess_ShouldRefuse_ANestedDescriptorNextToOtherFields() {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+		CreateBusinessProcessArgs args = Bind<CreateBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"descriptor\":{{\"name\":\"UsrOther\",\"descriptor\":{Descriptor}}}}}");
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(args);
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "two candidate process objects have no single reading");
+		TextOf(result).Should().Contain("Ambiguous descriptor", because: "the refusal names the problem");
+		command.Captured.Should().BeNull(because: "nothing may be built from a guessed descriptor");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("A descriptor nested deeper than the unwrap limit is refused clearly instead of being passed on still wrapped.")]
+	public void CreateBusinessProcess_ShouldRefuse_ADescriptorNestedTooDeep() {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+		string nested = Descriptor;
+		for (int level = 0; level < 4; level++) {
+			nested = $"{{\"descriptor\":{nested}}}";
+		}
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			Bind<CreateBusinessProcessArgs>($"{{\"environment-name\":\"dev\",\"descriptor\":{nested}}}"));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "an over-nested descriptor is a caller error");
+		TextOf(result).Should().Contain("nested more than", because: "the refusal says why");
+		command.Captured.Should().BeNull(because: "nothing is built from a still-wrapped object");
+	}
 }

@@ -196,6 +196,83 @@ internal static class ProcessToolArgumentAliases {
 	/// </summary>
 	/// <param name="args">The bound arguments; its overflow bag is what is inspected.</param>
 	internal static CreateResolution ResolveCreate(CreateBusinessProcessArgs args) {
+		CreateResolution resolved = ResolveCreateWrappers(args);
+		return resolved.Error is null ? UnwrapNestedDescriptor(resolved) : resolved;
+	}
+
+	private const int MaxDescriptorNesting = 3;
+
+	/// <summary>
+	/// A descriptor wrapped twice - <c>{"descriptor":{"descriptor":{...}}}</c>, or under a wrapper synonym such as
+	/// <c>process</c> - is unwrapped when the wrapper is the descriptor's only member, because the process then has
+	/// exactly one reading. A wrapper next to other fields has none, and is refused.
+	/// </summary>
+	private static CreateResolution UnwrapNestedDescriptor(CreateResolution resolved) {
+		JsonElement descriptor = resolved.Args.Descriptor;
+		if (descriptor.ValueKind == JsonValueKind.String && !TryParseObject(descriptor, out descriptor)) {
+			return resolved;
+		}
+		List<string> wrappers = [];
+		for (int depth = 0; descriptor.ValueKind == JsonValueKind.Object; depth++) {
+			List<JsonProperty> members = descriptor.EnumerateObject().ToList();
+			List<JsonProperty> nested = members.Where(member => IsDescriptorWrapper(member.Name)).ToList();
+			if (nested.Count == 0) {
+				break;
+			}
+			string shown = $"'{McpToolArgumentSupport.DescribeCallerKey(nested[0].Name)}'";
+			if (depth >= MaxDescriptorNesting) {
+				return resolved with { Error = $"'descriptor' is nested more than {MaxDescriptorNesting} levels deep, so it is "
+					+ "not clear which object is the process. Send the process fields directly inside 'descriptor'. "
+					+ "Nothing was built." };
+			}
+			if (members.Count > 1) {
+				return resolved with { Error = $"Ambiguous descriptor: 'descriptor' holds {shown} next to other fields, so "
+					+ "it is not clear which object is the process. Send the process fields (name, caption, packageName, "
+					+ "elements, flows, ...) directly inside 'descriptor'. Nothing was built." };
+			}
+			JsonElement inner = nested[0].Value;
+			if (inner.ValueKind == JsonValueKind.String && !TryParseObject(inner, out inner)) {
+				inner = nested[0].Value;
+			}
+			if (inner.ValueKind != JsonValueKind.Object) {
+				return resolved with { Error = $"'descriptor' holds only {shown}, which is not a process object. Send the "
+					+ "process fields directly inside 'descriptor'. Nothing was built." };
+			}
+			descriptor = inner;
+			wrappers.Add(shown);
+		}
+		if (wrappers.Count == 0) {
+			return resolved;
+		}
+		List<string> warnings = [.. resolved.Warnings,
+			$"'descriptor' held only {string.Join(" inside ", wrappers)}; the inner object was used as the process. "
+			+ "Send the process fields directly inside 'descriptor' in future calls."];
+		return new CreateResolution(resolved.Args with { Descriptor = descriptor.Clone() }, warnings, null);
+	}
+
+	private static bool IsDescriptorWrapper(string name) {
+		string key = Normalize(name);
+		return key == "descriptor" || DescriptorWrapperAliases.Contains(key);
+	}
+
+	/// <summary>Reads a string holding a JSON object; false for anything else, including a string that is not valid text.</summary>
+	private static bool TryParseObject(JsonElement value, out JsonElement element) {
+		element = default;
+		try {
+			string? text = value.GetString();
+			if (string.IsNullOrWhiteSpace(text) || !text.TrimStart().StartsWith('{')) {
+				return false;
+			}
+			using JsonDocument document = JsonDocument.Parse(text);
+			element = document.RootElement.Clone();
+			return true;
+		} catch (Exception exception) when (exception is JsonException or InvalidOperationException) {
+			// InvalidOperationException: a lone surrogate cannot be read as text; the ordinary refusal names it.
+			return false;
+		}
+	}
+
+	private static CreateResolution ResolveCreateWrappers(CreateBusinessProcessArgs args) {
 		List<string> warnings = [];
 		Dictionary<string, JsonElement>? bag = args.ExtensionData;
 		if (bag is null || bag.Count == 0) {

@@ -49,6 +49,64 @@ public sealed class ExecuteEsqSuggestedQuerySandboxE2ETests : McpContractFixture
 			because: "the equality filter was carried over");
 	}
 
+	[Test]
+	[AllureTag(ExecuteEsqTool.ToolName)]
+	[AllureName("execute-esq refuses a SelectQuery with columns as an array and its suggestion returns the column")]
+	[AllureDescription("QA ENG-103025: {rootSchemaName:Contact, columns:[Name]} used to run and return Id-only rows. It must be refused unexecuted, and the suggested query must return Name.")]
+	[Description("QA ENG-103025: a SelectQuery with columns as an array is refused instead of returning Id-only rows, and the returned suggested-query reads the Name column on the live stand.")]
+	public async Task ExecuteEsq_Should_Refuse_Array_Columns_And_Suggest_A_Query_That_Returns_Them() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
+			$"execute-esq shape-refusal MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ExecuteEsqResponse refused = await CallAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName,
+			["query"] = new Dictionary<string, object?> { ["rootSchemaName"] = "Contact", ["columns"] = new[] { "Name" } }
+		});
+		refused.SuggestedQuery.Should().NotBeNull(because: "a single schema with a plain column list has one safe reading");
+		object suggested = JsonSerializer.Deserialize<object>(refused.SuggestedQuery!.Value.GetRawText())!;
+		ExecuteEsqResponse executed = await CallAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName,
+			["query"] = suggested
+		});
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "running it would drop the columns and return Id-only rows");
+		refused.Rows.Should().BeNull(because: "nothing was executed");
+		refused.Error.Should().Contain("'columns' must be an object", because: "the refusal names the wrong part");
+		executed.Success.Should().BeTrue(because: $"the suggested query must be valid as returned: {executed.Error}");
+		executed.Count.Should().BeGreaterThan(0, because: "the stand has contacts");
+		executed.Rows!.Value[0].TryGetProperty("Name", out _).Should().BeTrue(
+			because: "the requested column is in the rows, not silently dropped");
+	}
+
+	[Test]
+	[AllureTag(ExecuteEsqTool.ToolName)]
+	[AllureName("execute-esq refuses write SQL as read-only")]
+	[AllureDescription("QA ENG-103025: UPDATE text is refused with a read-only message, not a JSON parse error.")]
+	[Description("QA ENG-103025: UPDATE SQL text gets the read-only refusal and nothing is executed.")]
+	public async Task ExecuteEsq_Should_Refuse_Write_Sql_As_Read_Only() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
+			$"execute-esq read-only MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ExecuteEsqResponse response = await CallAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName,
+			["query"] = "UPDATE Contact SET Name = 'x' WHERE Name = 'nobody-clio-e2e'"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "execute-esq never writes");
+		response.Error.Should().Contain("execute-esq is read-only", because: "the caller learns why")
+			.And.NotContain("not valid JSON", because: "the statement is SQL, not malformed JSON");
+	}
+
 	private static async Task<ExecuteEsqResponse> CallAsync(ArrangeContext arrange, Dictionary<string, object?> args) {
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			ExecuteEsqTool.ToolName,
