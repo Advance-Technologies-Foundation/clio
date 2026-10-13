@@ -580,7 +580,7 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 				+ "the violation check below became vacuous");
 		unregisteredReferences.Should().BeEmpty(
 			because: "a name in NEITHER availableNames nor featureGatedNames is one the pinned library does not "
-				+ "publish at all, so get-guidance answers with availableGuides instead of the article - and "
+				+ "publish at all, so get-guidance answers guidance-not-found instead of the article - and "
 				+ "the agent's first action on a mandatory instruction is an error. This arm was missing: the "
 				+ "oracle only flagged a name that was present and GATED, so an unpublished one passed. "
 				+ "Unregistered: " + string.Join(", ", unregisteredReferences));
