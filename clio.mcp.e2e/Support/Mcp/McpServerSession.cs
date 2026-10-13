@@ -481,9 +481,10 @@ internal sealed class McpServerSession : IAsyncDisposable {
 	}
 
 	/// <summary>
-	/// The compact discovery index from <c>get-tool-contract</c> (no args), fetched once per session.
-	/// Use it to assert per-tool discovery metadata (for example the <c>destructive</c> flag) for
-	/// long-tail tools that no longer surface an MCP tool annotation via <c>tools/list</c>.
+	/// The compact discovery index from <c>get-tool-contract</c> as per-tool objects
+	/// (<c>detail=index-entries</c>), fetched once per session. Use it to assert per-tool discovery metadata (for
+	/// example the <c>destructive</c> flag) for long-tail tools that no longer surface an MCP tool annotation via
+	/// <c>tools/list</c>. A no-args call returns the same index as text lines, which carry no parseable flags.
 	/// </summary>
 	public async Task<IReadOnlyList<ToolContractIndexEntry>> GetToolContractIndexAsync(CancellationToken cancellationToken) {
 		if (_toolContractIndex is not null) {
@@ -491,7 +492,9 @@ internal sealed class McpServerSession : IAsyncDisposable {
 		}
 		CallToolResult indexResult = await Client.CallToolAsync(
 			ToolContractGetTool.ToolName,
-			new Dictionary<string, object?>(),
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> { ["detail"] = ToolContractCatalog.IndexEntriesDetail }
+			},
 			cancellationToken: cancellationToken);
 		ToolContractGetResponse indexResponse =
 			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(indexResult);

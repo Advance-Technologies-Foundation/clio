@@ -19,6 +19,9 @@ date: 2026-09-26
    them: on the lab page it returned 14 keys while the merged `GetParentSchemas` hierarchy (what `get-page` shows) has
    16; the two missing keys are referenced only by an ancestor's replacing schema in another package
    (`BasePageFreedomTemplate` in `OperatorSingleWindow`). The complete key set comes from `GetParentSchemas`.
+   Such a key still resolves at runtime when the CHILD binds it: on a 10.x stand (GH-1740) a button inserted on
+   a `PageWithTabsFreedomTemplate` page with caption `$Resources.Strings.PostponeQueueItemButton_caption` -
+   absent from `GetSchema`, present in the `GetParentSchemas` entry - rendered "Postpone till".
 2. OWN key: `SaveSchema` replaces the stored list. An entry holding `en-US`, `es-ES`, `de-DE` saved with
    `values: [fr-FR]` leaves exactly one row, `fr-FR`; the other three are deleted.
 3. INHERITED key: an entry saved with `values: [es-ES]` only — with or without the parent marker, even as a fresh
