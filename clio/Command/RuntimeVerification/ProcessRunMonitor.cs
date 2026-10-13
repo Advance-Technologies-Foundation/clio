@@ -40,6 +40,8 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 	private const int IntegerDataValueType = 4;
 	private const int RunningStatusValue = 1;
 	private const int ErrorStatusValue = 3;
+	// A secondary read started with less than this left would only time out.
+	private const int MinimumSecondaryReadMs = 500;
 
 	/// <inheritdoc />
 	public ProcessRunState Read(Guid processId, int timeoutMs) {
@@ -60,8 +62,26 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 		int? status = root["StatusValue"]?.Type == JTokenType.Integer ? root["StatusValue"].Value<int>() : null;
 		string error = FirstLine(root[ErrorDescriptionColumn]?.ToString())
 			?? (status == ErrorStatusValue ? ReadSubProcessError(id, Left()) : null);
-		IReadOnlyList<WaitingElement> waiting = status == RunningStatusValue ? ReadWaitingElements(id, Left()) : [];
-		return new ProcessRunState(true, status, error, waiting);
+		if (status != RunningStatusValue) {
+			return new ProcessRunState(true, status, error, []);
+		}
+		// The root status is already read and stands on its own: a secondary read that cannot finish only loses the
+		// elements, never the state.
+		int left = Left();
+		if (left < MinimumSecondaryReadMs) {
+			return new ProcessRunState(true, status, error, []) {
+				Note = "The elements the run waits on were not read: too little of the read's time was left."
+			};
+		}
+		try {
+			return new ProcessRunState(true, status, error, ReadWaitingElements(id, left));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return new ProcessRunState(true, status, error, []) {
+				Note = "The elements the run waits on could not be read: "
+					+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + "."
+			};
+		}
 	}
 
 	/// <inheritdoc />

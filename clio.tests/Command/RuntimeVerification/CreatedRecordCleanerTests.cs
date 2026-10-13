@@ -167,4 +167,41 @@ public sealed class CreatedRecordCleanerTests {
 		client.Received(1).ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
 			Arg.Is<int>(timeout => timeout <= 5_000), Arg.Any<int>(), Arg.Any<int>());
 	}
+
+	[Test]
+	[Description("Once the call's token is cancelled no DELETE is sent: the records are reported as not attempted, because the caller who cancelled is never told what happens next.")]
+	public void Delete_Should_Not_Delete_After_The_Call_Was_Cancelled() {
+		// Arrange
+		(CreatedRecordCleaner cleaner, IApplicationClient client, _) = Create();
+		CreatedRecord activity = new("Activity", ActivityId, "Task");
+		using System.Threading.CancellationTokenSource cancelled = new();
+		cancelled.Cancel();
+
+		// Act
+		CleanupReport report = cleaner.Delete([activity], References, 10_000, null, cancelled.Token);
+
+		// Assert
+		client.DidNotReceiveWithAnyArgs().ExecuteDeleteRequest(default, default, default, default, default);
+		report.Failed.Should().ContainSingle(because: "the record was left in place")
+			.Which.Error.Should().Contain("cancelled", because: "the reason is the caller's cancel, not a refusal");
+	}
+
+	[Test]
+	[Description("Children go first even when the watch names differ in case from the platform's reference names.")]
+	public void OrderForDeletion_Should_Match_Entity_Names_Case_Insensitively() {
+		// Arrange
+		Dictionary<string, IReadOnlyCollection<string>> references = new() {
+			["activity"] = ["Contact"],
+			["activityparticipant"] = ["Activity", "Contact"]
+		};
+		CreatedRecord activity = new("activity", ActivityId, "Task");
+		CreatedRecord participant = new("activityparticipant", ParticipantId, null);
+
+		// Act
+		List<CreatedRecord> ordered = CreatedRecordCleaner.OrderForDeletion([activity, participant], references).ToList();
+
+		// Assert
+		ordered.Should().Equal([participant, activity],
+			because: "'Activity' and 'activity' name one schema, so the participant still goes before its activity");
+	}
 }

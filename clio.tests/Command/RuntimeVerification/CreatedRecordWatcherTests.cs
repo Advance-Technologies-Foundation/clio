@@ -57,6 +57,46 @@ public sealed class CreatedRecordWatcherTests {
 	}
 
 	[Test]
+	[Description("A watch name typed in another case is stored in the platform's own spelling, so the cleanup can match it against the platform's reference names.")]
+	public void Capture_Should_Use_The_Platforms_Spelling_Of_The_Entity_Name() {
+		// Arrange
+		Harness harness = Create("[]", "[]", "[]");
+
+		// Act
+		WatchBaseline baseline = harness.Watcher.Capture(["activity"], 10_000);
+
+		// Assert
+		baseline.Entities.Single().Entity.Should().Be("Activity",
+			because: "the schema reader returns the canonical name, and References hold canonical names too");
+	}
+
+	[Test]
+	[Description("A watch name in another case that the schema reader does not find is looked up in SysSchema, and the platform's spelling is watched (the sandbox's reader matched names exactly, so 'activity' was not watched).")]
+	public void Capture_Should_Resolve_A_Name_The_Schema_Reader_Matches_Exactly() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => JObject.Parse(call.ArgAt<string>(1)).Value<string>("rootSchemaName") == "SysSchema"
+				? "{\"success\":true,\"rows\":[{\"Name\":\"Activity\"}]}"
+				: "{\"success\":true,\"rows\":[]}");
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemaReader.GetByName("activity", Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("Can't find EntitySchema by Name: activity"));
+		schemaReader.GetByName("Activity", Arg.Any<int>()).Returns(Schema("Activity", "Title"));
+		CreatedRecordWatcher watcher = new(client, urlBuilder, schemaReader);
+
+		// Act
+		WatchBaseline baseline = watcher.Capture(["activity"], 10_000);
+
+		// Assert
+		EntityWatch watch = baseline.Entities.Single();
+		watch.Error.Should().BeNull(because: "the entity exists; only the case of its name differed");
+		watch.Entity.Should().Be("Activity", because: "the platform's spelling is what is watched and reported");
+	}
+
+	[Test]
 	[Description("The baseline is the newest CreatedOn exactly as DataService wrote it - milliseconds kept - and is sent back as a quoted JSON date, so the after-run read compares like with like; a record already at the baseline is not reported, a new one is, with its primary display value as title.")]
 	public void Collect_Should_Report_Only_Records_Created_After_The_Baseline() {
 		// Arrange
@@ -247,6 +287,23 @@ public sealed class ProcessRunMonitorTests {
 		// Assert
 		state.IsTerminal.Should().BeTrue(because: "Error is a final status");
 		state.ErrorSummary.Should().Be("System.Exception: boom", because: "the first line is the actionable part");
+	}
+
+	[Test]
+	[Description("A failed read of the elements a running run waits on keeps the root status that was read, with an empty waitingOn and a note, instead of failing the whole read.")]
+	public void Read_Should_Keep_The_Status_When_The_Waiting_Elements_Cannot_Be_Read() {
+		// Arrange
+		(ProcessRunMonitor monitor, _) = Create(query => query.Value<string>("rootSchemaName") == "SysProcessLog"
+			? "[{\"StatusValue\":1,\"ErrorDescription\":\"\"}]"
+			: throw new InvalidOperationException("The operation has timed out."));
+
+		// Act
+		ProcessRunState state = monitor.Read(ProcessId, 10_000);
+
+		// Assert
+		state.StatusValue.Should().Be(1, because: "the root status was read and stands on its own");
+		state.WaitingOn.Should().BeEmpty(because: "the elements could not be read");
+		state.Note.Should().Contain("could not be read", because: "the caller is told why waitingOn is empty");
 	}
 
 	[Test]

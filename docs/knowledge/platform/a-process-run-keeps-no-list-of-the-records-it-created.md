@@ -2,6 +2,7 @@
 description: Creatio records no list of the records a process run created - SysProcessEntity is empty, the element log has no record ids, element data is deleted on completion - so "created by this run" can only be a before/after diff
 applies-to:
   - clio/Command/RuntimeVerification/CreatedRecordWatcher.cs
+  - clio/Command/RuntimeVerification/RunRecordProvenance.cs
 ticket: ENG-103024
 date: 2026-10-12
 ---
@@ -17,5 +18,9 @@ afterwards, minus the ids that were already there.
 
 **What breaks if you ignore it** — an implementation that waits for a platform source reports nothing, and
 one that diffs without care deletes other users' rows: the diff window also catches a record another user
-created at the same moment. That is why run-process `cleanup` deletes only records whose `CreatedBy` is the
-calling user's contact and reports the rest in `cleanup.skipped`.
+created at the same moment, and `CreatedBy` cannot tell apart a parallel session under the SAME login (QA
+found run-process cleanup deleting such an activity). So cleanup deletes only what it can tie to the run: a
+record whose `ProcessElementId` names a `SysProcessElementData` row whose `SysProcess` is the run (or one of
+its sub-processes), or a record whose lookup points at such a record. That tie exists only while the element
+is live, so it is read BEFORE the run is cancelled; a record an element wrote and then completed (Add data)
+has no tie and stays in `cleanup.skipped`.
