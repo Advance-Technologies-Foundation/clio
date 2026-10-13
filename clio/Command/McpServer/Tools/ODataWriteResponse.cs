@@ -70,6 +70,10 @@ public sealed record ODataWriteResponse(
 	[JsonPropertyName("note"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Note { get; init; }
 
+	/// <summary>Notes that did not stop the call, for example that a synonym of data was accepted.</summary>
+	[JsonPropertyName("warnings"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Warnings { get; init; }
+
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);
 }
