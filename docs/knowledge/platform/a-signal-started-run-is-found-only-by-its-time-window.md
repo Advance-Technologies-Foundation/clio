@@ -18,7 +18,9 @@ Supervisor, so it can appear in the same window.
 
 **What breaks if you ignore it** — reading every new run as caused by the trigger blames or cancels a
 scheduled job, and a scheduled job runs as Supervisor - the usual clio login - so "started by the caller" does
-not mean "started by this call" either. trigger-smoke therefore reports every run in the window by name, deletes
+not mean "started by this call" either. trigger-smoke therefore bases `success` only on attributable runs - the
+caller's own, and with `process` only runs whose caption or code (`SysProcessLog.SysSchema.Name`) is that process,
+plus their sub-processes by `RootId` - and lists every other run of the window under `unrelated`. It deletes
 only the trigger and the caller's new records whose lookup points at it (or at another such record), and
 cancels a run only when it holds one of those records: the record's `ProcessElementId` is a
 `SysProcessElementData` row whose `SysProcess` is the run's `SysProcessLog` id (checked on the same stand).

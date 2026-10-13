@@ -35,11 +35,16 @@ public sealed class TriggerSmokeRunnerTests {
 
 	private static Harness Create(string createResponse, IReadOnlyList<CreatedRecord> runs,
 		IReadOnlyList<CreatedRecord> records, params ProcessRunState[] states) =>
-		Create(createResponse, runs, records, TriggerId, states);
+		Create(createResponse, runs, records, TriggerId, null, states);
 
 	// activityPointsAt: the value of the activity's UsrRequest lookup; the activity is held by RunId's element.
 	private static Harness Create(string createResponse, IReadOnlyList<CreatedRecord> runs,
-		IReadOnlyList<CreatedRecord> records, string activityPointsAt, params ProcessRunState[] states) {
+		IReadOnlyList<CreatedRecord> records, string activityPointsAt, params ProcessRunState[] states) =>
+		Create(createResponse, runs, records, activityPointsAt, null, states);
+
+	private static Harness Create(string createResponse, IReadOnlyList<CreatedRecord> runs,
+		IReadOnlyList<CreatedRecord> records, string activityPointsAt, string processLogError,
+		params ProcessRunState[] states) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteNonReplayablePostRequest(CreateUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(createResponse);
@@ -48,10 +53,11 @@ public sealed class TriggerSmokeRunnerTests {
 				JObject query = JObject.Parse(call.ArgAt<string>(1));
 				JObject columns = (JObject)query["columns"]["items"];
 				string rows = query.Value<string>("rootSchemaName") switch {
-					"Activity" when columns.ContainsKey("ProcessElementId") =>
-						$"[{{\"Id\":\"{ActivityId}\",\"ProcessElementId\":\"{ElementId}\"}}]",
-					"Activity" => $"[{{\"Id\":\"{ActivityId}\",\"UsrRequest\":{{\"value\":\"{activityPointsAt}\",\"displayValue\":\"x\"}}}}]",
+					"Activity" => $"[{{\"Id\":\"{ActivityId}\",\"ProcessElementId\":\"{ElementId}\","
+						+ $"\"UsrRequest\":{{\"value\":\"{activityPointsAt}\",\"displayValue\":\"x\"}}}}]",
 					"SysProcessElementData" => $"[{{\"Id\":\"{ElementId}\",\"SysProcess\":{{\"value\":\"{RunId}\"}}}}]",
+					"SysProcessLog" when columns.ContainsKey("Code") => $"[{{\"Id\":\"{RunId}\",\"Code\":\"UsrRequestHandling\","
+						+ $"\"RootId\":\"{RunId}\"}}]",
 					_ => "[]"
 				};
 				return "{\"success\":true,\"rows\":" + rows + "}";
@@ -71,7 +77,9 @@ public sealed class TriggerSmokeRunnerTests {
 			Entities = [new EntityWatch { Entity = "UsrRequest" }, new EntityWatch { Entity = "Activity", References = ["UsrRequest"] }],
 			CurrentUserContactId = Me
 		};
-		WatchBaseline processBaseline = new() { Entities = [new EntityWatch { Entity = "SysProcessLog" }], CurrentUserContactId = Me };
+		WatchBaseline processBaseline = new() {
+			Entities = [new EntityWatch { Entity = "SysProcessLog", Error = processLogError }], CurrentUserContactId = Me
+		};
 		ICreatedRecordWatcher watcher = Substitute.For<ICreatedRecordWatcher>();
 		watcher.Capture(Arg.Is<IReadOnlyList<string>>(list => list.Contains("SysProcessLog")), Arg.Any<int>(),
 			Arg.Any<DateTimeOffset?>()).Returns(processBaseline);
@@ -93,16 +101,17 @@ public sealed class TriggerSmokeRunnerTests {
 			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>())
 			.Returns(call => new CleanupReport { Deleted = [.. call.Arg<IReadOnlyList<CreatedRecord>>()] });
 		DateTimeOffset now = DateTimeOffset.UtcNow;
-		TriggerSmokeRunner runner = new(client, urls, new RunVerificationServices(monitor, watcher, cleaner), schemas) {
+		TriggerSmokeRunner runner = new(client, urls,
+			new RunVerificationServices(monitor, watcher, cleaner, new RunRecordProvenance(client, urls, schemas))) {
 			Clock = () => now,
 			Sleep = ms => now = now.AddMilliseconds(ms)
 		};
 		return new Harness(runner, client, monitor, watcher, cleaner);
 	}
 
-	private static TriggerSmokeRequest Request(bool cleanup = true) => new("UsrRequest",
-		new Dictionary<string, JsonElement> { ["UsrName"] = JsonSerializer.SerializeToElement("Smoke") },
-		["Activity"], 5, cleanup);
+	private static TriggerSmokeRequest Request(bool cleanup = true, string process = null, int timeout = 5) =>
+		new("UsrRequest", new Dictionary<string, JsonElement> { ["UsrName"] = JsonSerializer.SerializeToElement("Smoke") },
+			["Activity"], timeout, cleanup, process);
 
 	private static CreatedRecord Run() => new("SysProcessLog", RunId, "Request handling") { CreatedById = Me };
 
@@ -131,6 +140,8 @@ public sealed class TriggerSmokeRunnerTests {
 		result.Created.Select(record => record.Id).Should().Equal([ActivityId],
 			because: "created lists what the run made, not the trigger");
 		result.Cancelled.Should().Equal([RunId], because: "the caller's parked run is cancelled before deleting");
+		result.Processes.Single().StateBeforeCancel.Should().BeEquivalentTo(new SmokeRunState("running", parked.WaitingOn),
+			because: "QA D4: the answer keeps what the run was parked on before cleanup cancelled it");
 		Received.InOrder(() => {
 			harness.Monitor.Cancel(Guid.Parse(RunId), Arg.Any<int>());
 			harness.Cleaner.Delete(Arg.Is<IReadOnlyList<CreatedRecord>>(records =>
@@ -167,7 +178,7 @@ public sealed class TriggerSmokeRunnerTests {
 		// Assert
 		result.Processes.Should().BeEmpty(because: "nothing started");
 		result.Success.Should().BeFalse(because: "the process under test never ran");
-		result.Error.Should().Contain("No process started", because: "an empty result must be explained");
+		result.Error.Should().Contain("No run of this call started", because: "an empty result must be explained");
 		result.Cleanup.Deleted.Select(record => record.Id).Should().Equal([TriggerId],
 			because: "the trigger is cleaned up even when nothing started");
 	}
@@ -239,6 +250,121 @@ public sealed class TriggerSmokeRunnerTests {
 		harness.Cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default);
 		harness.Monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
 		result.Cleanup.Skipped.Should().HaveCount(2, because: "everything that appeared is reported, nothing is deleted");
+	}
+
+	[Test]
+	[Description("With `process`, a completed run of another process in the window is listed under unrelated and never makes the check pass (review: an unrelated scheduled run answered success).")]
+	public void Run_Should_Not_Pass_On_An_Unrelated_Run() {
+		// Arrange
+		CreatedRecord scheduled = new("SysProcessLog", RunId, "Scheduled cleanup") { CreatedById = Me };
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [scheduled], [Trigger()], new ProcessRunState(true, 2, null, []));
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request(cleanup: false, process: "UsrOtherProcess"));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the process under test never ran");
+		result.Processes.Should().BeEmpty(because: "only runs of the named process count");
+		result.Unrelated.Should().ContainSingle(because: "the scheduled run is reported apart")
+			.Which.Reason.Should().Contain("UsrOtherProcess", because: "the reason says why it does not count");
+		harness.Monitor.DidNotReceiveWithAnyArgs().Read(default, default);
+	}
+
+	[Test]
+	[Description("`process` matches a run by its process code (SysSchema.Name) as well as by its caption.")]
+	public void Run_Should_Attribute_A_Run_By_Its_Process_Code() {
+		// Arrange
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [Run()], [Trigger()], new ProcessRunState(true, 2, null, []));
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request(cleanup: false, process: "UsrRequestHandling"));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the run of the named process completed");
+		result.Processes.Should().ContainSingle(because: "the run's code matches");
+	}
+
+	[Test]
+	[Description("A run another user started counts for nothing even without `process`: it is unrelated, and the check fails when it is the only run.")]
+	public void Run_Should_Not_Count_Another_Users_Run() {
+		// Arrange
+		CreatedRecord foreign = new("SysProcessLog", RunId, "Request handling") { CreatedById = "c4ed336c-3e9b-40fe-8b82-5632650c7b8d" };
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [foreign], [Trigger()], new ProcessRunState(true, 2, null, []));
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request(cleanup: false));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "no run of this call started");
+		result.Error.Should().Contain("unrelated", because: "the error points at the runs that did not count");
+		result.Unrelated.Single().Reason.Should().Contain("another user", because: "the reason is named");
+	}
+
+	[Test]
+	[Description("A run whose state could not be read leaves the check not verified: success is false with an explanation, never a silent pass.")]
+	public void Run_Should_Not_Pass_When_A_Runs_State_Is_Unknown() {
+		// Arrange
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [Run()], [Trigger()]);
+		harness.Monitor.Read(Arg.Any<Guid>(), Arg.Any<int>()).Returns(_ => throw new InvalidOperationException("timed out"));
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request(cleanup: false));
+
+		// Assert
+		result.Success.Should().BeFalse(because: "a run that may have failed is not a pass");
+		result.Error.Should().Contain("Not verified", because: "the answer says why it is not a pass");
+	}
+
+	[Test]
+	[Description("When the SysProcessLog baseline cannot be read, the trigger is not created and the error names the real cause.")]
+	public void Run_Should_Not_Create_The_Trigger_Without_A_Process_Log_Baseline() {
+		// Arrange
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [Run()], [Trigger()], TriggerId, "access denied");
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "no run could be seen");
+		result.Error.Should().Contain("SysProcessLog").And.Contain("access denied", because: "the real cause is the error");
+		harness.Client.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("A run whose only running element is an executing one (a script task) is not parked: the wait does not settle on it and lasts until the timeout.")]
+	public void Run_Should_Wait_For_A_Run_That_Is_Still_Executing() {
+		// Arrange
+		ProcessRunState executing = new(true, 1, null, [new WaitingElement("Long script", "ProcessSchemaScriptTask")]);
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [Run()], [Trigger()], executing);
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request(cleanup: false, timeout: 15));
+
+		// Assert
+		harness.Monitor.ReceivedCalls().Count(call => call.GetMethodInfo().Name == "Read").Should().BeGreaterThan(10,
+			because: "an executing run keeps the wait going to the 15 s timeout; a parked one would settle after about 6 s");
+		result.Processes.Single().Status.Should().Be("running", because: "the run is reported as running, not parked");
+	}
+
+	[Test]
+	[Description("Settling: a parked run settles after the quiet period once the minimum wait passed; an executing one, a run list that is empty, or a quiet period too short does not.")]
+	[TestCase("ProcessSchemaUserTask", 3_000, 6_000, true)]
+	[TestCase("ProcessSchemaIntermediateCatchTimerEvent", 3_000, 6_000, true)]
+	[TestCase("ProcessSchemaScriptTask", 3_000, 6_000, false)]
+	[TestCase("ProcessSchemaUserTask", 2_000, 6_000, false)]
+	[TestCase("ProcessSchemaUserTask", 3_000, 5_000, false)]
+	public void IsSettled_Should_Settle_Only_On_Parked_Runs(string type, int quietMs, int waitedMs, bool expected) {
+		// Arrange
+		SmokeProcessRun run = new(RunId, "x", "running", null, [new WaitingElement("e", type)]);
+
+		// Act
+		bool settled = TriggerSmokeRunner.IsSettled([run], TimeSpan.FromMilliseconds(quietMs),
+			TimeSpan.FromMilliseconds(waitedMs), 15);
+		bool empty = TriggerSmokeRunner.IsSettled([], TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10), 15);
+
+		// Assert
+		settled.Should().Be(expected, because: "only a parked run, quiet long enough after the minimum wait, settles");
+		empty.Should().BeFalse(because: "no run yet is not settled: a background run may still start");
 	}
 
 	[Test]

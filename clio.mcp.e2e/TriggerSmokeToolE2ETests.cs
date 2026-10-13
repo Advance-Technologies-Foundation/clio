@@ -64,29 +64,56 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 		await EnsureSignalProcessAsync(arrange, environmentName);
 
 		// Act
-		JsonElement response = await RunAsync(arrange, environmentName, $"clio-smoke-{Guid.NewGuid():N}");
+		JsonElement response = await RunAsync(arrange, environmentName, $"clio-smoke-{Guid.NewGuid():N}",
+			process: SignalProcessCode);
+		// The activity is removed by the test whatever an assertion below says, so the shared stand is left clean.
+		string? activityId = FindActivityId(response);
+		try {
+			// Assert
+			response.GetProperty("success").GetBoolean().Should().BeTrue(because: response.ToString());
+			JsonElement run = response.GetProperty("processes").EnumerateArray()
+				.Should().ContainSingle(because: "only the run of the named process counts; any other run of the window "
+					+ "goes to unrelated").Which;
+			run.GetProperty("status").GetString().Should().Be("completed",
+				because: "the signal process adds one activity and ends");
+			response.GetProperty("created").EnumerateArray()
+				.Should().Contain(item => item.GetProperty("title").GetString() == ActivityTitle,
+					because: "the activity the signal run added must be reported");
+			response.GetProperty("cleanup").GetProperty("failed").GetArrayLength().Should().Be(0,
+				because: "the trigger contact is the caller's and deletable");
+			response.GetProperty("cleanup").GetProperty("deleted").EnumerateArray()
+				.Should().Contain(item => item.GetProperty("entity").GetString() == "Contact",
+					because: "the trigger itself is cleaned up too");
+			// This process's activity has no lookup to the contact, so nothing ties it to the trigger: time alone never
+			// licenses a delete, and cleanup leaves it in cleanup.skipped (the tool description says so).
+			response.GetProperty("cleanup").GetProperty("skipped").EnumerateArray()
+				.Should().Contain(item => item.GetProperty("title").GetString() == ActivityTitle,
+					because: "a record not tied to the trigger is reported in cleanup.skipped, not deleted");
+		}
+		finally {
+			if (activityId is not null) {
+				await DeleteAsync(arrange, environmentName, activityId);
+			}
+		}
+	}
 
-		// Assert
-		response.GetProperty("success").GetBoolean().Should().BeTrue(because: response.ToString());
-		JsonElement run = response.GetProperty("processes").EnumerateArray()
-			.Single(item => item.GetProperty("name").GetString()!.Contains("ENG-103024"));
-		run.GetProperty("status").GetString().Should().Be("completed",
-			because: "the signal process adds one activity and ends");
-		response.GetProperty("created").EnumerateArray()
-			.Should().Contain(item => item.GetProperty("title").GetString() == ActivityTitle,
-				because: "the activity the signal run added must be reported");
-		response.GetProperty("cleanup").GetProperty("failed").GetArrayLength().Should().Be(0,
-			because: "the trigger contact is the caller's and deletable");
-		response.GetProperty("cleanup").GetProperty("deleted").EnumerateArray()
-			.Should().Contain(item => item.GetProperty("entity").GetString() == "Contact",
-				because: "the trigger itself is cleaned up too");
-		// This process's activity has no lookup to the contact, so nothing ties it to the trigger: time alone never
-		// licenses a delete, and cleanup leaves it in cleanup.skipped. The test removes its own activity by id.
-		JsonElement activity = response.GetProperty("cleanup").GetProperty("skipped").EnumerateArray()
-			.FirstOrDefault(item => item.GetProperty("title").GetString() == ActivityTitle);
-		activity.ValueKind.Should().Be(JsonValueKind.Object,
-			because: "a record not tied to the trigger is reported in cleanup.skipped, not deleted");
-		await DeleteAsync(arrange, environmentName, activity.GetProperty("id").GetString()!);
+	// The activity the run added, from cleanup.skipped or, failing that, from created.
+	private static string? FindActivityId(JsonElement response) {
+		foreach (JsonElement list in new[] {
+				response.TryGetProperty("cleanup", out JsonElement cleanup) && cleanup.TryGetProperty("skipped", out JsonElement skipped)
+					? skipped : default,
+				response.TryGetProperty("created", out JsonElement created) ? created : default
+			}) {
+			if (list.ValueKind != JsonValueKind.Array) {
+				continue;
+			}
+			foreach (JsonElement item in list.EnumerateArray()) {
+				if (item.GetProperty("title").GetString() == ActivityTitle) {
+					return item.GetProperty("id").GetString();
+				}
+			}
+		}
+		return null;
 	}
 
 	private static async Task DeleteAsync(ArrangeContext arrange, string environmentName, string activityId) =>
@@ -100,7 +127,7 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.Sandbox")]
-	[Description("A record no process listens for gives an empty processes list with a warning, and the trigger is still cleaned up.")]
+	[Description("A record the signal filter does not match starts no run of the named process: the check fails with an error that says so, processes is empty, and the trigger is still cleaned up.")]
 	[AllureTag(ToolName)]
 	[AllureName("trigger-smoke explains a record that starts nothing")]
 	public async Task TriggerSmoke_Should_Explain_A_Record_That_Starts_Nothing() {
@@ -113,21 +140,27 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
 			"trigger-smoke MCP E2E requires the configured sandbox environment to be set and reachable.");
 		await using ArrangeContext arrange = Arrange(TimeSpan.FromMinutes(5));
+		// The process must exist, or a quiet answer would prove nothing.
+		await EnsureSignalProcessAsync(arrange, environmentName);
 
 		// Act
-		JsonElement response = await RunAsync(arrange, environmentName, $"clio-e2e-quiet-{Guid.NewGuid():N}", timeout: 4);
+		JsonElement response = await RunAsync(arrange, environmentName, $"clio-e2e-quiet-{Guid.NewGuid():N}", timeout: 4,
+			process: SignalProcessCode);
 
 		// Assert
-		response.GetProperty("processes").EnumerateArray()
-			.Should().NotContain(item => item.GetProperty("name").GetString()!.Contains("ENG-103024"),
-				because: "the signal filter does not match this name");
+		response.GetProperty("success").GetBoolean().Should().BeFalse(because: "the process under test never ran");
+		response.GetProperty("error").GetString().Should().Contain("No run of this call started",
+			because: "an empty result is explained, not reported as a pass");
+		response.TryGetProperty("processes", out JsonElement processes).Should().BeTrue(because: "processes is always answered");
+		processes.GetArrayLength().Should().Be(0,
+			because: "the signal filter does not match this name, and runs of other processes go to unrelated");
 		response.GetProperty("cleanup").GetProperty("deleted").EnumerateArray()
 			.Should().Contain(item => item.GetProperty("entity").GetString() == "Contact",
 				because: "the trigger is cleaned up even when nothing ran");
 	}
 
 	private static async Task<JsonElement> RunAsync(ArrangeContext arrange, string environmentName, string name,
-		int timeout = 15) {
+		int timeout = 15, string? process = null) {
 		CallToolResult result = await arrange.Session.CallToolAsync(ClioRunDestructiveTool.ToolName,
 			new Dictionary<string, object?> {
 				["command"] = ToolName,
@@ -136,7 +169,8 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 					["entity"] = "Contact",
 					["values"] = new Dictionary<string, object?> { ["Name"] = name },
 					["watch"] = new[] { "Activity" },
-					["timeout"] = timeout
+					["timeout"] = timeout,
+					["process"] = process
 				}
 			},
 			arrange.CancellationTokenSource.Token);

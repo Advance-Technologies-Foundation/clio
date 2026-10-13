@@ -29,12 +29,38 @@ public interface ITriggerSmokeRunner {
 /// <param name="Watch">Entities the started processes are expected to write.</param>
 /// <param name="TimeoutSeconds">How long to wait for processes to start and settle.</param>
 /// <param name="Cleanup">Whether to cancel what is still running and delete what was created, the trigger included.</param>
+/// <param name="Process">
+/// The process under test, by code or caption; only its runs (and their sub-processes) decide the verdict. Null binds
+/// the verdict to every run the caller's login started in the window.
+/// </param>
 public sealed record TriggerSmokeRequest(
 	string Entity,
 	IReadOnlyDictionary<string, JsonElement> Values,
 	IReadOnlyList<string> Watch,
 	int TimeoutSeconds,
-	bool Cleanup);
+	bool Cleanup,
+	string Process = null);
+
+/// <summary>The state a run had when cleanup cancelled it.</summary>
+public sealed record SmokeRunState(
+	[property: JsonProperty("status")]
+	[property: System.Text.Json.Serialization.JsonPropertyName("status")]
+	string Status,
+	[property: JsonProperty("waitingOn")]
+	[property: System.Text.Json.Serialization.JsonPropertyName("waitingOn")]
+	IReadOnlyList<WaitingElement> WaitingOn);
+
+/// <summary>A run that started in the window but cannot be tied to this call; it never affects the verdict.</summary>
+public sealed record UnrelatedRun(
+	[property: JsonProperty("processId")]
+	[property: System.Text.Json.Serialization.JsonPropertyName("processId")]
+	string ProcessId,
+	[property: JsonProperty("name")]
+	[property: System.Text.Json.Serialization.JsonPropertyName("name")]
+	string Name,
+	[property: JsonProperty("reason")]
+	[property: System.Text.Json.Serialization.JsonPropertyName("reason")]
+	string Reason);
 
 /// <summary>One process run started while the smoke check waited.</summary>
 public sealed record SmokeProcessRun(
@@ -52,12 +78,22 @@ public sealed record SmokeProcessRun(
 	string Error,
 	[property: JsonProperty("waitingOn")]
 	[property: System.Text.Json.Serialization.JsonPropertyName("waitingOn")]
-	IReadOnlyList<WaitingElement> WaitingOn);
+	IReadOnlyList<WaitingElement> WaitingOn) {
+
+	/// <summary>The state the run had when cleanup cancelled it; null when cleanup did not cancel it.</summary>
+	[JsonProperty("stateBeforeCancel", NullValueHandling = NullValueHandling.Ignore)]
+	[System.Text.Json.Serialization.JsonPropertyName("stateBeforeCancel")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public SmokeRunState StateBeforeCancel { get; init; }
+}
 
 /// <summary>Outcome of <see cref="ITriggerSmokeRunner.Run"/>.</summary>
 public sealed class TriggerSmokeResult {
 
-	/// <summary>False when the trigger could not be created, or a started process ended in error.</summary>
+	/// <summary>
+	/// False when the trigger could not be created, no attributable run started, an attributable run ended in error, or
+	/// the state of one could not be read. Only attributable runs count; <see cref="Unrelated"/> never does.
+	/// </summary>
 	[JsonProperty("success")]
 	[System.Text.Json.Serialization.JsonPropertyName("success")]
 	public bool Success { get; set; }
@@ -72,10 +108,15 @@ public sealed class TriggerSmokeResult {
 	[System.Text.Json.Serialization.JsonPropertyName("trigger")]
 	public CreatedRecord Trigger { get; set; }
 
-	/// <summary>Process runs that started while the check waited.</summary>
+	/// <summary>Attributable process runs that started while the check waited: they decide the verdict.</summary>
 	[JsonProperty("processes")]
 	[System.Text.Json.Serialization.JsonPropertyName("processes")]
 	public List<SmokeProcessRun> Processes { get; set; } = [];
+
+	/// <summary>Runs that started in the window but cannot be tied to this call (another user's, or another process).</summary>
+	[JsonProperty("unrelated")]
+	[System.Text.Json.Serialization.JsonPropertyName("unrelated")]
+	public List<UnrelatedRun> Unrelated { get; set; } = [];
 
 	/// <summary>
 	/// Records that appeared in the watched entities, the trigger excluded. The window is shared with every other session,
@@ -104,8 +145,7 @@ public sealed class TriggerSmokeResult {
 internal sealed class TriggerSmokeRunner(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IRunVerificationServices verification,
-	IRuntimeEntitySchemaReader schemaReader)
+	IRunVerificationServices verification)
 	: ITriggerSmokeRunner {
 
 	internal const int DefaultTimeoutSeconds = 15;
@@ -123,9 +163,7 @@ internal sealed class TriggerSmokeRunner(
 	private const int CaptureBudgetMs = 15_000;
 	private const int MinimumRequestMs = 1_000;
 	private const int GuidDataValueType = 0;
-	private const string ProcessElementColumn = "ProcessElementId";
-	// Every row has them, and they point at the user, never at the trigger.
-	private static readonly HashSet<string> AuditColumns = new(StringComparer.Ordinal) { "CreatedBy", "ModifiedBy" };
+	private const string UnknownStatus = "unknown";
 	// A background-mode signal run starts a few seconds after the insert; the wait never settles before this.
 	private const int MinimumWaitMs = 6_000;
 	private const string ProcessLogEntity = "SysProcessLog";
@@ -145,25 +183,102 @@ internal sealed class TriggerSmokeRunner(
 		// parent's per-call budget kills it.
 		DateTimeOffset stopAt = Clock().AddMilliseconds(TotalBudgetMs);
 		DateTimeOffset captureStop = Clock().AddMilliseconds(CaptureBudgetMs);
+		// The run baseline first: without it no run can be seen, so the trigger is not even created.
+		WatchBaseline processes = verification.Watcher.Capture([ProcessLogEntity], RequestMs, captureStop);
+		string processLogError = processes.Entities.FirstOrDefault(entity => entity.Error is not null)?.Error;
+		if (processLogError is not null) {
+			result.Error = "SysProcessLog could not be read before the trigger was created, so the runs it starts could "
+				+ $"not be seen: {processLogError}. Nothing was created; check the user's read access to the process log.";
+			return result;
+		}
 		List<string> watch = [.. request.Watch.Where(name => !string.Equals(name, request.Entity, StringComparison.OrdinalIgnoreCase))];
 		// The trigger's own entity is watched too, so cleanup knows what references it.
 		WatchBaseline records = verification.Watcher.Capture([request.Entity, .. watch], RequestMs, captureStop);
-		WatchBaseline processes = verification.Watcher.Capture([ProcessLogEntity], RequestMs, captureStop);
+		string me = records.CurrentUserContactId ?? processes.CurrentUserContactId;
 
 		string triggerId = CreateTrigger(request, Budget(stopAt, RequestMs * 3), out string createError);
 		if (triggerId is not null) {
 			// Created by this call, so the caller's own record whatever the after-read finds.
-			result.Trigger = new CreatedRecord(request.Entity, triggerId, null) { CreatedById = records.CurrentUserContactId };
+			result.Trigger = new CreatedRecord(request.Entity, triggerId, null) { CreatedById = me };
 		}
 		// A refused create can still have saved the row - a post-insert handler or a synchronous signal run that
 		// threw - so what appeared is read and reported even then; it is just not waited for.
-		List<CreatedRecord> runs = WaitForProcesses(processes, triggerId is null ? 0 : request.TimeoutSeconds, stopAt, result);
+		RunAttribution attribution = new(request.Process, me);
+		List<CreatedRecord> runs = WaitForProcesses(processes, attribution, triggerId is null ? 0 : request.TimeoutSeconds,
+			stopAt, result);
 		ReadCreated(request, records, triggerId, stopAt, result);
 		result.Success = Judge(request, triggerId, createError, result);
+		if (request.Process is null && result.Processes.Count > 0) {
+			result.Warnings.Add("processes lists every run the calling login started in the window, so a scheduled or "
+				+ "parallel run of the same login counts too; pass `process` to bind the verdict to the process under test.");
+		}
 		if (request.Cleanup) {
 			CleanUp(request, records, runs, triggerId, stopAt, result);
 		}
 		return result;
+	}
+
+	// Which runs of the window are this call's: the caller's own, and - when a process is named - only its runs and
+	// their sub-processes. The code and root of a run are read once.
+	private sealed class RunAttribution(string process, string me) {
+		public string Process { get; } = process;
+		public string Me { get; } = me;
+		public Dictionary<string, (string Code, string RootId)> Facts { get; } = new(StringComparer.OrdinalIgnoreCase);
+		public bool FactsUnreadable { get; set; }
+	}
+
+	private static string ReasonUnrelated(CreatedRecord run, RunAttribution attribution) {
+		if (attribution.Me is null) {
+			return "the calling user's contact could not be read, so no run can be shown to be the caller's";
+		}
+		if (!string.Equals(run.CreatedById, attribution.Me, StringComparison.OrdinalIgnoreCase)) {
+			return "started by another user";
+		}
+		if (attribution.Process is null || MatchesProcess(run, attribution)) {
+			return null;
+		}
+		return $"not a run of '{attribution.Process}'";
+	}
+
+	private static bool MatchesProcess(CreatedRecord run, RunAttribution attribution) {
+		if (string.Equals(run.Title, attribution.Process, StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		if (!attribution.Facts.TryGetValue(run.Id, out (string Code, string RootId) facts)) {
+			return false;
+		}
+		if (string.Equals(facts.Code, attribution.Process, StringComparison.OrdinalIgnoreCase)) {
+			return true;
+		}
+		// A sub-process counts when its root is a run of the named process.
+		return facts.RootId is not null && !string.Equals(facts.RootId, run.Id, StringComparison.OrdinalIgnoreCase)
+			&& attribution.Facts.TryGetValue(facts.RootId, out (string Code, string RootId) root)
+			&& string.Equals(root.Code, attribution.Process, StringComparison.OrdinalIgnoreCase);
+	}
+
+	// The code (SysSchema.Name) and RootId of the runs not read yet, and of their roots.
+	private void ReadRunFacts(IEnumerable<CreatedRecord> runs, RunAttribution attribution, DateTimeOffset stopAt,
+		TriggerSmokeResult result) {
+		if (attribution.Process is null || attribution.FactsUnreadable) {
+			return;
+		}
+		List<string> unread = runs.Select(run => run.Id).Where(id => id is not null && !attribution.Facts.ContainsKey(id)).ToList();
+		try {
+			for (int round = 0; round < 2 && unread.Count > 0; round++) {
+				foreach (JToken row in SelectByIds(ProcessLogEntity, [("Code", "SysSchema.Name"), ("RootId", "RootId")],
+						unread, stopAt)) {
+					string root = RunRecordProvenance.LookupValue(row["RootId"]);
+					attribution.Facts[row["Id"]?.ToString() ?? string.Empty] = (row["Code"]?.ToString(), root);
+				}
+				unread = attribution.Facts.Values.Select(facts => facts.RootId)
+					.Where(id => id is not null && !attribution.Facts.ContainsKey(id)).Distinct().ToList();
+			}
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			attribution.FactsUnreadable = true;
+			result.Warnings.Add("The process code of the runs could not be read, so `process` is matched against the run's "
+				+ "caption only: " + (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name));
+		}
 	}
 
 	// Reads the watched entities and splits the trigger off from what else appeared.
@@ -195,9 +310,12 @@ internal sealed class TriggerSmokeRunner(
 			return false;
 		}
 		if (result.Processes.Count == 0) {
-			result.Error = $"No process started within {request.TimeoutSeconds} s of creating the record. Check that "
-				+ "the process is active, that its signal is 'record added' on this entity, and that its filter matches "
-				+ "the values; a process that runs in the background may also start later than the wait.";
+			result.Error = $"No run of this call started within {request.TimeoutSeconds} s of creating the record. Check "
+				+ "that the process is active, that its signal is 'record added' on this entity, and that its filter matches "
+				+ "the values; a process that runs in the background may also start later than the wait."
+				+ (result.Unrelated.Count > 0
+					? $" {result.Unrelated.Count} other run(s) started in the window; `unrelated` lists them, and they do not count."
+					: string.Empty);
 			return false;
 		}
 		List<SmokeProcessRun> failed = result.Processes.Where(run => run.Status == ErrorStatus).ToList();
@@ -205,8 +323,18 @@ internal sealed class TriggerSmokeRunner(
 			result.Error = $"{failed.Count} started process run(s) ended in error; processes[].error names each.";
 			return false;
 		}
+		List<SmokeProcessRun> unknown = result.Processes.Where(IsUnknown).ToList();
+		if (unknown.Count > 0) {
+			result.Error = $"Not verified: the state of {unknown.Count} run(s) could not be read before the wait ended, so "
+				+ "they may have failed; processes[].error says why. Read SysProcessLog for them, or run again with a longer "
+				+ "timeout.";
+			return false;
+		}
 		return true;
 	}
+
+	private static bool IsUnknown(SmokeProcessRun run) =>
+		run.Status is null || run.Status.StartsWith(UnknownStatus, StringComparison.Ordinal);
 
 	private string CreateTrigger(TriggerSmokeRequest request, int timeoutMs, out string error) {
 		error = null;
@@ -239,11 +367,11 @@ internal sealed class TriggerSmokeRunner(
 		}
 	}
 
-	// Polls SysProcessLog for runs that appeared since the baseline, and their states, until every run has finished
-	// or parked, nothing changed for QuietMs and at least MinimumWaitMs passed - or the timeout passes. A run already
-	// in a final state is not read again.
-	private List<CreatedRecord> WaitForProcesses(WatchBaseline baseline, int timeoutSeconds, DateTimeOffset stopAt,
-		TriggerSmokeResult result) {
+	// Polls SysProcessLog for runs that appeared since the baseline, and the states of those attributable to this call,
+	// until every such run has finished or parked, nothing changed for QuietMs and at least MinimumWaitMs passed - or
+	// the timeout passes. A run already in a final state is not read again; an unrelated run is never read.
+	private List<CreatedRecord> WaitForProcesses(WatchBaseline baseline, RunAttribution attribution, int timeoutSeconds,
+		DateTimeOffset stopAt, TriggerSmokeResult result) {
 		DateTimeOffset started = Clock();
 		DateTimeOffset until = started.AddSeconds(timeoutSeconds);
 		if (until > stopAt) {
@@ -255,7 +383,18 @@ internal sealed class TriggerSmokeRunner(
 		Dictionary<string, SmokeProcessRun> last = new(StringComparer.OrdinalIgnoreCase);
 		while (true) {
 			WatchOutcome outcome = verification.Watcher.Collect(baseline, RequestMs, stopAt);
-			List<CreatedRecord> runs = outcome.Created;
+			ReadRunFacts(outcome.Created, attribution, stopAt, result);
+			List<CreatedRecord> runs = [];
+			result.Unrelated = [];
+			foreach (CreatedRecord run in outcome.Created) {
+				string reason = ReasonUnrelated(run, attribution);
+				if (reason is null) {
+					runs.Add(run);
+				}
+				else {
+					result.Unrelated.Add(new UnrelatedRun(run.Id, run.Title, reason));
+				}
+			}
 			// A run is read only while the wait lasts; one not reached keeps its last state, so a busy window cannot
 			// stretch a single poll past the wait.
 			result.Processes = runs.Select(run => CurrentState(run, final, last, until, stopAt)).ToList();
@@ -265,7 +404,8 @@ internal sealed class TriggerSmokeRunner(
 					final[run.ProcessId] = run;
 				}
 			}
-			string signature = string.Join("|", result.Processes.Select(run => run.ProcessId + ":" + run.Status));
+			string signature = string.Join("|", result.Processes.Select(run => run.ProcessId + ":" + run.Status + ":"
+				+ IsParked(run)));
 			if (signature != lastSignature) {
 				lastSignature = signature;
 				quietSince = Clock();
@@ -292,15 +432,26 @@ internal sealed class TriggerSmokeRunner(
 		}
 		return last.TryGetValue(run.Id, out SmokeProcessRun seen)
 			? seen
-			: new SmokeProcessRun(run.Id, run.Title, "unknown", "not read: the wait ended first", []);
+			: new SmokeProcessRun(run.Id, run.Title, UnknownStatus, "not read: the wait ended first", []);
 	}
 
-	private static bool IsSettled(IReadOnlyList<SmokeProcessRun> processes, TimeSpan quiet, TimeSpan waited,
+	internal static bool IsSettled(IReadOnlyList<SmokeProcessRun> processes, TimeSpan quiet, TimeSpan waited,
 		int timeoutSeconds) =>
 		processes.Count > 0
-		&& processes.All(run => run.Status != RunningStatus || run.WaitingOn.Count > 0)
+		&& processes.All(run => run.Status != RunningStatus || IsParked(run))
 		&& quiet >= TimeSpan.FromMilliseconds(QuietMs)
 		&& waited >= TimeSpan.FromMilliseconds(Math.Min(MinimumWaitMs, timeoutSeconds * 1000));
+
+	// Parked only on an element that waits for something outside the run - a user task, a timer, a catch event. A
+	// running element-log row of another type is an element still executing (a long script task), not a parked run.
+	internal static bool IsParked(SmokeProcessRun run) =>
+		run.Status == RunningStatus && (run.WaitingOn ?? []).Any(element => IsWaitingType(element.Type));
+
+	private static bool IsWaitingType(string type) =>
+		type is not null && (type.EndsWith("UserTask", StringComparison.Ordinal)
+			|| type.Contains("IntermediateCatch", StringComparison.Ordinal)
+			|| type.Contains("EventBasedGateway", StringComparison.Ordinal)
+			|| type.Contains("ReceiveTask", StringComparison.Ordinal));
 
 	private static bool IsFinal(SmokeProcessRun run) => run.Status is "completed" or ErrorStatus or CancelledStatus;
 
@@ -309,23 +460,23 @@ internal sealed class TriggerSmokeRunner(
 			ProcessRunState state = verification.Monitor.Read(Guid.Parse(run.Id), timeoutMs);
 			string status = state.StatusValue switch {
 				0 => "inactive", 1 => RunningStatus, 2 => "completed", 3 => ErrorStatus, 4 => CancelledStatus, 5 => "cancelling",
-				null => "unknown",
-				_ => $"unknown-status-{state.StatusValue}"
+				null => UnknownStatus,
+				_ => $"{UnknownStatus}-status-{state.StatusValue}"
 			};
 			return new SmokeProcessRun(run.Id, run.Title, status,
 				state.StatusValue == 3 ? UntrustedText.Fenced(state.ErrorSummary) ?? "no error text was logged" : null,
 				state.WaitingOn);
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			return new SmokeProcessRun(run.Id, run.Title, "unknown",
+			return new SmokeProcessRun(run.Id, run.Title, UnknownStatus,
 				"its state could not be read: " + (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name), []);
 		}
 	}
 
 	// Time links nothing to the trigger: anything another session - the same login included - created or started in
 	// the window looks the same. So cleanup acts only on what it can tie to this call: the trigger it created, the
-	// caller's new records whose lookup points at the trigger or at another such record, and a run only when it holds
-	// one of those records. Everything else is reported in cleanup.skipped and left alone.
+	// caller's new records whose lookup points at the trigger or at another such record, and a run only when it is
+	// attributable and holds one of those records. Everything else is reported in cleanup.skipped and left alone.
 	private void CleanUp(TriggerSmokeRequest request, WatchBaseline records, List<CreatedRecord> runs, string triggerId,
 		DateTimeOffset stopAt, TriggerSmokeResult result) {
 		result.Cancelled = [];
@@ -339,14 +490,14 @@ internal sealed class TriggerSmokeRunner(
 			return;
 		}
 		string me = records.CurrentUserContactId;
-		HashSet<string> ours = ProvablyOurs(triggerId, result.Created, me, stopAt, result);
-		if (CancelHoldingRuns(ours, runs, me, stopAt, result)) {
+		RecordProvenance provenance = Tie(triggerId, me, stopAt, result);
+		if (CancelHoldingRuns(provenance, runs, me, stopAt, result)) {
 			// A run cancelled mid-way can write before it stops; read again so nothing it wrote is missed.
 			ReadCreated(request, records, triggerId, stopAt, result);
-			ours = ProvablyOurs(triggerId, result.Created, me, stopAt, result);
+			provenance = Tie(triggerId, me, stopAt, result);
 		}
 		List<CreatedRecord> all = [.. result.Created, result.Trigger];
-		List<CreatedRecord> mine = all.Where(record => ours.Contains(record.Id)).ToList();
+		List<CreatedRecord> mine = all.Where(record => provenance.Tied.Contains(record.Id)).ToList();
 		Dictionary<string, IReadOnlyCollection<string>> references = records.Entities
 			.Where(watch => watch.Error is null)
 			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.OrdinalIgnoreCase);
@@ -366,77 +517,21 @@ internal sealed class TriggerSmokeRunner(
 		}
 	}
 
-	// The trigger, then every new record of the caller whose lookup points at a record already in the set.
-	private HashSet<string> ProvablyOurs(string triggerId, IReadOnlyList<CreatedRecord> created, string me,
-		DateTimeOffset stopAt, TriggerSmokeResult result) {
-		HashSet<string> ours = new(StringComparer.OrdinalIgnoreCase) { triggerId };
-		List<CreatedRecord> candidates = me is null ? [] : created
+	// The trigger, then every new record of the caller whose lookup points at a record already tied; and, for every
+	// record read, the run whose live element holds it.
+	private RecordProvenance Tie(string triggerId, string me, DateTimeOffset stopAt, TriggerSmokeResult result) {
+		List<CreatedRecord> candidates = me is null ? [] : result.Created
 			.Where(record => record.Id is not null && string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase))
 			.ToList();
-		Dictionary<string, HashSet<string>> pointsAt = ReadLookupValues(candidates, stopAt, result);
-		List<string> linked;
-		do {
-			linked = candidates
-				.Select(record => record.Id)
-				.Where(id => !ours.Contains(id) && pointsAt.TryGetValue(id, out HashSet<string> values) && values.Overlaps(ours))
-				.ToList();
-			ours.UnionWith(linked);
-		} while (linked.Count > 0);
-		return ours;
+		RecordProvenance provenance = verification.Provenance.Resolve([.. candidates, result.Trigger], [triggerId], [],
+			RequestMs, stopAt);
+		result.Warnings.AddRange(provenance.Warnings.Except(result.Warnings));
+		return provenance;
 	}
 
-	// Per record id, the values of its lookup columns (audit columns excluded). An entity that cannot be read links
-	// nothing, so its records stay skipped.
-	private Dictionary<string, HashSet<string>> ReadLookupValues(IReadOnlyList<CreatedRecord> records,
-		DateTimeOffset stopAt, TriggerSmokeResult result) {
-		Dictionary<string, HashSet<string>> values = new(StringComparer.OrdinalIgnoreCase);
-		foreach (IGrouping<string, CreatedRecord> entity in records.GroupBy(record => record.Entity, StringComparer.OrdinalIgnoreCase)) {
-			try {
-				List<string> lookups = schemaReader.GetByName(entity.Key, Budget(stopAt, RequestMs)).Columns
-					.Where(column => !string.IsNullOrWhiteSpace(column.ReferenceSchemaName) && !AuditColumns.Contains(column.Name)
-						&& CreatedRecordWatcher.IsValidEntityName(column.Name))
-					.Select(column => column.Name)
-					.ToList();
-				if (lookups.Count == 0) {
-					continue;
-				}
-				foreach (JToken row in SelectByIds(entity.Key, lookups, entity.Select(record => record.Id), stopAt)) {
-					values[row["Id"]?.ToString() ?? string.Empty] = lookups
-						.Select(column => LookupValue(row[column]))
-						.Where(value => value is not null)
-						.ToHashSet(StringComparer.OrdinalIgnoreCase);
-				}
-			}
-			catch (Exception exception) when (exception is not OutOfMemoryException) {
-				result.Warnings.Add($"cleanup could not read the lookups of the new {entity.Key} records, so none of them "
-					+ "can be tied to the trigger: " + (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name));
-			}
-		}
-		return values;
-	}
-
-	private JArray SelectByIds(string entity, IEnumerable<string> columns, IEnumerable<string> ids, DateTimeOffset stopAt) {
-		List<string> idList = ids.ToList();
-		JObject selected = new() { ["Id"] = ClassicEntitySchemaQuery.Column("Id") };
-		foreach (string column in columns) {
-			selected[column] = ClassicEntitySchemaQuery.Column(column);
-		}
-		JObject query = ClassicEntitySchemaQuery.Query(entity, selected,
-			ClassicEntitySchemaQuery.Group(("ids", ClassicEntitySchemaQuery.InFilter("Id", idList, GuidDataValueType))),
-			idList.Count);
-		string json = applicationClient.ExecutePostRequest(serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
-			query.ToString(Formatting.None), Budget(stopAt, RequestMs), maxAttempts: 1);
-		return DataServiceSelectResponse.ReadRows(json);
-	}
-
-	private static string LookupValue(JToken value) {
-		string text = value is JObject lookup ? lookup["value"]?.ToString() : value?.ToString();
-		return Guid.TryParse(text, out Guid id) && id != Guid.Empty ? id.ToString("D") : null;
-	}
-
-	// The runs that hold one of our records through ProcessElementId: the record's live element data row names the
-	// run. Only such a run is cancelled, and only one the caller started; a run merely started in the window is not.
-	private bool CancelHoldingRuns(HashSet<string> ours, List<CreatedRecord> runs, string me, DateTimeOffset stopAt,
+	// Only a running attributable run that holds one of our records through ProcessElementId is cancelled; a run merely
+	// started in the window is not.
+	private bool CancelHoldingRuns(RecordProvenance provenance, List<CreatedRecord> runs, string me, DateTimeOffset stopAt,
 		TriggerSmokeResult result) {
 		List<SmokeProcessRun> running = result.Processes.Where(run => run.Status == RunningStatus
 			&& me is not null && string.Equals(runs.FirstOrDefault(record => record.Id == run.ProcessId)?.CreatedById, me,
@@ -444,7 +539,10 @@ internal sealed class TriggerSmokeRunner(
 		if (running.Count == 0) {
 			return false;
 		}
-		HashSet<string> holding = ReadHoldingRuns([.. result.Created, result.Trigger], ours, stopAt, result);
+		HashSet<string> holding = provenance.Tied
+			.Select(id => provenance.HoldingRun.GetValueOrDefault(id))
+			.Where(run => run is not null)
+			.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		bool cancelledAny = false;
 		foreach (string processId in running.Select(run => run.ProcessId).Where(holding.Contains)) {
 			if (Budget(stopAt, RequestMs) < MinimumRequestMs) {
@@ -454,8 +552,14 @@ internal sealed class TriggerSmokeRunner(
 			if (CancelAndWait(Guid.Parse(processId), stopAt, result)) {
 				cancelledAny = true;
 				result.Cancelled.Add(processId);
+				// QA D4: the answer keeps what the run was doing when cleanup stopped it.
 				result.Processes = result.Processes
-					.Select(run => run.ProcessId == processId ? run with { Status = CancelledStatus, WaitingOn = [] } : run)
+					.Select(run => run.ProcessId == processId
+						? run with {
+							Status = CancelledStatus, WaitingOn = [],
+							StateBeforeCancel = new SmokeRunState(run.Status, run.WaitingOn)
+						}
+						: run)
 					.ToList();
 			}
 		}
@@ -466,39 +570,18 @@ internal sealed class TriggerSmokeRunner(
 		return cancelledAny;
 	}
 
-	private HashSet<string> ReadHoldingRuns(IEnumerable<CreatedRecord> records, HashSet<string> ours, DateTimeOffset stopAt,
-		TriggerSmokeResult result) {
-		try {
-			HashSet<string> elements = ReadProcessElements(records, ours, stopAt);
-			return elements.Count == 0
-				? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-				: SelectByIds("SysProcessElementData", ["SysProcess"], elements, stopAt)
-					.Select(row => LookupValue(row["SysProcess"]))
-					.Where(run => run is not null)
-					.ToHashSet(StringComparer.OrdinalIgnoreCase);
-		}
-		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			result.Warnings.Add("cleanup could not tell which run holds the records it deletes, so no run was cancelled: "
-				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name));
-			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-		}
-	}
-
-	// The ProcessElementId values of our records, for the entities that have the column.
-	private HashSet<string> ReadProcessElements(IEnumerable<CreatedRecord> records, HashSet<string> ours,
+	private JArray SelectByIds(string entity, IEnumerable<(string Alias, string Path)> columns, IReadOnlyCollection<string> ids,
 		DateTimeOffset stopAt) {
-		HashSet<string> elements = new(StringComparer.OrdinalIgnoreCase);
-		foreach (IGrouping<string, CreatedRecord> entity in records.Where(record => record is not null && ours.Contains(record.Id))
-				.GroupBy(record => record.Entity, StringComparer.OrdinalIgnoreCase)) {
-			bool hasElement = schemaReader.GetByName(entity.Key, Budget(stopAt, RequestMs)).Columns
-				.Any(column => string.Equals(column.Name, ProcessElementColumn, StringComparison.Ordinal));
-			if (hasElement) {
-				elements.UnionWith(SelectByIds(entity.Key, [ProcessElementColumn], entity.Select(record => record.Id), stopAt)
-					.Select(row => LookupValue(row[ProcessElementColumn]))
-					.Where(element => element is not null));
-			}
+		JObject selected = new() { ["Id"] = ClassicEntitySchemaQuery.Column("Id") };
+		foreach ((string alias, string path) in columns) {
+			selected[alias] = ClassicEntitySchemaQuery.Column(path);
 		}
-		return elements;
+		JObject query = ClassicEntitySchemaQuery.Query(entity, selected,
+			ClassicEntitySchemaQuery.Group(("ids", ClassicEntitySchemaQuery.InFilter("Id", ids, GuidDataValueType))),
+			ids.Count);
+		string json = applicationClient.ExecutePostRequest(serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select),
+			query.ToString(Formatting.None), Budget(stopAt, RequestMs), maxAttempts: 1);
+		return DataServiceSelectResponse.ReadRows(json);
 	}
 
 	private bool CancelAndWait(Guid processId, DateTimeOffset stopAt, TriggerSmokeResult result) {

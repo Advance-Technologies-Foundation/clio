@@ -22,7 +22,7 @@ public sealed class TriggerSmokeTool(
 
 	internal const string ToolName = "trigger-smoke";
 
-	internal const string ValidArgsHint = "Valid: environment-name, entity, values, watch, timeout, cleanup.";
+	internal const string ValidArgsHint = "Valid: environment-name, entity, values, watch, process, timeout, cleanup.";
 
 	/// <summary>Runs one trigger smoke check.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
@@ -37,16 +37,18 @@ public sealed class TriggerSmokeTool(
 		"Verify a record-triggered (signal-start) process in ONE call - the check run-process cannot do, because a " +
 		"signal start cannot be launched directly. Creates the triggering record from `values`, waits up to `timeout` " +
 		"seconds for the process runs it starts (from SysProcessLog) to finish or park, and returns `processes` " +
-		"[{processId, name, status, error, waitingOn}] and `created` [{entity, id, title}] - the records that appeared " +
-		"in the `watch` entities. Then, unless cleanup=false, it deletes only what it can tie to this call: the trigger, " +
-		"and the caller's new records whose lookup points at the trigger (or at another such record), children first; " +
-		"it cancels a still-running run only when that run holds one of those records. " +
-		"success=false when the trigger could not be created, no run started, or a started run ended in error. Runs and " +
-		"records found only by their time - another user's, or the same login's from another session - can appear " +
-		"too; they are never cancelled or deleted, and cleanup.skipped lists them. " +
+		"[{processId, name, status, error, waitingOn, stateBeforeCancel}] - only runs attributable to this call: the " +
+		"caller's own, and with `process` only that process's - `unrelated` [{processId, name, reason}] for the other " +
+		"runs of the window, which never count, and `created` [{entity, id, title}] - the records that appeared in the " +
+		"`watch` entities. Then, unless cleanup=false, it deletes only what it can tie to this call: the trigger, and " +
+		"the caller's new records whose lookup points at the trigger (or at another such record), children first; it " +
+		"cancels a still-running attributable run only when that run holds one of those records. A record the process " +
+		"created with no lookup to the trigger is NOT deleted: it stays in cleanup.skipped, so the stand is not " +
+		"necessarily clean afterwards. success=false when the trigger could not be created, no attributable run " +
+		"started, one ended in error, or the state of one could not be read. " +
 		McpToolDescriptions.CorrelationIdOnEveryResponse)]
 	public TriggerSmokeResponse Run(
-		[Description("Parameters: environment-name, entity, values, watch, timeout, cleanup.")]
+		[Description("Parameters: environment-name, entity, values, watch, process, timeout, cleanup.")]
 		[Required]
 		TriggerSmokeArgs args) {
 		string correlationId = correlationIds.New();
@@ -74,7 +76,8 @@ public sealed class TriggerSmokeTool(
 				args.Values ?? [],
 				args.Watch ?? [],
 				args.Timeout ?? TriggerSmokeRunner.DefaultTimeoutSeconds,
-				args.Cleanup ?? true));
+				args.Cleanup ?? true,
+				string.IsNullOrWhiteSpace(args.Process) ? null : args.Process.Trim()));
 			return TriggerSmokeResponse.From(result);
 		}
 		catch (Exception exception) {
@@ -144,6 +147,13 @@ public sealed record TriggerSmokeArgs {
 	[Required]
 	public string[]? Watch { get; init; }
 
+	/// <summary>The process under test.</summary>
+	[JsonPropertyName("process")]
+	[Description("Code or caption of the process under test. Only its runs (and their sub-processes) decide success; "
+		+ "every other run of the window goes to `unrelated`. Without it, every run the calling login started in the "
+		+ "window counts, a scheduled one of the same login included.")]
+	public string? Process { get; init; }
+
 	/// <summary>Wait, in seconds.</summary>
 	[JsonPropertyName("timeout")]
 	[Description("Seconds to wait for runs to start and finish or park, 1-30, default 15. The wait ends early once "
@@ -152,9 +162,10 @@ public sealed record TriggerSmokeArgs {
 
 	/// <summary>Whether to clean up.</summary>
 	[JsonPropertyName("cleanup")]
-	[Description("Default true: delete the trigger and the caller's new records that point at it, children first, "
-		+ "cancelling first a still-running run that holds one of them. Nothing else is cancelled or deleted. false "
-		+ "keeps everything for inspection.")]
+	[Description("Default true: delete the trigger and the caller's new records that point at it through a lookup, "
+		+ "children first, cancelling first a still-running run of this call that holds one of them. Nothing else is "
+		+ "cancelled or deleted - a created record with no lookup to the trigger stays and is listed in cleanup.skipped. "
+		+ "false keeps everything for inspection.")]
 	public bool? Cleanup { get; init; }
 }
 
@@ -176,6 +187,10 @@ public sealed record TriggerSmokeResponse {
 	/// <summary>See <see cref="TriggerSmokeResult.Processes"/>.</summary>
 	[JsonPropertyName("processes"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<SmokeProcessRun>? Processes { get; init; }
+
+	/// <summary>See <see cref="TriggerSmokeResult.Unrelated"/>.</summary>
+	[JsonPropertyName("unrelated"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<UnrelatedRun>? Unrelated { get; init; }
 
 	/// <summary>See <see cref="TriggerSmokeResult.Created"/>.</summary>
 	[JsonPropertyName("created"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -204,6 +219,7 @@ public sealed record TriggerSmokeResponse {
 		Error = result.Error,
 		Trigger = result.Trigger,
 		Processes = result.Processes,
+		Unrelated = result.Unrelated.Count > 0 ? result.Unrelated : null,
 		Created = result.Created,
 		Cleanup = result.Cleanup,
 		Cancelled = result.Cancelled,
