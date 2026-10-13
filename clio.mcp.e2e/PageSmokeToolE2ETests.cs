@@ -122,6 +122,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 				string text = result.Content.OfType<TextContentBlock>().First().Text;
 				JsonElement response = JsonDocument.Parse(text).RootElement.Clone();
 				IgnoreWithoutBrowser(response);
+				TestContext.Progress.WriteLine($"page-smoke reply: {System.Text.Encoding.UTF8.GetByteCount(text)} bytes");
 
 				// Assert
 				response.GetProperty("success").GetBoolean().Should().BeTrue(because: text);
@@ -141,6 +142,8 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 				click.GetProperty("consoleErrors").EnumerateArray().Select(item => item.GetProperty("text").GetString())
 					.Should().Contain(error => error!.Contains("stub handler failed"), because: "the console error is collected")
 					.And.Contain(error => error!.Contains("stub async failure"), because: "the uncaught exception is collected");
+				response.TryGetProperty("buttonsOmitted", out JsonElement _).Should().BeFalse(because: "nothing is over the cap");
+				System.Text.Encoding.UTF8.GetByteCount(text).Should().BeLessThan(14_000, because: "the reply stays bounded");
 				text.Should().NotContain("stub-auth", because: "a session cookie value never reaches the reply");
 				text.Should().NotContain("stub-csrf", because: "a session cookie value never reaches the reply");
 			},

@@ -174,6 +174,7 @@ public sealed class PageSmokeRunnerTests {
 			because: "the url is reported relative to the environment");
 		result.Title.Should().Be("Order 1", because: "the inventory carries the title");
 		result.Buttons.Select(button => button.Name).Should().Equal(["SaveButton", "RunButton"], because: "both are visible");
+		result.ButtonsOmitted.Should().Be(0, because: "nothing was over the cap");
 		result.Fields.Should().ContainSingle(because: "one field is visible").Which.Required.Should().BeTrue(
 			because: "the required flag is kept");
 		List<string> methods = harness.Cdp.Calls.Select(call => call.Method).ToList();
@@ -501,5 +502,7 @@ public sealed class PageSmokeRunnerTests {
 			because: "the reply must stay well under the 20 KB spill line");
 		result.Fields.Should().OnlyContain(field => field.Value == null, because: "values go first");
 		result.Warnings.Should().Contain(warning => warning.Contains("cut"), because: "the caller is told what is missing");
+		(result.FieldsOmitted + result.Fields.Count).Should().Be(60, because: "every field cut is counted");
+		(result.ButtonsOmitted + result.Buttons.Count).Should().Be(40, because: "every button cut is counted");
 	}
 }

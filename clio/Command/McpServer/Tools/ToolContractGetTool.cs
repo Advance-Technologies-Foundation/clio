@@ -5188,8 +5188,8 @@ internal static class ToolContractCatalog {
 		const string watchField = "watch";
 		return new ToolContractDefinition(
 			PageSmokeTool.ToolName,
-			"Opens a Freedom UI form page in a headless browser and reports its visible buttons, fields and console errors in one call. " +
-			"Use it to check a page at runtime instead of writing a Playwright script: it logs in with the environment's stored credentials " +
+			"Opens a Freedom UI form page headless and reports its buttons, fields and console errors. " +
+			"Use it only when the task needs a UI check, instead of a Playwright script or browser steps; it is not a routine step after every page change. It logs in with the environment's stored credentials " +
 			"(no cookie or password is returned), opens #Card/{page}/edit/{record-id} (add mode without record-id), waits until the page is ready " +
 			"(Shell up, no loading mask, controls unchanged for 1.5 s), and lists buttons [{name, caption, disabled}], fields " +
 			"[{name, type, caption, required, readonly, value, error}] and consoleErrors [{kind, text, count, url}]. " +
@@ -5218,8 +5218,8 @@ internal static class ToolContractCatalog {
 				Field("url", StringType, "The opened address, relative to the environment."),
 				Field("mode", StringType, "edit or add."),
 				Field("title", StringType, "The page title."),
-				Field("buttons", ArrayType, "Visible page buttons {name, caption, disabled}, at most 40."),
-				Field("fields", ArrayType, "Visible fields {name, type, caption, required, readonly, value, error}, at most 60; a password value is never reported."),
+				Field("buttons", ArrayType, "Visible page buttons {name, caption, disabled}, at most 30; buttonsOmitted counts the rest."),
+				Field("fields", ArrayType, "Visible fields {name, type, caption, required, readonly, value, error}, at most 40; fieldsOmitted counts the rest; a password value is never reported."),
 				Field("consoleErrors", ArrayType, "Errors logged while the page loaded: {kind: exception|console|log, text, count, url (path of a failed request)}."),
 				Field("click", ObjectType, "With click: outcome (clicked, not-found, ambiguous, disabled), name, caption, candidates, url, navigations, consoleErrors, dialogs, toasts, invalidFields, created, settled."),
 				Field("warnings", ArrayType, "Caveats, including what was cut to keep the reply small.")),

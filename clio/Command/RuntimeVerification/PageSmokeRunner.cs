@@ -131,9 +131,17 @@ public sealed class PageSmokeResult {
 	[JsonPropertyName("buttons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public List<PageButton> Buttons { get; set; }
 
+	/// <summary>Visible buttons not listed, because of the cap or to keep the reply small.</summary>
+	[JsonPropertyName("buttonsOmitted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ButtonsOmitted { get; set; }
+
 	/// <summary>Visible fields, at most <see cref="FreedomUiPageScripts.MaxFields"/>.</summary>
 	[JsonPropertyName("fields"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public List<PageField> Fields { get; set; }
+
+	/// <summary>Visible fields not listed, because of the cap or to keep the reply small.</summary>
+	[JsonPropertyName("fieldsOmitted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int FieldsOmitted { get; set; }
 
 	/// <summary>Errors the page logged while it loaded.</summary>
 	[JsonPropertyName("consoleErrors")]
@@ -379,12 +387,8 @@ internal sealed class PageSmokeRunner(
 		result.Title = inventory.Title;
 		result.Buttons = inventory.Buttons ?? [];
 		result.Fields = inventory.Fields ?? [];
-		if (inventory.TotalButtons > result.Buttons.Count) {
-			result.Warnings.Add($"{inventory.TotalButtons - result.Buttons.Count} more visible button(s) not listed.");
-		}
-		if (inventory.TotalFields > result.Fields.Count) {
-			result.Warnings.Add($"{inventory.TotalFields - result.Fields.Count} more visible field(s) not listed.");
-		}
+		result.ButtonsOmitted = Math.Max(0, inventory.TotalButtons - result.Buttons.Count);
+		result.FieldsOmitted = Math.Max(0, inventory.TotalFields - result.Fields.Count);
 		if (inventory.Scope != "page") {
 			result.Warnings.Add("No page outlet (crt-navigation-schema-outlet) was found, so buttons and fields were "
 				+ "read from the whole document, the Shell's own included.");
@@ -575,8 +579,12 @@ internal sealed class PageSmokeRunner(
 		}
 		int before = Count(result);
 		for (int round = 0; round < 6 && Size(result) > MaxReplyBytes; round++) {
+			int fields = result.Fields?.Count ?? 0;
+			int buttons = result.Buttons?.Count ?? 0;
 			result.Fields = Half(result.Fields);
 			result.Buttons = Half(result.Buttons);
+			result.FieldsOmitted += fields - (result.Fields?.Count ?? 0);
+			result.ButtonsOmitted += buttons - (result.Buttons?.Count ?? 0);
 			result.ConsoleErrors = Half(result.ConsoleErrors.ToList());
 			if (result.Click is not null) {
 				result.Click.Candidates = Half(result.Click.Candidates);

@@ -28,10 +28,10 @@ internal static class FreedomUiPageScripts {
 	internal const int MaxText = 60;
 
 	/// <summary>Most buttons reported.</summary>
-	internal const int MaxButtons = 40;
+	internal const int MaxButtons = 30;
 
 	/// <summary>Most fields reported.</summary>
-	internal const int MaxFields = 60;
+	internal const int MaxFields = 40;
 
 	// Helpers shared by every script. visible() uses checkVisibility where the browser has it (Chromium 105+), which
 	// also sees opacity:0 and visibility:hidden; a field component is one of FIELD_TAGS.

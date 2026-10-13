@@ -85,8 +85,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Measured 47495 bytes with it registered (238 for its index entry); next 256-byte step is 47616 (186).
 	// Re-pinned for ENG-103024: trigger-smoke is one more long-tail tool on top of that (about 190 for its index
 	// entry); next 256-byte step is 47872 (187).
-	// Re-pinned for ENG-103032: page-smoke is one more long-tail tool with a curated contract. Measured 48009 bytes
-	// with it registered (137 over the 47872 ceiling); next 256-byte step is 48128 (188).
+	// Re-pinned for ENG-103032: page-smoke is one more long-tail tool with a curated contract. Measured 47786 bytes
+	// without it and 47973 with it (186 bytes for its index entry, shorter than trigger-smoke's 223), 101 over the
+	// 47872 ceiling; next 256-byte step is 48128 (188).
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.

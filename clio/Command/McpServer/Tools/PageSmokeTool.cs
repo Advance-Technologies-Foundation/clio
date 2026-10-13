@@ -49,12 +49,12 @@ public sealed class PageSmokeTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.BrowserSessionCache)]
 	[Description(
-		"Open a Freedom UI form page in a headless browser and report its visible buttons, fields and console errors in " +
-		"one call. Use it instead of writing a Playwright script to look at a page. It logs in with the environment's " +
+		"Open a Freedom UI form page headless and report its buttons, fields and console errors. Use it instead of " +
+		"writing a Playwright script or driving a browser, only when the task needs a UI check. It logs in with the environment's " +
 		"stored credentials (no cookie or password is ever returned), opens {uri}/0/Shell/#Card/{page}/edit/{record-id} " +
 		"(add mode without record-id), waits up to `timeout` seconds for the page to be ready, and returns `buttons` " +
 		"[{name, caption, disabled}], `fields` [{name, type, caption, required, readonly, value, error}] and " +
-		"`consoleErrors` [{kind, text, count, url}] (uncaught exceptions, console.error, failed requests). Read-only by " +
+		"`consoleErrors` [{kind, text, count, url}]; a longer list is cut and `buttonsOmitted`/`fieldsOmitted` count the rest (uncaught exceptions, console.error, failed requests). Read-only by " +
 		"default. `click` (a caption or element name) is a WRITE: it presses that one button like a user - Save can " +
 		"create or change records, a process button can start a process - then reports `click` {outcome, url, " +
 		"navigations, consoleErrors, dialogs, toasts, invalidFields, created}; `created` lists the records that " +
@@ -224,9 +224,17 @@ public sealed record PageSmokeResponse {
 	[JsonPropertyName("buttons"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<PageButton>? Buttons { get; init; }
 
+	/// <summary>See <see cref="PageSmokeResult.ButtonsOmitted"/>.</summary>
+	[JsonPropertyName("buttonsOmitted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? ButtonsOmitted { get; init; }
+
 	/// <summary>See <see cref="PageSmokeResult.Fields"/>.</summary>
 	[JsonPropertyName("fields"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<PageField>? Fields { get; init; }
+
+	/// <summary>See <see cref="PageSmokeResult.FieldsOmitted"/>.</summary>
+	[JsonPropertyName("fieldsOmitted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? FieldsOmitted { get; init; }
 
 	/// <summary>See <see cref="PageSmokeResult.ConsoleErrors"/>.</summary>
 	[JsonPropertyName("consoleErrors"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -255,7 +263,9 @@ public sealed record PageSmokeResponse {
 		LoadMs = result.LoadMs,
 		Title = result.Title,
 		Buttons = result.Buttons,
+		ButtonsOmitted = result.ButtonsOmitted > 0 ? result.ButtonsOmitted : null,
 		Fields = result.Fields,
+		FieldsOmitted = result.FieldsOmitted > 0 ? result.FieldsOmitted : null,
 		ConsoleErrors = result.ConsoleErrors,
 		Click = result.Click,
 		Warnings = result.Warnings.Count > 0 ? result.Warnings : null
