@@ -753,6 +753,9 @@ public sealed class PageSyncTool(
 			}
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
+				// A rejected save can still carry findings for the same body (update-page keeps them beside the
+				// error), so they travel in the per-page envelope here too.
+				validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
