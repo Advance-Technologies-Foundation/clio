@@ -889,7 +889,7 @@ the D11 descriptor equivalent of the SC-1 elements that the cut supports:
 
 | Cut | Elements | Expected |
 |---|---|---|
-| PK-PT | `PFile`, `PFiles` (FileCollection, `direction: Variable`), `PFilesOut` (FileCollection, default) | equal under the AC-8 comparison rule (ENG-95984 File process parameter type test-plan section 4.2: N5, PT-a, N9, N15, N14, PT-b) |
+| PK-PT | `PFile`, `PFiles` (FileCollection, no direction: the Variable default, D3), `PFilesOut` (FileCollection, `direction: Out`; corrected 2026-10-13: since D3 made Variable the default, only an explicit Out builds the twin of `MarkProcessesToCancel.FilesCollection`) | equal under the AC-8 comparison rule (ENG-95984 File process parameter type test-plan section 4.2: N5, PT-a, N9, N15, N14, PT-b) |
 | PK-OA | E1, E2 | equal; E3-E5 are refused with the D15 text until SF |
 | PK-RP | E6, E7, E8, E9; E10 only if M1 passed | equal; SysFile targets refused until SF |
 | PK-SF | E3, E4, E5, E11 | equal; this closes the SF serialization AC |

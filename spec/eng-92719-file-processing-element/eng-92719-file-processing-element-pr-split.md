@@ -171,7 +171,8 @@ knowledge. A human merges each row.
 
 CL-PT-DOC and CL-DOC are numbered 0 and 0b: CL-PT-DOC must merge before PK-PT opens (E9); CL-DOC only
 needs to merge before PK-OA opens (E7) and can merge in parallel with PT, after CL-PT-DOC when both carry their
-analysis folders (E10).
+analysis folders (E10). On 2026-10-13 both analysis folders ride on CL-DOC's branch, so E10's condition does not hold
+and CL-DOC needs only E7.
 Knowledge branches live in a dedicated worktree under `.worktrees/<task>/` (`kbm/AGENTS.md:27-31`). net472
 package worktrees live on a short path, `C:/Projects/workspace/<short>`, because of MAX_PATH.
 
@@ -288,7 +289,8 @@ is a deliberate reading of the AGENTS.md sprint tracker rule for stacked drafts.
   D25, D26), `spec/stories/story-eng-95984-file-parameter-type-1.md`, `spec/test-plans/tp-eng-95984-file-parameter-type.md`,
   and `spec/sprint-status.yaml` rows in `ready-for-dev`.
 - The stories of PT's children: the three follow-up Sub-tasks (MH is not created: M3 refuted H-1).
-- The `../eng-95984-file-parameter-type/` folder, if the owner wants it in the repository.
+- Not the `../eng-95984-file-parameter-type/` folder: since 2026-10-13 it rides on CL-DOC's branch with the FE folder,
+  so the BMAD set is written self-contained.
 
 ### 5.8 BMAD artifacts each issue needs before its package PR opens
 
