@@ -4,6 +4,7 @@ using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -322,7 +323,8 @@ public class ModifyProcessAsNewVersionToolTests {
 		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
 
 		public FakeCommand(int exitCode = 0)
-			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
 		}
 

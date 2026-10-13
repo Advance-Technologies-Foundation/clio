@@ -55,6 +55,17 @@ diff sections and can discard comments inside those sections.
 > and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
 > `body-file`, or send the file contents as `body`.
 
+A successful (non-dry-run) MCP `update-page` save also returns `digest`: `validation`
+(`passed`, or `skipped` with `validate: false`), `basis` (`fragment` for append, `body` for
+replace), and `components` - one line per `viewConfigDiff` operation of the body that was
+written, such as `insert UsrPhone (crt.PhoneInput) in MainContainer`, at most 25 with the rest
+counted in `componentsOmitted`, `otherSections` (operation counts of `viewModelConfigDiff`,
+`modelConfigDiff` and `handlers` when present) and `checksum` - the post-save `SysSchema`
+checksum, the next save's conflict baseline (returned when the save ran with a baseline: a
+`get-page` baseline, a pinned `checksum`, or `force`). It confirms the write without a `get-page`
+(ENG-103023). An append whose fragment carried component operations that the merge could not
+write back returns no `digest`.
+
 The MCP `update-page` tool also accepts `include-operations: false`. It applies only with
 `verify: true`: the read-back page then carries `ownBodySummary.viewConfigDiffOpCounts`
 (operations per type) instead of the `viewConfigDiffOps` list.
