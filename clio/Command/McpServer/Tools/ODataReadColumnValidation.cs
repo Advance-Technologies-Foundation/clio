@@ -212,36 +212,55 @@ internal static class ODataReadColumnValidation {
 	internal static IReadOnlyList<string> Suggest(ODataFieldValidation.EntityShape shape, Reference reference,
 		string entity) {
 		string[] segments = reference.Path.Split('/');
-		bool pathOnly = IsPathOnlyContext(reference);
 		List<string> result = [];
 		if (segments.Length > 1 && shape.Root.Navigations.TryGetValue(segments[0], out string? navigation)
 			&& shape.NavigationTargets.TryGetValue(navigation, out ODataFieldValidation.TypeShape? target)) {
-			// The navigation as the metadata spells it, so a mis-cased one is corrected in the suggestion.
-			bool lastSegment = segments.Length == 2;
-			AddRanked(result, RankCandidates(MembersOf(target, reference.NavigationOnly), segments[1], entity),
-				name => navigation + "/" + (pathOnly && lastSegment ? PathOnlyForm(target, name) : name));
+			SuggestBehindNavigation(navigation, target, segments, reference, entity, result);
 		} else if (segments.Length > 1) {
-			// The first segment is not a navigation: correct it and keep the rest of the path, so
-			// Acount/Name becomes Account/Name rather than the bare Account.
-			if (segments.Length == 2 && !pathOnly && !reference.NavigationOnly) {
-				AddScalarFormOfIdPath(shape, segments, result);
-			}
-			string tail = string.Join("/", segments[1..]);
-			AddRanked(result, RankCandidates([.. shape.Root.Navigations], segments[0], entity),
-				name => CorrectTail(shape, name, tail, reference.NavigationOnly, pathOnly && segments.Length == 2)
-					is { } corrected
-					? name + "/" + corrected
-					: (pathOnly ? name + "/Id" : name));
+			SuggestForUnknownNavigation(shape, segments, reference, entity, result);
 		} else {
-			string subject = segments[0];
-			if (pathOnly && subject.Length > 2 && subject.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
-				&& shape.Root.Navigations.TryGetValue(subject[..^2], out string? stem)) {
-				result.Add(stem + "/Id");
-			}
-			AddRanked(result, RankCandidates(MembersOf(shape.Root, reference.NavigationOnly), subject, entity),
-				name => pathOnly ? PathOnlyForm(shape.Root, name) : name);
+			SuggestAtRoot(shape, segments[0], reference, entity, result);
 		}
 		return result;
+	}
+
+	/// <summary>A member misspelled behind a known navigation; the navigation is spelled as the metadata spells it.</summary>
+	private static void SuggestBehindNavigation(string navigation, ODataFieldValidation.TypeShape target,
+		string[] segments, Reference reference, string entity, List<string> result) {
+		bool pathOnly = IsPathOnlyContext(reference) && segments.Length == 2;
+		AddRanked(result, RankCandidates(MembersOf(target, reference.NavigationOnly), segments[1], entity),
+			name => navigation + "/" + (pathOnly ? PathOnlyForm(target, name) : name));
+	}
+
+	/// <summary>
+	/// The first segment is not a navigation: correct it and keep the rest of the path, so Acount/Name becomes
+	/// Account/Name rather than the bare Account.
+	/// </summary>
+	private static void SuggestForUnknownNavigation(ODataFieldValidation.EntityShape shape, string[] segments,
+		Reference reference, string entity, List<string> result) {
+		bool pathOnly = IsPathOnlyContext(reference);
+		if (segments.Length == 2 && !pathOnly && !reference.NavigationOnly) {
+			AddScalarFormOfIdPath(shape, segments, result);
+		}
+		string tail = string.Join("/", segments[1..]);
+		string bareFallback = pathOnly ? "/Id" : string.Empty;
+		AddRanked(result, RankCandidates([.. shape.Root.Navigations], segments[0], entity),
+			name => CorrectTail(shape, name, tail, reference.NavigationOnly, pathOnly && segments.Length == 2)
+				is { } corrected
+				? name + "/" + corrected
+				: name + bareFallback);
+	}
+
+	/// <summary>A single unknown name: in a filter or order-by a lookup becomes its navigation path.</summary>
+	private static void SuggestAtRoot(ODataFieldValidation.EntityShape shape, string subject, Reference reference,
+		string entity, List<string> result) {
+		bool pathOnly = IsPathOnlyContext(reference);
+		if (pathOnly && subject.Length > 2 && subject.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
+			&& shape.Root.Navigations.TryGetValue(subject[..^2], out string? stem)) {
+			result.Add(stem + "/Id");
+		}
+		AddRanked(result, RankCandidates(MembersOf(shape.Root, reference.NavigationOnly), subject, entity),
+			name => pathOnly ? PathOnlyForm(shape.Root, name) : name);
 	}
 
 	private static HashSet<string> MembersOf(ODataFieldValidation.TypeShape type, bool navigationOnly) =>
