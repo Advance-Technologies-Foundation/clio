@@ -137,6 +137,6 @@ public sealed record CreateUiProjectArgs(
 	bool Empty = false,
 
 	[property: JsonPropertyName("creatioVersion")]
-	[property: Description("Optional Creatio version to pick a matching UI project template")]
+	[property: Description("Optional Creatio version used to select the UI project template. Omitted, or 8.3.4 and later (10.x included), selects the current template; an older version selects the closest legacy template (8.0.3, 8.0.8 or 8.0.10). The output names the template used and its @creatio-devkit/common range.")]
 	string CreatioVersion = null
 );
