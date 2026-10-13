@@ -123,7 +123,7 @@ internal static class ProcessBlockKeyCheck {
 		return pointers;
 	}
 
-	private static Dictionary<string, string> Pointers(params (string Key, string Text)[] entries) =>
+	private static Dictionary<string, string> PointerMap(params (string Key, string Text)[] entries) =>
 		entries.ToDictionary(entry => entry.Key, entry => entry.Text, StringComparer.Ordinal);
 
 	#region Key sets (mirror the bundled CrtProcessBuilder request contracts)
@@ -148,7 +148,7 @@ internal static class ProcessBlockKeyCheck {
 
 	private static readonly KeySet RecordFilter = new KeySet("FilterDescriptor", Filter, null,
 			"object logicalOperation conditions groups",
-			pointers: Pointers(
+			pointers: PointerMap(
 				(Source, "a filter names the object it filters in 'object'"),
 				("filters", "a filter's conditions go in 'conditions' and nested groups in 'groups'")))
 		.With("conditions", FilterCondition)
@@ -199,14 +199,14 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet AccessRightsBlock = new KeySet("ChangeAccessRightsDescriptor", "accessRights",
 			"DescribeAccessRightsInfo", "object considerTimeInFilter add remove",
 			"objectSchemaUId addUnreadable removeUnreadable",
-			Pointers((Source, "the accessRights block names its object in 'object'")))
+			PointerMap((Source, "the accessRights block names its object in 'object'")))
 		.With("add remove", AccessRightsEntry);
 
 	private static readonly KeySet ApprovalBlock = new KeySet("ApprovalDescriptor", "approval", "DescribeApprovalInfo",
 			"purpose object recordId approver allowDelegation notifyApprover notifyAuthor ignoreEmailErrors",
 			"objectUId recordIdDisplay approverEmployeeDisplay approverRoleDisplay approverEmailTemplateDisplay "
 			+ "authorEmailTemplateDisplay approvalSchemaUId",
-			Pointers(
+			PointerMap(
 				("approverType", "write the approver nested: \"approver\":{\"type\":...}"),
 				("approverEmployee", "write the approver nested: \"approver\":{\"type\":\"employee\",\"employee\":...}"),
 				("approverRole", "write the approver nested: \"approver\":{\"type\":\"role\",\"role\":...}"),
@@ -230,7 +230,7 @@ internal static class ProcessBlockKeyCheck {
 			"page pageSchemaUId recordType editMode defaultValues recordId recommendation hint performer logActivity "
 			+ "resultsByColumn completion",
 			"object pageTypeUId",
-			Pointers(("completionMode", "write it nested: \"completion\":{\"mode\":...}")))
+			PointerMap(("completionMode", "write it nested: \"completion\":{\"mode\":...}")))
 		.With("defaultValues", ColumnValue)
 		.With(new KeySet("OpenEditPageRecordDescriptor", RecordId, null,
 			"value processParameter sourceElement sourceElementParameter sourceColumn expression"))
@@ -257,7 +257,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet SubProcessBlock = new KeySet("SubProcessDescriptor", "subProcess",
 			"DescribeSubProcessInfo", "processName processUId resync multiInstanceOptions",
 			"processCaption multiInstance inSync",
-			Pointers(("process", "name the called process in 'processName' (or 'processUId')")))
+			PointerMap(("process", "name the called process in 'processName' (or 'processUId')")))
 		.With(new KeySet("MultiInstanceOptionsDescriptor", "multiInstanceOptions", "DescribeMultiInstanceOptions",
 			"enabled executionMode ignoreErrors",
 			"inputCollection outputCollection completedIterationsCount terminatedIterationsCount totalIterationsCount "
@@ -281,7 +281,7 @@ internal static class ProcessBlockKeyCheck {
 	internal static readonly KeySet Element = WithBlocks(new KeySet("ProcessElementDescriptor", ElementKey,
 			"DescribeProcessElement", $"name type userTaskName caption {Signal} lane useBackgroundMode {Filter} {BlockKeys}",
 			"uid buildType managerItemUId position size filterDecodedCompletely deprecated writesConnectionsAtRuntime",
-			Pointers(
+			PointerMap(
 				("parameters", "an element's inputs are bound through the descriptor's top-level 'mappings' "
 					+ "(modify-business-process: an addMapping operation)"),
 				("connections", "\"Connected to\" links are set after the build with a modify-business-process "
@@ -293,7 +293,7 @@ internal static class ProcessBlockKeyCheck {
 	/// <summary>The <c>elementUpdate</c> of a <c>setElement</c> operation.</summary>
 	internal static readonly KeySet ElementUpdate = WithBlocks(new KeySet("ProcessElementUpdateDescriptor",
 		ElementUpdateKey, null, $"useBackgroundMode {BlockKeys}",
-		pointers: Pointers(
+		pointers: PointerMap(
 			(Filter, "a record filter is changed by its own operation: {\"op\":\"setFilter\",\"elementName\":...,"
 				+ "\"filter\":{...}}"),
 			(Signal, "a start signal is changed by its own operation: {\"op\":\"setSignal\",\"elementName\":...,"
