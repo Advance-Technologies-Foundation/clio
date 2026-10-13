@@ -5,7 +5,9 @@ using System.Text.Json;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.RuntimeVerification;
 using Clio.Common;
+using Clio.Common.EntitySchema;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -21,6 +23,8 @@ public sealed class TriggerSmokeRunnerTests {
 	private const string RunId = "e29511a0-b05e-4b8f-8155-a8a25b76754e";
 	private const string ActivityId = "489ae227-5516-487b-aa09-77de84b6feb4";
 	private const string CreateUrl = "http://sandbox/0/odata/UsrRequest";
+	private const string SelectUrl = "http://sandbox/0/DataService/json/SyncReply/SelectQuery";
+	private const string ElementId = "0c1a2b3c-4d5e-4f60-8a9b-0c1d2e3f4a5b";
 
 	private sealed record Harness(
 		TriggerSmokeRunner Runner,
@@ -30,12 +34,39 @@ public sealed class TriggerSmokeRunnerTests {
 		ICreatedRecordCleaner Cleaner);
 
 	private static Harness Create(string createResponse, IReadOnlyList<CreatedRecord> runs,
-		IReadOnlyList<CreatedRecord> records, params ProcessRunState[] states) {
+		IReadOnlyList<CreatedRecord> records, params ProcessRunState[] states) =>
+		Create(createResponse, runs, records, TriggerId, states);
+
+	// activityPointsAt: the value of the activity's UsrRequest lookup; the activity is held by RunId's element.
+	private static Harness Create(string createResponse, IReadOnlyList<CreatedRecord> runs,
+		IReadOnlyList<CreatedRecord> records, string activityPointsAt, params ProcessRunState[] states) {
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecuteNonReplayablePostRequest(CreateUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(createResponse);
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				JObject query = JObject.Parse(call.ArgAt<string>(1));
+				JObject columns = (JObject)query["columns"]["items"];
+				string rows = query.Value<string>("rootSchemaName") switch {
+					"Activity" when columns.ContainsKey("ProcessElementId") =>
+						$"[{{\"Id\":\"{ActivityId}\",\"ProcessElementId\":\"{ElementId}\"}}]",
+					"Activity" => $"[{{\"Id\":\"{ActivityId}\",\"UsrRequest\":{{\"value\":\"{activityPointsAt}\",\"displayValue\":\"x\"}}}}]",
+					"SysProcessElementData" => $"[{{\"Id\":\"{ElementId}\",\"SysProcess\":{{\"value\":\"{RunId}\"}}}}]",
+					_ => "[]"
+				};
+				return "{\"success\":true,\"rows\":" + rows + "}";
+			});
 		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
 		urls.Build(Arg.Any<string>()).Returns(call => "http://sandbox/0/" + call.Arg<string>());
+		urls.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemas = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemas.GetByName("Activity", Arg.Any<int>()).Returns(new RuntimeEntitySchemaResult(Guid.NewGuid(), "Activity",
+			Guid.NewGuid(), "Title", null, [
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "UsrRequest", null, null, 10, false, false, "UsrRequest"),
+				new RuntimeEntitySchemaColumnResult(Guid.NewGuid(), "ProcessElementId", null, null, 0, false, false, null)
+			]));
+		schemas.GetByName("UsrRequest", Arg.Any<int>()).Returns(new RuntimeEntitySchemaResult(Guid.NewGuid(), "UsrRequest",
+			Guid.NewGuid(), "UsrName", null, []));
 		WatchBaseline recordBaseline = new() {
 			Entities = [new EntityWatch { Entity = "UsrRequest" }, new EntityWatch { Entity = "Activity", References = ["UsrRequest"] }],
 			CurrentUserContactId = Me
@@ -48,10 +79,10 @@ public sealed class TriggerSmokeRunnerTests {
 			Arg.Any<DateTimeOffset?>()).Returns(recordBaseline);
 		WatchOutcome runOutcome = new();
 		runOutcome.Created.AddRange(runs);
-		watcher.Collect(processBaseline, Arg.Any<int>()).Returns(runOutcome);
+		watcher.Collect(processBaseline, Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(runOutcome);
 		WatchOutcome recordOutcome = new();
 		recordOutcome.Created.AddRange(records);
-		watcher.Collect(recordBaseline, Arg.Any<int>()).Returns(recordOutcome);
+		watcher.Collect(recordBaseline, Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(recordOutcome);
 		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
 		if (states.Length > 0) {
 			monitor.Read(Arg.Any<Guid>(), Arg.Any<int>()).Returns(states[0], states.Skip(1).ToArray());
@@ -62,7 +93,7 @@ public sealed class TriggerSmokeRunnerTests {
 			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>())
 			.Returns(call => new CleanupReport { Deleted = [.. call.Arg<IReadOnlyList<CreatedRecord>>()] });
 		DateTimeOffset now = DateTimeOffset.UtcNow;
-		TriggerSmokeRunner runner = new(client, urls, new RunVerificationServices(monitor, watcher, cleaner)) {
+		TriggerSmokeRunner runner = new(client, urls, new RunVerificationServices(monitor, watcher, cleaner), schemas) {
 			Clock = () => now,
 			Sleep = ms => now = now.AddMilliseconds(ms)
 		};
@@ -174,6 +205,40 @@ public sealed class TriggerSmokeRunnerTests {
 		harness.Monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
 		result.Cleanup.Skipped.Select(record => record.Id).Should().Equal([ActivityId],
 			because: "another user's record is reported, never deleted");
+	}
+
+	[Test]
+	[Description("A record the same login created in the window with no lookup to the trigger is not tied to this call: it is skipped, never deleted, and the parked run that holds it is not cancelled.")]
+	public void Run_Should_Not_Touch_A_Same_Login_Record_Not_Tied_To_The_Trigger() {
+		// Arrange
+		ProcessRunState parked = new(true, 1, null, [new WaitingElement("Notify", "ProcessSchemaUserTask")]);
+		Harness harness = Create($"{{\"Id\":\"{TriggerId}\"}}", [Run()], [Trigger(), Activity()],
+			"9d3c55a1-2b6e-4a43-9f43-6f3f1a2b7c11", parked);
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request());
+
+		// Assert
+		harness.Monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		result.Cleanup.Skipped.Select(record => record.Id).Should().Equal([ActivityId],
+			because: "nothing ties the activity to the trigger, so it may be another session's record");
+		result.Cleanup.Deleted.Select(record => record.Id).Should().Equal([TriggerId],
+			because: "only the record this call created is deleted");
+	}
+
+	[Test]
+	[Description("When the trigger create was not confirmed, cleanup cancels and deletes nothing: no record in the window can be shown to come from this call.")]
+	public void Run_Should_Not_Clean_Up_When_The_Trigger_Was_Not_Confirmed() {
+		// Arrange
+		Harness harness = Create("{}", [Run()], [Trigger(), Activity()]);
+
+		// Act
+		TriggerSmokeResult result = harness.Runner.Run(Request());
+
+		// Assert
+		harness.Cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default);
+		harness.Monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		result.Cleanup.Skipped.Should().HaveCount(2, because: "everything that appeared is reported, nothing is deleted");
 	}
 
 	[Test]

@@ -38,10 +38,12 @@ public sealed class TriggerSmokeTool(
 		"signal start cannot be launched directly. Creates the triggering record from `values`, waits up to `timeout` " +
 		"seconds for the process runs it starts (from SysProcessLog) to finish or park, and returns `processes` " +
 		"[{processId, name, status, error, waitingOn}] and `created` [{entity, id, title}] - the records that appeared " +
-		"in the `watch` entities. Then, unless cleanup=false, it cancels the runs it started that are still running and " +
-		"deletes what was created and the trigger itself, children first, only records the calling user created. " +
-		"success=false when the trigger could not be created, no run started, or a started run ended in error. Runs and records of other " +
-		"users in the same window can appear too; they are never cancelled or deleted. " +
+		"in the `watch` entities. Then, unless cleanup=false, it deletes only what it can tie to this call: the trigger, " +
+		"and the caller's new records whose lookup points at the trigger (or at another such record), children first; " +
+		"it cancels a still-running run only when that run holds one of those records. " +
+		"success=false when the trigger could not be created, no run started, or a started run ended in error. Runs and " +
+		"records found only by their time - another user's, or the same login's from another session - can appear " +
+		"too; they are never cancelled or deleted, and cleanup.skipped lists them. " +
 		McpToolDescriptions.CorrelationIdOnEveryResponse)]
 	public TriggerSmokeResponse Run(
 		[Description("Parameters: environment-name, entity, values, watch, timeout, cleanup.")]
@@ -150,8 +152,9 @@ public sealed record TriggerSmokeArgs {
 
 	/// <summary>Whether to clean up.</summary>
 	[JsonPropertyName("cleanup")]
-	[Description("Default true: cancel the caller's runs still running, then delete the created records and the "
-		+ "trigger, children first. false keeps everything for inspection.")]
+	[Description("Default true: delete the trigger and the caller's new records that point at it, children first, "
+		+ "cancelling first a still-running run that holds one of them. Nothing else is cancelled or deleted. false "
+		+ "keeps everything for inspection.")]
 	public bool? Cleanup { get; init; }
 }
 

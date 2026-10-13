@@ -17,6 +17,9 @@ Supervisor, so it can appear in the same window.
 **Why it is this way** — the signal is an entity event; the process engine logs execution, not causes.
 
 **What breaks if you ignore it** — reading every new run as caused by the trigger blames or cancels a
-scheduled job. trigger-smoke therefore reports every run in the window by name, and cancels only runs the
-calling user started that are still running; a filtered signal process keeps a shared stand from firing on
-other users' records.
+scheduled job, and a scheduled job runs as Supervisor - the usual clio login - so "started by the caller" does
+not mean "started by this call" either. trigger-smoke therefore reports every run in the window by name, deletes
+only the trigger and the caller's new records whose lookup points at it (or at another such record), and
+cancels a run only when it holds one of those records: the record's `ProcessElementId` is a
+`SysProcessElementData` row whose `SysProcess` is the run's `SysProcessLog` id (checked on the same stand).
+Everything else is left and listed in `cleanup.skipped`.

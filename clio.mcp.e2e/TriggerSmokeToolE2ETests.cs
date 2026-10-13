@@ -76,11 +76,27 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 			.Should().Contain(item => item.GetProperty("title").GetString() == ActivityTitle,
 				because: "the activity the signal run added must be reported");
 		response.GetProperty("cleanup").GetProperty("failed").GetArrayLength().Should().Be(0,
-			because: "the activity and the trigger contact are the caller's and deletable");
+			because: "the trigger contact is the caller's and deletable");
 		response.GetProperty("cleanup").GetProperty("deleted").EnumerateArray()
 			.Should().Contain(item => item.GetProperty("entity").GetString() == "Contact",
 				because: "the trigger itself is cleaned up too");
+		// This process's activity has no lookup to the contact, so nothing ties it to the trigger: time alone never
+		// licenses a delete, and cleanup leaves it in cleanup.skipped. The test removes its own activity by id.
+		JsonElement activity = response.GetProperty("cleanup").GetProperty("skipped").EnumerateArray()
+			.FirstOrDefault(item => item.GetProperty("title").GetString() == ActivityTitle);
+		activity.ValueKind.Should().Be(JsonValueKind.Object,
+			because: "a record not tied to the trigger is reported in cleanup.skipped, not deleted");
+		await DeleteAsync(arrange, environmentName, activity.GetProperty("id").GetString()!);
 	}
+
+	private static async Task DeleteAsync(ArrangeContext arrange, string environmentName, string activityId) =>
+		await arrange.Session.CallToolAsync(ODataDeleteTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName, ["entity"] = "Activity", ["id"] = activityId, ["confirm"] = true
+				}
+			},
+			arrange.CancellationTokenSource.Token);
 
 	[Test]
 	[Category("McpE2E.Sandbox")]
