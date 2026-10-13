@@ -72,7 +72,8 @@ public sealed class PageGetTool(
 				// components, meta.json (files.metaFile) carries them all, and the reply carries the counts.
 				Page = written.Page.ForResponse(args.IncludeOperations ?? false),
 				Editable = written.Editable,
-				Files = written.Files
+				Files = written.Files,
+				Warnings = written.Warnings
 			};
 		});
 	}
