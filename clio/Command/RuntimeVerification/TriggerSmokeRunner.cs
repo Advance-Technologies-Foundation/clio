@@ -258,16 +258,12 @@ internal sealed class TriggerSmokeRunner(
 			List<CreatedRecord> runs = outcome.Created;
 			// A run is read only while the wait lasts; one not reached keeps its last state, so a busy window cannot
 			// stretch a single poll past the wait.
-			result.Processes = runs.Select(run => final.TryGetValue(run.Id, out SmokeProcessRun done) ? done
-					: Clock() < until ? ReadRun(run, Budget(stopAt, RequestMs))
-					: last.TryGetValue(run.Id, out SmokeProcessRun seen) ? seen
-					: new SmokeProcessRun(run.Id, run.Title, "unknown", "not read: the wait ended first", []))
-				.ToList();
+			result.Processes = runs.Select(run => CurrentState(run, final, last, until, stopAt)).ToList();
 			foreach (SmokeProcessRun run in result.Processes) {
 				last[run.ProcessId] = run;
-			}
-			foreach (SmokeProcessRun run in result.Processes.Where(IsFinal)) {
-				final[run.ProcessId] = run;
+				if (IsFinal(run)) {
+					final[run.ProcessId] = run;
+				}
 			}
 			string signature = string.Join("|", result.Processes.Select(run => run.ProcessId + ":" + run.Status));
 			if (signature != lastSignature) {
@@ -275,10 +271,7 @@ internal sealed class TriggerSmokeRunner(
 				quietSince = Clock();
 			}
 			DateTimeOffset now = Clock();
-			bool settled = result.Processes.Count > 0
-				&& result.Processes.All(run => run.Status != RunningStatus || run.WaitingOn.Count > 0)
-				&& now - quietSince >= TimeSpan.FromMilliseconds(QuietMs)
-				&& now - started >= TimeSpan.FromMilliseconds(Math.Min(MinimumWaitMs, timeoutSeconds * 1000));
+			bool settled = IsSettled(result.Processes, now - quietSince, now - started, timeoutSeconds);
 			int leftMs = (int)(until - now).TotalMilliseconds;
 			if (settled || leftMs <= 0) {
 				result.Warnings.AddRange(outcome.Warnings);
@@ -287,6 +280,27 @@ internal sealed class TriggerSmokeRunner(
 			Sleep(Math.Min(PollIntervalMs, leftMs));
 		}
 	}
+
+	// A final run is not read again; others are read while the wait lasts, and keep their last state after it.
+	private SmokeProcessRun CurrentState(CreatedRecord run, Dictionary<string, SmokeProcessRun> final,
+		Dictionary<string, SmokeProcessRun> last, DateTimeOffset until, DateTimeOffset stopAt) {
+		if (final.TryGetValue(run.Id, out SmokeProcessRun done)) {
+			return done;
+		}
+		if (Clock() < until) {
+			return ReadRun(run, Budget(stopAt, RequestMs));
+		}
+		return last.TryGetValue(run.Id, out SmokeProcessRun seen)
+			? seen
+			: new SmokeProcessRun(run.Id, run.Title, "unknown", "not read: the wait ended first", []);
+	}
+
+	private static bool IsSettled(IReadOnlyList<SmokeProcessRun> processes, TimeSpan quiet, TimeSpan waited,
+		int timeoutSeconds) =>
+		processes.Count > 0
+		&& processes.All(run => run.Status != RunningStatus || run.WaitingOn.Count > 0)
+		&& quiet >= TimeSpan.FromMilliseconds(QuietMs)
+		&& waited >= TimeSpan.FromMilliseconds(Math.Min(MinimumWaitMs, timeoutSeconds * 1000));
 
 	private static bool IsFinal(SmokeProcessRun run) => run.Status is "completed" or ErrorStatus or CancelledStatus;
 
@@ -363,12 +377,12 @@ internal sealed class TriggerSmokeRunner(
 		bool grew = true;
 		while (grew) {
 			grew = false;
-			foreach (CreatedRecord record in candidates.Where(record => !ours.Contains(record.Id))) {
-				if (pointsAt.TryGetValue(record.Id, out HashSet<string> values) && values.Overlaps(ours)) {
-					ours.Add(record.Id);
-					grew = true;
-				}
-			}
+			List<string> linked = candidates
+				.Select(record => record.Id)
+				.Where(id => !ours.Contains(id) && pointsAt.TryGetValue(id, out HashSet<string> values) && values.Overlaps(ours))
+				.ToList();
+			ours.UnionWith(linked);
+			grew = linked.Count > 0;
 		}
 		return ours;
 	}
@@ -456,36 +470,37 @@ internal sealed class TriggerSmokeRunner(
 
 	private HashSet<string> ReadHoldingRuns(IEnumerable<CreatedRecord> records, HashSet<string> ours, DateTimeOffset stopAt,
 		TriggerSmokeResult result) {
-		HashSet<string> elements = new(StringComparer.OrdinalIgnoreCase);
-		HashSet<string> runs = new(StringComparer.OrdinalIgnoreCase);
 		try {
-			foreach (IGrouping<string, CreatedRecord> entity in records.Where(record => record is not null && ours.Contains(record.Id))
-					.GroupBy(record => record.Entity, StringComparer.OrdinalIgnoreCase)) {
-				bool hasElement = schemaReader.GetByName(entity.Key, Budget(stopAt, RequestMs)).Columns
-					.Any(column => string.Equals(column.Name, ProcessElementColumn, StringComparison.Ordinal));
-				if (!hasElement) {
-					continue;
-				}
-				foreach (JToken row in SelectByIds(entity.Key, [ProcessElementColumn], entity.Select(record => record.Id), stopAt)) {
-					if (LookupValue(row[ProcessElementColumn]) is { } element) {
-						elements.Add(element);
-					}
-				}
-			}
-			if (elements.Count > 0) {
-				foreach (JToken row in SelectByIds("SysProcessElementData", ["SysProcess"], elements, stopAt)) {
-					if (LookupValue(row["SysProcess"]) is { } run) {
-						runs.Add(run);
-					}
-				}
-			}
+			HashSet<string> elements = ReadProcessElements(records, ours, stopAt);
+			return elements.Count == 0
+				? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+				: SelectByIds("SysProcessElementData", ["SysProcess"], elements, stopAt)
+					.Select(row => LookupValue(row["SysProcess"]))
+					.Where(run => run is not null)
+					.ToHashSet(StringComparer.OrdinalIgnoreCase);
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			result.Warnings.Add("cleanup could not tell which run holds the records it deletes, so no run was cancelled: "
 				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name));
 			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		}
-		return runs;
+	}
+
+	// The ProcessElementId values of our records, for the entities that have the column.
+	private HashSet<string> ReadProcessElements(IEnumerable<CreatedRecord> records, HashSet<string> ours,
+		DateTimeOffset stopAt) {
+		HashSet<string> elements = new(StringComparer.OrdinalIgnoreCase);
+		foreach (IGrouping<string, CreatedRecord> entity in records.Where(record => record is not null && ours.Contains(record.Id))
+				.GroupBy(record => record.Entity, StringComparer.OrdinalIgnoreCase)) {
+			bool hasElement = schemaReader.GetByName(entity.Key, Budget(stopAt, RequestMs)).Columns
+				.Any(column => string.Equals(column.Name, ProcessElementColumn, StringComparison.Ordinal));
+			if (hasElement) {
+				elements.UnionWith(SelectByIds(entity.Key, [ProcessElementColumn], entity.Select(record => record.Id), stopAt)
+					.Select(row => LookupValue(row[ProcessElementColumn]))
+					.Where(element => element is not null));
+			}
+		}
+		return elements;
 	}
 
 	private bool CancelAndWait(Guid processId, DateTimeOffset stopAt, TriggerSmokeResult result) {
