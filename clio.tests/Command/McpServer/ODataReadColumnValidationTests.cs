@@ -431,10 +431,31 @@ public sealed class ODataReadColumnValidationTests {
 		// Assert
 		response.Error.Should().Contain("'ExternalId' is an ordinary column of Activity",
 			because: "the rejection's name-only hint suggests External/Id and the metadata proves that wrong");
-		response.Error.Should().Contain("not caused by a misspelled name",
-			because: "no name is unknown, so the agent must look at the operand types");
+		response.Error.Should().Contain("the rejection has another cause",
+			because: "no name is unknown, and the explanation must not assert which other cause applies");
+		response.Error.Should().NotContain("operand types", because: "the cause was never verified");
 		response.UnknownMembers.Should().BeNull(because: "nothing is unknown");
 		response.ValidColumnCount.Should().BeNull(because: "it is present only with unknown-members");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103117: a plain Id column used only in order-by gets no correction, because the lookup hint is built from filters only.")]
+	public void Read_Should_Return_The_Rejection_Unchanged_When_Plain_Id_Column_Is_Only_In_OrderBy() {
+		// Arrange
+		ODataReadTool baselineTool = BuildTool();
+		_metadataBody = string.Empty;
+		ODataReadArgs args = Args("Activity", orderBy: "ExternalId");
+		string rejection = baselineTool.Read(args).Error;
+		_metadataBody = Csdl.Replace("<Property Name=\"Title\" Type=\"Edm.String\" />",
+			"<Property Name=\"Title\" Type=\"Edm.String\" /><Property Name=\"ExternalId\" Type=\"Edm.String\" />");
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Error.Should().Be(rejection, because: "no lookup hint was generated for an order-by name");
 	}
 
 	[Test]

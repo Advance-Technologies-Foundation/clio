@@ -119,14 +119,15 @@ internal static class ODataReadColumnValidation {
 	}
 
 	/// <summary>
-	/// Filter and order-by names that end in Id but are ordinary columns of the entity (no navigation of the
+	/// Filter names that end in Id but are ordinary columns of the entity (no navigation of the
 	/// same stem, so <c>ExternalId</c> rather than <c>CreatedById</c>). The rejection's name-only lookup hint
 	/// tells the caller to rewrite each of them as <c>External/Id</c>; the metadata proves that wrong, and the
 	/// explanation says so, because it is appended to that hint rather than replacing it.
 	/// </summary>
 	private static List<string> PlainIdColumns(ODataFieldValidation.EntityShape shape, List<Reference> references) =>
 		references
-			.Where(reference => IsPathOnlyContext(reference)
+			//Filters only: the rejection's lookup hint is built from filter fields, never from order-by.
+			.Where(reference => reference.Argument == "filters"
 				&& !reference.Path.Contains('/', StringComparison.Ordinal)
 				&& reference.Path.Length > 2
 				&& ODataKeyFormatter.IsIdish(reference.Path)
@@ -260,15 +261,17 @@ internal static class ODataReadColumnValidation {
 		string detail = string.Join("; ", items.Select(item => Describe(item.Member, item.WrongForm)));
 		string more = unknown.Count > items.Count ? $" and {unknown.Count - items.Count} more" : string.Empty;
 		int columns = shape.Root.Properties.Count;
-		string text = unknown.Count == 0
-			? $"Checked against the OData metadata of {entity}: every name sent exists on the entity, so the rejection is not caused by a misspelled name; check the filter operand types against the column types."
-			: $"Checked against the OData metadata of {entity}: {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
-			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
-			"navigation path, for example AccountId -> Account/Id).";
+		string text = $"Checked against the OData metadata of {entity}:";
+		if (unknown.Count > 0) {
+			text += $" {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
+				$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
+				"navigation path, for example AccountId -> Account/Id).";
+		}
 		if (plainIdColumns.Count > 0) {
 			string names = string.Join(", ", plainIdColumns.Select(name => $"'{McpToolArgumentSupport.DescribeCallerKey(name)}'"));
 			text += $" {names} {(plainIdColumns.Count == 1 ? "is an ordinary column" : "are ordinary columns")} of {entity}, " +
-				"not a lookup: keep the name as sent and ignore the navigation-path rewrite suggested for it above.";
+				"not a lookup: keep the name as sent and ignore the navigation-path rewrite suggested for it above" +
+				(unknown.Count == 0 ? "; the rejection has another cause." : ".");
 		}
 		return new Explanation(text, items.Select(item => item.Member).ToList(), columns);
 	}
