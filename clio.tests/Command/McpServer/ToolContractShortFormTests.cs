@@ -392,7 +392,7 @@ public sealed class ToolContractShortFormTests {
 	public void ShortLookup_Should_KeepEverySafetySentence_OfEveryTool() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
-		string[] names = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+		string[] names = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		List<string> lost = [];
