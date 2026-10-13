@@ -8980,6 +8980,10 @@ public sealed class WebToMobileConversionServiceTests {
 		ViewConfigDiffOperation band = Element(guide, "Grid_TabletBand1");
 		band.Operation.Should().Be("insert", because: "a band grid is a new element");
 		band.ParentName.Should().Be("Grid", because: "the band sits in the grid it was cut from");
+		new[] { band.PropertyName, Element(guide, "Name").PropertyName }.Should().Equal(["items", "items"],
+			because: "the applier has no default slot, so an insert without propertyName is refused (GH-1752)");
+		band.Values!["items"].Should().BeOfType<JsonArray>(
+			because: "the differ refuses a child insert whose parent does not declare its slot");
 		band.Values!["gap"]!.ToJsonString().Should().Be(Element(guide, "Grid").Values!["gap"]!.ToJsonString(),
 			because: "the band spaces its cells like the grid it was cut from");
 		(guide.NameMap ?? new Dictionary<string, string>()).Values.Should().NotContain("Grid_TabletBand1",
@@ -9065,6 +9069,37 @@ public sealed class WebToMobileConversionServiceTests {
 			because: "a template grid keeps one reference-row grid");
 		TabletColumnsOf(guide, "GeneralInfoTabContainer").Should().Equal(["1fr", "1fr"],
 			because: "the paired fields are the reference row");
+	}
+
+	[Test]
+	[Description("A band grid never takes the name of an element already on the page: when a web child is itself named like the first band grid, the band grid gets a suffix.")]
+	public void Analyze_BandNameTakenByAWebChild_GetsASuffix() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "Grid_TabletBand1", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Owner", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		ParentOf(guide, "Owner").Should().Be("Grid_TabletBand1_2", because: "the plain band name is already taken");
+		guide.ViewConfigDiff.Count(op => op.Name == "Grid_TabletBand1").Should().Be(1,
+			because: "the web child keeps its own name and no second element shares it");
+	}
+
+	[Test]
+	[Description("A web column outside the web grid (a corrupt or hostile page) is clamped to the grid before it shapes a band, so no tablet column gets a zero or negative weight.")]
+	public void Analyze_ColumnOutsideTheWebGrid_IsClampedBeforeBanding() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": -2147483648, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide, "Grid_TabletBand1").Should().Equal(["1fr", "1fr"],
+			because: "A is clamped to web column 1, so row 1 is an ordinary pair");
 	}
 
 	[Test]

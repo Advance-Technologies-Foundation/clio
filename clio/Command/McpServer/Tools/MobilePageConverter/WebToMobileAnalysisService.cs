@@ -370,9 +370,9 @@ public static partial class WebToMobileAnalysisService {
 		// parent does not physically declare the slot ("Item X is not a container for other items"). Deliberately
 		// LAST among the elementMap-mutating passes: it must run AFTER RemoveEmptyContainers (above), which reads
 		// the slot's ABSENCE as its own emptiness signal — seeding it earlier would make every container look
-		// occupied and disable that pass entirely — and AFTER BuildTabAreaLayers, the only OTHER pass that adds new
-		// insert entries other inserts can target as parent (the synthesized tab-body/Area layers): running before
-		// it would leave those layers unseeded. The mobile registry is passed so a single-object slot the registry
+		// occupied and disable that pass entirely — and AFTER BuildTabAreaLayers and BuildAdaptiveLayout, the only OTHER passes that add
+		// new insert entries other inserts can target as parent (tab-body/Area layers, tablet band grids): running
+		// before them would leave those layers unseeded. The mobile registry is passed so a single-object slot the registry
 		// declares (itemLayout) is never declared as an array.
 		InitializeContainerChildSlots(elementMap, mobileByType);
 
@@ -5102,7 +5102,7 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
-	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet
+	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order (web row order inside a band grid); on tablet
 	/// (<c>medium</c> / <c>large</c>, identical) it cuts the web grid into bands of rows sharing one column
 	/// structure (see <see cref="SplitIntoBands"/>). One band keeps one weighted grid (see <see cref="BuildTabletGrid"/>);
 	/// several bands become a one-column stack of band grids (see <see cref="PlaceInBands"/>). A grid with a single web column gets NO adaptive (the mobile client
@@ -5341,13 +5341,12 @@ public static partial class WebToMobileAnalysisService {
 				return null;
 			}
 			List<int> current = bands.Count > 0 ? bands[^1] : null;
-			List<int> joined = current is null ? null : [.. current, .. rowChildren];
-			bool joins = joined is not null && SharesColumnStructure(cells, joined);
+			bool joins = current is not null && SharesColumnStructure(cells, current, rowChildren);
 			if (current is not null && row.Key <= coveredThroughRow && !joins) {
 				return null;
 			}
 			if (joins) {
-				bands[^1] = joined;
+				current.AddRange(rowChildren);
 			} else {
 				bands.Add(rowChildren);
 			}
@@ -5359,9 +5358,17 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>True when no child of <paramref name="members"/> covers another member's start column.</summary>
 	private static bool SharesColumnStructure(IReadOnlyList<WebCell> cells, IReadOnlyList<int> members) =>
-		members.All(a => members.All(b => a == b
-			|| cells[b].Column <= cells[a].Column
-			|| cells[b].Column > cells[a].Column + cells[a].Span - 1));
+		members.All(a => members.All(b => a == b || !Covers(cells[a], cells[b])));
+
+	/// <summary>
+	/// <see cref="SharesColumnStructure(IReadOnlyList{WebCell}, IReadOnlyList{int})"/> for the union of two
+	/// groups that each already share one: only the pairs across the groups are checked.
+	/// </summary>
+	private static bool SharesColumnStructure(IReadOnlyList<WebCell> cells, IReadOnlyList<int> band, IReadOnlyList<int> row) =>
+		band.All(a => row.All(b => !Covers(cells[a], cells[b]) && !Covers(cells[b], cells[a])));
+
+	private static bool Covers(WebCell wide, WebCell other) =>
+		other.Column > wide.Column && other.Column <= wide.Column + wide.Span - 1;
 
 	/// <summary>
 	/// Lays a grid of several bands out on tablet as a one-column stack: a band with one column keeps its children
@@ -5601,7 +5608,7 @@ public static partial class WebToMobileAnalysisService {
 	private static WebCell WebCellOf(
 		IReadOnlyDictionary<string, JObject> sourceLayouts, string name, int index, int cols) {
 		JObject lc = name is not null && sourceLayouts.TryGetValue(name, out JObject found) ? found : null;
-		int column = (lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1;
+		int column = Math.Clamp((lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1, 1, Math.Max(1, cols));
 		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebRow);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
 		int rowSpan = (lc is null ? null : ReadInt(lc, "rowSpan")) ?? 1;
@@ -6752,9 +6759,9 @@ public static partial class WebToMobileAnalysisService {
 		// merge onto Tabs), so two entries can share one mobile name. This stays safe because the
 		// loop below is gated on Operation == "insert" and every duplicate produced by that map is a MERGE — the
 		// insert side keeps its own uniqueness: Freedom UI requires unique component names on a page (the web
-		// source this walk consumes), and the only NAME-GENERATING path, StableSuffix in BuildTabAreaLayers,
-		// actively avoids every name already in the map (its own `taken` set, seeded from every WebName AND
-		// Name) before picking a suffix. Any future pass that indexes this map by Name WITHOUT the
+		// source this walk consumes), and both NAME-GENERATING paths, StableSuffix in BuildTabAreaLayers and
+		// BandName in BuildAdaptiveLayout, avoid every name already in the map (a `taken` set seeded from every
+		// WebName AND Name) before picking a suffix. Any future pass that indexes this map by Name WITHOUT the
 		// insert gate must state its own tie-break rather than assume uniqueness.
 		var occupiedSlots = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 		foreach (ElementMapEntry entry in elementMap) {
