@@ -234,7 +234,8 @@ internal static class ODataFieldValidation {
 		string? ServerError,
 		string? UnverifiedDetail,
 		bool DepthExceeded = false,
-		bool EmptyBody = false);
+		bool EmptyBody = false,
+		EntityShape? Shape = null);
 
 	/// <summary>
 	/// GETs the SERVICE-ROOT <c>odata/$metadata</c> document and parses the CSDL for the entity's
@@ -251,10 +252,11 @@ internal static class ODataFieldValidation {
 		IServiceUrlBuilder urlBuilder,
 		string entity,
 		int timeoutMs,
-		int attempts) =>
+		int attempts,
+		bool buildShape = false) =>
 		RetryWhileTransient(
 			attempts,
-			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs),
+			() => FetchMetadataOnce(client, urlBuilder, entity, timeoutMs, buildShape),
 			metadata => metadata.EmptyBody);
 
 	/// <summary>
@@ -294,7 +296,8 @@ internal static class ODataFieldValidation {
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		string entity,
-		int timeoutMs) {
+		int timeoutMs,
+		bool buildShape) {
 		string url = urlBuilder.Build("odata/$metadata");
 		string body = client.ExecuteGetRequest(url, timeoutMs, TransportAttempts, TransientDelaySec);
 		if (string.IsNullOrWhiteSpace(body)) {
@@ -305,9 +308,12 @@ internal static class ODataFieldValidation {
 			// definition resolves the validation; any other parse outcome leaves the fields
 			// unverified (the fallback probe then decides what it can).
 			try {
-				CsdlType? type = ParseCSDLEntity(body, entity, out bool depthExceeded);
+				CsdlType? type = ParseCSDLEntity(body, entity, out bool depthExceeded, out Dictionary<string, CsdlType> allTypes);
 				if (type is not null) {
-					return new EntityMetadata(true, type.Properties, type.PropertyTypes, null, null);
+					return new EntityMetadata(true, type.Properties, type.PropertyTypes, null, null,
+						// Only the read-side check reads the shape; the write paths must not pay for walking
+						// every navigation target.
+						Shape: buildShape ? BuildShape(type, allTypes) : null);
 				}
 				if (depthExceeded) {
 					return new EntityMetadata(false, [], [], null,
@@ -336,15 +342,23 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
-	/// One OData <c>EntityType</c> as read from CSDL: its property names (navigation properties
-	/// included - both are legal <c>$select</c> members) and its base type name for inheritance
-	/// resolution.
+	/// One OData <c>EntityType</c> as read from CSDL: its structural property names (the writable set the
+	/// write-side validation checks), its navigation properties kept apart in <see cref="Navigations"/>
+	/// for the read side only, and its base type name for inheritance resolution.
 	/// </summary>
 	private sealed record CsdlType(
 		string Name,
 		string? BaseType,
 		HashSet<string> Properties,
-		Dictionary<string, string> PropertyTypes);
+		Dictionary<string, string> PropertyTypes) {
+
+		/// <summary>
+		/// Navigation property name to the short name of its target type. Kept apart from
+		/// <see cref="Properties"/> on purpose: a navigation name is readable (select, expand, filter path)
+		/// but not writable, and the write-side validation must keep rejecting it.
+		/// </summary>
+		public Dictionary<string, string> Navigations { get; } = new(StringComparer.Ordinal);
+	}
 
 	/// <summary>
 	/// Parses the CSDL document and resolves the <paramref name="entity"/> type following
@@ -357,9 +371,10 @@ internal static class ODataFieldValidation {
 	/// describe the entity" from "this document describes it in a shape that cannot be trusted", which
 	/// the caller answers differently: the first degrades to the probe, the second fails the call.
 	/// </param>
-	private static CsdlType? ParseCSDLEntity(string body, string entity, out bool depthExceeded) {
+	private static CsdlType? ParseCSDLEntity(string body, string entity, out bool depthExceeded,
+		out Dictionary<string, CsdlType> types) {
 		depthExceeded = false;
-		Dictionary<string, CsdlType> types = ParseCSDLTypes(body);
+		types = ParseCSDLTypes(body);
 		if (!TryResolveEntity(types, entity, out CsdlType? target)) {
 			return null;
 		}
@@ -411,17 +426,21 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Records one element that belongs to the <paramref name="type"/> currently being read: only a
-	/// structural <c>Property</c> contributes its name to the writable set, and a
+	/// structural <c>Property</c> contributes its name to the writable set (<see cref="CsdlType.Properties"/>),
+	/// a <c>NavigationProperty</c> goes to the separate read-only <see cref="CsdlType.Navigations"/> map, and a
 	/// <c>ComplexType</c>/<c>EntityContainer</c> ends the entity scope (the nested elements then belong
 	/// to another construct).
 	/// </summary>
 	/// <remarks>
-	/// A <c>NavigationProperty</c> is deliberately NOT recorded. It used to land in the same set as the
-	/// structural properties, so a raw <c>Account</c> in the update payload passed validation and issued
-	/// one PATCH - but an OData relationship is written through bind semantics, not by assigning the
-	/// navigation name, and the tool contract points callers at the structural <c>AccountId</c> field
-	/// instead. Leaving the name out keeps it unverified, which is also what the fallback <c>$select</c>
-	/// probe can honestly say about it: that probe only proves a field is READABLE and structural.
+	/// A <c>NavigationProperty</c> must NEVER be added to <see cref="CsdlType.Properties"/>. It used to land in
+	/// the same set as the structural properties, so a raw <c>Account</c> in the update payload passed
+	/// validation and issued one PATCH - but an OData relationship is written through bind semantics, not by
+	/// assigning the navigation name, and the tool contract points callers at the structural
+	/// <c>AccountId</c> field instead. Leaving the name out of the writable set keeps it unverified, which is
+	/// also what the fallback <c>$select</c> probe can honestly say about it: that probe only proves a field
+	/// is READABLE and structural. The name IS recorded in <see cref="CsdlType.Navigations"/>, which only the
+	/// read-side check of odata-read reads (select, expand and filter paths); the write-side validation never
+	/// looks at it, so merging the two sets would reopen the write-side bug described here.
 	/// </remarks>
 	private static void RecordMember(XmlReader reader, CsdlType type, ref string? currentTypeName) {
 		if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
@@ -434,6 +453,10 @@ internal static class ODataFieldValidation {
 			return;
 		}
 		if (reader.LocalName == "NavigationProperty") {
+			// Recorded for the READ side only (odata-read column validation); never as a writable property.
+			if (reader.GetAttribute("Name") is string navName && reader.GetAttribute("Type") is string navType) {
+				type.Navigations[navName] = ShortTypeName(UnwrapCollection(navType));
+			}
 			return;
 		}
 		if (reader.LocalName is "ComplexType" or "EntityContainer") {
@@ -489,6 +512,9 @@ internal static class ODataFieldValidation {
 			CsdlType derived = chain[i - 1];
 			CsdlType baseType = chain[i];
 			derived.Properties.UnionWith(baseType.Properties);
+			foreach (KeyValuePair<string, string> navigation in baseType.Navigations) {
+				derived.Navigations.TryAdd(navigation.Key, navigation.Value);
+			}
 			foreach (KeyValuePair<string, string> inherited in baseType.PropertyTypes) {
 				// A redeclared property on the derived type wins; TryAdd keeps the derived declaration.
 				derived.PropertyTypes.TryAdd(inherited.Key, inherited.Value);
@@ -496,6 +522,63 @@ internal static class ODataFieldValidation {
 		}
 		return true;
 	}
+
+	/// <summary>Turns <c>Collection(ns.Type)</c> into <c>ns.Type</c>.</summary>
+	private static string UnwrapCollection(string typeReference) =>
+		typeReference.StartsWith("Collection(", StringComparison.Ordinal) && typeReference.EndsWith(')')
+			? typeReference["Collection(".Length..^1]
+			: typeReference;
+
+	/// <summary>
+	/// Builds the read-side shape of the entity: its own members plus the members of every navigation
+	/// target whose inheritance chain could be resolved (so a path such as <c>Account/Name</c> can be
+	/// checked one level deep without keeping the whole multi-megabyte document in memory).
+	/// </summary>
+	private static EntityShape BuildShape(CsdlType type, Dictionary<string, CsdlType> types) {
+		// Case-insensitive throughout: the read-side check treats a case-only difference as known.
+		Dictionary<string, TypeShape> targets = new(StringComparer.OrdinalIgnoreCase);
+		foreach (KeyValuePair<string, string> navigation in type.Navigations) {
+			if (types.TryGetValue(navigation.Value, out CsdlType? target) && CollectInherited(target, types)) {
+				targets[navigation.Key] = new TypeShape(
+					new HashSet<string>(target.Properties, StringComparer.OrdinalIgnoreCase),
+					new HashSet<string>(target.Navigations.Keys, StringComparer.OrdinalIgnoreCase));
+			}
+		}
+		return new EntityShape(
+			new TypeShape(
+				new HashSet<string>(type.Properties, StringComparer.OrdinalIgnoreCase),
+				new HashSet<string>(type.Navigations.Keys, StringComparer.OrdinalIgnoreCase)),
+			targets);
+	}
+
+	/// <summary>
+	/// Reads the entity's member names (structural and navigation) for odata-read column validation.
+	/// Returns <see langword="null"/> when the metadata cannot be established - the caller must then
+	/// send the query as before and never block it because the metadata fetch failed.
+	/// </summary>
+	/// <param name="client">The environment-scoped application client.</param>
+	/// <param name="urlBuilder">The environment-scoped URL builder.</param>
+	/// <param name="entity">The OData entity set name.</param>
+	/// <param name="timeoutMs">Request timeout; a single attempt is made.</param>
+	internal static EntityShape? TryGetEntityShape(
+		IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity, int timeoutMs) {
+		try {
+			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, timeoutMs, OptionalMetadataAttempts,
+				buildShape: true);
+			return metadata.Resolved ? metadata.Shape : null;
+		} catch (Exception) {
+			return null;
+		}
+	}
+
+	/// <summary>Member names of one OData type: structural properties and navigation properties.</summary>
+	internal sealed record TypeShape(HashSet<string> Properties, HashSet<string> Navigations);
+
+	/// <summary>
+	/// Read-side shape of an entity: its own members plus one level of navigation targets, keyed by the
+	/// navigation name.
+	/// </summary>
+	internal sealed record EntityShape(TypeShape Root, Dictionary<string, TypeShape> NavigationTargets);
 
 	/// <summary>Strips the CSDL namespace qualifier from a type reference.</summary>
 	private static string ShortTypeName(string qualifiedName) {

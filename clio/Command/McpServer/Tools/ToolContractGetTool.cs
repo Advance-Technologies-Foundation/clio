@@ -909,6 +909,7 @@ internal static class ToolContractCatalog {
 			[CreateDataBindingDbTool.CreateDataBindingDbToolName] = BuildCreateDataBindingDb(),
 			[UpsertDataBindingRowDbTool.UpsertDataBindingRowDbToolName] = BuildUpsertDataBindingRowDb(),
 			[RemoveDataBindingRowDbTool.RemoveDataBindingRowDbToolName] = BuildRemoveDataBindingRowDb(),
+			[PlaceSectionInWorkplaceTool.ToolName] = BuildPlaceSectionInWorkplace(),
 			[GetEntitySchemaPropertiesTool.GetEntitySchemaPropertiesToolName] = BuildGetEntitySchemaProperties(),
 			[GetEntitySchemaColumnPropertiesTool.GetEntitySchemaColumnPropertiesToolName] = BuildGetEntitySchemaColumnProperties(),
 			[FindEntitySchemaTool.FindEntitySchemaToolName] = BuildFindEntitySchema(),
@@ -2588,7 +2589,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataRead() {
 		return new ToolContractDefinition(
 			ODataReadTool.ToolName,
-			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. When a response is too large to return inline, call odata-read-to-file, which takes the same query arguments plus a required output-file. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id).",
+			"Reads Creatio records through OData v4. Use this to query records, page through ordered results, request a verified total count, resolve lookup primary values, verify records by Id, or inspect selected fields. When a response is too large to return inline, call odata-read-to-file, which takes the same query arguments plus a required output-file. Unknown arguments and malformed structured filters fail before any Creatio request; raw filter strings are not supported. Every response carries a correlation-id, and every failure carries a machine-readable error-code - branch on the code, not on the wording of error. The server's own error text is never reproduced in error, and reaches clio's debug log only when clio runs in-process with --debug and a log sink (an MCP worker process carries neither); the correlation-id is what ties this response to the debug line that records it. On error-code invalid-query the message lists the filter, select, expand and order-by names THIS request sent, and names the navigation path to use when a filter field looks like a raw lookup column (AccountId -> Account/Id). On that rejection those names are also checked against the entity's OData metadata: each unknown name is listed in unknown-members with the closest valid names (at most 3 each), and the entity's column count in valid-column-count, and the explanation is appended to error; when the metadata cannot be fetched the rejection comes back without them.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2627,7 +2628,9 @@ internal static class ToolContractCatalog {
 				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity."),
 				Field(ODataReadErrorCodeFieldName, StringType,
 					"Machine-readable failure classification when success is false; absent on success. Branch on this rather than on the wording of 'error'."),
-				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription)
+				Field(CorrelationIdFieldName, StringType, ODataReadCorrelationIdDescription),
+				Field("unknown-members", ArrayType, "Present on an invalid-query rejection whose select, filter-field, expand or order-by names are not on the entity: each item has argument, name and up to 3 closest valid names in suggestions."),
+				Field("valid-column-count", NumberType, "Number of columns the entity has; present together with unknown-members.")
 			),
 			ODataReadErrorContract,
 			[
@@ -2721,7 +2724,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataReadToFile() {
 		return new ToolContractDefinition(
 			ODataReadToFileTool.ToolName,
-			"Reads Creatio records through OData v4 and writes the raw JSON response to a local file, returning a compact row/column-size summary instead of inline values. Use it only when the response is too large to return inline; odata-read is the read-only tool for ordinary queries and takes the same query arguments. The write refuses an existing target, so a call is NOT retry-safe against the same path - a retry must use a different one.",
+			"Reads Creatio records through OData v4 and writes the raw JSON response to a local file, returning a compact row/column-size summary instead of inline values. Use it only when the response is too large to return inline; odata-read is the read-only tool for ordinary queries and takes the same query arguments. The write refuses an existing target, so a call is NOT retry-safe against the same path - a retry must use a different one. On error-code invalid-query the query's select, filter-field, expand and order-by names are checked against the entity's OData metadata exactly as odata-read does: unknown-members and valid-column-count are added and the explanation is appended to error.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName, OutputFileFieldName],
 				[
@@ -2757,10 +2760,12 @@ internal static class ToolContractCatalog {
 				Field(OutputFileFieldName, StringType, "Absolute path to the raw OData response written to disk."),
 				Field("row-count", NumberType, "Number of object rows written to output-file."),
 				Field("column-sizes", ObjectType, "UTF-8 byte totals by column for rows written to output-file."),
-				Field("error-code", StringType, "Machine-readable failure classification when success is false: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. The same body is classified the same way by odata-read, so branch on the code rather than on the wording of error. The one difference: on invalid-query this tool does not list the filter, select, expand and order-by names the request sent - that echo is inline-only. Null on success."),
+				Field("error-code", StringType, "Machine-readable failure classification when success is false: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. The same body is classified the same way by odata-read, so branch on the code rather than on the wording of error. The one difference: on invalid-query this tool does not list the filter, select, expand and order-by names the request sent - that echo is inline-only; the metadata check that adds unknown-members runs on both paths. Null on success."),
 				Field("status-code", NumberType, "HTTP status behind a failure, present ONLY when the response was an HTML error page that states its status in its title (404 when the entity has no OData controller). Absent otherwise: Creatio serves the JSON routing 404 with HTTP 200, and that case carries the wait-and-retry hint in error instead. Branch on both, never on status-code alone."),
 				Field(EntityFieldName, StringType, "The OData entity set the failure refers to, echoed back so several concurrent reads can be told apart. Present on every failure raised once the requested entity name is known; an argument-level rejection (a missing or malformed entity, an unsupported argument) is refused before that point and carries no entity."),
-				Field(CorrelationIdFieldName, StringType, "Identifier for this call, present on success and on failure. Quote it to whoever can read the environment's logs.")
+				Field(CorrelationIdFieldName, StringType, "Identifier for this call, present on success and on failure. Quote it to whoever can read the environment's logs."),
+				Field("unknown-members", ArrayType, "Present on an invalid-query rejection whose select, filter-field, expand or order-by names are not on the entity, exactly as for odata-read."),
+				Field("valid-column-count", NumberType, "Number of columns the entity has; present together with unknown-members.")
 			),
 			CommonErrorContract,
 			[
@@ -2894,7 +2899,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataCreate() {
 		return new ToolContractDefinition(
 			ODataCreateTool.ToolName,
-			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id.",
+			$"Creates one or more Creatio records through OData v4 (POST) in a single call. Pass all rows for the same entity in the 'rows' array or place that JSON array in rows-file for large payloads; each row is inserted sequentially and reported independently. {ODataCreateTool.RowCountLimitDescription} Returns a created/failed summary and a per-row result array including each created record's Id. The synonyms payload, values, body and data are accepted for rows (a single object becomes one row) and named in warnings; one of them together with rows or rows-file is rejected as ambiguous.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
@@ -2937,6 +2942,7 @@ internal static class ToolContractCatalog {
 			ODataUpdateTool.ToolName,
 			"Updates a single Creatio record through OData v4 (PATCH). Requires the record GUID and confirm=true; provide the fields inline in data " +
 			"or place the JSON object in rows-file for a large payload. Only supplied fields change. " +
+			"The synonyms values, payload, body and fields are accepted for data and named in warnings; one of them together with data or rows-file is rejected as ambiguous. " +
 			"Data field NAMES are verified against the entity's OData type ($metadata) before the write: an unknown field fails the call and nothing is written. " +
 			"Field VALUES are not validated - note that the platform silently drops the empty GUID on a lookup field, so send null to clear a reference. " +
 			"success:true means the service accepted the PATCH after this pre-validation; platform builds that silently discard unsupported values can still leave " +
@@ -2960,6 +2966,7 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether the OData update succeeded."),
 				Field(ErrorFieldName, StringType, FailureMessageDescription + " " + ODataWriteForeignKeyHintDescription),
 				Field("id", StringType, "GUID of the updated record."),
+				Field("warnings", ArrayType, "Notes that did not stop the call, for example that values was accepted as data; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
@@ -5076,6 +5083,79 @@ internal static class ToolContractCatalog {
 			[]);
 	}
 
+	private static ToolContractDefinition BuildPlaceSectionInWorkplace() {
+		const string sectionCodeField = "section-code";
+		const string workplaceNameField = "workplace-name";
+		const string clientTypeField = "client-type";
+		const string rolesField = "roles";
+		const string removeField = "remove-from-my-applications";
+		return new ToolContractDefinition(
+			PlaceSectionInWorkplaceTool.ToolName,
+			"Places an app section in a navigation workplace and grants roles access, in one call, replacing the manual " +
+			"SysWorkplace / SysModuleInWorkplace / SysAdminUnitInWorkplace recipe. " +
+			"Confirm the target workplace and the roles with the user before calling: a grant decides who sees the data behind the section. " +
+			"The workplace is matched by workplace-name and client-type (preferring one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's Type and LoaderId read back. " +
+			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added. " +
+			"A move is refused before any write when no role would see the target workplace (pass roles), or when another package ships the moved row (pass that package as package-name). " +
+			"An existing workplace another package ships is used but not bound into package-name (a warning names its owner), and a position change for it is refused. " +
+			"Every row is written live and bound into package-name (SysWorkplace_<Workplace>, SysModuleInWorkplace_<SectionCode>, SysAdminUnitInWorkplace_<Workplace>, or the binding that already ships the row), so it transfers with the package. " +
+			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report), or omitted (reuse or create). " +
+			"section-workplaces always reports where the section is after the call. " +
+			"Inputs are resolved before the first write, so an input error changes nothing; a failure after the first write returns writes-started=true and the written rows. Re-running converges and never duplicates; the tool never deletes a row. " +
+			"Afterwards tell the user to log out and back in; a refresh is not enough. For the model behind it, call get-guidance with name `workplaces`.",
+			new ToolInputSchemaContract(
+				[EnvironmentNameFieldName, sectionCodeField],
+				[
+					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
+					Field(sectionCodeField, StringType, "The section's SysModule.Code (a create-app app's code), not its caption. A code shared by several sections is resolved by the one already placed in a workplace."),
+					Field(workplaceNameField, StringType, "Workplace to create or reuse; required unless mode is none."),
+					Field("mode", StringType, "existing: the workplace must exist. new: create it, refused when a same-named workplace exists that package-name does not already ship. none: write nothing and only report section-workplaces. Omitted: reuse it when it exists, create it otherwise."),
+					Field(PackageNameFieldName, StringType, "Package that ships every row; use the app's own package. Omitted: the environment's current package, as get-target-package resolves it. Must be editable."),
+					Field(clientTypeField, StringType, "web (default) or mobile."),
+					Field(rolesField, ArrayType, "SysAdminUnit names or ids that see the workplace; default none. Moving the section into a workplace no role sees is refused. A name must match exactly one row."),
+					Field(removeField, BooleanType, "Move the My applications placement instead of adding one; default true."),
+					Field("position", NumberType, "Optional workplace position in the switcher. The platform renumbers positions, so read the returned value.")
+				]),
+			EnvelopeOutput(
+				SuccessFieldName,
+				[SuccessFalseSignal],
+				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
+				Field(PackageNameFieldName, StringType, "Package that ships every row."),
+				Field("workplace", ObjectType, "id, name, client-type, position, created (false: reused), binding-name (absent when another package ships the workplace)."),
+				Field("section", ObjectType, "section-id, code, placement-id, action (moved, created or already-present), binding-name."),
+				Field(rolesField, ArrayType, "Per role: role-id, name, grant-id, action (granted or already-granted), binding-name."),
+				Field("warnings", ArrayType, "Non-fatal findings to relay: a duplicate workplace name, an adopted workplace, a workplace another package ships (used, not bound), My applications not identified (added, not moved), a workplace with no grant."),
+				Field("section-workplaces", ArrayType, "Every workplace (id, name) holding the section after the call, read back; the answer to where the section ended up."),
+				Field("next-step", StringType, "Present after a write: tell the user to log out and back in."),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("writes-started", BooleanType, "true when the call failed after its first write; absent otherwise, so an error without it changed nothing."),
+				Field("written", ArrayType, "With writes-started: every row upsert (schema, id, binding-name) and binding creation (schema, binding-name) started before the failure, the failing one included; treat each as possibly on the environment. Re-run the same call to converge.")),
+			CommonErrorContract,
+			[
+				EnvironmentNameParameterAlias(),
+				PackageNameParameterAlias(),
+				Alias(ParameterScope, sectionCodeField, "app-code", RejectedStatus, $"Use '{sectionCodeField}' instead of 'app-code'."),
+				Alias(ParameterScope, workplaceNameField, "workplace", RejectedStatus, $"Use '{workplaceNameField}' instead of 'workplace'.")
+			],
+			[
+				Default(clientTypeField, "web", "Most workplaces are web workplaces."),
+				Default(removeField, "true", "A new app should leave My applications, not appear twice.")
+			],
+			[
+				Example("Move a new app into its own workplace for one role", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[sectionCodeField] = ExampleOrdersSectionCode,
+					[workplaceNameField] = "Orders",
+					[rolesField] = new[] { "Sales managers" }
+				})
+			],
+			Flow([ApplicationCreateTool.ApplicationCreateToolName, PlaceSectionInWorkplaceTool.ToolName],
+				"create-app -> place-section-in-workplace with the app code and its package, after the user chose the workplace and the roles."),
+			[],
+			[]);
+	}
+
 	private static ToolContractDefinition BuildCreateDataBinding() {
 		return new ToolContractDefinition(
 			CreateDataBindingTool.CreateDataBindingToolName,
@@ -7125,6 +7205,7 @@ internal static class ToolContractCatalog {
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
+				Field("warnings", ArrayType, "Notes that did not stop the call, for example that payload was accepted as rows; absent when there is nothing to note."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			]);

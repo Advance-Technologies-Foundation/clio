@@ -55,6 +55,12 @@ public sealed record ODataCreateBatchResponse {
 	[Description("Identifier for this batch, present on success and on failure. The same id tags any debug line written for it.")]
 	public string? CorrelationId { get; init; }
 
+	/// <summary>Gets notes that did not stop the call, for example that an argument synonym was accepted.</summary>
+	[JsonPropertyName("warnings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[Description("Notes that did not stop the call, for example that a synonym such as payload was accepted as rows. Absent when there is nothing to note.")]
+	public IReadOnlyList<string>? Warnings { get; init; }
+
 	/// <summary>Builds a response from per-row outcomes.</summary>
 	public static ODataCreateBatchResponse From(IReadOnlyList<ODataRowResult> results) =>
 		new() {
