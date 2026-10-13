@@ -36,8 +36,10 @@ DESCRIPTION
     stale assembly that still answers passes, so after an upgrade treat the
     migration working as the proof.
 
-    The command ALWAYS installs except in two cases, and re-running is otherwise
-    safe; it costs one configuration build on the target. Both exceptions are
+    The command ALWAYS installs except in two cases. Every run that installs,
+    a re-run included, costs a configuration build and a site restart for every
+    connected user, so an AI agent must get the user's approval before each
+    run. Both exceptions are
     about moving an environment BACKWARDS, and --force overrides both.
 
       1. A DOWNGRADE: the environment already carries a newer version than this

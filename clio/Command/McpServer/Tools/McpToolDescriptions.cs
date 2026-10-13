@@ -24,6 +24,13 @@ internal static class McpToolDescriptions {
 	internal const string EnvironmentName = "Registered clio environment name. Preferred.";
 
 	/// <summary>
+	/// The post-write digest sentence of the four process write tools (ENG-103023), so each says the same thing.
+	/// </summary>
+	internal const string ProcessWriteDigest =
+		" Success also returns a digest {summary, changes}: the saved version's mode=summary and what changed - "
+		+ "confirm the write from it.";
+
+	/// <summary>
 	/// The correlation-id promise, stated identically by every odata-* tool so the three
 	/// <c>[Description]</c> attributes cannot drift into three different promises.
 	/// </summary>

@@ -78,7 +78,7 @@ public class SetActiveProcessVersionTool(
 		 + "Requires the ProcessDesignService (CrtProcessBuilder) package on the target environment at "
 		 + "CrtProcessBuilder 1.6.1.0 or newer, which is where this operation first exists — an older package is "
 		 + "refused up front, naming the version this operation needs; install or update it with "
-		 + "install-process-builder. Activating does not normally require compile-creatio — but if the response "
+		 + "install-process-builder after user approval. Activating does not normally require compile-creatio — but if the response "
 		 + "warns that the version cannot execute until the configuration is compiled (from CrtProcessBuilder "
 		 + "1.6.6.51 it does for a version that carries C# or is not interpreted), heed that warning: ask the user, "
 		 + "then run it with process-name set to that version. One exception, for an interpreted version only "
@@ -86,7 +86,7 @@ public class SetActiveProcessVersionTool(
 		 + "C# last changed still covers it - activation re-saves the family but changes no code, so it owes no "
 		 + "second compile (measured on .NET Framework; a .NET host also needs its restart after the compile). The "
 		 + "warning speaks for THIS call only. Use describe-business-process "
-		 + "to see the family and which member is active.")]
+		 + "to see the family and which member is active." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult SetActiveProcessVersion(
 		[Description("set-active-business-process-version parameters")] [Required]
 		SetActiveProcessVersionArgs args
