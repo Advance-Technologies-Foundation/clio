@@ -198,7 +198,7 @@ M-G6-4), [T-43](#t-43).
 | T-65 | Unit tests cannot prove runtime behaviour | **yes** | source | stand runs (D28, D29) |
 | T-66 | Academy wording differs from the product | **yes** | source | guide (D25) |
 | T-67 | Consumers the builder cannot wire; a collection as a filter value | **yes** | source | guide (D22), Sub-task |
-| T-68 | A nested-item mapping on the create path throws a bare NRE | no (loud, uninformative) | measured on 1.6.6.54; still unfixed on 1.6.6.96 (hypothesis, source, 2026-10-13) | PT (two-level binder on create) |
+| T-68 | A nested-item mapping on the create path throws a bare NRE | no (loud, uninformative) | measured on 1.6.6.54; root-caused (synced nested items have no owning schema) and fixed in code in PK-PT, draft PR #96, 2026-10-14; stand proof owed (E2E-06, manual TC-04 on ENG-95984) | PT (the for-mapping walk adopts each descended item; regression test on the platform's real sync) |
 
 ---
 
@@ -1207,10 +1207,13 @@ M-G6-4), [T-43](#t-43).
 **Unit tests cannot prove the runtime behaviour this feature depends on.**
 - **What happens.** The runtime reader is `internal`, so no package test can run a binding through it; the platform's
   file classes live in `Terrasoft.Configuration`, which the package cannot reference and which the test build does not
-  have; the parameter sync on `SchemaUId` needs the real platform. A green suite proves the metadata shape only.
+  have. A green suite proves the metadata shape only. (The parameter sync on `SchemaUId` is NOT out of reach: PK-PT
+  runs the platform's real sync in the harness, `PBT/FileCollectionMappingTests.cs` `WireTheSyncManagers`, provided
+  the element is named before `SchemaUId` is assigned; T-68's regression test uses it.)
 - **Silent or loud.** Silent.
 - **Basis / evidence.** source: `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:16`;
-  `PBT/UserTaskElementHandlerCreateTests.cs:130-137`.
+  `PBT/UserTaskElementHandlerCreateTests.cs:130-137` (the wall an UNNAMED element's sync row runs into); the sync
+  recipe measured in the PK-PT harness on 2026-10-13.
 - **Neutraliser.** D28: tests pin the metadata (GS1/GS2 at both levels, nested UId references, the target block) and
   mirror the configuration constants (`ResultActionType` 0/1, row keys `File` / `ObjectFile` / `Id`,
   `FileConsts.FileTypeUId`); runtime claims go to the stand runs in the banner. Platform tests in `UT` are a reference only.
@@ -1233,12 +1236,28 @@ M-G6-4), [T-43](#t-43).
   are unchanged since the 1.6.6.54 measurement; `ProcessMappingService.cs` is byte-identical only since 1.6.6.85
   (`d9571626`), because ENG-102113's guards and ENG-102114's meta-path checks changed it in between. The reproduction
   rests on the unchanged create-path order and item descent, so it should still reproduce. T-68 stays in PT scope.
-- **Neutraliser.** The ENG-95984 File process parameter type two-level binder must run on the create path as well
-  as on modify, after the element's parameters are materialised; a package regression test builds the generic or the
-  `fileProcessing` element and a nested mapping in ONE create request (on a `TestProcessSchema` the element's
-  `SchemaUId` setter throws a NullReferenceException, so the test writes the field the way `ProcessBuildHandlerTests`
-  does, or builds on a plain `ProcessSchema`). Root-cause the NRE (likely the nested item
-  parameters of a freshly added user task are not yet populated when `mappings[]` is applied) before PK-PT's code.
+- **Root cause (source, reproduced in the PK-PT harness on 2026-10-13).** Not unpopulated items, as guessed here
+  before: the nested items of a user task synced in the same request have `ProcessSchema == null`. The platform's
+  parameter sync copies each template parameter with `new ProcessSchemaParameter(source)`, and the copy takes the
+  template's owner, which for a nested item is null, because its template lives on a `ProcessUserTaskSchema`, which is
+  not a `ProcessSchema`; assigning `ParentMetaSchema` afterwards never sets `ProcessSchema`. The locator backfilled
+  the item's `ContainerUId`, and from then on `GetMetaPath()` reads `ProcessSchema.UId` and threw. The modify path
+  never failed: it loads the items through the metadata reader, which inserts each nested item into a collection the
+  schema owns before reading it, and that insert stamps the owner. By the same mechanism `addElement` + `addMapping` in
+  ONE modify batch reaches the same state (inference; the sibling regression test asserts that state as its
+  precondition; never measured on a stand).
+- **Status.** **Fixed in code** in PK-PT (draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96,
+  2026-10-14, not yet merged); **stand proof owed** (E2E-06 of the ENG-95984 File process parameter type test-plan, and
+  manual TC-04 on ENG-95984).
+- **Neutraliser.** The for-mapping walk adopts each descended item: `ResolveElementParameterForMapping` (and
+  `AdoptItemForMapping` for the items the binder pairs) backfills `ContainerUId` and, when it is null, `ProcessSchema`,
+  the value a load would have given, so a created and a loaded element store the same meta path
+  (`PB/ProcessSchemaElementLocator.cs`, `ElementItemPathOwner.Adopt`). The two-level binder runs on the create path as
+  on modify. The regression test drives the platform's REAL sync in the harness (`PBT/FileCollectionMappingTests.cs`
+  `BuildProcess_ShouldStoreTheModifyPathsValue_WhenANestedItemIsMappedInTheCreateRequest`, recipe
+  `WireTheSyncManagers` / `PlaceBySync`: name the element before assigning `SchemaUId`): one create request with two
+  synced file elements and `PF1.Files.File <- OF1.ObjectFiles.File` succeeds and stores exactly what `addMapping`
+  stores, P1's parent included; a sibling covers the one-batch modify route.
 
 ---
 

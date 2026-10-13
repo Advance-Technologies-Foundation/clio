@@ -67,9 +67,10 @@ measured); **measured** = observed on the stand or counted over the corpus, with
 | **D** stand, design time | the user, in the classic designer | the designer opens builder-made elements, and a no-op save changes nothing | run time |
 
 The P/S boundary is fixed. `ProcessSchemaUserTask.SchemaUId`'s setter runs `SynchronizeParameters()`
-(`CORE/Terrasoft.Core/Process/ProcessSchemaUserTask.cs:106-115`), and the repository documents that the real sync
-stops at the configuration-backed `DesignModeClassResolver` (`PBT/UserTaskElementHandlerCreateTests.cs:130-137`).
-`ProcessInstanceParametersDataReader` is internal. No unit test may claim to prove what the runtime does with a
+(`CORE/Terrasoft.Core/Process/ProcessSchemaUserTask.cs:106-115`). That sync runs in the harness (PK-PT, 2026-10-13:
+`PBT/FileCollectionMappingTests.cs` `WireTheSyncManagers` / `PlaceBySync`, the element named before `SchemaUId` is
+assigned); only an unnamed element's sync stops at the configuration-backed `DesignModeClassResolver`
+(`PBT/UserTaskElementHandlerCreateTests.cs:130-137`). `ProcessInstanceParametersDataReader` is internal. No unit test may claim to prove what the runtime does with a
 `Files` binding, a storage pair or a report. The stand reports in section 6 must also say which level they reached:
 **Stored** (metadata written), **Design time** (the designer opens it) or **Runtime** (the process ran).
 

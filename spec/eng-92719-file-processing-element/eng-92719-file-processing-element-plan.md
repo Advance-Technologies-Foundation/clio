@@ -340,9 +340,11 @@ pre-code gate grows by the five SF measurements.
 
 ## 6. Stand verification — what no unit test can cover
 
-Two things are out of reach of a package unit test: the platform's parameter sync on `SchemaUId`
-(`PBT/UserTaskElementHandlerCreateTests.cs:130-137`) and the runtime reader, which is `internal`
-(`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs`). Everything runtime-critical that is only
+Out of reach of a package unit test: the runtime reader, which is `internal`
+(`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs`). The platform's parameter sync on `SchemaUId`
+is not: PK-PT runs it in the harness (2026-10-13, `PBT/FileCollectionMappingTests.cs` `WireTheSyncManagers`, the
+element named before `SchemaUId` is assigned; an unnamed one stops at the wall
+`PBT/UserTaskElementHandlerCreateTests.cs:130-137` records), so a sync claim can be pinned by a unit test. Everything runtime-critical that is only
 basis=source is measured here first.
 
 ### 6.1 Rules

@@ -54,7 +54,7 @@ measured); **measured** = observed on the stand or counted over the corpus, with
 
 | Level | Project | What it can prove | What it cannot |
 |---|---|---|---|
-| **PU** package unit | crt-process-builder `PBT/` (NUnit 4, NSubstitute, FluentAssertions) | type resolution, the stored parameter shape, every refusal, the metadata each mapping writes (both levels, meta paths, `ModifiedInSchemaUId`), describe projection and decode, short-key serialization | the platform parameter sync on `SchemaUId` (`PBT/UserTaskElementHandlerCreateTests.cs:130-137` documents the wall); the runtime reader (`ProcessInstanceParametersDataReader` is `internal`); the designer |
+| **PU** package unit | crt-process-builder `PBT/` (NUnit 4, NSubstitute, FluentAssertions) | type resolution, the stored parameter shape, every refusal, the metadata each mapping writes (both levels, meta paths, `ModifiedInSchemaUId`), describe projection and decode, short-key serialization; the platform's user-task parameter sync on `SchemaUId`, through the recipe of section 3 item 6 (the T-68 regression runs it) | a `ProcessSchemaManager` save; the platform's pre-save validation; the runtime reader (`ProcessInstanceParametersDataReader` is `internal`); the designer |
 | **CU** clio unit | `clio.tests` (`Module=ProcessModel`, `McpServer`, `Common`, `Command`) | the describe DTO keeps what the server sends and re-serializes it; description wording; floor literals; archive pins; the ManagerMap arm | anything the server does |
 | **E2E** MCP end-to-end | `clio.mcp.e2e`, category `McpE2E.ProcessDesigner` | the JSON member names, the server's refusal envelope and notices over the real MCP path, against a stand on the cut (only this level sees a member the serializer silently drops) | runtime behaviour. TeamCity excludes this category (`clio.mcp.e2e/Support/Configuration/McpE2ECategories.cs:30-38` and clio `docs/knowledge/infra/mcp-e2e-processdesigner-category-is-consumed-only-by-teamcity-job-args.md`, source), so the manual run on the stand is the only e2e evidence |
 | **KU** knowledge | clio-knowledge `automation/Clio.Knowledge.Bundle.Tests` | the guide states each rule; size budgets; registration | whether agents follow it |
@@ -134,7 +134,9 @@ repository's own worktree under `.worktrees/<task>/`.
 ## 3. Mocking recipe (package)
 
 The approach of decisions D28: hand-built elements with the platform's real schema UIds and literal parameter
-names, because the parameter sync cannot run in the harness. Full harness notes are in the
+names, because a hand-built element needs no manager wiring and the drift guard ties it to the metadata the stand
+serves. The platform's own parameter sync does run in the harness, through the recipe of item 6; PK-PT uses it for
+T-68 only. Full harness notes are in the
 [reuse](../eng-92719-file-processing-element/eng-92719-file-processing-element-reuse.md) document.
 
 1. **Data value types need no database.** `new DataValueTypeManager()` registers `CompositeObjectList`
@@ -207,16 +209,27 @@ names, because the parameter sync cannot run in the harness. Full harness notes 
    (`PBT/ProcessParameterServiceItemPropertiesTests.cs:60-85`), assertions on short keys
    (`PBT/MultiInstanceModeFieldTests.cs:65-92`). Keys: `L1` type, `L8` source value (`GS1` source, `GS2` value,
    `GS5` ModifiedInSchemaUId), `L9` reference schema, `L12` direction (omitted for Variable), `L17` Tag, `L18` items
-   (`CORE/Terrasoft.Core/Process/ProcessSchemaParameter.cs:123-142`).
-6. **Do not try** in a unit test: the `SchemaUId` sync, `ProcessSchemaManager` save, the platform's pre-save
-   validation (`IProcessSchemaValidator` is substituted, `PBT/ProcessDesignerRoundTripTests.cs:94-97`), running a
-   user task. Those are stand cases.
+   (`CORE/Terrasoft.Core/Process/ProcessSchemaParameter.cs:123-142`). As built in PK-PT, the written form is then
+   read with `System.Text.Json` (`JsonNode` in PU-13), and PU-13's oracles are embedded literals in
+   `PBT/FileProcessParameterTests.cs` that cite their PackageStore lines (`FileParameterProcess/metadata.json:14-24,
+   25-52`, `MarkProcessesToCancel/metadata.json:73-97`), not committed fixtures.
+6. **The `SchemaUId` sync DOES run in a unit test** (measured in PK-PT, 2026-10-13): substitute the
+   `ProcessSchemaManager` with an `AppConnection` that answers, give the workspace a `SchemaManagerProvider` that
+   returns the user-task manager for `ProcessUserTaskSchemaManager`, and NAME the element before assigning
+   `SchemaUId` (the sync names its schema-level mapping row after the element, and an unnamed row runs into
+   `SetUniqueNameAndCaptionForItem` and the `DesignModeClassResolver` wall `PBT/UserTaskElementHandlerCreateTests.cs`
+   records). The recipe is `PBT/FileCollectionMappingTests.cs` `WireTheSyncManagers` / `PlaceBySync`; the T-68
+   regression uses it. **Still stand cases**, not tried in a unit test: a `ProcessSchemaManager` save, the platform's
+   pre-save validation (`IProcessSchemaValidator` is substituted, `PBT/ProcessDesignerRoundTripTests.cs:94-97`),
+   running a user task.
 
 **Drift guard (PU-50 = TC-01 and TC-02 of the element test plan).** Without it the helper is a second, unverified
 copy of the platform contract. It is the design of the element test plan, section 3.4, unchanged: the three
 `PD/<Task>/metadata.json` files copied verbatim to `PBT/Fixtures/FileProcessing/<Task>.metadata.json` with a
 `PROVENANCE.md` (source path, CrtProcessDesigner 7.8.0, SHA-256 per file), read by ancestor search as
-`PBT/PackageDescriptorTests.cs:59-70` reads `descriptor.json` (no csproj change), deserialised with the platform's
+`PBT/PackageDescriptorTests.cs:59-70` reads `descriptor.json` (the captures are no csproj items; as built, the JSON is
+read with `System.Text.Json` `JsonDocument`, so the test csproj gained a net472-only `System.Text.Json` reference, and
+the root `.gitattributes` marks the captures `-text`), deserialised with the platform's
 `ProcessSchemaParameter.ReadMetaData` (one `Read()`, no `ReadInto()`), a precondition count of 13 / 8 / 13
 parameters, then strict equality of the helper's template with the capture, and a check that assigning `SchemaUId`
 left the helper's set unchanged. The guard ships in the same PR as the helper it guards, PK-PT, because that PR is
@@ -236,7 +249,7 @@ all four are PK-PT's, plan PB-9). Extended:
 plan's PB-9 names the existing fixtures as the home of these cases; new files are preferred because
 `PBT/ProcessParameterServiceTests.cs` is already 2,134 lines and `PBT/ProcessMappingServiceTests.cs` 805 (measured
 2026-10-01), and either placement satisfies PB-9 as long as every fixture carries the CI categories of section 2.1.
-Refusal and notice IDs (F-T1..F-T7, F-M1..F-M4) refer to the catalogue in the decisions' Appendix A; a test asserts
+Refusal and notice IDs (F-T1..F-T7, F-M1..F-M5) refer to the catalogue in the decisions' Appendix A; a test asserts
 the catalogue's key words (the names it must mention), not the full sentence, so wording can be tuned in review.
 
 A shape of a case, to fix the conventions (C# 7.3):
@@ -296,7 +309,7 @@ section 10; PT-a and PT-b are this ticket's.
 | # | Key or row | Designer capture | Builder | Rule | PU-13 | V4 |
 |---|---|---|---|---|---|---|
 | N5 | parameter and item `UId` | fresh | fresh | ignored: parameters paired by `A2`, items by `A2` under their parent | yes | yes |
-| PT-a | schema UIds inside `A3`, `A4`, `GS5` and `IL2` | `<P>` | `<P>` | role-replaced (`<P>`) as in serialization capture section 12.8 step 3. A key present on one side only is a DIFF unless N9 or N15 covers it, so an `A3` / `A4` the stand's save does not fill on the builder's side fails V4 | not compared: the harness writes no `A3` / `A4` (written only when non-empty, `CORE/Terrasoft.Core/MetaItem.cs:261-262`, and the harness sets neither; whether the stand's save does is what V4 sees) and no `GS5` (written only when `ModifiedInSchemaUId` is set, and it defaults to empty: `CORE/Terrasoft.Core/Process/ProcessSchemaParameterValue.cs:258, 467`) | yes |
+| PT-a | schema UIds inside `A3`, `A4`, `GS5` and `IL2` | `<P>` | `<P>` | role-replaced (`<P>`) as in serialization capture section 12.8 step 3. A key present on one side only is a DIFF unless N9 or N15 covers it, so an `A3` / `A4` the stand's save does not fill on the builder's side fails V4 | not compared, and what the builder side carries is pinned instead. Corrected in PK-PT (measured in the harness): the harness DOES stamp `A3` = `A4` = the schema UId on a root parameter added to `schema.Parameters` (`CORE/Terrasoft.Core/MetaItemCollection.cs`, `InsertItem`; written only when non-empty, `CORE/Terrasoft.Core/MetaItem.cs:261-262`), the role the designer's capture carries, but not on its item, which joins `ItemProperties` before its parent joins the schema; an unbound value carries no `GS5` (written only when `ModifiedInSchemaUId` is set, and it defaults to empty: `CORE/Terrasoft.Core/Process/ProcessSchemaParameterValue.cs:258, 467`). Whether the stand's save fills the item's `A3` / `A4` is what V4 sees | yes |
 | N9 | `IL2` on a process parameter and on its items | absent: none of the three captures carries it (read 2026-10-01); serialization capture section 8 counts 0 of 3,335 process parameters and 0 of 678 items over the 7.8.0 corpus | `<P>`: `ContainerUId = schema.UId` (`PB/Parameters/ProcessParameterService.cs:65`; cloned items `:478`), written whenever non-empty (`CORE/Terrasoft.Core/Process/BaseProcessSchemaElement.cs:217`, key `IL2` at `:38`) | normalised: absent equals `<P>`. The meta path is the same either way, and ENG-96230 Collection process parameter type collections already ship it; V5 checks that the designer opens it (M22) | pinned (present) | normalised |
 | N15 | "no value" `L8` forms: `{}`, `{"GS5": <P>}`, no `L8` | `{"GS5": <P>}` on every unbound parameter and item of the three captures | no `GS1` / `GS2` | equal | yes | yes |
 | N14 | resource culture | authoring culture | request culture | compare the authoring culture's `Caption` rows only | - | yes |
@@ -364,17 +377,30 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 | PU-45 | `BindCollection` | explicit pairs; null pairs = the P2 policy | pairs written as given; null pairs behave as PU-31/PU-32 | AC-5 |
 | PU-46 | dotted source (extend) | `ApplyMapping_ShouldResolveADottedSource_WhenTheValueComesFromAnotherCollection` (`PBT/MultiInstanceMappingTests.cs:294`) | add the P1 assertion: `InputRecordCollection` now bound to `ReadOrders.ResultCompositeObjectList` | AC-5 |
 
-**T-68 on the create path.** A nested-item mapping in `mappings[]` of ONE create request threw a bare
-NullReferenceException on 1.6.6.54 (measured 2026-10-02; [traps](../eng-92719-file-processing-element/eng-92719-file-processing-element-traps.md)
-T-68), and the route is unchanged on 1.6.6.96 (hypothesis, source reading 2026-10-13: the locator's item descent is
-unchanged since 1.6.6.54, `ProcessMappingService.cs` only since 1.6.6.85, `d9571626`), so it is still this ticket's
-(plan PB-4): root-cause it before the binder code. Its regression test is a build-path case beside PU-26 and PU-27:
-the element and the nested mapping in ONE request through `ProcessBuildHandler`, asserting both levels bound and no
-exception. If the root cause lies in the platform's parameter sync, which the harness cannot run (section 3 item 6),
-the unit case pins only the package's part, and the proof is a create request with a nested mapping on the stand
-(E2E-06 sends one). A build-path fixture on a `TestProcessSchema` needs the workaround of section 3 item 2. A create
-that builds a file element now also runs the configuration ledger's reconcile after the gate; the ledger has no rule
-for the three file schemas, so it adds no notice (hypothesis, source), and the notice-list assertions stay exact.
+**T-68 on the create path: fixed in code, stand proof owed.** A nested-item mapping in `mappings[]` of ONE create
+request threw a bare NullReferenceException on 1.6.6.54 (measured 2026-10-02;
+[traps](../eng-92719-file-processing-element/eng-92719-file-processing-element-traps.md) T-68). PK-PT (draft PR #96,
+2026-10-14) root-caused it (plan PB-4): the nested items of a user task synced in the same request carry
+`ProcessSchema == null`, because the platform's sync copies template items whose owner is a `ProcessUserTaskSchema`,
+so `GetMetaPath()` threw once the locator set their container; the modify path loads items through the metadata
+reader, which owns them. The for-mapping walk now adopts each descended item. The regression test (TC-U-55,
+`FileCollectionMappingTests.BuildProcess_ShouldStoreTheModifyPathsValue_WhenANestedItemIsMappedInTheCreateRequest`)
+runs the platform's REAL sync through the recipe of section 3 item 6, builds the two elements and the nested mapping
+in ONE request through `ProcessBuildHandler`, asserts as a precondition that the synced nested item has no owning
+schema, and asserts that the create path stores exactly the value `addMapping` stores on the same elements loaded for
+modify, P1's parent included, with no exception and no notice. A sibling covers `addElement` + `addMapping` in one
+modify batch. The proof on a real server is still owed: E2E-06 sends such a create, and manual TC-04 on ENG-95984
+repeats it. A create that builds a file element also runs the configuration ledger's reconcile after the gate; the
+ledger has no rule for the three file schemas, so it adds no notice (the test asserts `Warnings` null), and the
+notice-list assertions stay exact.
+
+**Cases review gate 1 added to `FileCollectionMappingTests`** beside PU-26..PU-45 (no new PU ids): a SOURCE chain
+deeper than the target's is refused (F-M5) and writes nothing; a TARGET chain deeper than the source's binds only the
+matching inner levels (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files`, not `Messages`), and
+equal depths pair level by level; a P1 parent goes through the sub-process direction guard; P3 resets EVERY bound
+collection above a file item, one notice per level; P2 resets an unpairable item bound outside the new source, with a
+notice naming the old binding; `BindCollectionItems` runs the outer target's guards; an item mapped from its sibling
+binds no reference of a collection to itself.
 
 ### 4.6 Type compatibility (no code change; pins only)
 
