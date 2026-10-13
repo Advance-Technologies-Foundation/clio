@@ -66,6 +66,26 @@ public sealed class ExecuteEsqQueryHintsE2ETests : McpContractFixtureBase {
 		response.Error.Should().Contain("'query' argument", because: "the shape is still explained");
 	}
 
+	[Test]
+	[AllureTag(ExecuteEsqTool.ToolName)]
+	[AllureName("execute-esq suggests no query for a number literal")]
+	[AllureDescription("Review ENG-103025: 'IsActive = 1' cannot tell a Boolean column from an Integer one, so no suggested-query is returned.")]
+	[Description("execute-esq with a numeric equality literal returns the shape and no suggested-query.")]
+	public async Task ExecuteEsq_Should_Not_Suggest_Query_For_A_Number_Literal() {
+		// Arrange
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ExecuteEsqResponse response = await CallAsync(arrange, new Dictionary<string, object?> {
+			["query"] = "SELECT Name FROM Contact WHERE IsActive = 1"
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "SQL text is never executed");
+		response.SuggestedQuery.Should().BeNull(because: "a filter typed from the literal would often be wrong");
+		response.Error.Should().Contain("The filter on 'IsActive'", because: "the caller learns which filter blocked the suggestion");
+	}
+
 	private static async Task<ExecuteEsqResponse> CallAsync(ArrangeContext arrange, Dictionary<string, object?> args) {
 		args["environment-name"] = $"missing-esq-hint-env-{Guid.NewGuid():N}";
 		CallToolResult callResult = await arrange.Session.CallToolAsync(

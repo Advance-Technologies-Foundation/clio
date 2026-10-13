@@ -49,7 +49,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		"A requested column whose columnPath does not resolve fails the call (success:false) instead of being " +
 		"silently dropped from the rows. A query whose columns, filters or rowCount have the wrong shape (for example " +
 		"columns as an array) or that carries non-SelectQuery parts (where, orderBy, ...) is refused, never run without " +
-		"them; where the mapping is safe the equivalent query is returned in suggested-query. Read-only: write SQL " +
+		"them; where the mapping is safe the equivalent query is returned in suggested-query. A member clio does not know " +
+		"runs, with a warning. Read-only: write SQL " +
 		"(UPDATE, DELETE, ...) is refused. DataService responses larger than the fixed MCP-safe budget fail with " +
 		"error-class=result-too-large; select explicit columns, lower rowCount, or page the query.")]
 	public ExecuteEsqResponse Execute(
@@ -86,7 +87,8 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			}
 			// QA ENG-103025: a SelectQuery whose columns are an array (or any part Creatio would silently ignore) ran and
 			// returned Id-only rows. Refuse it, with the equivalent query where that is safe, instead of losing parts.
-			if (ExecuteEsqQueryHints.CheckSelectQueryShape(query, args.ExtensionData) is { } shapeHint) {
+			if (ExecuteEsqQueryHints.CheckSelectQueryShape(query, args.ExtensionData,
+					out IReadOnlyList<string> shapeWarnings) is { } shapeHint) {
 				return FromHint(shapeHint);
 			}
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
@@ -106,12 +108,12 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			bool responseIsTooLarge = responseJson.Length > maxResponseBytes
 				|| Encoding.UTF8.GetByteCount(responseJson) > maxResponseBytes;
 			if (responseIsTooLarge) {
-				return ExecuteEsqResponse.ResultTooLarge(maxResponseBytes, suggestFileTwin);
+				return WithWarnings(ExecuteEsqResponse.ResultTooLarge(maxResponseBytes, suggestFileTwin), shapeWarnings);
 			}
 
 			IReadOnlyList<string> requestedColumns = ExtractRequestedColumnAliases(query);
 			string rootSchemaName = rootSchema.GetString() ?? string.Empty;
-			return ParseSelectQueryResponse(responseJson, requestedColumns, rootSchemaName);
+			return WithWarnings(ParseSelectQueryResponse(responseJson, requestedColumns, rootSchemaName), shapeWarnings);
 		} catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) {
 			// A timeout/cancellation is not a malformed-query problem, so it must not carry the
 			// "you probably guessed the ESQ format wrong" recovery hint.
@@ -121,6 +123,10 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	// A canonical query answers byte-for-byte as before: the field is set only when there is something to say.
+	private static ExecuteEsqResponse WithWarnings(ExecuteEsqResponse response, IReadOnlyList<string> warnings) =>
+		warnings.Count == 0 ? response : response with { Warnings = warnings };
 
 	private static ExecuteEsqResponse FromHint(ExecuteEsqQueryHints.Hint hint) =>
 		ExecuteEsqResponse.Failure(hint.Message + QueryShapeExample) with { SuggestedQuery = hint.SuggestedQuery };
@@ -402,7 +408,12 @@ public sealed record ExecuteEsqResponse(
 	[property: JsonPropertyName("suggested-query")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Failure only: the SelectQuery equivalent of the SQL text or top-level columns the call carried, ready to resend as 'query'. It was NOT executed.")]
-	JsonElement? SuggestedQuery = null) {
+	JsonElement? SuggestedQuery = null,
+
+	[property: JsonPropertyName("warnings")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Notes about the query as sent, e.g. a member clio does not know as a SelectQuery member (sent as is; Creatio may have ignored it). Omitted when there is nothing to say.")]
+	IReadOnlyList<string>? Warnings = null) {
 
 	/// <summary>
 	/// Recovery hint attached to every failure so a caller that guessed the ESQ format is pointed at the guidance.

@@ -153,6 +153,119 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 		text.Should().Contain("Nothing was built", because: "the refusal happens before any write");
 	}
 
+	[Test]
+	[AllureTag(ValidateProcessGraphTool.ToolName)]
+	[AllureName("validate-process-graph says element configuration was not checked for a descriptor")]
+	[AllureDescription("Review ENG-103025: a create-business-process descriptor sent as the graph is validated, and the response says only the graph shape was checked.")]
+	[Description("validate-process-graph with descriptor{elements,flows} succeeds and warns that element configuration was not checked.")]
+	public async Task ValidateProcessGraph_Should_Say_Element_Configuration_Was_Not_Checked() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
+
+		// Act
+		CallToolResult callResult = await arrange.Session.CallToolAsync(
+			ValidateProcessGraphTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["descriptor"] = new Dictionary<string, object?> {
+						["name"] = "UsrClioE2eGraphOnly", ["caption"] = "x",
+						["elements"] = new object[] {
+							new Dictionary<string, object?> { ["name"] = "s", ["type"] = "startEvent", ["caption"] = "Start" },
+							new Dictionary<string, object?> { ["name"] = "e", ["type"] = "endEvent", ["caption"] = "End" }
+						},
+						["flows"] = new object[] { new Dictionary<string, object?> { ["source"] = "s", ["target"] = "e" } }
+					}
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		ValidateProcessGraphResponse response = EntitySchemaStructuredResultParser.Extract<ValidateProcessGraphResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the descriptor's graph is valid: {response.Error}");
+		response.Warnings.Should().Contain(ProcessToolArgumentAliases.DescriptorOnlyGraphCheckedNote,
+			because: "a passing graph must not read as a passing descriptor");
+	}
+
+	[Test]
+	[AllureTag("modify-business-process")]
+	[AllureName("modify-business-process refuses a synonym next to process-name")]
+	[AllureDescription("Review ENG-103025: modify-business-process now reads processName as process-name; sent next to process-name it is ambiguous and refused before anything is written.")]
+	[Description("modify-business-process with both process-name and processName is refused as an ambiguous identity and changes nothing.")]
+	public async Task ModifyBusinessProcess_Should_Refuse_Ambiguous_Identity() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await arrange.Session.CallDestructiveAsync(
+			"modify-business-process",
+			new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["process-name"] = StockProcessCode,
+				["processName"] = "UsrClioE2eOther",
+				["operations"] = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"UsrE2e\",\"type\":\"Integer\"}}]"
+			},
+			arrange.CancellationTokenSource.Token);
+		string text = string.Concat(result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		text.Should().Contain("Ambiguous process identity", because: "two names for one process have no single reading");
+		text.Should().Contain("Nothing was changed", because: "the refusal happens before any write");
+	}
+
+	[Test]
+	[AllureTag("modify-business-process-as-new-version")]
+	[AllureName("modify-business-process-as-new-version refuses a synonym next to process-name")]
+	[AllureDescription("Review ENG-103025: the as-new-version tool follows the same identity rule as modify-business-process; an ambiguous identity is refused before any version is created.")]
+	[Description("modify-business-process-as-new-version with both process-name and processName is refused as an ambiguous identity and creates nothing.")]
+	public async Task ModifyProcessAsNewVersion_Should_Refuse_Ambiguous_Identity() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await arrange.Session.CallDestructiveAsync(
+			"modify-business-process-as-new-version",
+			new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["process-name"] = StockProcessCode,
+				["processName"] = "UsrClioE2eOther"
+			},
+			arrange.CancellationTokenSource.Token);
+		string text = string.Concat(result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		text.Should().Contain("Ambiguous process identity", because: "two names for one process have no single reading");
+		text.Should().Contain("Nothing was changed", because: "an undeletable version must never be created from a guess");
+	}
+
+	[Test]
+	[AllureTag("create-business-process")]
+	[AllureName("create-business-process refuses a double wrapper around nothing")]
+	[AllureDescription("QA ENG-103025: descriptor{descriptor{}} holds no process; the call is refused with the mini-contract and nothing is built.")]
+	[Description("QA ENG-103025: create-business-process with descriptor{descriptor:{}} is refused as empty, with a minimal valid example.")]
+	public async Task CreateBusinessProcess_Should_Refuse_Empty_Double_Wrapper() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult result = await arrange.Session.CallDestructiveAsync(
+			"create-business-process",
+			new Dictionary<string, object?> {
+				["environment-name"] = environmentName,
+				["descriptor"] = new Dictionary<string, object?> { ["descriptor"] = new Dictionary<string, object?>() }
+			},
+			arrange.CancellationTokenSource.Token);
+		string text = string.Concat(result.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+		// Assert
+		text.Should().Contain("it is empty", because: "there is no process to build");
+		text.Should().Contain("Minimal valid arguments:", because: "the caller gets a buildable example");
+	}
+
 	private static async Task<string> ResolveEnvironmentAsync() {
 		McpE2ESettings settings = TestConfiguration.Load();
 		return await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,

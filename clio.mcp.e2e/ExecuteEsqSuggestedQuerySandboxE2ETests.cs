@@ -107,6 +107,43 @@ public sealed class ExecuteEsqSuggestedQuerySandboxE2ETests : McpContractFixture
 			.And.NotContain("not valid JSON", because: "the statement is SQL, not malformed JSON");
 	}
 
+	[Test]
+	[AllureTag(ExecuteEsqTool.ToolName)]
+	[AllureName("execute-esq runs a query carrying an unknown member, with a warning")]
+	[AllureDescription("Review ENG-103025: a member clio does not know as a SelectQuery member no longer refuses a working query; it runs on the live stand and the response names the member in warnings.")]
+	[Description("Review ENG-103025: a well-formed SelectQuery with an unknown extra member runs on the stand and returns a warning naming it.")]
+	public async Task ExecuteEsq_Should_Run_With_A_Warning_When_The_Query_Has_An_Unknown_Member() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
+			$"execute-esq unknown-member MCP E2E requires the configured sandbox environment '{settings.Sandbox.EnvironmentName}' to be set and reachable.");
+		await using var arrange = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ExecuteEsqResponse response = await CallAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName,
+			["query"] = new Dictionary<string, object?> {
+				["rootSchemaName"] = "Contact",
+				["operationType"] = 0,
+				["allColumns"] = false,
+				["rowCount"] = 1,
+				["columns"] = new Dictionary<string, object?> {
+					["items"] = new Dictionary<string, object?> {
+						["Name"] = new Dictionary<string, object?> {
+							["expression"] = new Dictionary<string, object?> { ["expressionType"] = 0, ["columnPath"] = "Name" }
+						}
+					}
+				},
+				["clioE2eUnknownMember"] = true
+			}
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"an unknown member must not turn a working query into a failure: {response.Error}");
+		response.Warnings.Should().ContainSingle().Which.Should().Contain("'clioE2eUnknownMember'",
+			because: "the caller learns the member may have been ignored");
+	}
+
 	private static async Task<ExecuteEsqResponse> CallAsync(ArrangeContext arrange, Dictionary<string, object?> args) {
 		CallToolResult callResult = await arrange.Session.CallToolAsync(
 			ExecuteEsqTool.ToolName,

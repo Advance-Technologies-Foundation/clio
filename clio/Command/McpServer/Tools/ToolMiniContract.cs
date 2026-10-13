@@ -12,9 +12,11 @@ namespace Clio.Command.McpServer.Tools;
 /// </summary>
 /// <remarks>
 /// Kept short on purpose (<see cref="MaxLength"/> characters): the text travels in an error envelope on every
-/// probe, and the full contract stays one <c>get-tool-contract</c> call away. The examples are real argument
-/// objects and are pinned by tests that bind them to the tool's own args record, so they cannot drift into
-/// advice the tool would refuse.
+/// probe, and the full contract stays one <c>get-tool-contract</c> call away. Every contract is static, so the
+/// bound is held by tests rather than by cutting the text, which would only ever hand the caller a broken JSON
+/// example. The examples are real argument objects and are pinned by tests that bind them to the tool's own args
+/// record and check their values against the tool's own vocabularies (column types, operation tokens), so they
+/// cannot drift into advice the tool would refuse.
 /// </remarks>
 internal static class ToolMiniContract {
 
@@ -33,15 +35,20 @@ internal static class ToolMiniContract {
 		+ "\"packageName\":\"<package>\",\"elements\":[{\"name\":\"Start\",\"type\":\"startEvent\",\"caption\":\"Start\"},"
 		+ "{\"name\":\"End\",\"type\":\"endEvent\",\"caption\":\"End\"}],\"flows\":[{\"source\":\"Start\",\"target\":\"End\"}]}}";
 
-	/// <summary>Minimal valid <c>args</c> object of <c>modify-business-process</c>.</summary>
+	/// <summary>
+	/// Minimal valid <c>args</c> object of <c>modify-business-process</c>. An ADDITIVE operation that shows its
+	/// envelope (<c>addParameter</c> carries its payload under <c>parameter</c>): agents that read only a short
+	/// contract sent <c>addMapping</c>/<c>setElement</c> without the <c>mapping</c>/<c>elementUpdate</c> wrapper
+	/// (ENG-102797), and a destructive example on a made-up element is the wrong thing to copy.
+	/// </summary>
 	internal const string ModifyBusinessProcessExample =
 		"{\"environment-name\":\"<env>\",\"process-name\":\"UsrDemoProcess\","
-		+ "\"operations\":[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]}";
+		+ "\"operations\":[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"UsrAmount\",\"type\":\"Integer\"}}]}";
 
 	/// <summary>Minimal valid <c>args</c> object of <c>create-entity-schema</c>.</summary>
 	internal const string CreateEntitySchemaExample =
 		"{\"environment-name\":\"<env>\",\"package-name\":\"<package>\",\"schema-name\":\"UsrOrder\","
-		+ "\"title-localizations\":{\"en-US\":\"Order\"},\"columns\":[{\"name\":\"UsrAmount\",\"type\":\"Float\","
+		+ "\"title-localizations\":{\"en-US\":\"Order\"},\"columns\":[{\"name\":\"UsrAmount\",\"type\":\"Decimal2\","
 		+ "\"title-localizations\":{\"en-US\":\"Amount\"}}]}";
 
 	/// <summary>
@@ -57,22 +64,25 @@ internal static class ToolMiniContract {
 		string lead = missing.Count == 0
 			? $"{toolName} was called with no arguments."
 			: $"{toolName}: missing required {noun} " + string.Join(", ", missing.Select(name => $"'{name}'")) + ".";
-		string text = $"{lead} Required: {string.Join("; ", required)}. Minimal valid arguments: {exampleArgs}";
-		return text.Length <= MaxLength ? text : text[..MaxLength];
+		return $"{lead} Required: {string.Join("; ", required)}. Minimal valid arguments: {exampleArgs}";
 	}
 
 	/// <summary>
-	/// Appends <paramref name="contract"/> to a "... is required" refusal, keeping its exit code and its leading
-	/// sentence exactly as before: callers and tests branch on both, so the mini-contract only ADDS to them.
+	/// Appends the mini-contract to a refusal when the call lacks a required argument, keeping the refusal's exit
+	/// code and its leading sentence exactly as before: callers and tests branch on both, so the mini-contract only
+	/// ADDS to them. Whether to append is decided by <paramref name="missing"/>, never by the refusal's wording,
+	/// so rewording a refusal cannot make the contract silently disappear.
 	/// </summary>
 	/// <param name="refusal">The refusal the tool already produces.</param>
-	/// <param name="contract">The rendered mini-contract.</param>
-	internal static CommandExecutionResult Decorate(CommandExecutionResult refusal, string contract) {
+	/// <param name="missing">The required arguments the call lacks; empty leaves the refusal untouched.</param>
+	/// <param name="render">Renders the tool's mini-contract for <paramref name="missing"/>.</param>
+	internal static CommandExecutionResult Decorate(CommandExecutionResult refusal, IReadOnlyList<string> missing,
+		Func<IReadOnlyList<string>, string> render) {
 		string? text = refusal.Output?.FirstOrDefault()?.Value?.ToString();
-		if (text is null || !text.Contains("is required", StringComparison.Ordinal)) {
+		if (missing.Count == 0 || text is null) {
 			return refusal;
 		}
-		return refusal with { Output = [new Clio.Common.ErrorMessage($"{text} {contract}")] };
+		return refusal with { Output = [new Clio.Common.ErrorMessage($"{text} {render(missing)}")] };
 	}
 
 	/// <summary>The mini-contract of <c>create-app</c>.</summary>
@@ -98,7 +108,9 @@ internal static class ToolMiniContract {
 		missing,
 		[
 			RegisteredEnvironmentLine, "process-name OR process-uid (exactly one)",
-			"operations (JSON array of {op, ...} objects)"
+			"operations (JSON array of {op, ...}; each op carries its payload under a named key: addElement element, "
+			+ "addParameter parameter, addMapping mapping, setElement elementUpdate; get-tool-contract "
+			+ "tool-names=[modify-business-process] lists every op shape)"
 		],
 		ModifyBusinessProcessExample);
 

@@ -16,7 +16,8 @@ namespace Clio.Command.McpServer.Tools;
 /// Nothing here executes anything. A translated query is only RETURNED: the caller sends it, which keeps the
 /// decision (and the check that the schema and columns are what was meant) with the caller. Only the shapes that
 /// have one obvious reading are translated - a single table, a plain list of column names, equality filters on
-/// text, GUID or integer literals joined by AND, and a row cap. Everything else (joins, functions, OR, ranges,
+/// text or GUID literals joined by AND, and a row cap. A number or a date literal is not: it cannot tell an
+/// Integer column from a Boolean or Decimal one, or a Text column from a DateTime one. Everything else (joins, functions, OR, ranges,
 /// <c>*</c>, ordering, aliases, dotted paths) gets the shape and no suggestion, because a wrong guess would run a
 /// different read than the one intended.
 /// </remarks>
@@ -28,26 +29,47 @@ internal static class ExecuteEsqQueryHints {
 	/// <summary>Largest row cap a translation will carry over.</summary>
 	internal const int MaxRowCount = 10_000;
 
-	private static readonly string[] SchemaKeys = ["schemaname", "rootschemaname", "entity", "entityname", "table", "tablename", "from", "object"];
-	private static readonly string[] ColumnKeys = ["columns", "select", "fields"];
-	private static readonly string[] FilterKeys = ["filters", "filter", "where"];
-	private static readonly string[] LimitKeys = ["rowcount", "top", "limit", "take", "maxrows"];
+	// Key()-normalized names of the SelectQuery members this class reads.
+	private const string RootSchemaNameKey = "rootschemaname";
+	private const string ColumnsKey = "columns";
+	private const string FiltersKey = "filters";
+	private const string RowCountKey = "rowcount";
+	private const string OperationTypeKey = "operationtype";
+	private const string AllColumnsKey = "allcolumns";
+
+	private static readonly string[] SchemaKeys = ["schemaname", RootSchemaNameKey, "entity", "entityname", "table", "tablename", "from", "object"];
+	private static readonly string[] ColumnKeys = [ColumnsKey, "select", "fields"];
+	private static readonly string[] FilterKeys = [FiltersKey, "filter", "where"];
+	private static readonly string[] LimitKeys = [RowCountKey, "top", "limit", "take", "maxrows"];
 	private static readonly string[] SqlKeys = ["sql", "sqlquery", "sqltext", "statement"];
 
 	// Every alias of a query part (schema, columns, filters, row cap, SQL text), Key()-normalized.
 	private static readonly HashSet<string> QueryPartKeys =
 		new(SchemaKeys.Concat(ColumnKeys).Concat(FilterKeys).Concat(LimitKeys).Concat(SqlKeys), StringComparer.Ordinal);
 
-	// The members of Creatio's SelectQuery data contract (Terrasoft.Nui.ServiceModel.DataContract.SelectQuery and
-	// its BaseFilterableQuery/BaseQuery bases), Key()-normalized, plus the serializer's type hints. The DataService
-	// ignores any other member without an error, so a query carrying one would run without that part.
+	// The members of Creatio's SelectQuery data contract, Key()-normalized, plus the serializer's type hints. SOURCE:
+	// the public properties of Terrasoft.Nui.ServiceModel.DataContract.SelectQuery and its BaseFilterableQuery and
+	// BaseQuery bases in Terrasoft.Nui.ServiceModel.dll, read with System.Reflection.Metadata on 2026-10-13 from
+	// 8.1.0.6716 (the assembly clio ships) and 10.2.47 (a current platform build); the union of both is listed.
+	// Re-read it the same way when the platform adds a member. The list is NOT the refusal: a member missing from it
+	// only earns a warning (see ShapeProblem), so a gap here never turns a working query into a hard failure.
 	private static readonly HashSet<string> SelectQueryMembers = new(StringComparer.Ordinal) {
-		"queryid", "querykind", "columnvalues", "rootschemaname", "operationtype", "includeprocessexecutiondata",
-		"querytype", "filters", "columns", "allcolumns", "serveresqcacheparameters", "ispageable", "isdistinct",
-		"uselocalization", "userecorddeactivation", "rowcount", "conditionalvalues", "ishierarchical",
-		"hierarchicalmaxdepth", "hierarchicalcolumnname", "hierarchicalcolumnvalue", "rowsoffset", "chunksize",
+		"queryid", "querykind", "columnvalues", RootSchemaNameKey, OperationTypeKey, "includeprocessexecutiondata",
+		"forcebackgroundmode", "processexecutionoptions",
+		"querytype", FiltersKey, ColumnsKey, AllColumnsKey, "serveresqcacheparameters", "ispageable", "isdistinct",
+		"uselocalization", "userecorddeactivation", RowCountKey, "conditionalvalues", "ishierarchical",
+		"hierarchicalmaxdepth", "hierarchicalcolumnname", "hierarchicalcolumnvalue", "hierarchicalfulldataload",
+		"hierarchicalcolumnfiltersvalue", "rowsoffset", "chunksize",
 		"queryoptimize", "usemetrics", "adminunitrolesources", "querysource", "ignoredisplayvalues", "type", "$type"
 	};
+
+	// Keys that are recognisably a query PART written the SQL/OData way (where, orderBy, select, limit, ...). They are
+	// never a SelectQuery member on any platform version, and the DataService would drop them silently - running
+	// the query without its filter, order or cap - so a query carrying one is refused rather than warned about.
+	private static readonly HashSet<string> MisplacedPartKeys = new(
+		QueryPartKeys.Concat(["orderby", "order", "sort", "sortby", "sorting", "groupby", "having", "join", "joins",
+			"offset", "skip", "page", "pagesize", "distinct"]),
+		StringComparer.Ordinal);
 
 	private static readonly Regex Identifier = new(@"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
 
@@ -64,7 +86,7 @@ internal static class ExecuteEsqQueryHints {
 	// Top-level members of a real SelectQuery whose meaning a translation keeps: anything else on a malformed query
 	// (isDistinct, rowsOffset, isPageable, ...) would be dropped by a suggestion, so none is made.
 	private static readonly HashSet<string> TranslatableSelectQueryKeys = new(StringComparer.Ordinal) {
-		"rootschemaname", "operationtype", "allcolumns", "columns", "filters", "rowcount"
+		RootSchemaNameKey, OperationTypeKey, AllColumnsKey, ColumnsKey, FiltersKey, RowCountKey
 	};
 
 	private static readonly Regex SelectShape = new(
@@ -134,7 +156,7 @@ internal static class ExecuteEsqQueryHints {
 	}
 
 	private static bool HasSelectQueryColumns(JsonElement query) =>
-		query.TryGetProperty("columns", out JsonElement columns) && columns.ValueKind == JsonValueKind.Object;
+		query.TryGetProperty(ColumnsKey, out JsonElement columns) && columns.ValueKind == JsonValueKind.Object;
 
 	private static bool HasRootSchemaName(JsonElement query) =>
 		query.TryGetProperty("rootSchemaName", out JsonElement root)
@@ -150,7 +172,21 @@ internal static class ExecuteEsqQueryHints {
 	/// </summary>
 	/// <param name="query">The normalized <c>query</c> object (it has a non-empty <c>rootSchemaName</c>).</param>
 	/// <param name="extensionData">Top-level keys the binder could not bind.</param>
-	internal static Hint? CheckSelectQueryShape(JsonElement query, IReadOnlyDictionary<string, JsonElement>? extensionData) {
+	/// <param name="warnings">
+	/// Members the query carries that clio does not know as SelectQuery members but that are not a misplaced query
+	/// part either - most likely a member a newer platform added. The query still runs; the caller reports them.
+	/// </param>
+	internal static Hint? CheckSelectQueryShape(JsonElement query, IReadOnlyDictionary<string, JsonElement>? extensionData,
+		out IReadOnlyList<string> warnings) {
+		List<string> unknown = query.EnumerateObject()
+			.Where(property => IsUnknownMember(Key(property.Name)))
+			.Select(property => $"'{McpToolArgumentSupport.DescribeCallerKey(property.Name)}'")
+			.ToList();
+		warnings = unknown.Count == 0
+			? []
+			: [$"query carries {string.Join(", ", unknown)}, which clio does not know as a SelectQuery member. It was "
+				+ "sent as is: if this Creatio version does not know it either, the DataService ignored it and the rows "
+				+ "were read without it."];
 		List<string> stray = (extensionData?.Keys ?? Enumerable.Empty<string>())
 			.Where(key => QueryPartKeys.Contains(Key(key)))
 			.Select(key => $"'{McpToolArgumentSupport.DescribeCallerKey(key)}'")
@@ -174,8 +210,8 @@ internal static class ExecuteEsqQueryHints {
 			return new Hint(prefix + " It also carries parts a translation would drop or misread, so no query is "
 				+ "suggested.", null);
 		}
-		flat.Remove("operationtype");
-		flat.Remove("allcolumns");
+		flat.Remove(OperationTypeKey);
+		flat.Remove(AllColumnsKey);
 		return FromFlat(flat, prefix);
 	}
 
@@ -188,10 +224,10 @@ internal static class ExecuteEsqQueryHints {
 		if (!flat.Keys.All(key => TranslatableSelectQueryKeys.Contains(key) || QueryPartKeys.Contains(key))) {
 			return false;
 		}
-		if (flat.TryGetValue("allcolumns", out JsonElement all) && all.ValueKind == JsonValueKind.True) {
+		if (flat.TryGetValue(AllColumnsKey, out JsonElement all) && all.ValueKind == JsonValueKind.True) {
 			return false;
 		}
-		if (flat.TryGetValue("operationtype", out JsonElement operation)
+		if (flat.TryGetValue(OperationTypeKey, out JsonElement operation)
 			&& !(operation.ValueKind == JsonValueKind.Number && operation.TryGetInt32(out int kind) && kind == 0)) {
 			return false;
 		}
@@ -202,7 +238,25 @@ internal static class ExecuteEsqQueryHints {
 		filters.ValueKind == JsonValueKind.Object
 		&& (filters.TryGetProperty("items", out _) || filters.TryGetProperty("filterType", out _));
 
-	/// <summary>Why one top-level member of a SelectQuery would be ignored or misread, or null when it is fine.</summary>
+	// Stems of the parts that change WHAT is read. An unrecognised key carrying one (a misspelled 'column', 'rowCnt',
+	// 'filterGroup', 'criteria') is far likelier a part sent under the wrong name than a new platform member, and
+	// running without it returns the wrong rows with success:true - so it is refused like a misplaced part.
+	private static readonly string[] ReadShapingStems =
+		["column", "filter", "row", "where", "order", "sort", "limit", "select", "criteri", "condition"];
+
+	/// <summary>A query part under a non-SelectQuery name: refused, because the DataService would silently drop it.</summary>
+	private static bool IsMisplacedPart(string key) =>
+		!SelectQueryMembers.Contains(key)
+		&& (MisplacedPartKeys.Contains(key) || ReadShapingStems.Any(stem => key.Contains(stem, StringComparison.Ordinal)));
+
+	/// <summary>A member clio does not know that shapes nothing it can name: sent as is, with a warning.</summary>
+	private static bool IsUnknownMember(string key) =>
+		!SelectQueryMembers.Contains(key) && !IsMisplacedPart(key);
+
+	/// <summary>
+	/// Why one top-level member of a SelectQuery would be ignored or misread, or null when it is fine or merely
+	/// unknown to clio (that one is a warning, not a refusal: see <see cref="SelectQueryMembers"/>).
+	/// </summary>
 	private static string? ShapeProblem(JsonProperty property) {
 		string key = Key(property.Name);
 		JsonElement value = property.Value;
@@ -212,24 +266,22 @@ internal static class ExecuteEsqQueryHints {
 			return null;
 		}
 		switch (key) {
-			case "columns":
+			case ColumnsKey:
 				return value.ValueKind == JsonValueKind.Object && value.TryGetProperty("items", out JsonElement items)
 					&& items.ValueKind == JsonValueKind.Object
 					? null
 					: $"'{name}' must be an object {{\"items\":{{\"<alias>\":{{\"expression\":{{\"expressionType\":0,\"columnPath\":\"<column>\"}}}}}}}}, not {Describe(value)}";
-			case "filters":
+			case FiltersKey:
 				return IsFilterGroup(value)
 					&& (!value.TryGetProperty("items", out JsonElement filterItems) || filterItems.ValueKind == JsonValueKind.Object)
 					? null
 					: $"'{name}' must be a filter object {{\"filterType\":6,\"items\":{{\"<key>\":{{...}}}}}}, not {Describe(value)}";
-			case "rowcount":
+			case RowCountKey:
 				return value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out _)
 					? null
 					: $"'{name}' must be a whole number, not {Describe(value)}";
 			default:
-				return SelectQueryMembers.Contains(key)
-					? null
-					: $"'{name}' is not a SelectQuery member";
+				return IsMisplacedPart(key) ? $"'{name}' is not a SelectQuery member" : null;
 		}
 	}
 
@@ -388,11 +440,9 @@ internal static class ExecuteEsqQueryHints {
 			.ToList();
 	}
 
+	// Only text and GUID values reach here: Suggest refuses a number or a date before building any filter, because
+	// the literal cannot tell the column's type. Numbers are still PARSED, so that refusal can name the filter.
 	private static SelectQueryHelper.SelectQueryFilterDefinition ToFilterDefinition((string Column, JsonElement Value) filter) {
-		if (filter.Value.ValueKind == JsonValueKind.Number) {
-			return new SelectQueryHelper.SelectQueryFilterDefinition(
-				filter.Column, filter.Value.GetInt64(), SelectQueryHelper.IntDataValueType);
-		}
 		string text = filter.Value.GetString() ?? string.Empty;
 		int dataType = GuidLiteral.IsMatch(text) ? SelectQueryHelper.GuidDataValueType : SelectQueryHelper.TextDataValueType;
 		return new SelectQueryHelper.SelectQueryFilterDefinition(filter.Column, text, dataType);
@@ -411,10 +461,29 @@ internal static class ExecuteEsqQueryHints {
 		return result;
 	}
 
+	private static readonly Regex DateLiteral = new(
+		@"^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$",
+		RegexOptions.NonBacktracking | RegexOptions.CultureInvariant);
+
+	/// <summary>
+	/// A filter value whose column type the literal cannot tell: a number (Integer, Decimal or Boolean - 'IsActive = 1')
+	/// or a date ('CreatedOn = 2024-01-01', which as Text would never match a DateTime column).
+	/// </summary>
+	private static bool IsTypeAmbiguous(JsonElement value) =>
+		value.ValueKind == JsonValueKind.Number
+		|| (value.ValueKind == JsonValueKind.String && DateLiteral.IsMatch(value.GetString() ?? string.Empty));
+
 	private static Hint Suggest(
 		string prefix, string schema, List<string> columns, List<(string Column, JsonElement Value)> filters, int? requestedRows) {
 		if (requestedRows is <= 0 or > MaxRowCount) {
 			return new Hint(prefix + $" The row cap must be 1-{MaxRowCount}, so no query is suggested.", null);
+		}
+		if (filters.FirstOrDefault(filter => IsTypeAmbiguous(filter.Value)) is { Column: { } ambiguousColumn }) {
+			// Agents resend suggested-query as is, so a filter typed from the literal (an Integer filter on a Boolean
+			// column, a Text filter on a DateTime one) would come back as one more failed call or an empty read.
+			return new Hint(prefix + $" The filter on '{ambiguousColumn}' compares with a number or a date, and the "
+				+ "literal cannot tell its column type (Integer, Decimal, Boolean or DateTime), so no query is "
+				+ "suggested: build the filter with the column's dataValueType (get-guidance name=esq-filters).", null);
 		}
 		int rowCount = requestedRows ?? DefaultRowCount;
 		List<SelectQueryHelper.SelectQueryColumnDefinition> columnDefinitions =
@@ -424,8 +493,8 @@ internal static class ExecuteEsqQueryHints {
 			SelectQueryHelper.BuildSelectQuery(schema, columnDefinitions, filterDefinitions, rowCount));
 		return new Hint(prefix + " The equivalent query is returned in 'suggested-query' - send it as 'query' to run "
 			+ $"it. Check that '{schema}' is the Creatio schema name, that each column is an ESQ column name (a lookup is "
-			+ "'Account' or 'Account.Id', not the physical 'AccountId'), and that the filter values' types (inferred from "
-			+ $"the literals) fit their columns. The row cap is {rowCount}"
+			+ "'Account' or 'Account.Id', not the physical 'AccountId'), and that each filter fits its column (a quoted "
+			+ $"value is sent as Text, a GUID as Guid; a date-shaped one gets no suggestion). The row cap is {rowCount}"
 			+ (requestedRows is null ? " (default; none was given)." : "."), query);
 	}
 }

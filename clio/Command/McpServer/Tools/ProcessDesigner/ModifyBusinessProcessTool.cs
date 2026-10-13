@@ -377,6 +377,18 @@ public class ModifyBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: an unambiguous synonym of the process identity (processName, code, uid, ...) is read as the
+		// canonical argument it names - the same rule describe-business-process follows, minus the value-shape
+		// reading of name/process, which never drives a write. An ambiguous one is refused before anything runs.
+		ProcessToolArgumentAliases.IdentityResolution identity = ProcessToolArgumentAliases.ResolveWriteTarget(
+			args.ExtensionData, args.ProcessName, args.ProcessUid);
+		if (identity.Error is not null) {
+			return CommandExecutionResult.FromValidationError(identity.Error);
+		}
+		args = args with {
+			ProcessName = identity.ProcessName, ProcessUid = identity.ProcessUid, ExtensionData = identity.Remaining
+		};
+
 		// ENG-103025: a refusal for a missing environment, process or operations keeps its text and exit code and
 		// gains the required arguments and a minimal valid call after it.
 		List<string> missing = [];
@@ -389,17 +401,16 @@ public class ModifyBusinessProcessTool(
 		if (McpToolArgumentSupport.IsAbsentJsonDocument(args.Operations)) {
 			missing.Add("operations");
 		}
-		string contract = missing.Count > 0 ? ToolMiniContract.ForModifyBusinessProcess(missing) : string.Empty;
 
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
 		if (targetError is not null) {
-			return contract.Length > 0 ? ToolMiniContract.Decorate(targetError, contract) : targetError;
+			return ToolMiniContract.Decorate(targetError, missing, ToolMiniContract.ForModifyBusinessProcess);
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
 				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
-			return contract.Length > 0 ? ToolMiniContract.Decorate(operationsRefusal, contract) : operationsRefusal;
+			return ToolMiniContract.Decorate(operationsRefusal, missing, ToolMiniContract.ForModifyBusinessProcess);
 		}
 
 		ModifyBusinessProcessOptions options = new() {
@@ -414,7 +425,8 @@ public class ModifyBusinessProcessTool(
 		// server then warns that the process cannot run "until the configuration is compiled", and the gate
 		// drops the note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<ModifyBusinessProcessCommand>(options);
-		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(
+			result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote(), identity.Warnings);
 	}
 }
 

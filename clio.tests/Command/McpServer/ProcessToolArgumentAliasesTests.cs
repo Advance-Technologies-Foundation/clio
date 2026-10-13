@@ -490,4 +490,189 @@ public sealed class ProcessToolArgumentAliasesTests {
 		TextOf(result).Should().Contain("nested more than", because: "the refusal says why");
 		command.Captured.Should().BeNull(because: "nothing is built from a still-wrapped object");
 	}
+
+	// ------------------------------------------------------------------------------------------ review round 1
+
+	private sealed class FakeModifyCommand : ModifyBusinessProcessCommand {
+		public ModifyBusinessProcessOptions? Captured { get; private set; }
+
+		public FakeModifyCommand() : base(Substitute.For<IModifyBusinessProcessService>(),
+			Substitute.For<IProcessDescriber>(), Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(ModifyBusinessProcessOptions options) {
+			Captured = options;
+			return 0;
+		}
+	}
+
+	private sealed class FakeNewVersionCommand : ModifyProcessAsNewVersionCommand {
+		public ModifyProcessAsNewVersionOptions? Captured { get; private set; }
+
+		public FakeNewVersionCommand() : base(Substitute.For<IModifyProcessAsNewVersionService>(),
+			Substitute.For<ILogger>()) {
+		}
+
+		public override int Execute(ModifyProcessAsNewVersionOptions options) {
+			Captured = options;
+			return 0;
+		}
+	}
+
+	private static (ModifyBusinessProcessTool Tool, FakeModifyCommand Command) ModifyTool() {
+		FakeModifyCommand command = new();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>()).Returns(command);
+		return (new ModifyBusinessProcessTool(command, ConsoleLogger.Instance, resolver), command);
+	}
+
+	private const string Operations = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"UsrA\",\"type\":\"Integer\"}}]";
+
+	[TestCase("processName", "UsrOrder_Flow", "UsrOrder_Flow", "")]
+	[TestCase("code", "UsrOrder_Flow", "UsrOrder_Flow", "")]
+	[TestCase("uid", "0a1b2c3d-1111-2222-3333-444455556666", "", "0a1b2c3d-1111-2222-3333-444455556666")]
+	[Category("Unit")]
+	[Description("Review: modify-business-process accepts the value-independent identity synonyms describe-business-process accepts, with the same warning.")]
+	public void ModifyBusinessProcess_ShouldAcceptIdentitySynonyms(string key, string value, string expectedName,
+		string expectedUid) {
+		// Arrange
+		(ModifyBusinessProcessTool tool, FakeModifyCommand command) = ModifyTool();
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(Bind<ModifyBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"{key}\":\"{value}\",\"operations\":{Operations}}}"));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "a value-independent synonym has one reading on every process tool");
+		command.Captured!.ProcessName.Should().Be(expectedName, because: "the synonym is read as the canonical name");
+		command.Captured.ProcessUid.Should().Be(expectedUid, because: "the synonym is read as the canonical uid");
+		TextOf(result).Should().Contain($"'{key}' was accepted as", because: "the response names the canonical argument");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: on a write, name/process are never read by the shape of their value, a caption cannot address the process, and a synonym next to its canonical argument is refused.")]
+	public void ModifyBusinessProcess_ShouldRefuse_GuessedOrAmbiguousIdentities() {
+		// Arrange
+		(ModifyBusinessProcessTool tool, FakeModifyCommand command) = ModifyTool();
+		string[] unknown = ["\"name\":\"UsrOrder_Flow\"", "\"process\":\"UsrOrder_Flow\"", "\"caption\":\"Order\""];
+
+		// Act
+		List<CommandExecutionResult> refusedAsUnknown = unknown.Select(pair => tool.ModifyBusinessProcess(
+			Bind<ModifyBusinessProcessArgs>($"{{\"environment-name\":\"dev\",{pair},\"operations\":{Operations}}}"))).ToList();
+		CommandExecutionResult ambiguous = tool.ModifyBusinessProcess(Bind<ModifyBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"process-name\":\"UsrA\",\"processName\":\"UsrB\",\"operations\":{Operations}}}"));
+
+		// Assert
+		refusedAsUnknown.Should().OnlyContain(result => result.ExitCode == 1 && TextOf(result).Contains("Unknown args"),
+			because: "a write never runs on a reading guessed from a value's shape, nor on a caption it cannot address");
+		ambiguous.ExitCode.Should().Be(1, because: "two names for one process are a caller error");
+		TextOf(ambiguous).Should().Contain("Ambiguous process identity").And.Contain("Nothing was changed",
+			because: "the refusal says nothing was written");
+		command.Captured.Should().BeNull(because: "nothing may be written for a refused call");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: modify-business-process-as-new-version follows the same identity rule as modify-business-process.")]
+	public void ModifyProcessAsNewVersion_ShouldAcceptIdentitySynonyms() {
+		// Arrange
+		FakeNewVersionCommand command = new();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<ModifyProcessAsNewVersionCommand>(Arg.Any<ModifyProcessAsNewVersionOptions>()).Returns(command);
+		ModifyProcessAsNewVersionTool tool = new(command, ConsoleLogger.Instance, resolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(Bind<ModifyProcessAsNewVersionArgs>(
+			$"{{\"environment-name\":\"dev\",\"processName\":\"UsrOrder_Flow\",\"operations\":{Operations}}}"));
+
+		// Assert
+		result.ExitCode.Should().Be(0, because: "the family shares one identity rule");
+		command.Captured!.ProcessName.Should().Be("UsrOrder_Flow", because: "processName is read as process-name");
+		TextOf(result).Should().Contain("'processName' was accepted as 'process-name'", because: "the response names the canonical argument");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: a flat packageName next to the top-level package-name override is refused unbuilt, not resolved in favour of the override.")]
+	public void CreateBusinessProcess_ShouldRefuse_FlatPackageNameNextToTheOverride() {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(Bind<CreateBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"package-name\":\"Other\",{Descriptor[1..]}"));
+		CommandExecutionResult canonical = tool.CreateBusinessProcess(Bind<CreateBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"package-name\":\"Other\",\"descriptor\":{Descriptor}}}"));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "in a flat call both keys mean the package, so the process could land in the wrong one");
+		TextOf(result).Should().Contain("Ambiguous package", because: "the refusal names the clash");
+		canonical.ExitCode.Should().Be(0, because: "in the canonical shape package-name is the documented override");
+		command.Captured!.PackageName.Should().Be("Other", because: "only the canonical call was built, with its override");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: 'process' holding text is an identity, never a document: create-business-process and validate-process-graph refuse it, naming the tools that take an identity.")]
+	public void ProcessAsText_ShouldBeRefused_WhereADocumentIsExpected() {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+
+		// Act
+		CommandExecutionResult create = tool.CreateBusinessProcess(Bind<CreateBusinessProcessArgs>(
+			"{\"environment-name\":\"dev\",\"process\":\"UsrOrder_Flow\"}"));
+		ValidateProcessGraphResponse validate = _validateTool.Validate(Bind<ValidateProcessGraphArgs>(
+			"{\"environment-name\":\"dev\",\"process\":\"UsrOrder_Flow\"}"));
+
+		// Assert
+		create.ExitCode.Should().Be(1, because: "a process name is not a descriptor");
+		TextOf(create).Should().Contain("holds text, not a process object").And.Contain("describe-business-process",
+			because: "the refusal points at the tools that take a process name");
+		command.Captured.Should().BeNull(because: "nothing is built from a name");
+		validate.Success.Should().BeFalse(because: "a process name is not a graph");
+		validate.Error.Should().Contain("holds text, not a graph object").And.Contain("describe-business-process",
+			because: "this tool never reads a process from the environment, and the refusal says which one does");
+		ValidateProcessGraphResponse broken = _validateTool.Validate(Bind<ValidateProcessGraphArgs>(
+			"{\"environment-name\":\"dev\",\"graph\":\"{\\\"nodes\\\":[\"}"));
+		broken.Error.Should().Contain("not valid JSON").And.NotContain("holds text",
+			because: "a broken JSON document is reported as broken JSON, not as a process name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: a graph read from a descriptor's elements/flows says that element configuration was not checked; a nodes/edges wrapper does not.")]
+	public void Validate_ShouldSayElementConfigurationWasNotChecked_WhenTheGraphCameFromADescriptor() {
+		// Act
+		ValidateProcessGraphResponse fromDescriptor = _validateTool.Validate(Bind<ValidateProcessGraphArgs>(
+			$"{{\"environment-name\":\"dev\",\"descriptor\":{Descriptor}}}"));
+		ValidateProcessGraphResponse fromGraph = _validateTool.Validate(Bind<ValidateProcessGraphArgs>(
+			$"{{\"environment-name\":\"dev\",\"graph\":{Graph}}}"));
+
+		// Assert
+		fromDescriptor.Success.Should().BeTrue(because: $"the descriptor's graph is valid: {fromDescriptor.Error}");
+		fromDescriptor.Warnings.Should().Contain(ProcessToolArgumentAliases.DescriptorOnlyGraphCheckedNote,
+			because: "'accepted as the graph' must not read as 'the descriptor passed'");
+		fromGraph.Warnings.Should().NotContain(ProcessToolArgumentAliases.DescriptorOnlyGraphCheckedNote,
+			because: "a nodes/edges graph carries no element configuration to leave unchecked");
+	}
+
+	[TestCase("descriptor")]
+	[TestCase("process")]
+	[Category("Unit")]
+	[Description("QA ENG-103025: a double wrapper around an EMPTY object is refused with the mini-contract, never built as an empty process.")]
+	public void CreateBusinessProcess_ShouldRefuse_ADoubleWrapperAroundNothing(string innerKey) {
+		// Arrange
+		(CreateBusinessProcessTool tool, FakeCreateCommand command) = CreateTool();
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(Bind<CreateBusinessProcessArgs>(
+			$"{{\"environment-name\":\"dev\",\"descriptor\":{{\"{innerKey}\":{{}}}}}}"));
+
+		// Assert
+		result.ExitCode.Should().Be(1, because: "there is no process to build");
+		TextOf(result).Should().Contain("it is empty").And.Contain("Minimal valid arguments:",
+			because: "the caller gets the shape of a buildable descriptor");
+		command.Captured.Should().BeNull(because: "an empty process must never reach the build");
+	}
 }

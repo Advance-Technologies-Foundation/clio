@@ -22,6 +22,22 @@ namespace Clio.Command.McpServer.Tools.ProcessDesigner;
 /// still goes through the tool's ordinary unknown-argument check, so this never widens what is silently ignored.
 /// The shared <see cref="McpToolArgumentSupport.BuildLegacyAliasError"/> is deliberately untouched: its
 /// rename-only behaviour is pinned for every other tool.
+/// <para>
+/// One rule for the whole process family, so a shape that works on one tool means the same on its neighbour:
+/// </para>
+/// <list type="bullet">
+/// <item>A synonym whose meaning does not depend on its value (<c>processName</c>, <c>code</c>, <c>uid</c>,
+/// ...) is accepted on every tool that addresses an existing process: <c>describe-business-process</c>,
+/// <c>modify-business-process</c> and <c>modify-business-process-as-new-version</c>.</item>
+/// <item>A generic key read by the SHAPE of its value (<c>name</c>, or <c>process</c> as text) is accepted only
+/// on the read-only <c>describe-business-process</c>: a write never runs on a guessed reading.</item>
+/// <item><c>process</c> holding TEXT is a process identity; <c>process</c> holding an OBJECT is the process
+/// document - the descriptor on <c>create-business-process</c>, the graph on <c>validate-process-graph</c>.
+/// Text where a document is expected is refused, naming the tools that take an identity; an object where an
+/// identity is expected is not a usable identity, so it stays an unknown argument and is refused by name.</item>
+/// <item>A document spread flat over the top level is wrapped only when it carries <c>elements</c>, and never
+/// next to a top-level argument that would override one of its fields.</item>
+/// </list>
 /// </remarks>
 internal static class ProcessToolArgumentAliases {
 
@@ -69,6 +85,15 @@ internal static class ProcessToolArgumentAliases {
 	/// <summary>Outcome of resolving the identity synonyms of <c>describe-business-process</c>.</summary>
 	internal sealed record DescribeResolution(DescribeProcessArgs Args, List<string> Warnings, string? Error);
 
+	/// <summary>
+	/// Outcome of resolving the identity synonyms of a tool that addresses an existing process: the canonical
+	/// identity after the synonyms were applied, the overflow bag without the keys that were consumed, and either
+	/// the warnings to report or the refusal.
+	/// </summary>
+	internal sealed record IdentityResolution(
+		string? ProcessName, string? ProcessUid, string? ProcessCaption,
+		Dictionary<string, JsonElement>? Remaining, List<string> Warnings, string? Error);
+
 	// Synonyms whose meaning does not depend on the value. Keys are Normalize()d.
 	private static readonly Dictionary<string, string> DescribeSpecificAliases = new(StringComparer.Ordinal) {
 		["processname"] = ProcessNameKey,
@@ -102,66 +127,109 @@ internal static class ProcessToolArgumentAliases {
 	/// <summary>Resolves <c>name</c>-style synonyms of the process identity for <c>describe-business-process</c>.</summary>
 	/// <param name="args">The bound arguments; its overflow bag is what is inspected.</param>
 	internal static DescribeResolution ResolveDescribe(DescribeProcessArgs args) {
+		IdentityResolution identity = ResolveIdentity(args.ExtensionData, args.ProcessName, args.ProcessUid,
+			args.ProcessCaption, readOnly: true);
+		if (identity.Error is not null || identity.Warnings.Count == 0) {
+			return new DescribeResolution(args, identity.Warnings, identity.Error);
+		}
+		return new DescribeResolution(args with {
+			ProcessName = identity.ProcessName,
+			ProcessUid = identity.ProcessUid,
+			ProcessCaption = identity.ProcessCaption,
+			ExtensionData = identity.Remaining
+		}, identity.Warnings, null);
+	}
+
+	/// <summary>
+	/// Resolves the identity synonyms of a tool that WRITES to an existing process (<c>modify-business-process</c>,
+	/// <c>modify-business-process-as-new-version</c>). Only the synonyms whose meaning does not depend on the value
+	/// are read (<c>processName</c>, <c>code</c>, <c>uid</c>, ...): a write never runs on a reading guessed from
+	/// the value's shape, so <c>name</c> and <c>process</c> stay unknown arguments here, and so does a caption,
+	/// which these tools cannot address a process by.
+	/// </summary>
+	/// <param name="bag">The args record's overflow bag.</param>
+	/// <param name="processName">The canonical <c>process-name</c>, when supplied.</param>
+	/// <param name="processUid">The canonical <c>process-uid</c>, when supplied.</param>
+	internal static IdentityResolution ResolveWriteTarget(
+		Dictionary<string, JsonElement>? bag, string? processName, string? processUid) =>
+		ResolveIdentity(bag, processName, processUid, null, readOnly: false);
+
+	/// <summary>
+	/// The one identity rule of the process family. A value-independent synonym is read as its canonical argument
+	/// on every tool that addresses an existing process; a generic key (<c>name</c>, <c>process</c>) is read by
+	/// the shape of its value only on the read-only tool, and a caption only where the tool takes one. A synonym
+	/// next to its canonical argument, or two synonyms of one argument, is refused.
+	/// </summary>
+	private static IdentityResolution ResolveIdentity(Dictionary<string, JsonElement>? bag,
+		string? processName, string? processUid, string? processCaption, bool readOnly) {
 		List<string> warnings = [];
-		Dictionary<string, JsonElement>? bag = args.ExtensionData;
 		if (bag is null || bag.Count == 0) {
-			return new DescribeResolution(args, warnings, null);
+			return new IdentityResolution(processName, processUid, processCaption, bag, warnings, null);
 		}
 		// target canonical name -> (caller key, value, was it decided by the value's shape)
 		Dictionary<string, List<(string Key, string Value, bool ByShape)>> found = new(StringComparer.Ordinal);
 		foreach ((string key, JsonElement value) in bag) {
-			string normalized = Normalize(key);
-			bool generic = DescribeGenericAliases.Contains(normalized);
-			if (!generic && !DescribeSpecificAliases.ContainsKey(normalized)) {
+			string? target = IdentityTarget(Normalize(key), value, readOnly, out bool byShape, out string? text);
+			if (target is null) {
 				continue;
 			}
-			string? text = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-			if (string.IsNullOrWhiteSpace(text)) {
-				// Not a usable identity: leave it in the bag so the ordinary unknown-argument refusal names it.
-				continue;
-			}
-			string target = generic ? TargetByShape(text.Trim()) : DescribeSpecificAliases[normalized];
 			if (!found.TryGetValue(target, out List<(string, string, bool)>? list)) {
 				list = [];
 				found[target] = list;
 			}
-			list.Add((key, text.Trim(), generic));
+			list.Add((key, text!, byShape));
 		}
 		if (found.Count == 0) {
-			return new DescribeResolution(args, warnings, null);
+			return new IdentityResolution(processName, processUid, processCaption, bag, warnings, null);
 		}
+		string nothingRan = readOnly ? "Nothing was read." : "Nothing was changed.";
 		foreach ((string target, List<(string Key, string Value, bool ByShape)> list) in found) {
-			bool canonicalSupplied = target switch {
-				ProcessNameKey => !string.IsNullOrWhiteSpace(args.ProcessName),
-				ProcessUidKey => !string.IsNullOrWhiteSpace(args.ProcessUid),
-				_ => !string.IsNullOrWhiteSpace(args.ProcessCaption)
+			string? canonical = target switch {
+				ProcessNameKey => processName,
+				ProcessUidKey => processUid,
+				_ => processCaption
 			};
-			if (canonicalSupplied || list.Count > 1) {
+			if (!string.IsNullOrWhiteSpace(canonical) || list.Count > 1) {
 				string shown = string.Join(" and ", list.Select(item => $"'{McpToolArgumentSupport.DescribeCallerKey(item.Key)}'"));
-				return new DescribeResolution(args, warnings,
+				return new IdentityResolution(processName, processUid, processCaption, bag, warnings,
 					$"Ambiguous process identity: {shown} and '{target}' all name the process. "
-					+ $"Send the identity once, as '{target}'. Nothing was read.");
+					+ $"Send the identity once, as '{target}'. {nothingRan}");
 			}
 		}
 		HashSet<string> consumed = new(StringComparer.Ordinal);
-		DescribeProcessArgs resolved = args;
 		foreach ((string target, List<(string Key, string Value, bool ByShape)> list) in found) {
 			(string key, string value, bool byShape) = list[0];
 			consumed.Add(key);
-			resolved = target switch {
-				ProcessNameKey => resolved with { ProcessName = value },
-				ProcessUidKey => resolved with { ProcessUid = value },
-				_ => resolved with { ProcessCaption = value }
-			};
+			switch (target) {
+				case ProcessNameKey: processName = value; break;
+				case ProcessUidKey: processUid = value; break;
+				default: processCaption = value; break;
+			}
 			warnings.Add(byShape
 				? $"Argument '{McpToolArgumentSupport.DescribeCallerKey(key)}' was read as '{target}' because of its value; "
 					+ "send 'process-name', 'process-uid' or 'process-caption' explicitly in future calls."
 				: AcceptedNote(key, target));
 		}
-		Dictionary<string, JsonElement> remaining = bag.Where(pair => !consumed.Contains(pair.Key))
-			.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-		return new DescribeResolution(resolved with { ExtensionData = remaining.Count == 0 ? null : remaining },
+		return new IdentityResolution(processName, processUid, processCaption, RemainingBag(bag, consumed),
 			warnings, null);
+	}
+
+	/// <summary>The canonical identity argument a key names on this kind of tool, or null when it names none.</summary>
+	private static string? IdentityTarget(string normalized, JsonElement value, bool readOnly, out bool byShape,
+		out string? text) {
+		byShape = readOnly && DescribeGenericAliases.Contains(normalized);
+		text = null;
+		string? target = byShape ? null : DescribeSpecificAliases.GetValueOrDefault(normalized);
+		if (!byShape && (target is null || (!readOnly && target == ProcessCaptionKey))) {
+			return null;
+		}
+		string? raw = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+		if (string.IsNullOrWhiteSpace(raw)) {
+			// Not a usable identity: left in the bag so the ordinary unknown-argument refusal names it.
+			return null;
+		}
+		text = raw.Trim();
+		return target ?? TargetByShape(text);
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -213,7 +281,9 @@ internal static class ProcessToolArgumentAliases {
 			return resolved;
 		}
 		List<string> wrappers = [];
-		for (int depth = 0; descriptor.ValueKind == JsonValueKind.Object; depth++) {
+		// wrappers.Count is the nesting depth reached so far; the loop ends when an object holds no wrapper.
+		while (descriptor.ValueKind == JsonValueKind.Object) {
+			int depth = wrappers.Count;
 			List<JsonProperty> members = descriptor.EnumerateObject().ToList();
 			List<JsonProperty> nested = members.Where(member => IsDescriptorWrapper(member.Name)).ToList();
 			if (nested.Count == 0) {
@@ -237,6 +307,11 @@ internal static class ProcessToolArgumentAliases {
 			if (inner.ValueKind != JsonValueKind.Object) {
 				return resolved with { Error = $"'descriptor' holds only {shown}, which is not a process object. Send the "
 					+ "process fields directly inside 'descriptor'. Nothing was built." };
+			}
+			if (!inner.EnumerateObject().Any()) {
+				// {"descriptor":{"descriptor":{}}}: unwrapping it would hand the build an empty process.
+				return resolved with { Error = $"'descriptor' holds only {shown}, and it is empty: there is no process "
+					+ "to build. Nothing was built. " + ToolMiniContract.ForCreateBusinessProcess(["descriptor"]) };
 			}
 			descriptor = inner;
 			wrappers.Add(shown);
@@ -298,12 +373,44 @@ internal static class ProcessToolArgumentAliases {
 		if (repeated.Count > 0) {
 			return new CreateResolution(args, warnings, AmbiguousDescriptor(repeated));
 		}
+		if (wrappers.Count == 1 && IsIdentityText(bag[wrappers[0]])) {
+			return new CreateResolution(args, warnings,
+				$"'{McpToolArgumentSupport.DescribeCallerKey(wrappers[0])}' holds text, not a process object. On "
+				+ "create-business-process the process is the 'descriptor' object; a process NAME is what "
+				+ "describe-business-process and modify-business-process take (process-name). Nothing was built.");
+		}
+		// A flat packageName next to the top-level package-name override: in a canonical call the override is
+		// meant to win, but in a flat call both plainly mean "the package", so applying the override could put the
+		// process in the other one. This is a write, so it is refused rather than resolved.
+		if (wrappers.Count == 0 && !string.IsNullOrWhiteSpace(args.PackageName)
+			&& flat.FirstOrDefault(key => Normalize(key) == "packagename") is { } flatPackage) {
+			return new CreateResolution(args, warnings,
+				$"Ambiguous package: '{McpToolArgumentSupport.DescribeCallerKey(flatPackage)}' and 'package-name' both "
+				+ "name the package of a descriptor sent as flat fields. Send the process as the 'descriptor' object "
+				+ "with its packageName, and 'package-name' only to override it. Nothing was built.");
+		}
 		(JsonElement descriptor, HashSet<string> consumed) = wrappers.Count == 1
 			? TakeWrappedDescriptor(bag, wrappers[0], warnings)
 			: WrapFlatDescriptor(bag, flat, warnings);
 		return new CreateResolution(
 			args with { Descriptor = descriptor, ExtensionData = RemainingBag(bag, consumed) },
 			warnings, null);
+	}
+
+	/// <summary>
+	/// True for a string that is not JSON at all - a process name or caption, not a document. A string that starts
+	/// like JSON but does not parse is a broken document, and keeps the ordinary parse refusal.
+	/// </summary>
+	private static bool IsIdentityText(JsonElement value) =>
+		value.ValueKind == JsonValueKind.String && !LooksLikeJson(value) && !TryParseObject(value, out _);
+
+	private static bool LooksLikeJson(JsonElement value) {
+		try {
+			string text = (value.GetString() ?? string.Empty).TrimStart();
+			return text.StartsWith('{') || text.StartsWith('[');
+		} catch (InvalidOperationException) {
+			return false;
+		}
 	}
 
 	private static (JsonElement Descriptor, HashSet<string> Consumed) TakeWrappedDescriptor(
@@ -387,12 +494,24 @@ internal static class ProcessToolArgumentAliases {
 		warnings.Add(wrappers.Count == 1
 			? $"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level in future calls."
 			: $"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
+		if (source.ContainsKey(ElementsKey) || source.ContainsKey(FlowsKey)) {
+			warnings.Add(DescriptorOnlyGraphCheckedNote);
+		}
 		if (source.ContainsKey("nodes") && source.ContainsKey(ElementsKey)
 			|| source.ContainsKey("edges") && source.ContainsKey(FlowsKey)) {
 			return Refuse(args, warnings, $"{origin} carries both 'nodes' and 'elements' (or 'edges' and 'flows'); send one.");
 		}
 		return BuildGraphArgs(args, bag, source, wrappers.Count == 1 ? wrappers : flat, origin, warnings);
 	}
+
+	/// <summary>
+	/// Said whenever the graph was read from a descriptor's elements/flows: a passing graph is not a passing
+	/// descriptor, and the natural next step after "accepted" is to build it.
+	/// </summary>
+	internal const string DescriptorOnlyGraphCheckedNote =
+		"Only the graph shape was checked: element name and type, and flow source, target, kind, condition and "
+		+ "results. Element configuration (captions, parameters, mappings, filters, ...) was NOT checked; "
+		+ "create-business-process checks it when it builds.";
 
 	private static string? DescribeGraphAmbiguity(ValidateProcessGraphArgs args, List<string> wrappers, List<string> flat) {
 		bool canonicalSupplied = args.Nodes is { Count: > 0 } || args.Edges is { Count: > 0 };
@@ -428,12 +547,15 @@ internal static class ProcessToolArgumentAliases {
 		origin = McpToolArgumentSupport.DescribeCallerKey(key);
 		JsonElement value = bag[key];
 		if (value.ValueKind == JsonValueKind.String) {
-			try {
-				using JsonDocument parsed = JsonDocument.Parse(value.GetString() ?? string.Empty);
-				value = parsed.RootElement.Clone();
-			} catch (JsonException) {
-				return $"'{origin}' is a string that is not valid JSON.";
+			if (!TryParseObject(value, out JsonElement parsed)) {
+				if (LooksLikeJson(value)) {
+					return $"'{origin}' is a string that is not valid JSON.";
+				}
+				return $"'{origin}' holds text, not a graph object. On validate-process-graph it can only be the graph "
+					+ "('nodes' and 'edges', or a descriptor's 'elements' and 'flows'); this tool never reads a process "
+					+ "from the environment - describe-business-process does, by process-name.";
 			}
+			value = parsed;
 		}
 		if (value.ValueKind != JsonValueKind.Object) {
 			return $"'{origin}' must be a JSON object holding 'nodes' and 'edges'.";

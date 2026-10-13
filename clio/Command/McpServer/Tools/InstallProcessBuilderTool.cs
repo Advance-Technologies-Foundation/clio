@@ -169,13 +169,24 @@ public sealed class InstallProcessBuilderTool(
 				+ "would only trigger another configuration build. Wait, then retry the process-designer tool "
 				+ "that sent you here — its package gate IS the confirmation, and it refuses again if the "
 				+ "install did not take. That retry is the poll: there is no status tool, and no fixed sleep is "
-				+ "needed before it. While the target is still compiling or restarting, the gate refuses the same "
-				+ "way, so retry that tool a few times over the next minutes before concluding the install failed. "
-				+ "This call already waited out the response deadline "
+				+ "needed before the first one. While the target is still compiling or restarting, the gate refuses "
+				+ $"the same way, so retry that tool at most {InstallConfirmationRetryLimit} times, about "
+				+ $"{InstallConfirmationRetryIntervalSeconds} seconds apart. If it still refuses after "
+				+ $"{InstallConfirmationRetryLimit} retries, stop and tell the user the install is NOT confirmed, "
+				+ "instead of retrying further. This call already waited out the response deadline "
 				+ $"({McpProgressHeartbeat.ResponseDeadlineOverrideEnvVar} on the clio server raises it for a "
 				+ "client that allows a longer call).");
 		}
 	}
+
+	/// <summary>
+	/// How many times the deadline notice tells the caller to retry the gated tool before reporting the install
+	/// as not confirmed. A bound the caller can follow and an operator can measure, rather than "a few times".
+	/// </summary>
+	internal const int InstallConfirmationRetryLimit = 5;
+
+	/// <summary>The spacing between those retries, in seconds: five of them cover about five minutes of compile and restart.</summary>
+	internal const int InstallConfirmationRetryIntervalSeconds = 60;
 
 	// Takes the narrow configuration-build reservation, runs the install without the per-tenant execution
 	// monitor, and releases the reservation where the REAL work ends — including the detached continuation

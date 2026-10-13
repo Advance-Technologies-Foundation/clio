@@ -400,12 +400,12 @@ public class CreateBusinessProcessTool(
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 			return ToolMiniContract.Decorate(
 				CommandExecutionResult.FromError("environment-name is required and cannot be empty."),
-				ToolMiniContract.ForCreateBusinessProcess(missing));
+				missing, ToolMiniContract.ForCreateBusinessProcess);
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Descriptor, JsonValueKind.Object,
 				"descriptor", out string descriptorJson, out CommandExecutionResult? descriptorRefusal)) {
-			return ToolMiniContract.Decorate(descriptorRefusal, ToolMiniContract.ForCreateBusinessProcess(missing));
+			return ToolMiniContract.Decorate(descriptorRefusal, missing, ToolMiniContract.ForCreateBusinessProcess);
 		}
 
 		CreateBusinessProcessOptions options = new() {

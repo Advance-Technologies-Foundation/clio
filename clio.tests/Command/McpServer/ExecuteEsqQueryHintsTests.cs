@@ -42,10 +42,10 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A simple SELECT with equality filters and LIMIT comes back as the equivalent query, with inferred value types, and is not executed.")]
+	[Description("A simple SELECT with text and GUID equality filters and LIMIT comes back as the equivalent query, with inferred value types, and is not executed.")]
 	public void Execute_ShouldSuggestTheEquivalentQuery_WhenGivenASimpleSelect() {
 		// Arrange
-		string sql = "SELECT Id, Name FROM Contact WHERE Name = 'O''Neil' AND Type = 5 AND Owner = '0a1b2c3d-1111-2222-3333-444455556666' LIMIT 7";
+		string sql = "SELECT Id, Name FROM Contact WHERE Name = 'O''Neil' AND Owner = '0a1b2c3d-1111-2222-3333-444455556666' LIMIT 7";
 
 		// Act
 		ExecuteEsqResponse response = Run($"{{\"environment-name\":\"dev\",\"query\":{Quote(sql)}}}");
@@ -61,14 +61,11 @@ public sealed class ExecuteEsqQueryHintsTests {
 		query.GetProperty("columns").GetProperty("items").EnumerateObject().Select(p => p.Name)
 			.Should().Equal(["Id", "Name"], because: "the selected columns are carried over in order");
 		JsonElement[] filters = Items(query, "filters");
-		filters.Should().HaveCount(3, because: "each equality term becomes one filter");
+		filters.Should().HaveCount(2, because: "each equality term becomes one filter");
 		JsonElement text = filters[0].GetProperty("rightExpression").GetProperty("parameter");
 		text.GetProperty("value").GetString().Should().Be("O'Neil", because: "a doubled quote is an escaped quote");
 		text.GetProperty("dataValueType").GetInt32().Should().Be(1, because: "a quoted literal is a Text value");
-		JsonElement number = filters[1].GetProperty("rightExpression").GetProperty("parameter");
-		number.GetProperty("value").GetInt64().Should().Be(5, because: "an unquoted literal keeps its number");
-		number.GetProperty("dataValueType").GetInt32().Should().Be(4, because: "an unquoted literal is an Integer value");
-		filters[2].GetProperty("rightExpression").GetProperty("parameter").GetProperty("dataValueType").GetInt32()
+		filters[1].GetProperty("rightExpression").GetProperty("parameter").GetProperty("dataValueType").GetInt32()
 			.Should().Be(0, because: "a quoted GUID is a Guid value");
 	}
 
@@ -135,7 +132,7 @@ public sealed class ExecuteEsqQueryHintsTests {
 		// Act
 		ExecuteEsqResponse response = Run(
 			"{\"environment-name\":\"dev\",\"schema-name\":\"Contact\",\"columns\":[\"Id\",\"Name\"],"
-			+ "\"filters\":{\"Name\":\"John\",\"Type\":3},\"row-count\":5}");
+			+ "\"filters\":{\"Name\":\"John\",\"Owner\":\"0a1b2c3d-1111-2222-3333-444455556666\"},\"row-count\":5}");
 
 		// Assert
 		response.Success.Should().BeFalse(because: "a hint is a refusal, not a result");
@@ -278,6 +275,10 @@ public sealed class ExecuteEsqQueryHintsTests {
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"where\":{\"Name\":\"a\"}}", "'where' is not a SelectQuery member")]
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"orderBy\":\"Name\"}", "'orderBy' is not a SelectQuery member")]
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"sortBy\":\"Name\"}", "'sortBy' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"limit\":5}", "'limit' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"column\":{\"items\":{}}}", "'column' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"rowCnt\":5}", "'rowCnt' is not a SelectQuery member")]
+	[TestCase("{\"rootSchemaName\":\"Contact\",\"criteria\":{\"Name\":\"a\"}}", "'criteria' is not a SelectQuery member")]
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"filters\":{\"filterType\":6,\"items\":[{\"filterType\":1}]}}", "'filters' must be a filter object")]
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"columns\":[\"Name\"],\"isDistinct\":true}", "no query is suggested")]
 	[TestCase("{\"rootSchemaName\":\"Contact\",\"columns\":[\"Name\"],\"filters\":{\"filterType\":6,\"logicalOperation\":0}}", "no query is suggested")]
@@ -340,5 +341,47 @@ public sealed class ExecuteEsqQueryHintsTests {
 
 		// Assert
 		response.Success.Should().BeTrue(because: $"nothing in the query would be lost: {response.Error}");
+	}
+
+	[TestCase("SELECT Id FROM Contact WHERE IsActive = 1", "IsActive")]
+	[TestCase("SELECT Id FROM Contact WHERE CreatedOn = '2024-01-01'", "CreatedOn")]
+	[TestCase("SELECT Id FROM Contact WHERE ModifiedOn = '2024-01-01T10:00:00Z'", "ModifiedOn")]
+	[Category("Unit")]
+	[Description("Review: a number or a date literal cannot tell its column type (Integer/Boolean/Decimal, Text/DateTime), so no query is suggested.")]
+	public void Execute_ShouldNotSuggest_WhenAFilterLiteralIsANumberOrADate(string sql, string column) {
+		// Act
+		ExecuteEsqResponse viaSql = Run($"{{\"environment-name\":\"dev\",\"query\":{Quote(sql)}}}");
+		ExecuteEsqResponse viaFlat = Run(
+			"{\"environment-name\":\"dev\",\"schema-name\":\"Contact\",\"columns\":[\"Id\"],\"filters\":{\"IsActive\":1}}");
+
+		// Assert
+		viaSql.SuggestedQuery.Should().BeNull(because: "agents resend suggested-query as is, and a filter typed from the literal is often wrong");
+		viaSql.Error.Should().Contain($"The filter on '{column}'").And.Contain("dataValueType",
+			because: "the caller learns why and what to set instead");
+		viaFlat.SuggestedQuery.Should().BeNull(because: "the flat shape follows the same rule");
+		_client.ReceivedCalls().Should().BeEmpty(because: "nothing is executed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: a member clio does not know as a SelectQuery member (for example one a newer platform added) no longer refuses the query: it runs, and the response carries a warning naming it.")]
+	public void Execute_ShouldRunWithAWarning_WhenTheQueryCarriesAnUnknownMember() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true,\"rows\":[]}");
+
+		// Act
+		ExecuteEsqResponse unknown = Run(
+			"{\"environment-name\":\"dev\",\"query\":{\"rootSchemaName\":\"Contact\",\"rowCount\":1,\"someFutureFlag\":true}}");
+		ExecuteEsqResponse listed = Run(
+			"{\"environment-name\":\"dev\",\"query\":{\"rootSchemaName\":\"Contact\",\"rowCount\":1,\"forceBackgroundMode\":false}}");
+
+		// Assert
+		unknown.Success.Should().BeTrue(because: $"an unknown member must not turn a working query into a failure: {unknown.Error}");
+		unknown.Warnings.Should().ContainSingle().Which.Should().Contain("'someFutureFlag'",
+			because: "the caller learns the member may have been ignored");
+		listed.Success.Should().BeTrue(because: "forceBackgroundMode is a member of the current platform's SelectQuery");
+		listed.Warnings.Should().BeNull(because: "a known member earns no warning");
+		JsonSerializer.Serialize(listed).Should().NotContain("\"warnings\"", because: "a canonical query answers as before");
 	}
 }

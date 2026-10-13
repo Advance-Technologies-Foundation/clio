@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
@@ -204,5 +205,52 @@ public sealed class ToolMiniContractTests {
 		enrichment.ReceivedCalls().Should().BeEmpty(because: "a probe must not cost a Data Forge lookup");
 		resolver.ReceivedCalls().Should().BeEmpty(because: "nothing was resolved for a call that cannot run");
 		TextOf(empty).Length.Should().BeLessThanOrEqualTo(ToolMiniContract.MaxLength, because: "the mini-contract stays within its size budget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: binding proves the shape only, so the example VALUES are checked against the tools' own vocabularies: every column type resolves, and every modify op is a real token sent with the envelope its shape names.")]
+	public void Examples_ShouldUseValuesTheToolsAccept() {
+		// Arrange
+		CreateEntitySchemaArgs schema = JsonSerializer.Deserialize<CreateEntitySchemaArgs>(
+			ToolMiniContract.CreateEntitySchemaExample)!;
+		using JsonDocument modify = JsonDocument.Parse(ToolMiniContract.ModifyBusinessProcessExample);
+
+		// Act
+		List<string> columnTypes = schema.Columns!.Select(column => column.Type!).ToList();
+		List<JsonElement> operations = modify.RootElement.GetProperty("operations").EnumerateArray().ToList();
+
+		// Assert
+		columnTypes.Where(type => !EntitySchemaDesignerSupport.TryResolveDataValueType(type, out int _)).Should().BeEmpty(
+			because: "a column type the server rejects would make the example advice the tool refuses");
+		foreach (JsonElement operation in operations) {
+			string op = operation.GetProperty("op").GetString()!;
+			string? shape = ToolContractShortForm.ModifyOperationShape.FirstOrDefault(entry => entry.StartsWith(op + " ", StringComparison.Ordinal));
+			shape.Should().NotBeNull(because: $"'{op}' must be an operation token the bundled server accepts");
+			operation.EnumerateObject().Where(member => member.Name != "op")
+				.Should().OnlyContain(member => shape!.Contains(member.Name, StringComparison.Ordinal),
+					because: "the example carries its payload under the envelope key its operation shape names");
+			op.Should().NotStartWith("remove", because: "the copied example must not be a destructive operation");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review: Decorate appends because an argument is missing, not because of the refusal's wording, so a reworded refusal keeps its mini-contract.")]
+	public void Decorate_ShouldFollowTheMissingList_NotTheRefusalText() {
+		// Arrange
+		CommandExecutionResult reworded = CommandExecutionResult.FromError("Please supply an environment.");
+
+		// Act
+		CommandExecutionResult withMissing = ToolMiniContract.Decorate(reworded, ["environment-name"],
+			ToolMiniContract.ForCreateBusinessProcess);
+		CommandExecutionResult withoutMissing = ToolMiniContract.Decorate(reworded, [],
+			ToolMiniContract.ForCreateBusinessProcess);
+
+		// Assert
+		TextOf(withMissing).Should().StartWith("Please supply an environment.").And.Contain("Minimal valid arguments:",
+			because: "the decision is the missing list, so rewording a refusal cannot drop the contract");
+		withMissing.ExitCode.Should().Be(reworded.ExitCode, because: "the refusal keeps its exit code");
+		withoutMissing.Should().BeSameAs(reworded, because: "nothing missing means nothing to add");
 	}
 }
