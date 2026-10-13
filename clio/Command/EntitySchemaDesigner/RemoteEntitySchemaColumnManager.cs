@@ -1730,11 +1730,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				EntitySchemaColumnDto inheritedMatch = inheritedColumns.FirstOrDefault(column =>
 					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 				if (inheritedMatch != null) {
-					VerifyInheritedCaptionOverride(inheritedMatch, operation, effectiveCultureName);
-					if (!string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)) {
-						_inheritedLookupOverride.VerifyPersisted(reloadedSchema, columnName,
-							operation.ReferenceSchemaName.Trim());
-					}
+					VerifyInheritedColumnOverride(reloadedSchema, inheritedMatch, operation, effectiveCultureName);
 					continue;
 				}
 			}
@@ -1766,6 +1762,18 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// the effective culture (en-US fallback). A description-only override supplies no expected caption and is
 	/// verified by existence alone.
 	/// </summary>
+	private void VerifyInheritedColumnOverride(
+		EntityDesignSchemaDto reloadedSchema,
+		EntitySchemaColumnDto inheritedColumn,
+		ModifyEntitySchemaColumnOptions operation,
+		string effectiveCultureName) {
+		VerifyInheritedCaptionOverride(inheritedColumn, operation, effectiveCultureName);
+		if (!string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)) {
+			_inheritedLookupOverride.VerifyPersisted(reloadedSchema, inheritedColumn.Name,
+				operation.ReferenceSchemaName.Trim());
+		}
+	}
+
 	private static void VerifyInheritedCaptionOverride(
 		EntitySchemaColumnDto reloadedColumn,
 		ModifyEntitySchemaColumnOptions options,

@@ -204,9 +204,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IReadOnlyDictionary<string, ManagerItemDto> referenceSchemas,
 		string cultureName,
 		CreateEntitySchemaOptions options) {
-		referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName!, out ManagerItemDto? referenceSchema);
+		referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName, out ManagerItemDto? referenceSchema);
 		EntitySchemaColumnDto column = _inheritedLookupOverride.Apply(schema, parsedColumn.Name,
-			parsedColumn.ReferenceSchemaName!, referenceSchema, options);
+			parsedColumn.ReferenceSchemaName, referenceSchema, options);
 		if (parsedColumn.TitleLocalizations == null && string.IsNullOrWhiteSpace(parsedColumn.Title)) {
 			return;
 		}
@@ -544,13 +544,15 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static string? GetDisallowedOverrideProperty(StructuredColumnSpec structuredColumn) {
-		return !string.IsNullOrWhiteSpace(structuredColumn.Type) ? "type"
-			: structuredColumn.Required.HasValue ? "required"
-			: structuredColumn.DefaultValueSource != null ? "default-value-source"
-			: structuredColumn.DefaultValue != null ? "default-value"
-			: structuredColumn.DefaultValueConfig != null ? "default-value-config"
-			: structuredColumn.Masked.HasValue ? "masked"
-			: null;
+		(bool IsSet, string Name)[] properties = [
+			(!string.IsNullOrWhiteSpace(structuredColumn.Type), "type"),
+			(structuredColumn.Required.HasValue, "required"),
+			(structuredColumn.DefaultValueSource != null, "default-value-source"),
+			(structuredColumn.DefaultValue != null, "default-value"),
+			(structuredColumn.DefaultValueConfig != null, "default-value-config"),
+			(structuredColumn.Masked.HasValue, "masked")
+		];
+		return properties.FirstOrDefault(property => property.IsSet).Name;
 	}
 
 	private static string GetLookupReferenceSchemaName(string[] parts) {
@@ -660,6 +662,21 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
 	}
 
+	private void VerifyReloadedSchema(CreateEntitySchemaOptions options, EntityDesignSchemaDto reloadedSchema,
+		IReadOnlyCollection<ParsedColumn> overrideColumns) {
+		if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+		}
+		if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
+			throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
+		}
+		foreach (ParsedColumn overrideColumn in overrideColumns) {
+			_inheritedLookupOverride.VerifyPersisted(reloadedSchema, overrideColumn.Name,
+				overrideColumn.ReferenceSchemaName);
+		}
+	}
+
 	private void VerifyCreatedSchema(CreateEntitySchemaOptions options, Guid packageUId,
 		string effectiveCultureName, Guid schemaUId, IReadOnlyCollection<ParsedColumn> overrideColumns) {
 		// No separate runtime-availability probe after the publish. Publishing refreshes the schema manager
@@ -681,17 +698,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
 				?? throw new InvalidOperationException(
 					$"Schema '{options.SchemaName}' could not be reloaded after save.");
-			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
-			}
-			if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
-				throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
-			}
-			foreach (ParsedColumn overrideColumn in overrideColumns) {
-				_inheritedLookupOverride.VerifyPersisted(reloadedSchema, overrideColumn.Name,
-					overrideColumn.ReferenceSchemaName!);
-			}
+			VerifyReloadedSchema(options, reloadedSchema, overrideColumns);
 		} else {
 			// The designer service answered with an HTML error page, so the design-item reload above could not
 			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
