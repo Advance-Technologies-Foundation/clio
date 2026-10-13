@@ -36,7 +36,7 @@ public class InstallGateCommand : Command<InstallGateOptions> {
 	/// </summary>
 	/// <param name="environmentSettings">Resolved target environment settings.</param>
 	/// <param name="packageInstaller">Package installer used to install the bundled cliogate package.</param>
-	/// <param name="application">Application service used to restart Creatio after installation.</param>
+	/// <param name="application">Application service used to restart a .NET Framework Creatio after installation.</param>
 	/// <param name="workingDirectoriesProvider">Provider used to locate bundled clio assets.</param>
 	/// <param name="logger">Logger used for command output.</param>
 	public InstallGateCommand(
@@ -92,7 +92,13 @@ public class InstallGateCommand : Command<InstallGateOptions> {
 				createBackup: true);
 			if (success) {
 				_logger.WriteLine("Done");
-				_application.Restart();
+				// The installer restarts the application through the installation session when the environment is
+				// .NET or developer mode is on. Developer mode is forced off above, so on .NET the restart has
+				// already happened through the session that, on a web farm, reaches the design node; a second one
+				// from here would log in again and land on a common node. Only .NET Framework is restarted here.
+				if (!_environmentSettings.IsNetCore) {
+					_application.Restart();
+				}
 			} else {
 				_logger.WriteError("Error");
 			}

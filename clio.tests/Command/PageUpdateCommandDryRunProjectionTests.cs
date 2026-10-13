@@ -208,7 +208,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
 			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ }; });");
 		PageUpdateOptions options = AppendDryRun(
-			"""[{"operation":"insert","name":"UsrName","parentName":"Main","values":{"type":"crt.Input"}}]""");
+			"""[{"operation":"insert","name":"UsrName","parentName":"Main","propertyName":"items","values":{"type":"crt.Input"}}]""");
 
 		// Act
 		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
@@ -229,7 +229,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 	public void TryUpdatePage_ShouldWarnBeforeTheWrite_WhenAppendDryRunFormsAnInertPairWithTheServerBody() {
 		// Arrange — the pair exists only in the merged body: the insert is the server's, the merge is the
 		// caller's. Against the fragment alone, which is the pre-fix behaviour, there is nothing to see.
-		StubCurrentBody(WebBody("""[{"operation":"insert","name":"UsrName","parentName":"Main","values":{"type":"crt.Input"}}]"""));
+		StubCurrentBody(WebBody("""[{"operation":"insert","name":"UsrName","parentName":"Main","propertyName":"items","values":{"type":"crt.Input"}}]"""));
 		PageUpdateOptions options = AppendDryRun(
 			"""[{"operation":"merge","name":"UsrName","values":{"visible":false}}]""");
 
@@ -325,7 +325,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		// project. Pinning it because the contract text is read as 'append implies a projection'.
 		StubCurrentBody(string.Empty);
 		PageUpdateOptions options = AppendDryRun(
-			"""[{"operation":"insert","name":"UsrName","parentName":"Main","values":{"type":"crt.Input"}}]""");
+			"""[{"operation":"insert","name":"UsrName","parentName":"Main","propertyName":"items","values":{"type":"crt.Input"}}]""");
 
 		// Act
 		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
@@ -373,7 +373,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		// the round trip. sync-pages pins replace and runs at volume, so this has to stay free.
 		PageUpdateOptions options = new() {
 			SchemaName = SchemaName,
-			Body = WebBody("""[{"operation":"insert","name":"UsrName","parentName":"Main","values":{"type":"crt.Input"}}]"""),
+			Body = WebBody("""[{"operation":"insert","name":"UsrName","parentName":"Main","propertyName":"items","values":{"type":"crt.Input"}}]"""),
 			Mode = "replace",
 			DryRun = true
 		};
@@ -563,7 +563,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		const string resourceKey = "ProbeLabel_caption";
 		StubCurrentBodyWithRegisteredString(WebBody("[]"), resourceKey);
 		string insertBoundToRegisteredKey =
-			"[{\"operation\":\"insert\",\"name\":\"ProbeLabel\",\"parentName\":\"Main\","
+			"[{\"operation\":\"insert\",\"name\":\"ProbeLabel\",\"parentName\":\"Main\",\"propertyName\":\"items\","
 			+ "\"values\":{\"type\":\"crt.Label\",\"caption\":\"#ResourceString(" + resourceKey + ")#\"}}]";
 
 		// Act
@@ -583,7 +583,7 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		// if the two paths drifted into differently-worded messages that happen to share a phrase.
 		StubCurrentBody(WebBody("[]"));
 		const string insertWithUnregisteredCaption =
-			"""[{"operation":"insert","name":"ProbeLabel","parentName":"Main","values":{"type":"crt.Label","caption":"#ResourceString(ProbeLabel_caption)#"}}]""";
+			"""[{"operation":"insert","name":"ProbeLabel","parentName":"Main","propertyName":"items","values":{"type":"crt.Label","caption":"#ResourceString(ProbeLabel_caption)#"}}]""";
 
 		// Act
 		_command.TryUpdatePage(AppendDryRun(insertWithUnregisteredCaption), out PageUpdateResponse dryRunResponse);
@@ -715,11 +715,11 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		// future change to the merge identity that makes an append drop an insert fails here instead of
 		// silently gaining a warning nobody expected.
 		StubCurrentBody(WebBody(
-			"""[{"operation":"insert","name":"UsrWidget","parentName":"Main","values":{"type":"crt.Input","label":"Old"}}]"""));
+			"""[{"operation":"insert","name":"UsrWidget","parentName":"Main","propertyName":"items","values":{"type":"crt.Input","label":"Old"}}]"""));
 
 		// Act
 		bool result = _command.TryUpdatePage(
-			AppendDryRun("""[{"operation":"insert","name":"UsrWidget","parentName":"Main","values":{"type":"crt.Input","label":"New"}}]"""),
+			AppendDryRun("""[{"operation":"insert","name":"UsrWidget","parentName":"Main","propertyName":"items","values":{"type":"crt.Input","label":"New"}}]"""),
 			out PageUpdateResponse response);
 
 		// Assert
