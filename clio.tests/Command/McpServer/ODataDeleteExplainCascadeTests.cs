@@ -223,6 +223,97 @@ public sealed class ODataDeleteExplainCascadeTests {
 	}
 
 	[Test]
+	[Description("An owned row at the deepest cascade level is checked like every other: one held by a running process refuses the cascade before anything is deleted.")]
+	public void Cascade_Should_Check_A_Leaf_At_The_Depth_Limit() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		string level2 = Guid.NewGuid().ToString();
+		string level3 = Guid.NewGuid().ToString();
+		service.Diagnose("UsrRoot", AccountId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLevel1", "Root", [ParticipantId], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrLevel1", ParticipantId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLevel2", "Parent", [level2], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrLevel2", level2, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("Activity", "UsrLevel2", [level3], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("Activity", level3, Arg.Any<int>(), Arg.Any<DateTimeOffset>())
+			.Returns(Diagnosis(processElementId: "b623d2cd-629e-4d63-9d27-ca4c6b8ffe37"));
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "UsrRoot", Id = AccountId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the deepest owned activity is held by a running process");
+		response.Error.Should().Contain("live process element", because: "the refusal names the blocker");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("Shared master data is never deleted as an owned row: a Contact whose required lookup points at the record refuses the cascade.")]
+	public void Cascade_Should_Refuse_To_Delete_A_Contact_As_An_Owned_Row() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Diagnose("UsrProject", AccountId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("Contact", "UsrProject", [ContactId], false, ReferencingRows.OwnedKind)));
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "UsrProject", Id = AccountId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "cascade never deletes a Contact");
+		response.Error.Should().Contain("never deletes Contact", because: "the refusal says why");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("A row the platform deletes with the record is checked too: an owned row still referencing it would make the record's DELETE fail after the owned children were gone, so the cascade is refused first.")]
+	public void Cascade_Should_Refuse_When_A_Platform_Cascade_Row_Is_Still_Referenced() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		string owned = Guid.NewGuid().ToString();
+		string blocker = Guid.NewGuid().ToString();
+		service.Diagnose("Activity", ActivityId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: [
+				new ReferencingRows("ActivityParticipant", "Activity", [ParticipantId], false, ReferencingRows.CascadeKind),
+				new ReferencingRows("UsrNote", "Activity", [owned], false, ReferencingRows.OwnedKind)
+			]));
+		service.Diagnose("ActivityParticipant", ParticipantId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLink", "Participant", [blocker], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrNote", owned, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the platform's own cascade would fail on UsrLink");
+		response.Error.Should().Contain("ActivityParticipant", because: "the refusal names the platform-cascade row");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("id with an empty ids array still answers in the single-record shape, so explanation is at the top level.")]
+	public void Delete_Should_Answer_A_Single_Id_With_Empty_Ids_As_A_Single() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Delete("Activity", ActivityId, Arg.Any<int>()).Returns(Refused());
+		service.Diagnose("Activity", ActivityId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Ids = [], Confirm = true
+		});
+
+		// Assert
+		response.Explanation.Should().NotBeNullOrWhiteSpace(because: "a single id is answered at the top level");
+		response.Results.Should().BeNull(because: "the batch shape is only for ids");
+	}
+
+	[Test]
 	[Description("ids deletes each record and reports each outcome; one refusal does not stop the others.")]
 	public void Ids_Should_Report_Each_Outcome() {
 		// Arrange
@@ -324,6 +415,36 @@ public sealed class RecordDeletionServiceTests {
 		diagnosis.Complete.Should().BeTrue(because: "every referencing column was checked");
 		client.DidNotReceive().ExecutePostRequest(SelectUrl,
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Contact\"")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("A truncated reference metadata list keeps every later diagnosis of the same entity incomplete, not only the first one that read it.")]
+	public void Diagnose_Should_Stay_Incomplete_On_A_Cached_Truncated_Reference_List() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		string metadata = "[" + string.Join(",", Enumerable.Range(0, 5_000)
+			.Select(i => $"{{\"SchemaName\":\"Usr{i}\",\"ColumnName\":\"Activity\"}}")) + "]";
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				string root = JObject.Parse(call.ArgAt<string>(1)).Value<string>("rootSchemaName");
+				return "{\"success\":true,\"rows\":" + (root switch {
+					"Activity" => $"[{{\"Id\":\"{ActivityId}\"}}]",
+					"SysEntitySchemaReference" => metadata,
+					_ => "[]"
+				}) + "}";
+			});
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemas = Substitute.For<IRuntimeEntitySchemaReader>();
+		RecordDeletionService service = new(client, urls, schemas);
+
+		// Act
+		RecordDeleteDiagnosis first = service.Diagnose("Activity", ActivityId, 10_000, DateTimeOffset.UtcNow.AddMinutes(1));
+		RecordDeleteDiagnosis second = service.Diagnose("Activity", ActivityId, 10_000, DateTimeOffset.UtcNow.AddMinutes(1));
+
+		// Assert
+		first.Complete.Should().BeFalse(because: "the metadata read hit its row cap");
+		second.Complete.Should().BeFalse(because: "the cached list is just as truncated as the first read");
 	}
 
 	[Test]
