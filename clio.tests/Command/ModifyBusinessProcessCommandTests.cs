@@ -923,6 +923,54 @@ public sealed class ModifyBusinessProcessCommandTests {
 	}
 
 	[Test]
+	[Description("ENG-103165: an edit that points an element at a called process through setElement makes the process a caller, so it is not read back when no guard needs the read.")]
+	public void Execute_ShouldNotReadBack_WhenTheEditSetsASubProcessBlock() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "End"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"setElement","elementName":"CallOrder",
+					"elementUpdate":{"subProcess":{"processName":"UsrOrderProcess"}}}]
+				"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>());
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: a caller IS read back when the edit binds a process parameter, because the ENG-103081 check that a binding's source runs on every start judges the saved graph - skipping the read would drop that warning silently.")]
+	public void Execute_ShouldReadACallerBack_WhenTheEditBindsAProcessParameter() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller);
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"addMapping","mapping":{"targetProcessParameter":"Attempts","value":"3"}}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
 	[Description("ENG-103165: a caller IS read back when a guard needs the read - the label guard is the only signal that a label landed, and it took this read before ENG-103023 too - so the digest comes with it.")]
 	public void Execute_ShouldReadACallerBack_WhenAGuardNeedsTheRead() {
 		// Arrange

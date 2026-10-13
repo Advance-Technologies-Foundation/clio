@@ -47,7 +47,7 @@ internal static class ProcessWriteDigest {
 	private const string SubProcessBuildType = "subprocess";
 
 	/// <summary>
-	/// Whether a read of the written process may be skipped because it calls another process (ENG-103165).
+	/// Whether a created process calls another process, so its post-write read may be skipped (ENG-103165).
 	/// <para>A describe returns the schema instance the server's process manager caches, and the server builds that
 	/// instance on the first read: a sub-process element copies the called process's parameters at that moment, and
 	/// the instance is dropped only when the process itself is saved again. A read-back right after the write
@@ -56,14 +56,22 @@ internal static class ProcessWriteDigest {
 	/// first read after that change would have been built with it. Before ENG-103023 an unguarded write took no
 	/// read; this keeps that for a caller only, and every other write keeps its digest.</para>
 	/// </summary>
-	/// <param name="descriptorJson">The build descriptor, for a create; otherwise <c>null</c>.</param>
-	/// <param name="operationsJson">The operations array, for a modify; otherwise <c>null</c>.</param>
-	/// <param name="before">The read taken before a modify, when there is one.</param>
-	/// <returns><c>true</c> when the written process carries a sub-process element.</returns>
-	internal static bool CallsAnotherProcess(string descriptorJson, string operationsJson,
-		DescribeProcessResult before = null) =>
-		(descriptorJson is not null && BlockExpectationJson.ElementsCarrying(descriptorJson, SubProcessBlockKey).Count > 0)
-		|| (operationsJson is not null && BlockExpectationJson.AddElementTargets(operationsJson, SubProcessBlockKey).Count > 0)
+	/// <param name="descriptorJson">The build descriptor.</param>
+	/// <returns><c>true</c> when the descriptor carries a sub-process element.</returns>
+	internal static bool DescriptorCallsAnotherProcess(string descriptorJson) =>
+		BlockExpectationJson.ElementsCarrying(descriptorJson, SubProcessBlockKey).Count > 0;
+
+	/// <summary>
+	/// Whether an edited process may call another process after the edit, so its post-write read may be skipped
+	/// (ENG-103165, see <see cref="DescriptorCallsAnotherProcess"/>): the read before the edit shows a sub-process
+	/// element, or the edit configures one through <c>addElement</c> or <c>setElement</c>.
+	/// </summary>
+	/// <param name="operationsJson">The operations array.</param>
+	/// <param name="before">The read taken before the edit, or <c>null</c> when it failed.</param>
+	/// <returns><c>true</c> when the edited process may carry a sub-process element.</returns>
+	internal static bool EditedProcessCallsAnotherProcess(string operationsJson, DescribeProcessResult before) =>
+		BlockExpectationJson.AddElementTargets(operationsJson, SubProcessBlockKey).Count > 0
+		|| BlockExpectationJson.SetElementTargets(operationsJson, SubProcessBlockKey).Count > 0
 		|| (before?.Elements?.Exists(element => element?.SubProcess is not null
 			|| string.Equals(element?.BuildType, SubProcessBuildType, StringComparison.OrdinalIgnoreCase)) ?? false);
 

@@ -522,7 +522,7 @@ public class CreateBusinessProcessCommand(
 		}
 		// A read would pin a CALLER to its callees' current parameters (ENG-103165), so a caller is read back only
 		// when a guard needs the read, as before ENG-103023. The reply says why there is no summary.
-		if (!guarded && ProcessWriteDigest.CallsAnotherProcess(options.DescriptorJson, null)) {
+		if (!guarded && ProcessWriteDigest.DescriptorCallsAnotherProcess(options.DescriptorJson)) {
 			logger.WriteInfo(ProcessWriteDigest.CallerNotReadBack);
 			return true;
 		}
