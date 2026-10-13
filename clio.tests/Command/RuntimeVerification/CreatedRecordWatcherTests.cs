@@ -104,8 +104,44 @@ public sealed class CreatedRecordWatcherTests {
 		// Assert
 		baseline.Entities.Single().Baseline.Should().BeNull(because: "an empty table has no newest row");
 		outcome.Created.Select(record => record.Id).Should().Equal([NewId], because: "the table was empty before");
-		((JObject)harness.Queries.Last()["filters"]["items"]).Count.Should().Be(0,
-			because: "with no baseline there is nothing to filter on");
+		((JObject)harness.Queries.Last()["filters"]["items"]).ContainsKey("sinceBaseline").Should().BeFalse(
+			because: "with no baseline there is no lower bound to filter on");
+	}
+
+	[Test]
+	[Description("A row with no CreatedOn never becomes the baseline: the newest query filters it out (PostgreSQL sorts NULL first in a descending order), and an empty value is treated as no baseline instead of a lower bound that could report every existing row.")]
+	public void Capture_Should_Ignore_A_Row_Without_CreatedOn() {
+		// Arrange
+		Harness harness = Create("[{\"CreatedOn\":null}]", "[]", "[]");
+
+		// Act
+		WatchBaseline baseline = harness.Watcher.Capture(["Activity"], 10_000);
+		harness.Watcher.Collect(baseline, 10_000);
+
+		// Assert
+		baseline.Entities.Single().Baseline.Should().BeNull(because: "an empty CreatedOn is no lower bound");
+		JObject newest = CreatedRecordWatcher.BuildNewestQuery("Activity");
+		newest["filters"]["items"]["hasCreatedOn"]["comparisonType"].Value<int>().Should().Be(2,
+			because: "only rows that have a CreatedOn can be the newest one");
+		harness.Queries.Last()["filters"]["items"]["hasCreatedOn"].Should().NotBeNull(
+			because: "a row without CreatedOn predates the run and is never reported as created");
+	}
+
+	[Test]
+	[Description("An entity not yet read when stopAt passes is reported unread instead of being read after the tool answered.")]
+	public void Collect_Should_Not_Read_After_StopAt() {
+		// Arrange
+		Harness harness = Create("[]", "[]", "[]");
+		WatchBaseline baseline = harness.Watcher.Capture(["Activity"], 10_000);
+		int before = harness.Queries.Count;
+
+		// Act
+		WatchOutcome outcome = harness.Watcher.Collect(baseline, 10_000, DateTimeOffset.UtcNow.AddSeconds(-1));
+
+		// Assert
+		harness.Queries.Should().HaveCount(before, because: "no request is sent past stopAt");
+		outcome.Warnings.Should().ContainSingle(because: "the unread entity must be named")
+			.Which.Should().Contain("response deadline", because: "the warning says why it was not read");
 	}
 
 	[Test]

@@ -1556,7 +1556,7 @@ public sealed class RunProcessToolTests {
 		watcher.Capture(Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(baseline);
 		WatchOutcome outcome = new();
 		outcome.Created.AddRange(created);
-		watcher.Collect(baseline, Arg.Any<int>()).Returns(outcome);
+		watcher.Collect(baseline, Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(outcome);
 		return watcher;
 	}
 
@@ -1727,7 +1727,7 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Status.Should().Be("not-started", because: "the platform refused the launch");
 		response.Created.Should().BeNull(because: "nothing ran, so there is nothing to report");
-		watcher.DidNotReceiveWithAnyArgs().Collect(default, default);
+		watcher.DidNotReceiveWithAnyArgs().Collect(default, default, default);
 	}
 
 	[Test]
@@ -1792,6 +1792,35 @@ public sealed class RunProcessToolTests {
 		// Assert
 		monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
 		response.Status.Should().Be("running", because: "a run is cancelled only to free records cleanup deletes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("cleanup never sends the cancel with less than a second left before its stop instant: a cancel landing after the tool answered would stop the caller's run without telling them.")]
+	public void TryRun_Should_Not_Cancel_When_The_Deadline_Is_Too_Close() {
+		// Arrange
+		CreatedRecord activity = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") {
+			CreatedById = CallerContactId
+		};
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(1));
+		ICreatedRecordCleaner cleaner = Substitute.For<ICreatedRecordCleaner>();
+		cleaner.Delete(Arg.Any<IReadOnlyList<CreatedRecord>>(),
+			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(),
+			Arg.Any<DateTimeOffset?>()).Returns(new CleanupReport());
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
+			recordWatcher: WatcherFinding(activity), recordCleaner: cleaner);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true, WaitTimeoutSeconds = 0,
+			ResponseDeadline = DateTimeOffset.UtcNow.AddMilliseconds(3_800)
+		}, out RunProcessResponse response);
+
+		// Assert
+		monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		response.Warnings.Should().Contain(warning => warning.Contains("not cancelled"),
+			because: "the caller is told the run was left running");
 	}
 
 	[Test]
