@@ -31,7 +31,7 @@ public sealed class PageUpdateCommandConflictTests
 	private const string MetricBodyUnregisteredTitle =
 		"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { " +
 		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\"," +
-		"\"parentName\":\"Main\",\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{" +
+		"\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{\"type\":\"crt.IndicatorWidget\",\"config\":{" +
 		"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
 		"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
 		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
