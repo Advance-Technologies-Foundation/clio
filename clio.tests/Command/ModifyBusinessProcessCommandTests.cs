@@ -1,4 +1,5 @@
 using System;
+using System.Text.Json.Nodes;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Linq;
@@ -27,9 +28,14 @@ public sealed class ModifyBusinessProcessCommandTests {
 	[SetUp]
 	public void Setup() {
 		_modifyBusinessProcessService = Substitute.For<IModifyBusinessProcessService>();
-		// The command reads the process back to catch a server that discarded an email block while answering
-		// success. These operations carry no email block, so the substitute is never consulted.
+		// The command reads the saved process back - for the configuration guards, and since ENG-103023 on every
+		// success for the post-write summary. A readable empty process is the default; a test that exercises a
+		// guard configures its own read-back.
 		_processDescriber = Substitute.For<IProcessDescriber>();
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [], Parameters = []
+			});
 		_logger = Substitute.For<ILogger>();
 		_command = new ModifyBusinessProcessCommand(_modifyBusinessProcessService, _processDescriber, _logger);
 	}
@@ -66,7 +72,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -76,7 +82,10 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().NotContain(message => message.Contains("Could not verify"),
 			because: "the UId was in hand the whole time, so declaring the check unperformable would be a "
 				+ "wrong warning in a workflow the tool supports");
@@ -94,7 +103,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(_ => throw new InvalidOperationException("read-back exploded"));
 
 		// Act
@@ -118,7 +127,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Mail", Email = null }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -158,7 +167,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -192,7 +201,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -227,7 +236,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 				["accessRights"] = JsonDocument.Parse("{\"object\":\"Order\"}").RootElement.Clone()
 			}
 		};
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult { Elements = [element] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -237,7 +246,10 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
 			because: "the element is left acting on every row of its object and carries no output parameter to "
 				+ "say so, so this warning is the only signal the caller gets");
@@ -255,7 +267,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the environment refused the read"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -286,7 +298,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(new DescribeProcessResult {
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(new DescribeProcessResult {
 			Elements = [new DescribedElement { Name = "ReadOrders", UserTaskName = "ReadDataUserTask" }]
 		});
 		List<string> warnings = [];
@@ -312,7 +324,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "Grant" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -338,7 +350,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure("Describe.Failed", "the environment did not answer"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -363,7 +375,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>()).Returns(
 			new DescribeProcessResult { Elements = [new DescribedElement { Name = "SomethingElse" }] });
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -474,7 +486,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 			Arg.Is<ModifyBusinessProcessRequest>(request =>
 				request.ProcessName == "UsrSampleProcess" &&
 				request.OperationsJson == SampleOperations));
-		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("UsrSampleProcess")));
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("Process 'UsrSampleProcess' edited")));
 	}
 
 	[Test]
@@ -587,7 +599,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The old label is STILL on the flow - the shape a package below the capability version leaves after
 		// answering success, and the one a caller cannot distinguish from "my edit applied".
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Rejected" }]
@@ -602,7 +614,10 @@ public sealed class ModifyBusinessProcessCommandTests {
 		// Assert
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), null, false, true);
+		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().ContainSingle(
 			warning => warning.Contains("Decide -> Yes (asked for 'Approved', drawn 'Rejected')"),
 			because: "the caller asked for 'Approved' and the connector still says something else - so the "
@@ -627,7 +642,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// The edit took: the flow comes back with the new label.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -659,7 +674,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 			.Returns(BuildResult());
 		// The read-back reports endpoints as element NAMES, so the UId-addressed expectation can never match
 		// it - which is the whole point: the label may have landed or been discarded and nothing here can say.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "Yes", Label = "Approved" }]
@@ -694,7 +709,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
 		// Decide->No exists and came back with NO label: a real drop. The UId-addressed one cannot be checked.
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(new DescribeProcessResult {
 				Elements = [],
 				Flows = [new DescribedFlow { Source = "Decide", Target = "No" }]
@@ -730,7 +745,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 		};
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
 			.Returns(BuildResult());
-		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), null, Arg.Any<bool>(), Arg.Any<bool>())
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
 			.Returns(Error.Failure(description: "the request timed out"));
 		List<string> warnings = [];
 		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
@@ -747,4 +762,63 @@ public sealed class ModifyBusinessProcessCommandTests {
 			because: "'could not check' and 'verified' must not look the same to the caller");
 	}
 
+
+	[Test]
+	[Description("ENG-103023: a successful edit reports the saved version's summary and what the edit changed, from a read before and a read after, so the caller need not describe the process to confirm it.")]
+	public void Execute_ShouldReportSummaryAndChanges_AfterASuccessfulEdit() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "Old"), DigestProcess("Start", "New"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = SampleOperations
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		JsonNode digest = JsonNode.Parse(DigestLine() ?? "null");
+		digest.Should().NotBeNull(because: "every successful edit carries its digest");
+		digest!["summary"]!["elements"]!.AsArray().Should().HaveCount(2, because: "the summary is of the saved state");
+		digest["changes"]!["elementsAdded"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Equal(["New"], because: "the element the edit added is named");
+		digest["changes"]!["elementsRemoved"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Equal(["Old"], because: "the element the edit removed is named");
+	}
+
+	[Test]
+	[Description("ENG-103023: a failed read before the edit costs only the change list - the digest says why, the edit still succeeds.")]
+	public void Execute_ShouldSayWhyChangesAreUnavailable_WhenTheReadBeforeFails() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(Error.Failure(description: "stand unreachable"), DigestProcess("Start"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = SampleOperations
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the digest never changes the outcome of a write that landed");
+		JsonNode digest = JsonNode.Parse(DigestLine())!;
+		digest["changesUnavailable"]!.GetValue<string>().Should().Contain("stand unreachable",
+			because: "an unknown change list must not read as an empty one");
+		digest["changes"].Should().BeNull(because: "nothing was compared");
+	}
+
+	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {
+		Name = "UsrSampleProcess", SchemaUId = "uid",
+		Elements = [.. elements.Select(name => new DescribedElement { Name = name, BuildType = "formulatask" })],
+		Flows = elements.Length > 1 ? [new DescribedFlow { Source = elements[0], Target = elements[1] }] : [],
+		Parameters = []
+	};
+
+	private string DigestLine() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+		.Select(call => call.GetArguments()[0] as string)
+		.SingleOrDefault(text => text != null && text.StartsWith("{\"summary\""));
 }

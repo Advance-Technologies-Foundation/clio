@@ -1087,6 +1087,15 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("savedSchemaUId")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SavedSchemaUId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the post-write digest (ENG-103023): the components this save wrote and whether validation
+	/// passed. Set by the MCP tool on a successful real save only; absent otherwise.
+	/// </summary>
+	[JsonProperty("digest", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("digest")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageWriteDigest Digest { get; set; }
 }
 
 /// <summary>
