@@ -107,7 +107,7 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 	private void ArrangeServer(string response, string initialLog, string completeLog) {
 		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
 			.Returns(response);
-		_applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+		_applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
 			.Returns(initialLog, completeLog, completeLog, completeLog);
 	}
 
@@ -116,7 +116,7 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 			(logProvider, settings, clientFactory, application, archiver, scriptExecutor, urlBuilder, fileSystem,
 					logger, lockManager) =>
 				new PackageInstaller(logProvider, settings, clientFactory, application, archiver, scriptExecutor,
-					urlBuilder, fileSystem, logger, lockManager));
+					urlBuilder, fileSystem, logger, lockManager, Substitute.For<IDesignNodeSessionGuard>()));
 
 	private TInstaller CreateInstaller<TInstaller>(EnvironmentSettings environmentSettings,
 		Func<IApplicationLogProvider, EnvironmentSettings, IApplicationClientFactory, IApplication,
@@ -195,7 +195,7 @@ internal sealed class InstallerFailureClassificationTests : BaseClioModuleTests 
 			(logProvider, settings, clientFactory, application, archiver, scriptExecutor, urlBuilder, fileSystem,
 					logger, lockManager) =>
 				new ApplicationInstaller(logProvider, settings, clientFactory, application, archiver, scriptExecutor,
-					urlBuilder, fileSystem, logger, lockManager));
+					urlBuilder, fileSystem, logger, lockManager, Substitute.For<IDesignNodeSessionGuard>()));
 
 		// Act
 		Action act = () => installer.Install(packagePath, environmentSettings);
