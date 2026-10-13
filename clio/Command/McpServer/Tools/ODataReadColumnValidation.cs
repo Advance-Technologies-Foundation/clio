@@ -80,15 +80,17 @@ internal static class ODataReadColumnValidation {
 			? response
 			: response with {
 				Error = $"{response.Error} {explanation.Text}",
-				UnknownMembers = explanation.Members,
-				ValidColumnCount = explanation.ValidColumnCount
+				// An explanation without unknown names (only the plain-column correction) leaves both structured fields absent.
+				UnknownMembers = explanation.Members.Count > 0 ? explanation.Members : null,
+				ValidColumnCount = explanation.Members.Count > 0 ? explanation.ValidColumnCount : null
 			};
 	}
 
 	/// <summary>
 	/// Validates the names of a query the server rejected. Returns <see langword="null"/> when every name
-	/// is known, when there is nothing to check, or when the metadata is unavailable; otherwise the
-	/// explanation that names the unknown members.
+	/// is known and none is a plain column the rejection's lookup hint would misrewrite, when there is nothing to
+	/// check, or when the metadata is unavailable; otherwise the explanation that names the unknown members
+	/// (with no members when only the plain-column correction applies).
 	/// </summary>
 	internal static Explanation? Validate(
 		IApplicationClient client,
@@ -107,7 +109,11 @@ internal static class ODataReadColumnValidation {
 			return null;
 		}
 		List<(Reference Reference, string Name)> unknown = FindUnknown(shape, references);
-		return unknown.Count == 0 ? null : BuildExplanation(shape, unknown, PlainIdColumns(shape, references), entity);
+		List<string> plainIdColumns = PlainIdColumns(shape, references);
+		if (unknown.Count == 0 && plainIdColumns.Count == 0) {
+			return null;
+		}
+		return BuildExplanation(shape, unknown, plainIdColumns, entity);
 	}
 
 	/// <summary>
@@ -252,8 +258,9 @@ internal static class ODataReadColumnValidation {
 		string detail = string.Join("; ", items.Select(item => Describe(item.Member, item.WrongForm)));
 		string more = unknown.Count > items.Count ? $" and {unknown.Count - items.Count} more" : string.Empty;
 		int columns = shape.Root.Properties.Count;
-		string text =
-			$"Checked against the OData metadata of {entity}: {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
+		string text = unknown.Count == 0
+			? $"Checked against the OData metadata of {entity}: every name sent exists on the entity, so the rejection is not caused by a misspelled name; check the filter operand types against the column types."
+			: $"Checked against the OData metadata of {entity}: {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
 			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
 			"navigation path, for example AccountId -> Account/Id).";
 		if (plainIdColumns.Count > 0) {
