@@ -433,6 +433,99 @@ public sealed class RestartToolTests {
 		}
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: the restart request runs inside the response-deadline race, so a request that has not returned when the deadline passes - a fresh worker's login, an application reloading after a compile - answers in-progress at once, saying the request is not yet confirmed and pointing at restart-status, instead of answering after a 60 s client has given up.")]
+	public async Task RestartInstanceByName_Should_SayTheRequestIsPending_WhenTheDeadlinePassesBeforeTheRequestReturns() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		ManualResetEventSlim requestGate = new(false);
+		FakeRestartCommand resolvedCommand = new() { RequestGate = requestGate };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, commandResolver,
+			new RestartOperationRegistry()) {
+			ResponseDeadlineOverride = TimeSpan.FromMilliseconds(50)
+		};
+
+		try {
+			// Act
+			CommandExecutionResult result = await tool.RestartInstanceByName("sandbox");
+
+			// Assert
+			string notice = string.Join(" ", result.Output.Select(message => message.Value?.ToString()));
+			result.ExitCode.Should().Be(0, because: "an unanswered request is not a failure yet");
+			notice.Should().Contain("has not been answered yet",
+				because: "the notice must not claim the restart was accepted before the request returned");
+			notice.Should().NotContain("already succeeded",
+				because: "nothing about the request's outcome is known at the deadline");
+			notice.Should().Contain("restart-status",
+				because: "the operation is begun before the request, so restart-status can report what the request did");
+		} finally {
+			requestGate.Set();
+			ConsoleLogger.Instance.ClearMessages();
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: a restart request that fails is recorded as requestfailed, so restart-status can report it to an agent that already got an in-progress answer - not as timedout, which would claim a restart happened and only the warm-up failed.")]
+	public async Task RestartInstanceByName_Should_RecordRequestFailed_WhenTheRestartRequestFails() {
+		// Arrange
+		FakeRestartCommand resolvedCommand = new() { ExitCodeToReturn = 1 };
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<RestartCommand>(Arg.Any<RestartOptions>()).Returns(resolvedCommand);
+		commandResolver.GetTenantKey(Arg.Any<EnvironmentOptions>()).Returns("tenant-a");
+		RestartOperationRegistry registry = new();
+		RestartTool tool = new(new FakeRestartCommand(), ConsoleLogger.Instance, commandResolver, registry);
+
+		// Act
+		CommandExecutionResult result = await tool.RestartInstanceByName("sandbox");
+
+		// Assert
+		result.ExitCode.Should().NotBe(0, because: "the restart request failed and that is the call's answer");
+		registry.GetLatest("tenant-a").Status.Should().Be(RestartOperationStatus.RequestFailed,
+			because: "the operation begun before the request must end with what actually failed");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: on the credentials path restart-status cannot report the restart, so a notice that comes before the request returned must say the outcome is unknown and that an answering instance proves nothing - after a failed request it answers because it never went down, and the new code is not loaded.")]
+	public void BuildRequestPendingMessage_Should_SayTheOutcomeIsUnknown_OnTheCredentialsPath() {
+		// Arrange
+		const string target = "https://sandbox.example.com";
+
+		// Act
+		string notice = RestartTool.BuildRequestPendingMessage(target, RestartTool.RestartByCredentialsToolName,
+			"0f8fad5bd9cb469fa16570867728950e", environmentName: null);
+
+		// Assert
+		notice.Should().Contain("has not been answered yet", because: "the request had not returned when the notice was built");
+		notice.Should().Contain("do not assume new code is loaded",
+			because: "after a failed request the instance never restarted, so the new code is not loaded");
+		notice.Should().Contain("Ask the user before restarting again",
+			because: "a restart reloads the application for every user and needs the user's decision when its predecessor's fate is unknown");
+		notice.Should().NotContain("requestfailed",
+			because: "restart-status cannot report a credentials-started restart, so pointing at its status would mislead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: by environment name, a notice that comes before the request returned points at restart-status and says what requestfailed means.")]
+	public void BuildRequestPendingMessage_Should_ExplainRequestFailed_ByEnvironmentName() {
+		// Arrange
+		const string target = "environment 'sandbox'";
+
+		// Act
+		string notice = RestartTool.BuildRequestPendingMessage(target, RestartTool.RestartByEnvironmentNameToolName,
+			"0f8fad5bd9cb469fa16570867728950e", "sandbox");
+
+		// Assert
+		notice.Should().Contain("restart-status", because: "the operation is tracked under the environment name");
+		notice.Should().Contain("requestfailed: no restart happened, so ask the user, then retry once",
+			because: "an agent must know what to do when restart-status says the request itself failed");
+	}
+
 	private sealed class FakeRestartCommand : RestartCommand {
 		public RestartOptions? CapturedOptions { get; private set; }
 		public RestartOptions? CapturedReadinessOptions { get; private set; }
@@ -447,6 +540,10 @@ public sealed class RestartToolTests {
 		/// branch or hold the lock-free wait open while it probes a concurrent call.</summary>
 		public ManualResetEventSlim? ReadinessGate { get; init; }
 
+		/// <summary>When set, <see cref="Execute"/> blocks on this gate so a test can hold the restart request past the
+		/// response deadline.</summary>
+		public ManualResetEventSlim? RequestGate { get; init; }
+
 		public FakeRestartCommand()
 			: base(
 				Substitute.For<IApplicationClient>(),
@@ -456,6 +553,7 @@ public sealed class RestartToolTests {
 
 		public override int Execute(RestartOptions options) {
 			CapturedOptions = options;
+			RequestGate?.Wait();
 			return ExitCodeToReturn;
 		}
 

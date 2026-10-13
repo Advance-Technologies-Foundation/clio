@@ -111,7 +111,7 @@ public sealed record RestartStatusResponse(
 	bool Success,
 
 	[property: JsonPropertyName("status")]
-	[Description("One of: running, ready, timedout, not-found, invalid-request.")]
+	[Description("One of: running, ready, timedout, requestfailed, not-found, invalid-request. requestfailed: the restart request itself failed, so no restart is known to have happened.")]
 	string Status,
 
 	[property: JsonPropertyName("operation-id")]
@@ -127,7 +127,7 @@ public sealed record RestartStatusResponse(
 	DateTime? FinishedUtc = null,
 
 	[property: JsonPropertyName("exit-code")]
-	[Description("0 once the instance answered an authenticated application-layer round-trip (genuinely serving, not merely a liveness ping); non-zero when the readiness wait timed out; null while still running.")]
+	[Description("0 once the instance answered an authenticated application-layer round-trip (genuinely serving, not merely a liveness ping); non-zero when the readiness wait timed out or the restart request failed; null while still running.")]
 	int? ExitCode = null,
 
 	[property: JsonPropertyName("note")]

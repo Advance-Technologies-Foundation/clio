@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
 
 namespace Clio.Command.McpServer.Tools;
 
@@ -27,7 +28,7 @@ namespace Clio.Command.McpServer.Tools;
 /// </para>
 /// <para>
 /// What the short form keeps: the description's lead (the purpose, and for a destructive tool the call-time
-/// warning the catalog puts second); every sentence carrying a safety marker, wherever it stands
+/// warning that follows the purpose); every sentence carrying a safety marker, wherever it stands
 /// (<see cref="SafetyDuty"/> - a confirmation duty, an ask/tell/warn-the-user rule, a prohibition, an
 /// irreversibility warning), and every field description carrying one whole (<see cref="FieldDuty"/>); the
 /// input schema with its required list and validators; the error codes, preconditions,
@@ -50,14 +51,154 @@ internal static class ToolContractShortForm {
 	internal const string ShortDetail = "short";
 
 	/// <summary>
+	/// The argument lists of the two process write tools. Each name must be a wire name of the tool's args
+	/// record and every required one must be listed: the drift test compares them.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> CreateArgsShape = ["environment-name", "descriptor", "package-name?"];
+
+	/// <inheritdoc cref="CreateArgsShape"/>
+	internal static readonly IReadOnlyList<string> ModifyArgsShape =
+		["environment-name", "process-name | process-uid", "operations"];
+
+	/// <summary>
+	/// The <c>create-business-process</c> descriptor fields. Outside parentheses an entry holds wire names only,
+	/// and the entries hold every member of the bundled CrtProcessBuilder's build request: the drift test
+	/// compares the two.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> CreateDescriptorShape = [
+		"name", "caption", "packageName", "elements[]", "flows[]", "parameters[]?", "mappings[]?", "usings[]?",
+		"methods?", "isTracing?"
+	];
+
+	/// <summary>
+	/// The fields any process element may carry. Together with <see cref="CreateElementBlockShape"/>, every
+	/// member of the bundled CrtProcessBuilder's element descriptor, under the same drift test.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> CreateElementShape =
+		["name", "type", "caption", "userTaskName?", "lane?", "useBackgroundMode?", "filter?"];
+
+	/// <summary>
+	/// The type-specific element blocks. Where a block's name differs from its element type the type is named
+	/// beside it, since that pairing is what a caller cannot guess.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> CreateElementBlockShape = [
+		"signal (signalStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
+		"email (sendEmail)", "performer (performTask)", "approval", "openEditPage", "preconfiguredPage",
+		"formula (formulaTask)", "subProcess", "scriptTask"
+	];
+
+	/// <summary>The flow fields: every member of the bundled server's flow descriptor, under the drift test.</summary>
+	internal static readonly IReadOnlyList<string> CreateFlowShape =
+		["source", "target", "kind? (sequence|conditional|default)", "condition? | results?", "label?"];
+
+	/// <summary>The parameter fields: every member of the bundled server's parameter descriptor.</summary>
+	internal static readonly IReadOnlyList<string> CreateParameterShape = [
+		"name", "type", "direction?", "caption?", "description?", "referenceSchema?", "typeFromElement?",
+		"typeFromElementParameter?", "value?"
+	];
+
+	/// <summary>
+	/// The mapping targets and, in <see cref="CreateMappingSourceShape"/>, its sources: together every member of
+	/// the bundled server's mapping descriptor.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> CreateMappingTargetShape =
+		["elementName+elementParameter", "targetProcessParameter"];
+
+	/// <inheritdoc cref="CreateMappingTargetShape"/>
+	internal static readonly IReadOnlyList<string> CreateMappingSourceShape =
+		["processParameter", "sourceElement+sourceElementParameter+sourceColumn?", "value", "expression"];
+
+	/// <summary>
+	/// The <c>modify-business-process</c> operations. One entry per <c>op</c> token the bundled CrtProcessBuilder
+	/// accepts, each starting with the token, so a new server operation without a shape fails the drift test.
+	/// The braces hold wire names only, and together they are every member of the server's operation descriptor
+	/// besides <c>op</c>, under the same test.
+	/// </summary>
+	internal static readonly IReadOnlyList<string> ModifyOperationShape = [
+		"addElement {element}",
+		"removeElement {elementName}",
+		"addFlow {source, target, kind?, condition? | results?, label?}",
+		"removeFlow {source, target}",
+		"setFlow {source, target, kind, condition?, label?}",
+		"setFlowCondition {source, target, condition}",
+		"setFlowResults {source, target, results}",
+		"addParameter {parameter}",
+		"addMapping {mapping} (there is no removeMapping: re-map to overwrite)",
+		"setParameter {parameterName, parameterUpdate}",
+		"removeParameter {parameterName}",
+		"setFilter {elementName, filter}",
+		"clearFilter {elementName}",
+		"setSignal {elementName, signal}",
+		"setElement {elementName, elementUpdate}",
+		"setConnections {elementName, connections}",
+		"clearConnections {elementName, connections}",
+		"addUsing {using}",
+		"removeUsing {using}",
+		"setMethods {methods}",
+		"setTracing {enabled}"
+	];
+
+	/// <summary>
+	/// ENG-102797: the call shape a short contract still carries for the tools whose full description is mostly
+	/// that shape. Without it the short form names no element block and no operation, so agents asked for
+	/// <c>detail=full</c> (33 KB, spilled to a file) or guessed flat arguments.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// Names and nesting only, about 1 KB each, because agents read these two contracts in the seven-contract
+	/// bundle and that reply must still arrive inline (19 000 bytes on the wire, see
+	/// <c>ToolContractPayloadBudgetTests</c>). Glosses and per-field rules stay with <c>detail=full</c> and the
+	/// process guides. The two facts kept as prose are the two failure modes the A/B saw: descriptor keys sent
+	/// flat as arguments, and a reach for a <c>removeMapping</c> that does not exist.
+	/// </para>
+	/// <para>
+	/// The trade this makes, accepted on purpose: with both shapes the seven-contract bundle no longer fits
+	/// <see cref="InlineReplyBudgetBytes"/> as <see cref="Fit"/> measures it even with every contract short, so Fit
+	/// runs out of contracts to shorten and returns all seven short, about 1.2 KB over its own budget. All seven
+	/// came back short before the shapes as well - Fit reached its budget only with the last of them - so no
+	/// contract loses text it used to keep, and every short form keeps its safety duties; what the shapes spend
+	/// is Fit's margin over the wire size, which stays under 19 000 bytes. They are worth it because they cut the
+	/// <c>detail=full</c> fetch of the 33-134 KB full contracts, which always spills to a file (ENG-99970 A/B on
+	/// creatio_3: requested in 5 of 6 runs without the shapes, 7 of 14 with them).
+	/// </para>
+	/// <para>
+	/// A hand-written digest of the server's contract, so it can drift: <c>ToolContractShortFormTests</c> holds
+	/// every list above equal to the args records and to the members and operation tokens of the CrtProcessBuilder
+	/// archive clio bundles. Appended after the kept lead and never cut: <see cref="Shorten"/> runs once per
+	/// contract and <see cref="Fit"/> never shortens a contract twice.
+	/// </para>
+	/// </remarks>
+	internal static readonly IReadOnlyDictionary<string, string> CallShapes =
+		new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+			[CreateBusinessProcessTool.CreateBusinessProcessToolName] =
+				$"SHAPE: args {{{string.Join(", ", CreateArgsShape)}}}; descriptor is ONE JSON object whose keys "
+				+ "never go flat into args. "
+				+ $"descriptor {{{string.Join(", ", CreateDescriptorShape)}}}. "
+				+ $"element {{{string.Join(", ", CreateElementShape)}, and the ONE block its type owns: "
+				+ $"{string.Join(" | ", CreateElementBlockShape)}}}. "
+				+ $"flow {{{string.Join(", ", CreateFlowShape)}}}. "
+				+ $"parameter {{{string.Join(", ", CreateParameterShape)}}}. "
+				+ $"mapping {{target: {string.Join(" | ", CreateMappingTargetShape)}, ONE source: "
+				+ $"{string.Join(" | ", CreateMappingSourceShape)}}}. "
+				+ "Block fields: the element's article (get-guidance name=process-digest routes to it).",
+			[ModifyBusinessProcessTool.ModifyBusinessProcessToolName] =
+				$"SHAPE: args {{{string.Join(", ", ModifyArgsShape)}}}; operations is a JSON ARRAY of {{op, ...}}, "
+				+ "applied in order, and a failure aborts the edit unless its error says it WAS saved. "
+				+ $"ops: {string.Join(", ", ModifyOperationShape)}."
+		};
+
+	/// <summary>
 	/// Serialized size a default named lookup is fitted under, in UTF-8 bytes of the reply.
 	/// </summary>
 	/// <remarks>
-	/// Below the smallest spill observed in the CAADT transcripts (21.3 KB, Copilot CLI) with room for the
-	/// MCP envelope, and far below Claude Code's token-based limit. Seven process-designer contracts - the
-	/// largest request measured in those transcripts - fit it in their short forms. Measured with the default
-	/// JSON encoder, which escapes non-ASCII and so over-counts the real wire size - the safe direction for a
-	/// ceiling.
+	/// Below the Copilot CLI inline limit with room for the MCP envelope, and far below Claude Code's token-based
+	/// limit. That limit is bracketed by the CAADT gate's transcripts: ENG-100154 found no spill below 21.3 KB in
+	/// the runs it read, and release build 16156272 with the ENG-99970 A/B on creatio_3 (October 2026) narrowed it
+	/// to results of up to ~19.8 KB returned inline and ~20.7 KB and over spilled to a file. Measured with the
+	/// default JSON encoder, which escapes non-ASCII and writes every null, and so over-counts the real wire size
+	/// - the safe direction for a ceiling. The seven process-designer contracts - the largest request measured in
+	/// those transcripts - do NOT fit it since ENG-102797, even all short: <see cref="CallShapes"/> says why that
+	/// is accepted, and <c>ToolContractPayloadBudgetTests</c> holds that bundle to 19 000 bytes on the wire.
 	/// </remarks>
 	internal const int InlineReplyBudgetBytes = 18 * 1024;
 
@@ -263,6 +404,9 @@ internal static class ToolContractShortForm {
 			.Where(sentence => !lead.Contains(sentence.Trim('…'), StringComparison.Ordinal))
 			.Distinct(StringComparer.Ordinal)];
 		string kept = safety.Length == 0 ? lead : lead.TrimEnd() + " Also: " + string.Join(" ", safety);
+		if (CallShapes.TryGetValue(contract.Name, out string? shape)) {
+			kept = kept.TrimEnd() + " " + shape;
+		}
 		IReadOnlyList<ToolContractField> inputFields = TrimFields(contract.InputSchema?.Properties);
 		IReadOnlyList<ToolContractField> outputFields = TrimFields(contract.OutputContract?.Fields);
 		bool fieldsTrimmed = !SameDescriptions(inputFields, contract.InputSchema?.Properties)
@@ -338,7 +482,7 @@ internal static class ToolContractShortForm {
 
 	/// <summary>
 	/// Whether a <see cref="SafetyDuty"/> sentence STARTS inside the ordinary lead. Starts, not ends: the
-	/// create-business-process warning opens at character ~190 and runs past the ordinary lead, and a test on the ordinary
+	/// create-business-process warning opens after two ordinary sentences and runs past the ordinary lead, and a test on the ordinary
 	/// lead's own text would miss it and drop the rest of the block.
 	/// </summary>
 	internal static bool OpensWithSafetyWarning(string description) {

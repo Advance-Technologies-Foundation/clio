@@ -27,12 +27,14 @@ public class RestartTool(
 	internal const string RestartByCredentialsToolName = "restart-by-credentials";
 
 	/// <summary>
-	/// Test seam overriding the MCP response deadline used by the readiness wait. <see langword="null"/> in
-	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> ~150 s applies);
+	/// Test seam overriding the call's MCP response deadline, which races the restart request and the readiness wait
+	/// together. <see langword="null"/> in
+	/// production (the default <see cref="McpProgressHeartbeat.DefaultResponseDeadline"/> applies);
 	/// unit tests set a tiny value to deterministically exercise the deadline-exceeded in-progress branch
 	/// without racing the real ceiling.
 	/// </summary>
 	internal TimeSpan? ResponseDeadlineOverride { get; set; }
+
 
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Parameters mirror the restart-by-environment-name MCP tool contract; the trailing server/requestContext/cancellationToken are framework-injected. Grouping them into a DTO would break the MCP-reflected JSON schema.")]
@@ -47,7 +49,7 @@ public class RestartTool(
 		SharedFileResource = McpToolSharedFileResource.None,
 		StartsOperation = true)]
 	[McpServerTool(Name = RestartByEnvironmentNameToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead. If YOUR client stops waiting first (for example 'Request timed out'), the restart and its readiness wait keep running too: do NOT restart again - poll restart-status.")]
+	 Description("Restarts a Creatio instance by environment name. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note carrying an operation-id: the note says whether the restart request was already accepted (then only the readiness wait continues) or is not yet confirmed, and either keeps running server-side. restart-status reports requestfailed when the request itself failed - no restart happened: ask the user, then retry once. Do NOT retry; poll restart-status with the same environment-name (or this operation-id) instead. If YOUR client stops waiting first (for example 'Request timed out'), the restart and its readiness wait keep running too: do NOT restart again - poll restart-status.")]
 	public async Task<CommandExecutionResult> RestartInstanceByName(
 		[Description("Target Environment name to restart")] [Required] string environmentName,
 		[DefaultValue(true)] [Description("Wait after the restart until the instance answers an authenticated application-layer round-trip (not merely the liveness health-check ping); default true")] bool waitReady = true,
@@ -93,7 +95,7 @@ public class RestartTool(
 		SharedFileResource = McpToolSharedFileResource.None,
 		StartsOperation = true)]
 	[McpServerTool(Name = RestartByCredentialsToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false),
-	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note — the restart itself already succeeded and the readiness wait continues server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); re-check with healthcheck, or use restart-by-environment-name when you need a pollable restart.")]
+	 Description("Restarts a Creatio instance by credentials. By default (waitReady=true) waits after the restart until the instance answers an authenticated application-layer round-trip — not merely the liveness health-check ping — and returns only once it is genuinely serving, or after waitTimeoutSeconds. Long-running: streams notifications/progress while waiting; if the MCP response deadline is reached first, returns exit-code 0 with an in-progress note saying whether the restart request was already accepted or is not yet confirmed; either keeps running server-side. Do NOT retry. Note that restart-status CANNOT report a credentials-started restart (it is keyed by a registered environment name); check that the environment answers with describe-environment (through clio-run), or use restart-by-environment-name when you need a pollable restart.")]
 	public async Task<CommandExecutionResult> RestartInstanceByCredentials(
 		[Description("Creatio instance url")] [Required] string url,
 		[Description("Creatio instance Username")] [Required] string userName,
@@ -162,32 +164,60 @@ public class RestartTool(
 			return InternalExecute<RestartCommand>(options);
 		}
 
-		// Phase 1: restart request only, under the per-tenant execution lock (released on return).
-		CommandExecutionResult requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
-		if (requestResult.ExitCode != 0) {
-			// The restart request itself failed (or the environment did not resolve) — surface it as-is; there
-			// is nothing to wait on, so no operation is tracked.
-			return requestResult;
-		}
-
-		// Phase 2: readiness wait, lock-free and tracked. Begin BEFORE the deadline race so the operation-id
-		// is available for the in-progress notice even when the wait outlives the response.
+		// The operation is begun BEFORE the restart request, and the request runs INSIDE the deadline race (ENG-102333).
+		// A fresh sticky worker logs in first, and right after a compile a request can hang for 44 s; outside the race
+		// that time came on top of the deadline and could push the answer past the 60 s after which Claude Code desktop
+		// gives up and restarts the MCP server, losing the restart-status record. Begun first, the operation gives an
+		// answer that arrives before the request returned somewhere to point: restart-status reports a failed request as
+		// failed, and an accepted one as its readiness wait's outcome.
 		string tenantKey = ResolveTenantLockKey(options);
 		RestartOperationRecord operation = registry.Begin(tenantKey, waitContext.EnvironmentName);
+		RestartRequestPhase requestPhase = new();
 		try {
 			return await McpProgressHeartbeat.RunWithProgressAndDeadlineAsync(
 				server,
 				requestContext?.Params?.ProgressToken,
 				waitContext.ToolName,
-				() => RunReadinessWait(options, requestResult, waitContext, tenantKey, operation.OperationId),
+				() => RequestThenWaitForReadiness(options, waitContext, tenantKey, operation.OperationId, requestPhase),
 				deadline: ResponseDeadlineOverride,
 				cancellationToken: cancellationToken).ConfigureAwait(false);
 		} catch (McpResponseDeadlineExceededException) {
-			return CommandExecutionResult.FromInfo(
-				BuildInProgressMessage(
+			return CommandExecutionResult.FromInfo(requestPhase.Accepted
+				? BuildInProgressMessage(
 					waitContext.TargetDescription, waitContext.ToolName, waitContext.WaitTimeoutSeconds,
-					operation.OperationId, waitContext.EnvironmentName));
+					operation.OperationId, waitContext.EnvironmentName)
+				: BuildRequestPendingMessage(
+					waitContext.TargetDescription, waitContext.ToolName, operation.OperationId,
+					waitContext.EnvironmentName));
 		}
+	}
+
+	// Phase 1, the restart request, runs under the per-tenant execution lock (released when InternalExecute returns);
+	// Phase 2, the readiness wait, does not. Both run on the detached work, and every exit finishes the operation, so
+	// restart-status can never observe it stuck "running".
+	private CommandExecutionResult RequestThenWaitForReadiness(RestartOptions options, RestartWaitContext waitContext,
+		string tenantKey, string operationId, RestartRequestPhase requestPhase) {
+		CommandExecutionResult requestResult;
+		try {
+			requestResult = InternalExecute<RestartCommand>(BuildRequestOnlyOptions(options));
+		} catch (Exception) {
+			registry.FinishRequestFailed(operationId, 1);
+			throw;
+		}
+		if (requestResult.ExitCode != 0) {
+			// The restart request itself failed (or the environment did not resolve) - there is nothing to wait on.
+			registry.FinishRequestFailed(operationId, requestResult.ExitCode);
+			return requestResult;
+		}
+		requestPhase.MarkAccepted();
+		return RunReadinessWait(options, requestResult, waitContext, tenantKey, operationId);
+	}
+
+	// Written by the detached work, read by the deadline branch on another thread.
+	private sealed class RestartRequestPhase {
+		private volatile bool _accepted;
+		internal bool Accepted => _accepted;
+		internal void MarkAccepted() => _accepted = true;
 	}
 
 	// Runs the read-only readiness poll WITHOUT the per-tenant execution lock (so it does not serialize other
@@ -260,6 +290,27 @@ public class RestartTool(
 		+ $"readiness wait continues server-side for up to {waitTimeoutSeconds}s). "
 		+ BuildPollGuidance(operationId, environmentName)
 		+ $" Typical warm-up is 1-10 minutes; do NOT retry {toolName}.";
+
+	/// <summary>
+	/// Builds the in-progress notice for a restart whose request had not been answered when the deadline passed.
+	/// </summary>
+	/// <param name="targetDescription">The restart target, as the notice names it.</param>
+	/// <param name="toolName">The restart tool, which the notice says not to call again.</param>
+	/// <param name="operationId">The operation restart-status reports.</param>
+	/// <param name="environmentName">The registered environment, or <see langword="null"/> on the credentials path.</param>
+	/// <returns>The notice.</returns>
+	internal static string BuildRequestPendingMessage(
+		string targetDescription, string toolName, string operationId, string environmentName) =>
+		$"The restart request for {targetDescription} has not been answered yet (MCP response deadline reached); it "
+		+ "keeps going server-side, so it is not yet known whether the restart was accepted. "
+		+ BuildPollGuidance(operationId, environmentName)
+		+ (string.IsNullOrWhiteSpace(environmentName)
+			? " Whether this restart happened is unknown, and nothing here will report it: do not assume new code is "
+			  + "loaded - an instance that answers proves nothing, because it also answers when the request failed and "
+			  + "it never went down. Ask the user before restarting again."
+			: " A request that fails is reported there as requestfailed: no restart happened, so ask the user, then "
+			  + "retry once.")
+		+ $" Do NOT retry {toolName}.";
 
 	// restart-status resolves its tenant key from a REQUIRED environment name; the credentials path has
 	// none. Corrected 2026-08-18, story 7 AC-00: this comment used to claim the two keys could NEVER be

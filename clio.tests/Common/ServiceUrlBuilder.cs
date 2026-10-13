@@ -191,6 +191,9 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetSystemEnvironmentInfo, "https://localhost/ServiceModel/ApplicationInfoService.svc/GetSystemEnvironmentInfo");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/0/rest/ProcessDesignService/CompileProcess");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CompileProcess, "https://localhost/rest/ProcessDesignService/CompileProcess");
+			// ENG-101880: run-process launches the named version through the version-pinned route.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion, "https://localhost/0/ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion, "https://localhost/ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
 			// ENG-90576 (localize-page): page designer schema read/save and the post-save script-cache reset.
@@ -245,6 +248,18 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
 				ServiceUrlBuilder.KnownRoute.GetConfigurationData,
 				"https://localhost/rest/ConfigurationDataService/GetData");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.GetCurrentUserInfo,
+				"https://localhost/0/ServiceModel/UserInfoService.svc/GetCurrentUserInfo");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.GetCurrentUserInfo,
+				"https://localhost/ServiceModel/UserInfoService.svc/GetCurrentUserInfo");
+			yield return new TestCaseDataWithKnownRoutes(false, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.DesignReady,
+				"https://localhost/0/api/Probes/DesignReady");
+			yield return new TestCaseDataWithKnownRoutes(true, "https://localhost",
+				ServiceUrlBuilder.KnownRoute.DesignReady,
+				"https://localhost/api/Probes/DesignReady");
 
 			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.RestoreFromPackageBackup,

@@ -1,10 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.ComponentModel.DataAnnotations;
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Tests.Common;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -386,7 +392,7 @@ public sealed class ToolContractShortFormTests {
 	public void ShortLookup_Should_KeepEverySafetySentence_OfEveryTool() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolWithRegistry();
-		string[] names = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+		string[] names = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		List<string> lost = [];
@@ -511,6 +517,192 @@ public sealed class ToolContractShortFormTests {
 		ToolContractShortForm.MeasureBytes(full).Should().Be(shortForm.FullContractBytes,
 			because: "the size the short form advertises is the size detail=full actually returns");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The modify-business-process call shape names exactly the op tokens the bundled CrtProcessBuilder accepts, read from the server's own vocabulary rather than from a second hand-written list, so a new operation without a shape - or a shape for a renamed one - fails here (ENG-102797).")]
+	public void ModifyCallShape_Should_NameExactlyTheOperationsTheBundledServerAccepts() {
+		// Arrange
+		string archive = BundledProcessBuilderSource.ReadAsText();
+
+		// Act
+		IReadOnlyList<string> accepted = BundledProcessBuilderSource.ModifyOperationTokens(archive);
+		string[] shaped = [.. ToolContractShortForm.ModifyOperationShape.Select(LeadingWireName)];
+
+		// Assert
+		accepted.Should().Contain("setTracing",
+			because: "anti-vacuity: the server vocabulary was read, and it carries the newest operation");
+		shaped.Should().BeEquivalentTo(accepted,
+			because: "the short contract is how an agent learns the operations without a 33 KB detail=full read; "
+				+ "every accepted op must be shaped and every shaped op must be accepted");
+		accepted.Should().NotContain("removeMapping",
+			because: "the shape tells the caller there is no removeMapping, which stays true only while the server "
+				+ "has none");
+		ToolContractShortForm.CallShapes[ModifyBusinessProcessTool.ModifyBusinessProcessToolName]
+			.Should().Contain("there is no removeMapping",
+				because: "agents reach for removeMapping; the shape must say re-mapping overwrites instead");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The fields inside the modify-business-process operation braces, with the op key the shape states once for all, are exactly the members of the bundled CrtProcessBuilder's operation descriptor, so a renamed or new operation field fails here as an unshaped op token does (ENG-102797).")]
+	public void ModifyCallShape_Should_NameExactlyTheOperationFieldsTheBundledServerDeclares() {
+		// Arrange
+		string archive = BundledProcessBuilderSource.ReadAsText();
+
+		// Act
+		IReadOnlyList<string> members = BundledProcessBuilderSource.DataMemberNames(archive, "ProcessOperationDescriptor");
+		string[] shaped = [
+			"op", .. WireNames(ToolContractShortForm.ModifyOperationShape.Select(OperationFields)).Distinct()
+		];
+
+		// Assert
+		members.Should().Contain("enabled",
+			because: "anti-vacuity: the operation descriptor was read, and it carries the newest operation's field");
+		shaped.Should().BeEquivalentTo(members,
+			because: "an operation field missing from the shape is one an agent can only find in detail=full, and a "
+				+ "shaped field the server lacks is one it ignores or refuses");
+	}
+
+	[TestCase("BuildProcessRequest", "isTracing")]
+	[TestCase("ProcessElementDescriptor", "scriptTask")]
+	[TestCase("ProcessFlowDescriptor", "results")]
+	[TestCase("ProcessParameterDescriptor", "typeFromElementParameter")]
+	[TestCase("ProcessMappingDescriptor", "sourceColumn")]
+	[Category("Unit")]
+	[Description("Each create-business-process call shape list - descriptor, element fields with blocks, flow, parameter, mapping - names exactly the members of its contract type in the bundled CrtProcessBuilder, so a new descriptor field or element block without a shape fails here (ENG-102797).")]
+	public void CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract(string contractType,
+		string newestMember) {
+		// Arrange
+		string archive = BundledProcessBuilderSource.ReadAsText();
+
+		// Act
+		IReadOnlyList<string> members = BundledProcessBuilderSource.DataMemberNames(archive, contractType);
+		string[] shaped = [.. WireNames(CreateShapeOf(contractType))];
+
+		// Assert
+		members.Should().Contain(newestMember,
+			because: $"anti-vacuity: {contractType} was read, and it carries its newest member");
+		shaped.Should().BeEquivalentTo(members,
+			because: "a field missing from the shape is one an agent can only find in detail=full, and a shaped field "
+				+ "the server lacks is one it refuses");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName, typeof(CreateBusinessProcessArgs))]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName, typeof(ModifyBusinessProcessArgs))]
+	[Category("Unit")]
+	[Description("The args a process write tool's call shape names are wire names of its args record, and every required one is named, so a renamed or newly required argument fails here (ENG-102797).")]
+	public void CallShapeArgs_Should_NameRealArgumentsAndEveryRequiredOne(string toolName, Type argsType) {
+		// Arrange
+		(string Name, bool Required)[] arguments = [
+			.. argsType.GetProperties()
+				.Select(property => (Attribute: property.GetCustomAttribute<JsonPropertyNameAttribute>(), property))
+				.Where(pair => pair.Attribute is not null)
+				.Select(pair => (pair.Attribute!.Name, pair.property.GetCustomAttribute<RequiredAttribute>() is not null))
+		];
+		IReadOnlyList<string> shape = toolName == CreateBusinessProcessTool.CreateBusinessProcessToolName
+			? ToolContractShortForm.CreateArgsShape
+			: ToolContractShortForm.ModifyArgsShape;
+
+		// Act
+		string[] shaped = [.. shape.SelectMany(entry => ArgumentName.Matches(entry).Select(match => match.Value))];
+
+		// Assert
+		arguments.Should().Contain(argument => argument.Required,
+			because: "anti-vacuity: the args record was read, and the tool has required arguments");
+		shaped.Should().BeSubsetOf(arguments.Select(argument => argument.Name),
+			because: "an argument the shape names but the tool does not bind is refused as unknown");
+		shaped.Should().Contain(arguments.Where(argument => argument.Required).Select(argument => argument.Name),
+			because: "a required argument missing from the shape is the call that fails first");
+		ToolContractShortForm.CallShapes[toolName].Should().StartWith($"SHAPE: args {{{string.Join(", ", shape)}}}",
+			because: "the list checked here must be the one the shape prints");
+	}
+
+	[TestCase(CreateBusinessProcessTool.CreateBusinessProcessToolName)]
+	[TestCase(ModifyBusinessProcessTool.ModifyBusinessProcessToolName)]
+	[Category("Unit")]
+	[Description("Over the real catalog, the default single lookup of a process write tool is short and carries its call shape whole, once (ENG-102797).")]
+	public void DefaultLookup_Should_CarryTheCallShapeWhole_OfAProcessWriteTool(string toolName) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string shape = ToolContractShortForm.CallShapes[toolName];
+
+		// Act
+		ToolContractDefinition contract = tool.GetToolContracts(new ToolContractGetArgs([toolName])).Tools!.Single();
+
+		// Assert
+		contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+			because: "anti-vacuity: the shape rides on the short form, so the lookup must have been shortened");
+		contract.Description.Should().Contain(shape,
+			because: "the short form must hand the caller the descriptor or operations shape it builds the call from");
+		contract.Description.IndexOf(shape, StringComparison.Ordinal)
+			.Should().Be(contract.Description.LastIndexOf(shape, StringComparison.Ordinal),
+				because: "the shape is appended once, however the contract reached its short form");
+	}
+
+	[TestCase(7)]
+	[TestCase(12)]
+	[Category("Unit")]
+	[Description("Over the real catalog, a default lookup of seven or twelve process tools - the bundle sizes agents request - returns create- and modify-business-process short and each carries its call shape whole: fitting shortens a contract once and never cuts what it kept. Which of the OTHER contracts come back short is pinned by ToolContractPayloadBudgetTests (ENG-102797).")]
+	public void DefaultBundleLookup_Should_KeepBothCallShapesWhole(int bundleSize) {
+		// Arrange
+		ToolContractGetTool tool = BuildToolWithRegistry();
+		string[] processTools = [.. ProcessToolBundle.Take(bundleSize)];
+
+		// Act
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
+
+		// Assert
+		reply.Tools.Should().HaveCount(bundleSize, because: "fitting shortens contracts, it never drops one");
+		foreach (string toolName in ToolContractShortForm.CallShapes.Keys) {
+			ToolContractDefinition contract = reply.Tools!.Single(candidate => candidate.Name == toolName);
+			contract.Detail.Should().Be(ToolContractShortForm.ShortDetail,
+				because: $"anti-vacuity: {toolName} is the largest contract of the bundle, so it is shortened first");
+			contract.Description.Should().Contain(ToolContractShortForm.CallShapes[toolName],
+				because: "a bundle is how agents read these contracts before a build, and a cut shape is a guess");
+		}
+	}
+
+	// The seven contracts the CAADT transcripts requested in one call, then five more process tools for a twelve.
+	private static readonly string[] ProcessToolBundle = [
+		CreateBusinessProcessTool.CreateBusinessProcessToolName, ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+		"describe-business-process", "validate-process-graph", "list-user-tasks",
+		"modify-business-process-as-new-version", "set-active-business-process-version", "get-process-signature",
+		"run-process", "get-target-package", "compile-creatio", "get-process-page-facts"
+	];
+
+	// The wire name an operation entry starts with: "addFlow {source, ..." names addFlow.
+	private static string LeadingWireName(string shapeEntry) => LeadingWireNamePattern.Match(shapeEntry).Value;
+
+	// The fields an operation entry puts in braces, leaving the prose after them out: "addMapping {mapping}
+	// (there is no removeMapping: ...)" holds the field mapping and no field named removeMapping.
+	private static string OperationFields(string shapeEntry) =>
+		shapeEntry[(shapeEntry.IndexOf('{') + 1)..shapeEntry.IndexOf('}')];
+
+	// Every wire name in a list of shape entries. Outside parentheses an entry holds wire names and punctuation
+	// only ("parameters[]?", "condition? | results?", "sourceElement+sourceElementParameter+sourceColumn?"); a
+	// parenthesis glosses, as in "signal (signalStart)" or "kind? (sequence|conditional|default)".
+	private static IEnumerable<string> WireNames(IEnumerable<string> shapeEntries) =>
+		shapeEntries.SelectMany(entry => Word.Matches(Gloss.Replace(entry, string.Empty)).Select(match => match.Value));
+
+	private static IEnumerable<string> CreateShapeOf(string contractType) => contractType switch {
+		"BuildProcessRequest" => ToolContractShortForm.CreateDescriptorShape,
+		"ProcessElementDescriptor" =>
+			ToolContractShortForm.CreateElementShape.Concat(ToolContractShortForm.CreateElementBlockShape),
+		"ProcessFlowDescriptor" => ToolContractShortForm.CreateFlowShape,
+		"ProcessParameterDescriptor" => ToolContractShortForm.CreateParameterShape,
+		"ProcessMappingDescriptor" =>
+			ToolContractShortForm.CreateMappingTargetShape.Concat(ToolContractShortForm.CreateMappingSourceShape),
+		_ => throw new ArgumentOutOfRangeException(nameof(contractType), contractType, "No call shape list.")
+	};
+
+	private static readonly Regex LeadingWireNamePattern = new(@"^[A-Za-z]+", RegexOptions.CultureInvariant);
+
+	private static readonly Regex Gloss = new(@"\([^)]*\)", RegexOptions.CultureInvariant);
+
+	private static readonly Regex Word = new(@"[A-Za-z]+", RegexOptions.CultureInvariant);
+
+	private static readonly Regex ArgumentName = new(@"[a-z]+(?:-[a-z]+)*", RegexOptions.CultureInvariant);
 
 	private static int MeasureReply(IReadOnlyList<ToolContractDefinition> contracts) =>
 		ToolContractShortForm.MeasureBytes(new ToolContractGetResponse(true, Tools: contracts));

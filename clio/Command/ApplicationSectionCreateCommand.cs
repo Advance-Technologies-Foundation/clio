@@ -189,11 +189,12 @@ public sealed class ApplicationSectionCreateService(
 	private const int VerificationTimeoutMs = 30_000;
 
 	// Upper bound for how long a queued caller waits for the per-application serialization lock before
-	// degrading to best-effort. Kept BELOW the MCP response deadline (McpProgressHeartbeat
-	// .DefaultResponseDeadline = 150 s; ApplicationSectionCreate passes deadline:null, so that default
-	// applies) so a queued caller degrades to best-effort — and actually issues its insert — BEFORE the
-	// 150 s deadline fires, rather than sitting on the lock until the deadline returns an "in-progress"
-	// envelope with no insert ever issued. Decoupled from the (up to 600 s) MCP insert budget on purpose:
+	// degrading to best-effort. It was chosen below the MCP response deadline when that was 150 s, so a
+	// queued caller issued its insert before the deadline answered. Since ENG-102333 the default deadline
+	// is 45 s (McpProgressHeartbeat.DefaultResponseDeadline; ApplicationSectionCreate passes deadline:null),
+	// so a caller queued behind a long insert can now answer "in-progress" while it still waits here. That
+	// answer stays true: the work is detached, not cancelled, so the wait ends and the insert is issued after
+	// the answer, and list-app-sections shows the section. Decoupled from the (up to 600 s) MCP insert budget on purpose:
 	// the guard wait runs synchronously on a background thread-pool worker, so tying it to the full insert
 	// budget could park a worker for ~10 min under a same-app burst. Because the guarded span is now only
 	// the destructive commit (insert + contention-verify + retry), this window reliably serializes about

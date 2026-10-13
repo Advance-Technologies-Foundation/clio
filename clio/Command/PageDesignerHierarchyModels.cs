@@ -163,4 +163,22 @@ public sealed class PageParsedSchemaBody {
 	/// Gets or sets the args block.
 	/// </summary>
 	public string Args { get; init; } = "()";
+
+	/// <summary>
+	/// Returns a copy of this body with <see cref="ViewConfigDiff"/> replaced and every other section kept.
+	/// </summary>
+	/// <param name="viewConfigDiff">The replacement view config diff.</param>
+	/// <returns>A new parsed body; this instance is not changed.</returns>
+	public PageParsedSchemaBody WithViewConfigDiff(JToken viewConfigDiff) => new() {
+		ViewConfigDiff = viewConfigDiff,
+		ViewModelConfig = ViewModelConfig,
+		ViewModelConfigDiff = ViewModelConfigDiff,
+		ModelConfig = ModelConfig,
+		ModelConfigDiff = ModelConfigDiff,
+		Handlers = Handlers,
+		Converters = Converters,
+		Validators = Validators,
+		Deps = Deps,
+		Args = Args
+	};
 }

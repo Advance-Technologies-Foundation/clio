@@ -17,7 +17,7 @@ Session evidence (2026-07-10, Claude Opus 4.8 via Claude Desktop + clio MCP): th
 section creation, but the MCP call gave zero feedback and no deadline.
 
 `create-app-section` already solves the mirror problem for the **write** path
-(adr-create-app-section-response-deadline): after ~150 s it returns
+(adr-create-app-section-response-deadline): after ~150 s (45 s since ENG-102333) it returns
 `{"error-class":"creatio-timeout","section-created":"in-progress","retry-guidance":…}` before the
 client's hard request ceiling, and the backend work keeps running so a later poll observes it.
 
@@ -92,7 +92,7 @@ authority, used by all dispatch paths below so the classification can never drif
 1. **`McpReadResponseDeadline` (new helper).** Races the wrapped work against a wall-clock deadline.
    - Default **120 s**, overridable via a **new, dedicated** env var
      `CLIO_MCP_READ_DEADLINE_SECONDS` (invariant culture, `0 < n ≤ 600`; invalid/out-of-range →
-     120 s). Kept separate from the write path's `CLIO_MCP_RESPONSE_DEADLINE_SECONDS` (150 s) so an
+     120 s). Kept separate from the write path's `CLIO_MCP_RESPONSE_DEADLINE_SECONDS` (150 s; 45 s since ENG-102333) so an
      operator can tune read latency independently of the write ceiling.
    - On completion within the deadline: returns the tool's real `CallToolResult` unchanged.
    - On expiry: returns a structured timeout `CallToolResult` (`IsError = true`) whose
@@ -146,7 +146,9 @@ write one by `read-response-timed-out: true` and by the absence of `section-crea
    admits concurrent-duplicate SERVER writes, which is exactly what the review-gate fix removed.
 4. **Reuse the write env var `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`.** Rejected per the ticket's
    explicit ask for an independently tunable read deadline; a separate knob lets reads use a
-   tighter budget than the 150 s write ceiling.
+   tighter budget than the 150 s write ceiling. (Since ENG-102333 the write default is 45 s, below this
+   read default; the read deadline was deliberately kept, because a read that hits it is lost rather
+   than continued - see `adr-mcp-worker-execution-boundary.md` §3.2a.)
 5. **Cancel (not abandon) the work on deadline.** The underlying read services are synchronous and
    do not observe the token, so cancellation cannot truly stop them; abandon-and-observe (with a
    best-effort token cancel) is the only realistic behavior and is safe for reads.

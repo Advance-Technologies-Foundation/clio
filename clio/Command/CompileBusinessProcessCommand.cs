@@ -102,8 +102,10 @@ public sealed class CompileBusinessProcessService(
 			// party prose, and this line reaches an agent through the MCP result and the compile-status tail.
 			throw new InvalidOperationException(
 				"CompileProcess did not answer, so whether the package was compiled is UNKNOWN - the compile may "
-				+ "still be running on the server. Wait, then read last-compilation-log for this environment before "
-				+ "compiling again. Transport detail: "
+				+ "still be running on the server. Wait, then call compile-status, whose not-found answer lists the "
+				+ "environment's compilation-history rows with their times, or read last-compilation-log for this "
+				+ "environment - its verdict carries no time and can be an earlier compile's, so report it as "
+				+ "unconfirmed - and ask the user before compiling again. Transport detail: "
 				+ (UntrustedText.Fenced(exception.GetReadableMessageException()) ?? "none reported"),
 				exception);
 		}
@@ -203,8 +205,8 @@ public sealed class CompileBusinessProcessService(
 			+ "was compiled is UNKNOWN. The process builder reports its own failures inside that result, so this "
 			+ "error came from the platform around it: a refusal before the builder ran compiled nothing, but a "
 			+ "failure after the compile looks the same. The server's wording is not reproduced here. Before "
-			+ "compiling again, read last-compilation-log and compare its time with this call's: it shows the latest "
-			+ "compile, which may be an earlier one.");
+			+ "compiling again, read last-compilation-log: it shows the latest finished compile and carries no time, "
+			+ "so it may be an earlier one - report it to the user as unconfirmed and ask before compiling again.");
 	}
 
 	// Only a call that did not come back leaves the compile's fate open. Creatio's client reads Task.Result, so

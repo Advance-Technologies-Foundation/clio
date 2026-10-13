@@ -331,8 +331,9 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 	/// and returns the restart's answer; <c>null</c> on .NET Framework, where the compile's own reload is enough.
 	/// </summary>
 	/// <remarks>
-	/// The wait stays under the ~150 s MCP response deadline: past it the tool answers "in progress" with exit-code
-	/// 0, which would let a following run start against an application still warming up.
+	/// The wait stays under the 150 s MCP response deadline the suite pins (TestConfiguration.Load; the built-in
+	/// default is 45 s): past it the tool answers "in progress" with exit-code 0, which would let a following run
+	/// start against an application still warming up.
 	/// </remarks>
 	private static async Task<string?> RestartOnNetCoreHostAsync(ProcessDesignerArrangeContext context) {
 		if (!await IsNetCoreHostAsync(context)) {

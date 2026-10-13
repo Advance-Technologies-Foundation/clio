@@ -87,7 +87,7 @@ public sealed class PageUpdateToolBaselineTests
 			command, logger, commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			new PageBaselineGuard(_fileSystem), new PersistedResourceKeyReader(),
+			new PageBaselineGuard(_fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			resolverFactory, settingsRepository);
 	}
 
@@ -446,6 +446,37 @@ public sealed class PageUpdateToolBaselineTests
 		response.Warnings.Should().Contain(warning =>
 				warning.Contains("Persisted resource keys could not be read") && warning.Contains(refusal),
 			because: "the caller has to see that the rescue was skipped and why, not just that the key is unregistered");
+	}
+
+	[Test]
+	[Description("Issue #1740: a SUCCESSFUL replace dry run whose caption check had to read the persisted keys and could not still reports why - the tool must not drop the scoped failure reason before it appends it, because the caption check only warns and the dry run therefore succeeds.")]
+	public void UpdatePage_ShouldReportWhyTheCaptionKeyReadFailed_WhenADryRunSucceeds() {
+		// Arrange
+		const string refusal = "Access denied to schema";
+		StubSchemaReadRefusal(refusal);
+		string captionBody =
+			"define(\"Test_FormPage\", /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, function/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/ { return { "
+			+ "viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"ProbeButton\","
+			+ "\"values\":{\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings.ProbeButton_caption\"}}]"
+			+ "/**SCHEMA_VIEW_CONFIG_DIFF*/, "
+			+ "viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, "
+			+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, "
+			+ "handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, "
+			+ "converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, "
+			+ "validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageUpdateArgs args = new(SchemaName, captionBody, DryRun: true, OutputDirectory: "/ws")
+			{ EnvironmentName = "sandbox" };
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the replace dry-run caption check is advisory, so the dry run succeeds");
+		response.Warnings.Should().Contain(warning => warning.Contains("will not be registered"),
+			because: "without the stored keys the stricter caption verdict stands");
+		response.Warnings.Should().Contain(warning =>
+				warning.Contains("Persisted resource keys could not be read") && warning.Contains(refusal),
+			because: "the caller must see that the caption warning may be false because the stored keys could not be read");
 	}
 
 	[Test]

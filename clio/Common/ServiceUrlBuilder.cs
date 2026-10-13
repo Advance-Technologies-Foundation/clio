@@ -379,7 +379,29 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
 		GetAdministratedObject = 113,
 		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
-		SaveAdministratedObject = 114
+		SaveAdministratedObject = 114,
+
+		/// <summary>
+		///     Reads whether the site runs in file design mode (file system mode): the platform flag that decides
+		///     whether the site reads package content from <c>Terrasoft.Configuration/Pkg</c>.
+		/// </summary>
+		GetIsFileDesignMode = 115,
+
+		/// <summary>
+		///     Starts the process version the request names, never substituting the family's active version - the
+		///     route the process designer's Run uses. <see cref="RunProcess"/> runs the active version whatever
+		///     version it is given.
+		/// </summary>
+		RunSpecifiedProcessVersion = 116,
+
+		/// <summary>
+		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
+		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
+		/// </summary>
+		GetCurrentUserInfo = 117,
+
+		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
+		DesignReady = 118
 
 	}
 
@@ -507,6 +529,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
 		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
+		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
+		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
+		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
+		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

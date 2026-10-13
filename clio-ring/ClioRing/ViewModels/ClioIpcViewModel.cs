@@ -13,7 +13,7 @@ namespace ClioRing.ViewModels;
 
 /// <summary>
 /// View-model for the EXPERIMENTAL clio IPC proof view: shows the negotiated handshake, a searchable
-/// full-catalog list (from <c>get-tool-contract {}</c>), and READ-ONLY env calls (list-environments +
+/// full-catalog list (from <c>get-tool-contract detail=index-entries</c>), and READ-ONLY env calls (list-environments +
 /// env details). Talks to a long-lived clio MCP child through <see cref="IClioIpcClient"/>. All calls
 /// run off the UI thread; results are marshalled back via the dispatcher.
 /// </summary>

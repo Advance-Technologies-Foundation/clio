@@ -147,7 +147,7 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// break it the moment somebody raised <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> past it — the
 	/// invariant asserted by a comment rather than enforced by the code. Both values are resolved at type
 	/// load from the same environment, so the parent and the child cannot disagree about which deadline is
-	/// in force. On the shipped default this is 150 s + 60 s = 210 s.
+	/// in force. On the shipped default this is 45 s + 60 s = 105 s.
 	/// </para>
 	/// </remarks>
 	internal static readonly TimeSpan DefaultStickyCallBudget =

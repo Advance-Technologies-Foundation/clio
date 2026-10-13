@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Common;
 using Clio.UserEnvironment;
 using ModelContextProtocol.Server;
@@ -215,7 +216,7 @@ public class MobilePageConversionGuideTool {
 		// served IS the support test. baseInputs carries both jobs — it is the sole declaration site of
 		// visible/layoutConfig, and its content identifies the generation.
 		var mobileRegistryGeneration =
-			new WebToMobileAnalysisService.MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
+			new MobileRegistryGeneration(mobileState.GlobalReferences?.BaseInputs);
 
 		string rulesWarning = BuildRulesWarning(rules, mobileRequestTypes);
 		// Resolve the effective web template, climbing past same-named replacing layers when the page is a

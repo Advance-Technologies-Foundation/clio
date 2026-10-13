@@ -41,7 +41,7 @@ public sealed class GetTargetPackageTool(
 		"verify it can receive them. Pass package to resolve a package the user named (checks it exists and " +
 		"is not locked); omit package to resolve the package the environment's CurrentPackageId system " +
 		"setting names. Call this BEFORE telling the user which package new data will be added to, and pass " +
-		"the returned package-name to every command of the same run (create-theme, set-logo, " +
+		"the returned package-name to every command of the same run (create-business-process, create-theme, set-logo, " +
 		"set-background-image) so everything lands in one package. State the package-name, never a raw id, " +
 		"and never invent one. On success=false with resolutionFailed=true the environment answered and there " +
 		"is no usable target — relay the error and ask the user for another package; with " +

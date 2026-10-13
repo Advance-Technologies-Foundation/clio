@@ -122,10 +122,7 @@ internal sealed class PageBundleBuilder : IPageBundleBuilder {
 		// to this chain also keeps view-model and model alias state from leaking into each other.
 		IJsonPathDiffApplier applier = _pathApplierFactory();
 		foreach (PageSchemaBundlePart part in parts) {
-			JArray diff = diffSelector(part);
-			result = diff.Count > 0
-				? AsExpected<JObject>(applier.Apply(result, diff), "config")
-				: PageBundleMergeHelpers.DeepMerge(result, configSelector(part));
+			result = PageBundleMergeHelpers.ApplyConfigLayer(applier, result, diffSelector(part), configSelector(part));
 		}
 
 		return result;

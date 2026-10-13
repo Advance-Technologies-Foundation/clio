@@ -33,6 +33,15 @@ When `validate` is `true` (the default), the body is checked client-side before 
   `usr.HandleSomeRequest`). Call the MCP `get-guidance` tool with `name=page-schema-handlers` for details.
 - **SCHEMA_VALIDATORS keys** (object form) must follow `VendorPrefix.ValidatorName` format
   (e.g., `usr.RequiredValidator`). Call the MCP `get-guidance` tool with `name=page-schema-validators` for details.
+- **Data-source bindings (web and mobile).** Applied to every body when `validate` is `true`. The first segment
+  of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data source
+  that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page bundle is
+  built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged into it).
+  Templates never declare `PDS`: a generated page holds it in its own body, so a replace write that drops it is
+  rejected (ENG-102161). On web, keep the `SCHEMA_MODEL_CONFIG` section, or the `dataSources` and
+  `primaryDataSourceName` operations of `SCHEMA_MODEL_CONFIG_DIFF`; on mobile, the `modelConfigDiff` operations. The
+  inherited `modelConfig` is read before the per-tenant lock; when it cannot be read the check passes and the page
+  result says it did not run.
 - **Mobile page rules.** Applied to each mobile body when `validate` is `true`. Note this validates the
   WHOLE body, so a page that already stores a rejected shape fails until it is corrected.
   - **Rejected** — an `operation:"insert"`/`"set"` whose `values` object carries no usable `"type"` while a
@@ -84,9 +93,14 @@ When `validate` is `true` (the default), the body is checked client-side before 
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as `$Resources.Strings.<Key>` or
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
+  `resources`, is not already stored on the schema or declared by a schema of its designer hierarchy,
+  is not a DS-bound attribute, and is not a `Usr`-prefixed key. This guards the
   metric/chart-widget-title case (`#ResourceString(IndicatorWidget_<slug>_title)#` is registered only
   when passed in `resources`; otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
+- **A placement that names a parent must name its slot** (web and mobile, also with `validate: false`).
+  An `insert` or `move` with a `parentName` but no `propertyName` is **rejected** before saving: the
+  Creatio differ places the element into the parent's `propertyName` slot (usually `"items"`), and
+  without it the platform refuses the page and `get-page` cannot resolve it.
 
 A malformed `VendorPrefix.Name` in any of these sections causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
@@ -206,10 +220,11 @@ were added during save.
 is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
 whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
 because the count covers new declarations, not value updates. Other cultures and resource identities
-are preserved. The validation gate honours this: a label bound to
-a key that is only persisted on the schema is accepted without being repeated. The lookup costs one
-extra schema read and is paid ONLY when a label-resource check has already rejected the body, so a
-clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
+are preserved. The validation gate honours this: a label or an inserted widget caption bound to
+a key that is only persisted on the schema, or declared by a schema of its designer hierarchy, is
+accepted without being repeated and is not reported as a dangling binding. The lookup costs one
+extra schema read and is paid ONLY when a label-resource or widget-caption check has already flagged
+the body, so a clean page pays nothing. If that read fails (an unreachable environment, a refused schema read), the
 stricter verdict stands and the page result carries a warning naming the reason.
 
 Resource saves also return a workspace-capture warning. Preserve local edits, capture the affected

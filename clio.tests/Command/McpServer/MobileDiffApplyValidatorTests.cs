@@ -216,6 +216,29 @@ public sealed class MobileDiffApplyValidatorTests {
 	}
 
 	[Test]
+	[Description("A merge the client would throw on (single-value target, missing or null values) does not fail mobile validation: the oracle keeps its pre-GH-1753 outcome for these bodies and leaves merge failures to the update-page merge check.")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes","UsrName"], "values": { "caption": "x" } }""", TestName = "Validate_MergeIntoSingleValue_IsValid")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes"] }""", TestName = "Validate_MergeWithoutValues_IsValid")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes"], "values": null }""", TestName = "Validate_MergeWithNullValues_IsValid")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes","Items"], "values": { "caption": "x" } }""", TestName = "Validate_MergeIntoArray_IsValid")]
+	[TestCase("""{ "operation": "merge", "path": ["attributes","UsrFlag"], "values": { "caption": "x" } }""", TestName = "Validate_MergeIntoFalsyValue_IsValid")]
+	public void Validate_MergeTheClientThrowsOn_IsValid(string mergeOperation) {
+		// Arrange
+		string body = "{ \"viewModelConfigDiff\": [ " + mergeOperation + " ] }";
+		const string templateViewModelConfig = """
+			{ "attributes": { "UsrName": "text", "UsrFlag": 0, "Items": [ { "name": "A" } ] } }
+			""";
+
+		// Act
+		SchemaValidationResult result = MobileDiffApplyValidator.Validate(body, templateViewModelConfig);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "mobile validation must not newly reject a merge the differ reports as a merge failure");
+		result.Errors.Should().BeEmpty(because: "a skipped merge failure adds no mobile validation error");
+	}
+
+	[Test]
 	[Description("Two inserts appending to the SAME template-owned array both validate against the seeded base — the seed reuses the one shared empty array rather than overwriting it on the second insert.")]
 	public void Validate_TwoInsertsIntoSameArray_NoBase_IsValid() {
 		const string body = """

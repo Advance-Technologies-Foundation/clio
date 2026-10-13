@@ -58,8 +58,8 @@ clio configuration: `clioignore` (packaging exclusions), `workspaceSettings.json
 > deploy/schema operation, read the live channel first:
 >
 > 1. `get-guidance` with `name=core-rules` and `name=routing` — mandatory on every operation.
-> 2. `get-tool-contract` (no args) — the compact index of EVERY tool; each entry carries a
->    `resident` flag. Resident tools are called natively by name.
+> 2. `get-tool-contract` (no args) — the compact index of EVERY tool, one line per tool; a
+>    resident tool's line carries `(R)`. Resident tools are called natively by name.
 > 3. Non-resident ("long-tail") tools are NOT advertised in `tools/list` — invoke them through the
 >    `clio-run` executor: `{"command":"<tool>","args":{…}}`. Never assume a bare long-tail name is
 >    callable directly.
@@ -84,7 +84,7 @@ The running app reads packages from the filesystem. Do **NOT** use `push-workspa
 | You changed… | Do this |
 |---|---|
 | **C# (`Files/src/cs`)** and/or **Angular (`projects/...`)** | `dotnet build MainSolution.slnx -c dev-n8` (one build covers both — the Angular `.esproj` runs the npm build), **then** restart via `clio-run` (tool `restart-by-environment-name`, which waits for readiness by default). Nothing else. (`npm run build` alone also works for a client-only iteration, but still restart afterwards.) |
-| **Schema via clio MCP** (schema tools such as `modify-entity-schema-column`, `update-entity-schema` — resolve the current set via `get-tool-contract`) | After the MCP call, flush the DB changes to the filesystem via `clio-run` (tool `pkg-to-file-system`, aka **2fs**) so they land in the workspace and persist. |
+| **Schema via clio MCP** (schema tools such as `modify-entity-schema-column`, `update-entity-schema` — resolve the current set via `get-tool-contract`) | After the MCP call, flush the DB changes to the filesystem via `clio-run` (tool `pkg-to-file-system`, aka **2fs**) so they land in the workspace and persist. The same holds for package data written through MCP (seed rows and lookup registration in `sync-schemas`, `create-data-binding-db`, `upsert-data-binding-row-db`): the schema files can already be on disk while the `Data/` folders are not, and the tool result warns about it. **2fs** rewrites every package folder from the DB and removes on-disk items the DB lacks, so commit your on-disk work first, and run **2fs** before you commit the package or run **2db**. |
 | **Schema/metadata edited directly on the filesystem** | Load the filesystem packages into the running database/runtime via `clio-run` (tool `pkg-to-db`, aka **2db**). |
 | **Package data (a `Data/` binding folder)** | `pkg-to-db` loads package definitions only; it leaves package data alone, so an edited or hand-made binding folder stays local. Apply the same values on the environment through `clio-run` (tools `create-data-binding-db`, then `upsert-data-binding-row-db`) — read `get-guidance name=data-bindings` first. |
 
@@ -97,8 +97,8 @@ Key FSM facts learned the hard way:
 
 Use the default flow (read each contract via `get-tool-contract` first):
 1. `push-workspace` (via `clio-run`) — install local packages into the environment.
-2. `compile-creatio` (via `clio-run`) — **only** if C# schemas / source-code / executable process code changed (or the runtime reports "schema missing in runtime"). A full compilation can take minutes; if it returns exit-code 0 with an in-progress note, it is still running — poll `compile-status` (via `clio-run`) instead of retrying. The same holds when your MCP client gives up first (`Request timed out`): never call `compile-creatio` again to check; if `compile-status` answers not-found, `last-compilation-log` (via `clio-run`) shows the latest FINISHED compile with no time, so until the compile has had time to finish (a few minutes; a full one up to about 20) do not rely on it, or restart on it.
-3. `restart-by-environment-name` (via `clio-run`) — only if server assemblies were rebuilt or Redis was cleared. New C# does **not** load until this restart. It waits for readiness by default (`waitReady=true`), so the call itself already confirms the app answered before returning; typical warm-up is 1–10 minutes.
+2. `compile-creatio` (via `clio-run`) — **only** if C# schemas / source-code / executable process code changed (or the runtime reports "schema missing in runtime"). A full compilation can take minutes; if it returns exit-code 0 with an in-progress note, it has not finished — poll `compile-status` (via `clio-run`) instead of retrying. The same holds when your MCP client gives up first (`Request timed out`): never call `compile-creatio` again to check. If `compile-status` answers not-found, it lists the environment's newest compilation-history rows with the time each finished: only rows that finished after your call (the `started-utc` of compile-creatio's in-progress answer) can be your compile's (other compiles write rows too); it has finished only once its newest row is over seven minutes old, and a restart resting on those rows alone needs the user's confirmation; none yet means it has not finished a project yet or never started, and if none appears within ten minutes (about 20 for a full compile), treat it as not run and ask the user before compiling again - `last-compilation-log` could then only show an earlier compile's verdict.
+3. `restart-by-environment-name` (via `clio-run`) — only if server assemblies were rebuilt or Redis was cleared. New C# does **not** load until this restart. It waits for readiness by default (`waitReady=true`), but a restart longer than the MCP response deadline (about 45 s) ends the call with exit-code 0 and an in-progress note: readiness - and, when the note says so, the restart request itself - is not confirmed until `restart-status` (via `clio-run`) reports it; `requestfailed` there means no restart happened: ask the user, then retry once. Typical warm-up is 1–10 minutes.
 
 ### Shared gotcha — clio auth dies after a restart
 

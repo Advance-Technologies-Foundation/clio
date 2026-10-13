@@ -27,10 +27,10 @@ namespace Clio.Tests.Command.McpServer;
 /// <para>
 /// These ratchets do not shrink anything. They make growth a decision defended at review — raising a
 /// ceiling here is the moment to ask whether the text belongs in a <c>[Description]</c> at all — rather
-/// than an accident nobody measures. Both ceilings follow the <see cref="McpProfileGatingTests"/>
+/// than an accident nobody measures. The ceilings follow the <see cref="McpProfileGatingTests"/>
 /// convention when one has to move: re-pin to the MEASURED size rounded up to the next 256 bytes, never
 /// to the next whole kilobyte, so the ratchet keeps ratcheting instead of handing the surface silent
-/// room. Both also measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
+/// room. All of them measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
 /// for the same reason that fixture does.
 /// </para>
 /// <para>
@@ -84,7 +84,27 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
+	// Since ENG-102796 this ceiling covers the OBJECT index, which a no-names call returns only for
+	// detail=index-entries (ClioRing asks for it); the default reply is the line index below.
 	private const int MaxCompactIndexSerializedBytes = 185 * 256;
+
+	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
+	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
+	// index above is ~47 KB and Copilot CLI spills any tool result past ~20 KB to a file the agent then reads
+	// back in pieces, which it did 15 times in one CAADT release build. Unlike the object index, this ceiling
+	// has a hard upper bound: MaxInlineWireReplyBytes, the inline limit below. It follows the next-256 convention rather than the object index's
+	// three-tools-of-slack deviation: a new tool already re-pins that ceiling, so this one moving with it adds no
+	// review, and every re-pin is then a moment to read the distance left to that limit. Measured 17636
+	// bytes for 228 tools on the default surface (about 75 bytes a line; 216 of the 228 purposes are cut); next
+	// 256-byte step is 17664 (69). The same reply is 16871 bytes on the wire, where the MCP result encoder writes
+	// the ellipsis and the legend's quotes unescaped - so the spill line is about 30 tools away for an agent
+	// (2129 bytes at ~72 a line) and about 18 for this conservative measure.
+	//
+	// Re-pinned to 70 * 256 = 17920 before the first release, by a legend sentence rather than a tool: the review
+	// found that "(D) = destructive" read as "a line without (D) is read-only", which install-gate and reg-web-app
+	// (destructive=false, both write) contradict, so the legend now says a line without (D) can still write.
+	// Measured 17675 for the same 228 tools; the reply on the wire stays about 2 KB under the spill line.
+	private const int MaxToolIndexSerializedBytes = 70 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -166,11 +186,35 @@ public sealed class ToolContractPayloadBudgetTests {
 	// and the generic-route refusal to both descriptions. Modify paid by merging its four per-block entries,
 	// which each repeated "same block as create-business-process" behind an escaped em dash, into one:
 	// modify-business-process 35016, create-business-process 34854, describe-business-process 33367.
+	//
+	// ENG-99970 (the get-target-package routing sentence, "Take packageName from get-target-package.",
+	// placed second so a shortened contract keeps it) adds about 42 bytes to create-business-process; under
+	// the 137 * 256 ceiling that leaves it well inside, so the sentence needs no swap.
+	//
+	// ENG-102111 (2026-10-09, process tracing) added the setTracing operation to modify-business-process,
+	// isTracing to create-business-process and the tracing block to describe-business-process, each naming
+	// get-guidance name=process-tracing for the costs rather than carrying them. Modify paid by SWAP: the
+	// sentence saying removeFlow's refusal ships from CrtProcessBuilder 1.6.0.10 and what happens below it was
+	// dead once the floor reached 1.6.6.92, since clio refuses such an environment up front. Re-measured by
+	// lowering the ceiling: modify-business-process 35048, create-business-process 35027,
+	// describe-business-process 33463 - 24 and 45 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
+
+	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
+	// options (McpResultSize: McpResultJsonEncoder, nulls omitted) - against 19 000 bytes, the inline limit the
+	// CAADT release gate is budgeted against. Copilot CLI returned results of up to ~19.8 KB inline and spilled
+	// ~20.7 KB and over to a file in release build 16156272 and the ENG-99970 A/B on creatio_3 (October 2026); the
+	// 21.3 KB that InlineReplyBudgetBytes cites is the smallest spill the earlier ENG-100154 transcripts happened
+	// to contain, inside the same bracket. The bundle is NOT held to InlineReplyBudgetBytes: Fit measures with the
+	// default encoder, which escapes for HTML and writes every null, so it overstates the wire size - by about
+	// 1 KB here - and keeps fitting conservative. ENG-102797 spends that difference: the short create- and
+	// modify-business-process contracts carry their call shapes, so Fit's measure of this bundle stays over
+	// 18 432 even all short (pinned below) while the reply the agent receives stays inline.
+	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
 	[Category("Unit")]
-	[Description("The compact discovery index returned by a no-arguments get-tool-contract call stays within its byte budget, ratcheting the cost every long-tail discovery call pays.")]
+	[Description("The compact discovery index returned by a no-arguments get-tool-contract call - one line per tool plus the legend - stays within its byte budget, which sits below the size at which an agent CLI spills a tool result to a file.")]
 	public void GetToolContracts_ShouldKeepCompactIndexSerializedSizeWithinBudget_WhenCalledWithoutToolNames() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
@@ -180,10 +224,31 @@ public sealed class ToolContractPayloadBudgetTests {
 		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
 
 		// Assert
-		response.Index.Should().NotBeNullOrEmpty(
+		response.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "a no-arguments call is the discovery entry point and must answer with the compact index");
+		payloadBytes.Should().BeLessThanOrEqualTo(MaxToolIndexSerializedBytes,
+			because: $"the line index is paid on every discovery call, and every session makes one; measured {payloadBytes} bytes against the {MaxToolIndexSerializedBytes}-byte ceiling. Past {MaxInlineWireReplyBytes} bytes it spills to a file in an agent CLI - shorten the purpose cut or the legend before raising this");
+		MaxToolIndexSerializedBytes.Should().BeLessThanOrEqualTo(MaxInlineWireReplyBytes,
+			because: "a ceiling raised past the spill line would let the index grow back into the read-back it was cut to remove");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The object index returned for detail=index-entries - the shape ClioRing parses - stays within its byte budget, ratcheting the per-tool flags it carries.")]
+	public void GetToolContracts_ShouldKeepIndexEntriesSerializedSizeWithinBudget_WhenDetailIsIndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(
+			new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail));
+		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
+
+		// Assert
+		response.Index.Should().NotBeNullOrEmpty(
+			because: "detail=index-entries must answer with the per-tool objects");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxCompactIndexSerializedBytes,
-			because: $"the compact index is paid on every long-tail discovery call; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
+			because: $"the object index grows by tool count like the line index does; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
 	}
 
 	[Test]
@@ -198,7 +263,7 @@ public sealed class ToolContractPayloadBudgetTests {
 		// CanonicalToolNames, the CURATED catalog only, and would drop every uncurated tool, which is where
 		// the unbounded [Description] attributes actually live.)
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? [])
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? [])
 			.Select(entry => entry.Name)
 			.ToArray();
 
@@ -241,7 +306,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	public void GetToolContracts_ShouldFitEverySingleToolLookupInline_WhenDetailIsOmitted() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		(string Name, int Bytes, string? Detail)[] replies = toolNames
@@ -266,7 +331,7 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default (ENG-100154).")]
+	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default, measured as it goes on the wire (ENG-100154, ENG-102797).")]
 	public void GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
@@ -278,20 +343,20 @@ public sealed class ToolContractPayloadBudgetTests {
 
 		// Act
 		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
-		int replyBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply));
+		long replyBytes = McpResultSize.Of(reply);
 
 		// Assert
 		reply.Tools.Should().HaveCount(processTools.Length,
 			because: "fitting shortens contracts, it never drops one the caller asked for");
-		replyBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
+		replyBytes.Should().BeLessThanOrEqualTo(MaxInlineWireReplyBytes,
 			because: $"this exact request answered with well over 100 KB before ENG-100154 and was grepped back in "
-				+ $"pieces through the shell; measured {replyBytes} bytes");
+				+ $"pieces through the shell; measured {replyBytes} bytes on the wire");
 	}
 
 	[Test]
 	[Category("Unit")]
-	[Description("The seven process-designer contracts still fit one inline reply when every one of them is short and their shared error codes are carried once - the floor fitting can reach, so growth in their kept text is caught here before the default reply stops fitting.")]
-	public void GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget() {
+	[Description("The ENG-102797 trade, pinned: the default lookup of the seven process-designer contracts returns every one of them short - the floor, as it did before the call shapes - and, with both process-write shapes, Fit's own measure of that floor is over its budget, so Fit stops for want of anything left to cut rather than because the reply fits. A change that keeps one of the seven whole, or that brings the floor back under Fit's budget, fails here, so the trade is re-decided instead of drifting. The wire size of that reply is the guard above.")]
+	public void GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
 		string[] processTools = [
@@ -299,21 +364,23 @@ public sealed class ToolContractPayloadBudgetTests {
 			"validate-process-graph", "list-user-tasks", "modify-business-process-as-new-version",
 			"set-active-business-process-version"
 		];
-		ToolContractDefinition[] full = [.. tool.GetToolContracts(
-			new ToolContractGetArgs(processTools, ToolContractShortForm.FullDetail)).Tools!];
 
 		// Act
-		// A measure that never fits shortens every contract; destructive leads are the longer, conservative case.
-		ToolContractDefinition[] floor = [.. ToolContractShortForm.Fit(full, _ => int.MaxValue, _ => true)];
-		int floorBytes = ToolContractShortForm.MeasureBytes(new ToolContractGetResponse(true, Tools: floor));
-		ToolContractDefinition largest = floor.MaxBy(ToolContractShortForm.MeasureBytes)!;
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs(processTools));
+		string[] shortened = [.. reply.Tools!
+			.Where(contract => contract.Detail == ToolContractShortForm.ShortDetail)
+			.Select(contract => contract.Name)];
+		int fitMeasure = ToolContractShortForm.MeasureBytes(reply);
 
 		// Assert
-		floorBytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes,
-			because: $"with nothing left to cut the seven short forms measure {floorBytes} bytes; the largest kept form is "
-				+ $"{largest.Name} at {ToolContractShortForm.MeasureBytes(largest)} bytes. Trim the kept text of the "
-				+ "contract you lengthened (its lead, a safety-marked sentence, a field's first sentence) - do not raise "
-				+ "the budget, which sits below the 21.3 KB a Copilot CLI tool result spills to a file at");
+		shortened.Should().BeEquivalentTo(processTools,
+			because: "Fit shortens the largest contract first and needs all seven short to get as close to its "
+				+ "budget as it can; every short form keeps its safety duties, and a contract kept whole here would "
+				+ "be a change in what this bundle costs on the wire");
+		fitMeasure.Should().BeGreaterThan(ToolContractShortForm.InlineReplyBudgetBytes,
+			because: $"Fit measures the all-short reply at {fitMeasure} bytes with the default encoder: the call "
+				+ "shapes spend Fit's margin over the wire size. If this fails the bundle fits Fit's budget again, and "
+				+ "the CallShapes remarks, InlineReplyBudgetBytes and the knowledge record about fitting must say so");
 	}
 
 	[Test]

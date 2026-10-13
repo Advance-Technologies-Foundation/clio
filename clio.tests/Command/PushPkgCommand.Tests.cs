@@ -295,4 +295,27 @@ public class PushPkgCommandTestCase : BaseCommandTests<PushPkgOptions>
 			because: "no installation runs when the package is not found by path, so the suffix pointed at output that does not exist");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1749: when packing a package folder refuses a Schemas/Data folder without descriptor.json, push-pkg prints the refusal alone and exits 1, without the type name and stack trace it writes for unexpected failures.")]
+	public void Execute_ShouldWriteOnlyTheRefusal_WhenPackingFindsAFolderWithoutDescriptor() {
+		// Arrange
+		PushPackageCommand command = Container.GetRequiredService<PushPackageCommand>();
+		PackageItemDescriptorMissingException refusal = new([
+			new PackageItemFolderWithoutDescriptor("/ws/packages/UsrPkg/Data/Lookup_Status", ["Localization/data.en-US.json"])
+		]);
+		_packageInstaller.Install(Arg.Any<string>(), Arg.Any<EnvironmentSettings>(), Arg.Any<PackageInstallOptions>(),
+				Arg.Any<string>(), Arg.Any<bool>())
+			.Returns(_ => throw refusal);
+
+		// Act
+		int result = command.Execute(new PushPkgOptions { Name = "/ws/packages/UsrPkg" });
+
+		// Assert
+		result.Should().Be(1, because: "nothing was installed");
+		_logger.Received(1).WriteError(refusal.Message);
+		_logger.DidNotReceive().WriteError(Arg.Is<string>(line => line.Contains(nameof(PackageItemDescriptorMissingException))));
+		_logger.Received(1).WriteError(Arg.Any<string>());
+	}
+
 }

@@ -98,6 +98,13 @@ internal sealed class PackageTargetResolver(
 	/// <summary>The system setting that names the package design-time writes land in when the caller names none.</summary>
 	internal const string CurrentPackageSettingCode = "CurrentPackageId";
 
+	/// <summary>
+	/// Not list-packages: that list does not say which packages accept changes, so a target picked from it is
+	/// the guess this resolver exists to stop.
+	/// </summary>
+	internal const string AskForPackage =
+		"Ask the user which package should receive the change, then call again with that package named.";
+
 	private const int EditableInstallType = 0;
 
 	private const string SysPackageSchema = "SysPackage";
@@ -144,12 +151,13 @@ internal sealed class PackageTargetResolver(
 			if (!Guid.TryParse(currentPackageId, out Guid packageId) || packageId == Guid.Empty) {
 				return PackageTargetResolution.Unresolvable(
 					$"No package was named, and the environment's {CurrentPackageSettingCode} system setting does " +
-					"not point at one, so there is nowhere to deliver the package data. Name the package " +
-					"explicitly (see list-packages for the available names).");
+					"not point at one, so there is nowhere to deliver the package data. " + AskForPackage);
 			}
+			// The setting holds a package UId, not a row Id:
+			// docs/knowledge/Command/current-package-id-holds-a-package-uid-not-an-id.md
 			rows = SelectPackages([
 				new SelectQueryHelper.SelectQueryFilterDefinition(
-					"Id", packageId.ToString(), SelectQueryHelper.GuidDataValueType)
+					"UId", packageId.ToString(), SelectQueryHelper.GuidDataValueType)
 			]);
 		} catch (Exception exception) {
 			return PackageTargetResolution.Unavailable(DescribeUnavailable(exception));
@@ -158,14 +166,13 @@ internal sealed class PackageTargetResolver(
 			return PackageTargetResolution.Unresolvable(
 				$"The environment's {CurrentPackageSettingCode} system setting points at package " +
 				$"'{currentPackageId}', which matched {rows.Count} packages, so the delivery target cannot be " +
-				"told apart. Name the package explicitly (see list-packages for the available names).");
+				"told apart. " + AskForPackage);
 		}
 		PackageRowDto row = rows.FirstOrDefault();
 		if (row is null || string.IsNullOrWhiteSpace(row.Name)) {
 			return PackageTargetResolution.Unresolvable(
 				$"The environment's {CurrentPackageSettingCode} system setting points at package " +
-				$"'{currentPackageId}', which could not be resolved to a usable package. Name the package " +
-				"explicitly (see list-packages for the available names).");
+				$"'{currentPackageId}', which could not be resolved to a usable package. " + AskForPackage);
 		}
 		if (requireEditable && IsLocked(row)) {
 			return PackageTargetResolution.Unresolvable(
@@ -180,7 +187,7 @@ internal sealed class PackageTargetResolver(
 		if (!Guid.TryParse(row.UId, out Guid packageUId) || packageUId == Guid.Empty) {
 			return PackageTargetResolution.Unresolvable(
 				$"{subject} has no usable UId in the environment, so package data cannot be addressed to it. " +
-				"Name another package (see list-packages for the available names).");
+				AskForPackage);
 		}
 		return PackageTargetResolution.Resolved(row.Name, packageUId);
 	}

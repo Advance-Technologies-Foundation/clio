@@ -106,6 +106,23 @@ public sealed class RestartStatusToolTests {
 	}
 
 	[Test]
+	[Description("ENG-102333: surfaces requestfailed for a restart whose request itself failed, so an agent that already got an in-progress answer learns that no restart happened.")]
+	public void GetStatus_Should_ReturnRequestFailed_WhenTheRestartRequestFailed() {
+		// Arrange
+		RestartOperationRegistry registry = new();
+		RestartOperationRecord begun = registry.Begin("tenant-a", "sandbox");
+		registry.FinishRequestFailed(begun.OperationId, 1);
+		RestartStatusTool tool = new(registry, CreateResolver("tenant-a"));
+
+		// Act
+		RestartStatusResponse response = tool.GetStatus(new RestartStatusArgs("sandbox", null));
+
+		// Assert
+		response.Status.Should().Be("requestfailed", because: "the restart request failed, so no restart is known to have happened");
+		response.ExitCode.Should().Be(1, because: "the failed request's exit code is kept on the record");
+	}
+
+	[Test]
 	[Description("Returns the finished status for a specific operation-id, regardless of what is currently latest for the tenant.")]
 	public void GetStatus_Should_ReturnById_WhenOperationIdProvided() {
 		// Arrange

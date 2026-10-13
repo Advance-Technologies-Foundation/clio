@@ -10,8 +10,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.McpServer;
 
 /// <summary>
-/// Tests for <see cref="MobilePageMergedConfigResolver"/> — the mode-aware base resolver for the mobile
-/// apply-oracle. A REPLACE-mode write overwrites the page's own body verbatim, so its validation base must
+/// Tests for <see cref="PageMergedConfigResolver"/> — the mode-aware validation base resolver for the mobile
+/// apply-oracle and the data-source check. A REPLACE-mode write overwrites the page's own body verbatim, so its validation base must
 /// EXCLUDE that own body (the config the incoming body layers over at runtime); an APPEND-mode write keeps the
 /// own body and merges into it, so the base must INCLUDE it. A read failure degrades to <c>(null, null)</c>
 /// (the oracle then seeds its own base) after a diagnostic warning; a cancellation propagates.
@@ -19,7 +19,7 @@ namespace Clio.Tests.Command.McpServer;
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "McpServer")]
-public sealed class MobilePageMergedConfigResolverTests {
+public sealed class PageMergedConfigResolverTests {
 
 	private const string SchemaName = "Test_FormPage";
 	private const string SelectQueryUrl = "http://test/DataService/json/SyncReply/SelectQuery";
@@ -89,8 +89,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		IToolCommandResolver resolver = ResolverReturning(CreateCommandWithHierarchy());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
 
 		// Assert
 		viewModelConfigJson.Should().Contain("BaseAttr",
@@ -102,14 +102,42 @@ public sealed class MobilePageMergedConfigResolverTests {
 	}
 
 	[Test]
+	[Description("A replace-mode base for a schema with no ancestors is an empty object, not null: the base was read and declares nothing.")]
+	public void ResolveMergedConfig_ReplaceModeWithoutAncestors_ReturnsEmptyObjects() {
+		// Arrange
+		_applicationClient.ExecutePostRequest(
+				Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"rows":[{"Name":"{{SchemaName}}","UId":"uid-1","PackageName":"UsrPkg","PackageUId":"pkg-1","ParentSchemaName":""}]}""");
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("uid-1").Returns("pkg-1");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>()).Returns([
+			new PageDesignerHierarchySchema {
+				UId = "uid-1", Name = SchemaName, PackageUId = "pkg-1", PackageName = "UsrPkg", SchemaVersion = 1, Body = HeadBody
+			}
+		]);
+		PageGetCommand command = new(_applicationClient, _serviceUrlBuilder, Substitute.For<ILogger>(), hierarchyClient,
+			new PageSchemaBodyParser(), new PageBundleBuilder(() => new JsonDiffApplier(), () => new JsonPathDiffApplier()),
+			Substitute.For<IPageFileWriter>());
+
+		// Act
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(ResolverReturning(command), SchemaName, "dev", null, null, null, Mode: "replace"));
+
+		// Assert
+		modelConfigJson.Should().Be("{}",
+			because: "a null here reads as an unreadable base, and the data-source check would fail open on exactly the page it targets");
+		viewModelConfigJson.Should().Be("{}", because: "the view model base follows the same rule");
+	}
+
+	[Test]
 	[Description("Append mode validates against the FULL merged config including the editable schema's own body, because an append write keeps that body and merges the incoming fragment into it.")]
 	public void ResolveMergedConfig_AppendMode_IncludesOwnBody() {
 		// Arrange
 		IToolCommandResolver resolver = ResolverReturning(CreateCommandWithHierarchy());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "append"));
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "append"));
 
 		// Assert
 		viewModelConfigJson.Should().Contain("BaseAttr").And.Contain("OwnAttr",
@@ -133,8 +161,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		ILogger logger = Substitute.For<ILogger>();
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
 
 		// Assert
 		viewModelConfigJson.Should().BeNull(because: "a failed base resolution must fall back to the oracle's seeded base");
@@ -152,8 +180,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		resolver.Resolve<PageGetCommand>(Arg.Any<EnvironmentOptions>()).Returns(_ => throw new OperationCanceledException());
 
 		// Act
-		Action act = () => MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
+		Action act = () => PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace"));
 
 		// Assert
 		act.Should().Throw<OperationCanceledException>(
@@ -165,7 +193,7 @@ public sealed class MobilePageMergedConfigResolverTests {
 	public void ResolveMergedConfig_NullContext_ReturnsNulls() {
 		// Act
 		(string viewModelConfigJson, string modelConfigJson) =
-			MobilePageMergedConfigResolver.ResolveMergedConfig((MobilePageMergedConfigContext)null);
+			PageMergedConfigResolver.ResolveMergedConfig((PageMergedConfigContext)null);
 
 		// Assert
 		viewModelConfigJson.Should().BeNull(because: "a null context carries no schema/environment to resolve a base from");
@@ -184,8 +212,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => warning = ci.Arg<string>());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
 
 		// Assert
 		viewModelConfigJson.Should().BeNull(because: "an access-denied failure degrades to the seeded base, not a throw");
@@ -206,8 +234,8 @@ public sealed class MobilePageMergedConfigResolverTests {
 		logger.When(l => l.WriteWarning(Arg.Any<string>())).Do(ci => warning = ci.Arg<string>());
 
 		// Act
-		(string viewModelConfigJson, string modelConfigJson) = MobilePageMergedConfigResolver.ResolveMergedConfig(
-			new MobilePageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
+		(string viewModelConfigJson, string modelConfigJson) = PageMergedConfigResolver.ResolveMergedConfig(
+			new PageMergedConfigContext(resolver, SchemaName, "dev", null, null, null, Mode: "replace", Logger: logger));
 
 		// Assert
 		viewModelConfigJson.Should().BeNull(because: "a generic read failure also degrades to the seeded base without throwing");

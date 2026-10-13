@@ -160,12 +160,12 @@ and `retry-guidance`.
 
 ### MCP response deadline (`in-progress`)
 
-Some MCP clients (for example GitHub Copilot CLI) enforce a **hard ~180 s
-per-request ceiling that progress notifications do not reset**, so on a cold or
-large environment the whole `create-app-section` call can exceed it and the
-client abandons the request with an opaque `-32001 Request timed out` (ENG-91316).
-To stay under that ceiling the MCP tool bounds its **response** by a wall-clock
-deadline (default **150 s**, override with `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`,
+Some MCP clients enforce a **hard per-request ceiling that progress notifications
+do not reset** (Claude Code desktop: 60 s; GitHub Copilot CLI: ~180 s), so on a cold
+or large environment the whole `create-app-section` call can exceed it and the
+client abandons the request with an opaque `-32001 Request timed out` (ENG-91316,
+ENG-102333). To stay under that ceiling the MCP tool bounds its **response** by a
+wall-clock deadline (default **45 s**, override with `CLIO_MCP_RESPONSE_DEADLINE_SECONDS`,
 whole seconds, `0 < n ≤ 600`). When the work exceeds the deadline the tool returns
 `error-class: creatio-timeout` with `section-created: in-progress` **before** the
 client gives up, while the section keeps being created in the background on the

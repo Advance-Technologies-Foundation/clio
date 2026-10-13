@@ -14,7 +14,9 @@ them in a fixed order — `Merge`, then `Remove`/`Insert`/`Move`, then `RemovePr
 an operation with no diagnostic: group ordering; `FilterMoveOperation`, which opens the position
 pipeline by dropping every `move` whose `name` matches any element `remove` in the same body; and
 source resolution, where an operation whose target name is absent resolves to nothing and is skipped
-while `ApplyOperations` throws away the unsuccessful list each group returns. Two groups run after
+while `ApplyOperations` throws away the unsuccessful list each group returns (clio can observe the
+merge group's list through `JsonApplierOperationsOptions.UnresolvedMerges`, which only the GH-1753
+config-diff check uses — see `a-config-merge-into-a-missing-path-is-skipped.md`). Two groups run after
 inserts, `RemoveProperties` and `Set` — so a property `remove` beside an `insert` for one name does
 take effect, while a `merge`, `move` or element `remove` there does not. Since GH-1240
 `PageInertOperationDetector` reports eight provable pairs as advisory warnings on `update-page` — and on `sync-pages`, which shares `TryUpdatePage` and forwards
