@@ -15,6 +15,8 @@ new target inherits from the column's current reference: `Folder` -> `Contact` s
 test stand (`BaseItemInFolder` and `BaseFolder` are virtual; `ContactFolder`
 inherits `BaseFolder`; the runtime `RuntimeEntitySchemaRequest` by `uId` returns `parentUId`). Sending the
 same name in both `columns` and `inheritedColumns` fails in `EntitySchemaValidator.ValidateColumnsHaveUniqueNames`.
+A `BaseItemInFolder` child saved while `Folder` still references `BaseFolder` is refused with
+`The "Folder" column cannot refer to a virtual object`, so such a child can be created only with the override.
 
 **Why it is this way** — both rules live on the server, in the core mapper
 `EntitySchemaDesignSchemaDtoToDesignItemMapper`, outside clio, and the service validates neither
