@@ -216,18 +216,19 @@ public sealed class ODataDeleteTool(
 		string entity, List<string> ids, DateTimeOffset callDeadline, ref bool attempted, ref bool received) {
 		Dictionary<string, ODataDeleteItemResult> results = new(StringComparer.OrdinalIgnoreCase);
 		List<string> pending = SkipMissing(service, entity, ids, callDeadline, results);
-		Dictionary<string, RecordDeleteOutcome> refusals = new(StringComparer.OrdinalIgnoreCase);
+		BatchState batch = new(results);
 		for (int pass = 0; pass < MaxBatchPasses && pending.Count > 0; pass++) {
-			List<string> again = DeletePass(service, entity, pending, callDeadline, results, refusals, ref attempted,
-				ref received);
+			List<string> again = DeletePass(service, entity, pending, callDeadline, batch);
 			bool progressed = again.Count < pending.Count;
 			pending = again;
 			if (!progressed) {
 				break;
 			}
 		}
+		attempted |= batch.Attempted;
+		received |= batch.Received;
 		foreach (string id in pending) {
-			results[id] = refusals.TryGetValue(id, out RecordDeleteOutcome refusal)
+			results[id] = batch.Refusals.TryGetValue(id, out RecordDeleteOutcome refusal)
 				? Explain(service, entity, id, refusal, callDeadline, null)
 				: new ODataDeleteItemResult(id, false, $"{entity}({id}) was not deleted: this call's time budget ran out "
 					+ "before its DELETE could be sent.", null, null, null);
@@ -257,9 +258,15 @@ public sealed class ODataDeleteTool(
 	}
 
 	// One pass over the pending ids; returns those refused (or not sent for lack of time), to try again.
+	private sealed class BatchState(Dictionary<string, ODataDeleteItemResult> results) {
+		public Dictionary<string, ODataDeleteItemResult> Results { get; } = results;
+		public Dictionary<string, RecordDeleteOutcome> Refusals { get; } = new(StringComparer.OrdinalIgnoreCase);
+		public bool Attempted { get; set; }
+		public bool Received { get; set; }
+	}
+
 	private static List<string> DeletePass(IRecordDeletionService service, string entity, List<string> pending,
-		DateTimeOffset callDeadline, Dictionary<string, ODataDeleteItemResult> results,
-		Dictionary<string, RecordDeleteOutcome> refusals, ref bool attempted, ref bool received) {
+		DateTimeOffset callDeadline, BatchState batch) {
 		List<string> again = [];
 		foreach (string id in pending) {
 			if (DeleteBudget(callDeadline) is not { } deleteMs) {
@@ -267,16 +274,16 @@ public sealed class ODataDeleteTool(
 				continue;
 			}
 			RecordDeleteOutcome outcome = service.Delete(entity, id, deleteMs);
-			attempted |= outcome.Attempted;
-			received |= outcome.Received;
+			batch.Attempted |= outcome.Attempted;
+			batch.Received |= outcome.Received;
 			if (outcome.Success || !outcome.Received) {
 				// A transport failure has no refusal to explain, and its write may have landed.
-				results[id] = new ODataDeleteItemResult(id, outcome.Success, outcome.Success ? null : outcome.Error, null,
-					null, null);
-				refusals.Remove(id);
+				batch.Results[id] = new ODataDeleteItemResult(id, outcome.Success, outcome.Success ? null : outcome.Error,
+					null, null, null);
+				batch.Refusals.Remove(id);
 			}
 			else {
-				refusals[id] = outcome;
+				batch.Refusals[id] = outcome;
 				again.Add(id);
 			}
 		}
@@ -388,7 +395,7 @@ public sealed class ODataDeleteTool(
 					$"cascade stopped: this call's time budget ran out before owned row {child.Entity}({child.Id}) "
 					+ $"could be deleted, so {target.Entity}({target.Id}) was left in place"
 					+ (cascadeDeleted.Count > 0 ? "; cascade-deleted lists the owned rows already deleted." : "."),
-					null, plan.Referencing, DeletedSoFar(cascadeDeleted));
+					null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null));
 			}
 			RecordDeleteOutcome childOutcome = service.Delete(child.Entity, child.Id, childMs);
 			attempted |= childOutcome.Attempted;
@@ -401,9 +408,6 @@ public sealed class ODataDeleteTool(
 		return null;
 	}
 
-	private static IReadOnlyList<RecordKey> DeletedSoFar(List<RecordKey> cascadeDeleted) =>
-		cascadeDeleted.Count > 0 ? cascadeDeleted : null;
-
 	private static ODataDeleteItemResult ChildFailure(RecordKey target, RecordKey child, RecordDeleteOutcome outcome,
 		CascadePlan plan, List<RecordKey> cascadeDeleted) {
 		if (outcome.Attempted && !outcome.Received) {
@@ -411,7 +415,7 @@ public sealed class ODataDeleteTool(
 			return new ODataDeleteItemResult(target.Id, false,
 				$"cascade stopped: the DELETE of owned row {child.Entity}({child.Id}) got no answer, so it may have "
 				+ $"been deleted - check with odata-read; {target.Entity}({target.Id}) was left in place: "
-				+ outcome.Error, null, plan.Referencing, DeletedSoFar(cascadeDeleted)) {
+				+ outcome.Error, null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null)) {
 				CascadeUnconfirmed = [child]
 			};
 		}
@@ -420,7 +424,7 @@ public sealed class ODataDeleteTool(
 			: $"{outcome.Error} The server's own reason: {outcome.ServerDetail}.";
 		return new ODataDeleteItemResult(target.Id, false,
 			$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
-			+ $"was left in place: {reason}", null, plan.Referencing, DeletedSoFar(cascadeDeleted));
+			+ $"was left in place: {reason}", null, plan.Referencing, (cascadeDeleted.Count > 0 ? cascadeDeleted : null));
 	}
 
 	private static (ODataDeletePlanItem Item, CascadePlan Plan) BuildPlan(IRecordDeletionService service, string entity,
