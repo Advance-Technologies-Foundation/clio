@@ -147,4 +147,23 @@ public sealed class CreatedRecordCleanerTests {
 		report.Failed.Should().ContainSingle(because: "the record was not attempted")
 			.Which.Error.Should().Contain("not attempted", because: "the reason is the deadline, not a refusal");
 	}
+
+	[Test]
+	[Description("A DELETE is never given more time than is left before stopAt, and none is started with less than a second left, so no record is deleted after the caller was answered.")]
+	public void Delete_Should_Bound_Each_Request_By_StopAt() {
+		// Arrange
+		(CreatedRecordCleaner cleaner, IApplicationClient client, _) = Create();
+		CreatedRecord activity = new("Activity", ActivityId, "Task");
+
+		// Act
+		CleanupReport late = cleaner.Delete([activity], References, 10_000, System.DateTimeOffset.UtcNow.AddMilliseconds(500));
+		CleanupReport inTime = cleaner.Delete([activity], References, 10_000, System.DateTimeOffset.UtcNow.AddSeconds(5));
+
+		// Assert
+		late.Failed.Should().ContainSingle(because: "half a second is too little to start a delete")
+			.Which.Error.Should().Contain("not attempted", because: "the reason is the deadline");
+		inTime.Deleted.Should().ContainSingle(because: "five seconds are enough");
+		client.Received(1).ExecuteDeleteRequest(Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Is<int>(timeout => timeout <= 5_000), Arg.Any<int>(), Arg.Any<int>());
+	}
 }

@@ -17,7 +17,10 @@ public interface ICreatedRecordCleaner {
 	/// <param name="records">The records to delete; nothing else is ever deleted.</param>
 	/// <param name="referencesByEntity">Per entity, the entities its lookup columns reference.</param>
 	/// <param name="timeoutMs">Bound of each request, in milliseconds.</param>
-	/// <param name="stopAt">No request is started at or after this instant; the rest is reported as failed.</param>
+	/// <param name="stopAt">
+	/// No request runs past this instant: each is bounded by the time left, and one with less than a second left is not
+	/// started and is reported as failed.
+	/// </param>
 	/// <returns>What was deleted and what was not.</returns>
 	CleanupReport Delete(IReadOnlyList<CreatedRecord> records,
 		IReadOnlyDictionary<string, IReadOnlyCollection<string>> referencesByEntity, int timeoutMs,
@@ -28,6 +31,7 @@ internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient,
 	: ICreatedRecordCleaner {
 
 	private const int MaxPasses = 3;
+	private const int MinimumDeleteMs = 1_000;
 
 	/// <inheritdoc />
 	public CleanupReport Delete(IReadOnlyList<CreatedRecord> records,
@@ -39,9 +43,12 @@ internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient,
 		for (int pass = 0; pass < MaxPasses && pending.Count > 0; pass++) {
 			List<CreatedRecord> refused = [];
 			foreach (CreatedRecord record in pending) {
-				string error = stopAt is not null && DateTimeOffset.UtcNow >= stopAt
+				int budget = stopAt is null
+					? timeoutMs
+					: (int)Math.Min(timeoutMs, (stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds);
+				string error = stopAt is not null && budget < MinimumDeleteMs
 					? "not attempted: the response deadline was reached"
-					: DeleteOne(record, timeoutMs);
+					: DeleteOne(record, budget);
 				if (error is null) {
 					report.Deleted.Add(record);
 				}
