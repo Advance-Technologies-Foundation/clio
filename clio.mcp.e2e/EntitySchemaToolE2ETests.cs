@@ -367,12 +367,13 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("Creates a BaseItemInFolder child whose inherited Folder references ContactFolder, reads it back, refuses Contact as a target, and refuses a Folder column without override.")]
+	[Description("Creates a BaseItemInFolder child whose inherited Folder references ContactFolder, reads it back, redirects it through update-entity-schema to a sandbox child of ContactFolder, refuses Contact as a target, and refuses a Folder column without override.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]
+	[AllureTag(UpdateToolName)]
 	[AllureTag(ReadColumnToolName)]
-	[AllureName("Create entity schema overrides an inherited lookup and refuses an unrelated target")]
-	[AllureDescription("Creates a sandbox child of BaseItemInFolder with Folder overridden to ContactFolder, verifies through get-entity-schema-properties and get-entity-schema-column-properties that no own column exists and the inherited Folder references ContactFolder, redirects it again through modify-entity-schema-column, and verifies that Contact is refused as a target and that a Folder column without override is refused.")]
+	[AllureName("Entity schema tools override an inherited lookup and refuse an unrelated target")]
+	[AllureDescription("Creates a sandbox child of BaseItemInFolder with Folder overridden to ContactFolder and verifies through get-entity-schema-properties and get-entity-schema-column-properties that no own column exists and the inherited Folder references ContactFolder; modify-entity-schema-column accepts the same reference again. Creates a sandbox child of ContactFolder, redirects the inherited Folder to it through update-entity-schema and verifies the read-back. Verifies that Contact is refused as a target and that a Folder column without override is refused.")]
 	public async Task CreateEntitySchema_Should_Override_Inherited_Folder_And_Refuse_Unrelated_Target() {
 		// Arrange
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
@@ -408,6 +409,33 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				folderColumnName,
 				cancellationToken,
 				referenceSchemaName: "ContactFolder"));
+		// A redirect target must inherit from the current reference, so the update step needs a ContactFolder child.
+		string derivedFolderSchemaName = arrangeContext.SchemaName + "Fld";
+		CommandExecutionEnvelope createDerivedFolderResult = McpCommandExecutionParser.Extract(
+			await CallCreateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				derivedFolderSchemaName,
+				cancellationToken,
+				parentSchemaName: "ContactFolder"));
+		CommandExecutionEnvelope updateResult = McpCommandExecutionParser.Extract(
+			await CallUpdateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				cancellationToken,
+				[
+					new Dictionary<string, object?> {
+						["action"] = "modify",
+						["column-name"] = folderColumnName,
+						["reference-schema-name"] = derivedFolderSchemaName
+					}
+				]));
+		EntitySchemaPropertiesInfo updatedSchemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo folderAfterUpdate =
+			await ActGetColumnPropertiesAsync(arrangeContext, folderColumnName);
 		CommandExecutionEnvelope unrelatedTargetResult = McpCommandExecutionParser.Extract(
 			await CallModifyEntitySchemaColumnAsync(
 				arrangeContext.Session,
@@ -446,6 +474,16 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 			because: "the inherited Folder must reference the requested folder schema");
 		AssertCommandSucceeded(modifyResult,
 			"modify-entity-schema-column should accept reference-schema-name on the inherited Folder lookup");
+		AssertCommandSucceeded(createDerivedFolderResult,
+			"create-entity-schema should save a child of ContactFolder");
+		AssertCommandSucceeded(updateResult,
+			"update-entity-schema should redirect the inherited Folder lookup to a schema that inherits from its current reference");
+		updatedSchemaProperties.OwnColumnCount.Should().Be(0,
+			because: "a reference redirect changes the inherited Folder and must not add an own column");
+		folderAfterUpdate.Source.Should().Be("inherited",
+			because: "the redirected Folder must stay an inherited column");
+		folderAfterUpdate.ReferenceSchemaName.Should().Be(derivedFolderSchemaName,
+			because: "update-entity-schema must persist the new reference of the inherited Folder");
 		unrelatedTargetResult.ExitCode.Should().Be(1,
 			because: "Contact does not inherit from BaseFolder, so the override must be refused before saving");
 		unrelatedTargetResult.Output.Should().Contain(message =>

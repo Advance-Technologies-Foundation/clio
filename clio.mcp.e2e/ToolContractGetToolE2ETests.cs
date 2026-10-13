@@ -201,7 +201,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
-	[Description("Advertises the inherited lookup override on create-entity-schema columns and on the modify reference-schema-name field.")]
+	[Description("Advertises the inherited lookup override on create-entity-schema columns, sync-schemas operations and the modify reference-schema-name field, and not on create-lookup columns.")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract advertises the inherited lookup override")]
 	public async Task ToolContractGet_Should_Advertise_Inherited_Lookup_Override() {
@@ -216,13 +216,15 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 				["detail"] = ToolContractShortForm.FullDetail,
 				["tool-names"] = new[] {
 					CreateEntitySchemaTool.CreateEntitySchemaToolName,
-					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
+					CreateLookupTool.CreateLookupToolName,
+					SchemaSyncTool.ToolName
 				}
 			});
 		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
 
 		// Assert
-		response.Success.Should().BeTrue(because: "both entity-schema contracts should be served");
+		response.Success.Should().BeTrue(because: "the requested entity-schema contracts should be served");
 		ToolContractDefinition createContract = response.Tools!.Single(tool =>
 			tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
 		createContract.InputSchema.Properties.Single(field => field.Name == "columns").Description
@@ -237,6 +239,14 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			.InputSchema.Properties.Single(field => field.Name == "reference-schema-name").Description
 			.Should().Contain("INHERITED Lookup",
 				because: "modify must document that reference-schema-name redirects an inherited lookup");
+		response.Tools!.Single(tool => tool.Name == CreateLookupTool.CreateLookupToolName)
+			.InputSchema.Properties.Single(field => field.Name == "columns").Description
+			.Should().NotContain("override",
+				because: "a create-lookup schema has a BaseLookup parent, so the override does not apply to it");
+		response.Tools!.Single(tool => tool.Name == SchemaSyncTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "operations").Description
+			.Should().Contain("create-entity `columns` item with `override: true`",
+				because: "sync-schemas create-entity accepts the same override column as create-entity-schema");
 		McpClientTool? createTool = tools.SingleOrDefault(tool => tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
 		if (createTool is not null) {
 			createTool.JsonSchema.GetRawText().Should().Contain("\"override\"",

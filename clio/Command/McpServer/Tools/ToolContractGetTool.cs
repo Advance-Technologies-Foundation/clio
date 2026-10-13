@@ -614,12 +614,19 @@ internal static class ToolContractCatalog {
 		"Optional initial columns. Each item: `column-name` (alias `name`), `type` (alias `data-value-type`), " +
 		"optional `title-localizations` (auto-derived from the column name when omitted), " +
 		"`reference-schema-name` (alias `reference-schema`, required for type Lookup), and `required` " +
-		"(alias `is-required`). Type names are case-insensitive. " +
+		"(alias `is-required`). Type names are case-insensitive.";
+
+	// The override applies only to a child of a virtual parent, so it is not advertised for create-lookup,
+	// whose parent is BaseLookup.
+	private const string InheritedLookupOverrideColumnDescription =
 		"A name the parent schema already has is refused unless the item sets `override: true`: an override " +
 		"redirects that inherited Lookup to `reference-schema-name` (required) instead of adding a column, may " +
 		"carry `title-localizations`, and refuses `type`, `required`, defaults and `masked`. The parent must be " +
 		"virtual (e.g. BaseItemInFolder), the schema must not replace its parent, and the target must be a " +
 		"non-virtual schema that inherits from the column's current reference schema.";
+
+	private const string CreateEntityColumnsDescription =
+		CreateColumnsDescription + " " + InheritedLookupOverrideColumnDescription;
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string PassthroughEnvironmentNameSuffix =
@@ -1903,7 +1910,7 @@ internal static class ToolContractCatalog {
 						["rootSchemaName"] = ExampleContactSchemaName,
 						["operationType"] = 0,
 						["allColumns"] = false,
-						["columns"] = new Dictionary<string, object?> {
+						[ColumnsFieldName] = new Dictionary<string, object?> {
 							["items"] = new Dictionary<string, object?> {
 								["ContactCount"] = new Dictionary<string, object?> {
 									["expression"] = new Dictionary<string, object?> {
@@ -4461,7 +4468,7 @@ internal static class ToolContractCatalog {
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, PackageNameFieldName, OperationsFieldName],
 				EnvironmentPackageFields(
-					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). Each culture must exist in the environment's Languages section (SysCulture); an absent culture fails before any save, an inactive one is written with a warning. " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
+					Field(OperationsFieldName, ArrayType, "Ordered schema operations. Supported `type` values: create-lookup, create-entity, update-entity, seed-data. For create-entity, `is-db-view` maps to a separately provisioned SQL view without generating a table; seed-rows are rejected and an existing mismatched storage kind is a collision. Omission preserves metadata. Set `is-virtual` to true to create a virtual schema without a physical table; it defaults to false and cannot be combined with `seed-rows`. For update-entity, supply `update-operations` (add/modify/remove) or a `columns` add-batch. A standalone `seed-data` operation inserts `seed-rows` into an existing schema (used by resume-plan when a create succeeded but its inline seeding failed). Column fields are unified with get-app-info and are the same for the create-entity/create-lookup `columns` array: `column-name` (alias `name`), `type` (alias `data-value-type`), `reference-schema-name` (alias `reference-schema`), `required` (alias `is-required`) — so a column read from get-app-info can be sent back by adding the `action` verb. A create-entity `columns` item with `override: true` redirects an inherited Lookup to `reference-schema-name` instead of adding a column; it carries only `name`, `override`, `reference-schema-name` and optionally `title-localizations`, the parent must be virtual, the schema must not replace its parent, and the target must be a non-virtual schema that inherits from the column's current reference schema. Default values are accepted on create-entity/create-lookup `columns` items and on `update-operations` items: `default-value-config` with `source` Const (its `value` is the scalar — for a lookup column the STABLE RECORD GUID of the target record, which must exist at write time), Settings (`value-source` = setting code), SystemValue (`value-source` = system value GUID), or Sequence (`sequence-prefix` + `sequence-number-of-chars`); `source: None` removes an existing default. The legacy shorthand `default-value-source: Const|None` (+ `default-value` for Const) is also accepted. A column read from get-app-info reports its default as `default-value-config` — send it back as-is to re-apply, or set `source: None` to clear it. For an add, `title-localizations` is OPTIONAL: when omitted, `en-US` is auto-derived from a scalar `title`/`caption` or the column name (the `en-US` value must be English when supplied). Each culture must exist in the environment's Languages section (SysCulture); an absent culture fails before any save, an inactive one is written with a warning. " + ColumnTypeVocabularyDescription + " Applies to column types in both columns and update-operations. Read columns back with get-entity-schema-properties after writing. For date-only Freedom UI fields, explicitly set pickerType: \"date\" on crt.DateTimePicker.")),
 				Validators: [
 					new ToolContractValidator(
 						"sync-schemas-operations-localizations",
@@ -4888,7 +4895,7 @@ internal static class ToolContractCatalog {
 				EnvironmentPackageSchemaFields(
 					EntitySchemaNameDescription,
 					Field(TitleLocalizationsFieldName, ObjectType, "Localization map that must include en-US."),
-					Field("columns", ArrayType, CreateColumnsDescription),
+					Field(ColumnsFieldName, ArrayType, CreateEntityColumnsDescription),
 					Field(ParentSchemaNameFieldName, StringType, "Optional parent schema name."),
 					Field("extend-parent", BooleanType, "Optional replacement-schema flag."),
 					Field("is-db-view", BooleanType, "Map to a separately provisioned SQL view without generating a table. Omit to preserve inherited metadata."),
@@ -4920,7 +4927,7 @@ internal static class ToolContractCatalog {
 					[SchemaNameFieldName] = "UsrTaskInFolder",
 					[TitleLocalizationsFieldName] = LocalizationMap("Task in folder"),
 					[ParentSchemaNameFieldName] = "BaseItemInFolder",
-					["columns"] = new[] {
+					[ColumnsFieldName] = new[] {
 						new Dictionary<string, object?> {
 							["name"] = "Folder",
 							["override"] = true,
