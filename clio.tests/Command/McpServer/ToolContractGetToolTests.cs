@@ -3106,7 +3106,7 @@ public sealed class ToolContractGetToolTests {
 			because: "the package ships inside clio, so the target environment is the only thing to supply");
 		contract.PreferredFlow.Tools.Should().Equal(
 			new[] { InstallProcessBuilderTool.InstallProcessBuilderToolName },
-			because: "the flow must stop at this tool: any of the five process-designer tools may have sent "
+			because: "the flow must stop at this tool: any of the gated process tools may have sent "
 				+ "the caller here, so the contract cannot name which call to retry");
 		// A CLAIM-shaped guard, not a phrase ban — and note what CANNOT work here. The previous form banned
 		// the literal "which build is serving", and a reworded copy walked past it: the shipped note went

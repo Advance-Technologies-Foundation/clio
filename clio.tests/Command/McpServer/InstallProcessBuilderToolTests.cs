@@ -157,12 +157,11 @@ public sealed class InstallProcessBuilderToolTests {
 				+ "but compile-creatio and restart-by-environment-name are both true and this tool causes "
 				+ "the effects of both. install-gate's false is not the precedent: it ships a prebuilt "
 				+ "assembly and never makes the target rebuild");
-		attribute.Idempotent.Should().BeTrue(
-			because: "a SEQUENTIAL re-run converges on the same end state - it either installs again, costing "
-				+ "one configuration build and changing nothing else, or hits the same refusal it hit before, "
-				+ "which changes nothing at all. Both refusals are stable under repetition, which is what the "
-				+ "hint promises. It says nothing about CONCURRENT re-entry, refused outright by the "
-				+ "configuration-build reservation");
+		attribute.Idempotent.Should().BeFalse(
+			because: "MCP reads idempotentHint as 'a repeated call has no additional effect', and every run that "
+				+ "installs is another configuration build and site restart for every connected user - the "
+				+ "effect each run needs the user's approval for (ENG-102116). A host that auto-retries idempotent "
+				+ "tools must not repeat it; compile-creatio, with the same effect, is false too");
 		description.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the description should name the package the tool installs");
 		description.Description.Should().Contain("create-business-process",

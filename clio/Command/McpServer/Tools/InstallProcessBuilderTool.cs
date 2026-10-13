@@ -67,8 +67,12 @@ public sealed class InstallProcessBuilderTool(
 	// restart-by-environment-name are both Destructive = true and this tool causes the effects of both.
 	// install-gate is Destructive = false and is NOT the precedent: it ships a prebuilt assembly and never
 	// makes the target rebuild its configuration.
+	// Idempotent = false (ENG-102116 review): MCP reads idempotentHint as "a repeated call has no additional
+	// effect", and every run that installs is another configuration build and site restart for every user - a
+	// host that auto-retries idempotent tools would repeat exactly what needs the user's approval each time.
+	// compile-creatio, which has the same effect, is false too.
 	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
-		Idempotent = true, OpenWorld = false)]
+		Idempotent = false, OpenWorld = false)]
 	// One of the five long-running starters. Sticky because the install keeps running past the response
 	// deadline (the detached continuation above), so the worker must outlive the answer; ConfigurationBuild
 	// because it holds the narrow reservation this file already takes and must exclude a concurrent

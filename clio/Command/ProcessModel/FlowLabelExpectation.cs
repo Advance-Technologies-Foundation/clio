@@ -45,7 +45,7 @@ public static class FlowLabelExpectation {
 	// the member, which docs/agent-instructions/bundled-packages.md records under "a numeric floor cannot
 	// express a CAPABILITY once two branches cut numbers". So the three sibling guards' convention holds
 	// here too: name the cause qualitatively, the way EmailBlockExpectation says "predates the sendEmail
-	// element", and point at clio install-process-builder.
+	// element", and point at BundledPackages.ProcessBuilderInstallRemedy (the install plus the approval).
 
 	// How many FLOWS a single warning will name before it says "+ N more". The server accepts 1 000
 	// operations per request, and every one of them can carry a label, so an unbounded join renders a

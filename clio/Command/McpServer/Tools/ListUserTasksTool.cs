@@ -68,7 +68,7 @@ public class ListUserTasksTool(
 		 + "fall back to a generic userTask named after the schema, which older packages do build with the block; "
 		 + "for every other task above, run install-process-builder instead, after user approval - a generic "
 		 + "PreconfiguredPageUserTask or OpenEditPageUserTask has no page and fails at run time. Requires the "
-		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment; install-process-builder installs it, once the user approves.")]
+		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment; install it with install-process-builder after user approval.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {

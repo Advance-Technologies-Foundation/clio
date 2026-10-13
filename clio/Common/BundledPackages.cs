@@ -86,9 +86,20 @@ public static class BundledPackages {
 	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderInstallHint =
-		"Installing or updating " + ProcessBuilderPackageName + " builds the environment's configuration and "
-		+ "restarts the site for every connected user. This refusal is not the user's approval: ask them first, "
-		+ "then run 'clio install-process-builder -e <environment>' (or call the install-process-builder MCP tool).";
+		"Installing or updating " + ProcessBuilderPackageName + " " + ProcessBuilderInstallCost + ". This refusal "
+		+ "is not the user's approval: ask them first, then run 'clio install-process-builder -e <environment>' "
+		+ "(or call the install-process-builder MCP tool).";
+
+	/// <summary>
+	/// What installing CrtProcessBuilder costs the environment, worded ONCE for every surface that names it.
+	/// </summary>
+	/// <remarks>
+	/// The hint and the remedy concatenate it, and the install tool's description and curated contract carry
+	/// the same words (pinned by <c>InstallProcessBuilderToolTests.ConfigurationBuildAndRestartPattern</c>), so
+	/// an agent is told one cost whichever surface it reads (ENG-102116 review).
+	/// </remarks>
+	public const string ProcessBuilderInstallCost =
+		"builds the environment's configuration and restarts the site for every connected user";
 
 	/// <summary>
 	/// The remedy clause the post-write read-back warnings put in parentheses after the action they recommend
@@ -102,8 +113,7 @@ public static class BundledPackages {
 	/// unconditionally (ENG-102116).
 	/// </remarks>
 	public const string ProcessBuilderInstallRemedy =
-		"install-process-builder, after user approval - it builds the configuration and restarts the site for "
-		+ "every user";
+		"install-process-builder after user approval - it " + ProcessBuilderInstallCost;
 
 	/// <summary>
 	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which

@@ -141,7 +141,7 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 			because: "the environment is the tool's only argument and it is mandatory — the package ships inside "
 				+ "clio, so there is nothing else for the caller to supply");
 		contract.PreferredFlow.Tools.Should().Equal([ToolName],
-			because: "the flow must stop at this tool: any of the five process-designer tools may have sent "
+			because: "the flow must stop at this tool: any of the gated process tools may have sent "
 				+ "the caller here, so the contract cannot know which call to retry and must not invent one");
 		contract.PreferredFlow.Tools.Should().NotContain(ListUserTasksTool.ListUserTasksToolName,
 			because: "list-user-tasks was once hardcoded as a confirmation step, but the real confirmation is "
@@ -238,6 +238,52 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 				+ "environment, and an agent that reads the contract before calling should learn that from it. "
 				+ "CanManageProcessDesign is NOT this tool's requirement — it gates the process-designer tools "
 				+ "the caller retries afterwards");
+	}
+
+	[Test]
+	[Description("ENG-102116: every gated process tool's advertised full contract ties each install-process-builder remedy to the user's approval, so no description reached through get-tool-contract tells an agent to install unconditionally.")]
+	[AllureTag(ToolName)]
+	[AllureName("process-tool contracts name the approval next to every install remedy")]
+	[AllureDescription("Reads the full get-tool-contract description of the seven process tools gated on CrtProcessBuilder over the real MCP path and verifies that every mention of install-process-builder is followed by the approval clause.")]
+	public async Task ProcessToolContracts_Should_TieEveryInstallRemedyToTheUsersApproval() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+		string[] gatedTools = [
+			ListUserTasksTool.ListUserTasksToolName,
+			CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			ModifyBusinessProcessTool.ModifyBusinessProcessToolName,
+			DescribeProcessTool.ToolName,
+			ValidateProcessGraphTool.ToolName,
+			ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName,
+			SetActiveProcessVersionTool.SetActiveProcessVersionToolName
+		];
+
+		// Act
+		List<string> unconditional = [];
+		foreach (string toolName in gatedTools) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolContractGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["tool-names"] = new[] { toolName },
+						["detail"] = ToolContractShortForm.FullDetail
+					}
+				},
+				context.CancellationTokenSource.Token);
+			ToolContractDefinition contract = EntitySchemaStructuredResultParser
+				.Extract<ToolContractGetResponse>(callResult).Tools!.Single(tool => tool.Name == toolName);
+			string description = Regex.Replace(contract.Description, @"\s+", " ", RegexOptions.None, RegexTimeout);
+			unconditional.AddRange(Regex.Matches(description, @"install-process-builder(?<after>.{0,40})",
+					RegexOptions.None, RegexTimeout)
+				.Where(match => !match.Groups["after"].Value.Contains("after user approval", StringComparison.Ordinal))
+				.Select(match => $"{toolName}: ...{match.Value}..."));
+		}
+
+		// Assert
+		unconditional.Should().BeEmpty(
+			because: "these contracts are what an agent reads before it calls a process tool, and clio-run "
+				+ "collapses the install tool's Destructive flag - an install remedy without the approval reads "
+				+ "as permission to rebuild the configuration and restart the site for every user");
 	}
 
 	[Test]
