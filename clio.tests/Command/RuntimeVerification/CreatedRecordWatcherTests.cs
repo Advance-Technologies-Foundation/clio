@@ -105,15 +105,50 @@ public sealed class CreatedRecordWatcherTests {
 	}
 
 	[Test]
-	[Description("The SysSchema lookup is narrowed by every case variant of the name's first two letters, so it is case-blind on PostgreSQL too.")]
-	public void CasePrefixes_Should_List_Every_Case_Variant_Of_The_First_Two_Letters() {
+	[Description("The SysSchema lookup is narrowed by every case variant of the name's first three letters, so it is case-blind on PostgreSQL too.")]
+	public void CasePrefixes_Should_List_Every_Case_Variant_Of_The_First_Three_Letters() {
 		// Act
 		IReadOnlyList<string> prefixes = CreatedRecordWatcher.CasePrefixes("activity");
 		IReadOnlyList<string> digits = CreatedRecordWatcher.CasePrefixes("a1x");
 
 		// Assert
-		prefixes.Should().BeEquivalentTo(["ac", "aC", "Ac", "AC"], because: "each letter is tried in both cases");
-		digits.Should().BeEquivalentTo(["a1", "A1"], because: "a character without case is kept as is");
+		prefixes.Should().BeEquivalentTo(
+			["act", "acT", "aCt", "aCT", "Act", "AcT", "ACt", "ACT"], because: "each letter is tried in both cases");
+		digits.Should().BeEquivalentTo(["a1x", "a1X", "A1x", "A1X"], because: "a character without case is kept as is");
+	}
+
+	[Test]
+	[Description("The SysSchema page is read in Name order, so the 5000 rows that are read are the same on every run and the entity's own row is not dropped by an arbitrary cut.")]
+	public void Capture_Should_Read_The_SysSchema_Candidates_In_Name_Order() {
+		// Arrange
+		List<JObject> sysSchemaQueries = [];
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				JObject query = JObject.Parse(call.ArgAt<string>(1));
+				if (query.Value<string>("rootSchemaName") == "SysSchema") {
+					sysSchemaQueries.Add(query);
+					return "{\"success\":true,\"rows\":[{\"Name\":\"Activity\"}]}";
+				}
+				return "{\"success\":true,\"rows\":[]}";
+			});
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemaReader.GetByName("activity", Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("Can't find EntitySchema by Name: activity"));
+		schemaReader.GetByName("Activity", Arg.Any<int>()).Returns(Schema("Activity", "Title"));
+		CreatedRecordWatcher watcher = new(client, urlBuilder, schemaReader);
+
+		// Act
+		watcher.Capture(["activity"], 10_000);
+
+		// Assert
+		JObject query = sysSchemaQueries.Should().ContainSingle().Subject;
+		JToken nameColumn = query.SelectToken("columns.items.Name");
+		nameColumn.Should().NotBeNull();
+		nameColumn["orderDirection"]!.Value<int>().Should().Be(1, because: "the candidates are read in ascending Name order");
+		nameColumn["orderPosition"]!.Value<int>().Should().Be(0);
 	}
 
 	[Test]
