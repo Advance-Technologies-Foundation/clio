@@ -45,7 +45,7 @@ public static class FlowLabelExpectation {
 	// the member, which docs/agent-instructions/bundled-packages.md records under "a numeric floor cannot
 	// express a CAPABILITY once two branches cut numbers". So the three sibling guards' convention holds
 	// here too: name the cause qualitatively, the way EmailBlockExpectation says "predates the sendEmail
-	// element", and point at clio install-process-builder.
+	// element", and point at BundledPackages.ProcessBuilderInstallRemedy (the install plus the approval).
 
 	// How many FLOWS a single warning will name before it says "+ N more". The server accepts 1 000
 	// operations per request, and every one of them can carry a label, so an unbounded join renders a
@@ -243,7 +243,7 @@ public static class FlowLabelExpectation {
 			+ "read-back reports a flow's endpoints as element NAMES, so there is nothing to compare. A "
 			+ "CrtProcessBuilder that PREDATES the flow label discards it silently, and this read-back "
 			+ "is the only signal that it did. Re-send the same operation naming the SOURCE and TARGET "
-			+ "elements, or re-read the process with describe-business-process, before reporting the label "
+			+ "elements, or re-read the process with describe-business-process mode=full, before reporting the label "
 			+ "as applied.";
 	}
 
@@ -293,7 +293,7 @@ public static class FlowLabelExpectation {
 				+ "silently. This is USUALLY a CAPABILITY gap rather than an old version number: clio normally "
 				+ "refuses an environment running a package older than the one it ships, so what is missing is "
 				+ "the member rather than a higher number. Reinstall the package clio ships "
-				+ "(clio install-process-builder) and "
+				+ "(" + BundledPackages.ProcessBuilderInstallRemedy + ") and "
 				+ "re-apply the labels, or "
 				+ "label the connectors in the process designer. Until then a decision with two branches "
 				+ "renders as two identical unlabelled arrows.");
@@ -304,7 +304,7 @@ public static class FlowLabelExpectation {
 				+ $"{DescribeDifference(different)}. The package version is NOT the cause here - one that "
 				+ "discards the field leaves nothing rather than something else - so the label reached the "
 				+ "server and came back changed: the process was edited elsewhere between the write and this "
-				+ "read, or the text was normalised on the way in. Re-read it with describe-business-process "
+				+ "read, or the text was normalised on the way in. Re-read it with describe-business-process mode=full "
 				+ "and re-apply only if the drawn text is not what the diagram should say.");
 		}
 
@@ -338,7 +338,7 @@ public static class FlowLabelExpectation {
 			+ $"{Describe(expected)} landed: "
 			+ $"{reason}. The operation itself succeeded. A CrtProcessBuilder that PREDATES the flow label "
 			+ "discards the field silently, and this read-back is the only signal that it did — re-read the "
-			+ "process with describe-business-process before reporting the labels as applied.";
+			+ "process with describe-business-process mode=full before reporting the labels as applied.";
 	}
 
 	/// <summary>

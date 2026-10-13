@@ -18,7 +18,13 @@ public interface IPageSchemaBodyParser {
 
 internal sealed class PageSchemaBodyParser : IPageSchemaBodyParser {
 	/// <inheritdoc />
-	public PageParsedSchemaBody Parse(string body) {
+	public PageParsedSchemaBody Parse(string body) => ParseBody(body);
+
+	/// <summary>
+	/// The parse itself, which holds no state: exposed for the pure write-digest builder
+	/// (<see cref="PageWriteDigest"/>), which has no container to resolve the parser from.
+	/// </summary>
+	internal static PageParsedSchemaBody ParseBody(string body) {
 		if (string.IsNullOrWhiteSpace(body)) {
 			throw new InvalidOperationException("Page schema body is empty");
 		}

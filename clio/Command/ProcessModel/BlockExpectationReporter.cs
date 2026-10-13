@@ -86,7 +86,8 @@ internal static class BlockExpectationReporter {
 	/// here than for the other guards: the decision NOT to raise the package floor for this field rests
 	/// entirely on the read-back being able to report a drop.</para>
 	/// </summary>
-	internal static void WarnFlowLabelsUnverified(ILogger logger,
+	/// <returns>Whether a warning was written.</returns>
+	internal static bool WarnFlowLabelsUnverified(ILogger logger,
 			IReadOnlyList<FlowLabelExpectation.FlowLabel> expectedLabels, string reason) =>
 		Warn(logger, FlowLabelExpectation.BuildUnverifiedWarning(expectedLabels, reason));
 
@@ -96,10 +97,12 @@ internal static class BlockExpectationReporter {
 	/// command still succeeds — an unreadable description is not evidence of a drop — but the caller is told the
 	/// verification did not happen, so an unapplied revoke cannot pass as an applied one.
 	/// </summary>
-	internal static void WarnAccessRightsUnverified(ILogger logger, BlockExpectationIntent intent,
+	/// <returns>Whether a warning was written.</returns>
+	internal static bool WarnAccessRightsUnverified(ILogger logger, BlockExpectationIntent intent,
 			string reason) {
-		Warn(logger, BuildUnverifiedWarning(intent.ConfiguredRights, reason));
-		Warn(logger, BuildUnverifiedFilterWarning(intent.RefilteredOnly, reason));
+		bool rights = Warn(logger, BuildUnverifiedWarning(intent.ConfiguredRights, reason));
+		bool filters = Warn(logger, BuildUnverifiedFilterWarning(intent.RefilteredOnly, reason));
+		return rights || filters;
 	}
 
 	// An element this batch only RE-FILTERED gets its own wording. It sent no block, and with the read-back
@@ -117,7 +120,8 @@ internal static class BlockExpectationReporter {
 		return $"Could not read back the record filter this edit changed on the {subject} '{elements}': "
 			+ $"{reason}. The operation itself succeeded. If any of those is a Change access rights element, "
 			+ "note that CLEARING its record filter makes it apply the permission change to EVERY record of "
-			+ "its object — re-read the process with describe-business-process before reporting the change as "
+			+ "its object — re-read the process with describe-business-process mode=full (or element=<name>) before "
+			+ "reporting the change as "
 			+ "applied.";
 	}
 
@@ -132,12 +136,14 @@ internal static class BlockExpectationReporter {
 		return $"Could not verify that the 'accessRights' configuration for the {subject} '{elements}' landed: "
 			+ $"{reason}. The operation itself succeeded, but this check is the only signal that the permissions "
 			+ "were actually written — the element has no output parameters. Re-read the process with "
-			+ "describe-business-process before reporting a grant or revoke as applied.";
+			+ "describe-business-process mode=full before reporting a grant or revoke as applied.";
 	}
 
-	private static void Warn(ILogger logger, string? warning) {
-		if (warning is not null) {
-			logger.WriteWarning(warning);
+	private static bool Warn(ILogger logger, string? warning) {
+		if (warning is null) {
+			return false;
 		}
+		logger.WriteWarning(warning);
+		return true;
 	}
 }

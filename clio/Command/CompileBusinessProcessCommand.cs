@@ -126,7 +126,8 @@ public sealed class CompileBusinessProcessService(
 				+ "process builder, so nothing was compiled. "
 				+ (pageStatus == 404
 					? "The route was not found: check the environment's URL and its IsNetCore setting, and that "
-						+ "CrtProcessBuilder is installed and compiled there (install-process-builder)."
+						+ "CrtProcessBuilder is installed and compiled there ("
+						+ BundledPackages.ProcessBuilderInstallRemedy + ")."
 					: "Check the environment's credentials.")
 				+ " Ask the user again before compiling.");
 		}

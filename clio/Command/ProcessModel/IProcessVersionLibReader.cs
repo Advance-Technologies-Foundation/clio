@@ -61,6 +61,12 @@ public sealed record ProcessVersionFamilyMember {
 	/// enable/disable on the root schema, so every member of a family reports the same value.
 	/// </summary>
 	public bool Enabled { get; init; }
+
+	/// <summary>
+	/// When this member's schema was last saved, as the process library reports it, or <c>null</c> when the view
+	/// gave none. Read from the same row as the rest, so it costs no query of its own.
+	/// </summary>
+	public DateTime? ModifiedOn { get; init; }
 }
 
 /// <summary>
@@ -175,6 +181,21 @@ public interface IProcessVersionLibReader {
 	/// after it, which is already true of the caption resolution that produced it.
 	/// </remarks>
 	ProcessVersionFacts Read(VwProcessLib row);
+
+	/// <summary>
+	/// Reads the version facts for a schema within <paramref name="budget"/> instead of the reader's own budget,
+	/// for a best-effort read on a write's success path that must not hold the reply for long (ENG-103023).
+	/// </summary>
+	/// <param name="schemaUId">The schema UId, as a GUID string.</param>
+	/// <param name="budget">Wall-clock budget for the whole read, family included.</param>
+	/// <returns>The facts, on the same terms as <see cref="Read(string)"/>.</returns>
+	ProcessVersionFacts Read(string schemaUId, TimeSpan budget);
+
+	/// <summary>Reads the version facts for a schema by its code (name), within <paramref name="budget"/>.</summary>
+	/// <param name="name">The schema code.</param>
+	/// <param name="budget">Wall-clock budget for the whole read, family included.</param>
+	/// <returns>The facts, on the same terms as <see cref="Read(string)"/>.</returns>
+	ProcessVersionFacts ReadByName(string name, TimeSpan budget);
 }
 
 /// <inheritdoc cref="IProcessVersionLibReader" />
@@ -202,6 +223,12 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// </remarks>
 	internal static readonly TimeSpan DefaultReadBudget = TimeSpan.FromSeconds(10);
 
+	/// <summary>
+	/// Budget of a best-effort version read: one taken on the success path of a write that already landed, where a
+	/// stalled process library must cost the caller a missing fact, not ~10 s per read (ENG-103023).
+	/// </summary>
+	internal static readonly TimeSpan BestEffortReadBudget = TimeSpan.FromSeconds(3);
+
 	private readonly IDataProvider _dataProvider;
 	private readonly TimeSpan _readBudget;
 
@@ -221,7 +248,10 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	}
 
 	/// <inheritdoc />
-	public ProcessVersionFacts Read(string schemaUId) {
+	public ProcessVersionFacts Read(string schemaUId) => Read(schemaUId, _readBudget);
+
+	/// <inheritdoc />
+	public ProcessVersionFacts Read(string schemaUId, TimeSpan budget) {
 		if (!Guid.TryParse(schemaUId, out Guid uid)) {
 			return NotEstablished($"'{schemaUId}' is not a schema UId");
 		}
@@ -231,12 +261,12 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 		// the outer wait, which discards version facts that were in hand. This is the dominant path: the name
 		// and uid arms of describe both come through here.
 		Stopwatch elapsed = Stopwatch.StartNew();
-		return WithinBudget(() => ProcessLibRead.Guarded(() => {
+		return WithinBudget(budget, () => ProcessLibRead.Guarded(() => {
 			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
 			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.UId == uid);
 			return row is null
 				? NotEstablished($"the process library has no row for schema '{uid}'")
-				: FactsForRow(ctx, row, elapsed);
+				: FactsForRow(ctx, row, elapsed, budget);
 		}, ReadFailed));
 	}
 
@@ -246,9 +276,25 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			return NotEstablished("no process-library row was supplied");
 		}
 		Stopwatch elapsed = Stopwatch.StartNew();
-		return WithinBudget(() => ProcessLibRead.Guarded(
-			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row, elapsed),
+		return WithinBudget(_readBudget, () => ProcessLibRead.Guarded(
+			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row, elapsed, _readBudget),
 			ReadFailed));
+	}
+
+	/// <inheritdoc />
+	public ProcessVersionFacts ReadByName(string name, TimeSpan budget) {
+		if (string.IsNullOrWhiteSpace(name)) {
+			return NotEstablished("no schema name was supplied");
+		}
+		string code = name.Trim();
+		Stopwatch elapsed = Stopwatch.StartNew();
+		return WithinBudget(budget, () => ProcessLibRead.Guarded(() => {
+			IAppDataContext ctx = AppDataContextFactory.GetAppDataContext(_dataProvider);
+			VwProcessLib row = ctx.Models<VwProcessLib>().FirstOrDefault(p => p.Name == code);
+			return row is null
+				? NotEstablished($"the process library has no row for schema '{code}'")
+				: FactsForRow(ctx, row, elapsed, budget);
+		}, ReadFailed));
 	}
 
 	/// <summary>
@@ -270,7 +316,8 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			.Take(FamilyCap + 1)
 			.ToList();
 
-	private ProcessVersionFacts FactsForRow(IAppDataContext ctx, VwProcessLib row, Stopwatch elapsed) {
+	private ProcessVersionFacts FactsForRow(IAppDataContext ctx, VwProcessLib row, Stopwatch elapsed,
+		TimeSpan budget) {
 		// The family key is the one column this feature left non-nullable, and it is used as an IDENTITY.
 		// A defaulted value would not select a family: it would select every row that also defaulted, and
 		// publish an unrelated process as the version to launch.
@@ -278,7 +325,7 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 			return NotEstablished($"the process library reports no version family key for schema '{row.UId}'");
 		}
 		List<VwProcessLib> family = ReadFamily(ctx, row.VersionParentUId);
-		return BuildFacts(row, family, () => ReadPackageNames(ctx, elapsed));
+		return BuildFacts(row, family, () => ReadPackageNames(ctx, elapsed, budget));
 	}
 
 	/// <summary>
@@ -308,13 +355,13 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// ten-second default leaves far more than twice the slice, so the slice is what applies.
 	/// </para>
 	/// </remarks>
-	private TimeSpan PackageReadBudget(Stopwatch elapsed) {
-		TimeSpan remaining = _readBudget - elapsed.Elapsed;
+	private static TimeSpan PackageReadBudget(Stopwatch elapsed, TimeSpan readBudget) {
+		TimeSpan remaining = readBudget - elapsed.Elapsed;
 		if (remaining <= TimeSpan.Zero) {
 			return TimeSpan.Zero;
 		}
 		TimeSpan usable = TimeSpan.FromTicks(remaining.Ticks / 2);
-		TimeSpan slice = TimeSpan.FromTicks(_readBudget.Ticks / 3);
+		TimeSpan slice = TimeSpan.FromTicks(readBudget.Ticks / 3);
 		return slice < usable ? slice : usable;
 	}
 
@@ -353,8 +400,8 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	/// hundred rows of scalars, inside the slice of the budget this read is given.
 	/// </para>
 	/// </remarks>
-	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx, Stopwatch elapsed) {
-		TimeSpan budget = PackageReadBudget(elapsed);
+	private Dictionary<Guid, string> ReadPackageNames(IAppDataContext ctx, Stopwatch elapsed, TimeSpan readBudget) {
+		TimeSpan budget = PackageReadBudget(elapsed, readBudget);
 		// Refused rather than issued: WithinBudget starts the read before it waits, so a zero budget would
 		// send a full unfiltered select at an environment that is by definition already stalling and abandon
 		// it on arrival. The names are lost either way; the round trip need not be.
@@ -386,10 +433,10 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 				.ToList(),
 			rootUId);
 
-	private ProcessVersionFacts WithinBudget(Func<ProcessVersionFacts> read) =>
-		ProcessLibRead.WithinBudget(_readBudget, read,
+	private static ProcessVersionFacts WithinBudget(TimeSpan budget, Func<ProcessVersionFacts> read) =>
+		ProcessLibRead.WithinBudget(budget, read,
 			() => NotEstablished(
-				$"the process library read did not complete within {_readBudget.TotalSeconds:0.##}s"));
+				$"the process library read did not complete within {budget.TotalSeconds:0.##}s"));
 
 	private static ProcessVersionFacts BuildFacts(VwProcessLib row, List<VwProcessLib> fetched,
 		Func<Dictionary<Guid, string>> readPackageNames) {
@@ -502,7 +549,9 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 				&& packageNames.TryGetValue(p.PackageUId, out string name)
 					? name
 					: null,
-			Enabled = p.Enabled
+			Enabled = p.Enabled,
+			// default(DateTime) is what an unread column binds to; publishing it would date a version to year 1.
+			ModifiedOn = p.ModifiedOn == default ? null : p.ModifiedOn
 		};
 
 	private static ProcessVersionFacts ReadFailed(Exception e) =>

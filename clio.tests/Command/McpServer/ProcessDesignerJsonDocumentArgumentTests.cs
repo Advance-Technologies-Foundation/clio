@@ -434,7 +434,8 @@ public sealed class ProcessDesignerJsonDocumentArgumentTests {
 		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
 
 		public FakeNewVersionCommand()
-			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 		}
 
 		public override int Execute(ModifyProcessAsNewVersionOptions options) {

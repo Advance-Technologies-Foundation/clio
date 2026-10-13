@@ -5,6 +5,7 @@ using Clio.Command;
 using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -357,7 +358,8 @@ public class SetActiveProcessVersionToolTests {
 		public SetActiveProcessVersionOptions? CapturedOptions { get; private set; }
 
 		public FakeCommand(int exitCode = 0, string? warning = null)
-			: base(Substitute.For<ISetActiveProcessVersionService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<ISetActiveProcessVersionService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
 			_warning = warning;
 		}
