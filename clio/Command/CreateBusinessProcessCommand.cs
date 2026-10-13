@@ -301,6 +301,9 @@ public sealed class CreateBusinessProcessService(
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		JsonObject descriptor = ParseDescriptor(request.DescriptorJson);
+		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
+		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		ProcessBlockKeyCheck.Enforce(descriptor, logger);
 		if (!string.IsNullOrWhiteSpace(request.PackageNameOverride)) {
 			descriptor["packageName"] = request.PackageNameOverride;
 		}
