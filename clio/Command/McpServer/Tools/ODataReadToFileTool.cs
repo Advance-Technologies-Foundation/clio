@@ -72,6 +72,7 @@ public sealed class ODataReadToFileTool(
 		"The write refuses an existing target, so a call is NOT retry-safe against the same path: a retry must use a different path. " +
 		"top must be between 1 and 100 (default 25); an out-of-range top (including 0 or negative) is rejected, never silently widened. " +
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
+		"When Creatio rejects the query as invalid-query, its select, filter-field, expand and order-by names are checked against the entity's OData metadata exactly as odata-read does: unknown-members and valid-column-count are added, and the explanation is appended to error. " +
 		"Call get-tool-contract for odata-read-to-file to see usage examples and discovery workflow hints.")]
 	public ODataReadResponse ReadToFile(
 		[Description("Parameters: entity, environment-name, output-file (required); filters, select, expand, order-by, top, skip, count (optional).")]
@@ -144,8 +145,14 @@ public sealed class ODataReadToFileTool(
 				out ODataReadFileSummary summary, out ODataFileReadFailure failure)) {
 				// status-code travels too: the documented async-gap retry after create-entity-schema keys
 				// off 404 programmatically, and a caller cannot do that against a message it does not own.
-				return ODataReadResponse.Failure(
+				ODataReadResponse rejection = ODataReadResponse.Failure(
 					failure.Error, failure.ErrorCode, failure.StatusCode, args.Entity.Trim());
+				// An invalid-query rejection is explained exactly as the inline read explains it (one
+				// $metadata fetch, appended unknown-members), so the two read paths do not drift apart. A
+				// caller that has gone away does not pay for that fetch.
+				return cancellationToken.IsCancellationRequested
+					? rejection
+					: ODataReadColumnValidation.Explain(rejection, client, urlBuilder, args, selectColumns, expandColumns);
 			}
 			return new ODataReadResponse(
 				true,

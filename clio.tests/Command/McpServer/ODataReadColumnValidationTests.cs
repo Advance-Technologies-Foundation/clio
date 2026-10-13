@@ -1,5 +1,10 @@
+using System;
+using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Tools;
 using Clio.Common;
 using FluentAssertions;
@@ -354,5 +359,111 @@ public sealed class ODataReadColumnValidationTests {
 		response.UnknownMembers!.Single().Suggestions.Should().Contain("Account",
 			because: "the navigation itself is the safe correction").And.NotContain("Account/Zzzzzz",
 			because: "Account has no such member");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review #1798: the metadata explanation is APPENDED to the server's rejection, so the rejection's own text and the list of names sent survive when the query also failed for another reason.")]
+	public void Read_Should_Append_The_Explanation_To_The_Rejection() {
+		// Arrange
+		ODataReadTool baselineTool = BuildTool();
+		_metadataBody = string.Empty;
+		ODataReadArgs args = Args("Activity", select: Cols("Id", "CategoryId"), filters: Filter("AccountId"));
+		string rejection = baselineTool.Read(args).Error;
+		_metadataBody = Csdl;
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Error.Should().StartWith(rejection,
+			because: "the rejection's own sentence, the names sent and the lookup hint must all survive");
+		response.Error.Should().Contain("Names this request sent",
+			because: "the caller still needs the list of names that went out");
+		response.Error.Should().Contain("Checked against the OData metadata of Activity",
+			because: "the unknown-name explanation follows the rejection");
+		response.Error.Length.Should().BeGreaterThan(rejection.Length,
+			because: "the explanation is added, not substituted");
+		response.UnknownMembers.Should().NotBeNullOrEmpty(because: "the structured list is still reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review #1798: a declared *Id column with no navigation of the same stem (ExternalId) is an ordinary column and is never reported in a filter; a scalar lookup column is reported only because its navigation exists.")]
+	public void Read_Should_Not_Report_A_Declared_Id_Column_Without_A_Navigation_In_Filter() {
+		// Arrange
+		_metadataBody = Csdl.Replace("<Property Name=\"Title\" Type=\"Edm.String\" />",
+			"<Property Name=\"Title\" Type=\"Edm.String\" /><Property Name=\"ExternalId\" Type=\"Edm.String\" />");
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Titel"), filters: new ODataFilters {
+			All = [
+				new ODataFilterCondition { Field = "ExternalId", Op = "eq", Value = JsonSerializer.SerializeToElement("x") },
+				new ODataFilterCondition { Field = "ActivityCategoryId", Op = "eq", Value = JsonSerializer.SerializeToElement("x") }
+			]
+		}));
+
+		// Assert
+		response.UnknownMembers.Select(m => m.Name).Should().BeEquivalentTo(["Titel", "ActivityCategoryId"],
+			because: "ExternalId has no External navigation, so it is a plain column Creatio filters on directly");
+		response.Error.Should().Contain("'ExternalId' is an ordinary column of Activity",
+			because: "the name-only lookup hint in the rejection tells the caller to rewrite it, and the metadata proves that wrong");
+		response.Error.Should().NotContain("'ActivityCategoryId' is an ordinary column",
+			because: "a scalar column with a navigation of the same stem is a lookup");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review #1798: the metadata is fetched once per rejected query, as one attempt bounded by MetadataTimeoutMs.")]
+	public void Read_Should_Fetch_Metadata_Once_With_A_Bounded_Timeout() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		tool.Read(Args("Activity", select: Cols("CategoryId")));
+
+		// Assert
+		_metadataRequests.Should().Be(1, because: "one rejected query costs exactly one metadata fetch");
+		_client.Received(1).ExecuteGetRequest(Arg.Is<string>(url => url.Contains("$metadata")),
+			ODataReadColumnValidation.MetadataTimeoutMs, 1, Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review #1798: odata-read-to-file explains an invalid-query rejection the same way odata-read does and writes no file.")]
+	public void ReadToFile_Should_Explain_An_Invalid_Query_Like_The_Inline_Read() {
+		// Arrange
+		MockFileSystem fileSystem = new();
+		string outputFile = fileSystem.Path.Combine(fileSystem.Path.GetTempPath(), $"odata-col-{Guid.NewGuid():N}.json");
+		ICreatioApplicationClient client = Substitute.For<ICreatioApplicationClient>();
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		resolver.Resolve<IApplicationClient>(Arg.Any<EnvironmentOptions>()).Returns(client);
+		resolver.Resolve<IServiceUrlBuilder>(Arg.Any<EnvironmentOptions>()).Returns(urlBuilder);
+		urlBuilder.Build(Arg.Any<string>()).Returns(call => $"http://creatio/{call.Arg<string>()}");
+		client.ExecuteGetRequestBoundedAsync(
+				Arg.Any<string>(), Arg.Any<long>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns(Task.FromResult(Encoding.UTF8.GetBytes(InvalidQueryBody)));
+		client.ExecuteGetRequest(Arg.Is<string>(url => url.Contains("$metadata")), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<int>()).Returns(Csdl);
+		ODataReadToFileTool tool = new(resolver, new OperationCorrelationIdProvider(),
+			new ODataFileContract(fileSystem, new MockConfinedFileAccess(fileSystem)));
+
+		// Act
+		ODataReadResponse response = tool.ReadToFile(new ODataReadToFileArgs {
+			EnvironmentName = "dev-col", Entity = "Activity", OutputFile = outputFile,
+			Select = Cols("Id", "CategoryId")
+		});
+
+		// Assert
+		response.ErrorCode.Should().Be("invalid-query", because: "the server's classification stands");
+		response.UnknownMembers.Should().ContainSingle(because: "CategoryId is the one unknown name")
+			.Which.Suggestions.Should().Contain("ActivityCategoryId", because: "both read paths suggest the same names");
+		response.ValidColumnCount.Should().Be(4, because: "the column count is reported on both paths");
+		response.Error.Should().Contain("Creatio rejected this OData query as invalid",
+			because: "the rejection's own sentence is kept");
+		fileSystem.File.Exists(outputFile).Should().BeFalse(because: "a rejected read never publishes a file");
 	}
 }

@@ -342,9 +342,9 @@ internal static class ODataFieldValidation {
 	}
 
 	/// <summary>
-	/// One OData <c>EntityType</c> as read from CSDL: its property names (navigation properties
-	/// included - both are legal <c>$select</c> members) and its base type name for inheritance
-	/// resolution.
+	/// One OData <c>EntityType</c> as read from CSDL: its structural property names (the writable set the
+	/// write-side validation checks), its navigation properties kept apart in <see cref="Navigations"/>
+	/// for the read side only, and its base type name for inheritance resolution.
 	/// </summary>
 	private sealed record CsdlType(
 		string Name,
@@ -426,17 +426,21 @@ internal static class ODataFieldValidation {
 
 	/// <summary>
 	/// Records one element that belongs to the <paramref name="type"/> currently being read: only a
-	/// structural <c>Property</c> contributes its name to the writable set, and a
+	/// structural <c>Property</c> contributes its name to the writable set (<see cref="CsdlType.Properties"/>),
+	/// a <c>NavigationProperty</c> goes to the separate read-only <see cref="CsdlType.Navigations"/> map, and a
 	/// <c>ComplexType</c>/<c>EntityContainer</c> ends the entity scope (the nested elements then belong
 	/// to another construct).
 	/// </summary>
 	/// <remarks>
-	/// A <c>NavigationProperty</c> is deliberately NOT recorded. It used to land in the same set as the
-	/// structural properties, so a raw <c>Account</c> in the update payload passed validation and issued
-	/// one PATCH - but an OData relationship is written through bind semantics, not by assigning the
-	/// navigation name, and the tool contract points callers at the structural <c>AccountId</c> field
-	/// instead. Leaving the name out keeps it unverified, which is also what the fallback <c>$select</c>
-	/// probe can honestly say about it: that probe only proves a field is READABLE and structural.
+	/// A <c>NavigationProperty</c> must NEVER be added to <see cref="CsdlType.Properties"/>. It used to land in
+	/// the same set as the structural properties, so a raw <c>Account</c> in the update payload passed
+	/// validation and issued one PATCH - but an OData relationship is written through bind semantics, not by
+	/// assigning the navigation name, and the tool contract points callers at the structural
+	/// <c>AccountId</c> field instead. Leaving the name out of the writable set keeps it unverified, which is
+	/// also what the fallback <c>$select</c> probe can honestly say about it: that probe only proves a field
+	/// is READABLE and structural. The name IS recorded in <see cref="CsdlType.Navigations"/>, which only the
+	/// read-side check of odata-read reads (select, expand and filter paths); the write-side validation never
+	/// looks at it, so merging the two sets would reopen the write-side bug described here.
 	/// </remarks>
 	private static void RecordMember(XmlReader reader, CsdlType type, ref string? currentTypeName) {
 		if (reader.LocalName == "Property" && reader.GetAttribute("Name") is string propName) {
@@ -559,7 +563,8 @@ internal static class ODataFieldValidation {
 	internal static EntityShape? TryGetEntityShape(
 		IApplicationClient client, IServiceUrlBuilder urlBuilder, string entity, int timeoutMs) {
 		try {
-			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, timeoutMs, 1, buildShape: true);
+			EntityMetadata metadata = FetchMetadata(client, urlBuilder, entity, timeoutMs, OptionalMetadataAttempts,
+				buildShape: true);
 			return metadata.Resolved ? metadata.Shape : null;
 		} catch (Exception) {
 			return null;

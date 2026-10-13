@@ -85,7 +85,7 @@ public sealed class ODataReadTool(
 		"Unknown arguments and malformed filter conditions fail before any Creatio request; raw filter strings are not supported. " +
 		McpToolDescriptions.CorrelationIdOnEveryResponse +
 		"A failure also carries a machine-readable error-code: argument, entity-not-found, invalid-query, server-reported-error, non-json-response, incomplete-response, or transport. " +
-		"When Creatio rejects the query as invalid-query, its select, filter-field, expand and order-by names are checked against the entity's OData metadata: each unknown name is listed in unknown-members with the closest valid names (at most 3 each), and the entity's column count in valid-column-count. In filters and order-by a lookup is suggested as its navigation path (ActivityCategory/Id), and its scalar column (ActivityCategoryId) is itself reported there, because Creatio rejects it in those places; select keeps the scalar column. If the metadata cannot be fetched the rejection is returned without them. " +
+		"When Creatio rejects the query as invalid-query, its select, filter-field, expand and order-by names are checked against the entity's OData metadata: each unknown name is listed in unknown-members with the closest valid names (at most 3 each), and the entity's column count in valid-column-count; the explanation is appended to error, which keeps the rejection's own text. In filters and order-by a lookup is suggested as its navigation path (ActivityCategory/Id), and its scalar column (ActivityCategoryId) is itself reported there, because Creatio rejects it in those places; select keeps the scalar column. If the metadata cannot be fetched the rejection is returned without them. " +
 		"error-code invalid-query usually means the request shape is at fault, and the message lists the field, select, expand and order-by names YOU sent; when a filter field looks like a raw lookup column (a name ending in Id) it names the navigation path to use instead, for example AccountId -> Account/Id. " +
 		"The one exception is a member added moments ago: the same rejection is how a column or entity that exists but is not published to OData yet reports itself, so wait for the rebuild and retry once before changing the query - and never re-run a schema write in response. " +
 		"Creatio's own error wording is never reproduced in error - only an enum-like error.code and the identifiers a recognized rejection names (an unknown property and its entity, the operand types of a mistyped filter comparison, a binary column in select) are restated in clio's own sentence; the full wording is written to clio's debug log, which requires clio to be running in-process with --debug and a log sink, so in an MCP worker there is no such line and the correlation-id serves to match this response to clio's own logs. " +
@@ -125,21 +125,10 @@ public sealed class ODataReadTool(
 
 			string responseJson = client.ExecuteGetRequest(url, 30_000);
 			ODataReadResponse response = ParseODataResponse(responseJson, args, correlationId);
-			if (response.Success || response.ErrorCode != ODataReadErrorCodes.InvalidQuery) {
-				return response;
-			}
 			//Only a rejected query pays for the multi-megabyte $metadata document: this tool runs in a
-			//per-call worker, so a pre-flight check would fetch it on every read. Unavailable metadata
-			//yields null and the server's rejection is returned as it was.
-			ODataReadResponse? unknownColumns = ODataReadColumnValidation.Validate(
-				client, urlBuilder, args, selectColumns, expandColumns);
-			return unknownColumns is null
-				? response
-				: response with {
-					Error = unknownColumns.Error,
-					UnknownMembers = unknownColumns.UnknownMembers,
-					ValidColumnCount = unknownColumns.ValidColumnCount
-				};
+			//per-call worker, so a pre-flight check would fetch it on every read. The explanation is appended
+			//to the rejection, never substituted for it; unavailable metadata leaves the rejection as it was.
+			return ODataReadColumnValidation.Explain(response, client, urlBuilder, args, selectColumns, expandColumns);
 		} catch (Exception ex) {
 			//The transport swallows connection failures into an empty body, so what reaches here is
 			//mostly environment resolution and client construction - still a transport-class failure

@@ -16,7 +16,7 @@ public sealed record ODataUnknownMember(
 	[property: JsonPropertyName("suggestions")] IReadOnlyList<string> Suggestions);
 
 /// <summary>
-/// Explains an <c>odata-read</c> query that Creatio rejected as invalid-query: checks the names it used
+/// Explains an <c>odata-read</c> or <c>odata-read-to-file</c> query that Creatio rejected as invalid-query: checks the names it used
 /// (select, filter fields, expand, order-by) against the entity's OData metadata and reports each unknown
 /// name with the closest valid names, instead of the opaque "could not be resolved" answer.
 /// </summary>
@@ -24,6 +24,9 @@ public sealed record ODataUnknownMember(
 /// It runs only AFTER the server rejected the query. The metadata is the multi-megabyte service-root
 /// document and odata-read runs in a per-call worker process, where no in-process cache survives between
 /// calls: a pre-flight check would download and parse that document on every read.
+/// Every rejected query costs exactly one fetch of that document (no cache, no retry), bounded by
+/// <see cref="MetadataTimeoutMs"/>. OData v4 has no per-entity metadata endpoint, and Creatio answers 404
+/// to <c>odata/{Entity}/$metadata</c>, so the service root is the only source.
 /// The check must never become a new way to fail: when the metadata cannot be fetched or parsed,
 /// <see cref="Validate"/> returns <see langword="null"/> and the server's own rejection is returned
 /// unchanged. Names that differ from a valid one only by letter case count as known.
@@ -36,8 +39,12 @@ internal static class ODataReadColumnValidation {
 	/// <summary>Most unknown names reported in one rejection.</summary>
 	internal const int MaxReportedUnknown = 20;
 
-	/// <summary>Timeout of the single metadata request; on expiry the query is sent unvalidated.</summary>
-	internal const int MetadataTimeoutMs = 20_000;
+	/// <summary>
+	/// Timeout of the single metadata request. On expiry the server's rejection is returned unchanged, so this
+	/// bounds how much longer an already-failed read can take; the measured service-root document (~2.8 MB on a
+	/// .NET Framework stand) arrives in about a second.
+	/// </summary>
+	internal const int MetadataTimeoutMs = ODataFieldValidation.OptionalMetadataTimeoutMs;
 
 	private const int MinContainmentLength = 4;
 
@@ -45,12 +52,45 @@ internal static class ODataReadColumnValidation {
 
 	internal sealed record Reference(string Argument, string Path, bool NavigationOnly);
 
+	/// <summary>What the metadata says about the names of a rejected query.</summary>
+	/// <param name="Text">Locally authored sentence naming each unknown name and its closest valid names.</param>
+	/// <param name="Members">The unknown names, at most <see cref="MaxReportedUnknown"/>.</param>
+	/// <param name="ValidColumnCount">Number of columns the entity has.</param>
+	internal sealed record Explanation(string Text, IReadOnlyList<ODataUnknownMember> Members, int ValidColumnCount);
+
+	/// <summary>
+	/// Adds the unknown-name explanation to an <c>invalid-query</c> rejection. The rejection's own message is
+	/// kept and the explanation is APPENDED to it: the request can be rejected for another reason too (a
+	/// binary column in select, mismatched operand types), and that reason and the list of names sent must
+	/// survive. Any other response, and a rejection the metadata cannot explain, is returned unchanged.
+	/// Shared by odata-read and odata-read-to-file, so both read paths explain a rejection the same way.
+	/// </summary>
+	internal static ODataReadResponse Explain(
+		ODataReadResponse response,
+		IApplicationClient client,
+		IServiceUrlBuilder urlBuilder,
+		ODataReadArgs args,
+		IReadOnlyList<string>? selectColumns,
+		IReadOnlyList<string>? expandColumns) {
+		if (response.Success || response.ErrorCode != ODataReadErrorCodes.InvalidQuery) {
+			return response;
+		}
+		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandColumns);
+		return explanation is null
+			? response
+			: response with {
+				Error = $"{response.Error} {explanation.Text}",
+				UnknownMembers = explanation.Members,
+				ValidColumnCount = explanation.ValidColumnCount
+			};
+	}
+
 	/// <summary>
 	/// Validates the names of a query the server rejected. Returns <see langword="null"/> when every name
 	/// is known, when there is nothing to check, or when the metadata is unavailable; otherwise the
-	/// failure that names the unknown members.
+	/// explanation that names the unknown members.
 	/// </summary>
-	internal static ODataReadResponse? Validate(
+	internal static Explanation? Validate(
 		IApplicationClient client,
 		IServiceUrlBuilder urlBuilder,
 		ODataReadArgs args,
@@ -67,8 +107,26 @@ internal static class ODataReadColumnValidation {
 			return null;
 		}
 		List<(Reference Reference, string Name)> unknown = FindUnknown(shape, references);
-		return unknown.Count == 0 ? null : BuildFailure(shape, unknown, entity);
+		return unknown.Count == 0 ? null : BuildExplanation(shape, unknown, PlainIdColumns(shape, references), entity);
 	}
+
+	/// <summary>
+	/// Filter and order-by names that end in Id but are ordinary columns of the entity (no navigation of the
+	/// same stem, so <c>ExternalId</c> rather than <c>CreatedById</c>). The rejection's name-only lookup hint
+	/// tells the caller to rewrite each of them as <c>External/Id</c>; the metadata proves that wrong, and the
+	/// explanation says so, because it is appended to that hint rather than replacing it.
+	/// </summary>
+	private static List<string> PlainIdColumns(ODataFieldValidation.EntityShape shape, List<Reference> references) =>
+		references
+			.Where(reference => IsPathOnlyContext(reference)
+				&& !reference.Path.Contains('/', StringComparison.Ordinal)
+				&& reference.Path.Length > 2
+				&& ODataKeyFormatter.IsIdish(reference.Path)
+				&& shape.Root.Properties.Contains(reference.Path)
+				&& !NeedsNavigationPath(shape.Root, reference.Path))
+			.Select(reference => reference.Path)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToList();
 
 	private static List<Reference> CollectReferences(ODataReadArgs args, IReadOnlyList<string>? select,
 		IReadOnlyList<string>? expand) {
@@ -136,6 +194,16 @@ internal static class ODataReadColumnValidation {
 	/// Whether an existing name is used in a filter or order-by in a form Creatio rejects there (a lookup's
 	/// scalar column or a bare navigation), so it has to be sent as <c>X/Id</c>.
 	/// </summary>
+	/// <remarks>
+	/// A scalar column counts as a lookup only when the type ALSO declares the navigation named without the
+	/// Id suffix (<c>CreatedById</c> beside <c>CreatedBy</c>); a declared <c>*Id</c> column without one
+	/// (<c>ExternalId</c>) is an ordinary column and is never reported. Measured on a .NET Framework stand:
+	/// <c>$select=Id,CreatedById</c> is answered 200, while <c>$filter=CreatedById eq ...</c> and
+	/// <c>$orderby=CreatedById</c> are both rejected ("Column by path CreatedById not found in schema
+	/// Activity") and <c>$filter=CreatedBy/Id eq ...</c> is answered 200 - so the metadata declaring the
+	/// scalar column as a Property does not make it usable in a filter or order-by
+	/// (docs/knowledge/platform/odata-filter-addresses-lookup-columns-by-navigation-path.md).
+	/// </remarks>
 	private static bool NeedsNavigationPath(ODataFieldValidation.EntityShape shape, Reference reference) {
 		if (!IsPathOnlyContext(reference)) {
 			return false;
@@ -172,8 +240,8 @@ internal static class ODataReadColumnValidation {
 			: name;
 	}
 
-	private static ODataReadResponse BuildFailure(ODataFieldValidation.EntityShape shape,
-		List<(Reference Reference, string Name)> unknown, string entity) {
+	private static Explanation BuildExplanation(ODataFieldValidation.EntityShape shape,
+		List<(Reference Reference, string Name)> unknown, List<string> plainIdColumns, string entity) {
 		List<(ODataUnknownMember Member, bool WrongForm)> items = unknown
 			.Take(MaxReportedUnknown)
 			.Select(item => (new ODataUnknownMember(
@@ -184,14 +252,16 @@ internal static class ODataReadColumnValidation {
 		string detail = string.Join("; ", items.Select(item => Describe(item.Member, item.WrongForm)));
 		string more = unknown.Count > items.Count ? $" and {unknown.Count - items.Count} more" : string.Empty;
 		int columns = shape.Root.Properties.Count;
-		string message =
-			$"Creatio rejected the query as invalid: {unknown.Count} name(s) cannot be used as sent on the OData type of {entity}{more}: {detail}. " +
-			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its navigation path, " +
-			"for example AccountId -> Account/Id). If a column that is not on the type was added moments ago, wait for the OData rebuild and retry once.";
-		return ODataReadResponse.Failure(message, ODataReadErrorCodes.InvalidQuery, entity: entity) with {
-			UnknownMembers = items.Select(item => item.Member).ToList(),
-			ValidColumnCount = columns
-		};
+		string text =
+			$"Checked against the OData metadata of {entity}: {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
+			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
+			"navigation path, for example AccountId -> Account/Id).";
+		if (plainIdColumns.Count > 0) {
+			string names = string.Join(", ", plainIdColumns.Select(name => $"'{McpToolArgumentSupport.DescribeCallerKey(name)}'"));
+			text += $" {names} {(plainIdColumns.Count == 1 ? "is an ordinary column" : "are ordinary columns")} of {entity}, " +
+				"not a lookup: keep the name as sent and ignore the navigation-path rewrite suggested for it above.";
+		}
+		return new Explanation(text, items.Select(item => item.Member).ToList(), columns);
 	}
 
 	private static string Describe(ODataUnknownMember member, bool wrongForm) {
@@ -353,24 +423,7 @@ internal static class ODataReadColumnValidation {
 			|| (shorter.Length >= MinContainmentLength && longer.Contains(shorter, StringComparison.Ordinal))) {
 			return (1, longer.Length - shorter.Length);
 		}
-		int distance = EditDistance(left, right);
+		int distance = McpToolArgumentSupport.LevenshteinDistance(left, right);
 		return distance <= Math.Max(2, left.Length / 4) ? (2, distance) : null;
-	}
-
-	private static int EditDistance(string a, string b) {
-		int[] previous = new int[b.Length + 1];
-		int[] current = new int[b.Length + 1];
-		for (int j = 0; j <= b.Length; j++) {
-			previous[j] = j;
-		}
-		for (int i = 1; i <= a.Length; i++) {
-			current[0] = i;
-			for (int j = 1; j <= b.Length; j++) {
-				int cost = a[i - 1] == b[j - 1] ? 0 : 1;
-				current[j] = Math.Min(Math.Min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + cost);
-			}
-			(previous, current) = (current, previous);
-		}
-		return previous[b.Length];
 	}
 }

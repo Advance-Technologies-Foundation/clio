@@ -52,8 +52,10 @@ public sealed class ODataReadColumnValidationE2ETests : McpContractFixtureBase {
 			because: "at most three suggestions are reported per name");
 		response.ValidColumnCount.Should().BeGreaterThan(0,
 			because: "the entity's column count is reported next to unknown-members");
-		response.Error.Should().Contain("Creatio rejected the query",
-			because: "the names are explained after the server rejected the query");
+		response.Error.Should().Contain("Creatio rejected this OData query as invalid",
+			because: "the server's rejection is kept, not replaced");
+		response.Error.Should().Contain("Checked against the OData metadata of Activity",
+			because: "the names are explained after the server rejected the query, appended to the rejection");
 	}
 
 	[Test]
@@ -113,6 +115,44 @@ public sealed class ODataReadColumnValidationE2ETests : McpContractFixtureBase {
 			because: "a lookup is filtered through its navigation path; the scalar ActivityCategoryId is rejected there");
 		retried.Success.Should().BeTrue(
 			because: $"the suggested name must be one Creatio accepts in a filter and order-by: {retried.Error}");
+	}
+
+	[Test]
+	[AllureTag(ODataReadToFileTool.ToolName)]
+	[AllureName("odata-read-to-file explains an invalid-query rejection like odata-read")]
+	[AllureDescription("Selects the non-existent Activity column CategoryId through odata-read-to-file and verifies the rejection carries the same unknown-members explanation as the inline read, and that no file is written.")]
+	[Description("Review #1798: odata-read-to-file runs the same metadata explanation on invalid-query as odata-read.")]
+	public async Task ODataReadToFile_Should_Explain_Unknown_Columns_Like_The_Inline_Read() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
+		string outputFile = Path.Combine(Path.GetTempPath(), $"odata-col-e2e-{Guid.NewGuid():N}.json");
+
+		// Act
+		CallToolResult callResult = await arrange.Session.CallToolAsync(
+			ODataReadToFileTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["entity"] = "Activity",
+					["select"] = new[] { "Id", "CategoryId" },
+					["top"] = 1,
+					["output-file"] = outputFile
+				}
+			},
+			arrange.CancellationTokenSource.Token);
+		ODataReadResponse response = EntitySchemaStructuredResultParser.Extract<ODataReadResponse>(callResult);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "Activity has no CategoryId column");
+		response.ErrorCode.Should().Be("invalid-query", because: "both read paths classify the rejection the same way");
+		response.UnknownMembers.Should().ContainSingle(because: "only CategoryId is unknown")
+			.Which.Suggestions.Should().Contain("ActivityCategoryId",
+				because: "the file path suggests the same names as the inline read");
+		response.ValidColumnCount.Should().BeGreaterThan(0, because: "the column count travels with unknown-members");
+		response.Error.Should().Contain("Creatio rejected this OData query as invalid",
+			because: "the server's rejection is kept, not replaced");
+		File.Exists(outputFile).Should().BeFalse(because: "a rejected read never publishes a file");
 	}
 
 	private static async Task<ODataReadResponse> ReadAsync(ArrangeContext arrange, string environmentName,
