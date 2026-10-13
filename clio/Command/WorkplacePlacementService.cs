@@ -242,13 +242,16 @@ internal sealed class WorkplacePlacementService(
 			?? existing.FirstOrDefault();
 		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, existing);
 		PackageBindingRecord workplaceOwner = FindForeignWorkplaceOwner(request, package, reused);
-		CheckMoveBeforeWriting(request, package, workplaceName, roles, sectionPlacements, myApplicationsIds,
-			existing, reused);
+		CheckMoveBeforeWriting(request, package, roles, sectionPlacements, myApplicationsIds, existing, reused);
 
 		WorkplacePlacementResult placed;
+		if (existing.Count > 1) {
+			warnings.Add($"{existing.Count} workplaces are named '{workplaceName}' for this client type " +
+				$"({string.Join(", ", existing.Select(record => record.Id))}); {reused.Id} was used.");
+		}
 		try {
-			WorkplaceState workplace = EnsureWorkplace(request, package, workplaceName, clientTypeId, bindingSuffix,
-				existing, reused, workplaceOwner, warnings);
+			WorkplaceState workplace = EnsureWorkplace(request, package, clientTypeId, bindingSuffix, reused,
+				workplaceOwner, warnings);
 			// Grant before placing: a failed grant then leaves the section where it was, not in a workplace nobody sees.
 			List<WorkplacePlacementRole> grants = roles
 				.Select(role => EnsureRoleGrant(request, package, workplace.Record.Id, role, bindingSuffix))
@@ -351,7 +354,7 @@ internal sealed class WorkplacePlacementService(
 	/// target) or that another package would undo on install (it ships the moved row).
 	/// </summary>
 	private void CheckMoveBeforeWriting(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string workplaceName, IReadOnlyList<AdminUnitRecord> roles,
+		IReadOnlyList<AdminUnitRecord> roles,
 		IReadOnlyList<WorkplaceJunctionRecord> sectionPlacements, HashSet<Guid> myApplicationsIds,
 		IReadOnlyList<WorkplaceRecord> existing, WorkplaceRecord reused) {
 		if (!request.RemoveFromMyApplications) {
@@ -370,7 +373,7 @@ internal sealed class WorkplacePlacementService(
 		bool targetHasGrant = reused is not null && repository.FindRoleGrants(reused.Id).Count > 0;
 		if (roles.Count == 0 && !targetHasGrant) {
 			throw new InvalidOperationException(
-				$"Moving the section out of '{MyApplicationsWorkplaceName}' into '{workplaceName}', which no role sees, " +
+				$"Moving the section out of '{MyApplicationsWorkplaceName}' into '{request.WorkplaceName.Trim()}', which no role sees, " +
 				"would hide the app from everyone. Pass roles, or remove-from-my-applications=false to add a placement.");
 		}
 		// Checked even when the target package ships the row too: two packages shipping it is decided by install order.
@@ -506,12 +509,9 @@ internal sealed class WorkplacePlacementService(
 	}
 
 	private WorkplaceState EnsureWorkplace(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string workplaceName, Guid clientTypeId, string bindingSuffix, IReadOnlyList<WorkplaceRecord> existing,
-		WorkplaceRecord reused, PackageBindingRecord foreignOwner, List<string> warnings) {
-		if (existing.Count > 1) {
-			warnings.Add($"{existing.Count} workplaces are named '{workplaceName}' for this client type " +
-				$"({string.Join(", ", existing.Select(record => record.Id))}); {reused.Id} was used.");
-		}
+		Guid clientTypeId, string bindingSuffix, WorkplaceRecord reused, PackageBindingRecord foreignOwner,
+		List<string> warnings) {
+		string workplaceName = request.WorkplaceName.Trim();
 		if (foreignOwner is not null) {
 			// Another package owns the row: binding it here too would let either install overwrite or remove it.
 			warnings.Add($"Workplace '{reused.Name}' is shipped by package '{foreignOwner.PackageName}', so it was " +
@@ -613,6 +613,13 @@ internal sealed class WorkplacePlacementService(
 			}
 		}
 
+		return WritePlacement(request, package, section, target, placementId, action);
+	}
+
+	/// <summary>Binds and upserts the placement row, unless another package ships it already in the target.</summary>
+	private WorkplacePlacementSection WritePlacement(WorkplacePlacementRequest request,
+		PackageTargetResolution package, SectionModuleRecord section, WorkplaceRecord target, Guid placementId,
+		string action) {
 		// A new row cannot be in any binding yet, so only an existing one is looked up.
 		string bindingName = action == ActionCreated
 			? null
