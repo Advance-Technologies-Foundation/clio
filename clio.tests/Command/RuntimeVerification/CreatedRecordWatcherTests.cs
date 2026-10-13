@@ -128,6 +128,24 @@ public sealed class CreatedRecordWatcherTests {
 	}
 
 	[Test]
+	[Description("When more existing rows share the newest CreatedOn than can be remembered, the entity is not watched: a pre-existing row past the cap would otherwise be reported as created and deleted by a cleanup.")]
+	public void Capture_Should_Not_Watch_An_Entity_Whose_Newest_Rows_Exceed_The_Known_Id_Cap() {
+		// Arrange
+		string atBaseline = "[" + string.Join(",", Enumerable.Range(0, 501)
+			.Select(_ => $"{{\"Id\":\"{Guid.NewGuid()}\",\"CreatedOn\":\"{Baseline}\"}}")) + "]";
+		Harness harness = Create($"[{{\"CreatedOn\":\"{Baseline}\"}}]", atBaseline, atBaseline);
+
+		// Act
+		WatchBaseline baseline = harness.Watcher.Capture(["Activity"], 10_000);
+		WatchOutcome outcome = harness.Watcher.Collect(baseline, 10_000);
+
+		// Assert
+		baseline.Entities.Single().Error.Should().Contain("cannot be told apart",
+			because: "the known ids would be truncated");
+		outcome.Created.Should().BeEmpty(because: "an unwatched entity reports nothing, so nothing pre-existing is deleted");
+	}
+
+	[Test]
 	[Description("An entity not yet read when stopAt passes is reported unread instead of being read after the tool answered.")]
 	public void Collect_Should_Not_Read_After_StopAt() {
 		// Arrange
