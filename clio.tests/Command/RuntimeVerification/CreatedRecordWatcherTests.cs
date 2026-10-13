@@ -71,6 +71,32 @@ public sealed class CreatedRecordWatcherTests {
 	}
 
 	[Test]
+	[Description("A watch name in another case that the schema reader does not find is looked up in SysSchema, and the platform's spelling is watched (the sandbox's reader matched names exactly, so 'activity' was not watched).")]
+	public void Capture_Should_Resolve_A_Name_The_Schema_Reader_Matches_Exactly() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => JObject.Parse(call.ArgAt<string>(1)).Value<string>("rootSchemaName") == "SysSchema"
+				? "{\"success\":true,\"rows\":[{\"Name\":\"Activity\"}]}"
+				: "{\"success\":true,\"rows\":[]}");
+		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
+		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemaReader.GetByName("activity", Arg.Any<int>())
+			.Returns(_ => throw new InvalidOperationException("Can't find EntitySchema by Name: activity"));
+		schemaReader.GetByName("Activity", Arg.Any<int>()).Returns(Schema("Activity", "Title"));
+		CreatedRecordWatcher watcher = new(client, urlBuilder, schemaReader);
+
+		// Act
+		WatchBaseline baseline = watcher.Capture(["activity"], 10_000);
+
+		// Assert
+		EntityWatch watch = baseline.Entities.Single();
+		watch.Error.Should().BeNull(because: "the entity exists; only the case of its name differed");
+		watch.Entity.Should().Be("Activity", because: "the platform's spelling is what is watched and reported");
+	}
+
+	[Test]
 	[Description("The baseline is the newest CreatedOn exactly as DataService wrote it - milliseconds kept - and is sent back as a quoted JSON date, so the after-run read compares like with like; a record already at the baseline is not reported, a new one is, with its primary display value as title.")]
 	public void Collect_Should_Report_Only_Records_Created_After_The_Baseline() {
 		// Arrange

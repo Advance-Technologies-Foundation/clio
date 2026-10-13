@@ -59,6 +59,7 @@ internal sealed class CreatedRecordWatcher(
 	private const int MacrosFunctionType = 1;
 	private const int CurrentUserContactMacro = 2;
 	private const int DateTimeDataValueType = 7;
+	private const int TextDataValueType = 1;
 	private const int GreaterOrEqual = 8;
 	private const int OrderAscending = 1;
 	private const int OrderDescending = 2;
@@ -135,7 +136,7 @@ internal sealed class CreatedRecordWatcher(
 		}
 		string name = entity;
 		try {
-			RuntimeEntitySchemaResult schema = schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
+			RuntimeEntitySchemaResult schema = ReadSchema(entity, timeoutMs, stopAt);
 			// The platform's own spelling, not the caller's: References hold the platform's names, and the cleanup orders
 			// children before parents by matching the two.
 			name = IsValidEntityName(schema.Name) ? schema.Name : entity;
@@ -176,6 +177,39 @@ internal sealed class CreatedRecordWatcher(
 				Entity = name,
 				Error = UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name
 			};
+		}
+	}
+
+	// The schema reader matches the name exactly, so "activity" is not found on a stand where "Activity" is. On a miss
+	// the platform's spelling is looked up in SysSchema (case-insensitive on MS SQL; PostgreSQL compares exactly, and
+	// the original miss is then reported) and read again.
+	private RuntimeEntitySchemaResult ReadSchema(string entity, int timeoutMs, DateTimeOffset? stopAt) {
+		try {
+			return schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			string canonical = FindCanonicalName(entity, timeoutMs, stopAt);
+			if (canonical is null) {
+				throw;
+			}
+			return schemaReader.GetByName(canonical, Budget(timeoutMs, stopAt));
+		}
+	}
+
+	// The SysSchema name that differs from entity only in case, or null.
+	private string FindCanonicalName(string entity, int timeoutMs, DateTimeOffset? stopAt) {
+		try {
+			return Select(ClassicEntitySchemaQuery.Query("SysSchema",
+					new JObject { ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
+					ClassicEntitySchemaQuery.Group(("byName", ClassicEntitySchemaQuery.Eq("Name", entity, TextDataValueType)),
+						("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", "EntitySchemaManager", TextDataValueType))),
+					5), Budget(timeoutMs, stopAt))
+				.Select(row => row["Name"]?.ToString())
+				.FirstOrDefault(name => string.Equals(name, entity, StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(name, entity, StringComparison.Ordinal) && IsValidEntityName(name));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
 		}
 	}
 

@@ -172,7 +172,9 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 				+ string.Join(" | ", envelope.Warnings ?? []));
 		envelope.Cleanup.Should().NotBeNull(because: "cleanup was requested");
 		envelope.Cleanup!.Failed.Should().BeEmpty(
-			because: "cleanup cancels the parked run first, so the activity it uses can be deleted");
+			because: "cleanup cancels the parked run first, so the activity it uses can be deleted. Failed: "
+				+ string.Join(" | ", envelope.Cleanup.Failed.Select(failure => failure.Error))
+				+ ". Warnings: " + string.Join(" | ", envelope.Warnings ?? []));
 		envelope.Cleanup.Deleted.Select(record => record.Id).Should().BeEquivalentTo(
 			envelope.Created!.Select(record => record.Id),
 			because: "cleanup deletes exactly what created lists, nothing else");
