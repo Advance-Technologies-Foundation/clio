@@ -721,7 +721,8 @@ public sealed class DescribeProcessCommandTests {
 
 		// Assert
 		refusal.Should().BeNull(because: "a default describe is always answerable");
-		full.Length.Should().BeGreaterThan(Clio.Command.ProcessModel.ProcessDigest.AutoSummaryThresholdChars,
+		Clio.Command.McpServer.McpResultSize.OfCommandReply(full).Should().BeGreaterThan(
+			Clio.Command.ProcessModel.ProcessDigest.AutoSummaryThresholdBytes,
 			because: "anti-vacuity: the fixture must be over the threshold for this test to mean anything");
 		JsonNode summary = JsonNode.Parse(reply)!;
 		summary["mode"]!.GetValue<string>().Should().Be("summary", because: "the reply must say which mode was used");
@@ -734,22 +735,29 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("ENG-103023 backward compatibility: an explicit mode=full is byte-for-byte the graph describe wrote before modes existed, and a default that picks full (the graph fits) is that same text with a leading mode member.")]
-	public void BuildReply_ShouldKeepFullByteIdentical_AndLabelTheDefaultFull() {
+	[Description("ENG-103023 backward compatibility, against a COMMITTED baseline written by the pre-ENG-103023 clio: an explicit mode=full of a process without version dates is exactly the old reply (the change is additive - versions[].modifiedOn is the one new member), and a default that picks full is that text with a leading mode member.")]
+	public void BuildReply_ShouldMatchThePreChangeBaseline_AndLabelTheDefaultFull() {
 		// Arrange
 		DescribeProcessResult process = Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
 			Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture);
 		DescribeProcessCommand.OmitDecodedFilterPayloads(process);
-		string legacy = System.Text.Json.JsonSerializer.Serialize(process, DescribeProcessCommand.OutputOptions);
+		string baseline = System.IO.File.ReadAllText(System.IO.Path.Combine(TestContext.CurrentContext.TestDirectory,
+			"Examples", "ProcessDescribe", "ReviewChain.full-reply.pre-ENG-103023.json"));
+		DescribeProcessResult small = Clio.Tests.Command.ProcessModel.ProcessDigestTests.LoadFixture(
+			Clio.Tests.Command.ProcessModel.ProcessDigestTests.SmallFixture);
+		small.Elements = [.. small.Elements.Take(2)];
+		small.Flows = [];
+		DescribeProcessCommand.OmitDecodedFilterPayloads(small);
 
 		// Act
 		string explicitFull = DescribeProcessCommand.BuildReply(process, "FULL", null, out _);
-		string defaultReply = DescribeProcessCommand.BuildReply(process, null, null, out _);
-		string explicitSummary = DescribeProcessCommand.BuildReply(process, "summary", null, out _);
+		string smallFull = DescribeProcessCommand.BuildReply(small, "full", null, out _);
+		string defaultReply = DescribeProcessCommand.BuildReply(small, null, null, out _);
+		string explicitSummary = DescribeProcessCommand.BuildReply(small, "summary", null, out _);
 
 		// Assert
-		explicitFull.Should().Be(legacy, because: "an explicit full caller must receive exactly what it did before");
-		defaultReply.Should().Be("{\"mode\":\"full\"," + legacy[1..],
+		explicitFull.Should().Be(baseline, because: "an explicit full caller receives what the old clio wrote");
+		defaultReply.Should().Be("{\"mode\":\"full\"," + smallFull[1..],
 			because: "a graph under the threshold is returned whole, labelled with the mode that was chosen");
 		JsonNode.Parse(explicitSummary)!["mode"]!.GetValue<string>().Should().Be("summary",
 			because: "an explicit summary is honoured whatever the size");

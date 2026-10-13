@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -103,8 +104,16 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
 		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "a clio-built process is interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
-		callResultJson.Should().Contain("summary").And.Contain("checksum").And.Contain("task1",
+		JsonObject digest = DescribedProcessGraph.ReadWriteDigest(callResult);
+		JsonObject summary = digest["summary"]!.AsObject();
+		summary["name"]!.GetValue<string>().Should().Be(processName,
 			because: "a successful build carries the post-write digest of the saved process, so no describe is needed to confirm it (ENG-103023)");
+		summary["checksum"]!.GetValue<string>().Should().MatchRegex("^[0-9a-f]{12}$",
+			because: "the digest carries the content checksum a later describe can be compared with");
+		summary["elements"]!.ToJsonString().Should().Contain("task1",
+			because: "the summary lists the elements the build saved");
+		summary["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the digest states the version standing of what was written, and a new process is its own active version (review #9)");
 
 		// Readback: describe the built process and confirm the structure is really there — a server that
 		// returned success but built nothing would be caught here, unlike the success-echo assertion above.
@@ -1913,6 +1922,72 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  ]
 		}
 		""";
+
+	[Test]
+	[Description("ENG-103023 over the real MCP path: describe-business-process with NO mode on a process whose full reply would pass the 18,000-byte spill line answers with mode=summary, carries fullChars and the way to more, and stays far below the line; an explicit mode=full still returns the whole graph.")]
+	[AllureTag(DescribeProcessTool.ToolName)]
+	[AllureName("describe-business-process answers a large process with the summary by default")]
+	public async Task DescribeProcess_Should_AnswerALargeProcessWithTheSummary_WhenNoModeIsGiven() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLargeE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildChainDescriptor(processName, taskCount: 30)
+		});
+		JsonSerializer.Serialize(built).Should().Contain("\\u0022exit-code\\u0022:0",
+			because: "the arrange step must really build the large process");
+
+		// Act
+		CallToolResult defaultResult = await context.Session.CallToolAsync(DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		CallToolResult fullResult = await DescribeAsync(context, processName);
+
+		// Assert
+		long fullBytes = System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(fullResult));
+		long defaultBytes = System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(defaultResult));
+		fullBytes.Should().BeGreaterThan(18_000,
+			because: "anti-vacuity: the full reply of this process must be past the line for the default to matter");
+		JsonObject summary = DescribedProcessGraph.Read(defaultResult);
+		summary["mode"]!.GetValue<string>().Should().Be("summary",
+			because: "without a mode, a process whose full reply would spill is answered with the summary");
+		summary["fullChars"]!.GetValue<int>().Should().BeGreaterThan(0,
+			because: "the summary says what mode=full would cost");
+		summary["more"]!.GetValue<string>().Should().Contain("mode=full",
+			because: "the summary names the way to the whole graph");
+		defaultBytes.Should().BeLessThan(8_192,
+			because: "the summary reply exists to stay far below the ~20 KB spill line");
+		DescribedProcessGraph.Read(fullResult)["elements"]!.AsArray().Count.Should().BeGreaterThan(30,
+			because: "an explicit mode=full still returns every element");
+	}
+
+	// A start, taskCount chained performTask elements and an end: large enough that the full describe reply passes
+	// the 18,000-byte line, because each performTask reports its whole parameter set.
+	private static string BuildChainDescriptor(string processName, int taskCount) {
+		IEnumerable<string> tasks = Enumerable.Range(1, taskCount)
+			.Select(index => $$"""{ "name": "Task{{index}}", "type": "performTask", "caption": "Task {{index}}" }""");
+		IEnumerable<string> flows = Enumerable.Range(0, taskCount + 1)
+			.Select(index => $$"""{ "source": "{{(index == 0 ? "StartEvent1" : $"Task{index}")}}", "target": "{{(index == taskCount ? "EndEvent1" : $"Task{index + 1}")}}" }""");
+		return $$"""
+			{
+			  "name": "{{processName}}",
+			  "caption": "Clio BP Large E2E",
+			  "packageName": "Custom",
+			  "elements": [
+			    { "name": "StartEvent1", "type": "startEvent" },
+			    {{string.Join(",\n    ", tasks)}},
+			    { "name": "EndEvent1", "type": "endEvent" }
+			  ],
+			  "flows": [ {{string.Join(", ", flows)}} ]
+			}
+			""";
+	}
 
 	// Reads the built process back as a structured graph via describe-business-process (for build readback).
 	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>

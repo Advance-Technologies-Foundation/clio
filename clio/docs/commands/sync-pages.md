@@ -229,7 +229,8 @@ the native designer may already have written the linked source files. See `updat
 Each saved page result also returns `digest` (ENG-103023): `validation` (`passed`, or
 `skipped` with `validate: false`), `basis` (`body`), and `components` - one line per
 `viewConfigDiff` operation of the saved body, at most 25 with the rest counted in
-`componentsOmitted` - so the save can be confirmed without a `get-page`.
+`componentsOmitted` - plus `otherSections` and, when the save ran with a baseline, the
+post-save `checksum`, so the save can be confirmed without a `get-page`.
 
 When `verify` is `true`, each successful page result also returns:
 

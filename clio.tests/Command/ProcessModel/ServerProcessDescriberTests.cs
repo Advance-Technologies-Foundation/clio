@@ -265,6 +265,8 @@ public sealed class ServerProcessDescriberTests {
 		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
 		reader.Read(Arg.Any<string>()).Returns(facts);
 		reader.Read(Arg.Any<VwProcessLib>()).Returns(facts);
+		reader.Read(Arg.Any<string>(), Arg.Any<TimeSpan>()).Returns(facts);
+		reader.ReadByName(Arg.Any<string>(), Arg.Any<TimeSpan>()).Returns(facts);
 		return reader;
 	}
 
@@ -2365,4 +2367,65 @@ public sealed class ServerProcessDescriberTests {
 		untraced.Value.Tracing.Should().BeNull(because: "an absent block means runs are not traced");
 	}
 
+
+	[Test]
+	[Description("Review ENG-103023 #5: versions[].modifiedOn is written in UTC with a Z for a dated kind, without a zone for an unspecified kind, and left out when the library gave none.")]
+	public void Describe_ShouldFormatModifiedOn_ForEveryDateKind() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ProcessVersionFamilyMember utc = Member(RootUId, "UsrProc", 0, false, true) with {
+			ModifiedOn = new DateTime(2026, 10, 1, 8, 30, 0, DateTimeKind.Utc)
+		};
+		ProcessVersionFamilyMember unspecified = Member(ChildUId, "UsrProcCustom1", 1, true, false) with {
+			ModifiedOn = new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Unspecified)
+		};
+		ProcessVersionFamilyMember undated = Member(OtherFamilyUId, "UsrProcCustom2", 2, false, false);
+		ServerProcessDescriber describer = CreateDescriber(client, ReaderReturning(new ProcessVersionFacts {
+			Version = 0, IsActiveVersion = false, Versions = [utc, unspecified, undated]
+		}));
+
+		// Act
+		DescribeProcessResult result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null).Value;
+
+		// Assert
+		result.Versions.Select(version => version.ModifiedOn).Should().Equal(
+			["2026-10-01T08:30:00Z", "2026-10-02T09:00:00", null],
+			because: "a zone is written only when the reader knows it, and an absent date stays absent");
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #4: a best-effort describe reads the version facts on the short best-effort budget, not the reader's 10 s default.")]
+	public void Describe_ShouldReadVersionFactsOnTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 1, IsActiveVersion = true });
+		ServerProcessDescriber describer = CreateDescriber(client, reader);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null, includeVersionFacts: true, bestEffort: true);
+
+		// Assert
+		reader.Received(1).Read(RootUId, ProcessVersionLibReader.BestEffortReadBudget);
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #4: ReadVersionFacts establishes the version standing without the describe POST.")]
+	public void ReadVersionFacts_ShouldNotPostADescribe() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1, IsActiveVersion = false, ActiveVersionSchemaUId = ChildUId, ActiveVersionName = "UsrProcCustom1"
+		});
+		ServerProcessDescriber describer = CreateDescriber(client, reader);
+
+		// Act
+		DescribeProcessResult result = describer.ReadVersionFacts(new ProcessIdentity("UsrProc", null, null)).Value;
+
+		// Assert
+		result.ActiveVersionName.Should().Be("UsrProcCustom1", because: "the standing comes from the process library");
+		result.Elements.Should().BeNullOrEmpty(because: "no graph is read");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		reader.Received(1).ReadByName("UsrProc", ProcessVersionLibReader.BestEffortReadBudget);
+	}
 }

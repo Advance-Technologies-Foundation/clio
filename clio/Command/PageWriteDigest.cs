@@ -47,6 +47,16 @@ public sealed record PageWriteDigest {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyDictionary<string, int> OtherSections { get; init; }
 
+	/// <summary>
+	/// The schema's <c>SysSchema.Checksum</c> read after the save - the same value get-page reports as
+	/// <c>editable.checksum</c> - so the caller can pass it as the next save's conflict baseline without a re-read.
+	/// Read only when the save ran with a conflict baseline (a get-page baseline on disk, a pinned checksum, or
+	/// force), so a save without one costs no extra query; absent then, and when the query returned nothing.
+	/// </summary>
+	[JsonPropertyName("checksum")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string Checksum { get; init; }
+
 	/// <summary>How many further operations were not listed, or absent when none were left out.</summary>
 	[JsonPropertyName("componentsOmitted")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -61,13 +71,16 @@ public sealed record PageWriteDigest {
 	/// <param name="validationRan">Whether the content validation chain ran.</param>
 	/// <param name="appendProjection">
 	/// What the append merge did, or <c>null</c>. When it reports the merged <c>viewConfigDiff</c> was never
-	/// written back (<see cref="PageAppendProjection.ViewConfigDiffApplied"/> false), the fragment's components
-	/// did not reach the page, so no digest is returned rather than one that lists them as written.
+	/// written back (<see cref="PageAppendProjection.ViewConfigDiffApplied"/> false) while the fragment HAD
+	/// component operations, those components did not reach the page, so no digest is returned rather than one
+	/// that lists them as written. A fragment with no component operations (handlers only, say) lost nothing and
+	/// keeps its digest.
 	/// </param>
+	/// <param name="checksum">The post-save <c>SysSchema.Checksum</c>, or <c>null</c>.</param>
 	/// <returns>The digest, or <c>null</c>.</returns>
 	internal static PageWriteDigest TryBuild(string body, bool appendMode, bool validationRan,
-		PageAppendProjection appendProjection = null) {
-		if (appendMode && appendProjection is { ViewConfigDiffApplied: false }) {
+		PageAppendProjection appendProjection = null, string checksum = null) {
+		if (appendMode && appendProjection is { ViewConfigDiffApplied: false, IncomingOperationCount: > 0 }) {
 			return null;
 		}
 		List<PageOperationInfo> operations;
@@ -87,7 +100,8 @@ public sealed record PageWriteDigest {
 			Basis = appendMode ? "fragment" : "body",
 			Components = lines.Take(MaxComponents).ToList(),
 			ComponentsOmitted = lines.Count > MaxComponents ? lines.Count - MaxComponents : null,
-			OtherSections = otherSections.Count > 0 ? otherSections : null
+			OtherSections = otherSections.Count > 0 ? otherSections : null,
+			Checksum = string.IsNullOrWhiteSpace(checksum) ? null : checksum
 		};
 	}
 

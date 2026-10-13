@@ -20,8 +20,8 @@ internal static class ProcessWriteDigest {
 	/// The culture every digest read uses: none, so the server resolves captions and flow labels in the profile
 	/// culture - the one the write itself stored them in. The configuration guards compare flow labels on this
 	/// SAME read, and an explicit en-US read of a label written under another profile culture comes back empty,
-	/// which the label guard would report as a dropped label. The checksum is therefore comparable with a later
-	/// describe taken in the profile culture (en-US profiles: describe's default).
+	/// which the label guard would report as a dropped label. The checksum still matches a later describe in any
+	/// culture, because it leaves the culture-resolved text out (see <see cref="ProcessDigest.Checksum"/>).
 	/// </summary>
 	internal const string DigestCulture = null;
 
@@ -45,6 +45,23 @@ internal static class ProcessWriteDigest {
 		}
 	}
 
+	/// <summary>Reads only the version standing of a process, as a best-effort read that never throws.</summary>
+	/// <param name="describer">The describer.</param>
+	/// <param name="identity">The process to read.</param>
+	/// <returns>The version facts, or the reason they could not be read.</returns>
+	internal static ErrorOr<DescribeProcessResult> ReadVersionStanding(IProcessDescriber describer,
+		ProcessIdentity identity) {
+		try {
+			ErrorOr<DescribeProcessResult> read = describer.ReadVersionFacts(identity);
+			if (read.IsError) {
+				return read;
+			}
+			return read.Value is null ? Error.Failure(description: "the read returned no version standing") : read;
+		} catch (Exception exception) {
+			return Error.Failure(description: exception.Message);
+		}
+	}
+
 	/// <summary>
 	/// Writes the digest line: <c>{"summary":{...},"changes":{...}}</c>. <paramref name="before"/> null leaves
 	/// <c>changes</c> out (a create has nothing to compare with); a failed before-read says so in
@@ -61,10 +78,18 @@ internal static class ProcessWriteDigest {
 	/// What <paramref name="before"/> is when it is not the same schema before the edit - the source of a new
 	/// version, or the previously active version - so the change list says what it is relative to.
 	/// </param>
+	/// <param name="readFailureReported">
+	/// Whether a configuration guard has already warned that this same read-back failed; the digest then adds no
+	/// second warning about it.
+	/// </param>
 	internal static void Report(ILogger logger, ErrorOr<DescribeProcessResult> after,
-		ErrorOr<DescribeProcessResult>? before = null, bool versionFactsRead = false, string changesAgainst = null) {
+		ErrorOr<DescribeProcessResult>? before = null, bool versionFactsRead = false, string changesAgainst = null,
+		bool readFailureReported = false) {
 		try {
 			if (after.IsError) {
+				if (readFailureReported) {
+					return;
+				}
 				logger.WriteWarning(
 					$"The write landed, but reading the process back for its summary failed: {after.FirstError.Description}. "
 					+ "describe-business-process mode=summary confirms the saved state.");

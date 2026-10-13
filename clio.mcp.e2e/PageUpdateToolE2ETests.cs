@@ -1491,6 +1491,16 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			// Assert
 			saveResponse.Success.Should().BeTrue(
 				because: $"append must save the self-contained custom validator change. Error: {saveResponse.Error}");
+			// ENG-103023: the save carries a digest, so the write is confirmed without a get-page. This fragment
+			// has NO viewConfigDiff operations (review #11): it lost nothing, so it keeps its digest.
+			saveResponse.Digest.Should().NotBeNull(
+				because: "a successful real save returns a digest, even for a fragment without component operations");
+			saveResponse.Digest.Basis.Should().Be("fragment", because: "an append digests the fragment it wrote");
+			saveResponse.Digest.Components.Should().BeEmpty(because: "the fragment wrote no components");
+			saveResponse.Digest.OtherSections.Should().ContainKey("viewModelConfigDiff",
+				because: "the digest counts the view-model operations the fragment wrote");
+			saveResponse.Digest.Checksum.Should().NotBeNullOrWhiteSpace(
+				because: "the digest carries the post-save checksum, the next save's conflict baseline");
 			readBack.Success.Should().BeTrue(
 				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
 			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
@@ -1553,6 +1563,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				arrangeContext, savePage, outOfBandBody, environmentName, outOfBandDir);
 			outOfBandResponse.Success.Should().BeTrue(
 				because: $"the simulated out-of-band save must succeed to set up the conflict. Error: {outOfBandResponse.Error}");
+			outOfBandResponse.Digest.Should().NotBeNull(
+				because: "a successful real save returns a digest (ENG-103023)");
+			outOfBandResponse.Digest.Components.Should().Contain(line => line.StartsWith("insert UsrE2EOobContainer"),
+				because: "the replace digest lists the component the body wrote");
 
 			// Act 3: update-page with the stale session baseline — must surface the conflict.
 			PageUpdateResponse conflictResponse = await UpdatePageAsync(

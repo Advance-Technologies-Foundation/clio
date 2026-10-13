@@ -251,12 +251,13 @@ public sealed class SetActiveProcessVersionCommandTests {
 
 
 	[Test]
-	[Description("ENG-103023: the success path reports the resulting version's summary and what it changes against the previously active version.")]
+	[Description("ENG-103023: the success path reports the resulting version's summary and what it changes against the previously active version. Review #4: the read BEFORE the activation is version-facts-only (no graph), so it costs no describe POST.")]
 	public void Execute_ShouldReportDigestAgainstThePreviouslyActiveVersion_OnSuccess() {
 		// Arrange
 		_service.SetActiveVersion("sandbox", Arg.Any<SetActiveProcessVersionRequest>()).Returns(new SetActiveProcessVersionResult(VersionName, VersionUid, 0));
+		_describer.ReadVersionFacts(Arg.Any<ProcessIdentity>()).Returns(BeforeRead());
 		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
-			.Returns(BeforeRead(), DigestProcess("Start", "New"), DigestProcess("Start", "Old"));
+			.Returns(DigestProcess("Start", "New"), DigestProcess("Start", "Old"));
 
 		// Act
 		int result = _command.Execute(ByName());
@@ -269,6 +270,8 @@ public sealed class SetActiveProcessVersionCommandTests {
 			because: "the change list says which version it is relative to");
 		digest["changes"]!["elementsAdded"]!.AsArray().Select(node => node!.GetValue<string>())
 			.Should().Equal(["New"], because: "the activated version differs from the one that ran by this element");
+		_describer.Received(1).ReadVersionFacts(Arg.Is<ProcessIdentity>(identity => identity.Code == VersionName));
+		_describer.Received(2).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>());
 	}
 
 	// The read before activation: its version facts name the version that ran until now.

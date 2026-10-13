@@ -205,10 +205,10 @@ public class SetActiveProcessVersionCommand(
 			}
 
 			ProcessIdentity target = new(hasName ? options.VersionName : null, hasUid ? options.VersionUid : null, null);
-			// Read BEFORE the write for the version that runs now, which the digest compares the activated one
-			// with (ENG-103023). Best-effort: a failed read only costs the change list.
-			ErrorOr<DescribeProcessResult> before = ProcessWriteDigest.Read(processDescriber, target,
-				includeVersionFacts: true);
+			// Read BEFORE the write for WHICH version runs now - the version standing only, no graph - so the digest
+			// can compare the activated version with it (ENG-103023). Best-effort and on a short budget: a failed
+			// read only costs the change list.
+			ErrorOr<DescribeProcessResult> before = ProcessWriteDigest.ReadVersionStanding(processDescriber, target);
 			SetActiveProcessVersionResult result = setActiveProcessVersionService.SetActiveVersion(
 				options.Environment,
 				new SetActiveProcessVersionRequest(options.VersionName, options.VersionUid));

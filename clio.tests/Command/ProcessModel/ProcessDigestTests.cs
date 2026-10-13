@@ -47,11 +47,11 @@ public sealed class ProcessDigestTests {
 
 		// Act
 		JsonObject summary = ProcessDigest.BuildSummary(process, ProcessDigest.Checksum(process));
-		int summaryChars = ProcessDigest.Length(summary);
+		int summaryChars = ProcessDigest.Size(summary);
 		TestContext.Out.WriteLine($"{fixture}: full {fullChars} chars, summary {summaryChars} chars");
 
 		// Assert
-		summaryChars.Should().BeLessThanOrEqualTo(ProcessDigest.SummaryBudgetChars,
+		summaryChars.Should().BeLessThanOrEqualTo(ProcessDigest.SummaryBudgetBytes,
 			because: "the summary exists to stay far below the ~20 KB line past which Copilot CLI spills a reply");
 		summary["elements"]!.AsArray().Should().HaveCount(process.Elements.Count,
 			because: "a process of this size fits whole, so nothing may be cut");
@@ -111,7 +111,7 @@ public sealed class ProcessDigestTests {
 		JsonObject summary = ProcessDigest.BuildSummary(process, "abc123");
 
 		// Assert
-		ProcessDigest.Length(summary).Should().BeLessThanOrEqualTo(ProcessDigest.SummaryBudgetChars,
+		ProcessDigest.Size(summary).Should().BeLessThanOrEqualTo(ProcessDigest.SummaryBudgetBytes,
 			because: "the budget holds whatever the process size");
 		int omittedElements = summary["omitted"]!["elements"]!.GetValue<int>();
 		int omittedFlows = summary["omitted"]!["flows"]!.GetValue<int>();
@@ -128,7 +128,7 @@ public sealed class ProcessDigestTests {
 	}
 
 	[Test]
-	[Description("Keeps the checksum stable across a layout change, a different version standing and a tracing switch, and moves it when an element's content changes - so equal checksums mean equal content.")]
+	[Description("Keeps the checksum stable across a layout change, a different version standing, a tracing switch and a caption-only edit (culture-resolved text is left out), and moves it when the structure changes.")]
 	public void Checksum_ShouldIgnoreLayoutAndVersionFacts_AndTrackContent() {
 		// Arrange
 		DescribeProcessResult original = LoadFixture(LargeFixture);
@@ -139,18 +139,23 @@ public sealed class ProcessDigestTests {
 		relaidOut.Versions = [];
 		relaidOut.Tracing = new DescribedProcessTracing { Enabled = true, TurnOffDate = "2026-10-20" };
 		DescribeProcessResult edited = LoadFixture(LargeFixture);
-		edited.Elements.First(element => element.Name == "ComposeTaskTitle").Caption = "Compose another title";
+		edited.Elements.RemoveAll(element => element.Name == "AskEmployeeToDoBetter");
+		DescribeProcessResult recaptioned = LoadFixture(LargeFixture);
+		recaptioned.Elements.First(element => element.Name == "ComposeTaskTitle").Caption = "Compose another title";
 
 		// Act
 		string before = ProcessDigest.Checksum(original);
 		string afterLayout = ProcessDigest.Checksum(relaidOut);
 		string afterEdit = ProcessDigest.Checksum(edited);
+		string afterCaption = ProcessDigest.Checksum(recaptioned);
 
 		// Assert
 		before.Should().MatchRegex("^[0-9a-f]{12}$", because: "the checksum is short lower-case hex");
 		afterLayout.Should().Be(before,
 			because: "the server re-derives layout on every save, and version facts and tracing belong to the family");
 		afterEdit.Should().NotBe(before, because: "a content change has to show in the checksum");
+		afterCaption.Should().Be(before,
+			because: "captions are culture-resolved text, left out so a profile-culture read and an en-US read agree");
 	}
 
 	[Test]

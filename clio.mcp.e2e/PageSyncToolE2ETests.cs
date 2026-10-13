@@ -1709,6 +1709,13 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 				because: $"the checksum came straight from get-page, so the pinned save must go through. Error: {pinnedSave.Pages.FirstOrDefault()?.Error}");
 			pinnedSave.Pages[0].Conflict.Should().BeFalse(
 				because: "a baseline that matches the server state is not a conflict");
+			// ENG-103023: each saved page carries a digest, so the save is confirmed without a get-page.
+			pinnedSave.Pages[0].Digest.Should().NotBeNull(because: "a saved page returns its digest");
+			pinnedSave.Pages[0].Digest.Components.Should().Contain(
+				line => line.StartsWith("insert UsrE2ESyncPinContainerA"),
+				because: "the digest lists the component the saved body carries");
+			pinnedSave.Pages[0].Digest.Checksum.Should().NotBeNullOrWhiteSpace().And.NotBe(firstChecksum,
+				because: "the digest's checksum is the post-save one, which the save moved");
 
 			// Act 2: non-vacuity - re-send the now-stale pin.
 			PageSyncResponse staleSave = await SyncSeededPageAsync(

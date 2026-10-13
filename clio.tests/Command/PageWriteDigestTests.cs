@@ -85,7 +85,7 @@ public sealed class PageWriteDigestTests {
 
 		// Act
 		PageWriteDigest discarded = PageWriteDigest.TryBuild(body, appendMode: true, validationRan: true,
-			new PageAppendProjection { ViewConfigDiffApplied = false });
+			new PageAppendProjection { ViewConfigDiffApplied = false, IncomingOperationCount = 1 });
 		PageWriteDigest applied = PageWriteDigest.TryBuild(body, appendMode: true, validationRan: true,
 			new PageAppendProjection { ViewConfigDiffApplied = true });
 
@@ -93,5 +93,28 @@ public sealed class PageWriteDigestTests {
 		discarded.Should().BeNull(because: "the merged viewConfigDiff never reached the page, so nothing it lists was written");
 		applied.Components.Should().Equal(["insert Phone (crt.PhoneInput) in Main"],
 			because: "an applied merge wrote the fragment's components");
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #11: an append fragment with no component operations (handlers only) loses nothing when the viewConfigDiff markers are missing, so it keeps its digest; the post-save checksum is carried.")]
+	public void TryBuild_ShouldKeepTheDigest_ForAComponentFreeFragment_AndCarryTheChecksum() {
+		// Arrange
+		string body = WebBody("[]");
+
+		// Act
+		PageWriteDigest digest = PageWriteDigest.TryBuild(body, appendMode: true, validationRan: true,
+			new PageAppendProjection { ViewConfigDiffApplied = false, IncomingOperationCount = 0 }, "4f3374af");
+
+		// Assert
+		digest.Should().NotBeNull(because: "a fragment without component operations had nothing to lose");
+		digest.Components.Should().BeEmpty(because: "the fragment wrote no components");
+		digest.Checksum.Should().Be("4f3374af", because: "the post-save checksum is the next save's baseline");
+	}
+
+	[Test]
+	[Description("Pins the literal component cap, so a change of the number is a deliberate one.")]
+	public void MaxComponents_ShouldBe25() {
+		// Assert
+		PageWriteDigest.MaxComponents.Should().Be(25, because: "the page digest lists at most 25 components");
 	}
 }

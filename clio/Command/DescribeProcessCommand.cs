@@ -35,8 +35,9 @@ public class DescribeProcessOptions : EnvironmentOptions {
 	public string Culture { get; set; } = "en-US";
 
 	/// <summary>
-	/// Reply shape: <c>summary</c>, <c>full</c> or <c>versions</c>. Empty picks <c>full</c> when the whole graph
-	/// fits <see cref="ProcessDigest.AutoSummaryThresholdChars"/> and <c>summary</c> when it does not (ENG-103023).
+	/// Reply shape: <c>summary</c>, <c>full</c>, <c>versions</c> or <c>element</c> (with <see cref="Element"/>). Empty picks <c>full</c> when the whole graph
+	/// fits <see cref="ProcessDigest.AutoSummaryThresholdBytes"/> as a serialized MCP reply and <c>summary</c> when it
+	/// does not (ENG-103023).
 	/// </summary>
 	public string Mode { get; set; }
 
@@ -138,9 +139,10 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 	}
 
 	/// <summary>
-	/// Builds the reply for the requested mode (ENG-103023). An explicit <c>full</c> is byte-for-byte the graph
-	/// this command wrote before modes existed; a default that picks full says so in a leading <c>mode</c> member;
-	/// every other reply is a <see cref="ProcessDigest"/> view that names its mode and how to get more.
+	/// Builds the reply for the requested mode (ENG-103023). An explicit <c>full</c> is the whole graph with no
+	/// envelope, as before modes existed - plus the members added since (<c>versions[].modifiedOn</c>), an additive
+	/// change; a default that picks full says so in a leading <c>mode</c> member; every other reply is a
+	/// <see cref="ProcessDigest"/> view that names its mode and how to get more.
 	/// </summary>
 	/// <param name="process">The described process, raw filters already folded.</param>
 	/// <param name="mode">The requested mode, or empty for the size-based default.</param>
@@ -153,37 +155,48 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 		if (refusal is not null) {
 			return null;
 		}
-		string checksum = ProcessDigest.Checksum(process);
 		if (!string.IsNullOrWhiteSpace(element)) {
-			JsonObject view = ProcessDigest.BuildElement(process, element, checksum);
+			JsonObject view = ProcessDigest.BuildElement(process, element, ProcessDigest.Checksum(process));
 			if (view.Count == 0) {
-				refusal = $"process '{process.Name}' has no element named '{element.Trim()}'. Elements: "
-					+ string.Join(", ", (process.Elements ?? []).Select(candidate => candidate?.Name)
-						.Where(name => !string.IsNullOrWhiteSpace(name))) + ".";
+				refusal = ElementNotFound(process, element);
 				return null;
 			}
 			return ProcessDigest.Write(view);
 		}
 		string normalized = mode?.Trim().ToLowerInvariant();
 		if (normalized == ProcessDigest.VersionsMode) {
-			return ProcessDigest.Write(ProcessDigest.BuildVersions(process, checksum));
+			return ProcessDigest.Write(ProcessDigest.BuildVersions(process, ProcessDigest.Checksum(process)));
 		}
 		string full = JsonSerializer.Serialize(process, OutputOptions);
 		if (normalized == ProcessDigest.FullMode) {
 			return full;
 		}
-		if (normalized != ProcessDigest.SummaryMode && full.Length <= ProcessDigest.AutoSummaryThresholdChars) {
+		if (normalized != ProcessDigest.SummaryMode) {
 			// Spliced rather than re-serialized so the default full reply stays the explicit one plus one member.
-			return full.Length > 2 ? "{\"mode\":\"full\"," + full[1..] : full;
+			string labelled = full.Length > 2 ? "{\"mode\":\"full\"," + full[1..] : full;
+			// Measured as the serialized MCP reply, in bytes, not as graph characters: that is what the spill line
+			// is measured against, and the graph's quotes are paid three times on the way there. The wire reply is
+			// never shorter than the text it carries, so a text already over the line skips the two serializations.
+			if (labelled.Length <= ProcessDigest.AutoSummaryThresholdBytes
+				&& McpServer.McpResultSize.OfCommandReply(labelled) <= ProcessDigest.AutoSummaryThresholdBytes) {
+				return labelled;
+			}
 		}
-		JsonObject summary = new() { ["mode"] = ProcessDigest.SummaryMode };
-		foreach (KeyValuePair<string, JsonNode> member in ProcessDigest.BuildSummary(process, checksum).ToList()) {
-			summary[member.Key] = member.Value?.DeepClone();
-		}
-		summary["fullChars"] = full.Length;
-		summary["more"] = $"mode=full returns the whole graph ({full.Length} chars); element=<name> returns one "
-			+ "element in full (mappings, filters, formulas, its flows); mode=versions returns the version list.";
-		return ProcessDigest.Write(summary);
+		// The checksum is computed only for the replies that carry it: a full reply would serialize the largest
+		// graphs a second time for a value it then discards.
+		return ProcessDigest.Write(ProcessDigest.BuildSummaryReply(process, ProcessDigest.Checksum(process),
+			full.Length));
+	}
+
+	private static string ElementNotFound(DescribeProcessResult process, string element) {
+		List<string> names = (process.Elements ?? []).Select(candidate => candidate?.Name)
+			.Where(name => !string.IsNullOrWhiteSpace(name)).ToList();
+		string listed = string.Join(", ", names.Take(ProcessDigest.MaxListedElementNames));
+		string more = names.Count > ProcessDigest.MaxListedElementNames
+			? $" and {names.Count - ProcessDigest.MaxListedElementNames} more (mode=summary lists them unless it "
+				+ "reports omitted elements; mode=full always does)"
+			: string.Empty;
+		return $"process '{process.Name}' has no element named '{element.Trim()}'. Elements: {listed}{more}.";
 	}
 
 	/// <summary>

@@ -22,14 +22,34 @@ namespace Clio.Command.ProcessModel;
 internal static class ProcessDigest {
 
 	/// <summary>
-	/// Above this many characters of compact graph JSON a describe without an explicit mode answers with the
-	/// summary. Copilot CLI writes a tool result over ~20 KB to a file, and the graph travels as a STRING inside
-	/// the result, so every quote costs a second character; 15 000 keeps the whole reply under that line.
+	/// Above this many bytes of serialized MCP reply (<see cref="Clio.Command.McpServer.McpResultSize.OfCommandReply"/>)
+	/// a describe without an explicit mode answers with the summary. Copilot CLI writes a tool result over ~20 KB to
+	/// a file, and the graph travels as a string inside the command result, which is itself the text of a content
+	/// block, so each quote of the graph is paid three times: a 14,552-character graph was 20,074 bytes on the wire
+	/// (ENG-103023 QA). Measured in reply bytes, not graph characters, and 18,000 leaves ~2 KB under that line.
 	/// </summary>
-	internal const int AutoSummaryThresholdChars = 15_000;
+	internal const int AutoSummaryThresholdBytes = 18_000;
 
-	/// <summary>The size the summary aims to stay within; above it captions go first, then list tails.</summary>
-	internal const int SummaryBudgetChars = 3_072;
+	/// <summary>
+	/// The UTF-8 size the whole summary REPLY aims to stay within - the <c>mode</c>, <c>fullChars</c> and <c>more</c>
+	/// envelope included; above it captions go first, then list tails, then the header's free text.
+	/// </summary>
+	internal const int SummaryBudgetBytes = 3_072;
+
+	/// <summary>Most entries one post-write change list carries; the rest are counted in <c>&lt;list&gt;Omitted</c>.</summary>
+	internal const int MaxChangeEntries = 25;
+
+	/// <summary>Most element names an element-not-found refusal lists.</summary>
+	internal const int MaxListedElementNames = 30;
+
+	// Rebuilds the bisection of a too-large summary may spend; the share it finds is within 1/4096 of the best.
+	private const int BisectionSteps = 12;
+
+	// Bytes of SHA-256 the checksum keeps: 12 hex characters.
+	private const int ChecksumBytes = 6;
+
+	// The longest versionReadWarning a summary that is still over budget keeps.
+	private const int CompactWarningChars = 160;
 
 	/// <summary>Mode names, as the <c>mode</c> argument and the reply's <c>mode</c> member spell them.</summary>
 	internal const string SummaryMode = "summary";
@@ -46,6 +66,11 @@ internal static class ProcessDigest {
 	private const string SchemaUIdMember = "schemaUId";
 	private const string SequenceKind = "sequence";
 	private const string ConditionalKind = "conditional";
+
+	// Text the server resolves in the READ's culture. A describe defaults to en-US while the post-write reads use the
+	// profile culture (the flow-label guard needs it), so hashing these would make the two checksums of one unchanged
+	// process differ on every non-en-US profile.
+	private static readonly string[] LocalizedMembers = ["caption", "description", "label", "displayValue", "valueDisplay"];
 
 	// Version-family facts describe the FAMILY, not this schema's content, and change when a sibling is saved.
 	private static readonly string[] VersionFactMembers = [
@@ -65,12 +90,15 @@ internal static class ProcessDigest {
 	/// <summary>
 	/// A short content checksum of the graph: 12 hex characters of SHA-256 over the compact JSON of everything
 	/// except the version-family facts and tracing state, the schema's own name and UId, every member named <c>uid</c> (element
-	/// and parameter identities), and the diagram layout.
+	/// and parameter identities), the diagram layout, and the culture-resolved text (captions, descriptions, flow
+	/// labels, display values).
 	/// </summary>
 	/// <remarks>
-	/// Identities are left out because they say which schema was read, not what it does. The value is
-	/// comparable only between reads taken through clio in the same culture: it is a hash of clio's own
-	/// projection, captions included, and a clio that reports a new member changes it.
+	/// Identities are left out because they say which schema was read, not what it does; localized text because
+	/// it depends on the culture of the READ, so leaving it in would make a write digest (profile culture) and a
+	/// default describe (en-US) disagree about an unchanged process. The price: an edit that changes only a
+	/// caption or a label keeps the checksum - the write digest's change list still reports it. The value is a
+	/// hash of clio's own projection, so a clio that reports a new member changes it.
 	/// </remarks>
 	/// <param name="result">The described process.</param>
 	/// <returns>The checksum, lower-case hex.</returns>
@@ -82,39 +110,66 @@ internal static class ProcessDigest {
 		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
 		StripMembers(graph["flows"] as JsonArray, FlowLayoutMembers);
 		StripIdentities(graph);
+		StripRecursively(graph, LocalizedMembers);
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(graph.ToJsonString(DescribeProcessCommand.OutputOptions)));
-		return Convert.ToHexString(hash, 0, 6).ToLowerInvariant();
+		return Convert.ToHexString(hash, 0, ChecksumBytes).ToLowerInvariant();
 	}
 
 	/// <summary>
 	/// The summary: elements as name + type + caption, flows as <c>from -&gt; to</c> with their kind and
 	/// whether a condition is set, start signals, process parameters with their types, the version standing
-	/// and the checksum - within <see cref="SummaryBudgetChars"/> where the process allows.
+	/// and the checksum - within <see cref="SummaryBudgetBytes"/> where the process allows.
 	/// </summary>
 	/// <param name="result">The described process.</param>
 	/// <param name="checksum">Its <see cref="Checksum"/>.</param>
-	/// <returns>The summary object; the caller adds <c>mode</c> and any pointer to more.</returns>
-	internal static JsonObject BuildSummary(DescribeProcessResult result, string checksum) {
+	/// <returns>The summary object, without a reply envelope.</returns>
+	internal static JsonObject BuildSummary(DescribeProcessResult result, string checksum) =>
+		BuildSummary(result, checksum, envelope: null);
+
+	/// <summary>
+	/// The summary REPLY of a describe: <c>mode</c> first, the summary, then <c>fullChars</c> and the <c>more</c>
+	/// pointer - the whole object fitted to <see cref="SummaryBudgetBytes"/>.
+	/// </summary>
+	/// <param name="result">The described process.</param>
+	/// <param name="checksum">Its <see cref="Checksum"/>.</param>
+	/// <param name="fullChars">Length of the full graph, reported so the caller sees what mode=full costs.</param>
+	/// <returns>The reply object.</returns>
+	internal static JsonObject BuildSummaryReply(DescribeProcessResult result, string checksum, int fullChars) {
+		JsonObject envelope = new() {
+			["fullChars"] = fullChars,
+			["more"] = $"mode=full returns the whole graph ({fullChars} chars); element=<name> returns one element "
+				+ "in full (mappings, filters, formulas, its flows); mode=versions returns the version list."
+		};
+		return BuildSummary(result, checksum, envelope);
+	}
+
+	private static JsonObject BuildSummary(DescribeProcessResult result, string checksum, JsonObject envelope) {
 		List<DescribedElement> elements = result.Elements?.Where(element => element is not null).ToList() ?? [];
 		List<string> flows = result.Flows?.Where(flow => flow is not null).Select(FlowLine).ToList() ?? [];
 		List<DescribedParameter> parameters = result.Parameters?.Where(parameter => parameter is not null).ToList() ?? [];
-		JsonObject summary = BuildSummary(result, checksum, elements, flows, parameters, withCaptions: true);
-		if (Length(summary) <= SummaryBudgetChars) {
+		JsonObject Build(IReadOnlyList<DescribedElement> keptElements, IReadOnlyList<string> keptFlows,
+			IReadOnlyList<DescribedParameter> keptParameters, bool withCaptions, bool compactHeader) =>
+			Enveloped(BuildSummary(result, checksum, keptElements, keptFlows, keptParameters, withCaptions,
+				compactHeader), envelope);
+		JsonObject summary = Build(elements, flows, parameters, withCaptions: true, compactHeader: false);
+		if (Size(summary) <= SummaryBudgetBytes) {
 			return summary;
 		}
-		summary = BuildSummary(result, checksum, elements, flows, parameters, withCaptions: false);
-		if (Length(summary) <= SummaryBudgetChars) {
+		summary = Build(elements, flows, parameters, withCaptions: false, compactHeader: false);
+		if (Size(summary) <= SummaryBudgetBytes) {
 			return summary;
 		}
 		// Still over: keep the same leading share of every list - elements, flows and parameters alike, so no
 		// one list is emptied to save the others - and say how much was left out. The share is found by
 		// bisection, a dozen rebuilds whatever the process size. The graph stays one call away (mode=full,
-		// element=<name>), so a long process loses detail here, never the way to reach it.
+		// element=<name>), so a long process loses detail here, never the way to reach it. When even an empty
+		// share is over (a long caption or version warning), the header's free text is shortened too.
+		bool compact = false;
 		JsonObject Cut(double share) {
 			int Keep(int count) => (int)Math.Floor(count * share);
-			JsonObject cut = BuildSummary(result, checksum, elements.Take(Keep(elements.Count)).ToList(),
+			JsonObject cut = Build(elements.Take(Keep(elements.Count)).ToList(),
 				flows.Take(Keep(flows.Count)).ToList(), parameters.Take(Keep(parameters.Count)).ToList(),
-				withCaptions: false);
+				withCaptions: false, compactHeader: compact);
 			cut["omitted"] = new JsonObject {
 				["elements"] = elements.Count - Keep(elements.Count),
 				["flows"] = flows.Count - Keep(flows.Count),
@@ -124,10 +179,14 @@ internal static class ProcessDigest {
 		}
 		double low = 0, high = 1;
 		JsonObject best = Cut(0);
-		for (int step = 0; step < 12; step++) {
+		if (Size(best) > SummaryBudgetBytes) {
+			compact = true;
+			best = Cut(0);
+		}
+		for (int step = 0; step < BisectionSteps; step++) {
 			double middle = (low + high) / 2;
 			JsonObject candidate = Cut(middle);
-			if (Length(candidate) <= SummaryBudgetChars) {
+			if (Size(candidate) <= SummaryBudgetBytes) {
 				best = candidate;
 				low = middle;
 			} else {
@@ -135,6 +194,22 @@ internal static class ProcessDigest {
 			}
 		}
 		return best;
+	}
+
+	// mode first, as every reply names its mode up front; the envelope's pointers last.
+	private static JsonObject Enveloped(JsonObject summary, JsonObject envelope) {
+		if (envelope is null) {
+			return summary;
+		}
+		JsonObject reply = new() { ["mode"] = SummaryMode };
+		foreach (KeyValuePair<string, JsonNode> member in summary.ToList()) {
+			summary.Remove(member.Key);
+			reply[member.Key] = member.Value;
+		}
+		foreach (KeyValuePair<string, JsonNode> member in envelope) {
+			reply[member.Key] = member.Value?.DeepClone();
+		}
+		return reply;
 	}
 
 	/// <summary>
@@ -243,20 +318,20 @@ internal static class ProcessDigest {
 		return hasCondition ? $"{line} [{kind}, condition text, not evaluated]" : $"{line} [{kind}]";
 	}
 
-	/// <summary>Length of a view as it is written.</summary>
-	internal static int Length(JsonNode node) => node.ToJsonString(DescribeProcessCommand.OutputOptions).Length;
+	/// <summary>Size of a view as it is written, in UTF-8 bytes - the unit a client's spill line is measured in.</summary>
+	internal static int Size(JsonNode node) => Encoding.UTF8.GetByteCount(Write(node));
 
 	/// <summary>Writes a view as compact JSON.</summary>
 	internal static string Write(JsonNode node) => node.ToJsonString(DescribeProcessCommand.OutputOptions);
 
 	private static JsonObject BuildSummary(DescribeProcessResult result, string checksum,
 		IReadOnlyList<DescribedElement> elements, IReadOnlyList<string> flows,
-		IReadOnlyList<DescribedParameter> parameters, bool withCaptions) {
-		JsonObject summary = new() {
-			["name"] = result.Name,
-			["caption"] = result.Caption,
-			[SchemaUIdMember] = result.SchemaUId
-		};
+		IReadOnlyList<DescribedParameter> parameters, bool withCaptions, bool compactHeader) {
+		JsonObject summary = new() { ["name"] = result.Name };
+		if (!compactHeader) {
+			summary["caption"] = result.Caption;
+		}
+		summary[SchemaUIdMember] = result.SchemaUId;
 		AddIfPresent(summary, "version", result.Version);
 		AddIfPresent(summary, "isActiveVersion", result.IsActiveVersion);
 		if (result.IsActiveVersion == false) {
@@ -265,7 +340,11 @@ internal static class ProcessDigest {
 			AddIfPresent(summary, "activeVersionSchemaUId", result.ActiveVersionSchemaUId);
 		}
 		AddIfPresent(summary, "versionCount", result.Versions?.Count);
-		AddIfPresent(summary, "versionReadWarning", result.VersionReadWarning);
+		string warning = result.VersionReadWarning;
+		if (compactHeader && warning is { Length: > CompactWarningChars }) {
+			warning = warning[..CompactWarningChars] + "...";
+		}
+		AddIfPresent(summary, "versionReadWarning", warning);
 		summary["checksum"] = checksum;
 		summary["elements"] = new JsonArray(elements.Select(element => (JsonNode)ElementEntry(element, withCaptions))
 			.ToArray());
@@ -353,8 +432,27 @@ internal static class ProcessDigest {
 		return node?.ToJsonString(DescribeProcessCommand.OutputOptions) ?? string.Empty;
 	}
 
-	// A copy saved as a new version may carry fresh element and parameter UIds; they name the schema read, not
-	// what it does, so comparing them would mark every element of a new version as changed.
+	private static void StripRecursively(JsonNode node, string[] members) {
+		switch (node) {
+			case JsonObject obj:
+				foreach (string member in members) {
+					obj.Remove(member);
+				}
+				foreach (KeyValuePair<string, JsonNode> member in obj.ToList()) {
+					StripRecursively(member.Value, members);
+				}
+				break;
+			case JsonArray array:
+				foreach (JsonNode item in array) {
+					StripRecursively(item, members);
+				}
+				break;
+		}
+	}
+
+	// Identities name the schema read, not what it does. On the measured stand a version keeps the element and
+	// parameter UIds of its source (and the [#...[Parameter:{uid}]#] macros in mapped values with them), so this
+	// is defensive: a server that re-minted them would otherwise mark every element of a new version as changed.
 	private static void StripIdentities(JsonNode node) {
 		switch (node) {
 			case JsonObject obj:
@@ -434,10 +532,17 @@ internal static class ProcessDigest {
 			.Select(entry => entry.Value.Label));
 	}
 
+	// Capped like PageWriteDigest.MaxComponents: an activation between two very different versions would
+	// otherwise list every element and spill the write reply by itself.
 	private static void AddList(JsonObject target, string member, IEnumerable<string> values) {
-		JsonArray array = new(values.Select(value => (JsonNode)JsonValue.Create(value)).ToArray());
-		if (array.Count > 0) {
-			target[member] = array;
+		List<string> all = values.ToList();
+		if (all.Count == 0) {
+			return;
+		}
+		target[member] = new JsonArray(all.Take(MaxChangeEntries).Select(value => (JsonNode)JsonValue.Create(value))
+			.ToArray());
+		if (all.Count > MaxChangeEntries) {
+			target[member + "Omitted"] = all.Count - MaxChangeEntries;
 		}
 	}
 }

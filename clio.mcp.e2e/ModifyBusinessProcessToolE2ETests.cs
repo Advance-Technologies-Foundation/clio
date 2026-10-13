@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -379,6 +380,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			because: "a successful edit reports the edited schema name (run against an environment with the ProcessDesignService package)");
 		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "an edited process stays interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
+		JsonObject digest = DescribedProcessGraph.ReadWriteDigest(callResult);
+		digest["summary"]!["name"]!.GetValue<string>().Should().Be(processName,
+			because: "the edit returns the edited process's summary, so the agent need not describe it again (ENG-103023)");
+		digest["summary"]!["checksum"].Should().NotBeNull(because: "the digest carries the content checksum");
+		digest["summary"]!["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the digest states whether the edited version is the one that runs (review #9)");
+		digest["changes"]!.ToJsonString().Should().Contain("elementsAdded",
+			because: "the change list against the read taken before the edit names what the edit added");
 
 		// Readback: describe the edited process and confirm the signal start really replaced the simple start —
 		// a server that returned success but applied nothing would be caught here, unlike the success echo above.

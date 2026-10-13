@@ -86,7 +86,7 @@ public class SetActiveProcessVersionTool(
 		 + "C# last changed still covers it - activation re-saves the family but changes no code, so it owes no "
 		 + "second compile (measured on .NET Framework; a .NET host also needs its restart after the compile). The "
 		 + "warning speaks for THIS call only. Use describe-business-process "
-		 + "to see the family and which member is active.")]
+		 + "to see the family and which member is active." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult SetActiveProcessVersion(
 		[Description("set-active-business-process-version parameters")] [Required]
 		SetActiveProcessVersionArgs args

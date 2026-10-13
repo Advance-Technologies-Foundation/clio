@@ -411,10 +411,11 @@ public class ModifyProcessAsNewVersionCommand(
 			return;
 		}
 		ErrorOr<DescribeProcessResult> saved = ProcessWriteDigest.Read(processDescriber,
-			new ProcessIdentity(hasUid ? null : result.VersionName, hasUid ? result.VersionSchemaUId : null, null));
+			new ProcessIdentity(hasUid ? null : result.VersionName, hasUid ? result.VersionSchemaUId : null, null),
+			includeVersionFacts: true);
 		// The new version has no earlier state of its own: the change list is relative to the version it was cut from.
 		string sourceName = source.IsError ? null : source.Value?.Name;
-		ProcessWriteDigest.Report(logger, saved, source,
+		ProcessWriteDigest.Report(logger, saved, source, versionFactsRead: true,
 			changesAgainst: $"the source version '{sourceName ?? options.ProcessName ?? options.ProcessUid}'");
 	}
 }

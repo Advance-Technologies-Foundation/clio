@@ -151,7 +151,7 @@ public sealed class PageUpdateTool(
 			if (!options.DryRun) {
 				response.Digest = PageWriteDigest.TryBuild(options.Body,
 					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate,
-					response.AppendProjection);
+					response.AppendProjection, response.NewChecksum);
 			}
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is

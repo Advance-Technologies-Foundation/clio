@@ -208,7 +208,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 	}
 
 	[Test]
@@ -327,7 +327,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		_command.Execute(options);
 
 		// Assert
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, true);
 	}
 
 	[Test]
@@ -360,7 +360,7 @@ public sealed class CreateBusinessProcessCommandTests {
 		// Assert
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about a build that SUCCEEDED, never a failure");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().ContainSingle(warning => warning.Contains("Decide -> Yes ('Approved')"),
 			because: "the caller has to be told which label is not drawn, by the only handle they have on the "
 				+ "flow");
@@ -448,7 +448,7 @@ public sealed class CreateBusinessProcessCommandTests {
 
 		// Assert
 		result.Should().Be(0, because: "the build succeeded");
-		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		JsonNode digest = JsonNode.Parse(DigestLine())!;
 		digest["summary"]!["flows"]!.AsArray().Select(node => node!.GetValue<string>())
 			.Should().Equal(["Start -> End"], because: "the summary lists the saved flows");

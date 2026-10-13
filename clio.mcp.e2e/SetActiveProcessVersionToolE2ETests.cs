@@ -94,6 +94,13 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 				+ "here is what proves the switch took effect rather than that the request was echoed");
 		callResultJson.Should().Contain("Instances already running stay",
 			because: "activation reaches new instances only, and the caller is told so on every success");
+		JsonObject digest = DescribedProcessGraph.ReadWriteDigest(callResult);
+		digest["summary"]!["name"]!.GetValue<string>().Should().Be(versionName,
+			because: "the digest summarizes the activated version (ENG-103023)");
+		digest["summary"]!["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the digest's version standing is read AFTER the activation");
+		digest["changesAgainst"]!.GetValue<string>().Should().Contain(processName,
+			because: "the change list is relative to the version that ran before, read version-facts-only before the write");
 
 		// The read-back inside the tool proves the server agrees with itself; describing the family proves the
 		// environment as a whole did, and that the previously-actual member really stopped being actual.

@@ -794,7 +794,8 @@ public sealed class PageSyncTool(
 				Validation = validationResult,
 				ResourcesRegistered = updateResponse.ResourcesRegistered,
 				// The body as SAVED - after the before-save preprocessing - which is what update-page digests too.
-				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate)
+				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate,
+					checksum: updateResponse.NewChecksum)
 			};
 		} catch (Exception ex) {
 			return new PageSyncPageResult {
@@ -935,7 +936,8 @@ public sealed class PageSyncTool(
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
 			Page = getResponse.Page,
 			VerifiedBodyFile = verifiedBodyFile,
-			Digest = PageWriteDigest.TryBuild(savedBody ?? page.Body, appendMode: false, opOptions.Validate)
+			Digest = PageWriteDigest.TryBuild(savedBody ?? page.Body, appendMode: false, opOptions.Validate,
+				checksum: updateResponse.NewChecksum)
 		};
 	}
 

@@ -1,26 +1,42 @@
 ---
-description: since ENG-103023 every successful create/modify/new-version/set-active read the process back (modify, new-version and set-active also read BEFORE the write) to return a summary + change list; describe without a mode answers a graph over 15000 chars with the summary - an explicit mode=full is byte-identical to the old reply
+description: since ENG-103023 every successful create/modify/new-version/set-active read the process back (modify and new-version also read the graph BEFORE the write, set-active only the version standing) to return a summary + capped change list; describe without a mode answers with the summary once the full reply would pass 18000 bytes on the wire - an explicit mode=full is the old reply plus additive members (versions[].modifiedOn)
 applies-to:
   - clio/Command/ProcessModel/ProcessDigest.cs
   - clio/Command/ProcessModel/ProcessWriteDigest.cs
+  - clio/Command/ProcessModel/IProcessDescriber.cs
+  - clio/Command/ProcessModel/IProcessVersionLibReader.cs
   - clio/Command/DescribeProcessCommand.cs
+  - clio/Command/McpServer/McpResultSize.cs
   - clio/Command/CreateBusinessProcessCommand.cs
   - clio/Command/ModifyBusinessProcessCommand.cs
   - clio/Command/ModifyProcessAsNewVersionCommand.cs
   - clio/Command/SetActiveProcessVersionCommand.cs
+  - clio.tests/Examples/ProcessDescribe/ReviewChain.full-reply.pre-ENG-103023.json
 ticket: ENG-103023
-date: 2026-10-12
+date: 2026-10-13
 ---
 
 **What is true** — a successful process write logs one extra info line, `{"summary":{...},"changes":{...}}`:
-the `describe-business-process mode=summary` shape of the saved version plus elements/flows/parameters added,
-removed and changed. To produce it the write commands describe on EVERY success, not only when a
-configuration guard asked for it: create reads once (the guards' read-back is reused), modify and
-modify-as-new-version read once before and once after, set-active reads up to three times (target before,
-target after, previously active version). All reads are best-effort; a failed read becomes a warning or
-`changesUnavailable`, never an exit code. `describe-business-process` without `mode` returns the full graph
-prefixed with `"mode":"full"` when the compact graph is at most 15000 chars, otherwise the summary; an
-explicit `mode=full` is the pre-ENG-103023 bytes exactly.
+the `describe-business-process mode=summary` shape of the saved version (version standing included) plus
+elements/flows/parameters added, removed and changed, each list capped at 25 with a `<list>Omitted` count.
+To produce it the write commands describe on EVERY success, not only when a configuration guard asked for
+it: create reads once (the guards' read-back is reused), modify and modify-as-new-version read the graph once
+before and once after, set-active reads the version standing only before the write, then the target and the
+previously active version after it. Every read after a write is best-effort: one describe attempt on a short
+timeout, and version facts on `ProcessVersionLibReader.BestEffortReadBudget` (3 s) instead of the 10 s default.
+A failed read becomes one warning or `changesUnavailable`, never an exit code.
+
+`describe-business-process` without `mode` returns the full graph prefixed with `"mode":"full"` when that
+reply, serialized as the MCP `CallToolResult` (`McpResultSize.OfCommandReply`), is at most 18000 bytes;
+otherwise the summary, held to 3072 UTF-8 bytes with its `mode`/`fullChars`/`more` envelope. The graph is a
+string inside the command result, which is itself the text of a content block, so each quote is paid three
+times: a 14,552-character graph measured 20,074 bytes on the wire. An explicit `mode=full` is the old reply
+plus additive members; `ReviewChain.full-reply.pre-ENG-103023.json` is that old reply, committed as a baseline.
+
+The checksum leaves out captions, descriptions, flow labels and display values: the post-write reads use the
+profile culture (the flow-label guard needs it), a describe defaults to en-US, and hashing culture-resolved
+text made the two disagree on every non-en-US profile. A caption-only edit therefore keeps the checksum; the
+change list still reports it.
 
 **Why it is this way** — Copilot CLI spills any tool result over ~20 KB to a file, and in 35 CAADT runs agents
 re-read a process right after writing it 41 times and parsed spilled describes with 169 shell calls. One read
@@ -28,8 +44,11 @@ inside clio is cheaper than the agent's full describe plus its spill handling. T
 list ignore `position`/`size`/`geometry` because the server re-derives the layout on every save, and ignore
 the version-family facts because they change when a sibling is saved.
 
-**What breaks if you ignore it** — a unit test that asserts `Received(1).Describe` on modify now sees two
-calls, and a test counting warnings over a describer substitute that returns `default` sees a digest warning:
-give the substitute a readable process. Restoring the short-circuit "no guard, no read-back" silently drops
-the digest, and the agent goes back to describing after every write. Re-indenting or re-shaping the explicit
-full reply breaks callers that pinned it; add members to the summary instead.
+**What breaks if you ignore it** — measuring the threshold in graph characters lets a quote-heavy graph spill
+again. A unit test that asserts `Received(1).Describe` on modify now sees two calls (before without version
+facts, after with them), and a test counting warnings over a describer substitute that returns `default` sees
+a digest warning: give the substitute a readable process. Restoring the short-circuit "no guard, no
+read-back" silently drops the digest, and the agent goes back to describing after every write. Uncapping a
+change list lets set-active between two very different versions spill the write reply by itself. Putting
+captions back into the checksum makes every write on a non-en-US profile look like a change. Re-shaping the
+explicit full reply breaks callers that pinned it and fails the baseline test; add members instead.

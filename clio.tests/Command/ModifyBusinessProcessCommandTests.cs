@@ -83,7 +83,9 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 		// Assert
 		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
-		_processDescriber.Received(2).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().NotContain(message => message.Contains("Could not verify"),
 			because: "the UId was in hand the whole time, so declaring the check unperformable would be a "
 				+ "wrong warning in a workflow the tool supports");
@@ -245,7 +247,9 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 		// Assert
 		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
-		_processDescriber.Received(2).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().ContainSingle(message => message.Contains("EVERY record of the target object"),
 			because: "the element is left acting on every row of its object and carries no output parameter to "
 				+ "say so, so this warning is the only signal the caller gets");
@@ -611,7 +615,9 @@ public sealed class ModifyBusinessProcessCommandTests {
 		result.Should().Be(0,
 			because: "a dropped label is a caveat about an edit that SUCCEEDED, never a failure");
 		// Two reads: one before the edit for the digest's change list, one after for the guards and the summary.
-		_processDescriber.Received(2).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		// The before-read needs no version standing; the after-read does, for the digest.
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, false, true);
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
 		warnings.Should().ContainSingle(
 			warning => warning.Contains("Decide -> Yes (asked for 'Approved', drawn 'Rejected')"),
 			because: "the caller asked for 'Approved' and the connector still says something else - so the "
