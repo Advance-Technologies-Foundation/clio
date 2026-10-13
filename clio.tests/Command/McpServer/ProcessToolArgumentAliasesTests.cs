@@ -509,7 +509,7 @@ public sealed class ProcessToolArgumentAliasesTests {
 	private sealed class FakeNewVersionCommand : ModifyProcessAsNewVersionCommand {
 		public ModifyProcessAsNewVersionOptions? Captured { get; private set; }
 
-		public FakeNewVersionCommand() : base(Substitute.For<IModifyProcessAsNewVersionService>(),
+		public FakeNewVersionCommand() : base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<IProcessDescriber>(),
 			Substitute.For<ILogger>()) {
 		}
 
