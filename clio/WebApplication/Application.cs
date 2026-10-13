@@ -40,18 +40,25 @@ namespace Clio.WebApplication
 
 		#region Methods: Private
 
-		private string GetCompleteUrl(string url) => _serviceUrlBuilder.Build(url); 
+		private static string GetRestartServicePath(EnvironmentSettings environmentSettings) =>
+			environmentSettings.IsNetCore
+				? @"/ServiceModel/AppInstallerService.svc/RestartApp"
+				: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
 
 		#endregion
 
 		#region Methods: Public
 
-		public void Restart() {
+		public void Restart() => Restart(_applicationClient, _environmentSettings);
+
+		/// <inheritdoc />
+		public void Restart(IApplicationClient applicationClient, EnvironmentSettings environmentSettings) {
+			applicationClient.CheckArgumentNull(nameof(applicationClient));
+			environmentSettings.CheckArgumentNull(nameof(environmentSettings));
 			_logger.WriteLine("Restart application...");
-			string servicePath = _environmentSettings.IsNetCore 
-				? @"/ServiceModel/AppInstallerService.svc/RestartApp" 
-				: @"/ServiceModel/AppInstallerService.svc/UnloadAppDomain";
-			_applicationClient.ExecutePostRequest(GetCompleteUrl(servicePath), "{}", Timeout.Infinite);
+			applicationClient.ExecutePostRequest(
+				_serviceUrlBuilder.Build(GetRestartServicePath(environmentSettings), environmentSettings), "{}",
+				Timeout.Infinite);
 		}
 
 		public void LoadLicense(string licenseFilePath) {

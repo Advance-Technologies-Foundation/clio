@@ -2,6 +2,7 @@
 	using System;
 	using System.Collections.Generic;
 	using System.Diagnostics.CodeAnalysis;
+	using System.Globalization;
 	using System.IO;
 	using System.Linq;
 	using Clio.Command.McpServer;
@@ -140,6 +141,21 @@
 		internal bool ConditionalBaselineSchemaAbsent { get; set; }
 
 		/// <summary>
+		/// Gets or sets the design package UId the on-disk baseline was captured for, when that baseline
+		/// recorded NO editable schema and the save carries <c>target-package-uid</c>. MCP-internal.
+		/// </summary>
+		/// <remarks>
+		/// A baseline that recorded no editable schema has no UId for
+		/// <see cref="ConditionalBaselineSchemaUId"/>. The package <c>get-page</c> resolved
+		/// (<c>meta.json</c> <c>page.designPackageUId</c>) identifies it instead. A target that resolves
+		/// to that same design package is the write the baseline describes. Without this key the baseline
+		/// was dropped for every <c>target-package-uid</c>, also for one that named that same package, and
+		/// the save lost the <c>schema-created-externally</c> check that the same save without the selector
+		/// gets (issue #1741).
+		/// </remarks>
+		internal string? ConditionalBaselineDesignPackageUId { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the resolved target turned out to be the very schema the
 		/// conditional baseline describes. The save must then refresh the on-disk baseline like any other
 		/// armed save, or the next unpinned save auto-arms from a superseded checksum.
@@ -180,6 +196,7 @@
 		private readonly IPageDesignerPresenceNotifier? _pageDesignerPresenceNotifier;
 		private readonly IPageBaselineGuard _pageBaselineGuard;
 		private readonly IPersistedResourceKeyReader _persistedResourceKeyReader;
+		private readonly IPageUnresolvedMergeDetector? _unresolvedMergeDetector;
 
 		/// <summary>
 		/// Initializes a new instance of the <see cref="PageUpdateCommand"/> class.
@@ -203,6 +220,9 @@
 		/// <param name="viewConfigApplierFactory">Creates the platform diff interpreter for mandatory parent validation.</param>
 		/// <param name="pageDesignerPresenceNotifier">Best-effort notifier used by the update-page
 		/// entry points to publish Designer Presence save events.</param>
+		/// <param name="unresolvedMergeDetector">Check of the viewModelConfigDiff/modelConfigDiff merges against the
+		/// parent schemas (GH-1753): a merge the platform differ skips is a warning, a merge it throws on (so the page
+		/// fails to build) rejects the save. Optional: without it a save behaves exactly as before.</param>
 		[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 			Justification = "DI constructor: each collaborator owns a separate write concern. The factory creates a fresh stateful diff interpreter per hierarchy; bundling unrelated services would hide dependencies.")]
 		public PageUpdateCommand(
@@ -213,7 +233,8 @@
 			IPersistedResourceKeyReader persistedResourceKeyReader,
 			IPageDesignerHierarchyClient hierarchyClient = null,
 			IPageDesignerPresenceNotifier? pageDesignerPresenceNotifier = null,
-			Func<IJsonDiffApplier> viewConfigApplierFactory = null) {
+			Func<IJsonDiffApplier> viewConfigApplierFactory = null,
+			IPageUnresolvedMergeDetector? unresolvedMergeDetector = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_logger = logger;
@@ -222,6 +243,7 @@
 			_pageDesignerPresenceNotifier = pageDesignerPresenceNotifier;
 			_pageBaselineGuard = pageBaselineGuard;
 			_persistedResourceKeyReader = persistedResourceKeyReader;
+			_unresolvedMergeDetector = unresolvedMergeDetector;
 		}
 
 		/// <summary>
@@ -303,6 +325,7 @@
 			List<string> RegisteredKeys,
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
+			PageConfigMergeReport ConfigMergeReport,
 			PageUpdateResponse CaptionGateFailure);
 
 		/// <summary>
@@ -322,18 +345,35 @@
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
 			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
 				out PageAppendProjection projection, out response)) return false;
+			if (!TryValidatePlacementSlots(bodyToWrite, IsAppendMode(options), out response)) return false;
 			if (!TryValidateParents(bodyToWrite, context, out response)) return false;
 			// Captured BEFORE UpdateSchemaBody overwrites `body` with the resolved one.
 			IReadOnlyList<string> downgradeWarnings =
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
+			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
 			List<string> registeredKeys = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
-				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context.SchemaType);
+				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
 			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
-				downgradeWarnings, inertWarnings, captionGateFailure);
+				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
 			return true;
+		}
+
+		// GH-1752: body-only and mandatory, so it runs for mobile pages too (the parent check does not) and on
+		// update-page, sync-pages and the CLI alike. A placement without a slot saves fine but the page can then
+		// neither render nor be read back by get-page.
+		private static bool TryValidatePlacementSlots(string body, bool isAppend, out PageUpdateResponse response) {
+			response = null;
+			SchemaValidationResult slotResult = PagePlacementSlotValidation.Validate(body);
+			if (slotResult.IsValid) return true;
+			response = new PageUpdateResponse {
+				Success = false,
+				Error = PlacementSlotFailurePrefix + string.Join("; ", slotResult.Errors)
+					+ (isAppend ? PlacementSlotFailureHint : string.Empty)
+			};
+			return false;
 		}
 
 		private bool TryValidateParents(string body, EditableSchemaContext context, out PageUpdateResponse response) {
@@ -355,19 +395,58 @@
 			return true;
 		}
 
+		internal const string UnresolvedMergeCheckSkippedWarning =
+			"Could not check whether the viewModelConfigDiff/modelConfigDiff merges resolve against the parent schemas, " +
+			"so a merge whose path does not exist would not be reported: {0}";
+
+		/// <summary>
+		/// Checks the config <c>merge</c> operations in <paramref name="body"/> against the parent schemas (GH-1753).
+		/// A merge the platform differ skips is a warning only, because a page can legitimately carry such an
+		/// operation from earlier saves and rejecting it would block unrelated edits. A merge the differ throws on
+		/// is an error: the page already fails to build, so the save is rejected.
+		/// </summary>
+		/// <returns>The findings, empty when every merge resolves or nothing applies; a single "could not check"
+		/// warning when the check could not run.</returns>
+		private PageConfigMergeReport DetectUnresolvedConfigMerges(string body, EditableSchemaContext context) {
+			if (_unresolvedMergeDetector is null || _hierarchyClient is null
+				|| context.SchemaType == PageSchemaType.Mobile
+				|| PageSchemaTypeExtensions.FromBody(body) == PageSchemaType.Mobile) {
+				return PageConfigMergeReport.Empty;
+			}
+			try {
+				// The detector reads the hierarchy only when the body has a merge that can miss its target.
+				return _unresolvedMergeDetector.Detect(body, () => GetInheritedHierarchy(context));
+			} catch (Exception ex) {
+				// Every exception, deliberately: no cancellation token reaches this synchronous path, so even a
+				// TaskCanceledException is an HTTP timeout of the hierarchy read, not a caller's cancellation. An
+				// advisory check must never fail a save, and a check that did not run must say so - staying silent
+				// would look exactly like "every merge resolves". The reason is server-authored text: neutralized
+				// and length-capped before it reaches a model.
+				return new PageConfigMergeReport([], [string.Format(CultureInfo.InvariantCulture,
+					UnresolvedMergeCheckSkippedWarning,
+					SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex.Message) ?? ex.GetType().Name)]);
+			}
+		}
+
 		private IEnumerable<PageDesignerHierarchySchema> GetInheritedHierarchy(EditableSchemaContext context) {
+			// Read once per write: the parent check and the merge check both need it, and on the target-schema-uid
+			// and create-replacing paths every read is a designer request.
+			if (context.InheritedHierarchy is not null) {
+				return context.InheritedHierarchy;
+			}
 			string uid = context.IsCreateReplacing ? context.TemplateSchemaUId : context.EditableSchemaUId;
 			string package = context.DesignPackageUId ?? _hierarchyClient.GetDesignPackageUId(uid);
 			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context.ResolvedHierarchy ?? _hierarchyClient.GetParentSchemas(uid, package);
 			if (hierarchy is null || hierarchy.Count == 0)
-				throw new InvalidOperationException("Cannot validate parentName: page hierarchy is unavailable.");
+				throw new InvalidOperationException("Cannot read the page's parent schemas: page hierarchy is unavailable.");
 			IEnumerable<PageDesignerHierarchySchema> inherited = hierarchy;
 			if (!context.IsCreateReplacing) {
 				int own = hierarchy.ToList().FindIndex(x => SchemaUIdsMatch(x.UId, uid));
-				if (own < 0) throw new InvalidOperationException("Cannot validate parentName: target schema is missing from the hierarchy.");
+				if (own < 0) throw new InvalidOperationException("Cannot read the page's parent schemas: target schema is missing from the hierarchy.");
 				inherited = hierarchy.Skip(own + 1);
 			}
-			return inherited;
+			context.InheritedHierarchy = inherited.ToList();
+			return context.InheritedHierarchy;
 		}
 
 		private bool TryCompleteDryRun(
@@ -377,13 +456,17 @@
 			JArray parsedOptionalProperties,
 			out PageUpdateResponse response) {
 			if (!IsAppendMode(options)) {
+				if (!TryValidatePlacementSlots(options.Body, isAppend: false, out response)) return false;
 				if (!TryValidateParents(options.Body, context, out response)) return false;
 				// Parent references require the target hierarchy even during a dry run. No schema is saved.
-				// Caption checks remain fragment-scoped because replace does not fetch localizableStrings.
+				// The caption check reads the schema's stored and inherited keys only for a binding the body
+				// and `resources` leave unresolved (issue #1740), through the same cached read as ValidateInput.
 				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
 				response.Warnings = CombineWarnings(
-					BuildDryRunWidgetCaptionWarnings(options.Body, context.SchemaType, explicitResources),
-					PageInertOperationDetector.Detect(options.Body));
+					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
+						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
+					PageInertOperationDetector.Detect(options.Body),
+					ConfigMergeWarningsForDryRun(DetectUnresolvedConfigMerges(options.Body, context)));
 				return true;
 			}
 			// ENG-96262 / GH-1150: append used to return before the merge, so a dry run reported `success`
@@ -403,7 +486,9 @@
 				BuildCaptionGateWarnings(prepared.CaptionGateFailure),
 				BuildProjectedLossWarnings(prepared.Projection),
 				prepared.DowngradeWarnings,
-				prepared.InertWarnings);
+				prepared.InertWarnings,
+				WithAppendModeHint(ConfigMergeWarningsForDryRun(prepared.ConfigMergeReport), options,
+					prepared.ConfigMergeReport.Errors.Count > 0));
 			return true;
 		}
 
@@ -416,6 +501,17 @@
 			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
 				out PreparedWrite prepared, out response)) return false;
 			if (prepared.CaptionGateFailure != null) { response = prepared.CaptionGateFailure; return false; }
+			if (prepared.ConfigMergeReport.Errors.Count > 0) {
+				// Nothing is written, but the other findings for this body still hold: keep them beside the error.
+				response = new PageUpdateResponse {
+					Success = false,
+					Error = string.Join(Environment.NewLine, WithAppendModeHint(prepared.ConfigMergeReport.Errors, options)),
+					Warnings = CombineWarnings(
+						BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+						prepared.ConfigMergeReport.Warnings)
+				};
+				return false;
+			}
 			if (!TrySaveSchema(prepared.Schema, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
@@ -423,6 +519,7 @@
 			response.AppendProjection = prepared.Projection;
 			response.Warnings = CombineWarnings(
 				BuildProjectedLossWarnings(prepared.Projection), prepared.DowngradeWarnings, prepared.InertWarnings,
+				prepared.ConfigMergeReport.Warnings,
 				explicitResources?.Count > 0 || prepared.RegisteredKeys?.Count > 0
 					? new List<string> { ResourceWorkspaceCaptureWarning } : null);
 			PopulatePostSaveChecksum(options, context, response);
@@ -473,13 +570,21 @@
 		/// <param name="context">The resolved target schema.</param>
 		/// <returns>The keys, and the reason when the read produced none.</returns>
 		/// <remarks>
-		/// Used ONLY on the failure path of the label-resource validators, so the extra <c>GetSchema</c>
+		/// Used ONLY on the failure path of the label-resource validators and of the widget-caption
+		/// pre-flight, so the extra <c>GetSchema</c>
 		/// round-trip is not paid by a body that validates cleanly, and a body that fails on structure
 		/// still reports its own error rather than a network error. A key already stored on the schema
 		/// resolves at runtime whether or not the current call repeats it in <c>resources</c>; without
 		/// this the second and every later save of the same page was rejected unless the caller re-sent
 		/// every key it had ever registered (issue #1320). Best-effort: any failure degrades to an empty
 		/// set, which restores the previous, stricter behaviour instead of letting the save through.
+		/// <para>
+		/// The set also carries the keys of the already-resolved designer hierarchy
+		/// (<see cref="GetInheritedResourceKeys"/>), at no extra round trip: <c>GetSchema</c> with
+		/// <c>useFullHierarchy:false</c> omits inherited keys that come from an ancestor's replacing schema in
+		/// another package, and those resolve at runtime too (issue #1740). The widget-caption pre-flight uses
+		/// this same read, on its own failure path only.
+		/// </para>
 		/// <para>
 		/// PURE with respect to the request — the memo that used to live on <see cref="PageUpdateOptions"/>
 		/// is gone. Caching is <see cref="IPersistedResourceKeyReader"/>'s job, keyed by the thing actually
@@ -488,10 +593,10 @@
 		/// </remarks>
 		private PersistedResourceKeyRead ReadPersistedResourceKeys(EditableSchemaContext context) {
 			try {
-				if (context.IsCreateReplacing) {
-					// Nothing is persisted yet on a schema this save is about to create.
-					return PersistedResourceKeyRead.None;
-				}
+				// A schema this save is about to CREATE has nothing of its own yet, but TemplateSchemaUId then
+				// names the schema it replaces, and BuildNewReplacingSchemaDto copies that schema's
+				// localizableStrings into the new one - so reading the template answers with exactly the keys
+				// the save will carry, and the dry run agrees with the save's caption gate (issue #1740).
 				// A CLEAN GetSchema refusal is the third way this read ends with no keys, and it used to be
 				// the only silent one: the designer service answers success:false (schema not found, access
 				// denied, a redirected target UId), TryGetSchema returns false with the server's own message,
@@ -501,7 +606,7 @@
 					return LogPersistedResourceKeyFailure(schemaError);
 				}
 				return PersistedResourceKeyRead.FromKeys(
-					ResourceStringHelper.GetExistingKeys(schema[LocalizableStringsKey] as JArray));
+					CollectResolvableKeys(schema[LocalizableStringsKey] as JArray, context));
 			} catch (Exception ex) when (ex is not OperationCanceledException) {
 				return LogPersistedResourceKeyFailure(ex.Message);
 			}
@@ -525,19 +630,68 @@
 		}
 
 		/// <summary>
-		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
-		/// advisory warnings. Weaker than the save's gate on purpose: without the server's
-		/// <c>localizableStrings</c> it can only resolve against the explicitly supplied resources, and
-		/// fetching them would cost this path its offline guarantee. An append dry run does not use this -
-		/// it already has the schema, so it runs the authoritative gate instead.
+		/// The keys a caption or label on the target schema resolves at runtime: the given
+		/// <c>localizableStrings</c> entries plus <see cref="GetInheritedResourceKeys"/>. The one definition
+		/// shared by the persisted-key read and the caption save gate, so the dry run and the save cannot
+		/// drift apart on it.
 		/// </summary>
+		/// <param name="localizableStrings">The schema's <c>localizableStrings</c> array, or <c>null</c>.</param>
+		/// <param name="context">The resolved target schema.</param>
+		/// <returns>A new, mutable key set.</returns>
+		private static HashSet<string> CollectResolvableKeys(JArray localizableStrings, EditableSchemaContext context) {
+			HashSet<string> keys = ResourceStringHelper.GetExistingKeys(localizableStrings);
+			keys.UnionWith(GetInheritedResourceKeys(context));
+			return keys;
+		}
+
+		/// <summary>
+		/// Collects the <c>localizableStrings</c> keys of the target schema's level in the already-resolved
+		/// designer hierarchy and of every level it inherits from.
+		/// </summary>
+		/// <param name="context">The resolved target schema.</param>
+		/// <returns>The keys; empty when the context carries no hierarchy or the target is not in it.</returns>
+		/// <remarks>
+		/// Levels ABOVE the target (replacing schemas in packages that depend on the design package) are left
+		/// out on purpose: their keys resolve today only because those packages are installed, which this
+		/// save cannot rely on. An empty result keeps the stricter, <c>GetSchema</c>-only verdict.
+		/// </remarks>
+		private static IEnumerable<string> GetInheritedResourceKeys(EditableSchemaContext context) {
+			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = context?.ResolvedHierarchy;
+			if (hierarchy is null || hierarchy.Count == 0) {
+				return [];
+			}
+			int own = hierarchy.ToList().FindIndex(schema => SchemaUIdsMatch(schema?.UId, context.EditableSchemaUId));
+			if (own < 0) {
+				return [];
+			}
+			return hierarchy.Skip(own)
+				.SelectMany(schema => ResourceStringHelper.GetExistingKeys(schema?.LocalizableStrings));
+		}
+
+		/// <summary>
+		/// Validates widget caption resource resolutions for a REPLACE dry run (web pages only), returning
+		/// advisory warnings. A replace dry run does not fetch the schema body, so the check first resolves
+		/// against the body and the explicitly supplied resources and only then, for what is still
+		/// unresolved, against the keys the schema already stores or inherits. An append dry run does not use
+		/// this - it already has the schema, so it runs the authoritative gate instead.
+		/// </summary>
+		/// <param name="options">The request; its body is checked, and <c>validate=false</c> skips the check
+		/// exactly as it skips the save's caption gate.</param>
+		/// <param name="schemaType">The target page type; mobile pages are not checked.</param>
+		/// <param name="explicitResources">The <c>resources</c> argument of the call.</param>
+		/// <param name="persistedResourceKeysProvider">Supplies the stored and inherited keys; invoked only when
+		/// a binding is still unresolved, so a clean body costs no round trip.</param>
 		/// <returns>Warning messages for unresolved captions, or <c>null</c> if none.</returns>
 		private static List<string> BuildDryRunWidgetCaptionWarnings(
-				string body, PageSchemaType schemaType, Dictionary<string, string> explicitResources) {
-			if (schemaType == PageSchemaType.Mobile) {
+				PageUpdateOptions options, PageSchemaType schemaType, Dictionary<string, string> explicitResources,
+				Func<IReadOnlySet<string>> persistedResourceKeysProvider) {
+			// validate=false skips the save's caption gate (ValidateInsertedWidgetCaptionsResolve), so the
+			// preview of that save has nothing to warn about - and must not pay the stored-key read for it.
+			if (!options.Validate || schemaType == PageSchemaType.Mobile) {
 				return null;
 			}
-			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources);
+			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+				options.Body, explicitResources, persistedResourceKeysProvider);
 			return result.IsValid ? null : new List<string>(result.Errors);
 		}
 
@@ -547,6 +701,26 @@
 		/// </summary>
 		private static IReadOnlyList<string> BuildCaptionGateWarnings(PageUpdateResponse captionGateFailure) =>
 			captionGateFailure is null ? null : [captionGateFailure.Error];
+
+		// Like the caption gate, the config-merge errors that reject a save are advisory on a dry run: its job is to
+		// say what would happen. The errors come first, because each of them would stop the save.
+		private static IReadOnlyList<string> ConfigMergeWarningsForDryRun(PageConfigMergeReport report) =>
+			[.. report.Errors, .. report.Warnings];
+
+		internal const string ConfigMergeAppendModeHint =
+			"In append mode the page's stored viewModelConfigDiff/modelConfigDiff operations are kept and the new ones "
+			+ "are added after them, so if this merge is already in the stored body, save the page with mode replace to "
+			+ "fix or remove it.";
+
+		/// <summary>
+		/// Append concatenates the config diffs, so a throwing merge that is already stored rejects every later
+		/// append save, and "fix the path" or "remove the operation" can only be done with mode replace.
+		/// </summary>
+		private static IReadOnlyList<string> WithAppendModeHint(
+			IReadOnlyList<string> findings, PageUpdateOptions options, bool hasErrors = true) =>
+			hasErrors && findings.Count > 0 && IsAppendMode(options)
+				? [.. findings, ConfigMergeAppendModeHint]
+				: findings;
 
 		/// <summary>
 		/// Whether the caller asked for the incoming body to be merged with the schema's current body
@@ -603,15 +777,36 @@
 			"Use force=true ONLY after the user explicitly confirms overwriting the external changes.";
 
 		/// <summary>
-		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
-		/// against the resolved editable schema state and blocks the save with a structured conflict
-		/// when the schema was modified outside the current session. Skipped entirely when
-		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
+		/// Compares two schema UIds by VALUE rather than by spelling. The design package UId of a baseline
+		/// that recorded no editable schema is a GUID too and is compared the same way.
 		/// </summary>
-		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
+		/// <remarks>
+		/// The two sides reach this comparison from different places and are written by different people.
+		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
+		/// <c>--target-schema-uid</c> / <c>--target-package-uid</c> the caller typed, which
+		/// <c>TryResolveContext</c> uses verbatim. GUIDs have several legal spellings, and a braced
+		/// <c>{xxxxxxxx-…}</c> selector against a bare recorded UId is the same value written two ways. A plain
+		/// string comparison read that as a redirect and silently skipped the post-save refresh — the very
+		/// failure issue #1538 is about, reintroduced for one input shape. Only a value that does not parse as
+		/// a GUID at all falls back to the string comparison, so nothing that used to match stops matching.
+		/// </remarks>
+		/// <param name="recordedSchemaUId">The UId carried over from the on-disk baseline.</param>
+		/// <param name="resolvedSchemaUId">The UId the write actually resolved to.</param>
+		/// <returns><c>true</c> when both name the same schema (or package).</returns>
+		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
+			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
+				return false;
+			}
+			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
+				return recorded == resolved;
+			}
+			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
+		}
+
 		/// <summary>
 		/// Arms the baseline that <see cref="PageBaselineGuard"/> could not decide on, once the resolved
-		/// target turns out to be the very schema that baseline describes.
+		/// target turns out to be the page that baseline describes: the same editable schema, or, for a
+		/// baseline that recorded no editable schema, the same design package.
 		/// </summary>
 		/// <remarks>
 		/// The guard runs BEFORE the target is resolved, so a save carrying <c>target-package-uid</c> /
@@ -623,35 +818,16 @@
 		/// target that resolves elsewhere still leaves the baseline dropped, which is the redirect case
 		/// the guard exists to handle.
 		/// </remarks>
-		/// <summary>
-		/// Compares two schema UIds by VALUE rather than by spelling.
-		/// </summary>
-		/// <remarks>
-		/// The two sides reach this comparison from different places and are written by different people.
-		/// The left one comes off disk, in whatever form clio recorded; the right one can be the raw
-		/// <c>--target-schema-uid</c> the caller typed, which <c>TryResolveContext</c> uses verbatim. GUIDs
-		/// have several legal spellings, and a braced <c>{xxxxxxxx-…}</c> selector against a bare recorded
-		/// UId is the same schema written two ways. A plain string comparison read that as a redirect and
-		/// silently skipped the post-save refresh — the very failure issue #1538 is about, reintroduced for
-		/// one input shape. Only a value that does not parse as a GUID at all falls back to the string
-		/// comparison, so nothing that used to match stops matching.
-		/// </remarks>
-		/// <param name="recordedSchemaUId">The schema UId carried over from the on-disk baseline.</param>
-		/// <param name="resolvedSchemaUId">The schema UId the write actually resolved to.</param>
-		/// <returns><c>true</c> when both name the same schema.</returns>
-		private static bool SchemaUIdsMatch(string recordedSchemaUId, string resolvedSchemaUId) {
-			if (string.IsNullOrWhiteSpace(recordedSchemaUId) || string.IsNullOrWhiteSpace(resolvedSchemaUId)) {
-				return false;
-			}
-			if (Guid.TryParse(recordedSchemaUId, out Guid recorded) && Guid.TryParse(resolvedSchemaUId, out Guid resolved)) {
-				return recorded == resolved;
-			}
-			return string.Equals(recordedSchemaUId, resolvedSchemaUId, StringComparison.OrdinalIgnoreCase);
-		}
-
 		private static void PromoteConditionalBaselineWhenTargetMatches(
 				PageUpdateOptions options, EditableSchemaContext context) {
-			if (!SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)) {
+			// A baseline that recorded an editable schema is matched by that schema's UId. A baseline that
+			// recorded none is matched by the design package get-page resolved: a target-package-uid that
+			// resolves to that package is the write it describes (issue #1741). DesignPackageUId is empty on
+			// the target-schema-uid path, so that path never matches by package.
+			bool targetIsTheBaselinePage =
+				SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)
+				|| SchemaUIdsMatch(options.ConditionalBaselineDesignPackageUId, context.DesignPackageUId);
+			if (!targetIsTheBaselinePage) {
 				return;
 			}
 			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
@@ -669,6 +845,13 @@
 			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
 		}
 
+		/// <summary>
+		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
+		/// against the resolved editable schema state and blocks the save with a structured conflict
+		/// when the schema was modified outside the current session. Skipped entirely when
+		/// <see cref="PageUpdateOptions.Force"/> is set or no baseline information was supplied.
+		/// </summary>
+		/// <returns><c>true</c> when the write may proceed; <c>false</c> with a conflict response otherwise.</returns>
 		private bool TryCheckForExternalModification(
 				PageUpdateOptions options,
 				EditableSchemaContext context,
@@ -1041,6 +1224,10 @@
 			public string ParentSchemaName { get; set; }
 			public string TemplateSchemaUId { get; set; }
 			public PageSchemaType SchemaType { get; set; }
+			/// <summary>The schemas the written body layers over, nearest parent first; read once per write by
+			/// <see cref="GetInheritedHierarchy"/>. Separate from <see cref="ResolvedHierarchy"/>, which stays
+			/// <c>null</c> on the create-replacing path.</summary>
+			public IReadOnlyList<PageDesignerHierarchySchema> InheritedHierarchy { get; set; }
 		}
 
 		private static string FindRootSchemaUId(IReadOnlyList<PageDesignerHierarchySchema> hierarchy, string schemaName) {
@@ -1072,21 +1259,24 @@
 		/// <summary>
 		/// Authoritative widget-caption resolvability gate. After <see cref="UpdateSchemaBody"/>
 		/// has produced the final <c>localizableStrings</c>, this rejects the save when a freshly inserted
-		/// widget/container caption binds a localizable key that is neither
-		/// present in that final set nor auto-provided by a DS-bound attribute
+		/// widget/container caption binds a localizable key that is neither present in that final set,
+		/// nor inherited from the resolved designer hierarchy, nor auto-provided by a DS-bound attribute.
 		/// </summary>
 		/// <returns>A failure response when a saved inserted widget caption would render raw; otherwise <c>null</c>.</returns>
 		private static PageUpdateResponse ValidateInsertedWidgetCaptionsResolve(
-				PageUpdateOptions options, JObject schemaToSave, string body, PageSchemaType schemaType) {
+				PageUpdateOptions options, JObject schemaToSave, string body, EditableSchemaContext context) {
 			// validate=false is the explicit escape hatch for a pre-existing page defect: skip the
 			// client-side content checks here rather than at the call site, so TryUpdatePage stays flat.
 			if (!options.Validate) {
 				return null;
 			}
-			if (schemaType == PageSchemaType.Mobile) {
+			if (context.SchemaType == PageSchemaType.Mobile) {
 				return null;
 			}
-			HashSet<string> registeredNames = ResourceStringHelper.GetExistingKeys(schemaToSave[LocalizableStringsKey] as JArray);
+			// GetSchema's own list omits keys an ancestor's replacing schema in another package declares; they
+			// render at runtime, so refusing them was a false refusal (issue #1740). Same set the dry run reads.
+			HashSet<string> registeredNames =
+				CollectResolvableKeys(schemaToSave[LocalizableStringsKey] as JArray, context);
 			HashSet<string> dsBoundKeys = SchemaValidationService.CollectViewModelPaths(body).Keys
 				.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionsRegistered(
@@ -1308,6 +1498,16 @@
 		/// <summary>The canonical error for a malformed <c>resources</c> payload.</summary>
 		internal const string InvalidResourcesError = "resources must be a valid JSON object string";
 		internal const string MobileValidationFailedPrefix = "Mobile page validation failed: ";
+
+		/// <summary>Prefix of the mandatory GH-1752 rejection: an insert/move with a parentName but no propertyName.</summary>
+		internal const string PlacementSlotFailurePrefix = "Body places an element without a slot: ";
+
+		// The check runs on the body that would be WRITTEN. In append mode that is the stored body merged with
+		// the fragment, so the operation (and its index) may come from the page as an older clio saved it.
+		private const string PlacementSlotFailureHint =
+			" In append mode the index counts the stored body merged with your fragment: an operation already "
+			+ "stored on the page is fixed by appending the same operation with its propertyName, or by saving "
+			+ "the corrected get-page body in replace mode.";
 
 		/// <summary>
 		/// Text appended to every CONTENT-validation failure so the caller learns about the escape hatch at
