@@ -2,9 +2,10 @@
 
 **Status**: Accepted. Owner questions Q1-Q12 and Q19 were agreed on 2026-10-07 and 2026-10-08 (Q7 answered by stand
 measurement M3 on 2026-10-02), and **Q20** (where D25's description bytes come from) on 2026-10-14 as A: trim existing
-text per tool, reviewer-approved. One item is open: the test-plan item **O-TP1** decides where the e2e cases on the
-Process-parameter variant's `Files` run (recommended B: in ENG-96506 Generated report + process parameter modes). It
-changes no decision below.
+text per tool, reviewer-approved. Two items are open: the test-plan item **O-TP1** decides where the e2e cases on the
+Process-parameter variant's `Files` run (recommended B: in ENG-96506 Generated report + process parameter modes); it
+changes no decision below. The second, recorded on 2026-10-14 and not decided, is whether a single-instance
+sub-process's FileCollection-shaped `In` parameter joins D5's file-consuming targets (a stand measurement first).
 **Date**: 2026-10-13
 **Jira**: ENG-95984 File process parameter type (Task; epic ENG-92704 Create BP via AI Toolkit)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md)
@@ -62,7 +63,13 @@ Stand measurements of 2026-10-02 (CrtProcessBuilder 1.6.6.54; the stand runs 1.6
   over 3 contacts (the baseline for the post-cut proof).
 - **M6** a flat File mapped from a collection item outside a row context read null while the source held two files.
 - **T-68** a nested-item mapping in `mappings[]` of one create request threw a bare NullReferenceException, while the
-  same mapping through `addMapping` succeeded; the route is unchanged on 1.6.6.96 (hypothesis, source).
+  same mapping through `addMapping` succeeded; the route is unchanged on 1.6.6.96 (hypothesis, source). **Root-caused
+  and fixed in the package PR** (draft https://creatio.ghe.com/engineering/crt-process-builder/pull/96, 2026-10-14):
+  the nested items of a user task synced in the same request carry `ProcessSchema == null`, because the platform's
+  copy constructor copies template items whose owner is a `ProcessUserTaskSchema`, so `GetMetaPath()` threw; the
+  modify path loads items through the metadata reader, which owns them. The for-mapping walk now adopts each
+  descended item, and the regression test drives the platform's real sync. Stand proof owed: E2E-06, manual TC-04 on
+  ENG-95984.
 
 Re-checked on 2026-10-13 (clio master `19e6f9c53`, package main 1.6.6.96, knowledge 1.15.142):
 - **B1 Description budget measured full.** Under the unchanged ceiling 137 x 256 = 35,072 B
@@ -177,8 +184,9 @@ stays type-checked, and a failing segment is named in the error. An older server
 **Decision (option 2; owner choices agreed 2026-10-07).** Inside `ApplyMapping`, after the existing guards, for
 **structured sources only** (`sourceElement` + `sourceElementParameter`, or `processParameter`): rules P1, P2, P2-MI,
 P3, R-M1 and R-M2 below. P2 and R-M2 apply to **file-consuming targets only**: the Process-parameter variant's `Files`
-(schema `6c620dd2-026e-560c-489f-030c5be5f2c3`) and a process-level collection that matches the FileCollection
-predicate; later ENG-95985 Send email attachments adds its slots. P3 **resets** a stale parent with a notice. An
+(schema `6c620dd2-026e-560c-489f-030c5be5f2c3`, recognised by the element's task schema UId, mirrored as
+`ProcessDesignConstants.FileProcessing`) and a process-level collection that matches the FileCollection predicate;
+later ENG-95985 Send email attachments adds its slots. P3 **resets** every stale parent with a notice. An
 `expression` source goes to the named target as given: no auto-bind, no reset, no pairing, no refusal by these rules.
 Only the package's meta-path check applies to it (F4): a misspelled token, a token from another process and a column
 of a collection item are refused; GUIDs are stored lower-cased; nested-item tokens such as `Files.File` are accepted.
@@ -186,16 +194,35 @@ Every target is resolved and type-checked before the first value is written.
 
 | Rule | Trigger | Writes | Refusal or notice |
 |---|---|---|---|
-| P1 | the target is an item of a collection AND the source is an item of a collection | the item, and the parent to the source's parent (recursively) | refuse (F-M1) when the parent is bound to a DIFFERENT collection; the same source is a no-op; applies to `InputRecordCollection.<F>` too |
-| P2 | an outer collection mapping onto a file-consuming target that has a FileLocator item | each target FileLocator item to the paired source item: exact name (case-insensitive, type-checked), else the single-FileLocator pair | always a notice (F-M4); never overwrites an item already bound into the new source; rebinds a stale item and says so; an unpairable file item gets "at run time it will be empty" |
-| P2-MI | an outer mapping onto a multi-instance `InputRecordCollection` with an unbound FileLocator item | nothing extra | notice (F-M4): the callee parameter will be empty on every iteration unless mapped |
-| P3 | a plain (non-item) source onto an item of a single-instance owner | the item; the parent reset to None if it was bound to a collection | notice (F-M4) |
-| R-M1 | a flat FileLocator target from a collection item | - | refuse (F-M2): use a FileCollection, or a multi-instance sub-process (M6: such a mapping reads null) |
-| R-M2 | a file-consuming target collection from a collection with no FileLocator item | - | refuse (F-M3) |
+| P1 | target is an item of a collection AND source is an item of a collection | the item, and the target's parents to the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | refuse (F-M1) when a paired parent is bound to anything else; refuse (F-M5) when the SOURCE is nested one collection deeper than the target (outside its row it reads empty); the same source is a no-op; type-agnostic, so it applies to `InputRecordCollection.<F>` too; no notice |
+| P2 | outer collection mapping onto a file-consuming target that has a FileLocator item | each target FileLocator item not already bound into the new source to the paired source item: exact name (case-insensitive, type-checked), else the single-FileLocator pair (`Files.File` to `ObjectFiles.ObjectFile`); an item that cannot be paired and is bound outside the new source is reset to None; non-file items are never paired | a notice (F-M4) for every item bound, rebound, reset or left unpaired (a rebind and a reset name the old binding; an unpairable item gets "at run time it will be empty"); an item already bound into the new source is neither written nor reported |
+| P2-MI | a mapping that binds a multi-instance `InputRecordCollection` (as the named target, or as a parent P1 binds) while one of its FileLocator items stays unbound | nothing extra | notice (F-M4): the callee parameter will be empty on every iteration unless mapped |
+| P3 | plain (non-item) source onto a FileLocator item of a single-instance owner (any element but a multi-instance sub-process, or the process itself: a process-level `Docs.File` counts) | the item; EVERY bound collection above it reset to None | one notice (F-M4) per reset level (owner decision: reset, agreed 2026-10-07) |
+| R-M1 | flat FileLocator target (a process parameter, or an element input such as a single-instance sub-process's File parameter) from a collection item (`F` from `OF1.ObjectFiles.File`) | - | refuse (F-M2: "use a FileCollection, or a multi-instance sub-process"); M6 (2026-10-02): the mapping reads null, so the refusal stays |
+| R-M2 | file-consuming target collection from a collection with no FileLocator item (`Files` from `ReadData.ResultCompositeObjectList`) | - | refuse (F-M3: the source "has no File item") |
 
 An explicit API for later consumers:
 `void BindCollection(ProcessSchema schema, ProcessMappingDescriptor outer, IReadOnlyList<(string TargetItem, string SourceItem)> itemPairs)`
 on `IProcessMappingService` (type-agnostic mechanics; null pairs mean the P2 policy).
+
+**As built in the package PR** (draft https://creatio.ghe.com/engineering/crt-process-builder/pull/96, 2026-10-14):
+- plan, then commit: every write is planned and every target resolved and type-checked first, so a refused mapping
+  assigns no value (items it walked may be adopted: their `ContainerUId` and owning schema are backfilled, as a load
+  of the schema would); notices are recorded after the writes, through `IProcessDesignNotices`, now a constructor
+  dependency of `ProcessMappingService`;
+- one rule source: the rules are decided in `PB/Mappings/CollectionBindingRules.cs` (static, pure), which the write
+  side applies and describe asks (D8), so the two cannot drift apart;
+- `BindCollection` pairs DIRECT items by name (case-insensitive), written as given with no notice, and keeps every
+  other rule on the outer mapping (R-M2 and P2-MI included); a second entry point, `BindCollectionItems`, binds the
+  pairs only and never writes the outer value, while the outer target still passes the guards a mapping onto it would
+  (D9 uses it);
+- the texts are the catalogue's (F-M1..F-M5), quoted as the code writes them.
+
+**Open item (recorded 2026-10-14, not decided).** A single-instance sub-process's FileCollection-shaped `In`
+parameter is not a file-consuming target as written above, so an outer-only `SP.Docs <- OF1.ObjectFiles` gets neither
+P2 nor R-M2. M3 measured an outer-only binding onto a process parameter only. A stand measurement (M27 of the
+analysis) settles whether the callee reads the files; the owner decides afterwards whether the set widens. No code
+change in this story.
 
 **Rejected.** (1) Explicit dotted mappings only: cheapest, but an outer-only mapping stays a saved-green crash and
 agents must know the two-level rule. (3) Type-agnostic P2 (name pairing for every collection): it also changes what an
@@ -208,7 +235,8 @@ approvals) must stay green unchanged. P1 changes what an item-only multi-instanc
 `InputRecordCollection` is bound too, so one iteration becomes N (a visible behaviour change; two shipped guide
 passages that state "one iteration" are rewritten under a version gate, D25). P1 and P2 change what an existing
 operation writes, so the floor moves (D26). The create path is covered too: T-68 is root-caused before the binder code
-and pinned by a test that builds an element and a nested mapping in ONE create request. Regressions that must hold:
+and pinned by a test that builds an element and a nested mapping in ONE create request (done in the package PR: the
+test drives the platform's real sync; the stand proof is owed). Regressions that must hold:
 (1) a multi-instance sub-process whose callee has a Guid and a File parameter, iterated over `CreatedObjectFileIds`
 or over Read data rows, is ACCEPTED with the P2-MI notice and no item written; (2) explicit outer plus per-item
 mappings write exactly what 1.6.6.54 writes; (3) an `expression` onto `Files` and then onto `Files.File` writes both
@@ -257,7 +285,11 @@ value stamped with this schema (today only a ROOT value counts, so a nested-only
 When a stored Script is exactly one element-parameter token, describe also reports `sourceElement` and
 `sourceElementParameter` (dotted for a nested item, such as `ObjectFiles.File`, named through
 `ProcessSchemaElementLocator.TryNameNestedParameter`), with `sourceColumn` null, and only when the write side, given
-them back, would store this very value; `value` stays.
+them back, would store this very value; `value` stays. As built in the package PR, "this very value" means parity with
+the write side as a whole: the names are reported only when replaying them changes NO other level
+(`CollectionBindingRules.ReappliesUnchanged`: no refusal, no P1 parent write, no P3 reset, no P2 item write), so an
+outer-only `Files` binding stays a `value`; one element index (`ProcessElementLookup`) is built per describe, and the
+decode never throws.
 
 **Rejected.** New per-parameter fields: clio's `DescribedParameter` has no overflow bag, so an undeclared field is
 dropped (the members used here are already declared, so clio needs no DTO change). Formula-only output: a replayed
@@ -276,7 +308,10 @@ another element's output" (about +40 B of 1,053 B left). Three `DescribedParamet
 **Decision.** M3 refuted H-1 on 2026-10-02, so no Sub-task exists (contingency X4). The mirror
 (`BindMirroredCollection`) still binds every item to the source item of the same name through `BindCollection` with
 the clone pairs, as one parity commit in this ticket's package PR (the shipped shape: 60 of 61 bound collections with
-items bind their items), and the code comment that predicted null rows is narrowed.
+items bind their items), and the code comment that predicted null rows is narrowed. As built in the package PR, the
+add path AND the re-mirror path (`setParameter` + `typeFromElement`) bind the items; a re-mirror writes the
+collection's own value again only when it is exactly the plain reference to the output, keeps a caller's formula there
+byte for byte and binds only the items (`BindCollectionItems`), and puts the previous items back on a refusal.
 
 **Rejected.** A separate Sub-task fixed first (taken only had M3 confirmed H-1). Doing nothing (the builder keeps a
 shape the designer never writes).
@@ -394,10 +429,42 @@ not the full sentence, so wording can be tuned in review.
 | F-T5 | refuse | dotted mirror source | D6 |
 | F-T6 | refuse | mirror of a file output (the message points to FileCollection) | D2 |
 | F-T7 | refuse | a replayed mapping naming a FileCollection item the rebuild named `File` | D2 |
-| F-M1 | refuse | P1: the parent is bound to another collection | D5 |
+| F-M1 | refuse | P1: a paired parent is bound to anything else (another collection or a formula) | D5 |
 | F-M2 | refuse | R-M1: flat FileLocator <- a collection item | D5 |
-| F-M3 | refuse | R-M2: a collection without a file item into a file-consuming collection | D5 |
-| F-M4 | notice | P2 items bound, unpaired or stale; P2-MI empty callee file item; P3 parent reset | D5 |
+| F-M3 | refuse | R-M2: a collection without a file item into a file-consuming collection (the source "has no File item") | D5 |
+| F-M4 | notice | P2 item bound, rebound, reset (bound outside the new source and unpairable) or left unpaired; P2-MI empty callee file item, also when P1 binds the multi-instance input; P3 reset of EVERY bound collection above a file item, one notice per level | D5 |
+| F-M5 | refuse | P1: the source is nested one collection deeper than the target (outside its row it reads empty); a deeper TARGET is not refused | D5 |
+
+### F-T and F-M texts as the package PR writes them (draft https://creatio.ghe.com/engineering/crt-process-builder/pull/96, 2026-10-14)
+
+Quoted from `PB/Parameters/ProcessParameterService.cs`, `PB/Parameters/ProcessParameterValueValidator.cs`,
+`PB/ProcessSchemaElementLocator.cs`, `PB/Mappings/CollectionBindingRules.cs` and `PB/Mappings/ProcessMappingService.cs`.
+`<...>` marks a value the code fills in; `[Element '<E>': ]` is present only when the target is an element's
+parameter. `<binding>` names a stored binding: `'<Element>.<path>'`, `'<path>'` for a process parameter, or
+`the formula '<text>'`. `<items>` is `Its items are '<A>', '<B>'.` (at most 20, then a count), or `'<name>' has no
+items.` In F-M texts, a target path is written without its element, a source with it.
+- **F-T1** `Parameter type '<type>' is not supported: a process parameter carries a file by reference, not its bytes. Use type File (one file) or FileCollection (several files).` Any other unsupported name gets the generic text, which now lists `..., Guid, File, FileCollection, Collection (shape it via 'typeFromElement'), and Lookup (set a 'referenceSchema').`
+- **F-T2** `Process parameter '<name>' is a File and cannot have a 'referenceSchema': a file is carried by reference to its stored content (FileLocator), not as a lookup to an object. Drop 'referenceSchema', or drop 'type' to declare a Lookup.` / `Process parameter '<name>' is a FileCollection and cannot have a 'referenceSchema': its shape is fixed (one File item), and a file is carried by reference to its stored content, not as a lookup to an object.`
+- **F-T3** on `addParameter` / `setParameter`: `Process parameter '<name>' is a File and cannot carry a constant default 'value': a File has no constant form; map it from an element's file output or another File parameter.` On `addMapping value` (every constant route): `Value '<value>' is not valid for parameter '<name>' of type <type>: a file has no constant form. Map it from an element's file output or another File parameter ('sourceElement' + 'sourceElementParameter', or 'processParameter').` / `... of type <type>: a collection has no constant form. Map an element's collection output or another collection into it ('sourceElement' + 'sourceElementParameter', or 'processParameter').`
+- **F-T4** `Process parameter '<name>' is a collection of another shape: type FileCollection would change this collection's shape (a FileCollection has exactly one File item and no tag). Remove it and add it again with type FileCollection.`
+- **F-T5** `'<path>' is an item of collection '<collection>' on '<element>'. A mirror copies a whole parameter: mirror '<collection>' for its shape, or declare type File / FileCollection.`
+- **F-T6** `Cannot mirror collection '<element>.<output>': its item '<item>' is a file (FileLocator) with no column identity, so a mirror cannot reproduce this file collection. To keep these files, declare type: FileCollection and map it from '<element>.<output>'; both levels are bound by the mapping.`
+- **F-T7** `Process parameter '<path>' was not found: '<collection>' has no item '<segment>'. <items> A dotted name addresses an item of a collection process parameter, and the run time binds items by name and delivers nothing for a name it does not find.`
+- **F-M1** `[Element '<E>': ]'<parent>' is bound to <binding>; map '<parent>' to '<source parent>' first: <then>. A mapping onto '<target>' from '<source>' binds '<parent>' to '<source parent>' as well, because each row of a collection comes from the collection it is bound to - one collection cannot take its rows from two.` `<then>` is `its items follow` when `<parent>` takes files (P2 pairs its items), and otherwise `then map '<target>' again`.
+- **F-M2** `Mapping for target '<target>': a single File cannot take an item of '<source collection>'; use a FileCollection, or a multi-instance sub-process. Outside a row of that collection '<source>' reads empty at run time, so this mapping would save and deliver no file.`
+- **F-M3** `Mapping for target '<target>': '<source>' has no File item, so it cannot fill a collection that takes files - every row would reach '<target>.<file item>' with no file, and the element that reads it fails at run time. <items> Map a collection whose items include a File (FileLocator): an element's file output, or a FileCollection process parameter.`
+- **F-M4**, one per decision:
+  - P2 bound: `[Element '<E>': ]'<target>' takes its rows from '<source>', so its file item was bound to match: '<target>.<item>' now reads '<source>.<source item>'.`
+  - P2 rebound: `[Element '<E>': ]'<target>.<item>' was bound to <binding>, which is not an item of '<source>'; it was rebound: '<target>.<item>' now reads '<source>.<source item>', to match '<target>'.`
+  - P2 reset (bound outside the new source, unpairable): `[Element '<E>': ]'<target>.<item>' was bound to <binding>, which is not an item of '<source>', and could not be paired with one - none is named '<item>' and there is not exactly one File item on each side; it was cleared, because left bound that one value would be copied into every row, so at run time it will be empty. Map it with addMapping onto '<target>.<item>' from the item of '<source>' it should read.`
+  - P2 unpaired (unbound, left as it is): `[Element '<E>': ]'<target>.<item>' could not be paired with an item of '<source>' - none is named '<item>' and there is not exactly one File item on each side - so at run time it will be empty. Map it with addMapping onto '<target>.<item>' from the item of '<source>' it should read.`
+  - P2-MI, for each FileLocator item of the multi-instance input that the plan leaves unbound, whether the input is the named target or a parent P1 binds: `Element '<SP>': callee parameter '<F>' will be empty on every iteration unless you map '<input>.<F>' - the iterated collection fills only the items mapped from it.`
+  - P3, one per bound level above the file item: `[Element '<E>': ]'<level>' was bound to <binding>; it was cleared because '<target>' now takes a single file.`
+- **F-M5** `Mapping for target '<target>': the source '<source collection>' is a collection nested inside another collection; outside its row it reads empty at run time, so '<target parent>' would take no rows from it. Map from a root collection, or use a multi-instance sub-process.` A defensive twin (`... is inside '<parent>' itself, so '<parent>' cannot take its rows from it - a collection bound to one of its own items would read itself.`) is unreachable with chains that start at a root and is not catalogued.
+
+P3's scope as built: a FileLocator target item whose owner is single-instance, which is any element but a
+multi-instance sub-process, and the process itself, so a process-level `Docs.File` counts. P3 is not limited to
+file-consuming targets.
 
 ## Implementation outline
 
@@ -421,10 +488,11 @@ remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges bef
 | Q6 PR split (one feature PR per repository, plus this docs-only PR) | agreed 2026-10-07 |
 | Q7 / O-5 / D9 Where H-1 is fixed | answered by M3 (2026-10-02): no defect, parity commit only |
 | Q8 / O-10 This docs-only BMAD set merged before the package PR | agreed 2026-10-07 |
-| Q9 Follow-up Sub-tasks created on day 0 | agreed 2026-10-07 |
+| Q9 Follow-up Sub-tasks created on day 0 | agreed 2026-10-07; created 2026-10-14 (ENG-103162, ENG-103163, ENG-103164) |
 | Q10 / O-1 / D2 FileCollection as a type alias | agreed 2026-10-07 |
 | Q11 / O-2 / D3 FileCollection defaults to Variable | agreed 2026-10-07 |
 | Q12 / O-3, O-4 / D5 P3 resets with a notice; P2 and R-M2 on file-consuming targets only | agreed 2026-10-07 |
 | Q19 / O-6 / D25 Guide name `process-files` | agreed 2026-10-08 |
 | Q20 / D25 Where the description bytes come from | agreed 2026-10-14: A (trim existing text per tool, reviewer-approved; no ceiling raise, type lists stay in the descriptions); CL-2 proceeds with it |
 | **O-TP1 (test plan) Where the e2e cases on the Process-parameter variant's `Files` run** | **open** (recommended B: in the clio PR of ENG-96506 Generated report + process parameter modes); moves only the cross-ticket cases XT-14a..d |
+| **D5 open item: does a single-instance sub-process's FileCollection-shaped `In` parameter join the file-consuming targets?** | **open, not decided** (recorded 2026-10-14): a stand measurement first (M27 of the analysis); no code change in this story |

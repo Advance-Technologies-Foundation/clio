@@ -24,7 +24,7 @@ Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/
 
 | Level | Project | Ids here | Orig ids | What it can prove | What it cannot |
 |---|---|---|---|---|---|
-| Unit, package | crt-process-builder `PBT/` (NUnit, NSubstitute, FluentAssertions) | TC-U-01..TC-U-55 (TC-U-nn = PU-nn; TC-U-55 = the T-68 regression) | PU-01..PU-54 | type resolution, the stored parameter shape, every refusal, the metadata each mapping writes (both levels, meta paths, `ModifiedInSchemaUId`), describe projection and decode, short-key serialization | the platform parameter sync on `SchemaUId`, the runtime reader (`internal`), the designer |
+| Unit, package | crt-process-builder `PBT/` (NUnit, NSubstitute, FluentAssertions) | TC-U-01..TC-U-55 (TC-U-nn = PU-nn; TC-U-55 = the T-68 regression) | PU-01..PU-54 | type resolution, the stored parameter shape, every refusal, the metadata each mapping writes (both levels, meta paths, `ModifiedInSchemaUId`), describe projection and decode, short-key serialization; the platform's user-task parameter sync on `SchemaUId`, through the harness recipe under "Conventions" (TC-U-55 runs it) | a `ProcessSchemaManager` save, the platform's pre-save validation, the runtime reader (`internal`), the designer |
 | Unit, clio | `clio.tests` (`Module=ProcessModel`, `McpServer`, `Common`, `Command`) | TC-U-61..TC-U-70 (TC-U-6n = CU-0n, TC-U-70 = CU-10) | CU-01..CU-10 | the describe DTO keeps what the server sends; description wording; floor literals; archive pins; the ManagerMap arm | anything the server does |
 | Unit, knowledge | clio-knowledge `automation/Clio.Knowledge.Bundle.Tests` | TC-U-71..TC-U-75 | KU-01..KU-05 | the guide states each rule; size budgets; registration | whether agents follow it |
 | Integration (MCP e2e) | `clio.mcp.e2e`, category `McpE2E.ProcessDesigner` | TC-I-01..TC-I-13 | E2E-01..E2E-13 | JSON member names, the refusal envelope and notices over the real MCP path, against a stand on the cut | run-time behaviour. TeamCity excludes this category, so the manual run is the only e2e evidence |
@@ -65,14 +65,15 @@ or **Runtime** (the process ran and `SysProcessElementLog` shows it).
 | R-3 | P1 changes what an existing item-only multi-instance mapping writes (1 iteration becomes N) and nobody notices | Certain (intended) | Med | stated as visible change (1) in the PR; TC-U-29, TC-U-46, TC-I-06; TC-M-13 measures 3 against 1; guidance rewritten under a version gate (TC-U-73) |
 | R-4 | The rules leak to callers with scalar targets (`setConnections`, approvals) or to non-file collections | Med | High | the whole package suite before every push; TC-U-36, TC-U-37, TC-U-42 (Read data -> multi-instance untouched) |
 | R-5 | A refusal fires after a partial write | Low | High | TC-U-44 (every target resolved and type-checked before the first write); every refusal case asserts the schema unchanged |
-| R-6 | The create path still throws on a nested-item mapping (T-68) | Med | Med | TC-U-55 builds an element and a nested mapping in ONE create request; TC-I-06 sends one over the wire |
-| R-7 | Describe reports a decoded pair the write side would not store the same way, so a replay changes the binding | Med | High | TC-U-49, TC-U-54 (negative set), TC-U-52 round trip |
+| R-6 | The create path still throws on a nested-item mapping (T-68) | Low (fixed in code in the package PR, 2026-10-14; not yet proven on a stand) | Med | TC-U-55 drives the platform's real sync, builds the elements and a nested mapping in ONE create request, and asserts the value `addMapping` stores; TC-I-06 sends one over the wire, and manual TC-04 on ENG-95984 repeats it |
+| R-7 | Describe reports a decoded pair the write side would not store the same way, so a replay changes the binding | Med | High | TC-U-49, TC-U-54 (negative set), TC-U-52 round trip; the decode names a source only when replaying it changes no other level (ADR D8) |
 | R-8 | The serialization comparison "passes" by a rule nobody wrote down | Med | Med | the AC-8 comparison rule below is a finite list; anything else is a DIFF (TC-U-13, TC-M-14) |
 | R-9 | A description edit breaks the floor guards or the budget | High (budget full) | High | TC-U-66, TC-U-67; the swap is a reviewer-approved trim (Q20 = A, 2026-10-14) |
 | R-10 | An e2e that went to `Assert.Ignore` on an older package is read as a pass | Med | High | report Passed with Ignored = 0 (TC-M-12) |
 | R-11 | The session's MCP clio is older than the PR and silently drops unknown arguments | Med | Med | TC-M-11 checks `get-tool-contract` mentions `File` before any other stand case |
 | R-12 | A stale knowledge cache keeps serving the old guidance after a failed `update-knowledge` | Med | Med | TC-M-16 (`info-knowledge` shows the new libraryVersion) |
 | R-13 | A package test names a `Terrasoft.Configuration` type and builds only where that DLL exists | Low | Med | mirrored constants; `dotnet build MainSolution.slnx -c dev-n8` once per PR when the net-core application tree exists |
+| R-14 | A single-instance sub-process's FileCollection-shaped `In` parameter is not a file-consuming target, so an outer-only `SP.Docs <- OF1.ObjectFiles` gets neither P2 nor R-M2 and may run with `{File: null}` rows (open item, recorded 2026-10-14, not decided) | unknown (M3 measured a process-parameter target only) | High if the rows are null | a stand measurement (M27 of the analysis) on the cut, then an owner decision; no case here changes until it is decided |
 
 ## Conventions and commands
 
@@ -91,7 +92,11 @@ or **Runtime** (the process ran and `SysProcessElementLog` shows it).
   guarded against the shipped metadata by TC-U-50. Build order: a host with an empty UId, elements with `SchemaUId`,
   then `host.UId = Guid.NewGuid()`, then the process-level parameters through the service, so every
   `ModifiedInSchemaUId == host.UId` assertion is not vacuous. Register every task schema a test needs on ONE
-  user-task schema manager. Serialization goes through the platform `JsonDataWriter`; assertions use short keys (`L1`
+  user-task schema manager. The platform's own user-task sync DOES run in the harness: substitute the
+  `ProcessSchemaManager` with an `AppConnection` that answers, give the workspace a `SchemaManagerProvider` that returns
+  the user-task manager, and name the element before assigning `SchemaUId` (recipe:
+  `FileCollectionMappingTests.WireTheSyncManagers` / `PlaceBySync`); TC-U-55 uses it. Still stand cases: a
+  `ProcessSchemaManager` save, the platform's pre-save validation, running a user task. Serialization goes through the platform `JsonDataWriter`; assertions use short keys (`L1`
   type, `L8` source value, `L9` reference schema, `L12` direction, `L17` Tag, `L18` items, `IL2` container).
 - **clio unit**: `[Category("Unit")]` with the fixture's `[Property("Module", ...)]`; filter by `TestCategory`, never a
   `Category=` alias; run from bash with `< /dev/null`; check the executed count, not the exit code. No command-class
@@ -143,7 +148,7 @@ dotnet test automation/Clio.Knowledge.Bundle.Tests/Clio.Knowledge.Bundle.Tests.c
 New fixtures: `PBT/FileProcessParameterTests.cs` (D1, D2, D3, D6, D7), `PBT/FileCollectionMappingTests.cs` (D4, D5),
 `PBT/ElementSourceDecodeTests.cs` (D8), `PBT/FileProcessingTemplateDriftTests.cs` (drift guard); helper
 `PBT/FileProcessingTestSupport.cs`. Extended: `ProcessParameterServiceTests`, `ParameterTypeCompatibilityTests`,
-`ProcessDescriberTests`, `MultiInstanceMappingTests`. Refusal and notice ids (F-T1..F-T7, F-M1..F-M4) are the ADR's
+`ProcessDescriberTests`, `MultiInstanceMappingTests`. Refusal and notice ids (F-T1..F-T7, F-M1..F-M5) are the ADR's
 catalogue; a test asserts the catalogue's key words, not the full sentence. Every refusal case also asserts that the
 schema is unchanged.
 
@@ -180,7 +185,7 @@ analysis's serialization-capture rows; PT-a and PT-b are this ticket's.
 | # | Key or row | Designer capture | Builder | Rule | TC-U-13 | TC-M-14 |
 |---|---|---|---|---|---|---|
 | N5 | parameter and item `UId` | fresh | fresh | ignored; parameters paired by `A2`, items by `A2` under their parent | yes | yes |
-| PT-a | schema UIds inside `A3`, `A4`, `GS5` and `IL2` | `<P>` | `<P>` | role-replaced (`<P>`). A key present on one side only is a DIFF unless N9 or N15 covers it | not compared: the harness writes no `A3` / `A4` / `GS5` | yes |
+| PT-a | schema UIds inside `A3`, `A4`, `GS5` and `IL2` | `<P>` | `<P>` | role-replaced (`<P>`). A key present on one side only is a DIFF unless N9 or N15 covers it | not compared, and what the builder side carries is pinned instead: the harness DOES stamp `A3` = `A4` = the schema UId on a root parameter added to `schema.Parameters` (the platform's collection insert), not on its item; an unbound value carries no `GS5` | yes |
 | N9 | `IL2` on a process parameter and its items | absent (0 of 3,335 process parameters and 0 of 678 items in the 7.8.0 corpus) | `<P>` (`ContainerUId = schema.UId`) | normalised: absent equals `<P>`; the meta path is the same either way; TC-M-15 checks that the designer opens it | pinned (present) | normalised |
 | N15 | "no value" `L8` forms: `{}`, `{"GS5": <P>}`, no `L8` | `{"GS5": <P>}` | no `GS1` / `GS2` | equal | yes | yes |
 | N14 | resource culture | authoring culture | request culture | compare the authoring culture's `Caption` rows only | - | yes |
@@ -241,7 +246,7 @@ collection mode, "SP1" a multi-instance sub-process. Every case asserts both lev
 | TC-U-44 | PU-44 | ordering | a two-level write whose second target does not resolve | nothing written | AC-5 |
 | TC-U-45 | PU-45 | `BindCollection` | explicit pairs; null pairs | pairs written as given; null pairs behave as TC-U-31 / TC-U-32 | AC-5 |
 | TC-U-46 | PU-46 | dotted source | extend `ApplyMapping_ShouldResolveADottedSource_WhenTheValueComesFromAnotherCollection` | `InputRecordCollection` now also bound to `ReadOrders.ResultCompositeObjectList` | AC-5 |
-| TC-U-55 | (T-68) | create path | an element and a nested-item mapping in ONE create request through `ProcessBuildHandler` | both levels bound, no exception. Root-caused first; if the cause is in the platform sync the harness cannot run, the case pins the package part and TC-I-06 is the proof | AC-5 |
+| TC-U-55 | (T-68) | create path | two file elements placed by the platform's REAL sync (the harness recipe under "Conventions") and a nested-item mapping in ONE create request through `ProcessBuildHandler`; precondition: the synced nested item has no owning `ProcessSchema` | no exception, no notice; the create path stores exactly the value `addMapping` stores on the same elements loaded for modify, P1's parent included. A sibling covers `addElement` + `addMapping` in one modify batch. Implemented in the package PR (root cause: the platform's copy of a template item owned by a `ProcessUserTaskSchema` has no owning schema; fix: the for-mapping walk adopts each descended item); TC-I-06 and manual TC-04 on ENG-95984 are the stand proof | AC-5 |
 
 ### Type compatibility (no code change; pins only)
 
@@ -377,6 +382,7 @@ the source trace says: hold the clio and knowledge PRs and record the measured o
 | O-TP1 (where XT-14 runs) | XT-14a..d | recommended B: in ENG-96506's clio PR, outside this story. A: in this clio PR through the generic `userTask` route, as TC-I cases of this story; ENG-96506's clio PR then rewrites the arrange step, and the test builds an element that saves green unconfigured |
 | M1, M2 (ENG-96506 measurements) | TC-U-39, XT-14c, TC-M-18 | the single-file path fails: TC-U-39 stays (metadata), the guide says "wrap one file in a FileCollection", TC-M-18 is dropped |
 | A foreign package cut lands between ours | TC-M-11 | add a capability probe on a named field and run it against both archives |
+| The ADR D5 open item (a single-instance sub-process's FileCollection-shaped `In` parameter; recorded 2026-10-14, a stand measurement first) | none as written | if the owner widens the file-consuming targets: new TC-U cases for P2 and R-M2 on that target, and a TC-I case beside TC-I-09 (inference) |
 | The helper and guard owner (this ticket's package PR) | TC-U-50 and every case that uses the hand-built file elements | if moved to ENG-96505, this ticket hand-builds its elements with no guard (not recommended) and TC-U-50 moves unchanged |
 
 Decided and reflected above: the FileCollection alias (Q10), the Variable default (Q11), P3 reset and the P2 / R-M2

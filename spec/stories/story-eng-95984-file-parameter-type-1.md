@@ -64,7 +64,8 @@ in short.
   whatever the action (verified on hand-built elements for both `ResultActionType` values); a file-output mirror stays
   refused pointing to `FileCollection`; a dotted mirror source is refused.
 - [ ] **AC-7** - a value that is exactly one element-output token is described as `sourceElement` +
-  `sourceElementParameter` (dotted for an item); an input bound only on a nested item is listed.
+  `sourceElementParameter` (dotted for an item) when replaying those names changes no other level; an input bound only
+  on a nested item is listed.
 - [ ] **AC-8** - the serialization of a File, a FileCollection declared with no direction (the Variable default) and a
   FileCollection declared with `direction: Out` equals the three shipped captures under the test plan's AC-8
   comparison rule (N5, PT-a, N9, N15, N14, PT-b; any other difference fails).
@@ -110,7 +111,8 @@ implementation outline)
   this schema; single-token element-source decode beside `DecodeRecordColumnSource`; `PB/Contracts/DescribeContracts.cs`
   doc comment ("Null for every other value" no longer true).
 - [ ] **PB-8** (D9) `ProcessParameterService.cs` `BindMirroredCollection` calls `BindCollection` with the clone pairs;
-  the comment that predicted null rows narrowed (parity commit, contingency X4).
+  the comment that predicted null rows narrowed (parity commit, contingency X4). The re-mirror path binds its items
+  too and keeps a caller's formula on the outer level (`BindCollectionItems`; ADR D9).
 - [ ] **PB-9** (all) tests: `PBT/FileProcessParameterTests.cs`, `PBT/FileCollectionMappingTests.cs`,
   `PBT/ElementSourceDecodeTests.cs` (new), extended `ProcessParameterServiceTests`, `ParameterTypeCompatibilityTests`,
   `ProcessDescriberTests`, `MultiInstanceMappingTests`; the probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage`
@@ -283,9 +285,17 @@ readiness and object attachments mode) and never pushed after an approval. The f
 
 ## Dev Agent Record
 
-- Implementation started:
-- Package cut claimed (number, date, where claimed):
+- Implementation started: 2026-10-13 (package, PK-PT).
+- Package cut claimed (number, date, where claimed): 1.6.6.97, claimed in ENG-92719 comment 550565; not stamped and
+  not tagged yet (the stamp and the tag come with the final cut).
 - Bytes trimmed per Q20 = A (2026-10-14: trim, reviewer-approved), which text per tool and the reviewer's approval:
-- Tests passing (package, clio unit, e2e with Ignored count, knowledge):
+- Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3424 passed
+  (`dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`, 187 of them new);
+  clio, e2e and knowledge not started.
 - Stand records (V0-V8):
-- Notes:
+- Notes: PK-PT is a draft PR, https://creatio.ghe.com/engineering/crt-process-builder/pull/96, opened 2026-10-14
+  (one commit, b6dcd2c1; review gate 1 run, three lenses, all findings applied). T-68 is root-caused and fixed in code
+  (the nested items of a user task synced in the same request had no owning schema; the for-mapping walk adopts them;
+  the regression test drives the platform's real sync); its stand proof, E2E-06 and manual TC-04 on ENG-95984, is
+  owed. Open, not decided: whether a single-instance sub-process's FileCollection-shaped `In` parameter joins the
+  file-consuming targets (spec "Open owner items"). CL-PT and KB-PT not opened.
