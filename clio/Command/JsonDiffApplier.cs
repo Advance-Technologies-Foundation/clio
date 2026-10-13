@@ -615,8 +615,17 @@ public class JsonDiffApplier : IJsonDiffApplier {
 
 	protected virtual ItemInfo FindInsertItemInfo(JObject config) => FindItemInfoInSourceObject(config.Value<string>("parentName"));
 
-	protected virtual JToken FindInsertItemParent(ItemInfo itemInfo, JObject config) =>
-		itemInfo is null ? _sourceObject : itemInfo.Item[config.Value<string>("propertyName")];
+	protected virtual JToken FindInsertItemParent(ItemInfo itemInfo, JObject config) {
+		if (itemInfo is null) {
+			return _sourceObject;
+		}
+		// The TS reads item[config.propertyName]; a missing propertyName yields undefined there and Insert throws
+		// NotContainerItemInsertException. JToken's object indexer throws ArgumentNullException on a null key
+		// instead, which escaped every JsonDiffApplierException handler (GH-1752), so return null to reach the
+		// same not-a-container error.
+		string propertyName = config.Value<string>("propertyName");
+		return propertyName is null ? null : itemInfo.Item[propertyName];
+	}
 
 	private bool Insert(JObject config) {
 		string parentName = config.Value<string>("parentName");
