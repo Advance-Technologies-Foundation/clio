@@ -17,8 +17,21 @@ using Newtonsoft.Json.Linq;
 /// </remarks>
 internal static class DataServiceSelectResponse {
 
-	public static JArray ReadRows(string json) {
-		JObject parsed = JObject.Parse(json);
+	public static JArray ReadRows(string json) => Rows(JObject.Parse(json));
+
+	/// <summary>
+	/// <see cref="ReadRows"/> with every value kept as the server wrote it. <see cref="JObject.Parse(string)"/> turns
+	/// an ISO date string into a <see cref="DateTime"/> whose <c>ToString()</c> is culture-formatted and drops the
+	/// milliseconds, so a date read back and sent again as a filter value no longer matches the row it came from.
+	/// </summary>
+	public static JArray ReadRowsVerbatim(string json) {
+		using Newtonsoft.Json.JsonTextReader reader = new(new System.IO.StringReader(json)) {
+			DateParseHandling = Newtonsoft.Json.DateParseHandling.None
+		};
+		return Rows(JObject.Load(reader));
+	}
+
+	private static JArray Rows(JObject parsed) {
 		if (TryGetFailure(parsed, out string message)) {
 			throw new InvalidOperationException($"SelectQuery failed: {message}");
 		}
