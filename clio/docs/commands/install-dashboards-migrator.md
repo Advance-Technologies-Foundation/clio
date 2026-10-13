@@ -37,8 +37,9 @@ but is not serving is reported instead of looking like success. The check is **l
 on an upgrade a stale assembly that still answers passes, so after an upgrade treat the migration working
 as the proof.
 
-The command **always installs except in two cases**, and re-running is otherwise safe; it costs one
-configuration build on the target. Both exceptions are about moving an environment **backwards**, and
+The command **always installs except in two cases**. Every run that installs, a re-run included, costs a
+configuration build and a site restart for every connected user, so an AI agent must get the user's
+approval before each run. Both exceptions are about moving an environment **backwards**, and
 `--force` overrides both:
 
 1. **A downgrade.** The environment already carries a newer version than this clio ships.
