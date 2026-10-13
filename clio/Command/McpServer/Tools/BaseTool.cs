@@ -318,8 +318,8 @@ public abstract class BaseTool<T>(
 			// like the sibling gates below, and NOT FromError's -1. The distinction is load-bearing,
 			// not cosmetic: docs/McpCapabilityMap.md teaches agents that -1 means "clio itself failed,
 			// retrying the same call won't help", whereas the whole point of this refusal is that the
-			// caller CAN fix it — install the named package, then retry. Reporting it as -1 tells the
-			// agent not to bother, which breaks the install-then-retry remediation the hint describes.
+			// caller CAN fix it — once the user approves, install the named package, then retry. Reporting
+			// it as -1 tells the agent not to bother, which breaks the remediation the hint describes.
 			// Neither FromValidationError nor FromError redacts, so never enrich this message with the target
 			// URI or any connection detail — route dynamic text through FromException(redactSensitive: true).
 			// It used to be flatly STATIC (package name + attribute Hint, both source literals). It no longer
