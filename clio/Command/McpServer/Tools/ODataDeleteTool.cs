@@ -215,46 +215,11 @@ public sealed class ODataDeleteTool(
 	private static ODataWriteResponse DeleteWithoutCascade(ODataDeleteArgs args, IRecordDeletionService service,
 		string entity, List<string> ids, DateTimeOffset callDeadline, ref bool attempted, ref bool received) {
 		Dictionary<string, ODataDeleteItemResult> results = new(StringComparer.OrdinalIgnoreCase);
+		List<string> pending = SkipMissing(service, entity, ids, callDeadline, results);
 		Dictionary<string, RecordDeleteOutcome> refusals = new(StringComparer.OrdinalIgnoreCase);
-		List<string> pending = [];
-		foreach (string id in ids) {
-			if (DateTimeOffset.UtcNow >= callDeadline - IdStartReserve) {
-				results[id] = new ODataDeleteItemResult(id, false, NotAttemptedInTime, null, null, null);
-				continue;
-			}
-			// A DELETE of a missing record is answered like a deletion, so the record is looked up first.
-			if (DeleteBudget(callDeadline) is { } existsMs
-					&& service.Exists(entity, id, Math.Min(existsMs, DiagnosisRequestMs)) == false) {
-				results[id] = new ODataDeleteItemResult(id, false, $"{entity}({id}) was not found: it does not exist, was "
-					+ "already deleted, or this user cannot read it. Nothing was deleted.", null, null, null);
-				continue;
-			}
-			pending.Add(id);
-		}
 		for (int pass = 0; pass < MaxBatchPasses && pending.Count > 0; pass++) {
-			List<string> again = [];
-			foreach (string id in pending) {
-				if (DeleteBudget(callDeadline) is not { } deleteMs) {
-					again.Add(id);
-					continue;
-				}
-				RecordDeleteOutcome outcome = service.Delete(entity, id, deleteMs);
-				attempted |= outcome.Attempted;
-				received |= outcome.Received;
-				if (outcome.Success) {
-					results[id] = new ODataDeleteItemResult(id, true, null, null, null, null);
-					refusals.Remove(id);
-				}
-				else if (!outcome.Received) {
-					// A transport failure has no refusal to explain, and its write may have landed.
-					results[id] = new ODataDeleteItemResult(id, false, outcome.Error, null, null, null);
-					refusals.Remove(id);
-				}
-				else {
-					refusals[id] = outcome;
-					again.Add(id);
-				}
-			}
+			List<string> again = DeletePass(service, entity, pending, callDeadline, results, refusals, ref attempted,
+				ref received);
 			bool progressed = again.Count < pending.Count;
 			pending = again;
 			if (!progressed) {
@@ -268,6 +233,54 @@ public sealed class ODataDeleteTool(
 					+ "before its DELETE could be sent.", null, null, null);
 		}
 		return BuildDeleteResponse(args, ids.Select(id => results[id]).ToList());
+	}
+
+	// The ids to delete: a DELETE of a missing record is answered like a deletion, so each is looked up first, and a
+	// missing one is answered "not found" (QA D2).
+	private static List<string> SkipMissing(IRecordDeletionService service, string entity, List<string> ids,
+		DateTimeOffset callDeadline, Dictionary<string, ODataDeleteItemResult> results) {
+		List<string> pending = [];
+		foreach (string id in ids) {
+			if (DateTimeOffset.UtcNow >= callDeadline - IdStartReserve) {
+				results[id] = new ODataDeleteItemResult(id, false, NotAttemptedInTime, null, null, null);
+			}
+			else if (DeleteBudget(callDeadline) is { } existsMs
+					&& service.Exists(entity, id, Math.Min(existsMs, DiagnosisRequestMs)) == false) {
+				results[id] = new ODataDeleteItemResult(id, false, $"{entity}({id}) was not found: it does not exist, was "
+					+ "already deleted, or this user cannot read it. Nothing was deleted.", null, null, null);
+			}
+			else {
+				pending.Add(id);
+			}
+		}
+		return pending;
+	}
+
+	// One pass over the pending ids; returns those refused (or not sent for lack of time), to try again.
+	private static List<string> DeletePass(IRecordDeletionService service, string entity, List<string> pending,
+		DateTimeOffset callDeadline, Dictionary<string, ODataDeleteItemResult> results,
+		Dictionary<string, RecordDeleteOutcome> refusals, ref bool attempted, ref bool received) {
+		List<string> again = [];
+		foreach (string id in pending) {
+			if (DeleteBudget(callDeadline) is not { } deleteMs) {
+				again.Add(id);
+				continue;
+			}
+			RecordDeleteOutcome outcome = service.Delete(entity, id, deleteMs);
+			attempted |= outcome.Attempted;
+			received |= outcome.Received;
+			if (outcome.Success || !outcome.Received) {
+				// A transport failure has no refusal to explain, and its write may have landed.
+				results[id] = new ODataDeleteItemResult(id, outcome.Success, outcome.Success ? null : outcome.Error, null,
+					null, null);
+				refusals.Remove(id);
+			}
+			else {
+				refusals[id] = outcome;
+				again.Add(id);
+			}
+		}
+		return again;
 	}
 
 	// A budget of its own for the diagnosis: what ran before may have spent the first one, and this is the explanation
@@ -375,32 +388,39 @@ public sealed class ODataDeleteTool(
 					$"cascade stopped: this call's time budget ran out before owned row {child.Entity}({child.Id}) "
 					+ $"could be deleted, so {target.Entity}({target.Id}) was left in place"
 					+ (cascadeDeleted.Count > 0 ? "; cascade-deleted lists the owned rows already deleted." : "."),
-					null, plan.Referencing, cascadeDeleted.Count > 0 ? cascadeDeleted : null);
+					null, plan.Referencing, DeletedSoFar(cascadeDeleted));
 			}
 			RecordDeleteOutcome childOutcome = service.Delete(child.Entity, child.Id, childMs);
 			attempted |= childOutcome.Attempted;
 			received |= childOutcome.Received;
-			if (childOutcome.Success) {
-				cascadeDeleted.Add(child);
-				continue;
+			if (!childOutcome.Success) {
+				return ChildFailure(target, child, childOutcome, plan, cascadeDeleted);
 			}
-			if (childOutcome.Attempted && !childOutcome.Received) {
-				// No answer: the DELETE may have landed, so the row is neither listed as deleted nor as still there.
-				return new ODataDeleteItemResult(target.Id, false,
-					$"cascade stopped: the DELETE of owned row {child.Entity}({child.Id}) got no answer, so it may have "
-					+ $"been deleted - check with odata-read; {target.Entity}({target.Id}) was left in place: "
-					+ childOutcome.Error, null, plan.Referencing, cascadeDeleted.Count > 0 ? cascadeDeleted : null) {
-					CascadeUnconfirmed = [child]
-				};
-			}
-			string reason = childOutcome.ServerDetail is null
-				? childOutcome.Error
-				: $"{childOutcome.Error} The server's own reason: {childOutcome.ServerDetail}.";
-			return new ODataDeleteItemResult(target.Id, false,
-				$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
-				+ $"was left in place: {reason}", null, plan.Referencing, cascadeDeleted.Count > 0 ? cascadeDeleted : null);
+			cascadeDeleted.Add(child);
 		}
 		return null;
+	}
+
+	private static IReadOnlyList<RecordKey> DeletedSoFar(List<RecordKey> cascadeDeleted) =>
+		cascadeDeleted.Count > 0 ? cascadeDeleted : null;
+
+	private static ODataDeleteItemResult ChildFailure(RecordKey target, RecordKey child, RecordDeleteOutcome outcome,
+		CascadePlan plan, List<RecordKey> cascadeDeleted) {
+		if (outcome.Attempted && !outcome.Received) {
+			// No answer: the DELETE may have landed, so the row is neither listed as deleted nor as still there.
+			return new ODataDeleteItemResult(target.Id, false,
+				$"cascade stopped: the DELETE of owned row {child.Entity}({child.Id}) got no answer, so it may have "
+				+ $"been deleted - check with odata-read; {target.Entity}({target.Id}) was left in place: "
+				+ outcome.Error, null, plan.Referencing, DeletedSoFar(cascadeDeleted)) {
+				CascadeUnconfirmed = [child]
+			};
+		}
+		string reason = outcome.ServerDetail is null
+			? outcome.Error
+			: $"{outcome.Error} The server's own reason: {outcome.ServerDetail}.";
+		return new ODataDeleteItemResult(target.Id, false,
+			$"cascade stopped: owned row {child.Entity}({child.Id}) was not deleted, so {target.Entity}({target.Id}) "
+			+ $"was left in place: {reason}", null, plan.Referencing, DeletedSoFar(cascadeDeleted));
 	}
 
 	private static (ODataDeletePlanItem Item, CascadePlan Plan) BuildPlan(IRecordDeletionService service, string entity,
