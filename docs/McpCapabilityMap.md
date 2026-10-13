@@ -470,6 +470,7 @@ What an external AI can practically do here:
 - mutate one column or a whole schema batch
 - create `Color` columns (dataValueType 18; read back as the named `Color` type)
 - override the caption/description of an inherited column on a replacing/child schema (name, type, flags stay read-only)
+- redirect an inherited lookup to a schema that inherits from its current reference, on a child of a virtual parent (for example `Folder` on a `BaseItemInFolder` child): an `override` column in `create-entity-schema` / `sync-schemas` create-entity, or `reference-schema-name` on a `modify-entity-schema-column` / `update-entity-schema` modify
 - set a schema's primary-display column (own or inherited) via `set-entity-schema-properties`
 - execute composite schema changes in one call
 

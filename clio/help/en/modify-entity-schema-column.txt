@@ -130,9 +130,10 @@ EXAMPLES
     clio modify-entity-schema-column -e dev --package Custom --schema-name UsrTickets --action modify --column-name Symptoms --title "Description"
 
 NOTES
-    - own columns support all mutations; an INHERITED column can have only its caption/description
+    - own columns support all mutations; an INHERITED column can have its caption/description
       overridden (--title/title-localizations, --description/description-localizations) on a
-      replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed.
+      replacing/child schema — its name, type, and flags stay read-only (a Lookup's reference schema
+      is the exception below), and it cannot be removed.
       The override is stored on the child schema and does not change the parent
     - an INHERITED Lookup column also accepts --reference-schema on modify, which redirects the
       inherited reference in place. The parent must be virtual (for example BaseItemInFolder), the
