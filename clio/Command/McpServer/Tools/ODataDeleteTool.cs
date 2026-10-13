@@ -129,23 +129,27 @@ public sealed class ODataDeleteTool(
 						+ "ids before it; nothing was deleted for this id. Call again for it.", null, null, null)
 					: DeleteOne(service, entity, id, args.Cascade, callDeadline, ref attempted, ref received));
 			}
-			// The id the caller passed decides the shape, so `id` with an empty `ids: []` still answers like a single.
-			if (!string.IsNullOrWhiteSpace(args.Id)) {
-				ODataDeleteItemResult only = results[0];
-				return new ODataWriteResponse(only.Success, only.Error, only.Success ? only.Id : null) {
-					Explanation = only.Explanation,
-					Referencing = only.Referencing,
-					CascadeDeleted = only.CascadeDeleted
-				};
-			}
-			int failed = results.Count(result => !result.Success);
-			return new ODataWriteResponse(failed == 0,
-				failed == 0 ? null : $"{failed} of {results.Count} records were not deleted; results explains each.") {
-				Results = results
-			};
+			return BuildDeleteResponse(args, results);
 		} catch (Exception ex) {
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
+	}
+
+	// The id the caller passed decides the shape, so `id` with an empty `ids: []` still answers like a single.
+	private static ODataWriteResponse BuildDeleteResponse(ODataDeleteArgs args, List<ODataDeleteItemResult> results) {
+		if (!string.IsNullOrWhiteSpace(args.Id)) {
+			ODataDeleteItemResult only = results[0];
+			return new ODataWriteResponse(only.Success, only.Error, only.Success ? only.Id : null) {
+				Explanation = only.Explanation,
+				Referencing = only.Referencing,
+				CascadeDeleted = only.CascadeDeleted
+			};
+		}
+		int failed = results.Count(result => !result.Success);
+		return new ODataWriteResponse(failed == 0,
+			failed == 0 ? null : $"{failed} of {results.Count} records were not deleted; results explains each.") {
+			Results = results
+		};
 	}
 
 	private static ODataWriteResponse ValidateTargets(ODataDeleteArgs args, out List<string> ids) {
