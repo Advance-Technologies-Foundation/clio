@@ -78,10 +78,42 @@ public static class BundledPackages {
 	/// Attribute arguments must be compile-time constants, so this is a <c>const</c> built by concatenation
 	/// rather than an interpolated string.
 	/// </para>
+	/// <para>
+	/// It states the COST before the command (ENG-102116): the package ships as source, so installing it runs
+	/// a configuration build on the target and the platform restarts afterwards, for every user of that
+	/// environment. A refusal read by an agent on a shared stand is not the user's consent to that, and a hint
+	/// that only named the command read as one. Keep it short - it is appended to every refusal.
+	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderInstallHint =
-		"Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
-		+ "MCP tool) to install or update " + ProcessBuilderPackageName + ".";
+		"Installing or updating " + ProcessBuilderPackageName + " " + ProcessBuilderInstallCost + ". This refusal "
+		+ "is not the user's approval: ask them first, then run 'clio install-process-builder -e <environment>' "
+		+ "(or call the install-process-builder MCP tool).";
+
+	/// <summary>
+	/// What installing CrtProcessBuilder costs the environment, worded ONCE for every surface that names it.
+	/// </summary>
+	/// <remarks>
+	/// The hint and the remedy concatenate it, and the install tool's description and curated contract carry
+	/// the same words (pinned by <c>InstallProcessBuilderToolTests.ConfigurationBuildAndRestartPattern</c>), so
+	/// an agent is told one cost whichever surface it reads (ENG-102116 review).
+	/// </remarks>
+	public const string ProcessBuilderInstallCost =
+		"builds the environment's configuration and restarts the site for every connected user";
+
+	/// <summary>
+	/// The remedy clause the post-write read-back warnings put in parentheses after the action they recommend
+	/// (install, update or reinstall the package): the verb plus the approval it needs. It names
+	/// install-process-builder without the "clio" prefix because the same text reaches an agent over MCP, where it
+	/// is the tool name, and a developer on the CLI, where it is the verb.
+	/// </summary>
+	/// <remarks>
+	/// Those warnings ride on a SUCCESSFUL build or modify, so <see cref="ProcessBuilderInstallHint"/> - which
+	/// only a refusal carries - never reaches them; without this clause they told the agent to install
+	/// unconditionally (ENG-102116).
+	/// </remarks>
+	public const string ProcessBuilderInstallRemedy =
+		"install-process-builder after user approval - it " + ProcessBuilderInstallCost;
 
 	/// <summary>
 	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which

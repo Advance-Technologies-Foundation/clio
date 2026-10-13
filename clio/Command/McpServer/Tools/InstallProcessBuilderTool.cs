@@ -67,8 +67,12 @@ public sealed class InstallProcessBuilderTool(
 	// restart-by-environment-name are both Destructive = true and this tool causes the effects of both.
 	// install-gate is Destructive = false and is NOT the precedent: it ships a prebuilt assembly and never
 	// makes the target rebuild its configuration.
+	// Idempotent = false (ENG-102116 review): MCP reads idempotentHint as "a repeated call has no additional
+	// effect", and every run that installs is another configuration build and site restart for every user - a
+	// host that auto-retries idempotent tools would repeat exactly what needs the user's approval each time.
+	// compile-creatio, which has the same effect, is false too.
 	[McpServerTool(Name = InstallProcessBuilderToolName, ReadOnly = false, Destructive = true,
-		Idempotent = true, OpenWorld = false)]
+		Idempotent = false, OpenWorld = false)]
 	// One of the five long-running starters. Sticky because the install keeps running past the response
 	// deadline (the detached continuation above), so the worker must outlive the answer; ConfigurationBuild
 	// because it holds the narrow reservation this file already takes and must exclude a concurrent
@@ -86,13 +90,19 @@ public sealed class InstallProcessBuilderTool(
 	             Installs (or updates) the bundled CrtProcessBuilder package into a registered Creatio
 	             environment, making ProcessDesignService reachable there.
 
-	             Run this when a process-designer tool (`create-business-process`, `modify-business-process`,
-	             `describe-business-process`, `list-user-tasks`, `validate-process-graph`) refuses because of
-	             the CrtProcessBuilder package. There are two such refusals and both are fixed by this tool:
-	             the package is missing entirely ("you need to install the CrtProcessBuilder package"), or the
-	             environment carries an older version than this clio ships ("This clio carries CrtProcessBuilder
-	             X, but the target environment has Y"). Both name this tool in their hint. Then retry the
-	             original call.
+	             This install is needed when a process-designer tool (for example `create-business-process`,
+	             `modify-business-process`, `describe-business-process`, `list-user-tasks`,
+	             `validate-process-graph`) refuses because of the CrtProcessBuilder package. There are two such
+	             refusals and both are fixed by this tool: the package is missing entirely ("you need to install
+	             the CrtProcessBuilder package"), or the environment carries an older version than this clio
+	             ships ("This clio carries CrtProcessBuilder X, but the target environment has Y"). Both name
+	             this tool in their hint.
+
+	             ASK THE USER BEFORE EVERY CALL: the install builds the environment's configuration and restarts
+	             the site for every connected user. A refusal and its hint mean the install is NEEDED, never that
+	             the user approved it. Warn them and ask whether to install now or postpone; if they postpone, do
+	             not call it - they can run `clio install-process-builder -e <ENV>` themselves later. Once it has
+	             run, retry the original call.
 
 	             The package ships as source and the target environment compiles it during installation, so
 	             this takes substantially longer than a plain package install. How long depends entirely on
@@ -107,9 +117,9 @@ public sealed class InstallProcessBuilderTool(
 	             UPGRADE a stale assembly that still answers will pass. Treat a successful install of a NEW
 	             version as authoritative only after the functionality you needed actually works.
 
-	             It always installs except in two cases, and re-running is otherwise safe (it costs one
-	             configuration build on the target). Take the refusal itself as the signal to call this tool
-	             rather than comparing versions yourself: `list-packages` reports the version the environment
+	             It always installs except in two cases, and re-running does nothing worse than another
+	             configuration build and restart, which needs its own approval. Take the refusal itself as the signal that this install is
+	             needed rather than comparing versions yourself: `list-packages` reports the version the environment
 	             RECORDED, which is what the gate already checks for you.
 
 	             Both exceptions exist to stop an environment moving BACKWARDS, both report exit code 1, and
