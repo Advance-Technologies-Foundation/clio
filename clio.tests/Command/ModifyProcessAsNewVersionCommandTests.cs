@@ -1,6 +1,8 @@
 using System;
+using System.Text.Json.Nodes;
 using System.Linq;
 using Clio.Command;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -29,6 +31,7 @@ public sealed class ModifyProcessAsNewVersionCommandTests {
 	private const string RootUid = "332eac25-1443-4e4e-a972-6c0e66cb9243";
 
 	private IModifyProcessAsNewVersionService _service;
+	private IProcessDescriber _describer;
 	private ILogger _logger;
 	private ModifyProcessAsNewVersionCommand _command;
 
@@ -36,12 +39,20 @@ public sealed class ModifyProcessAsNewVersionCommandTests {
 	public void Setup() {
 		_service = Substitute.For<IModifyProcessAsNewVersionService>();
 		_logger = Substitute.For<ILogger>();
-		_command = new ModifyProcessAsNewVersionCommand(_service, _logger);
+		// The post-write digest (ENG-103023) reads the process back; a readable process keeps the digest out of
+		// the warning channel these tests count.
+		_describer = Substitute.For<IProcessDescriber>();
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [], Parameters = []
+			});
+		_command = new ModifyProcessAsNewVersionCommand(_service, _describer, _logger);
 	}
 
 	[TearDown]
 	public void TearDown() {
 		_service.ClearReceivedCalls();
+		_describer.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
 	}
 
@@ -199,4 +210,40 @@ public sealed class ModifyProcessAsNewVersionCommandTests {
 			message.Contains(VersionName) && message.Contains("cannot be deleted")));
 	}
 
+
+	[Test]
+	[Description("ENG-103023: the success path reports the resulting version's summary and what it changes against the source version.")]
+	public void Execute_ShouldReportDigestAgainstTheSourceVersion_OnSuccess() {
+		// Arrange
+		_service.ModifyAsNewVersion("sandbox", Arg.Any<ModifyProcessAsNewVersionRequest>()).Returns(Created());
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(BeforeRead(), DigestProcess("Start", "New"));
+
+		// Act
+		int result = _command.Execute(ByName());
+
+		// Assert
+		result.Should().Be(0, because: "the write succeeded");
+		JsonNode digest = JsonNode.Parse(DigestLine())!;
+		digest["summary"]!["elements"]!.AsArray().Should().HaveCount(2, because: "the summary is of the resulting version");
+		digest["changes"]!["elementsRemoved"]!.AsArray().Select(node => node!.GetValue<string>())
+			.Should().Equal(["Old"], because: "the new version is compared with its source");
+		digest["changesAgainst"]!.GetValue<string>().Should().StartWith("the source version",
+			because: "a new version has no earlier state of its own, so the digest names what the changes are relative to");
+	}
+
+	// The source, read before the write.
+	private static DescribeProcessResult BeforeRead() => DigestProcess("Start", "Old");
+
+	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {
+		Name = "UsrSampleProcess", SchemaUId = "uid",
+		Elements = [.. elements.Select(name => new DescribedElement { Name = name, BuildType = "formulatask" })],
+		Flows = elements.Length > 1 ? [new DescribedFlow { Source = elements[0], Target = elements[1] }] : [],
+		Parameters = []
+	};
+
+	private string DigestLine() => _logger.ReceivedCalls()
+		.Where(call => call.GetMethodInfo().Name == nameof(ILogger.WriteInfo))
+		.Select(call => call.GetArguments()[0] as string)
+		.SingleOrDefault(text => text != null && text.StartsWith("{\"summary\""));
 }
