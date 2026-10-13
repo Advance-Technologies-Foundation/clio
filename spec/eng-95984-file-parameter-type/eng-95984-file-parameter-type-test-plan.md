@@ -4,9 +4,10 @@
 [ENG-92704](https://creatio.atlassian.net/browse/ENG-92704) Create BP via AI Toolkit.
 
 Written 2026-10-01. Read-only: nothing was built, run, committed or written to any repository or to the stand.
-Anchors point to crt-process-builder `main` `d9571626` (CrtProcessBuilder 1.6.6.85), clio `master` `db6e2bf9e` and
-clio-knowledge `master` `73a619e` (libraryVersion 1.15.100), re-pinned 2026-10-08. The stand measurements of
-2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); platform claims in core 10.1.37.
+Anchors point to crt-process-builder `main` `a6bfcbf6` (CrtProcessBuilder 1.6.6.96, 2026-10-12), clio `master`
+`19e6f9c53` and clio-knowledge `master` `0b56d4a` (libraryVersion 1.15.142), re-pinned 2026-10-13. The stand
+measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand runs 1.6.6.96 since (measured
+2026-10-13, `list-packages`, read-only); platform claims in core 10.1.37.
 
 **Summary.** This plan proves the ten acceptance criteria of the [implementation plan](eng-95984-file-parameter-type-plan.md)
 (section 1.4, AC-1..AC-10) at five levels. Package unit tests in CrtProcessBuilder carry most of the weight: type
@@ -75,7 +76,7 @@ or **Runtime** (the process ran and `SysProcessElementLog` shows it).
 | Package sources and tests are C# 7.3 (no switch expressions, no `is not`, no records) | package build |
 | Tests never name `Terrasoft.Configuration` types (`ObjectFileProcessingUserTask` and the others): the dev-n8 build has no such DLL and demotes the missing reference to a message. Mirror the constants instead (schema UIds, parameter names, `ResultActionType` ints) | `PBT/CrtProcessBuilder.Tests.csproj:72-74`; `.build-props/env.dev-n8.props` (source; a portability convention, not a compiler wall) |
 | clio unit tests carry `[Category("Unit")]` and the fixture's `[Property("Module", "<module>")]`; the fixtures this plan extends already do (`clio.tests/Command/McpServer/CreateBusinessProcessToolTests.cs:16-23`, `clio.tests/Command/ProcessModel/ManagerMapResolveDataIdTests.cs:12-13`), and that pair is what the `TestCategory=Unit&Module=...` filter selects | clio `AGENTS.md` "Smart regression testing policy" |
-| clio command tests: no new command class changes in this ticket, so no `BaseCommandTests<T>` fixture is added | clio `AGENTS.md` |
+| clio command tests: no new command class changes in this ticket, so no `BaseCommandTests<T>` fixture is added. A command-level test added later must stub `IProcessDescriber.Describe`: since ENG-103023 clio: spill-free reads and post-write summaries (describe-business-process modes, write tools return the result, get-page lean by default), the create, modify, modify-as-new-version and set-active commands read the process back on every success (`clio.tests/Command/CreateBusinessProcessCommandTests.cs:27-40`) | clio `AGENTS.md` |
 | e2e: `[NonParallelizable]`, unique `UsrClioBpFile<Case>E2e{Guid:N}` names (the existing `UsrClioBp...E2e` convention; processes stay on the stand, cleanup is a separate batch with the user's go-ahead), no process RUN inside a fixture, arrange through `ProcessDesignerE2EArrange.StartAsync(subject, MinimumPackageVersion)` | pattern `clio.mcp.e2e/RecordColumnSourceToolE2ETests.cs:28-39` |
 
 ### 2.2 Commands
@@ -153,7 +154,8 @@ names, because the parameter sync cannot run in the harness. Full harness notes 
    with `SyncShape.Server`), `PBT/FileProcessingTemplateDriftTests.cs` (PU-50), the three captures under
    `PBT/Fixtures/FileProcessing/` and their `PROVENANCE.md`. ENG-96505 Element readiness and object attachments mode
    and ENG-96506 Generated report + process parameter modes inherit all four and add the rest
-   (`RegisterFileTaskSchemas`, `ArrangePaletteRow`, `ApplyCorpusConfiguration`, `SyncShape.Designer`). The plan's
+   (`RegisterFileTaskSchemas`, in the one-manager form of item 3, `ArrangePaletteRow`, `ApplyCorpusConfiguration`,
+   `SyncShape.Designer`). The plan's
    PB-9 lists the four files and their 2.5-3.5 h (inference: the literal table of 34 parameters plus their items
    and the three builders, about 1.5-2 h; the guard with its ancestor-search reader, the captures and the SHA-256
    pins, about 1-1.5 h). The parameters this ticket's tests read:
@@ -168,8 +170,13 @@ names, because the parameter sync cannot run in the harness. Full harness notes 
    runs the platform's parameter sync (`CORE/Terrasoft.Core/Process/ProcessSchemaUserTask.cs:105-115`), and the sync
    returns at once while the HOST's UId is empty, one of its three early exits (`CORE/Terrasoft.Core/Process/ProcessSchemaActivity.cs:324-326,
    587-590`). So: (1) take a host with an empty UId (`new ProcessSchema(UserConnection.ProcessSchemaManager)`, as
-   `PBT/SendEmailApplierTests.cs:48` does, or a `TestProcessSchema` (`PBT/ProcessDesignTestSupport.cs:23`) with
-   `UseDataValueTypeManager` and no UId);
+   `PBT/SendEmailApplierTests.cs:48` does). A `TestProcessSchema` (`PBT/ProcessDesignTestSupport.cs:23`) with
+   `UseDataValueTypeManager` and no UId does not work with step (2) as written: on it the `SchemaUId` setter throws a
+   NullReferenceException (`Schema.Workspace`; recorded in the package diary on 2026-10-08), so a test that needs one,
+   such as a build-path test through `ProcessBuildHandler`, writes `ProcessSchemaUserTask._schemaUId` by reflection as
+   `ProcessBuildHandlerTests` does, and passes the handler the `ElementConfigurationLedger` instance that
+   `CreateOperations` built (`PBT/BaseComposableAppTestFixture.cs:303-307`), or its reconcile examines an empty
+   ledger;
    (2) build each element as `new ProcessSchemaUserTask(host) { UId = Guid.NewGuid(), Name = name, Caption = name,
    SchemaUId = <real UId> }`, add its parameters and items by hand (`ItemProperties.Add`) with
    `ContainerUId = element.UId`, and add it to `host.FlowElements`; (3) THEN set `host.UId = Guid.NewGuid()`;
@@ -182,10 +189,17 @@ names, because the parameter sync cannot run in the harness. Full harness notes 
    `[Element:{...}]` segment of its meta path, and the runtime then looks for it among the process parameters
    (pinned at `PBT/MultiInstanceMappingTests.cs:323-330`).
 3. **The schema stub, only where describe or a handler reads the task's name.** Substitute `ProcessUserTaskSchema`
-   with the real UId on `UserConnection.SetupProcessUserTaskSchemaManager()` and wire `FindInstanceByName`,
-   `FindInstanceByUId`, `FindItemByUId` (describe reads `FindItemByUId(...)?.Name`; pattern
-   `PBT/DeleteDataConfigBinderTests.cs:37-70`, `PBT/AddDataConfigBinderTests.cs:79-86`). Arrange in `[SetUp]`: the
-   connection is rebuilt per test.
+   with the real UId and wire `FindInstanceByName`, `FindInstanceByUId`, `FindItemByUId` (describe reads
+   `FindItemByUId(...)?.Name`; pattern `PBT/DeleteDataConfigBinderTests.cs:37-70`, `PBT/AddDataConfigBinderTests.cs:79-86`).
+   Register every task schema a test needs on ONE manager: each `UserConnection.SetupProcessUserTaskSchemaManager()`
+   call installs a NEW manager, so registering tasks one call at a time leaves only the last one resolvable
+   (`PBT/UserTaskElementHandlerCreateTests.cs:34-53`, `SetupUserTaskSchemas`). That set is the three file schemas
+   plus any task the code under test resolves: since ENG-102112 create-business-process silently accepts a generic
+   userTask PreconfiguredPageUserTask without the preconfiguredPage block, every `UserTaskElementHandler.Create`
+   resolves `PreconfiguredPageUserTask`, `AutoGeneratedPageUserTask` and `UserQuestionUserTask` by name, and since
+   ENG-102537 Process elements built without their configuration block save green and fail or hang at run time,
+   every reconcile of the configuration ledger resolves the element's task NAME through `FindItemByUId`. Arrange in
+   `[SetUp]`: the connection is rebuilt per test.
 4. **Process-level File and FileCollection** are built through the service under test
    (`ProcessParameterService.AddProcessParameter`), never by hand, except in the cases that reproduce a
    designer-made shape (item `FileCollectionParameter`, `PS/ProcessTests/branches/7.8.0/Schemas/FileParameterProcess/metadata.json:24-52`).
@@ -256,7 +270,7 @@ public void AddProcessParameter_ShouldCreateFileLocator_WhenTypeIsAFileAlias(str
 | PU-01 | `addParameter` with `File`, `file`, `FileLocator`, `filelocator`, `file locator` (TestCases; the AC-1 alias list) | type UId = `A33C9252-D401-453E-949D-169157067ED9`; NOT `BA40CFC5-F554-4C26-8F57-1BB29CF43C4E`; direction Variable; no Tag; no reference schema | AC-1, AC-2 |
 | PU-02 | `addParameter` with `Binary`, `binary`, `Blob` (F-T1) | `ArgumentException` whose message contains `not supported`, the given name, `File` and `FileCollection`; schema has no new parameter. Keeps the two substrings the e2e pins (`not supported`, `Binary`) | AC-1 |
 | PU-03 | existing `AddProcessParameter_ShouldThrow_WhenTypeNotSupported` (`PBT/ProcessParameterServiceTests.cs:144-150`, Binary) | **unchanged, stays green** | AC-1 |
-| PU-04 | existing `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`:1671-1678`) | the probe type moves from `Binary` to `Image` (or `Color`), with a PRECONDITION assertion that the harness's `DataValueTypeManager` resolves that name. The generic message now also lists `File, FileCollection`; assert `*Collection*` and `*File*`. Without the move the probe would pass only because the new Binary-specific refusal names `FileCollection`, which contains "Collection" (decisions X7 and D1; open questions, the Binary-tests row) | AC-1 |
+| PU-04 | existing `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage` (`:1672-1680`) | the probe type moves from `Binary` to `Image` (or `Color`), with a PRECONDITION assertion that the harness's `DataValueTypeManager` resolves that name. The generic message now also lists `File, FileCollection`; assert `*Collection*` and `*File*`. Without the move the probe would pass only because the new Binary-specific refusal names `FileCollection`, which contains "Collection" (decisions X7 and D1; open questions, the Binary-tests row) | AC-1 |
 | PU-05 | describe a File parameter, feed the reported type back into `addParameter` | reported type `FileLocator` (`ProcessParameterService.ResolveDataValueTypeName`); the rebuilt parameter has the same type UId | AC-3 |
 
 ### 4.2 FileCollection shape and read-back (D2, D3)
@@ -350,6 +364,18 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 | PU-45 | `BindCollection` | explicit pairs; null pairs = the P2 policy | pairs written as given; null pairs behave as PU-31/PU-32 | AC-5 |
 | PU-46 | dotted source (extend) | `ApplyMapping_ShouldResolveADottedSource_WhenTheValueComesFromAnotherCollection` (`PBT/MultiInstanceMappingTests.cs:294`) | add the P1 assertion: `InputRecordCollection` now bound to `ReadOrders.ResultCompositeObjectList` | AC-5 |
 
+**T-68 on the create path.** A nested-item mapping in `mappings[]` of ONE create request threw a bare
+NullReferenceException on 1.6.6.54 (measured 2026-10-02; [traps](../eng-92719-file-processing-element/eng-92719-file-processing-element-traps.md)
+T-68), and the route is unchanged on 1.6.6.96 (hypothesis, source reading 2026-10-13: the locator's item descent is
+unchanged since 1.6.6.54, `ProcessMappingService.cs` only since 1.6.6.85, `d9571626`), so it is still this ticket's
+(plan PB-4): root-cause it before the binder code. Its regression test is a build-path case beside PU-26 and PU-27:
+the element and the nested mapping in ONE request through `ProcessBuildHandler`, asserting both levels bound and no
+exception. If the root cause lies in the platform's parameter sync, which the harness cannot run (section 3 item 6),
+the unit case pins only the package's part, and the proof is a create request with a nested mapping on the stand
+(E2E-06 sends one). A build-path fixture on a `TestProcessSchema` needs the workaround of section 3 item 2. A create
+that builds a file element now also runs the configuration ledger's reconcile after the gate; the ledger has no rule
+for the three file schemas, so it adds no notice (hypothesis, source), and the notice-list assertions stay exact.
+
 ### 4.6 Type compatibility (no code change; pins only)
 
 | ID | Arrange / Act | Assert | AC |
@@ -386,8 +412,8 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 | CU-03 | `clio.tests/Command/McpServer/CreateBusinessProcessToolTests.cs` (existing fixture, extended; pattern `CreateBusinessProcessTool_ShouldStateTheRecordFilterConsequence_InTheWideningDirection`, `:369`) | read the `[Description]` of `create-business-process` | the `parameters[]` type clause names `File` and `FileCollection` (`clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs:293`), and the constant clause says refused "on a Collection or File". No unit test pins the type list today (measured, grep over `clio.tests`), so a later trim would drop the types unseen | AC-10 |
 | CU-04 | `clio.tests/Command/McpServer/ModifyBusinessProcessToolTests.cs` (existing fixture, extended; pattern `:491`) | read the `modify-business-process` description | the `addParameter` type list names `File` and `FileCollection` (`ModifyBusinessProcessTool.cs:135`); the constant clause as CU-03 | AC-10 |
 | CU-05 | `clio.tests/Command/McpServer/DescribeProcessToolTests.cs` (existing fixture, extended; pattern `DescribeProcess_ShouldDocumentMultiInstanceOptions_WhenToolContractIsRead`, `:238`) | read the describe description (`DescribeProcessTool.cs:51`) | the decoded-source clause covers "a value that IS another element's output", not only one column of a record | AC-7, AC-10 |
-| CU-06 | `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` | re-measure create, modify, describe | under the 35,072-byte ceiling (`:205`, 137 x 256, unchanged); the figures in the comment at `:171-205` rewritten. There is no budget swap (ENG-102114 deleted C6 and shortened S2); the estimate on master `db6e2bf9e` leaves about 465 B on create and 146 B on modify before this PR, so lower the constant temporarily to measure the real size, then restore it. The seven process-designer short forms stay within 18,432 B (`GetToolContracts_ShouldKeepTheSevenProcessDesignerContractsShortFormsWithinBudget`) | AC-10 |
-| CU-07 | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the rebundle to this ticket's final cut | the four pins (`ExpectedArchiveVersion` `:316`, `ExpectedArchiveSha256` `:287` asserted at `:726`, `ExpectedDescriptorModifiedOnUtc` `:354`, `ExpectedProducingCommit`); `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral` (`:1474`) green with the moved floor literal (each of the three descriptions still contains `this clio requires <floor>`; no swap); `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse` (`:1557-1595`) green: "stopped validating formulas" is present in the create and modify descriptions and in `docs/McpCapabilityMap.md`, with no enforced floor literal in the 60 characters before it; `ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (`:1305`); `CapabilityMapVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (`:1535`); `BundledArchive_ShouldExposeNoUnexpectedOperation` with unchanged counts (no new WCF operation) | AC-10 |
+| CU-06 | `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` | re-measure create, modify, describe after the CL-2 swap | under the 35,072-byte ceiling (`:205`, 137 x 256, unchanged unless owner question Q20 is answered B); the figures in the comment at `:171-205` rewritten. A swap is needed (plan CL-2): measured on master `19e6f9c53` on 2026-10-13, create is 35,068 B (4 B left) and modify 35,062 B (10 B left) before this PR, against +30 / +28 B of type lists; lower the constant temporarily to measure the real size, then restore it. The seven process-designer contracts requested together stay within 19,000 B on the wire (`GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether`, `MaxInlineWireReplyBytes` at `:217`; 18,986 B before this PR) and still come back short (`GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`); the three call-shape drift tests (`clio.tests/Command/McpServer/ToolContractShortFormTests.cs:521-589`) stay green, because this ticket adds no descriptor member (hypothesis, source) | AC-10 |
+| CU-07 | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the rebundle to this ticket's final cut | the four pins (`ExpectedArchiveVersion` `:316`, `ExpectedArchiveSha256` `:287` asserted at `:726`, `ExpectedDescriptorModifiedOnUtc` `:354`, `ExpectedProducingCommit`); `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral` (`:1474`) green with the moved floor literal (each of the three descriptions still contains `this clio requires <floor>`; the CL-2 swap leaves it in place); `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse` (`:1557-1593`) green: "stopped validating formulas" is present in the create and modify descriptions and in `docs/McpCapabilityMap.md`, with no enforced floor literal in the 60 characters before it; `ToolContractVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (`:1305`); `CapabilityMapVersionLiterals_ShouldNotExceedTheBundledArchiveVersion` (`:1535`); `BundledArchive_ShouldExposeNoUnexpectedOperation` with unchanged counts (no new WCF operation); `BundledArchive_ShouldDeclareTheTracingWireNamesClioAdvertises` (`:1636`) | AC-10 |
 | CU-08 | `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs` | TestCases `:72-73` (create, modify) and `:111` (modify-as-new-version) | moved to this ticket's final cut; each `[Description]` gains this ticket's reason: P1/P2 change what `addMapping` writes, and an older server mis-refuses `type: File` and silently creates an unbound parameter from a dotted mirror | AC-10 |
 | CU-09 | `clio.tests/Command/ProcessModel/ManagerMapResolveDataIdTests.cs` | `[TestCase("fileProcessing")]`, `[TestCase("processFile")]` and their lowercase forms | `EventType.UserTask`, not `Unknown`. Carried in this PR for ENG-96505 Element readiness and object attachments mode, one release before any package emits the token (decision D10); without it `validate-process-graph` reports a hard Error on a described element (`clio/Command/ProcessModel/Schema.cs:1144-1145`) | AC-10 |
 | CU-10 | `WorkspaceTemplateGuidanceDriftTests`, `ProcessDesignerEmittedSchemaTests` | unchanged | green: this PR adds no `name=` pointer to any description (decision D25), and the tools' input schemas are unchanged (`descriptor` and `operations` are JSON values with no `type` since ENG-100153 O5, and a string holding the same JSON is still accepted; this PR changes neither) | AC-10 |
@@ -398,10 +424,13 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 
 New fixture `clio.mcp.e2e/FileParameterToolE2ETests.cs`: `[TestFixture]`, `[AllureNUnit]`,
 `[NonParallelizable]`, `[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = this ticket's final
-package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR: 1.6.6.88
-or higher at today's claims). Each test creates its own processes
-(`UsrClioBpFile<Case>E2e{Guid:N}`) and asserts on the tool result JSON and on a `describe-business-process` read-back.
-Describe reports a formula `value` as the raw `[#...#]` expression, so "bound to X" below means: the parameter's
+package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR: 1.6.6.97
+or higher at today's claims, with package `main` and clio's bundle at 1.6.6.96). Each test creates its own processes
+(`UsrClioBpFile<Case>E2e{Guid:N}`) and asserts on the tool result JSON and on a `describe-business-process` read-back
+with `mode=full` (or `element=<name>`): since ENG-103023 describe without a mode returns the full graph only up to
+18,000 B and otherwise a summary of at most 3,072 B without blocks, so a read-back without it can lose the very
+members asserted below. `ProcessDesignerE2EArrange.DescribeAsync` already passes `mode=full`. Describe reports a
+formula `value` as the raw `[#...#]` expression, so "bound to X" below means: the parameter's
 `value` contains `[Parameter:{<X uid>}]` (GUIDs compared case-insensitively) and `source` is `Script`.
 
 The fixture deliberately does not use the generic `userTask` route for the three Process file schemas: ENG-96505
@@ -455,8 +484,11 @@ Where it runs is owner decision **O-TP1**:
   legal on this cut and on the cut of ENG-96505 Element readiness and object attachments mode (D13 scopes the refusal
   per cut). Cost: the clio PR of ENG-96506 Generated report + process parameter modes must rewrite the arrange
   step, and the test builds an element that saves green unconfigured (no target, no action), a hazard D13 exists to
-  close. It also depends on the generic route saving that element on a real server, which is
-  source-traced only (D13; measurement M14 measures the Object variant's generic shape, not this one).
+  close; this still holds on 1.6.6.96, because ENG-102537's configuration ledger has no rule for the three file
+  schemas (hypothesis, source). It also depends on the generic route saving that element on a real server, which is
+  source-traced only (D13; measurement M14 measures the Object variant's generic shape, not this one): on 1.6.6.96 the
+  generic route builds the same element for the file schemas and gained refusals only for three other tasks
+  (Pre-configured page, Auto-generated page, User dialog; hypothesis, source).
 
 ---
 
@@ -464,21 +496,23 @@ Where it runs is owner decision **O-TP1**:
 
 | ID | Test (clio-knowledge `automation/Clio.Knowledge.Bundle.Tests/`) | Assert | AC |
 |---|---|---|---|
-| KU-01 | NEW `FileParameterGuidanceTests.cs` over `guidance/mcp/guides/processes/files.md` (`process-files`) | the guide states: the two types and FileLocator; the FileCollection read-back and the item-name caveat; "a FileCollection defaults to Variable; a generic Collection to Out"; P1, P2, P2-MI, P3, R-M1, R-M2 and the file-consuming targets; "an `expression` goes through as given; only its meta-path tokens are checked"; the gate sentence "use only when get-tool-contract for create-business-process mentions type File" with a concrete version (no TBD) | AC-10 |
+| KU-01 | NEW `FileParameterGuidanceTests.cs` over `guidance/mcp/guides/processes/files.md` (`process-files`) | the guide states: the two types and FileLocator; the FileCollection read-back and the item-name caveat; "a FileCollection defaults to Variable; a generic Collection to Out"; P1, P2, P2-MI, P3, R-M1, R-M2 and the file-consuming targets; "an `expression` goes through as given; only its meta-path tokens are checked"; the gate sentence "use only when get-tool-contract for create-business-process mentions type File" with a concrete "from clio [the version that ships CL-PT]" boundary (written with the real number at merge, no placeholder; a CrtProcessBuilder version only as inline evidence, "measured on CrtProcessBuilder X on <date>"; never a Jira key or PR link); every read-back it teaches says `describe-business-process mode=full` (or `element=<name>`) | AC-10 |
 | KU-02 | `CollectionParameterGuidanceTests.cs:24-29` re-pinned (the rationale at `:24-25` amended) | the FileCollection exception to `parameters.md:37-39` is stated; "binary" (not "file") in the not-supported list; the rationale names the alias exception | AC-3, AC-10 |
-| KU-03 | NEW pins over the rewritten `sub-process.md:137-141` and `sub-process-when.md:50-52` | the version-gated sentence ("from CrtProcessBuilder <cut>, a per-item value taken from an item of a collection binds that collection too ..."); "send both" kept for older servers | AC-5, AC-10 |
-| KU-04 | `ProcessGuideResponseSizeTests` | every article, the new one included, under the enforced ceiling of 27,793 chars (JSON-escaped length + 1,400 envelope, `ProcessGuideResponseSizeTests.cs:43, 131, 156`); the new guide's ENG-95984 File process parameter type part well below the design target of 22,000 chars that the whole guide must still meet after ENG-96506 Generated report + process parameter modes (decisions D25); `parameters.md` within the ceiling (345 chars of headroom before the edit, measured 2026-10-01); sub-process-when re-measured | AC-10 |
-| KU-05 | `GuidanceMigrationTests.PostMigrationGuidance`, `ProcessGuideSet.GoLiveFloor`, `ProcessGuideCrossReferenceTests` | the guide is registered (`bundle-source.json` entry, `requirements.itemIds`, `resourceUris`, routing row) and every cross-reference resolves | AC-10 |
+| KU-03 | NEW pins over the rewritten `sub-process.md:137-141` and `sub-process-when.md:50-52` | the version-gated sentence ("from clio [the version that ships CL-PT], a per-item value taken from an item of a collection binds that collection too ...", written with the real number at merge; a package version appears only as inline evidence); "send both" kept for older servers; a read-back in the rewritten text says `describe-business-process mode=full` (or `element=<name>`) | AC-5, AC-10 |
+| KU-04 | `ProcessGuideResponseSizeTests`, `GuidanceInlineReplyBudgetTests`, `ProcessDigestTests` | every article, the new one included, under the enforced ceiling of 27,793 chars (JSON-escaped length + 1,400 envelope, `ProcessGuideResponseSizeTests.cs:43, 131, 156`); the new guide's ENG-95984 File process parameter type part well below the design target the whole guide must still meet after ENG-96506 Generated report + process parameter modes: about 21,000 chars (decisions D25, lowered from 22,000 on 2026-10-13; inference: 22,000 chars is about 19,500 bytes, over the 19,000-byte inline rule of `GuidanceInlineReplyBudgetTests` should the guide ever be added to it, as nine process pairs were within two days); room on 2026-10-13, computed with the tests' rules: `parameters.md` 9,656 chars, sub-process 7,738, sub-process-when 11,089, none of them under the byte rule; sub-process-when re-measured; process-modeling (8 bytes under the byte rule) and the `process-digest` card (about 3,069 of 3,072 bytes) are not touched and stay green | AC-10 |
+| KU-05 | `GuidanceMigrationTests.PostMigrationGuidance`, `GuidanceMigrationTests.BundleSource_ShouldPublishGuidanceAtItsItemIdPath`, `ProcessGuideCrossReferenceTests`; and the suites a process-guide change must also keep green: `ProcessBuilderInstallConsentGuidanceTests`, `ClioToolSyncGuidanceTests`, `ProcessSplitCoreRuleTests`, `InternalTaskReferenceTests` | the guide is registered (`bundle-source.json` entry at `resources/process-files.md`, `requirements.itemIds`, `resourceUris`, routing row in the same generation) and every cross-reference resolves; it is banner-less, registered as `process-tracing` is, and NOT in `ProcessGuideSet.GoLiveFloor` (`GuidanceMigrationTests.cs:346` requires every GoLiveFloor id to be in the banner set split out of process-modeling; hypothesis from test source); every `install-process-builder` mention has consent wording within 80 characters (`ProcessBuilderInstallConsentGuidanceTests.cs:63-96`); no plain `describe-business-process` read-back (`ClioToolSyncGuidanceTests.cs:70-84`); no Jira key, issue or PR link | AC-10 |
 
 ---
 
 ## 8. Stand verification (V)
 
 Rules for every row: stand `Creatio` (core 10.1.37, .NET Framework; CrtProcessBuilder 1.6.6.54 when measured on
-2026-10-02). A clio built from master (bundle 1.6.6.85, floors 1.6.6.77) refuses the process tools against a stand
-still on 1.6.6.54, so the stand must hold the base package or the cut under test, and every record names the package
-version. Every write (a saved process, a run, a fixture
-record, an upload) needs the user's explicit go-ahead, row by row. Schema writes and runs go one at a time. Cleanup
+2026-10-02, 1.6.6.96 on 2026-10-13). A clio built from master (bundle 1.6.6.96, floors 1.6.6.92) refuses the
+process tools against any stand below 1.6.6.96, so the stand must hold the base package or the cut under test, and
+every record names the package version. Every write (a saved process, a run, a fixture
+record, an upload) needs the user's explicit go-ahead, row by row, and so does every `install-process-builder`, each
+time: it restarts the site for every connected user (`clio/Common/BundledPackages.cs:88-91`). Schema writes and runs
+go one at a time. Cleanup
 uses `execute-dataservice-batch` (the stand rejects HTTP DELETE); a remote `delete-schema` takes about six minutes,
 so pass the CLI `--timeout`. Runtime evidence comes from `SysProcessElementLog` (a `SysProcessLog` root row with no
 `CompleteDate` is a parked process, not a hung one). UI results are checked by the user. Before any
@@ -506,14 +540,14 @@ V1-V6 are the plan's rows (section 6), repeated here with their pass conditions;
 
 | ID | What | Method | Write? | Pass | Reaches | AC |
 |---|---|---|---|---|---|---|
-| V1 | instrument check | build the clio PR; `install-process-builder` from the refreshed BUILD OUTPUT (an install never reads the repository copy); `list-packages` shows the cut; `addParameter type: File` on a disposable process succeeds (only the new code answers); `get-tool-contract` for create mentions `File` | yes | all three | Stored | AC-10 |
+| V1 | instrument check | build the clio PR; `install-process-builder` from the refreshed BUILD OUTPUT (an install never reads the repository copy), after the user's explicit approval for this install, because it restarts the site for every connected user; `list-packages` shows the cut; `addParameter type: File` on a disposable process succeeds (only the new code answers); `get-tool-contract` for create mentions `File` | yes | all three | Stored | AC-10 |
 | V2 | e2e | section 6 fixture, then the must-stay-green list, sequentially | yes | Passed, **Ignored = 0** | Stored | AC-1..AC-7, AC-10 |
 | V3 | P1 at run time | the MI-0 process rebuilt on the cut | yes | 3 iterations, against 1 on MI-0 | Runtime | AC-5 |
 | V4 | serialization: the PK-PT row of SC-4, the builder twin of [serialization capture](../eng-92719-file-processing-element/eng-92719-file-processing-element-serialization-capture.md) section 12.7 | (1) **SC-0** first (section 12.3, read-only): export a shipped schema and diff it with its PackageStore copy, so a read-path or install artefact is never charged to the builder. (2) `create-business-process` `UsrFpSc4Pt` with `PFile` (`File`), `PFiles` (`FileCollection`, `direction: Variable`) and `PFilesOut` (`FileCollection`, default), one request. (3) Read back stored state by path A or B of section 12.2 (`pull-pkg` or `export-schema`), never describe. (4) Normalise and classify by section 12.8 against the three shipped captures; if SC-1 (section 12.4, the designer capture built for ENG-96505 Element readiness and object attachments mode) has already been saved, ALSO against its `PFile`, `PFiles`, `PFilesOut`, which are current-designer captures with the D2 item name. SC-1 is not a PT gate (G-C7: optional for PT). Record the table in `docs/file-parameter-capture.md` (PB-10) and the PR. About 0.5 h for SC-0 and 1-1.5 h for the rest (inference) | yes (the build) | equal under the AC-8 comparison rule (section 4.2): N5, PT-a, N9, N15, N14, PT-b, nothing else; one DIFF fails ("fix before merge", plan section 6). Against SC-1's captures PT-b does not apply | Stored | AC-8 |
 | V5 | designer opens builder output (part of M22) | the user opens the V4 process in the classic designer, opens each parameter, closes; then a no-op save; diff `SysSchema.MetaData` before and after | yes (the save) | no error; no diff | Design time | AC-8 |
 | V6 | guidance in force | after the knowledge release, `info-knowledge` shows the new libraryVersion | no | version matches | - | AC-10 |
-| V7 | **a file passed through a builder-written FileCollection is consumed** (optional, recommended before the guide teaches the pattern) | fixtures: contact `G1 Probe Source` with 2 attachments (ContactFile rows), contact `G1 Probe Target`. The user builds `UsrPtFilesFlowProbe` in the designer: Start -> `OF1` (Object attachments, source `Contact (Contact attachment)`, filter Contact = G1 Probe Source, Use in process) -> `PF1` (Process parameter source, target `Contact (Contact attachment)`, record = G1 Probe Target, Files bound to `OF1.ObjectFiles.File`, which also binds `Files` to `OF1.ObjectFiles`) -> End; saves. Then the BUILDER writes, through `modify-business-process`: `addParameter {name: Docs, type: FileCollection}`; `addMapping {targetProcessParameter: Docs, sourceElement: OF1, sourceElementParameter: ObjectFiles}` (P2 pairs `Docs.File`); `addMapping {elementName: PF1, elementParameter: Files, processParameter: Docs}` (P2 rebinds the stale `Files.File`, with its notice). Describe, then run once | yes | describe shows both levels of `PF1.Files` on `Docs` and both levels of `Docs` on `OF1.ObjectFiles`; `OF1` and `PF1` Completed in `SysProcessElementLog`; 2 new ContactFile rows on G1 Probe Target, names equal to the sources | Runtime | AC-5, AC-6, AC-9 |
-| V8 | a single builder-declared File is consumed (only if M1 passed) | `create-business-process` a callee `UsrPtFileCallee` with `F` (`File`, In); the user opens it in the designer (this is also a V5 check), adds a Process file element with source Process parameter, the "Files" field (caption `FilesCaption`, `CrtProcessDesigner/branches/7.8.0/Resources/ProcessFileProcessingUserTaskPropertiesPage.ClientUnit/resource.en-US.xml`) set to the parameter `F`, which binds `Files.File` only (the nested-only single-file shape), target as V7, and saves. Caller: a designer-built Start -> `OF1` (as V7) -> End; the builder adds a multi-instance `subProcess` on the callee between them (`removeFlow`, `addElement`, two `addFlow`) and only `InputRecordCollection.F <- OF1.ObjectFiles.File`. Describe, then run once | yes | describe: `InputRecordCollection` bound to `OF1.ObjectFiles` (P1); 2 callee iterations; 2 new ContactFile rows on G1 Probe Target | Runtime | AC-5, AC-9 |
+| V7 | **a file passed through a builder-written FileCollection is consumed** (optional, recommended before the guide teaches the pattern) | fixtures: contact `G1 Probe Source` with 2 attachments (ContactFile rows), contact `G1 Probe Target`. The user builds `UsrPtFilesFlowProbe` in the designer: Start -> `OF1` (Object attachments, source `Contact (Contact attachment)`, filter Contact = G1 Probe Source, Use in process) -> `PF1` (Process parameter source, target `Contact (Contact attachment)`, record = G1 Probe Target, Files bound to `OF1.ObjectFiles.File`, which also binds `Files` to `OF1.ObjectFiles`) -> End; saves. Then the BUILDER writes, through `modify-business-process`: `addParameter {name: Docs, type: FileCollection}`; `addMapping {targetProcessParameter: Docs, sourceElement: OF1, sourceElementParameter: ObjectFiles}` (P2 pairs `Docs.File`); `addMapping {elementName: PF1, elementParameter: Files, processParameter: Docs}` (P2 rebinds the stale `Files.File`, with its notice). Describe with `mode=full` (or `element=PF1`), then run once | yes | describe shows both levels of `PF1.Files` on `Docs` and both levels of `Docs` on `OF1.ObjectFiles`; `OF1` and `PF1` Completed in `SysProcessElementLog`; 2 new ContactFile rows on G1 Probe Target, names equal to the sources | Runtime | AC-5, AC-6, AC-9 |
+| V8 | a single builder-declared File is consumed (only if M1 passed) | `create-business-process` a callee `UsrPtFileCallee` with `F` (`File`, In); the user opens it in the designer (this is also a V5 check), adds a Process file element with source Process parameter, the "Files" field (caption `FilesCaption`, `CrtProcessDesigner/branches/7.8.0/Resources/ProcessFileProcessingUserTaskPropertiesPage.ClientUnit/resource.en-US.xml`) set to the parameter `F`, which binds `Files.File` only (the nested-only single-file shape), target as V7, and saves. Caller: a designer-built Start -> `OF1` (as V7) -> End; the builder adds a multi-instance `subProcess` on the callee between them (`removeFlow`, `addElement`, two `addFlow`) and only `InputRecordCollection.F <- OF1.ObjectFiles.File`. Describe with `mode=full`, then run once | yes | describe: `InputRecordCollection` bound to `OF1.ObjectFiles` (P1); 2 callee iterations; 2 new ContactFile rows on G1 Probe Target | Runtime | AC-5, AC-9 |
 
 Evidence for V3, V7 and V8 follows the read-only recipe EV-0..EV-6 of the element
 [test plan](../eng-92719-file-processing-element/eng-92719-file-processing-element-test-plan.md) (section 9), one
@@ -562,6 +596,7 @@ source trace says: hold the clio and knowledge PRs and record the measured outco
 | M1, M2 (ENG-96506 Generated report + process parameter modes) | PU-39, E2E-14c, V8 | the single-file path fails: PU-39 stays (metadata), the guide says "wrap one file in a FileCollection", V8 is dropped |
 | O-TP1 (this plan: where E2E-14 runs) | E2E-14 | (A): E2E-14 moves into section 6.1 and the clio PR of ENG-96506 Generated report + process parameter modes rewrites its arrange step |
 | A foreign cut lands between ours (the PR split's capability probe rule) | V1 | add a capability probe on a named field and run it against both archives |
+| Q20 (open questions, 2026-10-13: where the description bytes come from) | CU-03, CU-04, CU-06 | A, recommended: as written, CU-06 measures the trimmed text. B: CU-06 asserts the reviewed new ceiling instead of 35,072. C: the type lists leave the descriptions, so CU-03 and CU-04 are rewritten and KU-01 pins the type names in the guide |
 | The helper and guard owner, PK-PT (plan PB-9; element test plan TC-01/TC-02; reuse section 10.1) | section 3 item 2, PU-50, every PU case that uses `AProcessFileElement`, `AnObjectFileElement` or `AReportFileElement` (PU-08d, PU-16, PU-17, PU-19, PU-20, PU-22, PU-26..PU-46, PU-48, PU-49, PU-52) | the owner moves both to ENG-96505 Element readiness and object attachments mode: PK-PT hand-builds its elements with no guard (not recommended), and PU-50 moves to PK-OA unchanged |
 | The AC-8 comparison rule (section 4.2), also stated in plan AC-8 and V4 and in pr-split section 14 | PU-13, V4 | a difference outside the list is a DIFF (fix before merge); a new tolerated deviation needs the owner and a row in [serialization capture](../eng-92719-file-processing-element/eng-92719-file-processing-element-serialization-capture.md) section 10 |
 
@@ -577,4 +612,4 @@ source trace says: hold the clio and knowledge PRs and record the measured outco
 | A declared item shape for any Collection; an allow-list of mirrorable types | proposed Sub-tasks "Declared item shape for Collection process parameters" and "Allow-list the data types a typeFromElement mirror may copy" |
 | Passing a file as a start value through `run-process` | the start-value initializer has no FileLocator-specific branch. `IFileLocator` is an `ISerializableObject` (`CORE/Terrasoft.File.Abstractions/IFileLocator.cs:10`), so a passed string falls into the generic serializable-object branch (`CORE/Terrasoft.Core/Process/ProcessParameterValueInitializer.cs:97-101`), which either builds a CompositeObjectList (`ProcessParameterDataUtils.GetSerializableObject`, `CORE/Terrasoft.Core/Process/ProcessParameterDataUtils.cs:209-218`) or deserializes type-annotated JSON; no tested string form of a file exists (source, unmeasured). Out of scope and not tested: in this ticket a file reaches a process parameter through a mapping only |
 | SysFile attachment storage | the proposed Sub-task "SysFile attachment storage in the Process file element" |
-| ClioRing | consumes only catalog names, Purpose text and Destructive flags and dispatches non-destructive tools generically (`clio-ring/ClioRing.Ipc/ClioIpcModels.cs:80-95`, `clio-ring/ClioRing/ViewModels/ClioIpcViewModel.cs:144-157`); names, flags and Purpose leads are unchanged, so the PR states "ClioRing compatibility reviewed, no Ring-consumed contract changed" (plan 5.2); no Ring test runs |
+| ClioRing | consumes only catalog names, Purpose text and Destructive flags and dispatches non-destructive tools generically (`clio-ring/ClioRing.Ipc/ClioIpcModels.cs:80-95`, `clio-ring/ClioRing/ViewModels/ClioIpcViewModel.cs:144-157`); since clio #1796 it reads the catalog through `get-tool-contract` with `detail=index-entries` (`clio-ring/ClioRing.Ipc/ClioIpcClient.cs`, `CatalogRequest`) and treats a missing `destructive` as true; names, flags and Purpose leads (checked in that object index, not in the default 48-character line) are unchanged, so the PR states "ClioRing compatibility reviewed, no Ring-consumed contract changed" (plan 5.2); no Ring test runs |

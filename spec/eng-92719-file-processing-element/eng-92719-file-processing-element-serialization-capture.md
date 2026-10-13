@@ -5,7 +5,7 @@
 | Issues | ENG-92719 File processing element (Story), sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Acceptance criteria served | "Server serialization matches a designer-built capture" in all four issues (plan AC-FE5, AC-OA7, AC-RP6; ENG-95984 File process parameter type plan AC-8) |
-| Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves). Anchors point to CrtProcessBuilder `main` `d9571626` = 1.6.6.85 and clio `master` `db6e2bf9e`, re-pinned 2026-10-08; the stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`) |
+| Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves). Anchors point to CrtProcessBuilder `main` `a6bfcbf6` = 1.6.6.96 and clio `master` `19e6f9c53`, re-pinned 2026-10-13; the stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand ran 1.6.6.96 on 2026-10-13 (measured with `list-packages`, read-only) |
 | How it was made | Read-only, 2026-10-01. Corpus re-scanned for this document (16 processes, 30 elements, 400 stored parameter entries, 394 mapping rows). Nothing was built, saved or run on the stand |
 
 ## Summary
@@ -56,8 +56,8 @@ expected to write, derived from source plus corpus; section 12 measures it.
 | `NUI` | `CORE/Terrasoft.Nui/Resources/Terrasoft` (classic shell client, 10.1.37) |
 | `PD` / `PDR` | `C:/Projects/PackageStore/CrtProcessDesigner/branches/7.8.0/Schemas` / `.../Resources` |
 | `PS` | `C:/Projects/PackageStore` (shipped corpus; every file cited is under `<Package>/branches/7.8.0/`) |
-| `PB` / `PBD` | https://creatio.ghe.com/engineering/crt-process-builder, `packages/CrtProcessBuilder/Files/src/cs` / `docs`, main `d9571626` (1.6.6.85) |
-| `CLIO` | clio repository root, master `db6e2bf9e` |
+| `PB` / `PBD` | https://creatio.ghe.com/engineering/crt-process-builder, `packages/CrtProcessBuilder/Files/src/cs` / `docs`, main `a6bfcbf6` (1.6.6.96) |
+| `CLIO` | clio repository root, master `19e6f9c53` |
 
 **Placeholders in JSON fragments.** `<P>` = the process schema UId, `<T>` = the user-task schema UId (`9387c794…`,
 `6c620dd2…` or `c2bf0416…`), `<E>` = the element UId, `<lane>` = the lane UId. `…` elides a UId's tail or a long string.
@@ -709,7 +709,11 @@ This table is the comparison rule. The test plan's TC-41 rule (also used by TC-5
 table for elements. The ENG-95984 File process parameter type AC-8 rule (its test-plan section 4.2) takes the
 process-parameter rows. The table lists every known or predicted difference and says how the comparison treats it.
 "Today" means the generic route on 1.6.6.54, where M14 measured it ([decisions](eng-92719-file-processing-element-decisions.md) D13; G4 f.1);
-the generic route's code is unchanged on 1.6.6.85.
+the generic route builds the same element for the file schemas on 1.6.6.96. It gained refusals for three other tasks
+(`PB/Elements/UserTaskElementHandler.cs:86-87`, both merged 2026-10-08): the Pre-configured page (ENG-102112
+create-business-process silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage
+block), and Auto-generated page and User dialog (ENG-102537 Process elements built without their configuration block
+save green and fail or hang at run time). Neither fires for the three file schemas (hypothesis, source).
 
 | # | Key | Designer | Builder today | After D20 | Comparison | Measured by |
 |---|---|---|---|---|---|---|
@@ -877,7 +881,9 @@ becomes `AccountFile` on a re-save ([platform-reference](eng-92719-file-processi
 ### 12.7 SC-4: the builder twin, per cut
 
 After each package cut is installed on the stand (PK-PT, PK-OA, PK-RP, PK-SF;
-[pr-split](eng-92719-file-processing-element-pr-split.md)), the agent builds `UsrFpSc4<Cut>` with
+[pr-split](eng-92719-file-processing-element-pr-split.md); each install is an `install-process-builder` call, which needs
+the user's explicit approval every time and restarts the site for every connected user,
+`CLIO/clio/Common/BundledPackages.cs:88-91`), the agent builds `UsrFpSc4<Cut>` with
 `create-business-process`, one request (a write, go-ahead). It has the same captions, the same process parameters and
 the D11 descriptor equivalent of the SC-1 elements that the cut supports:
 

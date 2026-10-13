@@ -25,7 +25,7 @@ the stand (core 10.1.37) on the date given. *backlog* = Jira state, used for sco
 | PS | `C:/Projects/PackageStore` (the shipped corpus) |
 | PD | `PS/CrtProcessDesigner/branches/7.8.0` (byte-identical to what the stand serves) |
 | CORE | `C:/Projects/Creatio/.devenv/repos/core/TSBpm/Src/Lib` (10.1.37, the stand's core) |
-| PB | crt-process-builder `main` `d9571626` (package 1.6.6.85, re-pinned 2026-10-08; the stand measurements of 2026-10-02 ran on 1.6.6.54, `3f4cce50`), `packages/CrtProcessBuilder/Files/src/cs` |
+| PB | crt-process-builder `main` `a6bfcbf6` (package 1.6.6.96, re-pinned 2026-10-13; the stand measurements of 2026-10-02 ran on 1.6.6.54, `3f4cce50`; the stand ran 1.6.6.96 on 2026-10-13, measured with `list-packages`, read-only), `packages/CrtProcessBuilder/Files/src/cs` |
 | `<P>:<n>` in the corpus tables | `PS/<Package>/branches/7.8.0/Schemas/<Process>/metadata.json:<n>` |
 
 ---
@@ -261,8 +261,13 @@ element: Send email, Read data, Add data, Modify data, or a Creatio.ai call" (ba
 ### 3.1 Capability per pattern
 
 "Today" means CrtProcessBuilder 1.6.6.54 with clio `master` as read on 2026-10-01; the column still holds on
-1.6.6.85, whose generic route is unchanged and which still accepts a collection as a filter value. Today the element exists only
-through the unguarded generic `userTask` route, which writes no configuration (D13), so it is not counted as support.
+1.6.6.96 (hypothesis, source). The generic route builds the same element for the file schemas on 1.6.6.96; it gained
+refusals for three other tasks (ENG-102112 create-business-process silently accepts a generic userTask
+PreconfiguredPageUserTask without the preconfiguredPage block, and ENG-102537 Process elements built without their
+configuration block save green and fail or hang at run time, both merged 2026-10-08). The package still accepts a
+collection as a filter value (`ProcessFilterService.cs` is unchanged). Today the element exists only
+through the generic `userTask` route, unguarded for these schemas, which writes no configuration (D13), so it is not
+counted as support.
 
 | Pattern | Today | After ENG-95984 File process parameter type | After ENG-96505 Element readiness and object attachments mode | After ENG-96506 Generated report + process parameter modes | Still missing after all three | Home |
 |---|---|---|---|---|---|---|
@@ -317,7 +322,7 @@ collected with the other owner decisions in [open-questions](eng-92719-file-proc
 | P4 Modify data | Guidance, with the hazards (2.3) and the per-Id alternative (P8), plus the build-and-describe e2e TC-71. In SysFile mode the file object is SysFile, linked by `RecordId` + `RecordSchemaName` | ENG-96505 Element readiness and object attachments mode (the consumers section of its knowledge PR) | e2e TC-71 (CL-OA): Object save, then `changeData` on the file object (record + Name contains + CreatedOn = CurrentHour), setting Tag | no |
 | P5 Creatio.ai | Out of scope. Amend the AC. Guidance says "not through this tool yet" (never "Creatio cannot"). If ENG-92725 Execute AI Intent element (BP generation) is reopened, the `files` field becomes a Sub-task there and reuses the ENG-95985 Send email attachments slot writer | none | none | **yes** (drop, or reopen ENG-92725 Execute AI Intent element (BP generation)) |
 | P6 Object to Process chain | In scope | ENG-96506 Generated report + process parameter modes | e2e: the Object-to-Process chain and Report "use in process" into the Process variant | no |
-| P7 File collection parameter | In scope | ENG-95984 File process parameter type, consumed by ENG-96506 Generated report + process parameter modes | e2e of ENG-95984 File process parameter type: create with File and FileCollection, describe read-back. e2e of ENG-96506 Generated report + process parameter modes: Process variant from a FileCollection | no |
+| P7 File collection parameter | In scope | ENG-95984 File process parameter type, consumed by ENG-96506 Generated report + process parameter modes | e2e of ENG-95984 File process parameter type: create with File and FileCollection, describe read-back (`mode=full`). e2e of ENG-96506 Generated report + process parameter modes: Process variant from a FileCollection | no |
 | P8 Per-file iteration | In scope, with no new production code beyond the two tickets | ENG-96505 Element readiness and object attachments mode, after ENG-95984 File process parameter type | e2e: multi-instance per file | no |
 | P9-P12 | Guidance only (buildable with existing elements) | ENG-96505 Element readiness and object attachments mode / ENG-96506 Generated report + process parameter modes knowledge PRs | none beyond the above | no |
 | U8 SysFile attachments of custom Freedom UI objects | Refused in ENG-96505 Element readiness and object attachments mode. Delivered by the new Sub-task "SysFile attachment storage in the Process file element", after measurements M7, M8, M21, M23 and M25 | new Sub-task (key on creation) | its own e2e fixture | **yes** (SysFile placement) |
@@ -343,8 +348,9 @@ pick for a given intent"). It goes into the new `process-files` guide (D25):
 - ENG-96506 Generated report + process parameter modes writes the report and process-parameter rows.
 
 The key names are the D10/D11 proposal, which awaits the owner's naming decision. Each sentence ships only with the
-CrtProcessBuilder cut that makes it true, behind the guide's version gate. Exact version numbers are chosen at cut
-time.
+CrtProcessBuilder cut that makes it true, behind the guide's version gate. The gate names the clio version that
+ships that cut ("from clio [version]"), written with the real number at merge; a package version appears only as
+inline evidence ("measured on CrtProcessBuilder X on <date>").
 
 ### 6.1 Three questions, in order
 
@@ -414,8 +420,11 @@ time.
   attachments ships, or ENG-92725 Execute AI Intent element (BP generation) is reopened.
 - A file never goes into a column. Pass its Id through a sub-process iteration.
 
-Budget: the whole `process-files` guide targets at most 22,000 characters (D25). Sections 6.2 and 6.4 together are
-the largest block it carries for this ticket, so they should be compressed to table rows, not prose.
+Budget: the whole `process-files` guide targets at most about 21,000 characters (D25). That is an inference
+(2026-10-13): 22,000 characters is about 19,500 UTF-8 bytes, and the knowledge suite's 19,000-byte inline rule has
+spread to nine process article pairs, so a guide of 22,000 characters would not survive being added to it. Sections
+6.2 and 6.4 together are the largest block it carries for this ticket, so they should be compressed to table rows,
+not prose.
 
 ---
 

@@ -46,11 +46,12 @@ the element, and the 16 shipped processes, are in [use-cases](eng-92719-file-pro
 | `UI` | `C:/Projects/creatio-ui` | the Angular diagram. The checkout is a feature branch; the compiled bundle shipped in core agrees on every lookup cited |
 | `PS` | `C:/Projects/PackageStore` | shipped package corpus (`*/branches/7.8.0`) |
 | `UT` | `C:/Projects/UnitTests` | platform unit tests |
-| `PB` | `packages/CrtProcessBuilder/Files/src/cs` in https://creatio.ghe.com/engineering/crt-process-builder, main `d9571626` (1.6.6.85), re-pinned 2026-10-08; the stand ran 1.6.6.54 (`3f4cce50`) when measured | only where the platform fact touches the builder |
+| `PB` | `packages/CrtProcessBuilder/Files/src/cs` in https://creatio.ghe.com/engineering/crt-process-builder, main `a6bfcbf6` (1.6.6.96), re-pinned 2026-10-13; the stand ran 1.6.6.54 (`3f4cce50`) when measured, and 1.6.6.96 on 2026-10-13 (`list-packages`, read-only) | only where the platform fact touches the builder |
 
 **Basis.** *source* means read in code or metadata. For runtime behaviour this is a hypothesis. *measured* means
 observed on the stand `Creatio` (core 10.1.37.0, .NET Framework, MSSQL) or counted
-over the corpus. Every measurement in this document was read-only and taken on 2026-10-01. *doc* means Creatio Academy
+over the corpus. Every measurement in this document was read-only and taken on 2026-10-01, except the stand's
+package version in the `PB` row, read on 2026-10-13. *doc* means Creatio Academy
 text. The designer observations UO-1 to UO-4 were measured on 2026-10-01 in the classic designer, on a new unsaved
 process, by reading `Terrasoft.ProcessSchemaManager.items[0].instance.flowElements`; nothing was saved.
 
@@ -912,7 +913,12 @@ the stand (PrintInvoiceReport, read-only JS): the adapter emits `type: "userTask
 CrtProcessBuilder's generic `{type: "userTask", userTaskName: "<schema>"}` route already writes `ManagerItemUId =
 SchemaUId` whenever the schema has a `SysProcessUserTask` row, which all three have, plus the 69x55 size and the lane
 (`PB/Elements/UserTaskElementHandler.cs:73`, `:80-98`, `:401-411`; `PB/Elements/ProcessElementFactory.cs:114-125`). It
-writes no configuration. Today describe returns these elements as a generic `usertask` (`userTaskName`,
+writes no configuration. Since 1.6.6.88 / 1.6.6.91 the route's create runs two refusals first (`:86-87`): one for
+the Pre-configured page (ENG-102112 create-business-process silently accepts a generic userTask
+PreconfiguredPageUserTask without the preconfiguredPage block), and one for Auto-generated page and User dialog
+(ENG-102537 Process elements built without their configuration block save green and fail or hang at run time).
+Neither fires for the three file schemas, so on 1.6.6.96 the route still builds the same drawn, unconfigured element
+(source; hypothesis until measured). Today describe returns these elements as a generic `usertask` (`userTaskName`,
 `managerItemUId`, every typed block null) with only the parameters persisted in the element: template defaults that
 were never written are invisible, and `ReportId` and `TargetEntitySchemaUId` come back as bare GUIDs (measured
 2026-10-01 on three of the four installed report processes, PrintInvoiceReport, PrintQuotationReport and
