@@ -11,9 +11,7 @@ date: 2026-10-13
 its `referenceSchema` in the same `EntitySchemaDesignerService.SaveSchema`. The core mapper applies that
 change only when the design schema's `parentSchema.isVirtual` is true and `extendParent` is false; in every
 other case it drops the change and `SaveSchema` still answers success. The server does not check that the
-new target inherits from the column's current reference: `Folder` -> `Contact` saves. Verified on a
-test stand (`BaseItemInFolder` and `BaseFolder` are virtual; `ContactFolder`
-inherits `BaseFolder`; the runtime `RuntimeEntitySchemaRequest` by `uId` returns `parentUId`). Sending the
+new target inherits from the column's current reference: `Folder` -> `Contact` saves. Sending the
 same name in both `columns` and `inheritedColumns` fails in `EntitySchemaValidator.ValidateColumnsHaveUniqueNames`.
 A `BaseItemInFolder` child saved while `Folder` still references `BaseFolder` is refused with
 `The "Folder" column cannot refer to a virtual object`, so such a child can be created only with the override.
