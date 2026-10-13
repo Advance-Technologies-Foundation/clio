@@ -209,11 +209,16 @@ internal sealed class PageEventCollector {
 		if (!parameters.TryGetProperty("args", out JsonElement args) || args.ValueKind != JsonValueKind.Array) {
 			return null;
 		}
-		IEnumerable<string> parts = args.EnumerateArray().Take(3).Select(arg =>
-			arg.TryGetProperty("value", out JsonElement value)
-				? value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString()
-				: Text(arg, "description"));
+		IEnumerable<string> parts = args.EnumerateArray().Take(3).Select(ReadConsoleArgument);
 		return string.Join(" ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
+	}
+
+	// A primitive argument carries its value; an object only a description.
+	private static string ReadConsoleArgument(JsonElement arg) {
+		if (!arg.TryGetProperty("value", out JsonElement value)) {
+			return Text(arg, "description");
+		}
+		return value.ValueKind == JsonValueKind.String ? value.GetString() : value.ToString();
 	}
 
 	private static string Text(JsonElement element, string property) =>

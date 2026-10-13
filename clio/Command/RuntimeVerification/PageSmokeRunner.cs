@@ -337,39 +337,46 @@ internal sealed class PageSmokeRunner(
 		CancellationToken ct) {
 		DateTimeOffset deadline = Clock().AddMilliseconds(waitMs);
 		PageReadyState last = new("loading", "the page has not answered yet", null, null);
-		string signature = null;
-		DateTimeOffset stableSince = default;
-		string terminal = null;
+		ReadyTracker tracker = new();
 		while (true) {
 			PageReadyState state = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
 				.ConfigureAwait(false) ?? last with { State = "loading", Why = "the page is navigating" };
-			if (state.State is "login" or "classic") {
-				if (terminal == state.State) {
-					return state;
-				}
-				terminal = state.State;
-			}
-			else {
-				terminal = null;
-			}
-			if (state.State == "ready") {
-				string current = state.Signature + "|" + events.NavigationCount;
-				if (current != signature) {
-					signature = current;
-					stableSince = Clock();
-				}
-				else if ((Clock() - stableSince).TotalMilliseconds >= QuietMs) {
-					return state;
-				}
-			}
-			else {
-				signature = null;
+			if (tracker.IsDone(state, events.NavigationCount, Clock())) {
+				return state;
 			}
 			last = state;
 			if (Clock() >= deadline) {
 				return last.State == "ready" ? last with { State = "unsettled" } : last;
 			}
 			await Delay(PollMs, ct).ConfigureAwait(false);
+		}
+	}
+
+	// Decides when the ready wait is over: the login form or a Classic UI page seen twice in a row, or a ready page whose
+	// signature (and navigation count) has not changed for the quiet period.
+	private sealed class ReadyTracker {
+		private string _signature;
+		private DateTimeOffset _stableSince;
+		private string _terminal;
+
+		public bool IsDone(PageReadyState state, int navigationCount, DateTimeOffset now) {
+			if (state.State is "login" or "classic") {
+				bool repeated = _terminal == state.State;
+				_terminal = state.State;
+				return repeated;
+			}
+			_terminal = null;
+			if (state.State != "ready") {
+				_signature = null;
+				return false;
+			}
+			string current = state.Signature + "|" + navigationCount;
+			if (current != _signature) {
+				_signature = current;
+				_stableSince = now;
+				return false;
+			}
+			return (now - _stableSince).TotalMilliseconds >= QuietMs;
 		}
 	}
 
@@ -542,16 +549,20 @@ internal sealed class PageSmokeRunner(
 			returnByValue = true
 		}, ct).ConfigureAwait(false);
 		if (answer.TryGetProperty("exceptionDetails", out JsonElement details)) {
-			string text = details.TryGetProperty("exception", out JsonElement exception)
-				&& exception.TryGetProperty("description", out JsonElement description)
-				? description.GetString()
-				: details.TryGetProperty("text", out JsonElement value) ? value.GetString() : "unknown error";
-			throw new InvalidOperationException("The page script failed: " + text);
+			throw new InvalidOperationException("The page script failed: " + DescribeScriptError(details));
 		}
 		if (!answer.TryGetProperty("result", out JsonElement result) || !result.TryGetProperty("value", out JsonElement json)) {
 			throw new InvalidOperationException("The page script returned no value.");
 		}
 		return FreedomUiPageScripts.Read<T>(json);
+	}
+
+	private static string DescribeScriptError(JsonElement details) {
+		if (details.TryGetProperty("exception", out JsonElement exception)
+			&& exception.TryGetProperty("description", out JsonElement description)) {
+			return description.GetString();
+		}
+		return details.TryGetProperty("text", out JsonElement text) ? text.GetString() : "unknown error";
 	}
 
 	// While the page navigates its execution context is replaced, and an evaluation in flight fails; that is not an

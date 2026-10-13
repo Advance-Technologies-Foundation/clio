@@ -120,6 +120,11 @@ public sealed class PageSmokeTool(
 		if (args.Timeout is < 5 or > PageSmokeRunner.MaxTimeoutSeconds) {
 			return $"timeout must be between 5 and {PageSmokeRunner.MaxTimeoutSeconds} seconds.";
 		}
+		return ValidateClick(args);
+	}
+
+	// The opt-in click and the arguments that only make sense with it.
+	private static string ValidateClick(PageSmokeArgs args) {
 		if (args.Click is not null && (string.IsNullOrWhiteSpace(args.Click) || args.Click.Length > 200)) {
 			return "click must be a button caption or element name, 1-200 characters.";
 		}

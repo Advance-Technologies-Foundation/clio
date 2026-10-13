@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -31,7 +32,7 @@ public sealed class CdpSession : ICdpSession {
 	/// <param name="transport">An open text-message channel to a page target.</param>
 	public CdpSession(ICdpTransport transport) {
 		_transport = transport ?? throw new ArgumentNullException(nameof(transport));
-		_receiveLoop = Task.Run(ReceiveLoopAsync);
+		_receiveLoop = Task.Run(ReceiveLoopAsync, CancellationToken.None);
 	}
 
 	/// <inheritdoc />
@@ -153,7 +154,7 @@ public sealed class CdpSession : ICdpSession {
 		if (handlers is null) {
 			return;
 		}
-		foreach (EventHandler<CdpEvent> handler in handlers.GetInvocationList()) {
+		foreach (EventHandler<CdpEvent> handler in handlers.GetInvocationList().Cast<EventHandler<CdpEvent>>()) {
 			try {
 				handler(this, cdpEvent);
 			}
