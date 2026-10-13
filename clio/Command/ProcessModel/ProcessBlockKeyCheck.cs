@@ -53,15 +53,24 @@ internal static class ProcessBlockKeyCheck {
 		private readonly Dictionary<string, KeySet> _children = new(StringComparer.Ordinal);
 		private readonly HashSet<string> _keys;
 
-		internal KeySet(string contractType, string label, string describeType, IEnumerable<string> keys,
-				IEnumerable<string> readBack = null, IReadOnlyDictionary<string, string> pointers = null) {
+		/// <param name="contractType">The server request contract the keys mirror.</param>
+		/// <param name="label">The caller-facing name of the block.</param>
+		/// <param name="describeType">The describe type whose extra members <paramref name="readBack"/> names.</param>
+		/// <param name="keys">The contract's keys, space-separated.</param>
+		/// <param name="readBack">Describe-only keys tolerated with a warning, space-separated.</param>
+		/// <param name="pointers">Where a commonly misplaced or misspelled key belongs.</param>
+		internal KeySet(string contractType, string label, string describeType, string keys, string readBack = null,
+				IReadOnlyDictionary<string, string> pointers = null) {
 			ContractType = contractType;
 			Label = label;
 			DescribeType = describeType;
-			_keys = new HashSet<string>(keys, StringComparer.Ordinal);
-			ReadBack = new HashSet<string>(readBack ?? [], StringComparer.Ordinal);
+			_keys = new HashSet<string>(Split(keys), StringComparer.Ordinal);
+			ReadBack = new HashSet<string>(Split(readBack), StringComparer.Ordinal);
 			Pointers = pointers ?? new Dictionary<string, string>(StringComparer.Ordinal);
 		}
+
+		private static string[] Split(string keys) =>
+			(keys ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
 		/// <summary>The server's contract type these keys mirror.</summary>
 		internal string ContractType { get; }
@@ -86,275 +95,213 @@ internal static class ProcessBlockKeyCheck {
 
 		internal bool Declares(string key) => _keys.Contains(key);
 
-		internal KeySet With(string key, KeySet child) {
-			_children[key] = child;
+		/// <summary>Links <paramref name="child"/> under every space-separated key in <paramref name="keys"/>.</summary>
+		internal KeySet With(string keys, KeySet child) {
+			foreach (string key in Split(keys)) {
+				_children[key] = child;
+			}
 			return this;
 		}
 
+		/// <summary>Links <paramref name="child"/> under its own label.</summary>
+		internal KeySet With(KeySet child) => With(child.Label, child);
+
 	}
 
-	private static readonly string[] DataSourceSynonyms = ["object", "entity", "entityName", "entitySchemaName",
-		"entitySchema", "schema", "schemaName", "objectName"];
+	private const string Performer = "performer";
+	private const string Recipient = "recipient";
+	private const string RecordId = "recordId";
 
-	private static Dictionary<string, string> DataBlockPointers(string block) {
+	private static readonly IReadOnlyDictionary<string, string> DataBlockPointers = BuildDataBlockPointers();
+
+	private static Dictionary<string, string> BuildDataBlockPointers() {
 		Dictionary<string, string> pointers = new(StringComparer.Ordinal);
-		foreach (string synonym in DataSourceSynonyms) {
-			pointers[synonym] = $"the {block} block names its object in 'source' (for example \"source\":\"Contact\")";
+		foreach (string synonym in "object entity entityName entitySchemaName entitySchema schema schemaName objectName"
+				.Split(' ')) {
+			pointers[synonym] = $"a data block names its object in '{Source}' (for example \"{Source}\":\"Contact\")";
 		}
 		return pointers;
 	}
 
+	private static Dictionary<string, string> Pointers(params (string Key, string Text)[] entries) =>
+		entries.ToDictionary(entry => entry.Key, entry => entry.Text, StringComparer.Ordinal);
+
 	#region Key sets (mirror the bundled CrtProcessBuilder request contracts)
 
+	// Keys are space-separated and mirror each contract's [DataMember] names; ProcessBlockKeyCheckTests holds them
+	// equal to the bundled archive, so the order here is irrelevant and a typo fails the drift test.
+
 	private static readonly KeySet ElementParameterRef = new("FilterElementParameterRef", "elementParameter", null,
-		["elementName", "parameter", "column"]);
+		"elementName parameter column");
 
 	private static readonly KeySet FilterCondition = new KeySet("FilterConditionDescriptor", "filter condition", null,
-		["column", "comparison", "value", "displayValue", "processParameter", "elementParameter", "expression",
-			"macro", "macroArgument", "datePart"])
-		.With("elementParameter", ElementParameterRef);
+			"column comparison value displayValue processParameter elementParameter expression macro macroArgument datePart")
+		.With(ElementParameterRef);
 
 	private static readonly KeySet FilterGroup = BuildFilterGroup();
 
 	private static KeySet BuildFilterGroup() {
-		KeySet group = new KeySet("FilterGroupDescriptor", "filter group", null,
-				["logicalOperation", "conditions", "groups"])
+		KeySet group = new KeySet("FilterGroupDescriptor", "filter group", null, "logicalOperation conditions groups")
 			.With("conditions", FilterCondition);
 		return group.With("groups", group);
 	}
 
 	private static readonly KeySet RecordFilter = new KeySet("FilterDescriptor", Filter, null,
-			["object", "logicalOperation", "conditions", "groups"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				[Source] = "a filter names the object it filters in 'object'",
-				["filters"] = "a filter's conditions go in 'conditions' and nested groups in 'groups'"
-			})
+			"object logicalOperation conditions groups",
+			pointers: Pointers(
+				(Source, "a filter names the object it filters in 'object'"),
+				("filters", "a filter's conditions go in 'conditions' and nested groups in 'groups'")))
 		.With("conditions", FilterCondition)
 		.With("groups", FilterGroup);
 
 	private static readonly KeySet SignalBlock = new("ProcessSignalDescriptor", Signal, "DescribeSignalInfo",
-		["entity", "on", "changedColumns"], readBack: ["entitySchemaUId"]);
-
-	private static readonly KeySet ReadDataSort = new("ReadDataSortDescriptor", "sort", null, ["column", "direction"]);
-
-	private static readonly KeySet ReadDataAggregation = new("ReadDataAggregationDescriptor", "aggregation", null,
-		["function", "column"]);
+		"entity on changedColumns", "entitySchemaUId");
 
 	private static readonly KeySet ReadDataBlock = new KeySet("ReadDataConfigDescriptor", "readData",
-			"DescribeReadDataInfo", ["source", "mode", "aggregation", "columns", "numberOfRecords", "sort"],
-			readBack: ["sourceSchemaUId", "outputs"], pointers: DataBlockPointers("readData"))
-		.With("aggregation", ReadDataAggregation)
-		.With("sort", ReadDataSort);
+			"DescribeReadDataInfo", "source mode aggregation columns numberOfRecords sort", "sourceSchemaUId outputs",
+			DataBlockPointers)
+		.With(new KeySet("ReadDataAggregationDescriptor", "aggregation", null, "function column"))
+		.With(new KeySet("ReadDataSortDescriptor", "sort", null, "column direction"));
 
 	private static readonly KeySet ColumnValue = new("ChangeDataValueDescriptor", "values entry", null,
-		["column", "value", "processParameter", "sourceElement", "sourceElementParameter", "sourceColumn",
-			"expression", "selectionColumn"]);
+		"column value processParameter sourceElement sourceElementParameter sourceColumn expression selectionColumn");
 
 	private static readonly KeySet ChangeDataBlock = new KeySet("ChangeDataConfigDescriptor", "changeData",
-			"DescribeChangeDataInfo", ["source", "values"], readBack: ["sourceSchemaUId"],
-			pointers: DataBlockPointers("changeData"))
+			"DescribeChangeDataInfo", "source values", "sourceSchemaUId", DataBlockPointers)
 		.With("values", ColumnValue);
 
 	private static readonly KeySet AddDataBlock = new KeySet("AddDataConfigDescriptor", "addData",
-			"DescribeAddDataInfo", ["source", "mode", "selection", "values"],
-			readBack: ["sourceSchemaUId", "selectionSchemaUId"], pointers: DataBlockPointers("addData"))
+			"DescribeAddDataInfo", "source mode selection values", "sourceSchemaUId selectionSchemaUId", DataBlockPointers)
 		.With("values", ColumnValue);
 
 	private static readonly KeySet DeleteDataBlock = new("DeleteDataConfigDescriptor", "deleteData",
-		"DescribeDeleteDataInfo", ["source"], readBack: ["sourceSchemaUId"], pointers: DataBlockPointers("deleteData"));
+		"DescribeDeleteDataInfo", Source, "sourceSchemaUId", DataBlockPointers);
 
-	private static readonly KeySet TaskPerformer = new("UserTaskPerformerDescriptor", "performer",
-		"DescribeUserTaskPerformerInfo", ["type", "contact", "role", "showPage"], readBack: ["roleDisplay"]);
-
-	private static readonly KeySet EmailTemplateEntity = new("SendEmailTemplateEntityDescriptor", "templateEntity",
-		null, ["processParameter", "sourceElement", "sourceElementParameter", "expression"]);
-
-	private static readonly KeySet EmailRecipient = new("SendEmailRecipientDescriptor", "recipient", null,
-		["value", "processParameter", "expression", "referenceSchema"]);
+	private static readonly KeySet TaskPerformer = new("UserTaskPerformerDescriptor", Performer,
+		"DescribeUserTaskPerformerInfo", "type contact role showPage", "roleDisplay");
 
 	private static readonly KeySet EmailBlock = new KeySet("SendEmailDescriptor", "email", "DescribeSendEmailInfo",
-			["messageSource", "template", "templateEntity", "body", "bodyFormat", "mode", "sender", "subject", "to",
-				"cc", "bcc", "importance", "ignoreErrors", "performer"],
-			readBack: ["templateDisplay", "senderDisplay", "hasBody"])
-		.With("templateEntity", EmailTemplateEntity)
-		.With("to", EmailRecipient)
-		.With("cc", EmailRecipient)
-		.With("bcc", EmailRecipient)
-		.With("performer", TaskPerformer);
-
-	private static readonly KeySet AccessRightsGrantee = new KeySet("AccessRightsGranteeDescriptor", "grantee",
-			"DescribeAccessRightsGrantee", ["type", "role", "contact", Filter], readBack: ["display"])
-		.With(Filter, RecordFilter);
+			"messageSource template templateEntity body bodyFormat mode sender subject to cc bcc importance ignoreErrors "
+			+ Performer,
+			"templateDisplay senderDisplay hasBody")
+		.With(new KeySet("SendEmailTemplateEntityDescriptor", "templateEntity", null,
+			"processParameter sourceElement sourceElementParameter expression"))
+		.With("to cc bcc", new KeySet("SendEmailRecipientDescriptor", Recipient, null,
+			"value processParameter expression referenceSchema"))
+		.With(TaskPerformer);
 
 	private static readonly KeySet AccessRightsEntry = new KeySet("AccessRightsEntryDescriptor", "access rights entry",
-			null, ["operations", "level", "grantee"])
-		.With("grantee", AccessRightsGrantee);
+			null, "operations level grantee")
+		.With(new KeySet("AccessRightsGranteeDescriptor", "grantee", "DescribeAccessRightsGrantee",
+				"type role contact " + Filter, "display")
+			.With(RecordFilter));
 
 	private static readonly KeySet AccessRightsBlock = new KeySet("ChangeAccessRightsDescriptor", "accessRights",
-			"DescribeAccessRightsInfo", ["object", "considerTimeInFilter", "add", "remove"],
-			readBack: ["objectSchemaUId", "addUnreadable", "removeUnreadable"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				[Source] = "the accessRights block names its object in 'object'"
-			})
-		.With("add", AccessRightsEntry)
-		.With("remove", AccessRightsEntry);
-
-	private static readonly KeySet ApprovalRecord = new("ApprovalRecordDescriptor", "recordId", null,
-		["recordId", "processParameter", "sourceElement", "sourceElementParameter"]);
-
-	private static readonly KeySet ApprovalApprover = new("ApprovalApproverDescriptor", "approver", null,
-		["type", "employee", "role"]);
-
-	private static readonly KeySet ApprovalNotification = new("ApprovalNotificationDescriptor", "notifyApprover", null,
-		["emailTemplate"]);
-
-	private static readonly KeySet ApprovalRecipient = new("ApprovalRecipientDescriptor", "recipient", null,
-		["value", "processParameter"]);
-
-	private static readonly KeySet ApprovalAuthorNotification = new KeySet("ApprovalAuthorNotificationDescriptor",
-			"notifyAuthor", null, ["emailTemplate", "recipient"])
-		.With("recipient", ApprovalRecipient);
+			"DescribeAccessRightsInfo", "object considerTimeInFilter add remove",
+			"objectSchemaUId addUnreadable removeUnreadable",
+			Pointers((Source, "the accessRights block names its object in 'object'")))
+		.With("add remove", AccessRightsEntry);
 
 	private static readonly KeySet ApprovalBlock = new KeySet("ApprovalDescriptor", "approval", "DescribeApprovalInfo",
-			["purpose", "object", "recordId", "approver", "allowDelegation", "notifyApprover", "notifyAuthor",
-				"ignoreEmailErrors"],
-			readBack: ["objectUId", "recordIdDisplay", "approverEmployeeDisplay", "approverRoleDisplay",
-				"approverEmailTemplateDisplay", "authorEmailTemplateDisplay", "approvalSchemaUId"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				["approverType"] = "write the approver nested: \"approver\":{\"type\":...}",
-				["approverEmployee"] = "write the approver nested: \"approver\":{\"type\":\"employee\",\"employee\":...}",
-				["approverRole"] = "write the approver nested: \"approver\":{\"type\":\"role\",\"role\":...}",
-				["approverEmailTemplate"] = "write it nested: \"notifyApprover\":{\"emailTemplate\":...}",
-				["authorEmailTemplate"] = "write it nested: \"notifyAuthor\":{\"emailTemplate\":...}",
-				["recipient"] = "write it nested: \"notifyAuthor\":{\"recipient\":{...}}"
-			})
-		.With("recordId", ApprovalRecord)
-		.With("approver", ApprovalApprover)
-		.With("notifyApprover", ApprovalNotification)
-		.With("notifyAuthor", ApprovalAuthorNotification);
-
-	private static readonly KeySet FormulaTarget = new("FormulaTargetDescriptor", "target", null,
-		["resultProcessParameter", "elementName", "elementParameter", "entityColumnUId", "unresolved"]);
+			"purpose object recordId approver allowDelegation notifyApprover notifyAuthor ignoreEmailErrors",
+			"objectUId recordIdDisplay approverEmployeeDisplay approverRoleDisplay approverEmailTemplateDisplay "
+			+ "authorEmailTemplateDisplay approvalSchemaUId",
+			Pointers(
+				("approverType", "write the approver nested: \"approver\":{\"type\":...}"),
+				("approverEmployee", "write the approver nested: \"approver\":{\"type\":\"employee\",\"employee\":...}"),
+				("approverRole", "write the approver nested: \"approver\":{\"type\":\"role\",\"role\":...}"),
+				("approverEmailTemplate", "write it nested: \"notifyApprover\":{\"emailTemplate\":...}"),
+				("authorEmailTemplate", "write it nested: \"notifyAuthor\":{\"emailTemplate\":...}"),
+				(Recipient, "write it nested: \"notifyAuthor\":{\"recipient\":{...}}")))
+		.With(new KeySet("ApprovalRecordDescriptor", RecordId, null,
+			"recordId processParameter sourceElement sourceElementParameter"))
+		.With(new KeySet("ApprovalApproverDescriptor", "approver", null, "type employee role"))
+		.With(new KeySet("ApprovalNotificationDescriptor", "notifyApprover", null, "emailTemplate"))
+		.With(new KeySet("ApprovalAuthorNotificationDescriptor", "notifyAuthor", null, "emailTemplate recipient")
+			.With(new KeySet("ApprovalRecipientDescriptor", Recipient, null, "value processParameter")));
 
 	private static readonly KeySet FormulaBlock = new KeySet("FormulaTaskDescriptor", "formula", "DescribeFormulaInfo",
-			["body", "target", "resultProcessParameter", "elementName", "elementParameter", "entityColumnUId"])
-		.With("target", FormulaTarget);
-
-	private static readonly KeySet ActivityInterval = new("ActivityIntervalDescriptor", "interval",
-		"DescribeActivityIntervalInfo", ["value", "unit"], readBack: ["period"]);
-
-	private static readonly KeySet LogActivity = new KeySet("LogActivityDescriptor", "logActivity",
-			"DescribeOpenEditPageLogActivityInfo",
-			["enabled", "startIn", "duration", "remindIn", "showInCalendar", "priority"], readBack: ["priorityId"])
-		.With("startIn", ActivityInterval)
-		.With("duration", ActivityInterval)
-		.With("remindIn", ActivityInterval);
-
-	private static readonly KeySet ResultsByColumn = new("OpenEditPageResultsByColumnDescriptor", "resultsByColumn",
-		"DescribeOpenEditPageResultsByColumnInfo", ["enabled", "column"], readBack: ["columnUId"]);
-
-	private static readonly KeySet OpenEditPagePerformer = new("OpenEditPagePerformerDescriptor", "performer",
-		"DescribeOpenEditPagePerformerInfo", ["type", "contact", "role", "showPage"], readBack: ["roleDisplay"]);
-
-	private static readonly KeySet OpenEditPageRecord = new("OpenEditPageRecordDescriptor", "recordId", null,
-		["value", "processParameter", "sourceElement", "sourceElementParameter", "sourceColumn", "expression"]);
-
-	private static readonly KeySet OpenEditPageCompletion = new("OpenEditPageCompletionDescriptor", "completion", null,
-		["mode"]);
+			"body target resultProcessParameter elementName elementParameter entityColumnUId")
+		.With(new KeySet("FormulaTargetDescriptor", "target", null,
+			"resultProcessParameter elementName elementParameter entityColumnUId unresolved"));
 
 	private static readonly KeySet OpenEditPageBlock = new KeySet("OpenEditPageConfigDescriptor", "openEditPage",
 			"DescribeOpenEditPageInfo",
-			["page", "pageSchemaUId", "recordType", "editMode", "defaultValues", "recordId", "recommendation", "hint",
-				"performer", "logActivity", "resultsByColumn", "completion"],
-			readBack: ["object", "pageTypeUId"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				["completionMode"] = "write it nested: \"completion\":{\"mode\":...}"
-			})
+			"page pageSchemaUId recordType editMode defaultValues recordId recommendation hint performer logActivity "
+			+ "resultsByColumn completion",
+			"object pageTypeUId",
+			Pointers(("completionMode", "write it nested: \"completion\":{\"mode\":...}")))
 		.With("defaultValues", ColumnValue)
-		.With("recordId", OpenEditPageRecord)
-		.With("performer", OpenEditPagePerformer)
-		.With("logActivity", LogActivity)
-		.With("resultsByColumn", ResultsByColumn)
-		.With("completion", OpenEditPageCompletion);
-
-	private static readonly KeySet PreconfiguredPagePerformer = new("PreconfiguredPagePerformerDescriptor",
-		"performer", "DescribePreconfiguredPagePerformer", ["type", "contact", "role", "showPage"]);
-
-	private static readonly KeySet PreconfiguredPageButton = new("PreconfiguredPageButtonDescriptor", "button",
-		"DescribePreconfiguredPageButton", ["name", "caption", "event", "validate"]);
-
-	private static readonly KeySet PreconfiguredPageDataSource = new("PreconfiguredPageDataSourceDescriptor",
-		"dataSource", "DescribePreconfiguredPageDataSource", ["name", "entitySchemaName"], readBack: ["parameter"]);
+		.With(new KeySet("OpenEditPageRecordDescriptor", RecordId, null,
+			"value processParameter sourceElement sourceElementParameter sourceColumn expression"))
+		.With(new KeySet("OpenEditPagePerformerDescriptor", Performer, "DescribeOpenEditPagePerformerInfo",
+			"type contact role showPage", "roleDisplay"))
+		.With(new KeySet("LogActivityDescriptor", "logActivity", "DescribeOpenEditPageLogActivityInfo",
+				"enabled startIn duration remindIn showInCalendar priority", "priorityId")
+			.With("startIn duration remindIn", new KeySet("ActivityIntervalDescriptor", "interval",
+				"DescribeActivityIntervalInfo", "value unit", "period")))
+		.With(new KeySet("OpenEditPageResultsByColumnDescriptor", "resultsByColumn",
+			"DescribeOpenEditPageResultsByColumnInfo", "enabled column", "columnUId"))
+		.With(new KeySet("OpenEditPageCompletionDescriptor", "completion", null, "mode"));
 
 	private static readonly KeySet PreconfiguredPageBlock = new KeySet("PreconfiguredPageDescriptor",
-			"preconfiguredPage", "DescribePreconfiguredPageInfo",
-			["page", "performer", "buttons", "dataSources", "recommendation"],
-			readBack: ["pageUiType", "connectedObject", "connectedObjectRecord", "inSync", "shadowedPageParameters"])
-		.With("performer", PreconfiguredPagePerformer)
-		.With("buttons", PreconfiguredPageButton)
-		.With("dataSources", PreconfiguredPageDataSource);
-
-	private static readonly KeySet MultiInstanceOptions = new("MultiInstanceOptionsDescriptor", "multiInstanceOptions",
-		"DescribeMultiInstanceOptions", ["enabled", "executionMode", "ignoreErrors"],
-		readBack: ["inputCollection", "outputCollection", "completedIterationsCount", "terminatedIterationsCount",
-			"totalIterationsCount", "calleeInSync"]);
+			"preconfiguredPage", "DescribePreconfiguredPageInfo", "page performer buttons dataSources recommendation",
+			"pageUiType connectedObject connectedObjectRecord inSync shadowedPageParameters")
+		.With(new KeySet("PreconfiguredPagePerformerDescriptor", Performer, "DescribePreconfiguredPagePerformer",
+			"type contact role showPage"))
+		.With("buttons", new KeySet("PreconfiguredPageButtonDescriptor", "button", "DescribePreconfiguredPageButton",
+			"name caption event validate"))
+		.With("dataSources", new KeySet("PreconfiguredPageDataSourceDescriptor", "dataSource",
+			"DescribePreconfiguredPageDataSource", "name entitySchemaName", "parameter"));
 
 	private static readonly KeySet SubProcessBlock = new KeySet("SubProcessDescriptor", "subProcess",
-			"DescribeSubProcessInfo", ["processName", "processUId", "resync", "multiInstanceOptions"],
-			readBack: ["processCaption", "multiInstance", "inSync"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				["process"] = "name the called process in 'processName' (or 'processUId')"
-			})
-		.With("multiInstanceOptions", MultiInstanceOptions);
+			"DescribeSubProcessInfo", "processName processUId resync multiInstanceOptions",
+			"processCaption multiInstance inSync",
+			Pointers(("process", "name the called process in 'processName' (or 'processUId')")))
+		.With(new KeySet("MultiInstanceOptionsDescriptor", "multiInstanceOptions", "DescribeMultiInstanceOptions",
+			"enabled executionMode ignoreErrors",
+			"inputCollection outputCollection completedIterationsCount terminatedIterationsCount totalIterationsCount "
+			+ "calleeInSync"));
 
 	private static readonly KeySet ScriptTaskBlock = new("ScriptTaskDescriptor", "scriptTask", "DescribeScriptTaskInfo",
-		["body", "forInterpretedProcess"]);
+		"body forInterpretedProcess");
 
 	/// <summary>
-	/// The element's configuration blocks, shared by the create element and the <c>setElement</c> update: each is
-	/// added to both, and the drift test catches one the server gained on either side only.
+	/// The element's configuration blocks, each linked under its own label into both the create element and the
+	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
 	/// </summary>
-	private static readonly (string Key, KeySet Set)[] Blocks = [
-		("readData", ReadDataBlock), ("changeData", ChangeDataBlock), ("addData", AddDataBlock),
-		("deleteData", DeleteDataBlock), ("email", EmailBlock), ("performer", TaskPerformer),
-		("accessRights", AccessRightsBlock), ("approval", ApprovalBlock), ("formula", FormulaBlock),
-		("openEditPage", OpenEditPageBlock), ("preconfiguredPage", PreconfiguredPageBlock),
-		("subProcess", SubProcessBlock), ("scriptTask", ScriptTaskBlock)
+	private static readonly KeySet[] Blocks = [
+		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
+		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock
 	];
+
+	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));
 
 	/// <summary>An element of a create descriptor's <c>elements[]</c>, or of an <c>addElement</c> operation.</summary>
 	internal static readonly KeySet Element = WithBlocks(new KeySet("ProcessElementDescriptor", ElementKey,
-			"DescribeProcessElement",
-			["name", "type", "userTaskName", "caption", Signal, "lane", "useBackgroundMode", Filter, "readData", "email",
-				"performer", "changeData", "addData", "deleteData", "accessRights", "approval", "formula",
-				"openEditPage", "preconfiguredPage", "subProcess", "scriptTask"],
-			readBack: ["uid", "buildType", "managerItemUId", "position", "size", "filterDecodedCompletely", "deprecated",
-				"writesConnectionsAtRuntime"],
-			pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-				["parameters"] = "an element's inputs are bound through the descriptor's top-level 'mappings' "
-					+ "(modify-business-process: an addMapping operation)",
-				["connections"] = "\"Connected to\" links are set after the build with a modify-business-process "
-					+ "setConnections operation",
-				["filters"] = "the element's record filter is the single element-level 'filter' block"
-			})
-		.With(Signal, SignalBlock)
-		.With(Filter, RecordFilter));
+			"DescribeProcessElement", $"name type userTaskName caption {Signal} lane useBackgroundMode {Filter} {BlockKeys}",
+			"uid buildType managerItemUId position size filterDecodedCompletely deprecated writesConnectionsAtRuntime",
+			Pointers(
+				("parameters", "an element's inputs are bound through the descriptor's top-level 'mappings' "
+					+ "(modify-business-process: an addMapping operation)"),
+				("connections", "\"Connected to\" links are set after the build with a modify-business-process "
+					+ "setConnections operation"),
+				("filters", "the element's record filter is the single element-level 'filter' block")))
+		.With(SignalBlock)
+		.With(RecordFilter));
 
 	/// <summary>The <c>elementUpdate</c> of a <c>setElement</c> operation.</summary>
 	internal static readonly KeySet ElementUpdate = WithBlocks(new KeySet("ProcessElementUpdateDescriptor",
-		ElementUpdateKey, null,
-		["useBackgroundMode", "email", "approval", "formula", "scriptTask", "readData", "preconfiguredPage",
-			"changeData", "addData", "deleteData", "performer", "openEditPage", "accessRights", "subProcess"],
-		pointers: new Dictionary<string, string>(StringComparer.Ordinal) {
-			[Filter] = "a record filter is changed by its own operation: {\"op\":\"setFilter\",\"elementName\":...,"
-				+ "\"filter\":{...}}",
-			[Signal] = "a start signal is changed by its own operation: {\"op\":\"setSignal\",\"elementName\":...,"
-				+ "\"signal\":{...}}"
-		}));
+		ElementUpdateKey, null, $"useBackgroundMode {BlockKeys}",
+		pointers: Pointers(
+			(Filter, "a record filter is changed by its own operation: {\"op\":\"setFilter\",\"elementName\":...,"
+				+ "\"filter\":{...}}"),
+			(Signal, "a start signal is changed by its own operation: {\"op\":\"setSignal\",\"elementName\":...,"
+				+ "\"signal\":{...}}"))));
 
 	private static KeySet WithBlocks(KeySet element) {
-		foreach ((string key, KeySet set) in Blocks) {
-			element.With(key, set);
+		foreach (KeySet block in Blocks) {
+			element.With(block);
 		}
 		return element;
 	}
@@ -561,7 +508,7 @@ internal static class ProcessBlockKeyCheck {
 			}
 			// Only a configuration block's own level: the element's filter and signal are not "a block" a key can
 			// be misplaced into (filter.filter must not be told to use the element-level filter it is already in).
-			if (depth != 1 || !Element.Declares(key) || !Blocks.Any(block => block.Set == set)) {
+			if (depth != 1 || !Element.Declares(key) || !Blocks.Contains(set)) {
 				return string.Empty;
 			}
 			return placement switch {
@@ -591,14 +538,16 @@ internal static class ProcessBlockKeyCheck {
 					+ "without a word, so these keys would have saved a process that ignores them. "
 					+ string.Join(" ", shown) + more;
 			}
-			IReadOnlyList<string> warnings = _readBacks.Count == 0
-				? []
-				: [
+			IReadOnlyList<string> warnings = [];
+			if (_readBacks.Count > 0) {
+				string moreReadBacks = _readBacks.Count > MaxReportedKeys
+					? $" (and {_readBacks.Count - MaxReportedKeys} more)"
+					: string.Empty;
+				warnings = [
 					"Ignored describe-business-process read-back fields (derived on read, never written): "
-					+ string.Join("; ", _readBacks.Take(MaxReportedKeys))
-					+ (_readBacks.Count > MaxReportedKeys ? $" (and {_readBacks.Count - MaxReportedKeys} more)" : "")
-					+ "."
+					+ string.Join("; ", _readBacks.Take(MaxReportedKeys)) + moreReadBacks + "."
 				];
+			}
 			return new ProcessBlockKeyCheckResult(error, warnings);
 		}
 
