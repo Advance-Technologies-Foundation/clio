@@ -67,6 +67,8 @@ public sealed class ToolContractGetToolLegacyClientE2ETests : McpContractFixture
 			because: "the legacy CAADT 1.4.0 client hard-crashes on the compact index and must receive the full tools array instead");
 		response.Index.Should().BeNull(
 			because: "the legacy shape is the full tools array, not the compact discovery index");
+		response.ToolIndex.Should().BeNull(
+			because: "the legacy shape is the full tools array, not the line form of the compact index either");
 		response.Tools!.Should().Contain(tool =>
 				tool.InputSchema != null && tool.InputSchema.Properties != null && tool.InputSchema.Properties.Count > 0,
 			because: "the legacy client must receive real per-tool input schemas, not just names, to avoid the historical crash");

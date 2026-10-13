@@ -122,12 +122,12 @@ public static class IpcProofRunner {
 			state.DestructiveCount = catalog.Count(entry => entry.Destructive);
 			bool modern = client.LastCatalogIsModern;
 			state.CatalogOk = state.CatalogCount > 0 && modern;
-			state.Results.Add(("Catalog fetch (get-tool-contract {})", Ms(stopwatch),
+			state.Results.Add(("Catalog fetch (get-tool-contract detail=index-entries)", Ms(stopwatch),
 				$"{state.CatalogCount} tools ({state.DestructiveCount} destructive, {catalog.Count(entry => entry.Resident)} resident); modernIndex={modern}{(modern ? "" : " -> INCOMPATIBLE clio (old/empty shape)")}."));
 			log($"[ipc-proof] catalog: {state.CatalogCount} tools in {Ms(stopwatch)} (modernIndex={modern})");
 		}
 		catch (Exception ex) {
-			state.Results.Add(("Catalog fetch (get-tool-contract {})", "FAILED", Truncate(ex.Message, 200)));
+			state.Results.Add(("Catalog fetch (get-tool-contract detail=index-entries)", "FAILED", Truncate(ex.Message, 200)));
 			log($"[ipc-proof] catalog FAILED: {ex.Message}");
 		}
 	}
@@ -340,7 +340,7 @@ public static class IpcProofRunner {
 	private static void AppendCatalog(StringBuilder sb, int catalogCount, int destructiveCount) {
 		sb.AppendLine("## Catalog");
 		sb.AppendLine();
-		sb.AppendLine($"- Total tools discovered via `get-tool-contract {{}}`: **{catalogCount}**");
+		sb.AppendLine($"- Total tools discovered via `get-tool-contract detail=index-entries`: **{catalogCount}**");
 		sb.AppendLine($"- Destructive tools: {destructiveCount}");
 		sb.AppendLine();
 		sb.AppendLine("---");

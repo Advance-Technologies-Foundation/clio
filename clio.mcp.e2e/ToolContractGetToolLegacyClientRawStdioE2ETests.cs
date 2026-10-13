@@ -109,6 +109,8 @@ public sealed class ToolContractGetToolLegacyClientRawStdioE2ETests {
 				&& index.ValueKind != JsonValueKind.Null;
 			hasIndex.Should().BeFalse(
 				because: "the legacy response must not carry the compact discovery index the shipped client crashes on");
+			payload.TryGetProperty("tool-index", out _).Should().BeFalse(
+				because: "the legacy response must not carry the line form of the compact index either");
 			_ = standardErrorTask;
 		} finally {
 			// Guarantee the spawned child is gone even if an assertion above throws first, so a failed
