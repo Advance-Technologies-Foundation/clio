@@ -137,6 +137,9 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicl
 # Remove an own column
 clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicle --action remove --column-name LegacyCode
 
+# Redirect an inherited lookup on a child of a virtual parent
+clio modify-entity-schema-column -e dev --package Custom --schema-name UsrVehicleInFolder --action modify --column-name Folder --reference-schema UsrVehicleFolder
+
 # Override the caption of an inherited column on a replacing/child schema
 clio modify-entity-schema-column -e dev --package Custom --schema-name UsrTickets --action modify --column-name Symptoms --title "Description"
 ```
@@ -147,6 +150,11 @@ clio modify-entity-schema-column -e dev --package Custom --schema-name UsrTicket
 overridden (--title/title-localizations, --description/description-localizations) on a
 replacing/child schema — its name, type, and flags stay read-only, and it cannot be removed.
 The override is stored on the child schema and does not change the parent
+- an INHERITED Lookup column also accepts --reference-schema on modify, which redirects the
+inherited reference in place. The parent must be virtual (for example BaseItemInFolder), the
+schema must not replace its parent, and the target must be a non-virtual schema that inherits
+from the column's current reference schema; the new reference is read back after saving
+- add refuses a name the parent schema already has and names the parent
 - remove clears schema-level references to the deleted column and validates required fallbacks locally
 - unspecified modify options are preserved as-is in the saved payload
 - MCP callers can also send structured default-value-config with source

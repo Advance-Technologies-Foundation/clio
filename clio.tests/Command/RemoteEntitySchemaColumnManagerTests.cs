@@ -149,7 +149,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 				_defaultValueSourceResolver,
 				_lookupDefaultDisplayValueResolver,
 				_captionCultureResolver,
-				new CultureAvailabilityGuard(_cultureCatalog, _logger)),
+				new CultureAvailabilityGuard(_cultureCatalog, _logger),
+				new InheritedLookupOverride(_designerClient)),
 			_designerClient,
 			_runtimeEntitySchemaReader,
 			_dependencyResolver,
@@ -1222,7 +1223,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
-	[Description("Fails closed: every non-caption settable option on ModifyEntitySchemaColumnOptions must be rejected on an inherited column, so a newly added option cannot silently bypass the inherited read-only guard.")]
+	[Description("Fails closed: every settable option on ModifyEntitySchemaColumnOptions other than caption, description, and reference schema must be rejected on an inherited column, so a newly added option cannot silently bypass the inherited read-only guard.")]
 	public void ModifyColumn_ShouldRejectEveryNonCaptionOption_OnInheritedColumn() {
 		// Arrange — the identity/target/culture and caption/description fields that are NOT column mutations.
 		HashSet<string> allowedNonMutationOptions = new(StringComparer.Ordinal) {
@@ -1235,7 +1236,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 			nameof(ModifyEntitySchemaColumnOptions.Title),
 			nameof(ModifyEntitySchemaColumnOptions.TitleLocalizations),
 			nameof(ModifyEntitySchemaColumnOptions.Description),
-			nameof(ModifyEntitySchemaColumnOptions.DescriptionLocalizations)
+			nameof(ModifyEntitySchemaColumnOptions.DescriptionLocalizations),
+			nameof(ModifyEntitySchemaColumnOptions.ReferenceSchemaName)
 		};
 		PropertyInfo[] mutationProperties = typeof(ModifyEntitySchemaColumnOptions)
 			.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
@@ -1262,8 +1264,8 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 			// Assert
 			act.Should().Throw<EntitySchemaDesignerException>(
-					because: $"the non-caption option '{property.Name}' must be rejected on an inherited column so a new option cannot silently bypass the guard")
-				.WithMessage("*inherited; only its caption and description can be overridden*");
+					because: $"the non-overridable option '{property.Name}' must be rejected on an inherited column so a new option cannot silently bypass the guard")
+				.WithMessage("*inherited; only its caption, description, and (for a lookup) reference-schema-name can be overridden*");
 			_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
 				Arg.Any<Clio.Command.RemoteCommandOptions>());
 		}
@@ -1423,7 +1425,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 		}
 		throw new InvalidOperationException(
 			$"Drift test cannot build a representative value for the new option '{propertyName}' of type '{propertyType}'. " +
-			"Add a case here (and ensure HasNonCaptionInheritedMutation covers the option) so the inherited guard stays fail-closed.");
+			"Add a case here (and ensure HasNonOverridableInheritedMutation covers the option) so the inherited guard stays fail-closed.");
 	}
 
 	[Test]
@@ -1446,8 +1448,182 @@ internal class RemoteEntitySchemaColumnManagerTests
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>()
-			.WithMessage("*inherited; only its caption and description can be overridden*",
+			.WithMessage("*inherited; only its caption, description, and (for a lookup) reference-schema-name can be overridden*",
 				because: "name, type, and flags of an inherited column stay read-only");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	private static readonly Guid BaseItemInFolderUId = Guid.Parse("4f63bafb-e9e7-4082-b92e-66b97c14017c");
+	private static readonly Guid BaseFolderUId = Guid.Parse("d602bf96-d029-4b07-9755-63c8f5cb5ed5");
+	private static readonly Guid ContactFolderUId = Guid.Parse("8b5c01a2-59e9-40dc-855b-6e3bebddc6ee");
+	private static readonly Guid FolderColumnUId = Guid.Parse("9e46bb69-9788-423c-b7cd-4c624081082d");
+
+	private static EntityDesignSchemaDto CreateFolderChildSchema() {
+		EntitySchemaColumnDto folder = CreateLookupColumn("Folder", FolderColumnUId, "BaseFolder");
+		folder.ReferenceSchema.UId = BaseFolderUId;
+		EntityDesignSchemaDto schema = CreateSchema(columns: [], inheritedColumns: [folder],
+			primaryColumn: CreateGuidColumn("Id", IdColumnUId), primaryDisplayColumn: null);
+		schema.Name = "UsrVehicleInFolder";
+		schema.ParentSchema = new EntityDesignSchemaDto {
+			UId = BaseItemInFolderUId,
+			Name = "BaseItemInFolder",
+			IsVirtual = true
+		};
+		return schema;
+	}
+
+	private void SetupFolderHierarchy() {
+		_designerClient.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new AvailableEntitySchemasResponse {
+				Success = true,
+				Items = [
+					new ManagerItemDto { UId = ContactFolderUId, Name = "ContactFolder", Caption = "Contact folder" }
+				]
+			});
+		_designerClient.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto { UId = ContactFolderUId, Name = "ContactFolder", ParentUId = BaseFolderUId }
+			});
+	}
+
+	[Test]
+	[Description("Redirects an inherited lookup with modify reference-schema-name in place on InheritedColumns and verifies the reloaded reference.")]
+	public void ModifyColumn_ShouldRedirectInheritedLookup_WhenReferenceSchemaNameIsSupplied() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Action = "modify",
+			ColumnName = "Folder",
+			ReferenceSchemaName = "ContactFolder"
+		};
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		_savedSchema.Should().NotBeNull(because: "a reference override of an inherited lookup saves the schema");
+		_savedSchema.Columns.Should().BeEmpty(because: "the override must not add an own column");
+		EntitySchemaColumnDto folder = _savedSchema.InheritedColumns.Single(column => column.Name == "Folder");
+		folder.UId.Should().Be(FolderColumnUId, because: "the inherited column keeps its identity");
+		folder.ReferenceSchema.UId.Should().Be(ContactFolderUId, because: "the reference must point at the requested schema");
+		folder.ReferenceSchema.Name.Should().Be("ContactFolder", because: "the reference name must match the requested schema");
+		EntitySchemaDesignerSupport.GetLocalizableValue(folder.Caption, "en-US").Should().Be("Folder",
+			because: "a reference-only override must leave the inherited caption unchanged");
+		PublishedChanges().Should().ContainSingle(because: "the save publishes once")
+			.Which.Impact.Should().Be(ODataContractImpact.Changed,
+				because: "a changed reference schema changes a navigation property of the OData contract");
+	}
+
+	[Test]
+	[Description("Keeps rejecting a required flag on the same inherited lookup that accepts a reference override.")]
+	public void ModifyColumn_ShouldRejectRequired_OnInheritedLookup() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Action = "modify",
+			ColumnName = "Folder",
+			ReferenceSchemaName = "ContactFolder",
+			Required = true
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "required stays read-only on an inherited column")
+			.WithMessage("*inherited; only its caption, description, and (for a lookup) reference-schema-name can be overridden*");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Rejects a reference override on an inherited column that is not a lookup, before saving.")]
+	public void ModifyColumn_ShouldRejectReferenceOverride_WhenInheritedColumnIsNotLookup() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		_loadedSchema.InheritedColumns = [CreateTextColumn("Notes", NameColumnUId)];
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Action = "modify",
+			ColumnName = "Notes",
+			ReferenceSchemaName = "ContactFolder"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "only an inherited lookup has a reference to override")
+			.WithMessage("*only the reference schema of an inherited Lookup column can be overridden*");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Reports a reference override that the reloaded schema does not carry as a failure instead of success.")]
+	public void ModifyColumn_ShouldThrow_WhenReloadedInheritedReferenceDiffers() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		_designerClient.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(_ => new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true,
+				Schema = _savedSchema == null ? _loadedSchema : CreateFolderChildSchema()
+			});
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Action = "modify",
+			ColumnName = "Folder",
+			ReferenceSchemaName = "ContactFolder"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(
+				because: "a reference change the server dropped must not be reported as success")
+			.WithMessage("*Reference override of inherited column 'Folder' was not persisted*expected 'ContactFolder'*'BaseFolder'*");
+	}
+
+	[Test]
+	[Description("Names the parent schema and the override form when an add reuses the name of an inherited column.")]
+	public void AddColumn_ShouldNameParentAndOverrideForm_WhenNameIsInherited() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		var options = new ModifyEntitySchemaColumnOptions {
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Action = "add",
+			ColumnName = "Folder",
+			Type = "Lookup",
+			ReferenceSchemaName = "ContactFolder"
+		};
+
+		// Act
+		Action act = () => _manager.ModifyColumn(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "an inherited name cannot be added again")
+			.WithMessage("*inherited*from parent schema 'BaseItemInFolder'*\"override\":true*");
 		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
 			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}

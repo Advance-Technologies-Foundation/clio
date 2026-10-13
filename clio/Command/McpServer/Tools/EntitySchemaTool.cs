@@ -81,6 +81,10 @@ public sealed class CreateEntitySchemaTool(
 				 (/0/odata/<Entity>) without a compile. That rebuild is asynchronous (~1-2 min): a 404 from an
 				 odata-* tool right after creation is the expected async gap — wait briefly and retry, do not compile.
 
+				 A column whose name the parent schema already has is refused unless it sets `override: true`, which
+				 redirects that inherited Lookup to `reference-schema-name` instead of adding a column (for example
+				 Folder of a BaseItemInFolder child -> the entity's folder schema).
+
 				 Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.
 				 """)]
 	public async Task<CommandExecutionResult> CreateEntitySchema(
@@ -161,6 +165,9 @@ public sealed class CreateEntitySchemaTool(
 		// spelling, so the "at least one of the two" rule is enforced here (issue #947).
 		string resolvedName = ColumnIdentityContract.RequireColumnIdentity(
 			column.ResolveName(), context, nameof(column));
+		if (column.Override == true) {
+			return SerializeOverrideColumn(column, resolvedName, context);
+		}
 		// Type is checked here for the same reason as the code above: it is optional in the EMITTED SCHEMA so
 		// the `data-value-type` alias stays usable, which means the "one of the two is required" rule has to
 		// live in code or a typeless column would reach the creator and fail with a vaguer message.
@@ -194,6 +201,33 @@ public sealed class CreateEntitySchemaTool(
 			["masked"] = column.Masked
 	});
 }
+
+	// An override carries no type and keeps the inherited caption unless a title is sent, so neither is
+	// defaulted here. Every other property is forwarded unchanged for the creator to refuse.
+	private static string SerializeOverrideColumn(CreateEntitySchemaColumnArgs column, string resolvedName,
+		string context) {
+		bool hasTitle = column.TitleLocalizations != null || column.LegacyTitle != null || column.LegacyCaption != null;
+		IReadOnlyDictionary<string, string>? titleLocalizations = hasTitle
+			? EntitySchemaLocalizationContract.RequireTitleLocalizations(
+				column.TitleLocalizations,
+				column.LegacyTitle,
+				column.LegacyCaption,
+				resolvedName,
+				context)
+			: null;
+		return JsonSerializer.Serialize(new Dictionary<string, object?> {
+			["name"] = resolvedName,
+			["override"] = true,
+			["type"] = column.ResolveType()?.Trim(),
+			["title-localizations"] = titleLocalizations,
+			["reference-schema-name"] = column.ResolveReferenceSchemaName()?.Trim(),
+			["required"] = column.ResolveRequired(),
+			["default-value-source"] = column.DefaultValueSource,
+			["default-value"] = column.DefaultValue,
+			["default-value-config"] = column.DefaultValueConfig,
+			["masked"] = column.Masked
+		});
+	}
 }
 
 /// <summary>
@@ -346,7 +380,7 @@ public sealed class UpdateEntitySchemaTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Applies a batch of add, modify, and remove column operations to a remote Creatio entity schema. " +
 		"The batch is always published. An OData entities rebuild is requested only if at least one operation in the batch changes the published OData contract — adding or removing a column, renaming one (newName), or changing its type or reference schema; caption, description, default value, mask, usage type, and required changes leave the contract unchanged and do not trigger a rebuild. When a rebuild is requested, changed columns become reachable over OData (/0/odata/<Entity>) asynchronously (~1-2 min): a 404 (or \"The request is invalid\") from an odata-* tool right after a change is the expected async gap — wait briefly and retry, do not compile. " +
-		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations); its name, type, and flags stay read-only. " +
+		"An INHERITED column can have only its caption/description overridden (title-localizations / description-localizations), and an inherited Lookup its reference-schema-name; its name, type, and flags stay read-only. " +
 		"Entity business rules (conditional editability/required/values) are separate artifacts — call get-guidance with name business-rules to learn more. For the schema-design workflow call get-guidance with name app-modeling.")]
 	public async Task<CommandExecutionResult> UpdateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, operations (all required)")] [Required] UpdateEntitySchemaArgs args) {
@@ -688,7 +722,9 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "and the schema is not saved. The check is point-in-time (TOCTOU) and is skipped when the referenced "
 		+ "record cannot be read. "
 		+ "An INHERITED column can have only its caption/description overridden (title-localizations / "
-		+ "description-localizations) on a replacing/child schema; its name, type, and flags stay read-only. "
+		+ "description-localizations) on a replacing/child schema, and an inherited Lookup its "
+		+ "reference-schema-name when the parent is virtual and the target inherits from the current reference "
+		+ "schema; its name, type, and flags stay read-only. "
 		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
@@ -965,6 +1001,21 @@ public sealed record CreateEntitySchemaColumnArgs(
 	[property: JsonPropertyName("masked")]
 	[property: Description("Optional masked flag. Allowed for Text and SecureText columns.")]
 	public bool? Masked { get; init; }
+
+	/// <summary>
+	/// Gets whether this entry overrides a lookup column inherited from the parent schema instead of adding a
+	/// new column.
+	/// </summary>
+	[property: JsonPropertyName("override")]
+	[property: Description("""
+						  Set to true to redirect a Lookup column inherited from the parent schema to another reference
+						  schema instead of adding a new column (e.g. Folder of a BaseItemInFolder child -> ContactFolder).
+						  Send only name, override, reference-schema-name and optionally title-localizations; type,
+						  required, defaults and masked are refused. The parent must be virtual, the schema must not
+						  replace its parent, and the target must be a non-virtual schema that inherits from the column's
+						  current reference schema. Omitted or false: a name that matches an inherited column is refused.
+						  """)]
+	public bool? Override { get; init; }
 
 	/// <summary>
 	/// Gets the read-shape alias for <c>type</c>. <c>get-app-info</c> reports the column type as

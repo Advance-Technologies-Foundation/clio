@@ -614,7 +614,12 @@ internal static class ToolContractCatalog {
 		"Optional initial columns. Each item: `column-name` (alias `name`), `type` (alias `data-value-type`), " +
 		"optional `title-localizations` (auto-derived from the column name when omitted), " +
 		"`reference-schema-name` (alias `reference-schema`, required for type Lookup), and `required` " +
-		"(alias `is-required`). Type names are case-insensitive.";
+		"(alias `is-required`). Type names are case-insensitive. " +
+		"A name the parent schema already has is refused unless the item sets `override: true`: an override " +
+		"redirects that inherited Lookup to `reference-schema-name` (required) instead of adding a column, may " +
+		"carry `title-localizations`, and refuses `type`, `required`, defaults and `masked`. The parent must be " +
+		"virtual (e.g. BaseItemInFolder), the schema must not replace its parent, and the target must be a " +
+		"non-virtual schema that inherits from the column's current reference schema.";
 	private const string EntitySchemaNameFieldName = "entity-schema-name";
 	private const string EnvironmentNameFieldName = "environment-name";
 	private const string PassthroughEnvironmentNameSuffix =
@@ -4908,6 +4913,20 @@ internal static class ToolContractCatalog {
 					[SchemaNameFieldName] = "UsrTaskComment",
 					[TitleLocalizationsFieldName] = LocalizationMap("Task Comment"),
 					[ParentSchemaNameFieldName] = "BaseEntity"
+				}),
+				Example("Create a folder-item schema whose inherited Folder references the entity's folder schema", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[SchemaNameFieldName] = "UsrTaskInFolder",
+					[TitleLocalizationsFieldName] = LocalizationMap("Task in folder"),
+					[ParentSchemaNameFieldName] = "BaseItemInFolder",
+					["columns"] = new[] {
+						new Dictionary<string, object?> {
+							["name"] = "Folder",
+							["override"] = true,
+							[ReferenceSchemaNameFieldName] = "UsrTaskFolder"
+						}
+					}
 				})
 			],
 			PreferSchemaSyncFlow(),
@@ -5354,7 +5373,7 @@ internal static class ToolContractCatalog {
 					Field("type", StringType, ColumnTypeVocabularyDescription),
 					Field(TitleLocalizationsFieldName, ObjectType, "Optional localization map."),
 					Field(DescriptionLocalizationsFieldName, ObjectType, "Optional localization map."),
-					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target."),
+					Field(ReferenceSchemaNameFieldName, StringType, "Optional lookup target. On a modify of an INHERITED Lookup column it redirects the inherited reference in place; the parent must be virtual, the schema must not replace its parent, and the target must be a non-virtual schema that inherits from the column's current reference schema."),
 					Field("required", BooleanType, "Optional required flag."),
 					Field("indexed", BooleanType, "Optional indexed flag."),
 					Field("cloneable", BooleanType, "Optional cloneable flag."),

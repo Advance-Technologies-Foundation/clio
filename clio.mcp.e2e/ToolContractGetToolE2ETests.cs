@@ -201,6 +201,50 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Advertises the inherited lookup override on create-entity-schema columns and on the modify reference-schema-name field.")]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract advertises the inherited lookup override")]
+	public async Task ToolContractGet_Should_Advertise_Inherited_Lookup_Override() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		ToolContractGetResponse response = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> {
+				["detail"] = ToolContractShortForm.FullDetail,
+				["tool-names"] = new[] {
+					CreateEntitySchemaTool.CreateEntitySchemaToolName,
+					ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName
+				}
+			});
+		IList<McpClientTool> tools = await context.Session.ListToolsAsync(context.CancellationTokenSource.Token);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "both entity-schema contracts should be served");
+		ToolContractDefinition createContract = response.Tools!.Single(tool =>
+			tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		createContract.InputSchema.Properties.Single(field => field.Name == "columns").Description
+			.Should().Contain("`override: true`",
+				because: "the columns contract must name the flag that redirects an inherited lookup");
+		bool hasFolderItemExample = createContract.Examples.Any(example =>
+			example.Arguments.TryGetValue("parent-schema-name", out object? parent)
+			&& string.Equals(parent?.ToString(), "BaseItemInFolder", StringComparison.Ordinal));
+		hasFolderItemExample.Should().BeTrue(
+			because: "the contract must show a folder-item example that overrides the inherited Folder");
+		response.Tools!.Single(tool => tool.Name == ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName)
+			.InputSchema.Properties.Single(field => field.Name == "reference-schema-name").Description
+			.Should().Contain("INHERITED Lookup",
+				because: "modify must document that reference-schema-name redirects an inherited lookup");
+		McpClientTool? createTool = tools.SingleOrDefault(tool => tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
+		if (createTool is not null) {
+			createTool.JsonSchema.GetRawText().Should().Contain("\"override\"",
+				because: "the emitted create-entity-schema input schema must accept the override flag on a column");
+		}
+	}
+
+	[Test]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract tool is advertised by the MCP server")]
 	public async Task ToolContractGet_Should_Be_Listed_By_Mcp_Server() {

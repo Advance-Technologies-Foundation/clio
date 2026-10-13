@@ -152,6 +152,9 @@ internal sealed class RuntimeEntitySchemaDto
 
 	[JsonProperty("name")]
 	public string Name { get; set; }
+
+	[JsonProperty("parentUId")]
+	public Guid ParentUId { get; set; }
 }
 
 internal sealed class ManagerItemDto

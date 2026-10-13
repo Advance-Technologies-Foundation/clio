@@ -78,7 +78,8 @@ view separately
 or JSON with name/type/title or caption/
 reference-schema-name/required/
 legacy default-value-source/default-value or
-structured default-value-config.
+structured default-value-config, or override
+(redirects an inherited Lookup; see Notes).
 Repeat the option for multiple columns, pass multiple values
 after one option, or pass a non-empty JSON array of objects.
 Invalid array entries fail before saving the schema.
@@ -134,6 +135,9 @@ clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Veh
 # Create a schema inheriting from a parent schema
 clio create-entity-schema -e dev --package Custom --name UsrVehicle --title "Vehicle" --parent BaseEntity
 
+# Create a folder-item schema whose inherited Folder references the entity's folder schema
+clio create-entity-schema -e dev --package Custom --name UsrVehicleInFolder --title "Vehicle in folder" --parent BaseItemInFolder --column "{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrVehicleFolder\"}"
+
 # Create a replacement schema
 clio create-entity-schema -e dev --package Custom --name Account --title "Account" --extend-parent
 
@@ -158,6 +162,17 @@ schema. With --extend-parent, the parent defaults to --name and an explicit
 parent must match that name. The base schema may live in another package,
 but a replacement already in the target package is rejected; use
 sync-schemas through MCP to create or reconcile it.
+- A column whose name the parent schema already has is refused before the
+schema is saved, naming the parent. Set "override": true on a JSON column
+to redirect that inherited Lookup to reference-schema-name instead of adding
+a column; the column stays inherited. An override may set only
+reference-schema-name (required) and title/caption/title-localizations; type,
+required, defaults and masked are refused. The parent must be virtual (for
+example BaseItemInFolder), the schema must not replace its parent (no
+--extend-parent), and the target must be a non-virtual schema that inherits
+from the column's current reference schema (for example ContactFolder, which
+inherits BaseFolder). The reference is read back after saving and a change
+the server did not persist is reported as an error
 - If no Guid column is supplied for a root schema, Id:Guid is added automatically
 - A schema with a parent keeps the parent's primary column; custom Guid columns
 remain ordinary columns

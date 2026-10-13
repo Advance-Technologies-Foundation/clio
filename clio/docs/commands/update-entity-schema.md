@@ -131,8 +131,11 @@ different values is rejected
 - each operation payload must be a JSON object; a field value of the wrong type
 is reported with its JSON path (for example $.required)
 - a modify on an INHERITED column may override only its caption/description
-(title-localizations/description-localizations); changing its name, type, or
-flags is rejected, and stops the batch on that operation
+(title-localizations/description-localizations) and, for a Lookup,
+reference-schema-name; changing its name, type, or flags is rejected, and
+stops the batch on that operation. A reference override requires a virtual
+parent, a schema that does not replace its parent, and a non-virtual target
+that inherits from the column's current reference schema
 - each operation may set usage-type (General, Advanced, or None; any column
 type); on modify the stored value is left unchanged when omitted
 - execution stops on the first failed operation

@@ -367,6 +367,100 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Creates a BaseItemInFolder child whose inherited Folder references ContactFolder, reads it back, refuses Contact as a target, and refuses a Folder column without override.")]
+	[AllureTag(CreateToolName)]
+	[AllureTag(ModifyToolName)]
+	[AllureTag(ReadColumnToolName)]
+	[AllureName("Create entity schema overrides an inherited lookup and refuses an unrelated target")]
+	[AllureDescription("Creates a sandbox child of BaseItemInFolder with Folder overridden to ContactFolder, verifies through get-entity-schema-properties and get-entity-schema-column-properties that no own column exists and the inherited Folder references ContactFolder, redirects it again through modify-entity-schema-column, and verifies that Contact is refused as a target and that a Folder column without override is refused.")]
+	public async Task CreateEntitySchema_Should_Override_Inherited_Folder_And_Refuse_Unrelated_Target() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
+		const string folderColumnName = "Folder";
+		CancellationToken cancellationToken = arrangeContext.CancellationTokenSource.Token;
+
+		// Act
+		CommandExecutionEnvelope createResult = McpCommandExecutionParser.Extract(
+			await CallCreateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				cancellationToken,
+				columns: [
+					new Dictionary<string, object?> {
+						["name"] = folderColumnName,
+						["override"] = true,
+						["reference-schema-name"] = "ContactFolder"
+					}
+				],
+				parentSchemaName: "BaseItemInFolder"));
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+		EntitySchemaColumnPropertiesInfo folderProperties =
+			await ActGetColumnPropertiesAsync(arrangeContext, folderColumnName);
+		CommandExecutionEnvelope modifyResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				folderColumnName,
+				cancellationToken,
+				referenceSchemaName: "ContactFolder"));
+		CommandExecutionEnvelope unrelatedTargetResult = McpCommandExecutionParser.Extract(
+			await CallModifyEntitySchemaColumnAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName,
+				"modify",
+				folderColumnName,
+				cancellationToken,
+				referenceSchemaName: "Contact"));
+		CommandExecutionEnvelope missingOverrideResult = McpCommandExecutionParser.Extract(
+			await CallCreateEntitySchemaAsync(
+				arrangeContext.Session,
+				arrangeContext.EnvironmentName,
+				arrangeContext.PackageName,
+				arrangeContext.SchemaName + "Dup",
+				cancellationToken,
+				columns: [
+					new Dictionary<string, object?> {
+						["name"] = folderColumnName,
+						["type"] = "Lookup",
+						["reference-schema-name"] = "ContactFolder",
+						["title-localizations"] = BuildLocalizations("Folder")
+					}
+				],
+				parentSchemaName: "BaseItemInFolder"));
+
+		// Assert
+		AssertCommandSucceeded(createResult,
+			"create-entity-schema should save a BaseItemInFolder child whose inherited Folder is overridden; a zero exit also proves the read-back verified the reference");
+		schemaProperties.OwnColumnCount.Should().Be(0,
+			because: "an override changes the inherited Folder and must not add an own column");
+		folderProperties.Source.Should().Be("inherited",
+			because: "the overridden Folder must stay an inherited column");
+		folderProperties.ReferenceSchemaName.Should().Be("ContactFolder",
+			because: "the inherited Folder must reference the requested folder schema");
+		AssertCommandSucceeded(modifyResult,
+			"modify-entity-schema-column should accept reference-schema-name on the inherited Folder lookup");
+		unrelatedTargetResult.ExitCode.Should().Be(1,
+			because: "Contact does not inherit from BaseFolder, so the override must be refused before saving");
+		unrelatedTargetResult.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("does not inherit from", StringComparison.Ordinal),
+			because: "the refusal must say why the target is invalid");
+		missingOverrideResult.ExitCode.Should().Be(1,
+			because: "a Folder column without override duplicates the inherited column and must be refused");
+		missingOverrideResult.Output.Should().Contain(message =>
+				message.Value != null && message.Value.Contains("BaseItemInFolder", StringComparison.Ordinal)
+				&& message.Value.Contains("\"override\":true", StringComparison.Ordinal),
+			because: "the refusal must name the parent schema and the override form");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Creates a virtual entity schema and verifies both structured readback and absence of a PostgreSQL table through the real MCP server.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ReadSchemaToolName)]
@@ -1851,24 +1945,26 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		string schemaName,
 		CancellationToken cancellationToken,
 		IReadOnlyList<Dictionary<string, object?>>? columns = null,
-		bool isVirtual = false, bool? isDBView = null) {
+		bool isVirtual = false, bool? isDBView = null, string? parentSchemaName = null) {
 		IReadOnlyCollection<string> reachableToolNames = await session.ListReachableToolNamesAsync(cancellationToken);
 		reachableToolNames.Should().Contain(CreateToolName,
 			because: "the create-entity-schema MCP tool must be discoverable via the get-tool-contract compact index before the end-to-end call can be executed");
 
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = environmentName,
+			["package-name"] = packageName,
+			["schema-name"] = schemaName,
+			["title-localizations"] = BuildLocalizations("Vehicle"),
+			["columns"] = columns,
+			["is-virtual"] = isVirtual,
+			["is-db-view"] = isDBView
+		};
+		if (!string.IsNullOrWhiteSpace(parentSchemaName)) {
+			args["parent-schema-name"] = parentSchemaName;
+		}
 		return await session.CallToolAsync(
 			CreateToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = environmentName,
-					["package-name"] = packageName,
-					["schema-name"] = schemaName,
-					["title-localizations"] = BuildLocalizations("Vehicle"),
-					["columns"] = columns,
-					["is-virtual"] = isVirtual,
-					["is-db-view"] = isDBView
-				}
-			},
+			new Dictionary<string, object?> { ["args"] = args },
 			cancellationToken);
 	}
 

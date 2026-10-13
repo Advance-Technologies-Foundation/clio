@@ -257,7 +257,8 @@ public class BindingsModule {
 			sp.GetRequiredService<IEntitySchemaDefaultValueSourceResolver>(),
 			sp.GetRequiredService<ILookupDefaultDisplayValueResolver>(),
 			sp.GetRequiredService<IEntitySchemaCaptionCultureResolver>(),
-			sp.GetRequiredService<Clio.Command.Localization.ICultureAvailabilityGuard>()));
+			sp.GetRequiredService<Clio.Command.Localization.ICultureAvailabilityGuard>(),
+			sp.GetRequiredService<IInheritedLookupOverride>()));
 		services.AddSingleton<IWorkspacePathBuilder, WorkspacePathBuilder>();
 		services.AddTransient<IVsProjectFactory, VsProjectFactory>();
 		services.AddTransient<ICreatioPkgProjectCreator, CreatioPkgProjectCreator>();
