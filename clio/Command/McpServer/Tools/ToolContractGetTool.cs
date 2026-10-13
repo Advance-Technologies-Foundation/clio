@@ -2892,15 +2892,16 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildODataDelete() {
 		return new ToolContractDefinition(
 			ODataDeleteTool.ToolName,
-			"Deletes Creatio records by GUID through OData v4 (DELETE): one id or up to 50 ids of one entity, with confirm=true; never performs a keyless mass delete. Every refusal is explained: the server's own reason, the rows still referencing the record, a running-process binding, or the rights/event-handler cause. cascade=true also deletes owned children (required lookups) deepest first, after checking the whole tree - a linked row, a live process binding or an unreadable table anywhere refuses it with nothing deleted; a refusal the check cannot see in advance (delete rights, an event handler) can still stop the record after its owned rows went, and cascade-deleted lists them; dry-run=true lists what would be deleted and what blocks it.",
+			"Deletes Creatio records by GUID through OData v4 (DELETE): one id or up to 50 ids of one entity, with confirm=true; never performs a keyless mass delete. Every refusal is explained: the server's own reason, the rows still referencing the record, a running-process binding, or the rights/event-handler cause. cascade=true also deletes owned children (required lookups) deepest first, after checking the whole tree - a linked row, a live process binding, an unreadable table or a walked row the user cannot read refuses it with nothing deleted; never for a lookup (dictionary) record; it needs the cascade-plan-hash of a dry run and refuses when the plan changed. A refusal the check cannot see in advance (delete rights, an event handler, a row hidden by record rights) can still stop the record after its owned rows went, and cascade-deleted lists them; dry-run=true lists what would be deleted and what blocks it. A record that does not exist is reported not found, never deleted.",
 			new ToolInputSchemaContract(
 				[EntityFieldName, EnvironmentNameFieldName],
 				[
 					Field(EntityFieldName, StringType, "Creatio OData entity set name such as Contact or Account."),
 					Field("id", StringType, "GUID of the record to delete. Pass id or ids; a keyless mass delete is rejected."),
 					Field("ids", ArrayType, "Up to 50 record GUIDs of the same entity; results reports each."),
-					Field("cascade", BooleanType, "true also deletes owned children - rows whose REQUIRED lookup points at the record - up to 3 levels, 100 rows and 10 ids. The whole tree is checked first; any linked row (optional lookup), live process binding or unreadable table refuses the cascade with nothing deleted. Refused for Contact, Employee, SysAdminUnit and SysUserInRole, as the record or as an owned row."),
-					Field("dry-run", BooleanType, "true deletes nothing and needs no confirm; plan lists visibility, referencing rows, what cascade would delete and what blocks it."),
+					Field("cascade", BooleanType, "true also deletes owned children - rows whose REQUIRED lookup points at the record - up to 3 levels, 100 rows and 10 ids. The whole tree is checked first; any linked row (optional lookup), live process binding or unreadable table refuses the cascade with nothing deleted. Refused for Contact, Employee, SysAdminUnit and SysUserInRole (as the record or as an owned row) and for any lookup (dictionary) record."),
+					Field("cascade-plan-hash", StringType, "Required with cascade and confirm: the cascade-plan-hash of the dry run of the same entity and ids; nothing is deleted when the recomputed plan differs."),
+					Field("dry-run", BooleanType, "true deletes nothing and needs no confirm; plan lists visibility, referencing rows, what cascade would delete, what the platform deletes with it and what blocks it; with cascade it returns cascade-plan-hash."),
 					Field(ConfirmFieldName, BooleanType, "Must be true to authorize this destructive delete. When false or omitted the tool refuses without any remote call."),
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription)
 				]),
@@ -2913,8 +2914,11 @@ internal static class ToolContractCatalog {
 				Field("explanation", StringType, "Why the record was not deleted; present on every refusal the server answered."),
 				Field("referencing", ArrayType, "Rows still referencing the record: {entity, column, ids, more, kind} with kind owned, linked or cascade."),
 				Field("cascade-deleted", ArrayType, "Owned rows deleted before the record ({entity, id})."),
+				Field("cascade-unconfirmed", ArrayType, "Owned rows whose DELETE got no answer: they may be gone; check with odata-read."),
 				Field(ResultsFieldName, ArrayType, "With ids: one {id, success, error, explanation, referencing, cascade-deleted} per id."),
-				Field("plan", ArrayType, "With dry-run: one {id, visible, referencing, cascade-would-delete, cascade-refusal, blocked-because, complete} per id."),
+				Field("plan", ArrayType, "With dry-run: one {id, visible, referencing, cascade-would-delete, platform-cascade, cascade-refusal, blocked-because, complete} per id."),
+				Field("cascade-plan-hash", StringType, "With dry-run and cascade: pass it back with confirm to delete exactly this plan."),
+				Field("note", StringType, "With dry-run: rows hidden from the user by record-level rights are not seen by the check."),
 				Field(CorrelationIdFieldName, StringType, ODataWriteCorrelationIdDescription),
 				Field(DataWriteDiagnosticFieldName, ObjectType, DataWriteDiagnosticDescription)
 			),
@@ -2943,7 +2947,7 @@ internal static class ToolContractCatalog {
 					"Read to confirm the target record and obtain its Id, then delete by that Id."),
 				Flow(
 					[ODataDeleteTool.ToolName, ODataDeleteTool.ToolName],
-					"On a refusal, read explanation and referencing; with the user's agreement call dry-run with cascade, then cascade with confirm.")
+					"On a refusal, read explanation and referencing; with the user's agreement call dry-run with cascade, then cascade with confirm and the dry run's cascade-plan-hash.")
 			],
 			[]);
 	}

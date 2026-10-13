@@ -45,6 +45,12 @@ public sealed class ODataDeleteExplainCascadeTests {
 
 	private static RecordDeleteOutcome Deleted() => new(true, null, null, true, true);
 
+	// A confirmed cascade the way the contract asks for it: a dry run first, then the call with its plan hash.
+	private static ODataWriteResponse CascadeConfirmed(ODataDeleteTool tool, ODataDeleteArgs args) {
+		ODataWriteResponse dryRun = tool.Delete(args with { DryRun = true, Confirm = false });
+		return tool.Delete(args with { CascadePlanHash = dryRun.CascadePlanHash });
+	}
+
 	[Test]
 	[Description("The opaque \"An error has occurred.\" refusal of a process-bound activity is explained with the server's inner reason and the ProcessElementId binding, and how to free it.")]
 	public void Delete_Should_Explain_A_Record_Held_By_A_Running_Process() {
@@ -151,7 +157,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 		service.Delete(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(Deleted());
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
 		});
 
@@ -176,7 +182,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 			.Returns(Diagnosis(referencing: [participant, linked]));
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
 		});
 
@@ -212,7 +218,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 		service.Diagnose("Activity", ActivityId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(partial);
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
 		});
 
@@ -239,7 +245,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 			.Returns(Diagnosis(processElementId: "b623d2cd-629e-4d63-9d27-ca4c6b8ffe37"));
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "UsrRoot", Id = AccountId, Cascade = true, Confirm = true
 		});
 
@@ -258,7 +264,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 			referencing: new ReferencingRows("Contact", "UsrProject", [ContactId], false, ReferencingRows.OwnedKind)));
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "UsrProject", Id = AccountId, Cascade = true, Confirm = true
 		});
 
@@ -285,7 +291,7 @@ public sealed class ODataDeleteExplainCascadeTests {
 		service.Diagnose("UsrNote", owned, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
 
 		// Act
-		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
 			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
 		});
 
@@ -353,6 +359,207 @@ public sealed class ODataDeleteExplainCascadeTests {
 		response.Success.Should().BeFalse(because: "the targets are outside the contract");
 		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
 	}
+
+	[Test]
+	[Description("cascade is refused for a lookup (dictionary) record before anything is read: rows that require a lookup value only refer to it (review: ActivityStatus would have taken its activities with it).")]
+	public void Cascade_Should_Be_Refused_For_A_Lookup_Target() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.IsLookup("ActivityStatus", Arg.Any<int>()).Returns(true);
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "ActivityStatus", Id = AccountId, Cascade = true, DryRun = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a dictionary value owns nothing");
+		response.Error.Should().Contain("lookup (dictionary)", because: "the refusal says why");
+		service.DidNotReceiveWithAnyArgs().Diagnose(default, default, default, default);
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("A lookup row reached below the record refuses the cascade when rows require it: they are not owned by it.")]
+	public void Cascade_Should_Refuse_A_Lookup_Node_With_Owned_Rows() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.IsLookup("UsrKind", Arg.Any<int>()).Returns(true);
+		service.Diagnose("UsrRoot", AccountId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrKind", "Root", [ParticipantId], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrKind", ParticipantId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("Activity", "UsrKind", [ActivityId], false, ReferencingRows.OwnedKind)));
+
+		// Act
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "UsrRoot", Id = AccountId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the activity requiring the lookup value is not owned by it");
+		response.Error.Should().Contain("UsrKind").And.Contain("lookup (dictionary)", because: "the refusal names the node");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("A confirmed cascade without the dry run's cascade-plan-hash is refused before anything is deleted.")]
+	public void Cascade_Should_Require_The_Plan_Hash() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Diagnose(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the approval is not bound to a plan");
+		response.Error.Should().Contain("cascade-plan-hash", because: "the refusal says what is missing");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("An owned row that appeared after the dry run changes the plan, so the confirmed cascade is refused and nothing is deleted.")]
+	public void Cascade_Should_Refuse_When_The_Plan_Changed_Since_The_Dry_Run() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		string newcomer = Guid.NewGuid().ToString();
+		service.Diagnose("Activity", ActivityId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(
+			Diagnosis(referencing: new ReferencingRows("UsrNote", "Activity", [ParticipantId], false, ReferencingRows.OwnedKind)),
+			Diagnosis(referencing: new ReferencingRows("UsrNote", "Activity", [ParticipantId, newcomer], false,
+				ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrNote", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+
+		// Act
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the user never saw the second note");
+		response.Error.Should().Contain("2 owned row(s)", because: "the refusal says what the plan is now");
+		service.DidNotReceiveWithAnyArgs().Delete(default, default, default);
+	}
+
+	[Test]
+	[Description("A row at the depth limit is checked for rows the platform deletes with it, and the dry run lists such rows under platform-cascade.")]
+	public void Cascade_Should_Check_And_List_Platform_Cascade_Rows() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		string level2 = Guid.NewGuid().ToString();
+		string level3 = Guid.NewGuid().ToString();
+		string dependent = Guid.NewGuid().ToString();
+		service.Diagnose("UsrRoot", AccountId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLevel1", "Root", [ParticipantId], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrLevel1", ParticipantId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLevel2", "Parent", [level2], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrLevel2", level2, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrLevel3", "Parent", [level3], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrLevel3", level3, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis(
+			referencing: new ReferencingRows("UsrPart", "Parent", [dependent], false, ReferencingRows.CascadeKind)));
+		service.Diagnose("UsrPart", dependent, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+
+		// Act
+		ODataWriteResponse plan = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "UsrRoot", Id = AccountId, Cascade = true, DryRun = true
+		});
+
+		// Assert
+		service.Received().Diagnose("UsrPart", dependent, Arg.Any<int>(), Arg.Any<DateTimeOffset>());
+		plan.Plan!.Single().PlatformCascade.Should().Equal([new RecordKey("UsrPart", dependent)],
+			because: "a dry run shows what disappears with the leaf, not only what clio deletes");
+		plan.CascadePlanHash.Should().NotBeNullOrWhiteSpace(because: "the confirm is bound to this plan");
+		plan.Note.Should().Contain("record-level rights", because: "the dry run says what the check cannot see");
+	}
+
+	[Test]
+	[Description("An owned row whose DELETE got no answer is reported as unconfirmed - it may be gone - and not as not deleted.")]
+	public void Cascade_Should_Report_An_Unanswered_Child_Delete_As_Unconfirmed() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Diagnose("Activity", ActivityId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(
+			Diagnosis(referencing: new ReferencingRows("UsrNote", "Activity", [ParticipantId], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrNote", ParticipantId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+		service.Delete("UsrNote", ParticipantId, Arg.Any<int>()).Returns(new RecordDeleteOutcome(false, "timed out", null, true, false));
+
+		// Act
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Error.Should().Contain("may have been deleted", because: "an unanswered DELETE may have landed");
+		response.CascadeUnconfirmed.Should().Equal([new RecordKey("UsrNote", ParticipantId)],
+			because: "the row is listed apart from the confirmed deletions");
+		service.DidNotReceive().Delete("Activity", ActivityId, Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ids listing a parent before its child: the parent refused while the child exists is tried again after the child went, so one call deletes both.")]
+	public void Ids_Should_Retry_A_Record_Refused_Because_Of_Another_Of_The_Batch() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Delete("Account", AccountId, Arg.Any<int>()).Returns(Refused(), Deleted());
+		service.Delete("Account", ContactId, Arg.Any<int>()).Returns(Deleted());
+
+		// Act
+		ODataWriteResponse response = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Account", Ids = [AccountId, ContactId], Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the second pass deleted the parent");
+		service.DidNotReceiveWithAnyArgs().Diagnose(default, default, default, default);
+	}
+
+	[Test]
+	[Description("cascade over ids: an id its predecessor's cascade already deleted is reported deleted, not failed.")]
+	public void Cascade_Should_Report_An_Id_Removed_By_An_Earlier_Cascade_As_Deleted() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Diagnose("UsrTask", AccountId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(
+			Diagnosis(referencing: new ReferencingRows("UsrTask", "Parent", [ContactId], false, ReferencingRows.OwnedKind)));
+		service.Diagnose("UsrTask", ContactId, Arg.Any<int>(), Arg.Any<DateTimeOffset>()).Returns(Diagnosis());
+		service.Delete(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Returns(Deleted());
+
+		// Act
+		ODataWriteResponse response = CascadeConfirmed(tool, new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "UsrTask", Ids = [AccountId, ContactId], Cascade = true, Confirm = true
+		});
+
+		// Assert
+		response.Success.Should().BeTrue(because: "both records are gone");
+		response.Results!.Single(result => result.Id == ContactId).Explanation.Should().Contain("earlier id's cascade",
+			because: "the caller is told why the second id needed no DELETE of its own");
+		service.Received(1).Delete("UsrTask", ContactId, Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("QA D2: an id that does not exist is reported not found - single and batch alike - and no DELETE is sent for it.")]
+	public void Delete_Should_Report_A_Missing_Record_As_Not_Found() {
+		// Arrange
+		(ODataDeleteTool tool, IRecordDeletionService service) = CreateTool();
+		service.Exists("Activity", ActivityId, Arg.Any<int>()).Returns(false);
+		service.Exists("Activity", ParticipantId, Arg.Any<int>()).Returns(true);
+		service.Delete("Activity", ParticipantId, Arg.Any<int>()).Returns(Deleted());
+
+		// Act
+		ODataWriteResponse single = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Id = ActivityId, Confirm = true
+		});
+		ODataWriteResponse batch = tool.Delete(new ODataDeleteArgs {
+			EnvironmentName = "dev", Entity = "Activity", Ids = [ActivityId, ParticipantId], Confirm = true
+		});
+
+		// Assert
+		single.Success.Should().BeFalse(because: "nothing was deleted");
+		single.Error.Should().Contain("was not found", because: "the answer matches what a dry run says");
+		batch.Results!.Single(result => result.Id == ActivityId).Error.Should().Contain("was not found",
+			because: "the batch answers the same way as the single");
+		batch.Results!.Single(result => result.Id == ParticipantId).Success.Should().BeTrue(because: "it existed");
+		service.DidNotReceive().Delete("Activity", ActivityId, Arg.Any<int>());
+	}
 }
 
 /// <summary>ENG-103024: the diagnosis reads referencing rows through the metadata and classifies them.</summary>
@@ -415,6 +622,83 @@ public sealed class RecordDeletionServiceTests {
 		diagnosis.Complete.Should().BeTrue(because: "every referencing column was checked");
 		client.DidNotReceive().ExecutePostRequest(SelectUrl,
 			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"Contact\"")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Two referencing columns of one entity are read in one select with an OR filter, and each hit is attributed to its column.")]
+	public void Diagnose_Should_Read_One_Entity_In_One_Select() {
+		// Arrange
+		List<JObject> queries = [];
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				JObject query = JObject.Parse(call.ArgAt<string>(1));
+				queries.Add(query);
+				string rows = query.Value<string>("rootSchemaName") switch {
+					"Activity" => $"[{{\"Id\":\"{ActivityId}\"}}]",
+					"SysEntitySchemaReference" => "[{\"SchemaName\":\"Case\",\"ColumnName\":\"ParentActivity\"},"
+						+ "{\"SchemaName\":\"Case\",\"ColumnName\":\"OriginActivity\"}]",
+					_ => $"[{{\"Id\":\"a1798c77-a0e1-4918-923f-fb1c0c0d022a\",\"ParentActivity\":{{\"value\":\"{ActivityId}\"}},"
+						+ "\"OriginActivity\":null}]"
+				};
+				return "{\"success\":true,\"rows\":" + rows + "}";
+			});
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemas = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemas.GetByName("Case", Arg.Any<int>()).Returns(Schema("Case", false,
+			Lookup("ParentActivity", "Activity", false, false), Lookup("OriginActivity", "Activity", false, false)));
+		RecordDeletionService service = new(client, urls, schemas);
+
+		// Act
+		RecordDeleteDiagnosis diagnosis = service.Diagnose("Activity", ActivityId, 10_000, DateTimeOffset.UtcNow.AddMinutes(1));
+
+		// Assert
+		queries.Count(query => query.Value<string>("rootSchemaName") == "Case").Should().Be(1,
+			because: "the columns of one referencing entity share one select");
+		diagnosis.Referencing.Select(rows => rows.Column).Should().Equal(["ParentActivity"],
+			because: "only the column that points at the record is reported");
+	}
+
+	[Test]
+	[Description("A diagnosis whose stop instant has passed sends no request and is incomplete.")]
+	public void Diagnose_Should_Send_Nothing_Past_Its_Stop() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		RecordDeletionService service = new(client, Substitute.For<IServiceUrlBuilder>(),
+			Substitute.For<IRuntimeEntitySchemaReader>());
+
+		// Act
+		RecordDeleteDiagnosis diagnosis = service.Diagnose("Activity", ActivityId, 10_000, DateTimeOffset.UtcNow.AddSeconds(-1));
+
+		// Assert
+		diagnosis.Complete.Should().BeFalse(because: "nothing was checked");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+	}
+
+	[Test]
+	[Description("An entity registered in SysLookup is a lookup; one that is neither registered nor derived from a base lookup is not; one whose schema cannot be read counts as a lookup.")]
+	public void IsLookup_Should_Read_SysLookup_And_The_Parent_Schema() {
+		// Arrange
+		Guid statusUId = Guid.NewGuid();
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => call.ArgAt<string>(1).Contains(statusUId.ToString("D"))
+				? "{\"success\":true,\"rows\":[{\"Id\":\"x\"}]}"
+				: "{\"success\":true,\"rows\":[]}");
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemas = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemas.GetByName("ActivityStatus", Arg.Any<int>())
+			.Returns(new RuntimeEntitySchemaResult(statusUId, "ActivityStatus", Guid.NewGuid(), null, null, []));
+		schemas.GetByName("Activity", Arg.Any<int>()).Returns(Schema("Activity"));
+		schemas.GetByName("Missing", Arg.Any<int>()).Returns(_ => throw new InvalidOperationException("no schema"));
+		RecordDeletionService service = new(client, urls, schemas);
+
+		// Act / Assert
+		service.IsLookup("ActivityStatus", 10_000).Should().BeTrue(because: "it is registered in SysLookup");
+		service.IsLookup("Activity", 10_000).Should().BeFalse(because: "it is a business entity");
+		service.IsLookup("Missing", 10_000).Should().BeTrue(because: "not knowing must not allow a cascade");
 	}
 
 	[Test]

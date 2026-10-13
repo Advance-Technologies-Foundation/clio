@@ -1196,6 +1196,7 @@ public class BindingsModule {
 		services.AddTransient<IProcessRunMonitor, ProcessRunMonitor>();
 		services.AddTransient<ICreatedRecordWatcher, CreatedRecordWatcher>();
 		services.AddTransient<ICreatedRecordCleaner, CreatedRecordCleaner>();
+		services.AddTransient<IRunRecordProvenance, RunRecordProvenance>();
 		services.AddTransient<IRunVerificationServices, RunVerificationServices>();
 		services.AddTransient<IRecordDeletionService, RecordDeletionService>();
 		services.AddTransient<ITriggerSmokeRunner, TriggerSmokeRunner>();

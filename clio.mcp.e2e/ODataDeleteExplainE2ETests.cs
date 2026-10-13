@@ -102,6 +102,89 @@ public sealed class ODataDeleteExplainE2ETests : McpContractFixtureBase {
 		response.Results!.Should().OnlyContain(result => result.Success, because: "both were deleted");
 	}
 
+	[Test]
+	[AllureTag(ODataDeleteTool.ToolName)]
+	[AllureName("odata-delete binds a cascade to its dry-run plan and refuses a lookup")]
+	[AllureDescription("Creates an Account, plans its cascade, then confirms without and with a wrong cascade-plan-hash and checks nothing was deleted; then asks a cascade of an ActivityStatus value and checks it is refused as a lookup.")]
+	[Description("A confirmed cascade without the dry run's cascade-plan-hash, or with another one, deletes nothing; a business entity is not taken for a lookup, and a lookup record is refused.")]
+	public async Task ODataDelete_Should_Bind_A_Cascade_To_Its_Plan_And_Refuse_A_Lookup() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run odata-delete against the sandbox stand.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
+		string? accountId = null;
+		try {
+			accountId = await CreateRecordAsync(arrange, environmentName, "Account",
+				new Dictionary<string, object?> { ["Name"] = $"clio-e2e-plan-{Guid.NewGuid():N}" });
+
+			// Act
+			ODataWriteResponse plan = await DeleteAsync(arrange, new Dictionary<string, object?> {
+				["environment-name"] = environmentName, ["entity"] = "Account", ["id"] = accountId,
+				["cascade"] = true, ["dry-run"] = true
+			});
+			ODataWriteResponse unbound = await DeleteAsync(arrange, new Dictionary<string, object?> {
+				["environment-name"] = environmentName, ["entity"] = "Account", ["id"] = accountId,
+				["cascade"] = true, ["confirm"] = true
+			});
+			ODataWriteResponse wrongPlan = await DeleteAsync(arrange, new Dictionary<string, object?> {
+				["environment-name"] = environmentName, ["entity"] = "Account", ["id"] = accountId,
+				["cascade"] = true, ["confirm"] = true, ["cascade-plan-hash"] = "0000000000000000"
+			});
+			ODataWriteResponse lookup = await DeleteAsync(arrange, new Dictionary<string, object?> {
+				["environment-name"] = environmentName, ["entity"] = "ActivityStatus", ["id"] = Guid.NewGuid().ToString(),
+				["cascade"] = true, ["dry-run"] = true
+			});
+
+			// Assert
+			plan.Success.Should().BeTrue(because: $"an Account is not a lookup, so its cascade can be planned: {plan.Error}");
+			plan.CascadePlanHash.Should().NotBeNullOrWhiteSpace(because: "the confirm must be bound to the plan");
+			unbound.Success.Should().BeFalse(because: "a cascade without the plan hash is refused");
+			unbound.Error.Should().Contain("cascade-plan-hash", because: "the refusal says what is missing");
+			wrongPlan.Success.Should().BeFalse(because: "another plan's hash does not authorize this one");
+			lookup.Success.Should().BeFalse(because: "ActivityStatus is a lookup: activities that require a status are not owned by it");
+			lookup.Error.Should().Contain("lookup (dictionary)", because: "the refusal names the reason");
+			ODataWriteResponse stillThere = await DeleteAsync(arrange, new Dictionary<string, object?> {
+				["environment-name"] = environmentName, ["entity"] = "Account", ["id"] = accountId, ["dry-run"] = true
+			});
+			stillThere.Plan!.Single().Visible.Should().BeTrue(because: "neither refused call deleted anything");
+		} finally {
+			await DeleteRecordAsync(arrange, environmentName, "Account", accountId);
+		}
+	}
+
+	[Test]
+	[AllureTag(ODataDeleteTool.ToolName)]
+	[AllureName("odata-delete reports a record that does not exist as not found")]
+	[AllureDescription("Deletes a random GUID as a single id and in a batch, and checks both answers say not found.")]
+	[Description("QA D2: a missing id is answered not found - single and batch alike - never as deleted.")]
+	public async Task ODataDelete_Should_Report_A_Missing_Record_As_Not_Found() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("Set McpE2E:AllowDestructiveMcpTests=true to run odata-delete against the sandbox stand.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
+		string missing = Guid.NewGuid().ToString();
+
+		// Act
+		ODataWriteResponse single = await DeleteAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName, ["entity"] = "Contact", ["id"] = missing, ["confirm"] = true
+		});
+		ODataWriteResponse batch = await DeleteAsync(arrange, new Dictionary<string, object?> {
+			["environment-name"] = environmentName, ["entity"] = "Contact", ["ids"] = new[] { missing }, ["confirm"] = true
+		});
+
+		// Assert
+		single.Success.Should().BeFalse(because: "nothing was deleted");
+		single.Error.Should().Contain("was not found", because: "the answer agrees with what a dry run says");
+		batch.Results.Should().ContainSingle(because: "one id was sent")
+			.Which.Error.Should().Contain("was not found", because: "the batch answers like the single");
+	}
+
 	private static async Task<ODataWriteResponse> DeleteAsync(ArrangeContext arrange, Dictionary<string, object?> args) {
 		CallToolResult callResult = await arrange.Session.CallToolAsync(ODataDeleteTool.ToolName,
 			new Dictionary<string, object?> { ["args"] = args }, arrange.CancellationTokenSource.Token);

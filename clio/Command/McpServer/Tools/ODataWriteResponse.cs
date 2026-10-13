@@ -58,6 +58,18 @@ public sealed record ODataWriteResponse(
 	[JsonPropertyName("plan"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<ODataDeletePlanItem>? Plan { get; init; }
 
+	/// <summary>odata-delete with cascade: owned rows whose DELETE got no answer, so they may or may not be gone.</summary>
+	[JsonPropertyName("cascade-unconfirmed"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<RecordKey>? CascadeUnconfirmed { get; init; }
+
+	/// <summary>odata-delete dry-run with cascade: the digest the destructive call must pass back as cascade-plan-hash.</summary>
+	[JsonPropertyName("cascade-plan-hash"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? CascadePlanHash { get; init; }
+
+	/// <summary>odata-delete dry-run: what the check cannot see.</summary>
+	[JsonPropertyName("note"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Note { get; init; }
+
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);
 }

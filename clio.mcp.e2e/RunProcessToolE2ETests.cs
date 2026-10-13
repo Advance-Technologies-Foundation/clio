@@ -130,7 +130,7 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
-	[Description("A process that parks on a Perform task is waited for, names the element it waits on, reports the activity it created in a watched entity, and with cleanup cancels the run and deletes exactly that activity.")]
+	[Description("A process that parks on a Perform task is waited for, names the element it waits on, reports the activity it created in a watched entity (watched in another case, reported in the platform's spelling), and with cleanup cancels the run and deletes exactly that activity.")]
 	[AllureTag(ToolName)]
 	[AllureName("Run process reports and cleans up the records a parked run created")]
 	[AllureDescription("Starts the real clio MCP server, launches CreateActivityProcess through clio-run with watch [Activity] and cleanup true, and verifies waitingOn, created and cleanup, then reads the activity back to prove it is gone.")]
@@ -154,7 +154,9 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		RunProcessEnvelope envelope = await RunProcessContractToolE2ETests.ActAsync(
 			arrangeContext, ActivityProcessCode, environmentName!, parameters: null,
 			extraArgs: new Dictionary<string, object?> {
-				["watch"] = new[] { "Activity" },
+				// Typed in another case on purpose: the platform's spelling must come back, so the cleanup's
+				// children-first order can match it against the schema's reference names.
+				["watch"] = new[] { "activity" },
 				["wait-timeout"] = 3,
 				["cleanup"] = true
 			});
@@ -165,10 +167,14 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		// Assert
 		envelope.Error.Should().BeNull(because: $"a parked run is not a failure. Error: {envelope.Error}");
 		envelope.Created.Should().ContainSingle(record => record.Entity == "Activity",
-			because: "the Perform task created exactly one activity, and the watch must report it");
+			because: "the Perform task created exactly one activity, and the watch must report it under the "
+				+ $"platform's spelling of the entity, not the caller's 'activity'. Warnings: "
+				+ string.Join(" | ", envelope.Warnings ?? []));
 		envelope.Cleanup.Should().NotBeNull(because: "cleanup was requested");
 		envelope.Cleanup!.Failed.Should().BeEmpty(
-			because: "cleanup cancels the parked run first, so the activity it uses can be deleted");
+			because: "cleanup cancels the parked run first, so the activity it uses can be deleted. Failed: "
+				+ string.Join(" | ", envelope.Cleanup.Failed.Select(failure => failure.Error))
+				+ ". Warnings: " + string.Join(" | ", envelope.Warnings ?? []));
 		envelope.Cleanup.Deleted.Select(record => record.Id).Should().BeEquivalentTo(
 			envelope.Created!.Select(record => record.Id),
 			because: "cleanup deletes exactly what created lists, nothing else");

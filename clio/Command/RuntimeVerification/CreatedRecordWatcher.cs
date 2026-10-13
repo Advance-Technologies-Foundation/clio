@@ -59,6 +59,7 @@ internal sealed class CreatedRecordWatcher(
 	private const int MacrosFunctionType = 1;
 	private const int CurrentUserContactMacro = 2;
 	private const int DateTimeDataValueType = 7;
+	private const int TextDataValueType = 1;
 	private const int GreaterOrEqual = 8;
 	private const int OrderAscending = 1;
 	private const int OrderDescending = 2;
@@ -133,24 +134,28 @@ internal sealed class CreatedRecordWatcher(
 		if (!IsValidEntityName(entity)) {
 			return new EntityWatch { Entity = entity, Error = "not a plain entity schema name" };
 		}
+		string name = entity;
 		try {
-			RuntimeEntitySchemaResult schema = schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
+			RuntimeEntitySchemaResult schema = ReadSchema(entity, timeoutMs, stopAt);
+			// The platform's own spelling, not the caller's: References hold the platform's names, and the cleanup orders
+			// children before parents by matching the two.
+			name = IsValidEntityName(schema.Name) ? schema.Name : entity;
 			string titleColumn = schema.PrimaryDisplayColumnName;
 			HashSet<string> references = schema.Columns
 				.Select(column => column.ReferenceSchemaName)
-				.Where(name => !string.IsNullOrWhiteSpace(name))
-				.ToHashSet(StringComparer.Ordinal);
-			string newest = Select(BuildNewestQuery(entity), Budget(timeoutMs, stopAt)).FirstOrDefault()?[CreatedOnColumn]
+				.Where(reference => !string.IsNullOrWhiteSpace(reference))
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			string newest = Select(BuildNewestQuery(name), Budget(timeoutMs, stopAt)).FirstOrDefault()?[CreatedOnColumn]
 				?.ToString();
 			// An empty value is no lower bound: comparing against it could report every existing row as created.
 			newest = string.IsNullOrEmpty(newest) ? null : newest;
 			HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
 			if (newest is not null) {
-				EntityWatch atNewest = new() { Entity = entity, TitleColumn = titleColumn, Baseline = newest };
+				EntityWatch atNewest = new() { Entity = name, TitleColumn = titleColumn, Baseline = newest };
 				JArray atNewestRows = Select(BuildRowsQuery(atNewest, MaxKnownIds + 1, false), Budget(timeoutMs, stopAt));
 				if (atNewestRows.Count > MaxKnownIds) {
 					return new EntityWatch {
-						Entity = entity,
+						Entity = name,
 						Error = $"more than {MaxKnownIds} existing rows share its newest CreatedOn, so new rows cannot be "
 							+ "told apart from them"
 					};
@@ -160,7 +165,7 @@ internal sealed class CreatedRecordWatcher(
 				}
 			}
 			return new EntityWatch {
-				Entity = entity,
+				Entity = name,
 				TitleColumn = titleColumn,
 				References = references,
 				Baseline = newest,
@@ -169,10 +174,76 @@ internal sealed class CreatedRecordWatcher(
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			return new EntityWatch {
-				Entity = entity,
+				Entity = name,
 				Error = UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name
 			};
 		}
+	}
+
+	// The schema reader matches the name exactly, so "activity" is not found on a stand where "Activity" is. On a miss
+	// the platform's spelling is looked up in SysSchema and the schema is read again.
+	private RuntimeEntitySchemaResult ReadSchema(string entity, int timeoutMs, DateTimeOffset? stopAt) {
+		try {
+			return schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			string canonical = FindCanonicalName(entity, timeoutMs, stopAt);
+			if (canonical is null) {
+				throw;
+			}
+			return schemaReader.GetByName(canonical, Budget(timeoutMs, stopAt));
+		}
+	}
+
+	// Most SysSchema rows read to find the platform's spelling; a name past it is not resolved.
+	private const int MaxCanonicalCandidates = 5_000;
+	// Terrasoft FilterComparisonType.StartWith.
+	private const int StartWith = 9;
+
+	// The entity schema name that differs from entity only in case, or null. A text filter compares exactly on
+	// PostgreSQL and case-insensitively on MS SQL, so the names are compared here instead: the select narrows them by
+	// every case variant of the first two letters, which is exact on both databases.
+	private string FindCanonicalName(string entity, int timeoutMs, DateTimeOffset? stopAt) {
+		try {
+			JObject variants = new();
+			int i = 0;
+			foreach (string prefix in CasePrefixes(entity)) {
+				variants[$"prefix{i++}"] = new JObject {
+					["filterType"] = 1, ["comparisonType"] = StartWith, ["isEnabled"] = true,
+					["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+					["rightExpression"] = new JObject {
+						[ExpressionTypeKey] = 2,
+						["parameter"] = new JObject { ["dataValueType"] = TextDataValueType, ["value"] = prefix }
+					}
+				};
+			}
+			JObject anyPrefix = new() { ["filterType"] = 6, ["logicalOperation"] = 1, ["isEnabled"] = true, ["items"] = variants };
+			return Select(ClassicEntitySchemaQuery.Query("SysSchema",
+					new JObject { ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
+					ClassicEntitySchemaQuery.Group(("byPrefix", anyPrefix),
+						("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", "EntitySchemaManager", TextDataValueType))),
+					MaxCanonicalCandidates), Budget(timeoutMs, stopAt))
+				.Select(row => row["Name"]?.ToString())
+				.FirstOrDefault(name => string.Equals(name, entity, StringComparison.OrdinalIgnoreCase)
+					&& !string.Equals(name, entity, StringComparison.Ordinal) && IsValidEntityName(name));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
+		}
+	}
+
+	// "ac" -> "ac", "aC", "Ac", "AC".
+	internal static IReadOnlyList<string> CasePrefixes(string entity) {
+		string head = entity.Length > 2 ? entity[..2] : entity;
+		List<string> prefixes = [string.Empty];
+		foreach (char letter in head) {
+			char lower = char.ToLowerInvariant(letter);
+			char upper = char.ToUpperInvariant(letter);
+			prefixes = lower == upper
+				? prefixes.Select(prefix => prefix + letter).ToList()
+				: prefixes.SelectMany(prefix => new[] { prefix + lower, prefix + upper }).ToList();
+		}
+		return prefixes;
 	}
 
 	// Rows with no CreatedOn are left out: PostgreSQL sorts NULL first in a descending order, which would make the
