@@ -50,6 +50,16 @@ public sealed class InstallDashboardsMigratorContractToolE2ETests : McpContractF
 			because: "an agent must learn that success means the package's own service answered, not that the install call returned");
 		contract.Description.Should().NotMatchRegex(@"(?i)\d+\s*(s|sec|secs|second|seconds|min|mins|minute|minutes|hr|hrs|hour|hours)\b",
 			because: "elapsed time belongs to the target environment and a figure here is repeated to users as a promise");
+		contract.Description.Should().MatchRegex(@"(?i)ask the user before every call",
+			because: "ENG-102116: this long-tail tool's contract is the only text an agent reads before calling it, and "
+				+ "clio-run collapses its Destructive flag, so the consent rule must be stated here");
+		contract.Description.Should().MatchRegex(
+			@"(?i)builds the environment's configuration and restarts the site for every connected user",
+			because: "the cost the user is asked to accept must be named, not implied");
+		contract.Description.Should().NotContain("otherwise safe",
+			because: "a re-run is another configuration build and restart, which needs its own approval");
+		contract.Preconditions.Should().Contain(precondition => precondition.Contains("approved this install"),
+			because: "an agent checking preconditions before the call must meet the user's approval among them");
 	}
 
 	[Test]

@@ -38,10 +38,11 @@ there is no need to copy vendor bodies or override the target package.
 > disk instead, at the paths reported in `files.bodyFile` / `files.bundleFile`. MCP callers
 > read `files.bodyFile`; there is no `raw` property in the MCP response.
 >
-> **`include-operations` (MCP only, default `true`).** With `false` the MCP response leaves
+> **`include-operations` (MCP only, default `false`).** By default the MCP response leaves
 > `page.ownBodySummary.viewConfigDiffOps` out and returns `page.ownBodySummary.viewConfigDiffOpCounts`
-> (number of operations per operation type) in its place. `meta.json` is written first and keeps the
-> full list either way.
+> (number of operations per operation type) in its place; pass `true` to get the per-operation list in
+> the response. `meta.json` is written first and keeps the full list either way. (The default was
+> `true` before ENG-103023; a page's own body routinely names dozens of components.)
 >
 > **`editable` is optional.** The capture is best-effort: when the `SysSchema` checksum row
 > is missing or the query fails, the successful envelope carries no `editable` key at all.
