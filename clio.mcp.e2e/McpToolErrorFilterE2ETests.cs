@@ -307,6 +307,9 @@ public sealed class McpToolErrorFilterE2ETests : McpContractFixtureBase
 		responseText.Should().NotContain("\"index\"",
 			because: "returning the compact index for a NAMED request is the exact defect this closes — the "
 				+ "agent asked one question and silently got the catalog back as a success");
+		responseText.Should().NotContain("\"tool-index\"",
+			because: "the catalog's default form is the line index, so a regression to it carries no \"index\" key and "
+				+ "only this key shows it");
 	}
 
 	[Test]
