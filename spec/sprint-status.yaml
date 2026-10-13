@@ -4690,3 +4690,106 @@ stories:
     depends_on:
       - story-page-localization-1
     blocks: []
+
+  # --- eng-95984-file-parameter-type (ENG-95984 File process parameter type) - added 2026-10-13 ---
+  # One story carries the whole ticket (crt-process-builder -> clio -> clio-knowledge, one feature PR each); this BMAD
+  # set is the docs-only clio PR that merges before the package PR opens. Stories 2-4 are the three follow-up Sub-tasks
+  # created on day 0; their Jira keys are not assigned yet (each jira field holds a marker). They stay deferred until
+  # ENG-96506 Generated report + process parameter modes has merged its package PR. ENG-96506 and ENG-95985 have no
+  # story id in this tracker yet (ENG-96506's arrives with the docs PR titled "ENG-92719 File processing element"), so
+  # the dependencies name their Jira keys.
+  - id: story-eng-95984-file-parameter-type-1
+    title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
+    feature: "eng-95984-file-parameter-type"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: L
+    status: ready-for-dev
+    jira: ENG-95984
+    file: spec/stories/story-eng-95984-file-parameter-type-1.md
+    prd: spec/prd/spec-eng-95984-file-parameter-type.md
+    adr: spec/adr/adr-eng-95984-file-parameter-type.md
+    test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
+    depends_on: []
+    blocks:
+      - ENG-96506
+      - ENG-95985
+      - story-eng-95984-file-parameter-type-2
+      - story-eng-95984-file-parameter-type-3
+      - story-eng-95984-file-parameter-type-4
+    note: >-
+      AC-1..AC-10 replace the Jira acceptance criteria (agreed by the owner 2026-10-07). Blocks ENG-96506 Generated
+      report + process parameter modes functionally, and ENG-95985 Send email attachments (link L5, together with
+      ENG-96505). ENG-96505 Element readiness and object attachments mode only RELATES (ADR D23) but merges after this
+      story, and its clio PR merges only once this story's process-files guide is published. Status convention:
+      in-progress in the first commit of the clio feature draft; review when that PR leaves draft; done only after the
+      knowledge PR merges, carried by the next clio PR of the chain and never pushed after an approval. Open owner
+      question Q20 (where the description bytes come from) gates the clio description edit only: on clio master
+      19e6f9c53 create has 4 B and modify 10 B left. The three floors move to the final package cut (1.6.6.97 or higher
+      at the 2026-10-13 claims), claimed in the PR description and in the shared cut claim on ENG-92719.
+
+  - id: story-eng-95984-file-parameter-type-2
+    title: "Declared item shape for Collection process parameters"
+    feature: "eng-95984-file-parameter-type"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: M
+    status: deferred
+    jira: KEY-PENDING
+    file: spec/stories/story-eng-95984-file-parameter-type-2.md
+    prd: spec/prd/spec-eng-95984-file-parameter-type.md
+    adr: spec/adr/adr-eng-95984-file-parameter-type.md
+    test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
+    depends_on:
+      - story-eng-95984-file-parameter-type-1
+      - ENG-96506
+    blocks: []
+    note: >-
+      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
+      ENG-95984 File process parameter type from ADR D2, rejected option C: generic itemProperties on a declared
+      Collection, after which FileCollection is sugar for a Collection with one File item. Needs its own floor raise,
+      because an older server silently drops the member and saves a shapeless collection. Does not gate the closure of
+      ENG-95984.
+
+  - id: story-eng-95984-file-parameter-type-3
+    title: "Allow-list the data types a typeFromElement mirror may copy"
+    feature: "eng-95984-file-parameter-type"
+    repo: "crt-process-builder (+ clio and clio-knowledge if the refusal is advertised)"
+    size: S
+    status: deferred
+    jira: KEY-PENDING
+    file: spec/stories/story-eng-95984-file-parameter-type-3.md
+    prd: spec/prd/spec-eng-95984-file-parameter-type.md
+    adr: spec/adr/adr-eng-95984-file-parameter-type.md
+    test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
+    depends_on:
+      - story-eng-95984-file-parameter-type-1
+      - ENG-96506
+    blocks: []
+    note: >-
+      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
+      ENG-95984 File process parameter type from ADR D6, rejected option b. Gated on a recorded scan of the output
+      types shipped user tasks expose, so that no mirror accepted today is refused unannounced. Does not gate the
+      closure of ENG-95984.
+
+  - id: story-eng-95984-file-parameter-type-4
+    title: "Describe: decode process-parameter sources into re-appliable names"
+    feature: "eng-95984-file-parameter-type"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: M
+    status: deferred
+    jira: KEY-PENDING
+    file: spec/stories/story-eng-95984-file-parameter-type-4.md
+    prd: spec/prd/spec-eng-95984-file-parameter-type.md
+    adr: spec/adr/adr-eng-95984-file-parameter-type.md
+    test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
+    depends_on:
+      - story-eng-95984-file-parameter-type-1
+      - ENG-96506
+    blocks: []
+    note: >-
+      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
+      ENG-95984 File process parameter type from ADR D8. Needs a new typed member on clio's DescribedParameter, which
+      has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
+      ENG-95984.
