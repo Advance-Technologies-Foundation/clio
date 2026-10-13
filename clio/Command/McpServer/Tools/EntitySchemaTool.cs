@@ -86,6 +86,11 @@ public sealed class CreateEntitySchemaTool(
 	public async Task<CommandExecutionResult> CreateEntitySchema(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns, parent-schema-name (optional, defaults to schema-name for replacements or BaseEntity otherwise), extend-parent (optional; an explicit parent must match schema-name)")] [Required] CreateEntitySchemaArgs args
 	) {
+		// ENG-103025: an empty call, or one missing a required argument, is answered with the required arguments
+		// and a minimal valid call rather than reaching the enrichment lookup with null names.
+		if (MissingCreateArguments(args) is { Count: > 0 } missing) {
+			return CommandExecutionResult.FromValidationError(ToolMiniContract.ForCreateEntitySchema(missing));
+		}
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
 				args.EnvironmentName,
@@ -99,6 +104,33 @@ public sealed class CreateEntitySchemaTool(
 		} catch (Exception exception) {
 			return new CommandExecutionResult(1, [new ErrorMessage(SensitiveErrorTextRedactor.Redact(exception.Message))], null, dataForge);
 		}
+	}
+
+	private const string TitleLocalizationsArgument = "title-localizations";
+
+	/// <summary>
+	/// The required arguments of <c>create-entity-schema</c> the call lacks. The title counts as supplied when
+	/// <c>title-localizations</c> is non-empty or the legacy <c>title</c> is present, because the localization
+	/// contract still owns the precise refusal for the legacy scalar.
+	/// </summary>
+	internal static List<string> MissingCreateArguments(CreateEntitySchemaArgs? args) {
+		if (args is null) {
+			return ["package-name", "schema-name", TitleLocalizationsArgument];
+		}
+		// environment-name is not checked here: under credential passthrough the caller must omit it, and the
+		// resolver owns that refusal (as for create-app).
+		List<string> missing = [];
+		if (string.IsNullOrWhiteSpace(args.PackageName)) {
+			missing.Add("package-name");
+		}
+		if (string.IsNullOrWhiteSpace(args.SchemaName)) {
+			missing.Add("schema-name");
+		}
+		if ((args.TitleLocalizations is null || args.TitleLocalizations.Count == 0)
+			&& string.IsNullOrWhiteSpace(args.LegacyTitle)) {
+			missing.Add(TitleLocalizationsArgument);
+		}
+		return missing;
 	}
 
 	private static IReadOnlyList<string> BuildCandidateTerms(
