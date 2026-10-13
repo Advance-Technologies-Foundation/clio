@@ -489,6 +489,18 @@ public class ModifyBusinessProcessCommand(
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
+			// A process-parameter mapping is a binding, not a flow-time assignment (ENG-103081): say when this edit
+			// replaced one or bound a parameter to an element some start never reaches. Judged on the reads the
+			// command already took, so it costs no round trip, and guarded like them: the edit already landed.
+			try {
+				foreach (string warning in ProcessParameterBindingWarnings.ForOperations(options.OperationsJson,
+					before.IsError ? null : before.Value,
+					saved is { IsError: false } savedRead ? savedRead.Value : null)) {
+					logger.WriteWarning(warning);
+				}
+			} catch (Exception analysis) {
+				logger.WriteWarning($"The edit was applied, but checking its parameter mappings failed: {analysis.Message}.");
+			}
 			// The digest rides the SAME read-back as the guards (ENG-103023).
 			if (saved is { } readBack) {
 				ProcessWriteDigest.Report(logger, readBack, before, versionFactsRead: true,
