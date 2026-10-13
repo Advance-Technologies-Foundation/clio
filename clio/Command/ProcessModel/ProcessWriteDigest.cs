@@ -34,6 +34,39 @@ internal static class ProcessWriteDigest {
 	internal const string VersionStandingNotRead =
 		"version standing not read; the summary and changes still confirm the write - no re-describe is needed";
 
+	/// <summary>
+	/// The reply line of a create or modify whose post-write read-back was skipped because the written process calls
+	/// another process and no configuration guard needed the read (ENG-103165).
+	/// </summary>
+	internal const string CallerNotReadBack =
+		"No summary is returned for a process that calls another process: reading it back now would keep its "
+		+ "sub-process elements on the called processes' current parameters until it is saved again. Read it with "
+		+ "describe-business-process once the processes it calls are final.";
+
+	private const string SubProcessBlockKey = "subProcess";
+	private const string SubProcessBuildType = "subprocess";
+
+	/// <summary>
+	/// Whether a read of the written process may be skipped because it calls another process (ENG-103165).
+	/// <para>A describe returns the schema instance the server's process manager caches, and the server builds that
+	/// instance on the first read: a sub-process element copies the called process's parameters at that moment, and
+	/// the instance is dropped only when the process itself is saved again. A read-back right after the write
+	/// therefore pins the CALLER to its callees' current parameters, so a parameter a callee gains afterwards is
+	/// missing from every later describe of the caller (its element reports <c>inSync: false</c>), where a caller
+	/// first read after that change would have been built with it. Before ENG-103023 an unguarded write took no
+	/// read; this keeps that for a caller only, and every other write keeps its digest.</para>
+	/// </summary>
+	/// <param name="descriptorJson">The build descriptor, for a create; otherwise <c>null</c>.</param>
+	/// <param name="operationsJson">The operations array, for a modify; otherwise <c>null</c>.</param>
+	/// <param name="before">The read taken before a modify, when there is one.</param>
+	/// <returns><c>true</c> when the written process carries a sub-process element.</returns>
+	internal static bool CallsAnotherProcess(string descriptorJson, string operationsJson,
+		DescribeProcessResult before = null) =>
+		(descriptorJson is not null && BlockExpectationJson.ElementsCarrying(descriptorJson, SubProcessBlockKey).Count > 0)
+		|| (operationsJson is not null && BlockExpectationJson.AddElementTargets(operationsJson, SubProcessBlockKey).Count > 0)
+		|| (before?.Elements?.Exists(element => element?.SubProcess is not null
+			|| string.Equals(element?.BuildType, SubProcessBuildType, StringComparison.OrdinalIgnoreCase)) ?? false);
+
 	/// <summary>Reads a process for the digest, as a best-effort read that never throws.</summary>
 	/// <param name="describer">The describer.</param>
 	/// <param name="identity">The process to read.</param>
