@@ -52,6 +52,11 @@ internal sealed class CreatedRecordWatcher(
 	private const string CreatedOnColumn = "CreatedOn";
 	private const string ExpressionTypeKey = "expressionType";
 	private const string ColumnPathKey = "columnPath";
+	private const string FilterTypeKey = "filterType";
+	private const string ComparisonTypeKey = "comparisonType";
+	private const string IsEnabledKey = "isEnabled";
+	private const string LeftExpressionKey = "leftExpression";
+	private const string RightExpressionKey = "rightExpression";
 	// Aliased so it can never collide with a title column called CreatedBy.
 	private const string CreatedByAlias = "ClioCreatedBy";
 
@@ -209,15 +214,15 @@ internal sealed class CreatedRecordWatcher(
 			int i = 0;
 			foreach (string prefix in CasePrefixes(entity)) {
 				variants[$"prefix{i++}"] = new JObject {
-					["filterType"] = 1, ["comparisonType"] = StartWith, ["isEnabled"] = true,
-					["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
-					["rightExpression"] = new JObject {
+					[FilterTypeKey] = 1, [ComparisonTypeKey] = StartWith, [IsEnabledKey] = true,
+					[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+					[RightExpressionKey] = new JObject {
 						[ExpressionTypeKey] = 2,
 						["parameter"] = new JObject { ["dataValueType"] = TextDataValueType, ["value"] = prefix }
 					}
 				};
 			}
-			JObject anyPrefix = new() { ["filterType"] = 6, ["logicalOperation"] = 1, ["isEnabled"] = true, ["items"] = variants };
+			JObject anyPrefix = new() { [FilterTypeKey] = 6, ["logicalOperation"] = 1, [IsEnabledKey] = true, ["items"] = variants };
 			return Select(ClassicEntitySchemaQuery.Query("SysSchema",
 					new JObject { ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
 					ClassicEntitySchemaQuery.Group(("byPrefix", anyPrefix),
@@ -262,8 +267,8 @@ internal sealed class CreatedRecordWatcher(
 
 	// filterType 2 (IsNullFilter), comparisonType 2 (IsNotNull).
 	private static JObject CreatedOnIsNotNull() => new() {
-		["filterType"] = 2, ["comparisonType"] = 2, ["isNull"] = false, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn }
+		[FilterTypeKey] = 2, [ComparisonTypeKey] = 2, ["isNull"] = false, [IsEnabledKey] = true,
+		[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn }
 	};
 
 	// Rows at or after the baseline (every row when the table was empty), oldest first.
@@ -295,9 +300,9 @@ internal sealed class CreatedRecordWatcher(
 	// The value DataService returned, sent back as a quoted JSON date: DataService reads and writes DateTime
 	// parameters in the session time zone, so the round trip compares like with like. An unquoted value is refused.
 	private static JObject AtOrAfter(string baseline) => new() {
-		["filterType"] = 1, ["comparisonType"] = GreaterOrEqual, ["isEnabled"] = true,
-		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
-		["rightExpression"] = new JObject {
+		[FilterTypeKey] = 1, [ComparisonTypeKey] = GreaterOrEqual, [IsEnabledKey] = true,
+		[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
+		[RightExpressionKey] = new JObject {
 			[ExpressionTypeKey] = 2,
 			["parameter"] = new JObject {
 				["dataValueType"] = DateTimeDataValueType,
@@ -310,9 +315,9 @@ internal sealed class CreatedRecordWatcher(
 	private string ReadCurrentUserContactId(int timeoutMs) {
 		try {
 			JObject filter = new() {
-				["filterType"] = 1, ["comparisonType"] = 3, ["isEnabled"] = true,
-				["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" },
-				["rightExpression"] = new JObject {
+				[FilterTypeKey] = 1, [ComparisonTypeKey] = 3, [IsEnabledKey] = true,
+				[LeftExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" },
+				[RightExpressionKey] = new JObject {
 					[ExpressionTypeKey] = 1, ["functionType"] = MacrosFunctionType, ["macrosType"] = CurrentUserContactMacro
 				}
 			};

@@ -399,10 +399,30 @@ public class RunProcessCommand(
 			until = deadline.AddMilliseconds(-reserveMs);
 			cutByDeadline = true;
 		}
-		// The last state read in full: a read that fails later (a slow stand, one timed-out request) does not discard it,
-		// and the wait goes on until its end.
+		ProcessRunState state = PollUntilEnd(options, processId, until, out string readError);
+		if (options.IsCallerGone) {
+			// The caller cancelled the call: nobody reads this answer, and nothing more is done for it.
+			return;
+		}
+		if (state is null && readError is not null) {
+			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
+				+ readError + $". Read SysProcessLog row {processId} for the outcome.");
+			return;
+		}
+		if (readError is not null) {
+			(response.Warnings ??= []).Add("The last read of the run's state failed (" + readError + "); the state "
+				+ "reported is the one read before it.");
+		}
+		int waitedSeconds = (int)Math.Round((DateTimeOffset.UtcNow - started).TotalSeconds);
+		ApplyRunState(response, state, waitedSeconds, cutByDeadline ? options.WaitTimeoutSeconds : null);
+	}
+
+	// Reads the run until it ends, `until` passes, the caller goes or reads keep failing. The last state read in full is
+	// kept: a read that fails later (a slow stand, one timed-out request) does not discard it, and the wait goes on.
+	private ProcessRunState PollUntilEnd(RunProcessOptions options, Guid processId, DateTimeOffset until,
+		out string readError) {
 		ProcessRunState state = null;
-		string readError = null;
+		readError = null;
 		int failedReads = 0;
 		// Read, then sleep only while time is left, so the state reported is the last one read.
 		while (!options.IsCallerGone) {
@@ -425,21 +445,7 @@ public class RunProcessCommand(
 			}
 			Sleep(Math.Min(PollIntervalMs, leftMs));
 		}
-		if (options.IsCallerGone) {
-			// The caller cancelled the call: nobody reads this answer, and nothing more is done for it.
-			return;
-		}
-		if (state is null && readError is not null) {
-			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
-				+ readError + $". Read SysProcessLog row {processId} for the outcome.");
-			return;
-		}
-		if (readError is not null) {
-			(response.Warnings ??= []).Add("The last read of the run's state failed (" + readError + "); the state "
-				+ "reported is the one read before it.");
-		}
-		int waitedSeconds = (int)Math.Round((DateTimeOffset.UtcNow - started).TotalSeconds);
-		ApplyRunState(response, state, waitedSeconds, cutByDeadline ? options.WaitTimeoutSeconds : null);
+		return state;
 	}
 
 	// Called only for a run the launch answered `running`, so its result-parameter values are the ones it had then.
