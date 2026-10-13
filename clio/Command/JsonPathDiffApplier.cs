@@ -2,7 +2,9 @@ namespace Clio.Command;
 
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Linq;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 /// <summary>
@@ -48,7 +50,8 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		} else if (pathArr is not null) {
 			List<object> parts = PathSegments(pathArr);
 			itemInfo = new ItemInfo { Item = GetByPath(_sourceObject, parts) };
-			if (itemInfo.Item is null) {
+			// The client tests `!itemInfo.item` here too, so a falsy value falls back like a missing one.
+			if (IsFalsy(itemInfo.Item)) {
 				string rootName = parts.Count > 0 ? parts[0]?.ToString() : null;
 				if (parts.Count > 0) {
 					parts.RemoveAt(0);
@@ -68,7 +71,9 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		if (itemInfo?.Item is null && pathArr is not null) {
 			List<object> parts = PathSegments(pathArr);
 			JToken found = GetByPath(_sourceObject, parts, parts.Count > 0 ? null : _sourceObject);
-			itemInfo = new ItemInfo { Item = found };
+			// The client tests `!itemInfo.item`, so a JSON null (or other falsy value) at the path falls back like
+			// a missing one instead of being merged into (GH-1753: the cast in Merge used to throw here).
+			itemInfo = new ItemInfo { Item = IsFalsy(found) ? null : found };
 			if (itemInfo.Item is null) {
 				string parentName = parts.Count > 0 ? parts[0]?.ToString() : null;
 				if (parts.Count > 0) {
@@ -101,21 +106,77 @@ public sealed class JsonPathDiffApplier : JsonDiffApplier, IJsonPathDiffApplier 
 		return parentItemInfo;
 	}
 
+	// Mirrors the client _merge in strict mode: Object.keys(values) throws for null or missing values, a property
+	// assignment on a single value (or on undefined) throws, and an array target takes the assignments as named
+	// properties that are lost while the merge still reports success.
 	protected override bool Merge(JObject config) {
 		ItemInfo itemInfo = FindMergeOrRemoveItemInfo(config);
 		bool parentExists = !IsEmpty(itemInfo);
-		if (parentExists) {
-			var configValues = (JObject)config["values"];
-			var values = new JObject();
-			foreach (string propertyName in ExcludeAliasProperties(config.Value<string>("name"), configValues)) {
-				values[propertyName] = configValues[propertyName]?.DeepClone();
+		if (!parentExists) {
+			return false;
+		}
+		JToken configValues = config["values"];
+		if (configValues is null || configValues.Type is JTokenType.Null or JTokenType.Undefined) {
+			throw MergeException(JsonDiffApplierResources.MergeValuesMissing, config, JsonDiffApplierMergeFailure.ValuesMissing);
+		}
+		JObject keyedValues = ObjectKeysView(configValues);
+		var values = new JObject();
+		foreach (string propertyName in ExcludeAliasProperties(config.Value<string>("name"), keyedValues)) {
+			values[propertyName] = keyedValues[propertyName]?.DeepClone();
+		}
+		switch (itemInfo.Item) {
+			case JObject target:
+				foreach (JProperty property in DeepMergeReplaceArrays(target, values).Properties()) {
+					target[property.Name] = property.Value;
+				}
+				return true;
+			case JArray:
+				if (values.Count > 0) {
+					OperationsOptions?.ArrayTargetMerges?.Add(config);
+				}
+				return true;
+			case null:
+			case { Type: JTokenType.Null or JTokenType.Undefined }:
+				// deepmerge reads Object.keys of the target, which throws for undefined or null even with empty values.
+				throw MergeException(JsonDiffApplierResources.MergeTargetUnresolved, config, JsonDiffApplierMergeFailure.TargetUnresolved);
+			case { Type: JTokenType.String } text when text.Value<string>().Length > 0:
+			case { Type: JTokenType.Date }:
+				// deepmerge takes the string's indexes as keys, and writing them back to the string throws. A date-like
+				// string reaches here as JTokenType.Date (the body parser reads dates), but it is a non-empty string to
+				// the client.
+				throw MergeException(JsonDiffApplierResources.MergeTargetNotObject, config, JsonDiffApplierMergeFailure.TargetNotObject);
+			default:
+				if (values.Count > 0) {
+					throw MergeException(JsonDiffApplierResources.MergeTargetNotObject, config, JsonDiffApplierMergeFailure.TargetNotObject);
+				}
+				return true;
+		}
+	}
+
+	private static JsonDiffApplierException MergeException(string template, JObject config, JsonDiffApplierMergeFailure failure) =>
+		new(string.Format(CultureInfo.InvariantCulture, template, MergeTargetText(config)), failure);
+
+	private static string MergeTargetText(JObject config) =>
+		(config["path"] as JArray)?.ToString(Formatting.None) ?? config.Value<string>("name");
+
+	// JS Object.keys over a non-null value: an object's own keys, the indexes of an array or a string, and nothing
+	// for a number or a boolean.
+	private static JObject ObjectKeysView(JToken values) {
+		if (values is JObject keyedObject) {
+			return keyedObject;
+		}
+		var keyed = new JObject();
+		if (values is JArray array) {
+			for (int index = 0; index < array.Count; index++) {
+				keyed[index.ToString(CultureInfo.InvariantCulture)] = array[index];
 			}
-			var target = (JObject)itemInfo.Item;
-			foreach (JProperty property in DeepMergeReplaceArrays(target, values).Properties()) {
-				target[property.Name] = property.Value;
+		} else if (values.Type == JTokenType.String) {
+			string text = values.Value<string>();
+			for (int index = 0; index < text.Length; index++) {
+				keyed[index.ToString(CultureInfo.InvariantCulture)] = text[index].ToString();
 			}
 		}
-		return parentExists;
+		return keyed;
 	}
 
 	protected override bool IterateChildItems(JToken config, System.Func<IterationConfig, bool> iterator) =>

@@ -57,6 +57,14 @@ there is no need to copy vendor bodies or override the target package.
 > so a second `get-page` of the same schema destroys an edit made in place (and anything
 > else kept in that directory). Send the edit through `update-page` / `sync-pages`, or copy
 > it out first.
+>
+> **`warnings` is optional.** A schema chain that the Creatio differ rejects fails get-page with
+> an error naming the page. One shape is read anyway so the page can be repaired: a
+> `viewConfigDiff` `insert` or `move` with a `parentName` but no `propertyName` (older clio
+> versions saved it). get-page then resolves the bundle without that operation and returns a
+> `warnings` entry naming the schema, the operation index and the fix; `raw.body` / `body.js`
+> still contains the operation. Add the parent's slot (e.g. `"propertyName": "items"`) or remove
+> the operation, then save with `update-page`.
 
 ## Conflict-Detection Baseline
 

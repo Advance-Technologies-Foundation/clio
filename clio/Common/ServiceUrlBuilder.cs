@@ -395,11 +395,20 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		RunSpecifiedProcessVersion = 116,
 
 		/// <summary>
+		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
+		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
+		/// </summary>
+		GetCurrentUserInfo = 117,
+
+		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
+		DesignReady = 118,
+
+		/// <summary>
 		///     Cancels running process instances. The body is <c>{"processDataIds":"id1;id2"}</c> - ONE string of
 		///     semicolon-separated ids, not a JSON array (an array is accepted with 200 and cancels nothing). The
 		///     cancellation is asynchronous: the SysProcessLog status moves to Canceled shortly after the call.
 		/// </summary>
-		CancelProcessExecution = 117
+		CancelProcessExecution = 119
 
 	}
 
@@ -529,6 +538,8 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
 		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
 		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
+		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
+		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 		{KnownRoute.CancelProcessExecution, "ServiceModel/ProcessEngineService.svc/CancelExecution"},
 	};
 

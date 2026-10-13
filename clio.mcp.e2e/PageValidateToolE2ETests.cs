@@ -662,7 +662,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		string bodyWithUnregisteredMetricTitle = ValidPageBody.Replace(
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
-				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{" +
 				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
 				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
 				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +
@@ -699,13 +699,13 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		string bodyWithUnregisteredCaptions = ValidPageBody.Replace(
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
-				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_OpenCases\",\"parentName\":\"Main\",\"values\":{" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_OpenCases\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{" +
 				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
 				"\"title\":\"#ResourceString(IndicatorWidget_OpenCases_title)#\"," +
 				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}," +
-				"{\"operation\":\"insert\",\"name\":\"SummaryLabel\",\"parentName\":\"Main\",\"values\":{" +
+				"{\"operation\":\"insert\",\"name\":\"SummaryLabel\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{" +
 				"\"type\":\"crt.Label\",\"caption\":\"#ResourceString(SummaryLabel_caption)#\"}}," +
-				"{\"operation\":\"insert\",\"name\":\"RefreshButton\",\"parentName\":\"Main\",\"values\":{" +
+				"{\"operation\":\"insert\",\"name\":\"RefreshButton\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{" +
 				"\"type\":\"crt.Button\",\"caption\":\"$Resources.Strings.RefreshButton_caption\"}}" +
 				"]/**SCHEMA_VIEW_CONFIG_DIFF*/");
 		string[] expectedBindingLines = [
@@ -763,7 +763,7 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 		string bodyWithMetricTitle = ValidPageBody.Replace(
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
 			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[" +
-				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"values\":{" +
+				"{\"operation\":\"insert\",\"name\":\"IndicatorWidget_CriticalRequests\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{" +
 				"\"type\":\"crt.IndicatorWidget\",\"config\":{" +
 				"\"title\":\"#ResourceString(IndicatorWidget_CriticalRequests_title)#\"," +
 				"\"text\":{\"template\":\"{0}\",\"metricMacros\":\"{0}\"}}}}" +

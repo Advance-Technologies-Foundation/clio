@@ -58,8 +58,8 @@ clio configuration: `clioignore` (packaging exclusions), `workspaceSettings.json
 > deploy/schema operation, read the live channel first:
 >
 > 1. `get-guidance` with `name=core-rules` and `name=routing` — mandatory on every operation.
-> 2. `get-tool-contract` (no args) — the compact index of EVERY tool; each entry carries a
->    `resident` flag. Resident tools are called natively by name.
+> 2. `get-tool-contract` (no args) — the compact index of EVERY tool, one line per tool; a
+>    resident tool's line carries `(R)`. Resident tools are called natively by name.
 > 3. Non-resident ("long-tail") tools are NOT advertised in `tools/list` — invoke them through the
 >    `clio-run` executor: `{"command":"<tool>","args":{…}}`. Never assume a bare long-tail name is
 >    callable directly.
