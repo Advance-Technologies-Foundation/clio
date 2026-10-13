@@ -271,6 +271,17 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 	}
 
 	/// <inheritdoc />
+	public ProcessVersionFacts Read(VwProcessLib row) {
+		if (row is null) {
+			return NotEstablished("no process-library row was supplied");
+		}
+		Stopwatch elapsed = Stopwatch.StartNew();
+		return WithinBudget(_readBudget, () => ProcessLibRead.Guarded(
+			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row, elapsed, _readBudget),
+			ReadFailed));
+	}
+
+	/// <inheritdoc />
 	public ProcessVersionFacts ReadByName(string name, TimeSpan budget) {
 		if (string.IsNullOrWhiteSpace(name)) {
 			return NotEstablished("no schema name was supplied");
@@ -284,17 +295,6 @@ public sealed class ProcessVersionLibReader : IProcessVersionLibReader {
 				? NotEstablished($"the process library has no row for schema '{code}'")
 				: FactsForRow(ctx, row, elapsed, budget);
 		}, ReadFailed));
-	}
-
-	/// <inheritdoc />
-	public ProcessVersionFacts Read(VwProcessLib row) {
-		if (row is null) {
-			return NotEstablished("no process-library row was supplied");
-		}
-		Stopwatch elapsed = Stopwatch.StartNew();
-		return WithinBudget(_readBudget, () => ProcessLibRead.Guarded(
-			() => FactsForRow(AppDataContextFactory.GetAppDataContext(_dataProvider), row, elapsed, _readBudget),
-			ReadFailed));
 	}
 
 	/// <summary>

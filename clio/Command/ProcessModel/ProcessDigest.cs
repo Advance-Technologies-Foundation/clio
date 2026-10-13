@@ -137,7 +137,7 @@ internal static class ProcessDigest {
 	/// <param name="checksum">Its <see cref="Checksum"/>.</param>
 	/// <returns>The summary object, without a reply envelope.</returns>
 	internal static JsonObject BuildSummary(DescribeProcessResult result, string checksum) =>
-		BuildSummary(result, checksum, envelope: null);
+		FitSummary(result, checksum, envelope: null);
 
 	/// <summary>
 	/// The summary REPLY of a describe: <c>mode</c> first, the summary, then <c>fullChars</c> and the <c>more</c>
@@ -153,16 +153,16 @@ internal static class ProcessDigest {
 			["more"] = $"mode=full returns the whole graph ({fullChars} chars); element=<name> returns one element "
 				+ "in full (mappings, filters, formulas, its flows); mode=versions returns the version list."
 		};
-		return BuildSummary(result, checksum, envelope);
+		return FitSummary(result, checksum, envelope);
 	}
 
-	private static JsonObject BuildSummary(DescribeProcessResult result, string checksum, JsonObject envelope) {
+	private static JsonObject FitSummary(DescribeProcessResult result, string checksum, JsonObject envelope) {
 		List<DescribedElement> elements = result.Elements?.Where(element => element is not null).ToList() ?? [];
 		List<string> flows = result.Flows?.Where(flow => flow is not null).Select(FlowLine).ToList() ?? [];
 		List<DescribedParameter> parameters = result.Parameters?.Where(parameter => parameter is not null).ToList() ?? [];
 		JsonObject Build(IReadOnlyList<DescribedElement> keptElements, IReadOnlyList<string> keptFlows,
 			IReadOnlyList<DescribedParameter> keptParameters, bool withCaptions, bool compactHeader) =>
-			Enveloped(BuildSummary(result, checksum, keptElements, keptFlows, keptParameters, withCaptions,
+			Enveloped(ComposeSummary(result, checksum, keptElements, keptFlows, keptParameters, withCaptions,
 				compactHeader), envelope);
 		JsonObject summary = Build(elements, flows, parameters, withCaptions: true, compactHeader: false);
 		if (Size(summary) <= SummaryBudgetBytes) {
@@ -337,7 +337,7 @@ internal static class ProcessDigest {
 	/// <summary>Writes a view as compact JSON.</summary>
 	internal static string Write(JsonNode node) => node.ToJsonString(DescribeProcessCommand.OutputOptions);
 
-	private static JsonObject BuildSummary(DescribeProcessResult result, string checksum,
+	private static JsonObject ComposeSummary(DescribeProcessResult result, string checksum,
 		IReadOnlyList<DescribedElement> elements, IReadOnlyList<string> flows,
 		IReadOnlyList<DescribedParameter> parameters, bool withCaptions, bool compactHeader) {
 		JsonObject summary = new() { ["name"] = result.Name };
