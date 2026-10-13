@@ -23,8 +23,8 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 
 	private const string ToolName = PageSmokeTool.ToolName;
 
-	// A form page every Creatio product ships; add mode needs no record, so the read-only check changes nothing.
-	private const string ContactFormPage = "Contacts_FormPage";
+	// A form page every Creatio product ships (CrtUIv2, Studio included); add mode needs no record, so the read-only check changes nothing.
+	private const string TaskFormPage = "Tasks_FormPage";
 
 	[Test]
 	[Category("McpE2E.NoEnvironment")]
@@ -166,7 +166,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		// Act
 		JsonElement response = await RunAsync(arrange, new Dictionary<string, object?> {
 			["environment-name"] = environmentName,
-			["page"] = ContactFormPage,
+			["page"] = TaskFormPage,
 			["timeout"] = 45
 		});
 		IgnoreWithoutBrowser(response);
@@ -176,7 +176,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		response.GetProperty("ready").GetBoolean().Should().BeTrue(because: "the page reached the ready state");
 		response.GetProperty("mode").GetString().Should().Be("add", because: "no record id was passed");
 		response.GetProperty("buttons").GetArrayLength().Should().BeGreaterThan(0, because: "a form page has buttons");
-		response.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0, because: "a contact form has fields");
+		response.GetProperty("fields").GetArrayLength().Should().BeGreaterThan(0, because: "a task form has fields");
 		response.GetProperty("consoleErrors").ValueKind.Should().Be(JsonValueKind.Array,
 			because: "console errors are always answered");
 		response.ToString().Should().NotContain("BPMCSRF", because: "no cookie reaches the reply");
@@ -185,7 +185,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.Sandbox")]
-	[Description("Clicking the Close button of an untouched add page is reported as clicked, with what followed; nothing is saved.")]
+	[Description("Clicking the Back button of an untouched add page is reported as clicked, with what followed; nothing is saved.")]
 	[AllureTag(ToolName)]
 	[AllureName("page-smoke clicks a button and reports what followed")]
 	public async Task PageSmoke_Should_Click_A_Button_And_Report_What_Followed() {
@@ -199,17 +199,17 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		// Act
 		JsonElement response = await RunAsync(arrange, new Dictionary<string, object?> {
 			["environment-name"] = environmentName,
-			["page"] = ContactFormPage,
+			["page"] = TaskFormPage,
 			["timeout"] = 45,
-			["click"] = "CloseButton"
+			["click"] = "BackButton"
 		});
 		IgnoreWithoutBrowser(response);
 
 		// Assert
 		response.GetProperty("success").GetBoolean().Should().BeTrue(because: response.ToString());
 		JsonElement click = response.GetProperty("click");
-		click.GetProperty("outcome").GetString().Should().Be("clicked", because: "the page has one Close button");
-		click.GetProperty("name").GetString().Should().Be("CloseButton", because: "the element name matched");
+		click.GetProperty("outcome").GetString().Should().Be("clicked", because: "the page has one Back button");
+		click.GetProperty("name").GetString().Should().Be("BackButton", because: "the element name matched");
 		click.TryGetProperty("settled", out JsonElement settled).Should().BeTrue(because: "the settle state is reported");
 		settled.ValueKind.Should().BeOneOf([JsonValueKind.True, JsonValueKind.False], because: "it is a boolean");
 	}
@@ -226,6 +226,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			new Dictionary<string, object?> { ["command"] = ToolName, ["args"] = args },
 			arrange.CancellationTokenSource.Token);
 		string text = result.Content.OfType<TextContentBlock>().First().Text;
+		TestContext.Progress.WriteLine($"page-smoke reply: {System.Text.Encoding.UTF8.GetByteCount(text)} bytes");
 		return JsonDocument.Parse(text).RootElement.Clone();
 	}
 }

@@ -32,6 +32,8 @@ state.
 **What breaks if you ignore it** — waiting for `document.readyState` or for the first named element reads
 the page while its data is still loading (fields empty, buttons missing); treating a hidden
 `crt-7x-schema` as "Classic page" refuses every Freedom page; reading `crt-button` across the whole document
-lists the Shell's own toolbar buttons and lets a click hit one. Verified only against a DOM fixture that
-reproduces this contract and the TestKit source, not yet against a live 8.x stand (the sandboxes were asleep
-when this was written): if a live page disagrees, fix the scripts and this record together.
+lists the Shell's own toolbar buttons and lets a click hit one. Verified against a DOM fixture, the TestKit source
+and, on 2026-10-13, a live Studio sandbox (.NET Framework): `Tasks_FormPage` in add mode was ready in about 14 s and
+reported its header buttons by `element-name` and 16 fields with labels, required flags and values. A page schema
+that does not exist never leaves the splash: the ready wait times out and `consoleErrors` carries
+`Script error for "<page>"` plus a 404 for `<page>.js`.

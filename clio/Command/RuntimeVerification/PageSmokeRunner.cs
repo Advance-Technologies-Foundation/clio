@@ -88,9 +88,9 @@ public sealed class PageClickReport {
 	[JsonPropertyName("created"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public List<CreatedRecord> Created { get; set; }
 
-	/// <summary>False when the page was still changing when the click wait ended.</summary>
-	[JsonPropertyName("settled")]
-	public bool Settled { get; set; }
+	/// <summary>False when the page was still changing when the click wait ended; null when nothing was clicked.</summary>
+	[JsonPropertyName("settled"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? Settled { get; set; }
 }
 
 /// <summary>Outcome of <see cref="IPageSmokeRunner.RunAsync"/>.</summary>
@@ -459,7 +459,7 @@ internal sealed class PageSmokeRunner(
 				.ConfigureAwait(false);
 			List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
 			report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
-			if (!report.Settled) {
+			if (report.Settled == false) {
 				result.Warnings.Add($"The page was still changing when click-wait ({request.ClickWaitSeconds} s) ended; "
 					+ "what followed may be incomplete.");
 			}

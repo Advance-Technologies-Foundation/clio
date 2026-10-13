@@ -287,7 +287,7 @@ public sealed class PageSmokeRunnerTests {
 		result.Success.Should().BeTrue(because: "the click was made: " + result.Error);
 		PageClickReport click = result.Click;
 		click.Outcome.Should().Be("clicked", because: "one enabled button matched");
-		click.Settled.Should().BeTrue(because: "the page stayed quiet after the click");
+		click.Settled.Should().Be(true, because: "the page stayed quiet after the click");
 		click.Navigations.Should().Equal(["/0/Shell/#Section/UsrOrders_ListPage"], because: "the click navigated");
 		click.ConsoleErrors.Should().ContainSingle(because: "only errors after the click count")
 			.Which.Text.Should().Contain("TypeError: x is undefined").And.Contain("at handler").And.NotContain("at more",
