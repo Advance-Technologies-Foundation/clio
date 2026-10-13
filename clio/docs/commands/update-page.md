@@ -222,8 +222,11 @@ name instead of trying to edit a non-existent local `insert`.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `--resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio auto-derives. This
-  guards the metric/chart-widget-title case (a title such as
+  `--resources`, is not already stored in the target schema's `localizableStrings` (on the first save
+  into a package: in the schema it replaces, whose strings the save copies) or declared by a level of
+  the designer hierarchy clio resolved for the page (not with `--target-schema-uid`), is not a DS-bound
+  attribute, and is not a `Usr`-prefixed key clio auto-derives. A layout-only re-save therefore does not
+  have to repeat keys an earlier save registered. This guards the metric/chart-widget-title case (a title such as
   `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
   otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
 - **A placement that names a parent must name its slot** (web and mobile, also with `validate: false`).
@@ -265,11 +268,17 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return `warnings`. Every entry is informational only — the
-schema save already succeeded, so never retry on a warning. Today they cover the live
+Successful saves may also return `warnings`. When `success` is true every entry is
+informational only — the schema save already succeeded, so never retry on a warning. A
+rejected save (`success: false`) can carry `warnings` too; nothing was written. On a
+`--dry-run`, a config merge the runtime throws on is listed as a warning that says it
+"breaks the page", and the real save of the same body is rejected (see "Config merges into
+a missing path"). Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
 `merge`/`move`/`remove`, an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes"), and — on `append` — an
+for the same component name cancels it (see "Write modes"), a `viewModelConfigDiff` /
+`modelConfigDiff` `merge` whose `path` does not resolve (see "Config merges into a missing
+path"), and — on `append` — an
 existing operation the merge could not preserve because your fragment superseded an
 identity the page carried more than once. That last one names the component and tells you
 to re-read with `get-page`, because it is the one case where appending removes something
@@ -399,6 +408,38 @@ apply after all. A `--dry-run` reports it too, against the body that would actua
 in append mode it sees pairs formed between your fragment and the server's body, not only pairs
 inside your fragment.
 
+### Config merges into a missing path
+
+A `viewModelConfigDiff` or `modelConfigDiff` `merge` is addressed by `path`. The platform differ walks
+that path through the config built from the parent schemas and the merges that come before it in the
+same body. If a segment does not exist, the differ skips the merge. It does not create the
+missing key. The body is saved with the operation in it, but the operation has no effect.
+Typical shapes:
+
+- a new data source written as `path: ["dataSources", "NewDS"]`. The key does not exist yet;
+- `path: ["dependencies"]` on a page whose chain has no `dependencies` yet;
+- a nested key that the parent schema's data source or attribute does not have, for example
+  `path: ["dataSources", "AttachmentListDS", "config", "sortingConfig"]`;
+- a nested merge placed before the merge that creates its target. Merges run in array order.
+
+`update-page` resolves the page's real parent schemas and applies the body's config diffs to that
+config the way the platform does. For every merge that would be skipped, the response gets an advisory
+`warnings` entry naming the section and the path, and the save still succeeds. To
+add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
+with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
+always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
+them is safe. A merge whose path ends on an array, or whose `values` is an array, a string, a number
+or a boolean, is reported the same way, with its own reason.
+
+A merge the runtime throws on makes the page fail to build, so it rejects the save: `success` is
+false, nothing is written, `error` names each such merge on its own line, and the other warnings
+for the body are still returned. A `--dry-run` lists the same merges as warnings that say the merge
+"breaks the page". The cases are a path that ends on a single value, such as `isCollection`; a path
+whose first segment matches an element `_id` but whose rest does not exist under it; and a merge
+with no `values` or `values: null` on a target that exists. If the parent schemas cannot be read for
+this check, the response says the check did not run, and the save is not blocked. If an operation
+that is not a merge makes the differ throw, the merges are still checked and one warning says so.
+
 ### What a `--dry-run` tells you about an append
 
 In append mode a dry run resolves the current server body and computes the merge, then returns
@@ -447,9 +488,11 @@ Three consequences worth knowing:
   check — do not plan a workflow around it running without a server. Resolving the schema context
   happens before either mode is chosen and still queries `SysSchema`, the design package and the
   parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
-  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
-  is that its caption check can only resolve against the resources you pass, so it is weaker than
-  the save's — the one place a replace dry run can still differ from its save.
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. Its caption
+  check first resolves against the body and the resources you pass; only when a binding is still
+  unresolved does it read the keys the schema already stores (one `GetSchema`) together with the keys
+  of its designer hierarchy, the same set the save accepts. A body whose captions all resolve from the
+  body or `--resources` still costs no designer read.
 
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.
