@@ -80,6 +80,41 @@ public sealed class ODataReadColumnValidationE2ETests : McpContractFixtureBase {
 		response.UnknownMembers.Should().BeNull(because: "nothing was unknown");
 	}
 
+	[Test]
+	[AllureTag(ODataReadTool.ToolName)]
+	[AllureName("odata-read suggests the ActivityCategory/Id navigation path for a filter, and Creatio accepts it")]
+	[AllureDescription("Filters Activity on the non-existent CategoryId, takes the first suggestion and re-runs the read with it: the suggestion must be a form Creatio accepts in a filter.")]
+	[Description("QA ENG-103020: a filter suggestion for a lookup is the navigation path ActivityCategory/Id (not ActivityCategoryId, which Creatio rejects in a filter), and a read using it succeeds.")]
+	public async Task ODataRead_Should_Suggest_A_Filter_Form_Creatio_Accepts() {
+		// Arrange
+		string environmentName = await ResolveEnvironmentAsync();
+		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
+		const string anyCategory = "f51c4643-58e6-df11-971b-001d60e938c6";
+
+		// Act
+		ODataReadResponse rejected = await ReadAsync(arrange, environmentName, new Dictionary<string, object?> {
+			["entity"] = "Activity",
+			["select"] = new[] { "Id" },
+			["filters"] = new { all = new[] { new { field = "CategoryId", op = "eq", value = anyCategory } } },
+			["top"] = 1
+		});
+		string suggestion = rejected.UnknownMembers!.Should().ContainSingle(
+			because: "only the filter field is unknown").Which.Suggestions.First();
+		ODataReadResponse retried = await ReadAsync(arrange, environmentName, new Dictionary<string, object?> {
+			["entity"] = "Activity",
+			["select"] = new[] { "Id" },
+			["filters"] = new { all = new[] { new { field = suggestion, op = "eq", value = anyCategory } } },
+			["order-by"] = suggestion,
+			["top"] = 1
+		});
+
+		// Assert
+		suggestion.Should().Be("ActivityCategory/Id",
+			because: "a lookup is filtered through its navigation path; the scalar ActivityCategoryId is rejected there");
+		retried.Success.Should().BeTrue(
+			because: $"the suggested name must be one Creatio accepts in a filter and order-by: {retried.Error}");
+	}
+
 	private static async Task<ODataReadResponse> ReadAsync(ArrangeContext arrange, string environmentName,
 			Dictionary<string, object?> args) {
 		args["environment-name"] = environmentName;

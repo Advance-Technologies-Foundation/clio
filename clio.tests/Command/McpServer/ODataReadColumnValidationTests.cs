@@ -29,6 +29,10 @@ public sealed class ODataReadColumnValidationTests {
 		        <Property Name="Title" Type="Edm.String" />
 		        <Property Name="ActivityCategoryId" Type="Edm.Guid" />
 		        <NavigationProperty Name="ActivityCategory" Type="Terrasoft.Configuration.OData.ActivityCategory" />
+		        <NavigationProperty Name="Account" Type="Terrasoft.Configuration.OData.Account" />
+		      </EntityType>
+		      <EntityType Name="Account" BaseType="Terrasoft.Configuration.OData.BaseEntity">
+		        <Property Name="Name" Type="Edm.String" />
 		      </EntityType>
 		      <EntityType Name="ActivityCategory" BaseType="Terrasoft.Configuration.OData.BaseEntity">
 		        <Property Name="Name" Type="Edm.String" />
@@ -246,5 +250,109 @@ public sealed class ODataReadColumnValidationTests {
 		// Assert
 		_metadataRequests.Should().Be(0, because: "the multi-megabyte document is only fetched when a name needs checking");
 		_dataRequests.Should().Be(1, because: "the query itself is still sent");
+	}
+	[TestCase("filters")]
+	[TestCase("order-by")]
+	[Category("Unit")]
+	[Description("QA ENG-103020: in a filter or order-by a lookup is suggested as its navigation path ActivityCategory/Id, never as the ActivityCategoryId column Creatio rejects there.")]
+	public void Read_Should_Suggest_Navigation_Path_For_Lookup_In_Filter_And_OrderBy(string argument) {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+		ODataReadArgs args = argument == "filters"
+			? Args("Activity", filters: Filter("CategoryId"))
+			: Args("Activity", orderBy: "CategoryId desc");
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		ODataUnknownMember member = response.UnknownMembers.Should().ContainSingle().Subject;
+		member.Argument.Should().Be(argument, because: "the name is reported where it was sent");
+		member.Suggestions.Should().Contain("ActivityCategory/Id",
+			because: "the navigation path is the form Creatio accepts in a filter and order-by");
+		member.Suggestions.Should().NotContain("ActivityCategoryId",
+			because: "the scalar lookup column is rejected again in this context");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA ENG-103020: a filter on the scalar lookup column ActivityCategoryId is reported with the navigation path ActivityCategory/Id.")]
+	public void Read_Should_Report_Scalar_Lookup_Column_In_Filter() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", filters: Filter("ActivityCategoryId")));
+
+		// Assert
+		ODataUnknownMember member = response.UnknownMembers.Should().ContainSingle(
+			because: "Creatio rejects the scalar column in a filter").Subject;
+		member.Suggestions[0].Should().Be("ActivityCategory/Id", because: "the usable form comes first");
+		member.Suggestions.Should().NotContain("ActivityCategoryId", because: "it is the rejected name itself");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("In select the scalar lookup column stays the suggestion; the navigation path is a filter-only correction.")]
+	public void Read_Should_Keep_Scalar_Suggestion_In_Select() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("CategoryId")));
+
+		// Assert
+		response.UnknownMembers!.Single().Suggestions.Should().Contain("ActivityCategoryId",
+			because: "the scalar column is valid in select").And.NotContain("ActivityCategory/Id",
+			because: "select keeps the scalar form");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA ENG-103020: a misspelled navigation keeps the rest of the path (Acount/Name -> Account/Name), and a short expand prefix finds the navigation (Acc -> Account).")]
+	public void Read_Should_Keep_Path_Tail_And_Match_Short_Prefix() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Acount/Name"), expand: Cols("Acc")));
+
+		// Assert
+		response.UnknownMembers!.Single(m => m.Argument == "select").Suggestions[0].Should().Be("Account/Name",
+			because: "the navigation is corrected and the member behind it is kept");
+		response.UnknownMembers.Single(m => m.Argument == "expand").Suggestions.Should().Contain("Account",
+			because: "Acc is a prefix of the Account navigation");
+	}
+	[Test]
+	[Category("Unit")]
+	[Description("A bare navigation in a filter is reported with its navigation path, and the message says the lookup exists but is not usable there.")]
+	public void Read_Should_Report_Bare_Navigation_In_Filter_As_Wrong_Form() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", filters: Filter("ActivityCategory")));
+
+		// Assert
+		response.UnknownMembers!.Single().Suggestions[0].Should().Be("ActivityCategory/Id",
+			because: "Creatio filters a lookup only through its navigation path");
+		response.Error.Should().Contain("not usable in filters",
+			because: "the name exists on the type, so the message must not claim it is missing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A misspelled navigation whose member matches nothing behind it falls back to the navigation alone, never to a path known to be invalid.")]
+	public void Read_Should_Not_Suggest_A_Known_Invalid_Tail() {
+		// Arrange
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", select: Cols("Acount/Zzzzzz")));
+
+		// Assert
+		response.UnknownMembers!.Single().Suggestions.Should().Contain("Account",
+			because: "the navigation itself is the safe correction").And.NotContain("Account/Zzzzzz",
+			because: "Account has no such member");
 	}
 }

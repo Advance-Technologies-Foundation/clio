@@ -41,6 +41,8 @@ internal static class ODataReadColumnValidation {
 
 	private const int MinContainmentLength = 4;
 
+	private const int MinPrefixLength = 3;
+
 	internal sealed record Reference(string Argument, string Path, bool NavigationOnly);
 
 	/// <summary>
@@ -103,9 +105,15 @@ internal static class ODataReadColumnValidation {
 	/// <summary>
 	/// A single segment must be a property or navigation of the entity (a navigation only, for expand).
 	/// A two-segment path needs a navigation first and a member of its target second; deeper segments are
-	/// not checked. A name that differs from a valid one only by case is treated as known.
+	/// not checked. A name that differs from a valid one only by case is treated as known. In a filter or
+	/// order-by the last checked segment must also be usable there: a lookup's scalar column
+	/// (<c>ActivityCategoryId</c>) or a bare navigation (<c>ActivityCategory</c>) is rejected by Creatio in
+	/// those places, where only the navigation path <c>ActivityCategory/Id</c> works.
 	/// </summary>
-	private static bool IsKnown(ODataFieldValidation.EntityShape shape, Reference reference) {
+	private static bool IsKnown(ODataFieldValidation.EntityShape shape, Reference reference) =>
+		ExistsOnType(shape, reference) && !NeedsNavigationPath(shape, reference);
+
+	private static bool ExistsOnType(ODataFieldValidation.EntityShape shape, Reference reference) {
 		// The shape's sets compare case-insensitively (see ODataFieldValidation.BuildShape).
 		string[] segments = reference.Path.Split('/');
 		string first = segments[0];
@@ -124,63 +132,157 @@ internal static class ODataReadColumnValidation {
 			|| (!reference.NavigationOnly && target.Properties.Contains(segments[1]));
 	}
 
+	/// <summary>
+	/// Whether an existing name is used in a filter or order-by in a form Creatio rejects there (a lookup's
+	/// scalar column or a bare navigation), so it has to be sent as <c>X/Id</c>.
+	/// </summary>
+	private static bool NeedsNavigationPath(ODataFieldValidation.EntityShape shape, Reference reference) {
+		if (!IsPathOnlyContext(reference)) {
+			return false;
+		}
+		string[] segments = reference.Path.Split('/');
+		if (segments.Length == 1) {
+			return NeedsNavigationPath(shape.Root, segments[0]);
+		}
+		return segments.Length == 2
+			&& shape.NavigationTargets.TryGetValue(segments[0], out ODataFieldValidation.TypeShape? target)
+			&& NeedsNavigationPath(target, segments[1]);
+	}
+
+	private static bool NeedsNavigationPath(ODataFieldValidation.TypeShape type, string name) =>
+		!string.Equals(PathOnlyForm(type, name), name, StringComparison.OrdinalIgnoreCase);
+
+	/// <summary>Filters and order-by address a lookup only through its navigation path (<c>X/Id</c>).</summary>
+	private static bool IsPathOnlyContext(Reference reference) =>
+		reference.Argument is "filters" or "order-by";
+
+	/// <summary>
+	/// The form of a member that a filter or order-by accepts: <c>ActivityCategory/Id</c> for the lookup
+	/// column <c>ActivityCategoryId</c> and for the bare navigation <c>ActivityCategory</c>; any other name
+	/// unchanged. Names are returned as the metadata spells them.
+	/// </summary>
+	private static string PathOnlyForm(ODataFieldValidation.TypeShape type, string name) {
+		if (name.Length > 2 && name.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
+			&& type.Properties.Contains(name)
+			&& type.Navigations.TryGetValue(name[..^2], out string? lookup)) {
+			return lookup + "/Id";
+		}
+		return !type.Properties.Contains(name) && type.Navigations.TryGetValue(name, out string? navigation)
+			? navigation + "/Id"
+			: name;
+	}
+
 	private static ODataReadResponse BuildFailure(ODataFieldValidation.EntityShape shape,
 		List<(Reference Reference, string Name)> unknown, string entity) {
-		List<ODataUnknownMember> members = unknown
+		List<(ODataUnknownMember Member, bool WrongForm)> items = unknown
 			.Take(MaxReportedUnknown)
-			.Select(item => new ODataUnknownMember(
+			.Select(item => (new ODataUnknownMember(
 				item.Reference.Argument,
 				McpToolArgumentSupport.DescribeCallerKey(item.Name),
-				Suggest(shape, item.Reference, entity)))
+				Suggest(shape, item.Reference, entity)), ExistsOnType(shape, item.Reference)))
 			.ToList();
-		string detail = string.Join("; ", members.Select(member => member.Suggestions.Count > 0
-			? $"{member.Argument} '{member.Name}' (closest: {string.Join(", ", member.Suggestions)})"
-			: $"{member.Argument} '{member.Name}' (no close match)"));
-		string more = unknown.Count > members.Count ? $" and {unknown.Count - members.Count} more" : string.Empty;
+		string detail = string.Join("; ", items.Select(item => Describe(item.Member, item.WrongForm)));
+		string more = unknown.Count > items.Count ? $" and {unknown.Count - items.Count} more" : string.Empty;
 		int columns = shape.Root.Properties.Count;
 		string message =
-			$"Creatio rejected the query as invalid: {unknown.Count} name(s) are not on the OData type of {entity}{more}: {detail}. " +
-			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered through its navigation path, " +
-			"for example AccountId -> Account/Id). If the column was added moments ago, wait for the OData rebuild and retry once.";
+			$"Creatio rejected the query as invalid: {unknown.Count} name(s) cannot be used as sent on the OData type of {entity}{more}: {detail}. " +
+			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its navigation path, " +
+			"for example AccountId -> Account/Id). If a column that is not on the type was added moments ago, wait for the OData rebuild and retry once.";
 		return ODataReadResponse.Failure(message, ODataReadErrorCodes.InvalidQuery, entity: entity) with {
-			UnknownMembers = members,
+			UnknownMembers = items.Select(item => item.Member).ToList(),
 			ValidColumnCount = columns
 		};
 	}
 
-	/// <summary>Closest valid names for an unknown one, best first, at most <see cref="MaxSuggestions"/>.</summary>
+	private static string Describe(ODataUnknownMember member, bool wrongForm) {
+		if (wrongForm) {
+			string use = member.Suggestions.Count > 0 ? member.Suggestions[0] : "its navigation path";
+			return $"{member.Argument} '{member.Name}' (a lookup on the type, but not usable in {member.Argument}: use {use})";
+		}
+		return member.Suggestions.Count > 0
+			? $"{member.Argument} '{member.Name}' (not on the type; closest: {string.Join(", ", member.Suggestions)})"
+			: $"{member.Argument} '{member.Name}' (not on the type; no close match)";
+	}
+
+	/// <summary>
+	/// Closest valid names for an unknown one, best first, at most <see cref="MaxSuggestions"/>. In a filter
+	/// or order-by a lookup is suggested as its navigation path (<c>ActivityCategory/Id</c>), never as the
+	/// scalar column or the bare navigation, because those are what Creatio rejects there.
+	/// </summary>
 	internal static IReadOnlyList<string> Suggest(ODataFieldValidation.EntityShape shape, Reference reference,
 		string entity) {
 		string[] segments = reference.Path.Split('/');
-		string prefix = string.Empty;
-		HashSet<string> pool;
-		string subject;
-		bool lookupForms;
+		bool pathOnly = IsPathOnlyContext(reference);
+		List<string> result = [];
 		if (segments.Length > 1 && shape.Root.Navigations.TryGetValue(segments[0], out string? navigation)
 			&& shape.NavigationTargets.TryGetValue(navigation, out ODataFieldValidation.TypeShape? target)) {
 			// The navigation as the metadata spells it, so a mis-cased one is corrected in the suggestion.
-			prefix = navigation + "/";
-			pool = reference.NavigationOnly ? [.. target.Navigations] : [.. target.Properties, .. target.Navigations];
-			subject = segments[1];
-			lookupForms = false;
+			bool lastSegment = segments.Length == 2;
+			AddRanked(result, RankCandidates(MembersOf(target, reference.NavigationOnly), segments[1], entity),
+				name => navigation + "/" + (pathOnly && lastSegment ? PathOnlyForm(target, name) : name));
+		} else if (segments.Length > 1) {
+			// The first segment is not a navigation: correct it and keep the rest of the path, so
+			// Acount/Name becomes Account/Name rather than the bare Account.
+			if (segments.Length == 2 && !pathOnly && !reference.NavigationOnly) {
+				AddScalarFormOfIdPath(shape, segments, result);
+			}
+			string tail = string.Join("/", segments[1..]);
+			AddRanked(result, RankCandidates([.. shape.Root.Navigations], segments[0], entity),
+				name => CorrectTail(shape, name, tail, reference.NavigationOnly, pathOnly && segments.Length == 2)
+					is { } corrected
+					? name + "/" + corrected
+					: (pathOnly ? name + "/Id" : name));
 		} else {
-			pool = reference.NavigationOnly ? [.. shape.Root.Navigations] : [.. shape.Root.Properties, .. shape.Root.Navigations];
-			subject = segments[0];
-			lookupForms = segments.Length == 1 || segments.Length == 2;
+			string subject = segments[0];
+			if (pathOnly && subject.Length > 2 && subject.EndsWith("Id", StringComparison.OrdinalIgnoreCase)
+				&& shape.Root.Navigations.TryGetValue(subject[..^2], out string? stem)) {
+				result.Add(stem + "/Id");
+			}
+			AddRanked(result, RankCandidates(MembersOf(shape.Root, reference.NavigationOnly), subject, entity),
+				name => pathOnly ? PathOnlyForm(shape.Root, name) : name);
 		}
-		List<(int Tier, int Distance, string Name)> ranked = RankCandidates(pool, subject, entity);
-		List<string> result = [];
-		if (lookupForms && prefix.Length == 0) {
-			AddLookupForm(shape, reference, subject, result);
-		}
-		foreach ((int _, int _, string name) in ranked.OrderBy(r => r.Tier).ThenBy(r => r.Distance)
-			.ThenBy(r => r.Name.Length).ThenBy(r => r.Name, StringComparer.Ordinal)) {
-			string full = prefix + name;
+		return result;
+	}
+
+	private static HashSet<string> MembersOf(ODataFieldValidation.TypeShape type, bool navigationOnly) =>
+		navigationOnly ? [.. type.Navigations] : [.. type.Properties, .. type.Navigations];
+
+	private static IEnumerable<string> Ordered(List<(int Tier, int Distance, string Name)> ranked) =>
+		ranked.OrderBy(r => r.Tier).ThenBy(r => r.Distance).ThenBy(r => r.Name.Length)
+			.ThenBy(r => r.Name, StringComparer.Ordinal).Select(r => r.Name);
+
+	/// <summary>Adds formatted candidates best first until <see cref="MaxSuggestions"/> distinct names are held.</summary>
+	private static void AddRanked(List<string> result, List<(int Tier, int Distance, string Name)> ranked,
+		Func<string, string> format) {
+		foreach (string name in Ordered(ranked)) {
+			if (result.Count >= MaxSuggestions) {
+				return;
+			}
+			string full = format(name);
 			if (!result.Contains(full, StringComparer.Ordinal)) {
 				result.Add(full);
 			}
 		}
-		return result.Take(MaxSuggestions).ToList();
+	}
+
+	/// <summary>
+	/// The path after a corrected navigation: its first member as the target spells it, or the closest
+	/// member when it is misspelled too. The caller's text when the target is unknown; <see langword="null"/>
+	/// when the target is known and nothing in it is close, so no invalid path is suggested.
+	/// </summary>
+	private static string? CorrectTail(ODataFieldValidation.EntityShape shape, string navigation, string tail,
+		bool navigationOnly, bool pathOnly) {
+		if (!shape.NavigationTargets.TryGetValue(navigation, out ODataFieldValidation.TypeShape? target)) {
+			return tail;
+		}
+		string[] parts = tail.Split('/');
+		string? best = Ordered(RankCandidates(MembersOf(target, navigationOnly), parts[0], string.Empty))
+			.FirstOrDefault();
+		if (best is null) {
+			return null;
+		}
+		parts[0] = pathOnly ? PathOnlyForm(target, best) : best;
+		return string.Join("/", parts);
 	}
 
 	private static List<(int Tier, int Distance, string Name)> RankCandidates(HashSet<string> pool, string subject,
@@ -200,37 +302,24 @@ internal static class ODataReadColumnValidation {
 		return ranked;
 	}
 
-	/// <summary>The <c>&lt;Name&gt;Id</c> and <c>&lt;Name&gt;/Id</c> forms of one lookup, in either direction.</summary>
-	private static void AddLookupForm(ODataFieldValidation.EntityShape shape, Reference reference, string subject,
+	/// <summary>In a select, <c>Name/Id</c> on an entity without that navigation suggests the column <c>NameId</c>.</summary>
+	private static void AddScalarFormOfIdPath(ODataFieldValidation.EntityShape shape, string[] segments,
 		List<string> result) {
-		string[] segments = reference.Path.Split('/');
-		if (segments.Length == 2 && string.Equals(segments[1], "Id", StringComparison.OrdinalIgnoreCase)
-			&& shape.Root.Properties.FirstOrDefault(name => string.Equals(name, segments[0] + "Id",
-				StringComparison.OrdinalIgnoreCase)) is { } column) {
+		if (string.Equals(segments[1], "Id", StringComparison.OrdinalIgnoreCase)
+			&& shape.Root.Properties.TryGetValue(segments[0] + "Id", out string? column)) {
 			result.Add(column);
-			return;
-		}
-		if (segments.Length == 1 && subject.Length > 2
-			&& subject.EndsWith("Id", StringComparison.OrdinalIgnoreCase)) {
-			string stem = subject[..^2];
-			string? navigation = shape.Root.Navigations.FirstOrDefault(
-				name => string.Equals(name, stem, StringComparison.OrdinalIgnoreCase));
-			if (navigation is not null) {
-				result.Add(reference.Argument == "filters" || reference.Argument == "order-by"
-					? navigation + "/Id"
-					: navigation);
-			}
 		}
 	}
 
 	private static string? StripEntityPrefix(string name, string entity) =>
-		name.Length > entity.Length && name.StartsWith(entity, StringComparison.OrdinalIgnoreCase)
+		entity.Length > 0 && name.Length > entity.Length && name.StartsWith(entity, StringComparison.OrdinalIgnoreCase)
 			? name[entity.Length..]
 			: null;
 
 	/// <summary>
-	/// Ranks a candidate against the unknown name: tier 0 differs by case only, tier 1 one contains the
-	/// other (the shorter at least <see cref="MinContainmentLength"/> characters), tier 2 a small edit
+	/// Ranks a candidate against the unknown name: tier 0 differs by case only, tier 1 the candidate starts
+	/// with the name (at least <see cref="MinPrefixLength"/> characters, so Acc finds Account) or one
+	/// contains it (the shorter at least <see cref="MinContainmentLength"/> characters), tier 2 a small edit
 	/// distance. <see langword="null"/> means not close enough to suggest.
 	/// </summary>
 	private static (int, int)? Score(string name, string candidate) {
@@ -240,7 +329,9 @@ internal static class ODataReadColumnValidation {
 			return (0, 0);
 		}
 		(string shorter, string longer) = left.Length <= right.Length ? (left, right) : (right, left);
-		if (shorter.Length >= MinContainmentLength && longer.Contains(shorter, StringComparison.Ordinal)) {
+		// The prefix rule is one-way: a short candidate such as Web must not outrank WebPage for WebPagee.
+		if ((left.Length >= MinPrefixLength && right.StartsWith(left, StringComparison.Ordinal))
+			|| (shorter.Length >= MinContainmentLength && longer.Contains(shorter, StringComparison.Ordinal))) {
 			return (1, longer.Length - shorter.Length);
 		}
 		int distance = EditDistance(left, right);

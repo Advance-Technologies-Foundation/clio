@@ -98,7 +98,7 @@ public sealed class ODataUpdateTool(
 		ODataWriteResponse result = payloadAlias.Error is not null
 			? ODataWriteResponse.Failure(payloadAlias.Error)
 			: UpdateCore(args, out attempted, out received);
-		return result with { Warnings = payloadAlias.Warning is null ? null : [payloadAlias.Warning],
+		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,
 			CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
 			args.Entity, null, attempted, received, result.Success, result.Error) };
 	}

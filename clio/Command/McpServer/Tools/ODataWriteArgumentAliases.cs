@@ -33,7 +33,25 @@ internal static class ODataWriteArgumentAliases {
 		JsonElement? Value,
 		Dictionary<string, JsonElement>? Remaining,
 		string? Warning,
-		string? Error);
+		string? Error) {
+
+		/// <summary>Synonym the caller used (sanitized for display), or null when none was used.</summary>
+		internal string? Alias { get; init; }
+
+		/// <summary>Canonical argument the synonym stands for.</summary>
+		internal string? Canonical { get; init; }
+
+		/// <summary>
+		/// The note to report once the call has finished: a refused call accepted nothing, so it must not
+		/// claim that the synonym "was accepted".
+		/// </summary>
+		/// <param name="refused">Whether the call was refused before any write was sent.</param>
+		internal string? WarningFor(bool refused) =>
+			Warning is null || !refused
+				? Warning
+				: $"Argument '{Alias}' was read as '{Canonical}', but the call was refused (see error); "
+					+ $"use '{Canonical}' in future calls.";
+	}
 
 	/// <summary>Resolves synonyms of <paramref name="canonical"/> found in <paramref name="extensionData"/>.</summary>
 	/// <param name="extensionData">The args record's overflow bag.</param>
@@ -68,14 +86,14 @@ internal static class ODataWriteArgumentAliases {
 				+ $"Send the payload once, as '{canonical}'. Nothing was written.");
 		}
 		string alias = used[0];
+		string displayed = McpToolArgumentSupport.DescribeCallerKey(alias);
 		Dictionary<string, JsonElement> remaining = extensionData
 			.Where(pair => pair.Key != alias)
 			.ToDictionary(pair => pair.Key, pair => pair.Value);
 		return new Resolution(
 			extensionData[alias].Clone(),
 			remaining.Count == 0 ? null : remaining,
-			$"Argument '{McpToolArgumentSupport.DescribeCallerKey(alias)}' was accepted as '{canonical}'; "
-			+ $"use '{canonical}' in future calls.",
-			null);
+			$"Argument '{displayed}' was accepted as '{canonical}'; use '{canonical}' in future calls.",
+			null) { Alias = displayed, Canonical = canonical };
 	}
 }

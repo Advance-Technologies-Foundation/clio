@@ -165,4 +165,41 @@ public sealed class ODataWriteArgumentAliasesTests {
 		// Assert
 		response.Error.Should().Contain("Unknown args", because: "only the payload synonyms are accepted");
 	}
+	[Test]
+	[Category("Unit")]
+	[Description("An update whose synonym is read but whose call is then refused (unknown field) does not claim the synonym was accepted.")]
+	public void Update_Refused_After_Synonym_Should_Not_Say_Accepted() {
+		// Arrange
+		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
+		client.ExecuteGetRequest(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(Csdl);
+		ODataUpdateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+
+		// Act
+		ODataWriteResponse response = tool.Update(UpdateArgs("\"values\":{\"Bogus\":\"New\"}"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "Bogus is not a Contact field");
+		response.Warnings.Should().ContainSingle().Which.Should().NotContain("accepted",
+			because: "a refused call accepted nothing").And.Contain("refused", because: "the note says the call was refused")
+			.And.Contain("'data'", because: "the canonical name is still taught");
+		client.DidNotReceiveWithAnyArgs().ExecutePatchRequest(default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A create whose synonym is read but whose request is refused (unknown argument) does not claim the synonym was accepted.")]
+	public void Create_Refused_After_Synonym_Should_Not_Say_Accepted() {
+		// Arrange
+		(IApplicationClient client, IToolCommandResolver resolver) = Wire();
+		ODataCreateTool tool = new(resolver, new OperationCorrelationIdProvider(), NoFiles());
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(CreateArgs("\"payload\":{\"Name\":\"x\"},\"bogus\":1"));
+
+		// Assert
+		response.Error.Should().NotBeNull(because: "bogus is an unknown argument");
+		response.Warnings.Should().ContainSingle().Which.Should().NotContain("accepted",
+			because: "a refused call accepted nothing").And.Contain("'rows'", because: "the canonical name is still taught");
+		client.DidNotReceiveWithAnyArgs().ExecuteNonReplayablePostRequest(default, default, default, default, default);
+	}
 }

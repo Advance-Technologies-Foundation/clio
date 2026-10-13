@@ -155,7 +155,7 @@ public sealed class ODataCreateTool(
 			? ODataCreateBatchResponse.RequestError(payloadAlias.Error)
 			: CreateCore(args, cancellationToken);
 		return result with {
-			Warnings = payloadAlias.Warning is null ? null : [payloadAlias.Warning],
+			Warnings = payloadAlias.WarningFor(result.Error is not null) is { } warning ? [warning] : null,
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
