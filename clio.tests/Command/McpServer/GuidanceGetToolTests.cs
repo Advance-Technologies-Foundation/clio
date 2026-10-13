@@ -269,6 +269,8 @@ public sealed class GuidanceGetToolTests {
 			.ToArray();
 		_source.GetCatalog().Returns(catalog);
 		_source.GetNames().Returns(FixtureNames());
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
 	}
 
 	[TestCase("list")]
@@ -287,6 +289,9 @@ public sealed class GuidanceGetToolTests {
 			new KnowledgeGuidanceDescriptor("beta", "Beta title", "", "docs://b", "text/markdown")
 		]);
 
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
 		// Act
 		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs(name));
 
@@ -295,7 +300,77 @@ public sealed class GuidanceGetToolTests {
 		response.Catalog.Should().Be("alpha: Alpha purpose.\nbeta: Beta title",
 			because: "entries are deduplicated, sorted, and carry a one-line purpose");
 		response.Article.Should().BeNull(because: "the catalog is not an article");
-		_source.DidNotReceive().FindByName(Arg.Any<string>());
+	}
+
+	[TestCase("help")]
+	[TestCase("list")]
+	[TestCase("index")]
+	[TestCase("catalog")]
+	[Description("A published guide whose name is a catalog keyword is served as the article; the keyword falls back to the catalog only when no guide carries it.")]
+	public async Task GetGuidance_ShouldServeTheGuide_WhenAGuideIsPublishedUnderACatalogKeyword(string name) {
+		// Arrange
+		_source.GetNames().Returns([name, "alpha"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Alpha purpose.", "docs://a", "text/markdown")
+		]);
+		_source.FindByName(name).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle(name, "docs://mcp/guides/" + name, "Keyword-named guide.\n"),
+			1));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs(name));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the published guide resolves");
+		response.Article.Should().NotBeNull(because: "a guide named like a catalog keyword must stay reachable");
+		response.Article!.Name.Should().Be(name);
+		response.Catalog.Should().BeNull(because: "the guide wins over the catalog keyword");
+	}
+
+	[Test]
+	[Description("The catalog purpose is the first real sentence: an abbreviation such as 'e.g.' does not end it.")]
+	public async Task GetGuidance_ShouldKeepTheWholeFirstSentence_WhenThePurposeContainsAnAbbreviation() {
+		// Arrange
+		_source.GetNames().Returns(["alpha"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Guides pages, e.g. forms and lists. More detail.",
+				"docs://a", "text/markdown")
+		]);
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		response.Catalog.Should().Be("alpha: Guides pages, e.g. forms and lists.",
+			because: "the tool index's sentence rule skips 'e.g.' instead of cutting the purpose there");
+	}
+
+	[Test]
+	[Description("A purpose longer than the per-line limit is cut at a word boundary and never leaves a lone surrogate.")]
+	public async Task GetGuidance_ShouldCutAtAWordBoundaryWithoutSplittingASurrogatePair_WhenThePurposeIsLong() {
+		// Arrange
+		string longWord = new string('a', 108) + "\U0001F600" + "tail";
+		_source.GetNames().Returns(["alpha", "beta"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", longWord, "docs://a", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("beta", "Beta", string.Join(' ', Enumerable.Repeat("word", 40)),
+				"docs://b", "text/markdown")
+		]);
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		string[] lines = response.Catalog.Split('\n');
+		lines[0].Should().Be("alpha: " + new string('a', 108) + "…",
+			because: "the cut lands inside the surrogate pair, so the whole pair is dropped");
+		lines[0].Any(char.IsSurrogate).Should().BeFalse(because: "a lone surrogate is invalid UTF-16 in the reply");
+		lines[1].Should().EndWith("word…", because: "a multi-word purpose is cut after a whole word, not inside one");
 	}
 
 	[Test]
@@ -326,6 +401,8 @@ public sealed class GuidanceGetToolTests {
 		// Arrange
 		_source.GetNames().Returns(System.Array.Empty<string>());
 		_source.GetCatalog().Returns(System.Array.Empty<KnowledgeGuidanceDescriptor>());
+		_source.FindByName("list").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
 
 		// Act
 		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
@@ -336,7 +413,6 @@ public sealed class GuidanceGetToolTests {
 			because: "the caller must learn that no guidance is active");
 		response.Error.Should().NotContain("name=list",
 			because: "repeating the same call can never succeed");
-		_source.DidNotReceive().FindByName(Arg.Any<string>());
 	}
 
 	[Test]
@@ -538,7 +614,7 @@ public sealed class GuidanceGetToolTests {
 		response.Success.Should().BeFalse(
 			because: "an unknown guide is refused");
 		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
-			because: "the refusal and its list of available guides still reached the agent's context");
+			because: "the refusal and its closest-name suggestions still reached the agent's context");
 		served.GuidanceReads.Should().Be(0,
 			because: "a refusal served no article");
 		served.GuidanceBytes.Should().Be(McpResultBytes(response),

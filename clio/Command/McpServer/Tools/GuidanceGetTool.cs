@@ -108,9 +108,15 @@ internal sealed class GuidanceGetTool {
 		try {
 			KnowledgeFeedbackGuidancePolicy feedbackPolicy = CreateFeedbackPolicy();
 			(string? effectiveName, string? aliasHint) = ResolveEffectiveName(args);
-			bool catalogRequested = string.IsNullOrWhiteSpace(effectiveName)
-				|| CatalogKeywords.Contains(effectiveName.Trim());
-			if (catalogRequested) {
+			// A published guide wins over a catalog keyword: a library may publish a guide whose name is "list" or
+			// "index", and intercepting the keyword first would make that guide unreachable. The catalog is the
+			// fallback only when the keyword names no guide.
+			bool noName = string.IsNullOrWhiteSpace(effectiveName);
+			KnowledgeArticleLookup? lookup = noName ? null : _guidanceSource.FindByName(effectiveName!);
+			bool catalogRequested = noName
+				|| (CatalogKeywords.Contains(effectiveName!.Trim())
+					&& lookup?.Status is not (KnowledgeArticleLookupStatus.Active or KnowledgeArticleLookupStatus.Ambiguous));
+			if (catalogRequested || lookup is null) {
 				string? catalog = BuildCatalog();
 				if (catalog is not null) {
 					return new GuidanceGetResponse {
@@ -134,7 +140,6 @@ internal sealed class GuidanceGetTool {
 					Diagnostics = SensitiveErrorTextRedactor.RedactUntrustedOrNull(_activator.LastDiagnostic)
 				};
 			}
-			KnowledgeArticleLookup lookup = _guidanceSource.FindByName(effectiveName);
 			if (lookup.Status == KnowledgeArticleLookupStatus.Active) {
 				return new GuidanceGetResponse {
 					Success = true,
@@ -251,8 +256,7 @@ internal sealed class GuidanceGetTool {
 		if (limit == 0 || purpose.Length == 0) {
 			return name;
 		}
-		string shortPurpose = purpose.Length <= limit ? purpose : purpose[..(limit - 1)].TrimEnd() + "…";
-		return $"{name}: {shortPurpose}";
+		return $"{name}: {ToolContractCatalog.CutPurpose(purpose, limit)}";
 	}
 
 	private static string Purpose(KnowledgeGuidanceDescriptor descriptor) {
@@ -261,7 +265,8 @@ internal sealed class GuidanceGetTool {
 			return string.Empty;
 		}
 		text = string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
-		int end = text.IndexOf(". ", StringComparison.Ordinal);
+		// The tool index's sentence rule, so an abbreviation such as "e.g." does not end the purpose.
+		int end = ToolContractCatalog.FindSentenceEnd(text, 0);
 		return end > 0 ? text[..(end + 1)] : text;
 	}
 
@@ -292,21 +297,8 @@ internal sealed class GuidanceGetTool {
 		if (candidate.Contains(needle, StringComparison.Ordinal) || needle.Contains(candidate, StringComparison.Ordinal)) {
 			return 1;
 		}
-		int distance = EditDistance(needle, candidate);
+		int distance = McpToolArgumentSupport.LevenshteinDistance(needle, candidate);
 		return distance <= Math.Max(2, needle.Length / 3) ? distance + 1 : int.MaxValue;
-	}
-
-	private static int EditDistance(string a, string b) {
-		int[] prev = Enumerable.Range(0, b.Length + 1).ToArray();
-		for (int i = 1; i <= a.Length; i++) {
-			int[] cur = new int[b.Length + 1];
-			cur[0] = i;
-			for (int j = 1; j <= b.Length; j++) {
-				cur[j] = Math.Min(Math.Min(cur[j - 1], prev[j]) + 1, prev[j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
-			}
-			prev = cur;
-		}
-		return prev[b.Length];
 	}
 
 	private KnowledgeFeedbackGuidancePolicy CreateFeedbackPolicy() {
@@ -378,7 +370,10 @@ public sealed class GuidanceGetResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public GuidanceArticle? Article { get; init; }
 
-	/// <summary>One <c>name: purpose</c> line per guide, returned for name=list/index/catalog/help or no name.</summary>
+	/// <summary>
+	/// One <c>name: purpose</c> line per guide, returned for no name, or for name=list/index/catalog/help when no
+	/// published guide carries that name.
+	/// </summary>
 	[JsonPropertyName("catalog")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string? Catalog { get; init; }
