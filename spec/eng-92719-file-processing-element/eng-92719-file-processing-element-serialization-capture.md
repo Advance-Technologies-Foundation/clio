@@ -109,7 +109,7 @@ datable signal: an element that lacks `TargetDataEntitySchemaUId` was last saved
 basis=source.
 
 **Do not compare describe output.** `describe-business-process` hides inherited template defaults, empty link
-columns and nested-only bindings (`PB/Describe/ProcessDescriber.cs:188-199`), and it resolves a process by name to
+columns and nested-only bindings (`PB/Describe/ProcessDescriber.cs:208-219`), and it resolves a process by name to
 its base version (`CLIO/docs/knowledge/ProcessModel/describe-business-process-reads-the-base-version-not-the-active-one.md`).
 The capture is the stored metadata plus the stored resources, nothing else (section 12.2).
 

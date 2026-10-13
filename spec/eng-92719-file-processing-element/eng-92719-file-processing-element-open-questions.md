@@ -255,7 +255,7 @@ rebuild shapeless and save green (`PB/Parameters/ProcessParameterService.cs:31-3
 
 **Recommendation: A**, with C as the later Sub-task "Declared item shape for Collection process parameters". This is
 low stakes. **What changes:** the create/modify type lists (+30 B / +28 B), the describe predicate, one exception
-sentence in `KB/guidance/mcp/guides/processes/parameters.md:35-37`, and a PBT round-trip test.
+sentence in `KB/guidance/mcp/guides/processes/parameters.md:37-39`, and a PBT round-trip test.
 
 #### Q11. Default direction of a FileCollection (agreed 2026-10-07: Variable)
 
@@ -301,8 +301,8 @@ decisions D5 and the guide's binder section. P1 moves the `[RequiresPackage]` fl
 
 "Process file" is one palette entry backed by three schemas, and changing the source REPLACES the element (measured
 live: `getExcludedMenuItems()` = `["ReportFileProcessingUserTask","ProcessFileProcessingUserTask"]`, 2026-10-01).
-`source` already means an object NAME in four data blocks (`PB/Contracts/ProcessDescriptorContracts.cs:1018, 1044,
-1164, 1222`).
+`source` already means an object NAME in four data blocks (`PB/Contracts/ProcessDescriptorContracts.cs:1021, 1047,
+1167, 1225`).
 
 | Choice | Options | Recommendation |
 |---|---|---|
@@ -443,7 +443,7 @@ New text therefore goes to a NEW guide, born in KB-PT.
   `install-process-builder` refuses it unless a human passes its CLI-only override; the MCP path cannot
   (`CLIO/clio/Command/InstallBundledPackageCommand.cs:51-56, 277, 472`, basis=source). The cost: that human
   decision (it rolls the package back for everyone on the stand), a reinstall from a clio build that still bundles
-  1.6.6.54 (clio master bundles 1.6.6.85 since 2026-10-07, `CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:318`,
+  1.6.6.54 (clio master bundles 1.6.6.85 since 2026-10-07, `CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:316`,
   and refuses the process tools on a 1.6.6.54 stand), telling every verifier, the
   probe itself, then a reinstall of the current cut and a re-run of its instrument checks (pr-split section 14,
   stand protocol step 2) before any verification continues on that cut. Day 0 avoids all of it.
@@ -498,7 +498,7 @@ no business data, so M17-Q7 stays in the read-only count.
 | EV-6 | after | the source rows again, compared with EV-5: same `Name` and `Size`, new `Id`s, sources unchanged | EV-0's source query |
 | EV-7 | while parked, then after | the temporary process files of the instance (the instance column is confirmed against `SysProcessData` on the first run) | `SELECT Id, Name FROM SysProcessFile WHERE SysProcessId = '<instance Id>'` |
 | EV-8 | after | what an executed element produced, per instance: its parameter values, collections included (each file locator with `_entitySchemaName` and `_recordId`). Measured on M6 | `SELECT d.SchemaElementUId, d.Status, CONVERT(varchar(max), d.PropertiesData) FROM SysProcessElementData d WHERE d.SysProcessId = '<EV-2 Id>'` |
-| MD | after a save | the saved metadata: `clio pull-pkg Custom -e Creatio -d <scratch dir> -r`, then `Schemas/<probe>/metadata.json`, or the `SysSchema.MetaData` row through `execute-esq`. Describe is not used to check a nested-only binding, because it hides one (`PB/Describe/ProcessDescriber.cs:188-194`) | - |
+| MD | after a save | the saved metadata: `clio pull-pkg Custom -e Creatio -d <scratch dir> -r`, then `Schemas/<probe>/metadata.json`, or the `SysSchema.MetaData` row through `execute-esq`. Describe is not used to check a nested-only binding, because it hides one (`PB/Describe/ProcessDescriber.cs:208-214`) | - |
 
 Status values (`PS/CrtBase/branches/7.8.0/Data/SysProcessStatus`, basis=source): Running
 `ed2ae277-b6e2-df11-971b-001d60e938c6`, Completed `815c9586-b6e2-df11-971b-001d60e938c6`, Error
@@ -635,7 +635,7 @@ logs, so no business records are written.
 1. Callee `UsrFpM3Callee` (builder, `create-business-process`): an In Text parameter `Name` and a Variable Text
    parameter `Mark`. Start -> an exclusive gateway with a conditional flow "Name is empty",
    `string.IsNullOrEmpty([#Name#])` (on create a flow condition takes the parameter NAME,
-   `KB/guidance/mcp/guides/processes/formulas.md:41-43, 72-74`), to a Formula element captioned `M3 name empty`
+   `KB/guidance/mcp/guides/processes/formulas.md:45-47, 76-78`), to a Formula element captioned `M3 name empty`
    (`Mark` = `"empty"`). The default flow goes to a Formula element captioned `M3 name set` (`Mark` = `"set"`). Both
    continue to an end event.
 2. Probe `UsrFpM3MirrorProbe` (builder): Read data `RD1` on Contact in collection mode, column `Name`, 3 records,
@@ -661,7 +661,7 @@ refutes it: no MH, and contingency X4 applies. Any other iteration count is reco
 **M3b: baseline of an item-only multi-instance mapping.** Same callee. Probe `UsrFpM3ItemOnly` (builder, 1.6.6.54):
 `RD1` as in M3, sub-process `SP1` multi-instance, mapping ONLY `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name`
 (no outer mapping). Run, then count the callee instances with EV-4. Predicted: 1 (the guide passage measured this on
-1.6.6.22, `KB/guidance/mcp/guides/processes/sub-process.md:133-137`). After the PK-PT cut, the same request must
+1.6.6.22, `KB/guidance/mcp/guides/processes/sub-process.md:137-141`). After the PK-PT cut, the same request must
 give 3 (P1 binds the parent). **Settles** the version-gated sentences in `sub-process.md` and `sub-process-when.md`
 (D25), and gives PK-PT's stand proof its baseline (pr-split section 14).
 
@@ -730,7 +730,7 @@ The user then opens PF1's card: does "Files" display `File` (the builder's bare 
    this core (measured 2026-09-25 during ENG-92711 Script task element).
 3. Before the first run, confirm the nested-only shape with the UO method's read (B.0): on `CopyFile`,
    `Files.sourceValue.source` is 0 and `Files.itemProperties.first().sourceValue.source` is set (3, a mapping). Do not
-   use describe for this check; it hides nested-only bindings (`PB/Describe/ProcessDescriber.cs:188-194`).
+   use describe for this check; it hides nested-only bindings (`PB/Describe/ProcessDescriber.cs:208-214`).
 4. Run once. Evidence: EV-3 (`CopyFile` Completed), EV-5 on `G1 Probe Target`, EV-6.
 5. Piggyback: compare `Notes`, `Tag` and `CreatedById` of the copy with S (attribute inheritance through
    `CopyAttributes`, `CORE/Terrasoft.File/File.cs:174-180`).
@@ -799,7 +799,7 @@ under which code name. Without M25 the notice does not ship; nothing else depend
 | M19 | Builder on 1.6.6.54, on day 0 (B.0), `UsrFpM19CollectionFilter`: `RD1` Read data Contact, collection, 3 records -> `RD2` Read data Contact, first record, filter `Id = RD1.ResultCompositeObjectList`. **Use Read data as the consumer, never Modify or Delete data**: a mis-evaluated filter there would touch every record | EV-3: RD2's outcome and error | urgency of "Refuse collection parameters as filter values" |
 | M20 | Builder on 1.6.6.54, on day 0 (B.0; from OA's cut the block is known): `setElement {name: "RD1", caption: "M20", fileProcessing: {source: "attachments"}}` on M19's process | describe: the caption changed and no error. Check first that this clio forwards the unknown block to the package (`get-tool-contract`); if clio drops it, record that this measures the client | the D26 premise (silent drop, hence the floor raise) |
 | M22 | After every cut: the user opens the builder-made File / FileCollection parameters and Process file elements in the designer (including a dedicated-storage Object element, the H-G3-1 case, and a builder-written scope), closes them, then saves with no change | MD before and after: identical, apart from known designer normalisations | parity confidence; the H-G3-1 guide warning |
-| M24 | Builder on 1.6.6.54, on day 0 (B.0), on M19's process: (a) `setElement {name: "RD1", readData: {sort: [{column: "Name", direction: "asc"}]}}` (an array into the object member); (b) an object sent into the array member `readData.columns` (`string[]`, `PB/Contracts/ProcessDescriptorContracts.cs:1269-1270`; `sort` is an object, `:1294-1295`) | for each: a loud fault, a null sort, or something else; MD for what was stored | the `attachments.sort` guide sentence |
+| M24 | Builder on 1.6.6.54, on day 0 (B.0), on M19's process: (a) `setElement {name: "RD1", readData: {sort: [{column: "Name", direction: "asc"}]}}` (an array into the object member); (b) an object sent into the array member `readData.columns` (`string[]`, `PB/Contracts/ProcessDescriptorContracts.cs:1272-1273`; `sort` is an object, `:1297-1298`) | for each: a loud fault, a null sort, or something else; MD for what was stored | the `attachments.sort` guide sentence |
 | M26 | Designer-built by the user (it needs a File parameter until PT lands); the full method is under the banner of [traps](eng-92719-file-processing-element-traps.md) (T-19). `OF1` Object attachments of a disposable Contact with 2 uploaded attachments, "Save to object attachments" onto a disposable Account; then a multi-instance sub-process with `InputRecordCollection.Doc <- OF1.ObjectFiles.File` (the parent bound too) whose callee script task writes `Doc`'s `EntitySchemaName` and `RecordId` into the title of an Activity it adds | read-only reads of ContactFile, AccountFile and Activity after the run: the 2 titles carry `ContactFile` and the Ids of the source ContactFile rows, and the 2 new AccountFile Ids are not among them; cleanup of the activities, copies and fixtures through `execute-dataservice-batch` | the OA.12 guide sentence and the CL-OA knowledge record (T-19) |
 
 ### B.6 Proposed during research, not scheduled
@@ -947,7 +947,7 @@ the cell names the measurement that settles it, or says why none is scheduled.
 | # | Earlier claim (where) | Counter-evidence | Resolution | Basis | Open |
 |---|---|---|---|---|---|
 | 1 | "addParameter accepts the Binary / File data type" (Jira AC of PT) | the name `File` resolves to BLOB BA40CFC5 (`CORE/Terrasoft.Core/DataValueTypeManager.cs:341-349`); Binary B7342B7A has no flow-engine store (`CORE/Terrasoft.Core/Process/FlowEngineStateService.cs:139-148, 409-429`); 0 corpus parameters | one file = FileLocator A33C9252; friendly names map to it; Binary/BLOB stay refused (D1); AC rewritten (Q1) | source + corpus | no |
-| 2 | Binary-refusal tests "must be flipped in the rebundle PR" (delivery research) | Binary stays refused | `CLIO/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2360-2387` and `PBT/ProcessParameterServiceTests.cs:144-150` stay green; the `:1671-1678` probe moves to `Image` or `Color`, so it keeps testing the generic message (decisions X7, D1) | source | no |
+| 2 | Binary-refusal tests "must be flipped in the rebundle PR" (delivery research) | Binary stays refused | `CLIO/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2401-2428` and `PBT/ProcessParameterServiceTests.cs:144-150` stay green; the `:1673-1680` probe moves to `Image` or `Color`, so it keeps testing the generic message (decisions X7, D1) | source | no |
 | 3 | "CI would catch a broken Binary refusal" (a PR-split proposal) | the process-designer e2e category is excluded from TeamCity (`CLIO/clio.mcp.e2e/TestSelection/mcp-e2e-selection.json:46`, `baseFilter`) | the PBT pin is the only automated guard ([pr-split](eng-92719-file-processing-element-pr-split.md) section 3, row 7) | measured | no |
 | 4 | "An outer-only binding = a silent zero copy" (earlier refinement) | rows are rebuilt by target item names, and an unbound item is null; the Process variant dereferences it (`PD/ProcessFileProcessingUserTask/ProcessFileProcessingUserTask.cs:72-79`) | a NullReferenceException is predicted; the shape is refused anyway (F-P1) | source | yes: none scheduled (M5 skipped, the refusal covers it) |
 | 5 | "A nested-only `Files` binding is not read at all: the reader filters by the root's `GS5`" (builder-serialization research) | the provenance filter is only in the sub-process / iteration path (`CORE/Terrasoft.Core/Process/ProcessParameterValueProvider.cs:718-753`, callers `ProcessComponentSet.cs:1361-1366, 1518-1521`); an ordinary element reads all its parameters (`ProcessComponentSet.cs:502-540`) | nested-only = one row through `TryGetListValue` (`CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:444-453`) (decisions X1) | source | **yes (M1)** |
@@ -969,7 +969,7 @@ the cell names the measurement that settles it, or says why none is scheduled.
 |---|---|---|---|---|---|
 | 17 | UO-1: only "Use in process" is offered for `Account address` (the user's screenshot) | with the field text selected, both options are listed | a combobox text-filter artefact (C.4) | measured | no |
 | 18 | "Add files" on the Process-variant page creates a COMPOSITE_OBJECT_LIST IN parameter (stand research) | the page binds the nested `Files.File` of the schema's own `Files` input (`PD/ProcessFileProcessingUserTaskPropertiesPage/ProcessFileProcessingUserTaskPropertiesPage.js:44-57, 73-79`); the dynamic slots belong to Send email and the Creatio.ai call | decisions X6 | source | no |
-| 19 | Describe "shows no item structure for out collections" and "lists only the parameters persisted in the element" (stand research) | the stale session clio stripped `itemProperties`; describe filters by provenance, a root value set in this schema (`PB/Describe/ProcessDescriber.cs:188-194`), and is converged only for metadata instances | describe is read with a current clio; PT lists nested-only bindings (D8) | measured + source | **yes (M13**, for the snapshot question) |
+| 19 | Describe "shows no item structure for out collections" and "lists only the parameters persisted in the element" (stand research) | the stale session clio stripped `itemProperties`; describe filters by provenance, a root value set in this schema (`PB/Describe/ProcessDescriber.cs:208-214`), and is converged only for metadata instances | describe is read with a current clio; PT lists nested-only bindings (D8) | measured + source | **yes (M13**, for the snapshot question) |
 | 20 | "The designer is unreachable: login required" (stand research) | later passes read the designer in an already logged-in tab (UO-2..UO-4; the feature reads of C.2) | the block applied to a fresh agent tab only; nobody types credentials for an agent | measured | no |
 | 21 | A describe capture cited with correlation `9e931c583c33` (builder research) | the file carries `1ba2aef74dce`; the re-measure gave `16307feb8a4d`, same content | citation corrected (C.3) | measured | no |
 | 22 | "Support reported an empty collection with SysFile attachments" (Academy research) | the asker reported it; support acknowledged it and gave a `SourceDataEntitySchemaUId` workaround; an August 2026 comment asks whether it was fixed (https://community.creatio.com/questions/process-file-business-process-element-not-working-sysfile) | relevant to M8, not evidence of current behaviour | documentation | **yes (M8)** |
@@ -991,7 +991,7 @@ the cell names the measurement that settles it, or says why none is scheduled.
 | 28 | `linkColumn: "none"` with a warning (storage research) | row 8 | not offered in v1 (Q17) |
 | 29 | A retarget keeps a filter whose root name matches (`DataSourceFilterValue.ClearIfForeign`) (decisions, first draft) | in SysFile mode the root is SysFile for every object, so a foreign `RecordId` scope survives | any storage-pair change clears filter, scope and sort (decisions review A1, D12) |
 | 30 | "Read-only members are accepted only when equal" (decisions, first draft) | captions, issues and repaired states legitimately differ, so correct resubmissions would be refused | two kinds: identity CHECK vs describe-only (decisions review B2) |
-| 31 | Two shipped guide passages: an item-only multi-instance mapping "runs ONE iteration" (`KB/guidance/mcp/guides/processes/sub-process.md:133-137`, measured on 1.6.6.22; `sub-process-when.md:49-51`) | P1 changes that behaviour from PT's cut | both rewritten with a version gate in KB-PT; M3b gives the baseline (decisions review B13) |
+| 31 | Two shipped guide passages: an item-only multi-instance mapping "runs ONE iteration" (`KB/guidance/mcp/guides/processes/sub-process.md:137-141`, measured on 1.6.6.22; `sub-process-when.md:50-52`) | P1 changes that behaviour from PT's cut | both rewritten with a version gate in KB-PT; M3b gives the baseline (decisions review B13) |
 | 32 | H-1 fixed inside PT (decisions D9, first version) | a shipped defect, small, revertible on its own (pr-split O2) | Sub-task MH first, if M3 confirms (Q7). M3 refuted H-1 on 2026-10-02: MH not created; binding the items is one parity commit in PK-PT (X4) |
 | 33 | SysFile conditional inside OA (decisions D15 and D27, first version) | five pre-code measurements, three of them user-built, and no runtime evidence (pr-split O1) | Sub-task SF (Q3) |
 | 34 | Fixed versions 1.6.6.55 / .56 / .57 (decisions D26, first version), and "floor = the first cut" (a review proposal) | collisions under one number happened twice; a review round can add a write member after the first cut | numbers are claimed per cut, and the floor is the FINAL cut of each clio PR ([pr-split](eng-92719-file-processing-element-pr-split.md) section 3 row 3, section 9.1) |
@@ -1003,7 +1003,7 @@ Smaller corrections that changed no decision:
 - A tool-description `name=` IS checked against the curated fixture
   (`CLIO/clio.tests/Command/McpServer/WorkspaceTemplateGuidanceDriftTests.cs:537-594`, decisions X2).
 - The floor sentence must keep `this clio requires <X>`
-  (`CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:1503-1560`, decisions X3).
+  (`CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:1473-1530`, decisions X3).
 - Merge tails are 30-71 minutes, not 10-45 (delivery research, re-measured over the merged PR triples).
 - ClioRing dispatches any non-destructive catalog tool by name through clio-run with only an `environment` argument,
   and shows each tool's Purpose (`clio-ring/ClioRing/ViewModels/ClioIpcViewModel.cs:144-157`,

@@ -253,7 +253,7 @@ The full reuse-versus-mirror map for the builder is in [reuse](eng-92719-file-pr
 - **Every element parameter is read before `InternalExecute` runs.** The read loop has no `HasValue` gate
   (`CORE/Terrasoft.Core/Process/ProcessFlowElement.cs:577-590`). A process saved with `IsInterpretable = true` runs in
   flow-engine mode (`CORE/Terrasoft.Core/Process/ProcessComponentSet.cs:139`), and CrtProcessBuilder saves processes
-  that way (`PB/Design/ProcessBuildHandler.cs:401`).
+  that way (`PB/Design/ProcessBuildHandler.cs:440`).
 - **Rights.** Reads use the running user's rights: `UseAdminRights = false` (`PD/FileProcessing/FileProcessing.cs:145`;
   `GEN/ReportEngine.Reports.cs:166-168`). Writes go through a factory `WithRightsDisabled()`
   (`FileProcessing.cs:157`; `ProcessFileProcessingUserTask.cs:27-30`; `ReportFileProcessingUserTask.cs:44-47`). Net
@@ -911,7 +911,7 @@ the stand (PrintInvoiceReport, read-only JS): the adapter emits `type: "userTask
 
 CrtProcessBuilder's generic `{type: "userTask", userTaskName: "<schema>"}` route already writes `ManagerItemUId =
 SchemaUId` whenever the schema has a `SysProcessUserTask` row, which all three have, plus the 69x55 size and the lane
-(`PB/Elements/UserTaskElementHandler.cs:67`, `:74-90`, `:329-339`; `PB/Elements/ProcessElementFactory.cs:114-125`). It
+(`PB/Elements/UserTaskElementHandler.cs:73`, `:80-98`, `:401-411`; `PB/Elements/ProcessElementFactory.cs:114-125`). It
 writes no configuration. Today describe returns these elements as a generic `usertask` (`userTaskName`,
 `managerItemUId`, every typed block null) with only the parameters persisted in the element: template defaults that
 were never written are invisible, and `ReportId` and `TargetEntitySchemaUId` come back as bare GUIDs (measured

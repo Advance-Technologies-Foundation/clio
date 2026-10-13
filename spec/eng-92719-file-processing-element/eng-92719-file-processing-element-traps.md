@@ -232,8 +232,8 @@ M-G6-4), [T-43](#t-43).
   0 process or user-task parameters of type Binary or File (BLOB); 50 FileLocator `L1` occurrences in 21 files.
 - **Neutraliser.** D1, refusal F-T1: "Parameter type 'Binary' is not supported: a process parameter carries a file by
   reference, not its bytes. Use type File (one file) or FileCollection (several files)." It keeps the two substrings
-  "not supported" and "Binary" that `clio/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2360-2387` asserts. The
-  PBT pins `PBT/ProcessParameterServiceTests.cs:144-150, 1671-1678` are the only guard CI actually runs, so they stay
+  "not supported" and "Binary" that `clio/clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs:2401-2428` asserts. The
+  PBT pins `PBT/ProcessParameterServiceTests.cs:144-150, 1673-1680` are the only guard CI actually runs, so they stay
   and gain the "names File" assertion. Guidance never says "Binary".
 
 ### T-3
@@ -247,13 +247,13 @@ M-G6-4), [T-43](#t-43).
   breaks a replayed mapping that names the old item.
 - **Silent or loud.** Silent for the shapeless rebuild; the replayed item name is loud ("not found").
 - **Basis / evidence.** source: `PB/Parameters/ProcessParameterService.cs:31-33` (alias), `:456-475` (mirror refusal);
-  `PB/Contracts/ProcessDescriptorContracts.cs:1977-2052`; `KB/guidance/mcp/guides/processes/parameters.md:35-37`.
+  `PB/Contracts/ProcessDescriptorContracts.cs:1980-2055`; `KB/guidance/mcp/guides/processes/parameters.md:37-39`.
   measured (corpus): 0 of 133 process-level collections carry a Tag; the two shipped file collections are
   `PS/ProcessTests/.../FileParameterProcess` and `PS/ProcessLibrary/.../MarkProcessesToCancel`.
 - **Neutraliser.** D2: `type: FileCollection` adds exactly one item `File` (FileLocator, Variable, no Tag,
   `ContainerUId = schema.UId`); describe reports `type: "FileCollection"` for a process-level collection with no Tag
   and exactly one FileLocator item, with `itemProperties` kept for information. F-T6 (mirror of a file output points to
-  FileCollection) and F-T7 (a replayed item name that the rebuild changed, items listed). `parameters.md:35-37` and
+  FileCollection) and F-T7 (a replayed item name that the rebuild changed, items listed). `parameters.md:37-39` and
   `CollectionParameterGuidanceTests` amended in the PT knowledge PR. PBT round trip build -> describe -> build.
 
 ### T-4
@@ -398,8 +398,8 @@ M-G6-4), [T-43](#t-43).
   changes it: from the PT cut, a per-item value taken from an item of a collection also binds the collection.
 - **Silent or loud.** Silent: the build succeeds and nothing warns.
 - **Basis / evidence.** source (`CORE/Terrasoft.Core/Process/BaseFlowSchemaGenerator.cs:466-490`, `FillHasCollectionWithOneElement`); the guides record a
-  measurement on CrtProcessBuilder 1.6.6.22: `KB/guidance/mcp/guides/processes/sub-process.md:133-137`,
-  `KB/guidance/mcp/guides/processes/sub-process-when.md:49-51`.
+  measurement on CrtProcessBuilder 1.6.6.22: `KB/guidance/mcp/guides/processes/sub-process.md:137-141`,
+  `KB/guidance/mcp/guides/processes/sub-process-when.md:50-52`.
 - **Neutraliser.** D5 P1, including `InputRecordCollection.<F>`; both guide passages rewritten in the PT knowledge PR
   with a version gate (the "send both" advice stays, it is right on older servers), and pinned. Stand proof on the PT
   cut: 3 iterations over 3 contacts, against 1 on the 1.6.6.54 baseline ([pr-split](eng-92719-file-processing-element-pr-split.md)).
@@ -674,7 +674,7 @@ M-G6-4), [T-43](#t-43).
 - **Silent or loud.** Silent.
 - **Basis / evidence.** source: `PB/Filters/DataNodeFilterTarget.cs:57-91`; `PB/Operations/DataSourceFilterValue.cs:16-18`;
   `PB/Contracts/FilterContracts.cs:108-165`, `PB/Filters/MacrosCatalog.cs:67`; `PB/Filters/FilterExpressionReference.cs:74-92`;
-  `PB/Contracts/ProcessDescriptorContracts.cs:925-972`. The SysFile scope shape the designer writes is not captured (M7).
+  `PB/Contracts/ProcessDescriptorContracts.cs:928-975`. The SysFile scope shape the designer writes is not captured (M7).
 - **Neutraliser.** D16: the record scope moves into the block (`attachments.recordId`, `report.recordId`) with the one
   value-source contract; `FileProcessingScopeFilter` owns `Split` / `Join`; `FileProcessingFilterTarget` (priority 50)
   refuses a `filter.object` other than the runtime root (V1), a filter on an unconfigured element (V2), a scope of the
@@ -889,7 +889,7 @@ M-G6-4), [T-43](#t-43).
   required-parameter rule) and throws at run time on `GetInstanceByUId(Guid.Empty)`. `list-user-tasks` lists all three
   schemas with "pass this as userTaskName on a userTask element".
 - **Silent or loud.** Silent at save, loud at run time.
-- **Basis / evidence.** source: `PB/Elements/UserTaskElementHandler.cs:74-90`; `PD/ObjectFileProcessingUserTask/ObjectFileProcessingUserTask.cs:94-112`;
+- **Basis / evidence.** source: `PB/Elements/UserTaskElementHandler.cs:80-98`; `PD/ObjectFileProcessingUserTask/ObjectFileProcessingUserTask.cs:94-112`;
   `PB/Catalog/UserTaskCatalog.cs:17-46`; `PB/Contracts/ListUserTasksContracts.cs:43`.
 - **Neutraliser.** D13, F-E1, per cut: OA refuses the generic route for the Object schema, keyed on the RESOLVED schema
   UId right after `FindInstanceByName` (covers case, whitespace and the `performTask` alias); RP refuses it for the
@@ -920,7 +920,7 @@ M-G6-4), [T-43](#t-43).
 - **Silent or loud.** Silent.
 - **Basis / evidence.** source: `PB/Contracts/VersionContracts.cs:22-26`; `PB/Elements/ProcessElementFactory.cs:57-66`
   (unknown type refused), `:87-97` (tolerated `approval` route), `:100-113` (strict gates). measured precedent:
-  `clio/clio.mcp.e2e/SubProcessElementToolE2ETests.cs:366` (the factory-gated case). M20 measured the `setElement` case
+  `clio/clio.mcp.e2e/SubProcessElementToolE2ETests.cs:411` (the factory-gated case). M20 measured the `setElement` case
   on 1.6.6.54 (2026-10-02: dropped silently). It still holds on 1.6.6.85: no commit since touched unknown-key handling,
   and the strict-keys work of SK is unmerged.
 - **Neutraliser.** D10: a new TYPE token (`fileProcessing`, alias `processFile`), so an older package refuses it; a
@@ -935,7 +935,7 @@ M-G6-4), [T-43](#t-43).
   after `UserTaskElementHandler` never runs.
 - **Silent or loud.** Loud (a validator Error; a composition tripwire test).
 - **Basis / evidence.** source and measured: `clio/clio/Command/ProcessModel/Schema.cs:1140-1149`;
-  `PB/Elements/ProcessElementFactory.cs:132-133`; `PBA:124-150`; tripwire `PBT/CrtProcessBuilderAppTests.cs:139-199`.
+  `PB/Elements/ProcessElementFactory.cs:132-133`; `PBA:126-152`; tripwire `PBT/CrtProcessBuilderAppTests.cs:139-199`.
 - **Neutraliser.** D10: `"fileprocessing"` and `"processfile"` join the explicit `EventType.UserTask` arm in the PT clio
   PR (one release before any package emits the token), with `[TestCase]`s in `ManagerMapResolveDataIdTests`; the
   handler is registered before `UserTaskElementHandler` and the tripwire is updated.
@@ -957,7 +957,7 @@ M-G6-4), [T-43](#t-43).
   `PB/Schema/ProcessSchemaRepository.cs:239-240, 265-310`. measured (corpus scan, 2026-10-01): the counts above. Not
   measured: M13 (is describe of PrintContractsReport converged?).
 - **Neutraliser.** D20 / D19: the binder works only on the `GetDesignInstance` instance; a missing template parameter is
-  refused ("the element's user-task parameters are not synchronized", the `ChangeDataConfigBinder.cs:967-976`
+  refused ("the element's user-task parameters are not synchronized", the `ChangeDataConfigBinder.cs:975-984`
   precedent); values are encoded by the TEMPLATE's type; the describe reader tolerates absent parameters and reads a
   Lookup-typed `ConnectedObjectId` like a Guid, with no "out of sync" signal.
 
@@ -995,7 +995,7 @@ M-G6-4), [T-43](#t-43).
   with all its parameters, so the runtime does read it; only a sub-process start and the multi-instance count filter by
   provenance.)
 - **Silent or loud.** Silent.
-- **Basis / evidence.** source: `PB/Describe/ProcessDescriber.cs:188-194`; `CORE/Terrasoft.Core/Process/ProcessComponentSet.cs:502-540`;
+- **Basis / evidence.** source: `PB/Describe/ProcessDescriber.cs:208-214`; `CORE/Terrasoft.Core/Process/ProcessComponentSet.cs:502-540`;
   `CORE/Terrasoft.Core/Process/ProcessParameterValueProvider.cs:718-753`.
 - **Neutraliser.** D20: every value the caller chose or the binder derived is a NEW `ProcessSchemaParameterValue`, with
   `Source` set before `Value` and `ModifiedInSchemaUId = schema.UId`; template defaults are exact copies (T-51).
@@ -1034,7 +1034,7 @@ M-G6-4), [T-43](#t-43).
   projects item properties only under a listed root. `Files` is Direction In, so a correct nested-only binding
   (`Files.File <- $File`, T-11) is invisible and the element looks unbound. An agent then "fixes" it.
 - **Silent or loud.** Silent.
-- **Basis / evidence.** source: `PB/Describe/ProcessDescriber.cs:188-194`; `PB/Parameters/ProcessParameterService.cs:152-154`;
+- **Basis / evidence.** source: `PB/Describe/ProcessDescriber.cs:208-214`; `PB/Parameters/ProcessParameterService.cs:152-154`;
   `PD/ProcessFileProcessingUserTask/metadata.json` (`Files` L12 = 0).
 - **Neutraliser.** D8: describe also lists a parameter when ANY nested item carries a value stamped with this schema;
   D19: the block reports `files` and `bindingLevels` (`both | itemOnly | outerOnly | none`); FB-14. PBT: a `Files` input
@@ -1061,7 +1061,7 @@ M-G6-4), [T-43](#t-43).
   `[#OF1.ObjectFiles#]`, comes back as a `value` formula. Replayed, it becomes an `expression`, which bypasses the
   structured checks (P1, R-M1, R-M2).
 - **Silent or loud.** Silent.
-- **Basis / evidence.** source: `PB/Contracts/DescribeContracts.cs:1467-1482` ("Null for every other value").
+- **Basis / evidence.** source: `PB/Contracts/DescribeContracts.cs:1502-1517` ("Null for every other value").
 - **Neutraliser.** D8 (in PT): a stored Script that is exactly one element-parameter token is also reported as
   `sourceElement` + `sourceElementParameter` (dotted for a nested item), `value` kept; D5: an `expression` source goes
   through as given (only the package's meta-path check runs, since 1.6.6.79) and never auto-binds, resets or pairs, so
@@ -1074,8 +1074,8 @@ M-G6-4), [T-43](#t-43).
   `[JsonExtensionData]` bag, so a new filter member a package reports is dropped by every clio that does not declare it.
   `DescribedElement` does carry one, so an undeclared element block survives.
 - **Silent or loud.** Silent.
-- **Basis / evidence.** source: `clio/clio/Command/ProcessModel/IProcessDescriber.cs:730-736` (the element bag),
-  `:1621-1643` (filter DTOs); `clio/docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md`.
+- **Basis / evidence.** source: `clio/clio/Command/ProcessModel/IProcessDescriber.cs:823-829` (the element bag),
+  `:1724-1746` (filter DTOs); `clio/docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md`.
 - **Neutraliser.** D16: the record scope lives in the block, not in `FilterDescriptor`, so the filter DTOs are untouched;
   D19: every nested type of clio's `DescribedFileProcessing` gets its own bag, a `ServerProcessDescriberTests` case
   round-trips an unknown member at every level, and the knowledge record is updated in the same clio PR.
@@ -1088,7 +1088,7 @@ M-G6-4), [T-43](#t-43).
   once SK (strict descriptor keys) lands they are refused as unknown keys.
 - **Silent or loud.** Silent today, loud later.
 - **Basis / evidence.** source: `PB/Contracts/VersionContracts.cs:22-26`; the existing blocks never declare describe-only
-  fields on the write contract (`PB/Contracts/DescribeContracts.cs:390-511, 948-1035`).
+  fields on the write contract (`PB/Contracts/DescribeContracts.cs:425-546, 983-1070`).
 - **Neutraliser.** D11: two kinds of read-only member. Identity CHECK members (`source`, `storage`, `fileObject`,
   `attachments.linkColumn`, `report.object`, `report.type`) are on the write contract, accepted when equal and refused
   with the derived value otherwise (F-E8). Describe-only members are not on the write contract; the guide says "remove
@@ -1106,7 +1106,7 @@ M-G6-4), [T-43](#t-43).
   also drops arguments it does not know without a word.
 - **Silent or loud.** Silent.
 - **Basis / evidence.** measured (2026-10-01): describe of PrintQuotationReport, correlation-id 16307feb8a4d, against
-  `PB/Contracts/DescribeContracts.cs:1430-1431, 1441-1442, 1500-1501` and `clio/clio/Command/ProcessModel/IProcessDescriber.cs:1941, 1951, 2031`.
+  `PB/Contracts/DescribeContracts.cs:1465-1466, 1476-1477, 1535-1536` and `clio/clio/Command/ProcessModel/IProcessDescriber.cs:2034, 2044, 2124`.
 - **Neutraliser.** Verification protocol ([pr-split](eng-92719-file-processing-element-pr-split.md)): before trusting a
   live call, check `get-tool-contract` shows the new vocabulary; drive the PR's own clio build over stdio for
   measurements; the e2e suite runs on the built clio.
@@ -1173,7 +1173,7 @@ M-G6-4), [T-43](#t-43).
   have; the parameter sync on `SchemaUId` needs the real platform. A green suite proves the metadata shape only.
 - **Silent or loud.** Silent.
 - **Basis / evidence.** source: `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:16`;
-  `PBT/UserTaskElementHandlerCreateTests.cs:118-125`.
+  `PBT/UserTaskElementHandlerCreateTests.cs:130-137`.
 - **Neutraliser.** D28: tests pin the metadata (GS1/GS2 at both levels, nested UId references, the target block) and
   mirror the configuration constants (`ResultActionType` 0/1, row keys `File` / `ObjectFile` / `Id`,
   `FileConsts.FileTypeUId`); runtime claims go to the stand runs in the banner. Platform tests in `UT` are a reference only.
