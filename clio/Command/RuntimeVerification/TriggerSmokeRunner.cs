@@ -374,16 +374,14 @@ internal sealed class TriggerSmokeRunner(
 			.Where(record => record.Id is not null && string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase))
 			.ToList();
 		Dictionary<string, HashSet<string>> pointsAt = ReadLookupValues(candidates, stopAt, result);
-		bool grew = true;
-		while (grew) {
-			grew = false;
-			List<string> linked = candidates
+		List<string> linked;
+		do {
+			linked = candidates
 				.Select(record => record.Id)
 				.Where(id => !ours.Contains(id) && pointsAt.TryGetValue(id, out HashSet<string> values) && values.Overlaps(ours))
 				.ToList();
 			ours.UnionWith(linked);
-			grew = linked.Count > 0;
-		}
+		} while (linked.Count > 0);
 		return ours;
 	}
 
