@@ -13,7 +13,11 @@ date: 2026-10-12
 per tool, `name (R)(D) [aka old-name]: purpose`, the purpose cut to 48 characters. The object form
 (`name`, `purpose`, `contract-available`, `resident`, `destructive`, `aliases`) is still served, under the
 same `index` key and in the same shape as before, but only for `detail=index-entries`. ClioRing sends only
-that request; the e2e helpers `GetToolContractIndexAsync` / `ListReachableToolNamesAsync` ask for it too. A
+that request; the e2e helpers `GetToolContractIndexAsync` / `ListReachableToolNamesAsync` ask for it too.
+Outside this repository, the `clio-mcp-regression` skill in `engineering/caadt-metarepo` on creatio.ghe.com
+(`.claude/skills/clio-mcp-regression/scripts/mcp_dump.py`) calls the tool with `{}` and fails closed with
+"index reply has no index array" when `index` is not a list; it needs the same `detail=index-entries`
+argument (checked 2026-10-13). A
 clio from before the change ignores the unknown detail value (its no-names branch returns the object index for
 any detail other than `full`) and returns the objects, so one request covers both generations.
 

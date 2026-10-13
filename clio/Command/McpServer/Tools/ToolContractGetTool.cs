@@ -1026,7 +1026,7 @@ internal static class ToolContractCatalog {
 	];
 
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
-	private const int MaxPurposeLength = 120;
+	internal const int MaxPurposeLength = 120;
 
 	/// <summary>
 	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
@@ -1199,7 +1199,8 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Cuts <paramref name="purpose"/> to <see cref="MaxToolIndexPurposeLength"/> characters, ellipsis included, at
-	/// the last word boundary that leaves room for the ellipsis; a single word longer than that is cut inside it.
+	/// the last word boundary that leaves room for the ellipsis; a single word longer than that is cut inside it,
+	/// before a surrogate pair rather than between its halves, so the cut never splits a pair.
 	/// </summary>
 	/// <param name="purpose">The one-line purpose of an index entry.</param>
 	internal static string CutToolIndexPurpose(string purpose) {
@@ -1207,8 +1208,11 @@ internal static class ToolContractCatalog {
 			return purpose;
 		}
 		int space = purpose.LastIndexOf(' ', MaxToolIndexPurposeLength - 1);
-		string head = space > 0 ? purpose[..space] : purpose[..(MaxToolIndexPurposeLength - 1)];
-		return head.TrimEnd(',', ';', ':', '-', '(', '—', '–', ' ') + "…";
+		int end = space > 0 ? space : MaxToolIndexPurposeLength - 1;
+		if (char.IsHighSurrogate(purpose[end - 1])) {
+			end--;
+		}
+		return purpose[..end].TrimEnd(',', ';', ':', '-', '(', '—', '–', ' ') + "…";
 	}
 
 	/// <summary>
@@ -1420,7 +1424,7 @@ internal static class ToolContractCatalog {
 	/// Distills the one-line purpose the compact index shows for a tool: collapses inner whitespace,
 	/// takes the first sentence (a period followed by whitespace or the end of the text, skipping the
 	/// <see cref="SentenceSafeAbbreviations"/>), and truncates to <see cref="MaxPurposeLength"/>
-	/// characters with an ellipsis so the index stays compact.
+	/// characters with an ellipsis so the index stays compact, never between the halves of a surrogate pair.
 	/// </summary>
 	/// <remarks>
 	/// <c>internal</c> rather than <c>private</c> so the distillation can be driven directly from tests.
@@ -1442,7 +1446,11 @@ internal static class ToolContractCatalog {
 		if (firstSentence.Length <= MaxPurposeLength) {
 			return firstSentence;
 		}
-		return firstSentence[..(MaxPurposeLength - 1)].TrimEnd() + "…";
+		int end = MaxPurposeLength - 1;
+		if (char.IsHighSurrogate(firstSentence[end - 1])) {
+			end--;
+		}
+		return firstSentence[..end].TrimEnd() + "…";
 	}
 
 	/// <summary>

@@ -1048,6 +1048,24 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A purpose with no word boundary whose cut would fall between the two halves of a surrogate pair is cut before the pair, so the tool-index line never carries a lone surrogate.")]
+	public void CutToolIndexPurpose_ShouldNotSplitASurrogatePair_WhenTheCutFallsInsideIt() {
+		// Arrange
+		string prefix = new('a', ToolContractCatalog.MaxToolIndexPurposeLength - 2);
+		string purpose = prefix + "\U0001F600" + "tail";
+
+		// Act
+		string cut = ToolContractCatalog.CutToolIndexPurpose(purpose);
+
+		// Assert
+		cut.Should().Be(prefix + "…",
+			because: "the high surrogate sits on the last kept position and its low half on the first dropped one, so the whole pair is dropped");
+		cut.Any(char.IsSurrogate).Should().BeFalse(
+			because: "a lone surrogate is not valid UTF-16 and turns into a replacement character or an encoder error on the wire");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The legend explains the line format and both markers, and keeps the 'resident=true' wording the core-rules guidance (mirrored verbatim in another repository) relies on.")]
 	public void ToolContractGet_Should_Explain_The_Line_Markers_In_The_Legend() {
 		// Arrange
@@ -4503,6 +4521,24 @@ public sealed class ToolContractGetToolTests {
 		// Assert
 		purpose.Should().Be(expectedPurpose,
 			because: "skipping an abbreviation must RESUME the scan, not abandon it - abandoning silently degrades every purpose to a 120-character truncation of the whole description, which reads as the same truncated thought the skip exists to prevent");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A first sentence longer than the purpose cap whose hard cut would fall between the two halves of a surrogate pair is cut before the pair, so the detail=index-entries purpose never carries a lone surrogate.")]
+	public void BuildPurpose_ShouldNotSplitASurrogatePair_WhenTheCapFallsInsideIt() {
+		// Arrange
+		string prefix = new('a', ToolContractCatalog.MaxPurposeLength - 2);
+		string description = prefix + "\U0001F600" + "tail.";
+
+		// Act
+		string purpose = ToolContractCatalog.BuildPurpose(description);
+
+		// Assert
+		purpose.Should().Be(prefix + "…",
+			because: "the high surrogate sits on the last kept position and its low half on the first dropped one, so the whole pair is dropped");
+		purpose.Any(char.IsSurrogate).Should().BeFalse(
+			because: "a lone surrogate is not valid UTF-16 and turns into a replacement character or an encoder error on the wire");
 	}
 
 	[Test]
