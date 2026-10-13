@@ -38,8 +38,11 @@ public sealed class InstallDashboardsMigratorTool(
 	/// <summary>
 	/// Installs (or updates) the bundled dashboards-migrator package into a registered Creatio environment.
 	/// </summary>
+	// Idempotent = false (ENG-102116 review): every run that installs is another configuration build and site
+	// restart for every user, which MCP's idempotentHint ("a repeated call has no additional effect") would let a
+	// host repeat unasked. Same reasoning and value as install-process-builder.
 	[McpServerTool(Name = InstallDashboardsMigratorToolName, ReadOnly = false, Destructive = true,
-		Idempotent = true, OpenWorld = false)]
+		Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.Sticky,
@@ -57,7 +60,13 @@ public sealed class InstallDashboardsMigratorTool(
 	             Run this when a Creatio environment still has Classic dashboards that must be moved to Freedom
 	             UI and `list-packages` does not show CrtDashboardsMigratorApp, or shows an older version than
 	             `get-info` reports for this clio. There is no gated tool that refuses and sends you here; the
-	             need comes from the user's task. Confirm the target environment with the user first.
+	             need comes from the user's task.
+
+	             ASK THE USER BEFORE EVERY CALL: the install builds the environment's configuration and restarts
+	             the site for every connected user. Warn them, name the environment, and ask whether to install
+	             now or postpone; if they postpone, do not call it - they can run
+	             `clio install-dashboards-migrator -e <ENV>` themselves later. An approval given earlier in the
+	             session is not approval for this call.
 
 	             The package ships prebuilt - its assembly is included for both .NET Framework and .NET, so
 	             the target does not compile it - but the install still runs the platform's configuration
@@ -76,8 +85,8 @@ public sealed class InstallDashboardsMigratorTool(
 	             The package requires Creatio 8.3.1 or later. This is not checked up front: an older instance
 	             accepts the archive and fails the configuration build, which the outcome check then reports.
 
-	             It always installs except in two cases, and re-running is otherwise safe (it costs one
-	             configuration build on the target). Both exceptions exist to stop an environment moving
+	             It always installs except in two cases, and re-running does nothing worse than another
+	             configuration build and restart, which needs its own approval. Both exceptions exist to stop an environment moving
 	             BACKWARDS, both report exit code 1, and neither is retryable. The override is the same for
 	             both and is deliberately NOT available to you - it is a command-line flag a human runs after
 	             deciding the rollback is what they want. Do not reach for a shell to get around either one.
