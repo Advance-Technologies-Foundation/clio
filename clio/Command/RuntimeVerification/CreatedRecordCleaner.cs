@@ -43,12 +43,7 @@ internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient,
 		for (int pass = 0; pass < MaxPasses && pending.Count > 0; pass++) {
 			List<CreatedRecord> refused = [];
 			foreach (CreatedRecord record in pending) {
-				int budget = stopAt is null
-					? timeoutMs
-					: (int)Math.Min(timeoutMs, (stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds);
-				string error = stopAt is not null && budget < MinimumDeleteMs
-					? "not attempted: the response deadline was reached"
-					: DeleteOne(record, budget);
+				string error = DeleteBeforeStop(record, timeoutMs, stopAt);
 				if (error is null) {
 					report.Deleted.Add(record);
 				}
@@ -94,6 +89,17 @@ internal sealed class CreatedRecordCleaner(IApplicationClient applicationClient,
 		return ordered.SelectMany(entity => records
 			.Where(record => string.Equals(record.Entity, entity, StringComparison.Ordinal))
 			.OrderByDescending(record => record.CreatedOn, StringComparer.Ordinal));
+	}
+
+	// Each DELETE is bounded by the time left before stopAt, and none starts with less than a second left.
+	private string DeleteBeforeStop(CreatedRecord record, int timeoutMs, DateTimeOffset? stopAt) {
+		if (stopAt is null) {
+			return DeleteOne(record, timeoutMs);
+		}
+		double left = (stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds;
+		return left < MinimumDeleteMs
+			? "not attempted: the response deadline was reached"
+			: DeleteOne(record, (int)Math.Min(timeoutMs, left));
 	}
 
 	private string DeleteOne(CreatedRecord record, int timeoutMs) {
