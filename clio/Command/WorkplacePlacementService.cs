@@ -245,7 +245,7 @@ internal sealed class WorkplacePlacementService(
 		CheckMoveBeforeWriting(request, package, roles, sectionPlacements, myApplicationsIds, existing, reused);
 
 		WorkplacePlacementResult placed;
-		if (existing.Count > 1) {
+		if (existing.Count > 1 && reused is not null) {
 			warnings.Add($"{existing.Count} workplaces are named '{workplaceName}' for this client type " +
 				$"({string.Join(", ", existing.Select(record => record.Id))}); {reused.Id} was used.");
 		}
