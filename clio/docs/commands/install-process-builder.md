@@ -76,8 +76,9 @@ RECORDED, which moves when the archive is accepted whether or not anything compi
 Only the package's own code answering a request can establish that it was compiled at
 all — which is what this check asks, and the most it can ask.
 
-The command **always installs except in two cases**, and re-running is otherwise safe; it
-costs one configuration build on the target. Both exceptions are about moving an
+The command **always installs except in two cases**. Every run, a re-run included, costs a
+configuration build and a site restart for every connected user, so an AI agent must get the
+user's approval before each run. Both exceptions are about moving an
 environment **backwards**, and `--force` overrides both.
 
 1. **A downgrade.** The environment already carries a NEWER version than this clio ships.

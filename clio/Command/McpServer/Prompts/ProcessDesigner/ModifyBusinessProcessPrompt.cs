@@ -135,7 +135,8 @@ public static class ModifyBusinessProcessPrompt {
 		 refuses, up front, any environment below the version it needs — and, when that floor is below what it
 		 bundles, refuses the gap to the bundled version instead — while an older clio surfaces the old
 		 package's `[#Lookup…#]`-macro rejection; either refusal
-		 means the environment's package is behind, so update it rather than concluding the parameter is
+		 means the environment's package is behind, so it needs updating (install-process-builder, after user
+		 approval) rather than concluding the parameter is
 		 unsettable). A data element's object is the exception: Add/Delete data `EntitySchemaId`, Add data
 		 `FilterEntitySchemaId` and Modify data `EntitySchemaUId` are schema-registry Lookups that hold the
 		 object's schema UId (what describe reports), never the registry row Id, and `addMapping` only keeps the

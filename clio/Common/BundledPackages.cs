@@ -91,8 +91,10 @@ public static class BundledPackages {
 		+ "then run 'clio install-process-builder -e <environment>' (or call the install-process-builder MCP tool).";
 
 	/// <summary>
-	/// The remedy clause the post-write read-back warnings put in parentheses after "install a package that
-	/// supports ...": the CLI verb plus the approval it needs.
+	/// The remedy clause the post-write read-back warnings put in parentheses after the action they recommend
+	/// (install, update or reinstall the package): the verb plus the approval it needs. It names
+	/// install-process-builder without the "clio" prefix because the same text reaches an agent over MCP, where it
+	/// is the tool name, and a developer on the CLI, where it is the verb.
 	/// </summary>
 	/// <remarks>
 	/// Those warnings ride on a SUCCESSFUL build or modify, so <see cref="ProcessBuilderInstallHint"/> - which
@@ -100,8 +102,8 @@ public static class BundledPackages {
 	/// unconditionally (ENG-102116).
 	/// </remarks>
 	public const string ProcessBuilderInstallRemedy =
-		"clio install-process-builder, once the user approves it - it builds the environment's configuration "
-		+ "and restarts the site";
+		"install-process-builder, after user approval - it builds the configuration and restarts the site for "
+		+ "every user";
 
 	/// <summary>
 	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which
