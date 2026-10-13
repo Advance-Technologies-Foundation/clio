@@ -111,7 +111,8 @@ internal sealed class RecordDeletionService(
 	private const string ProcessElementColumn = "ProcessElementId";
 
 	// One service instance serves one tool call; a cascade diagnoses many rows of the same entities.
-	private readonly Dictionary<string, List<(string Entity, string Column)>> _pairsByEntity = new(StringComparer.Ordinal);
+	private readonly Dictionary<string, (List<(string Entity, string Column)> Pairs, bool Truncated)> _pairsByEntity =
+		new(StringComparer.Ordinal);
 	private readonly Dictionary<string, RuntimeEntitySchemaResult> _schemas = new(StringComparer.Ordinal);
 
 	// Every entity has them, they point at Contact, and they are never the reason a test record cannot go.
@@ -145,12 +146,15 @@ internal sealed class RecordDeletionService(
 		};
 		List<(string Entity, string Column)> pairs;
 		try {
-			if (!_pairsByEntity.TryGetValue(entity, out pairs)) {
-				pairs = ReadReferencePairs(entity, timeoutMs, out bool truncated);
-				if (truncated) {
-					diagnosis.Complete = false;
-				}
-				_pairsByEntity[entity] = pairs;
+			// The truncation is cached with the pairs: every diagnosis over a truncated list is incomplete, not
+			// only the first one.
+			if (!_pairsByEntity.TryGetValue(entity, out (List<(string Entity, string Column)> Pairs, bool Truncated) cached)) {
+				cached = (ReadReferencePairs(entity, timeoutMs, out bool truncated), truncated);
+				_pairsByEntity[entity] = cached;
+			}
+			pairs = cached.Pairs;
+			if (cached.Truncated) {
+				diagnosis.Complete = false;
 			}
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
