@@ -99,8 +99,9 @@ public sealed class SetActiveProcessVersionToolE2ETests {
 			because: "the digest summarizes the activated version (ENG-103023)");
 		digest["summary"]!["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 			because: "the digest's version standing is read AFTER the activation");
-		digest["changesAgainst"]!.GetValue<string>().Should().Contain(processName,
-			because: "the change list is relative to the version that ran before, read version-facts-only before the write");
+		digest["changesAgainst"]!.GetValue<string>().Should().Contain($"'{processName}'",
+			because: "the change list is relative to the ROOT, the version that ran before (read version-facts-only "
+				+ "before the write); quoted, because the activated version's name starts with the root's");
 
 		// The read-back inside the tool proves the server agrees with itself; describing the family proves the
 		// environment as a whole did, and that the previously-actual member really stopped being actual.

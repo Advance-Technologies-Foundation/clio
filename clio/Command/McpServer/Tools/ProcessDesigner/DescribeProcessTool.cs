@@ -122,7 +122,7 @@ public sealed record DescribeProcessArgs(
 	string? Culture = null,
 
 	[property: JsonPropertyName("mode")]
-	[property: Description("summary | full | versions | element (with element=). Omit: full when the reply fits 18000 bytes, else summary.")]
+	[property: Description("summary | full | versions | element (+element=). Omit: full if the reply fits 18000 B, else summary.")]
 	string? Mode = null,
 
 	[property: JsonPropertyName("element")]

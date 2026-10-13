@@ -174,9 +174,9 @@ public class DescribeProcessCommand(IProcessDescriber describer, ILogger logger)
 		if (normalized != ProcessDigest.SummaryMode) {
 			// Spliced rather than re-serialized so the default full reply stays the explicit one plus one member.
 			string labelled = full.Length > 2 ? "{\"mode\":\"full\"," + full[1..] : full;
-			// Measured as the serialized MCP reply, in bytes, not as graph characters: that is what the spill line
-			// is measured against, and the graph's quotes are paid three times on the way there. The wire reply is
-			// never shorter than the text it carries, so a text already over the line skips the two serializations.
+			// Measured as the tool reply the agent reads, in bytes, not as graph characters: the graph is an escaped
+			// string in that reply, so each of its quotes costs two bytes. The reply is never shorter than the text
+			// it carries, so a text already over the line skips the serialization.
 			if (labelled.Length <= ProcessDigest.AutoSummaryThresholdBytes
 				&& McpServer.McpResultSize.OfCommandReply(labelled) <= ProcessDigest.AutoSummaryThresholdBytes) {
 				return labelled;

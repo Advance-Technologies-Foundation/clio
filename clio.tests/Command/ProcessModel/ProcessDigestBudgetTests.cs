@@ -15,9 +15,8 @@ using NUnit.Framework;
 namespace Clio.Tests.Command.ProcessModel;
 
 /// <summary>
-/// The reply-size rules of ENG-103023, measured the way the spill line measures them: the serialized MCP reply, in
-/// UTF-8 bytes (QA: a 14,552-character graph was 20,074 bytes on the wire, past the ~20 KB line, while the old
-/// character threshold of 15,000 still picked full).
+/// The reply-size rules of ENG-103023, measured the way the spill line measures them: the tool reply the agent
+/// reads, in UTF-8 bytes (QA: the old 15,000-character threshold let a quote-heavy graph past the ~20 KB line).
 /// </summary>
 [TestFixture]
 [Category("Unit")]
@@ -61,11 +60,11 @@ public sealed class ProcessDigestBudgetTests {
 	private static string ModeOf(string reply) => JsonNode.Parse(reply)!["mode"]?.GetValue<string>();
 
 	[Test]
-	[Description("QA ENG-103023 regression: a graph under the old 15,000-character threshold whose reply is over 18,000 bytes on the wire is answered with the summary.")]
-	public void DefaultReply_ShouldBeSummary_WhenTheWireReplyIsOverTheLine_EvenUnder15000Chars() {
+	[Description("QA ENG-103023 regression: a graph whose CHARACTER count is under the 18,000 line but whose reply - where every quote is escaped - is over it is answered with the summary, so the unit the spill line counts decides.")]
+	public void DefaultReply_ShouldBeSummary_WhenTheReplyIsOverTheLine_ThoughTheGraphIsUnderItInCharacters() {
 		// Arrange
 		int extra = 0;
-		while (Full(Grown(extra + 1)).Length < 15_000) {
+		while (Full(Grown(extra + 1)).Length < ProcessDigest.AutoSummaryThresholdBytes) {
 			extra++;
 		}
 		DescribeProcessResult process = Grown(extra);
@@ -73,19 +72,20 @@ public sealed class ProcessDigestBudgetTests {
 
 		// Act
 		string reply = DescribeProcessCommand.BuildReply(process, null, null, out string refusal);
-		long fullWire = McpResultSize.OfCommandReply(Labelled(full));
-		TestContext.Out.WriteLine($"graph {full.Length} chars, full reply {fullWire} bytes on the wire");
+		long fullReply = McpResultSize.OfCommandReply(Labelled(full));
+		TestContext.Out.WriteLine($"graph {full.Length} chars, full reply {fullReply} bytes");
 
 		// Assert
 		refusal.Should().BeNull(because: "a default describe is always answerable");
-		full.Length.Should().BeLessThan(15_000, because: "anti-vacuity: the old character rule would have picked full");
-		fullWire.Should().BeGreaterThan(ProcessDigest.AutoSummaryThresholdBytes,
-			because: "anti-vacuity: on the wire this graph is past the line");
-		ModeOf(reply).Should().Be("summary", because: "the wire size, not the character count, decides");
+		full.Length.Should().BeLessThan(ProcessDigest.AutoSummaryThresholdBytes,
+			because: "anti-vacuity: a character rule would have picked full");
+		fullReply.Should().BeGreaterThan(ProcessDigest.AutoSummaryThresholdBytes,
+			because: "anti-vacuity: the reply the agent reads is past the line");
+		ModeOf(reply).Should().Be("summary", because: "the reply size, not the character count, decides");
 	}
 
 	[Test]
-	[Description("QA ENG-103023: near the threshold, the largest graph answered in full stays at or below 18,000 bytes on the wire, and one more element switches to the summary.")]
+	[Description("QA ENG-103023: near the threshold, the largest graph answered in full stays at or below 18,000 bytes as the agent reads it, and one more element switches to the summary.")]
 	public void DefaultReply_ShouldSwitchExactlyAtTheWireThreshold() {
 		// Arrange
 		int extra = 0;
@@ -102,7 +102,7 @@ public sealed class ProcessDigestBudgetTests {
 
 		// Assert
 		ModeOf(lastFull).Should().Be("full", because: "this graph still fits");
-		lastFullWire.Should().BeLessThanOrEqualTo(18_000, because: "a full reply never passes 18,000 bytes on the wire");
+		lastFullWire.Should().BeLessThanOrEqualTo(18_000, because: "a full reply never passes 18,000 bytes as the agent reads it");
 		lastFullWire.Should().BeGreaterThan(17_000, because: "anti-vacuity: the probe really is at the threshold");
 		ModeOf(firstSummary).Should().Be("summary", because: "one element more crosses the line");
 		nextFullWire.Should().BeGreaterThan(18_000, because: "the switch happens where the wire size crosses the line");
@@ -176,7 +176,7 @@ public sealed class ProcessDigestBudgetTests {
 		JsonObject changes = ProcessDigest.BuildChanges(before, after);
 		ProcessWriteDigest.Report(logger, after, before, versionFactsRead: true);
 		long wire = McpResultSize.OfCommandReply(infos.Single());
-		TestContext.Out.WriteLine($"write-digest line: {infos.Single().Length} chars, {wire} bytes on the wire");
+		TestContext.Out.WriteLine($"write-digest line: {infos.Single().Length} chars, {wire} bytes as the agent reads it");
 
 		// Assert
 		changes["elementsAdded"]!.AsArray().Should().HaveCount(25, because: "a list is capped");
@@ -212,6 +212,52 @@ public sealed class ProcessDigestBudgetTests {
 		uk.Should().Be(en, because: "the same process read in another culture is the same process");
 		other.Should().NotBe(en, because: "an added element is a real change");
 		en.Should().MatchRegex("^[0-9a-f]{12}$", because: "the checksum is 12 lower-case hex characters");
+	}
+
+	private static IEnumerable<TestCaseData> LocalizedMemberFamilies() {
+		yield return Family("sub-process caption", (element, text) => element.SubProcess = new DescribedSubProcess { ProcessCaption = text });
+		yield return Family("open-edit-page recommendation and hint", (element, text) =>
+			element.OpenEditPage = new DescribedOpenEditPage { Recommendation = text, Hint = text });
+		yield return Family("email subject, sender and template display", (element, text) =>
+			element.Email = new DescribedEmail { Subject = text, SenderDisplay = text, TemplateDisplay = text });
+		yield return Family("approval display members", (element, text) =>
+			element.Approval = new DescribedApproval {
+				RecordIdDisplay = text, ApproverEmployeeDisplay = text, ApproverRoleDisplay = text,
+				ApproverEmailTemplateDisplay = text, AuthorEmailTemplateDisplay = text
+			});
+		yield return Family("pre-configured page recommendation", (element, text) =>
+			element.PreconfiguredPage = new DescribedPreconfiguredPage { Recommendation = text });
+		yield return Family("performer role display", (element, text) =>
+			element.Performer = new DescribedPerformer { RoleDisplay = text });
+		yield return new TestCaseData("flow result captions", null, (Action<DescribeProcessResult, string>)((process, text) =>
+			process.Flows[0].Results = [text])).SetArgDisplayNames("flow result captions");
+	}
+
+	private static TestCaseData Family(string name, Action<DescribedElement, string> set) =>
+		new TestCaseData(name, set, null).SetArgDisplayNames(name);
+
+	[TestCaseSource(nameof(LocalizedMemberFamilies))]
+	[Description("Re-review ENG-103023 N2: each family of culture-resolved members the server localizes is left out of the checksum, so the same process read in en-US and in uk-UA has one checksum.")]
+	public void Checksum_ShouldIgnoreEachLocalizedMemberFamily(string family, Action<DescribedElement, string> setOnElement,
+		Action<DescribeProcessResult, string> setOnProcess) {
+		// Arrange
+		DescribeProcessResult english = Grown(3);
+		DescribeProcessResult ukrainian = Grown(3);
+		void Apply(DescribeProcessResult process, string text) {
+			setOnElement?.Invoke(process.Elements[2], text);
+			setOnProcess?.Invoke(process, text);
+		}
+		Apply(english, "Approve the request");
+		Apply(ukrainian, "Погодити заявку");
+
+		// Act
+		string en = ProcessDigest.Checksum(english);
+		string uk = ProcessDigest.Checksum(ukrainian);
+
+		// Assert
+		uk.Should().Be(en, because: $"the {family} is text the server resolves in the read's culture");
+		ProcessDigest.Checksum(Grown(3)).Should().NotBe(ProcessDigest.Checksum(Grown(4)),
+			because: "anti-vacuity: the same fixture still moves the checksum on a structural change");
 	}
 
 	[Test]

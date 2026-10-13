@@ -20,10 +20,19 @@ internal static class ProcessWriteDigest {
 	/// The culture every digest read uses: none, so the server resolves captions and flow labels in the profile
 	/// culture - the one the write itself stored them in. The configuration guards compare flow labels on this
 	/// SAME read, and an explicit en-US read of a label written under another profile culture comes back empty,
-	/// which the label guard would report as a dropped label. The checksum still matches a later describe in any
-	/// culture, because it leaves the culture-resolved text out (see <see cref="ProcessDigest.Checksum"/>).
+	/// which the label guard would report as a dropped label. The checksum still matches a later describe in another
+	/// culture for the culture-resolved members clio reports (captions, labels, display values, result captions,
+	/// page and email texts), because it leaves them out; a localizable constant inside an element parameter's
+	/// <c>value</c> is hashed as read (see <see cref="ProcessDigest.Checksum"/>).
 	/// </summary>
 	internal const string DigestCulture = null;
+
+	/// <summary>
+	/// Leads a digest's <c>versionReadWarning</c>: the version standing was not read within the best-effort budget,
+	/// and the rest of the digest still confirms the write.
+	/// </summary>
+	internal const string VersionStandingNotRead =
+		"version standing not read; the summary and changes still confirm the write - no re-describe is needed";
 
 	/// <summary>Reads a process for the digest, as a best-effort read that never throws.</summary>
 	/// <param name="describer">The describer.</param>
@@ -99,6 +108,10 @@ internal static class ProcessWriteDigest {
 			DescribeProcessResult saved = DescribeProcessCommand.OmitDecodedFilterPayloads(after.Value);
 			if (!versionFactsRead) {
 				saved.VersionReadWarning = null;
+			} else if (!string.IsNullOrWhiteSpace(saved.VersionReadWarning)) {
+				// A best-effort read on a slow stand can miss its short budget. Said so that it does not read as a
+				// reason to describe the process again: only the version standing is missing, not the write.
+				saved.VersionReadWarning = $"{VersionStandingNotRead} ({saved.VersionReadWarning})";
 			}
 			JsonObject digest = new() {
 				["summary"] = ProcessDigest.BuildSummary(saved, ProcessDigest.Checksum(saved))

@@ -456,6 +456,89 @@ public sealed class CreateBusinessProcessCommandTests {
 		digest["changes"].Should().BeNull(because: "a create has nothing to compare with");
 	}
 
+	private const string LabelledDescriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+		+ "{\"name\":\"Decide\",\"type\":\"userTask\"},{\"name\":\"Yes\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"Decide\",\"target\":\"Yes\",\"label\":\"Approved\"}]}";
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review ENG-103023 #10: a guard that throws AFTER the read-back succeeded does not lose the digest - the read is handed out before the guards run, so the caller still gets the summary next to the verification warning.")]
+	public void Execute_ShouldKeepTheDigest_WhenAGuardThrowsAfterASuccessfulRead() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		// The saved flow lost its label, so the label guard writes a warning - and that write throws.
+		DescribeProcessResult saved = DigestProcess("Decide", "Yes");
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(saved);
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>())).Do(call => {
+			string warning = call.Arg<string>();
+			if (warning.Contains("Decide -> Yes ('Approved')")) {
+				throw new InvalidOperationException("guard broke");
+			}
+			warnings.Add(warning);
+		});
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", DescriptorJson = LabelledDescriptor
+		});
+
+		// Assert
+		result.Should().Be(0, because: "a verification failure after the write never fails the command");
+		warnings.Should().ContainSingle(warning => warning.Contains("verifying its configuration failed"),
+			because: "the caller is told the verification did not complete");
+		DigestLine().Should().NotBeNull(because: "the read-back had already succeeded, so the digest is still reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Review ENG-103023 #12: a failed read-back that a guard already reported produces exactly ONE warning - the digest does not add a second one about the same failure.")]
+	public void Execute_ShouldWarnExactlyOnce_WhenTheReadBackFails() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(Error.Failure(description: "the request timed out"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", DescriptorJson = LabelledDescriptor
+		});
+
+		// Assert
+		result.Should().Be(0, because: "an unreadable description is not evidence of a drop");
+		warnings.Should().ContainSingle(because: "one failed read is one warning, and the guard's names the reason")
+			.Which.Should().Contain("the request timed out", because: "the single warning carries the cause");
+		DigestLine().Should().BeNull(because: "there is nothing to summarize");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Re-review ENG-103023 N3: when the best-effort version read misses its budget, the digest's versionReadWarning says the summary still confirms the write, so it does not invite a re-describe.")]
+	public void Execute_ShouldMarkAMissedVersionReadAsHarmless_InTheDigest() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult saved = DigestProcess("Start", "End");
+		saved.VersionReadWarning = "the process library read did not complete within 3s";
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(saved);
+
+		// Act
+		_command.Execute(new CreateBusinessProcessOptions { Environment = "sandbox", DescriptorJson = SampleDescriptor });
+
+		// Assert
+		string warning = JsonNode.Parse(DigestLine())!["summary"]!["versionReadWarning"]!.GetValue<string>();
+		warning.Should().StartWith(ProcessWriteDigest.VersionStandingNotRead,
+			because: "the agent must read the timeout as a missing fact, not as a reason to describe again");
+		warning.Should().Contain("within 3s", because: "the cause is kept");
+	}
+
 	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {
 		Name = "UsrSampleProcess", SchemaUId = "uid",
 		Elements = [.. elements.Select(name => new DescribedElement { Name = name, BuildType = "formulatask" })],

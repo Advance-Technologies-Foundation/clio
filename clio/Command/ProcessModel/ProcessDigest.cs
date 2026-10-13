@@ -22,11 +22,12 @@ namespace Clio.Command.ProcessModel;
 internal static class ProcessDigest {
 
 	/// <summary>
-	/// Above this many bytes of serialized MCP reply (<see cref="Clio.Command.McpServer.McpResultSize.OfCommandReply"/>)
-	/// a describe without an explicit mode answers with the summary. Copilot CLI writes a tool result over ~20 KB to
-	/// a file, and the graph travels as a string inside the command result, which is itself the text of a content
-	/// block, so each quote of the graph is paid three times: a 14,552-character graph was 20,074 bytes on the wire
-	/// (ENG-103023 QA). Measured in reply bytes, not graph characters, and 18,000 leaves ~2 KB under that line.
+	/// Above this many bytes of tool reply - the result text the agent reads, as
+	/// <see cref="Clio.Command.McpServer.McpResultSize.OfCommandReply"/> measures it - a describe without an explicit
+	/// mode answers with the summary. Copilot CLI writes a tool result over ~20 KB to a file, and the graph travels
+	/// as an escaped string inside that result, so it costs more bytes than it has characters (ENG-103023 QA: the
+	/// old 15,000-character rule let a quote-heavy graph through). Measured in reply bytes, not graph characters;
+	/// 18,000 leaves ~2 KB under the line.
 	/// </summary>
 	internal const int AutoSummaryThresholdBytes = 18_000;
 
@@ -69,8 +70,19 @@ internal static class ProcessDigest {
 
 	// Text the server resolves in the READ's culture. A describe defaults to en-US while the post-write reads use the
 	// profile culture (the flow-label guard needs it), so hashing these would make the two checksums of one unchanged
-	// process differ on every non-en-US profile.
-	private static readonly string[] LocalizedMembers = ["caption", "description", "label", "displayValue", "valueDisplay"];
+	// process differ on every non-en-US profile: captions, descriptions, flow labels, display values, the
+	// localizable texts of pages and emails (recommendation, hint, subject), a branch's activity-result captions
+	// (results), and every member named ...Caption or ...Display (processCaption, recordIdDisplay, templateDisplay,
+	// senderDisplay, roleDisplay, approver...Display) - lookup and library names the server resolves per culture.
+	private static readonly HashSet<string> LocalizedMembers = new(StringComparer.Ordinal) {
+		"caption", "description", "label", "displayValue", "valueDisplay", "recommendation", "hint", "subject",
+		"results"
+	};
+
+	private static bool IsLocalized(string member) =>
+		LocalizedMembers.Contains(member)
+		|| member.EndsWith("Caption", StringComparison.Ordinal)
+		|| member.EndsWith("Display", StringComparison.Ordinal);
 
 	// Version-family facts describe the FAMILY, not this schema's content, and change when a sibling is saved.
 	private static readonly string[] VersionFactMembers = [
@@ -90,8 +102,9 @@ internal static class ProcessDigest {
 	/// <summary>
 	/// A short content checksum of the graph: 12 hex characters of SHA-256 over the compact JSON of everything
 	/// except the version-family facts and tracing state, the schema's own name and UId, every member named <c>uid</c> (element
-	/// and parameter identities), the diagram layout, and the culture-resolved text (captions, descriptions, flow
-	/// labels, display values).
+	/// and parameter identities), the diagram layout, and the culture-resolved text clio reports as its own members
+	/// (captions, descriptions, flow labels, display values, result captions, page and email texts - see
+	/// <c>LocalizedMembers</c>). A constant inside an element parameter's <c>value</c> is still hashed as read.
 	/// </summary>
 	/// <remarks>
 	/// Identities are left out because they say which schema was read, not what it does; localized text because
@@ -110,7 +123,7 @@ internal static class ProcessDigest {
 		StripMembers(graph["elements"] as JsonArray, ElementLayoutMembers);
 		StripMembers(graph["flows"] as JsonArray, FlowLayoutMembers);
 		StripIdentities(graph);
-		StripRecursively(graph, LocalizedMembers);
+		StripLocalized(graph);
 		byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(graph.ToJsonString(DescribeProcessCommand.OutputOptions)));
 		return Convert.ToHexString(hash, 0, ChecksumBytes).ToLowerInvariant();
 	}
@@ -432,23 +445,24 @@ internal static class ProcessDigest {
 		return node?.ToJsonString(DescribeProcessCommand.OutputOptions) ?? string.Empty;
 	}
 
-	private static void StripRecursively(JsonNode node, string[] members) {
+	private static void StripLocalized(JsonNode node) {
 		switch (node) {
 			case JsonObject obj:
-				foreach (string member in members) {
+				foreach (string member in obj.Select(entry => entry.Key).Where(IsLocalized).ToList()) {
 					obj.Remove(member);
 				}
 				foreach (KeyValuePair<string, JsonNode> member in obj.ToList()) {
-					StripRecursively(member.Value, members);
+					StripLocalized(member.Value);
 				}
 				break;
 			case JsonArray array:
 				foreach (JsonNode item in array) {
-					StripRecursively(item, members);
+					StripLocalized(item);
 				}
 				break;
 		}
 	}
+
 
 	// Identities name the schema read, not what it does. On the measured stand a version keeps the element and
 	// parameter UIds of its source (and the [#...[Parameter:{uid}]#] macros in mapped values with them), so this

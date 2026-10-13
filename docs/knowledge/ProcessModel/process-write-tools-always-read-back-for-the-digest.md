@@ -27,16 +27,21 @@ timeout, and version facts on `ProcessVersionLibReader.BestEffortReadBudget` (3 
 A failed read becomes one warning or `changesUnavailable`, never an exit code.
 
 `describe-business-process` without `mode` returns the full graph prefixed with `"mode":"full"` when that
-reply, serialized as the MCP `CallToolResult` (`McpResultSize.OfCommandReply`), is at most 18000 bytes;
-otherwise the summary, held to 3072 UTF-8 bytes with its `mode`/`fullChars`/`more` envelope. The graph is a
-string inside the command result, which is itself the text of a content block, so each quote is paid three
-times: a 14,552-character graph measured 20,074 bytes on the wire. An explicit `mode=full` is the old reply
+reply - the serialized command result, the text the agent reads (`McpResultSize.OfCommandReply`, the same
+layer `McpResultSize.Of` measures for every tool) - is at most 18000 bytes; otherwise the summary, held to
+3072 UTF-8 bytes with its `mode`/`fullChars`/`more` envelope. The graph is an escaped string inside that
+result, so each quote and backslash costs two bytes and a graph's character count understates the reply
+(the old 15000-character rule let a quote-heavy graph spill). An explicit `mode=full` is the old reply
 plus additive members; `ReviewChain.full-reply.pre-ENG-103023.json` is that old reply, committed as a baseline.
 
-The checksum leaves out captions, descriptions, flow labels and display values: the post-write reads use the
-profile culture (the flow-label guard needs it), a describe defaults to en-US, and hashing culture-resolved
-text made the two disagree on every non-en-US profile. A caption-only edit therefore keeps the checksum; the
-change list still reports it.
+The checksum leaves out the culture-resolved members clio reports: captions, descriptions, flow labels,
+display values, branch result captions (`results`), page and email texts (`recommendation`, `hint`,
+`subject`) and every member named `...Caption` or `...Display`. The post-write reads use the profile culture
+(the flow-label guard needs it), a describe defaults to en-US, and hashing that text made the two disagree on
+every non-en-US profile. A localizable constant inside an element parameter's `value` is still hashed as read.
+A caption-only edit keeps the checksum; the change list still reports it. A version-facts read that misses
+its 3 s budget surfaces as a `versionReadWarning` that starts with "version standing not read; the summary
+and changes still confirm the write", so it is not read as a reason to describe again.
 
 **Why it is this way** — Copilot CLI spills any tool result over ~20 KB to a file, and in 35 CAADT runs agents
 re-read a process right after writing it 41 times and parsed spilled describes with 169 shell calls. One read

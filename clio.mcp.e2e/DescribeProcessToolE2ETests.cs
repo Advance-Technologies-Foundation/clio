@@ -262,8 +262,8 @@ public sealed class DescribeProcessToolE2ETests {
 	private static IEnumerable<int?> VersionNumbers(JsonObject graph) =>
 		graph["versions"]!.AsArray().Select(member => (int?)member!["version"]?.GetValue<int>());
 
-	// The fixtures above assert on the whole graph, so they ask for it: without a mode a graph over 15000
-	// characters comes back as the summary (ENG-103023). The mode tests pass their own mode.
+	// The fixtures above assert on the whole graph, so they ask for it: without a mode a graph whose reply would
+	// pass 18,000 bytes comes back as the summary (ENG-103023). The mode tests pass their own mode.
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
 		if (!args.ContainsKey("mode") && !args.ContainsKey("element")) {
 			args["mode"] = "full";
