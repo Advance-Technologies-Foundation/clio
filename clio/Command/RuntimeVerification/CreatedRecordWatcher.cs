@@ -181,8 +181,7 @@ internal sealed class CreatedRecordWatcher(
 	}
 
 	// The schema reader matches the name exactly, so "activity" is not found on a stand where "Activity" is. On a miss
-	// the platform's spelling is looked up in SysSchema (case-insensitive on MS SQL; PostgreSQL compares exactly, and
-	// the original miss is then reported) and read again.
+	// the platform's spelling is looked up in SysSchema and the schema is read again.
 	private RuntimeEntitySchemaResult ReadSchema(string entity, int timeoutMs, DateTimeOffset? stopAt) {
 		try {
 			return schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
@@ -196,14 +195,34 @@ internal sealed class CreatedRecordWatcher(
 		}
 	}
 
-	// The SysSchema name that differs from entity only in case, or null.
+	// Most SysSchema rows read to find the platform's spelling; a name past it is not resolved.
+	private const int MaxCanonicalCandidates = 5_000;
+	// Terrasoft FilterComparisonType.StartWith.
+	private const int StartWith = 9;
+
+	// The entity schema name that differs from entity only in case, or null. A text filter compares exactly on
+	// PostgreSQL and case-insensitively on MS SQL, so the names are compared here instead: the select narrows them by
+	// every case variant of the first two letters, which is exact on both databases.
 	private string FindCanonicalName(string entity, int timeoutMs, DateTimeOffset? stopAt) {
 		try {
+			JObject variants = new();
+			int i = 0;
+			foreach (string prefix in CasePrefixes(entity)) {
+				variants[$"prefix{i++}"] = new JObject {
+					["filterType"] = 1, ["comparisonType"] = StartWith, ["isEnabled"] = true,
+					["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+					["rightExpression"] = new JObject {
+						[ExpressionTypeKey] = 2,
+						["parameter"] = new JObject { ["dataValueType"] = TextDataValueType, ["value"] = prefix }
+					}
+				};
+			}
+			JObject anyPrefix = new() { ["filterType"] = 6, ["logicalOperation"] = 1, ["isEnabled"] = true, ["items"] = variants };
 			return Select(ClassicEntitySchemaQuery.Query("SysSchema",
 					new JObject { ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
-					ClassicEntitySchemaQuery.Group(("byName", ClassicEntitySchemaQuery.Eq("Name", entity, TextDataValueType)),
+					ClassicEntitySchemaQuery.Group(("byPrefix", anyPrefix),
 						("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", "EntitySchemaManager", TextDataValueType))),
-					5), Budget(timeoutMs, stopAt))
+					MaxCanonicalCandidates), Budget(timeoutMs, stopAt))
 				.Select(row => row["Name"]?.ToString())
 				.FirstOrDefault(name => string.Equals(name, entity, StringComparison.OrdinalIgnoreCase)
 					&& !string.Equals(name, entity, StringComparison.Ordinal) && IsValidEntityName(name));
@@ -211,6 +230,20 @@ internal sealed class CreatedRecordWatcher(
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			return null;
 		}
+	}
+
+	// "ac" -> "ac", "aC", "Ac", "AC".
+	internal static IReadOnlyList<string> CasePrefixes(string entity) {
+		string head = entity.Length > 2 ? entity[..2] : entity;
+		List<string> prefixes = [string.Empty];
+		foreach (char letter in head) {
+			char lower = char.ToLowerInvariant(letter);
+			char upper = char.ToUpperInvariant(letter);
+			prefixes = lower == upper
+				? prefixes.Select(prefix => prefix + letter).ToList()
+				: prefixes.SelectMany(prefix => new[] { prefix + lower, prefix + upper }).ToList();
+		}
+		return prefixes;
 	}
 
 	// Rows with no CreatedOn are left out: PostgreSQL sorts NULL first in a descending order, which would make the
