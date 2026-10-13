@@ -24,8 +24,9 @@ The cliogate package is required for:
 - Advanced remote operations and extended API access
 - Database and configuration management commands
 
-The command automatically restarts the Creatio application after
-installation to apply the changes.
+The command automatically restarts the Creatio application after a
+successful installation to apply the changes. A failed installation does not
+restart the application.
 
 ## Options
 
@@ -64,8 +65,13 @@ clio gate -e demo
 
 - The command installs the version of cliogate bundled with your current
 clio installation
-- After installation, the Creatio application will automatically restart
+- After a successful installation, the Creatio application will automatically restart
 - Administrator permissions are required on the target environment
+- On a Creatio web farm (for example a Kubernetes deployment managed by Creatio
+Control Plane), register the environment on the shared application URL: the
+installation runs in one session routed to the design node, as described for
+[push-pkg](push-pkg.md#web-farms). On .NET Framework the restart that follows
+the installation is sent from a separate session
 - Use 'clio info --gate' to check the cliogate version included with clio
 - Use 'clio get-info -e <ENV>' to verify the installed cliogate version
 

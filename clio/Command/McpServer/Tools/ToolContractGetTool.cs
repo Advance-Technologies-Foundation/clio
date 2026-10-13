@@ -347,15 +347,27 @@ public sealed record ToolContractGetArgs(
 /// <param name="Success">Whether discovery succeeded or at least one requested name resolved.</param>
 /// <param name="Tools">Resolved full contracts, or null when none resolved.</param>
 /// <param name="Error">Request failure, including the first miss when no requested names resolved.</param>
-/// <param name="Index">Compact discovery index for requests without names.</param>
+/// <param name="Index">
+/// Per-tool discovery objects for a request without names that passes
+/// <c>detail=</c><see cref="ToolContractCatalog.IndexEntriesDetail"/>; the shape a program parses (ClioRing reads it).
+/// </param>
 /// <param name="NotFound">Unresolved normalized names with individual suggestions; omitted when there are no misses.</param>
+/// <param name="Legend">What the markers in <paramref name="ToolIndex"/> mean; present only beside it.</param>
+/// <param name="ToolIndex">
+/// The default answer to a request without names: one line per tool, built from the same entries as
+/// <paramref name="Index"/> (see <see cref="ToolContractCatalog.BuildToolIndexLine"/>).
+/// </param>
 public sealed record ToolContractGetResponse(
 	[property: JsonPropertyName("success")] bool Success,
 	[property: JsonPropertyName("tools")] IReadOnlyList<ToolContractDefinition>? Tools = null,
 	[property: JsonPropertyName("error")] ToolContractError? Error = null,
 	[property: JsonPropertyName("index")] IReadOnlyList<ToolContractIndexEntry>? Index = null,
 	[property: JsonPropertyName("not-found"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	IReadOnlyList<ToolContractNotFound>? NotFound = null
+	IReadOnlyList<ToolContractNotFound>? NotFound = null,
+	[property: JsonPropertyName("legend"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string? Legend = null,
+	[property: JsonPropertyName("tool-index"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	IReadOnlyList<string>? ToolIndex = null
 );
 
 /// <summary>One requested tool name that could not be resolved.</summary>
@@ -372,6 +384,9 @@ public sealed record ToolContractNotFound(
 /// see WHAT tools exist without paying for the heavy full contract (input schema, examples, flows, error
 /// contract). This is the Anthropic <c>defer_loading</c> shape — names resident, schemas on demand. Call
 /// <c>get-tool-contract</c> with the specific <c>tool-names</c> to expand any entry into its full contract.
+/// A no-names request returns these objects under <c>index</c> only with
+/// <c>detail=</c><see cref="ToolContractCatalog.IndexEntriesDetail"/>; by default each entry is rendered as one
+/// line of <c>tool-index</c> instead (see <see cref="ToolContractCatalog.BuildToolIndexLine"/>).
 /// </summary>
 /// <param name="Name">The stable MCP tool name (kebab-case), matching the full contract's name.</param>
 /// <param name="Purpose">A one-line purpose distilled from the first sentence of the tool's description.</param>
@@ -539,6 +554,7 @@ internal static class ToolContractCatalog {
 	private const string DefaultValueConfigFieldName = "default-value-config";
 	private const string DefaultValueConfigSourceKey = "source";
 	private const string DescriptionLocalizationsFieldName = "description-localizations";
+	private const string DetailFieldName = "detail";
 	private const string DryRunFieldName = "dry-run";
 	private const string EmailIdFieldName = "email-id";
 	private const string ConfirmFieldName = "confirm";
@@ -1010,7 +1026,7 @@ internal static class ToolContractCatalog {
 	];
 
 	/// <summary>The one-line purpose is truncated to this many characters for the compact index.</summary>
-	private const int MaxPurposeLength = 120;
+	internal const int MaxPurposeLength = 120;
 
 	/// <summary>
 	/// Abbreviations whose own terminating period IS followed by whitespace and therefore reads as a
@@ -1055,19 +1071,20 @@ internal static class ToolContractCatalog {
 	/// <summary>
 	/// Resolves clio MCP tool contracts. When <paramref name="toolNames"/> is omitted the response depends
 	/// on <paramref name="detail"/> and <paramref name="legacyNoNamesFullShape"/>: any <paramref name="detail"/>
-	/// other than <c>full</c> (the default) returns the cheap compact INDEX of EVERY invokable tool — curated
-	/// core plus the hidden long tail reachable through clio-run (names + one-line purpose + safety flags,
-	/// <c>Tools</c> null) — UNLESS <paramref name="legacyNoNamesFullShape"/> is set, in which case the SAME
-	/// index name universe is returned as full <c>Tools</c> contracts instead (ENG-93885, see
-	/// <see cref="ToolContractGetTool.IsLegacyStdioClient"/>); <c>full</c> returns every CANONICAL tool's full
-	/// contract (legacy behavior, <c>Index</c> null) regardless of <paramref name="legacyNoNamesFullShape"/> —
-	/// an explicit <c>detail=full</c> request is unaffected by client detection. When <paramref name="toolNames"/>
-	/// is supplied the named tools' full contracts are returned via the curated → registry → reflection →
-	/// not-found cascade (unchanged; also unaffected by <paramref name="legacyNoNamesFullShape"/>).
+	/// other than <c>full</c> and <see cref="IndexEntriesDetail"/> (the default) returns the cheap compact INDEX of
+	/// EVERY invokable tool — curated core plus the hidden long tail reachable through clio-run — as one
+	/// <c>ToolIndex</c> line per tool with its <c>Legend</c> (<c>Tools</c> and <c>Index</c> null) — UNLESS
+	/// <paramref name="legacyNoNamesFullShape"/> is set, in which case the SAME index name universe is returned as
+	/// full <c>Tools</c> contracts instead (ENG-93885, see <see cref="ToolContractGetTool.IsLegacyStdioClient"/>);
+	/// <see cref="IndexEntriesDetail"/> returns that index as <c>Index</c> objects (names + one-line purpose +
+	/// safety flags); <c>full</c> returns every CANONICAL tool's full contract (legacy behavior, <c>Index</c> null).
+	/// The two explicit values are unaffected by <paramref name="legacyNoNamesFullShape"/>. When
+	/// <paramref name="toolNames"/> is supplied the named tools' full contracts are returned via the curated →
+	/// registry → reflection → not-found cascade (unchanged; also unaffected by <paramref name="legacyNoNamesFullShape"/>).
 	/// </summary>
 	/// <param name="toolNames">The requested tool names, or <c>null</c>/empty to discover all tools.</param>
 	/// <param name="toolInvokerRegistry">Optional invoker registry used to derive uncurated contracts and the index destructive hint.</param>
-	/// <param name="detail">Optional detail level for a no-names request: <c>index</c> (default) or <c>full</c>.</param>
+	/// <param name="detail">Optional detail level for a no-names request: <c>index</c> (default), <see cref="IndexEntriesDetail"/> or <c>full</c>.</param>
 	/// <param name="legacyNoNamesFullShape">
 	/// When <c>true</c>, a no-names/non-full-detail request returns the full <c>Tools</c> contracts for the
 	/// index name universe instead of the compact index. Set only for the legacy CAADT 1.4.0 stdio client
@@ -1085,8 +1102,8 @@ internal static class ToolContractCatalog {
 
 	/// <summary>
 	/// Resolves the no-tool-names branch of <see cref="GetContracts"/>: <c>detail=full</c> (legacy, curated
-	/// only), the ENG-93885 legacy-client full shape (set-equal with the index universe), or the default
-	/// compact index — extracted purely to keep <see cref="GetContracts"/>'s cognitive complexity low
+	/// only), <c>detail=index-entries</c> (the index as objects), the ENG-93885 legacy-client full shape (set-equal
+	/// with the index universe), or the default line index — extracted purely to keep <see cref="GetContracts"/>'s cognitive complexity low
 	/// (Sonar S3776), no behavior change.
 	/// </summary>
 	private static ToolContractGetResponse ResolveNoNamesContracts(
@@ -1099,6 +1116,12 @@ internal static class ToolContractCatalog {
 			return new ToolContractGetResponse(
 				true,
 				CanonicalToolNames.Select(name => Contracts[name]).ToArray());
+		}
+		// Ahead of the legacy-client check for the same reason detail=full is: an explicit request names its shape.
+		if (ToolContractShortForm.IsDetail(detail, IndexEntriesDetail)) {
+			return new ToolContractGetResponse(
+				true,
+				Index: BuildCompactIndex(toolInvokerRegistry));
 		}
 		if (legacyNoNamesFullShape) {
 			// Deliberate: set-EQUAL with the index name universe (curated + long-tail), not just the
@@ -1125,9 +1148,71 @@ internal static class ToolContractCatalog {
 			}
 			return new ToolContractGetResponse(true, legacyTools);
 		}
+		// ENG-102796: as objects the index is ~47 KB, past the ~20 KB at which an agent CLI spills a tool result to
+		// a file and reads it back in pieces - and every session makes this call. One line per tool keeps it inline.
 		return new ToolContractGetResponse(
 			true,
-			Index: BuildCompactIndex(toolInvokerRegistry));
+			Legend: ToolIndexLegend,
+			ToolIndex: BuildCompactIndex(toolInvokerRegistry).Select(BuildToolIndexLine).ToArray());
+	}
+
+	/// <summary>
+	/// The <c>detail</c> value that returns the no-names index as <see cref="ToolContractIndexEntry"/> objects
+	/// under <c>index</c>, the shape that index had before the line form became the default. A program that parses
+	/// the flags (ClioRing) asks for it; an older clio ignores an unknown <c>detail</c> and returns the objects too.
+	/// </summary>
+	internal const string IndexEntriesDetail = "index-entries";
+
+	/// <summary>Longest purpose a <c>tool-index</c> line carries, ellipsis included.</summary>
+	internal const int MaxToolIndexPurposeLength = 48;
+
+	/// <summary>
+	/// Explains the <c>tool-index</c> markers. States "resident=true in detail=index-entries" verbatim: the
+	/// core-rules guidance tells agents that resident tools are the ones with <c>resident=true</c> in this index, and
+	/// that sentence is mirrored word for word in a separately released toolkit, so the legend keeps it true instead.
+	/// clio-run, not clio-run-destructive, is named as the executor because the latter is a deprecated alias of it.
+	/// </summary>
+	internal static readonly string ToolIndexLegend =
+		$"One line per tool: name (R)(D) [aka deprecated names]: purpose, cut to {MaxToolIndexPurposeLength} characters. "
+		+ "(R) = resident, resident=true in detail=index-entries: it is in tools/list, call it directly, never through clio-run. "
+		+ "A tool without (R) is called through clio-run {\"command\":\"<name>\",\"args\":{...}}. "
+		+ "(D) = destructive: it may delete or overwrite data; a line without (D) can still write. "
+		+ "Pass tool-names for contracts; detail=index-entries returns this index as objects.";
+
+	/// <summary>
+	/// Renders one index entry as a <c>tool-index</c> line: <c>name (R)(D) [aka old-name]: purpose</c>, with the
+	/// purpose cut to <see cref="MaxToolIndexPurposeLength"/> characters at a word boundary.
+	/// </summary>
+	/// <remarks>
+	/// The deprecated aliases stay on the line because the index is where an agent holding an old name from
+	/// guidance looks for it; without them it concludes the tool is gone. A purpose cut short costs at worst one
+	/// named contract fetch, which the line's name is enough to make. An unknown destructive hint (no invoker
+	/// registry) is marked (D): it fails closed, as the named path's <c>ResolveDestructive(...) ?? true</c> does.
+	/// </remarks>
+	/// <param name="entry">The index entry to render.</param>
+	internal static string BuildToolIndexLine(ToolContractIndexEntry entry) {
+		string markers = (entry.Resident ? "(R)" : string.Empty) + (entry.Destructive != false ? "(D)" : string.Empty);
+		string head = markers.Length == 0 ? entry.Name : $"{entry.Name} {markers}";
+		string aliases = entry.Aliases is { Count: > 0 } ? $" [aka {string.Join(", ", entry.Aliases)}]" : string.Empty;
+		return $"{head}{aliases}: {CutToolIndexPurpose(entry.Purpose)}";
+	}
+
+	/// <summary>
+	/// Cuts <paramref name="purpose"/> to <see cref="MaxToolIndexPurposeLength"/> characters, ellipsis included, at
+	/// the last word boundary that leaves room for the ellipsis; a single word longer than that is cut inside it,
+	/// before a surrogate pair rather than between its halves, so the cut never splits a pair.
+	/// </summary>
+	/// <param name="purpose">The one-line purpose of an index entry.</param>
+	internal static string CutToolIndexPurpose(string purpose) {
+		if (purpose.Length <= MaxToolIndexPurposeLength) {
+			return purpose;
+		}
+		int space = purpose.LastIndexOf(' ', MaxToolIndexPurposeLength - 1);
+		int end = space > 0 ? space : MaxToolIndexPurposeLength - 1;
+		if (char.IsHighSurrogate(purpose[end - 1])) {
+			end--;
+		}
+		return purpose[..end].TrimEnd(',', ';', ':', '-', '(', '—', '–', ' ') + "…";
 	}
 
 	/// <summary>
@@ -1339,7 +1424,7 @@ internal static class ToolContractCatalog {
 	/// Distills the one-line purpose the compact index shows for a tool: collapses inner whitespace,
 	/// takes the first sentence (a period followed by whitespace or the end of the text, skipping the
 	/// <see cref="SentenceSafeAbbreviations"/>), and truncates to <see cref="MaxPurposeLength"/>
-	/// characters with an ellipsis so the index stays compact.
+	/// characters with an ellipsis so the index stays compact, never between the halves of a surrogate pair.
 	/// </summary>
 	/// <remarks>
 	/// <c>internal</c> rather than <c>private</c> so the distillation can be driven directly from tests.
@@ -1361,7 +1446,11 @@ internal static class ToolContractCatalog {
 		if (firstSentence.Length <= MaxPurposeLength) {
 			return firstSentence;
 		}
-		return firstSentence[..(MaxPurposeLength - 1)].TrimEnd() + "…";
+		int end = MaxPurposeLength - 1;
+		if (char.IsHighSurrogate(firstSentence[end - 1])) {
+			end--;
+		}
+		return firstSentence[..end].TrimEnd() + "…";
 	}
 
 	/// <summary>
@@ -1428,7 +1517,7 @@ internal static class ToolContractCatalog {
 	private static ToolContractDefinition BuildToolContractGet() {
 		return new ToolContractDefinition(
 			ToolContractGetTool.ToolName,
-			"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools (name + one-line purpose + safety flags) for cheap discovery; pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
+			$"Returns clio MCP tool contracts. Omit tool-names for a compact index of all tools for cheap discovery - one tool-index line per tool (name, resident and destructive markers, a purpose cut to {MaxToolIndexPurposeLength} characters) explained by legend; pass detail=index-entries (with no tool-names) for the same index as objects (name, purpose, contract-available, resident, destructive); pass tool-names to expand those tools' executable contracts; pass detail=full (with no tool-names) to expand every tool's full contract. "
 			+ "A named lookup is FITTED to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest are replaced by their SHORT form until it does. "
 			+ "A short contract carries detail=\"short\" and full-contract-bytes, keeps the purpose of its description and every sentence carrying a safety marker - a confirmation, an ask/tell/warn-the-user rule, a prohibition, an irreversibility warning - wherever it stands, in the description or in a field, plus the input schema with its required list and validators, the error codes, preconditions, aliases, defaults, flows, deprecations and anti-patterns, and says in its description what it left out (the rest of the description, the examples, other field descriptions past their first sentence). "
 			+ "The short create-business-process and modify-business-process contracts also carry a SHAPE block: the descriptor fields and element blocks, or every operation with its fields. "
@@ -1437,7 +1526,7 @@ internal static class ToolContractCatalog {
 				[],
 				[
 					Field("tool-names", ArrayType, "Optional array of tool names. Omit for a compact index of all tools; pass names to expand their contracts, fitted to one reply (detail=full for all in full)."),
-					Field("detail", StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
+					Field(DetailFieldName, StringType, "Optional detail level. Without tool-names: 'index' (default) returns the compact index as tool-index lines; 'index-entries' returns it as index objects; 'full' returns every tool's full contract. With tool-names: omit it to fit the reply inline (the largest contracts come back short only when needed); 'full' returns every named contract complete; 'short' returns every named contract in its short form.")
 				]),
 			EnvelopeOutput(
 				SuccessFieldName,
@@ -1447,7 +1536,9 @@ internal static class ToolContractCatalog {
 				Field(SuccessFieldName, BooleanType, "Whether discovery succeeded or at least one requested name resolved. Check not-found for partial results."),
 				Field("tools", ArrayType, "Tool contract definitions; populated when tool-names are passed or detail=full. A short contract carries detail=\"short\" and full-contract-bytes (the size of its full form); a full contract carries neither. In a reply fitted below the inline budget, an error-contract may be {codes: [], same-as: <tool>}: the same codes as that earlier contract in the reply."),
 				Field("not-found", ArrayType, "Unresolved names with per-name error codes, messages and suggestions. Valid contracts remain in tools; omitted when all names resolve. If no names resolve, success=false and error retains the first tool-not-found diagnostic."),
-				Field("index", ArrayType, "Compact tool index (name, purpose, contract-available, resident, destructive); populated for a no-names request unless detail=full. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run/clio-run-destructive — never wrap a resident tool in clio-run."),
+				Field("index", ArrayType, "Compact tool index as objects (name, purpose, contract-available, resident, destructive, aliases); populated for a no-names request with detail=index-entries. resident=true tools are present in tools/list and are called natively; resident=false tools are reachable only via clio-run — never wrap a resident tool in clio-run."),
+				Field("tool-index", ArrayType, $"The default answer to a no-names request: one line per tool, 'name (R)(D) [aka deprecated names]: purpose', the purpose cut to {MaxToolIndexPurposeLength} characters; legend explains the (R) and (D) markers."),
+				Field("legend", StringType, "Explains the tool-index line format and markers; returned only with tool-index."),
 				Field(ErrorFieldName, ObjectType, "Structured error payload when lookup fails.")
 			),
 			CommonErrorContract,
@@ -1455,15 +1546,18 @@ internal static class ToolContractCatalog {
 			[],
 			[
 				Example("Return the compact index of all clio MCP tools (cheap discovery)", new Dictionary<string, object?>()),
+				Example("Return the compact index as per-tool objects with the resident and destructive flags", new Dictionary<string, object?> {
+					[DetailFieldName] = IndexEntriesDetail
+				}),
 				Example("Return the full contracts of every tool (legacy behavior)", new Dictionary<string, object?> {
-					["detail"] = ToolContractShortForm.FullDetail
+					[DetailFieldName] = ToolContractShortForm.FullDetail
 				}),
 				Example("Return the contract for list-apps, update-page, and modify-entity-schema-column", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "list-apps", "update-page", "modify-entity-schema-column" }
 				}),
 				Example("Return one short contract's complete form, examples included", new Dictionary<string, object?> {
 					["tool-names"] = new[] { "create-business-process" },
-					["detail"] = ToolContractShortForm.FullDetail
+					[DetailFieldName] = ToolContractShortForm.FullDetail
 				})
 			],
 			Flow(["get-tool-contract"], "Call with no args first for the compact index of all tools, then call with specific tool-names for their contracts before execution (detail=full when a short form is not enough)."),
