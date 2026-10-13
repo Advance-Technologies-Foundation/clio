@@ -10,16 +10,16 @@
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one feature PR each, titled
 `ENG-95984 File process parameter type`, branch `feature/ENG-95984-file-process-parameter-type`)
 **Depends on**: this BMAD set (the docs-only clio PR on branch `feature/ENG-95984-file-parameter-type-spec`) merged
-**before the package PR opens**. Q20 answered before the clio PR's description edit (CL-2) only.
+**before the package PR opens**. Q20 = A (2026-10-14): trim, reviewer-approved; it concerned the clio PR's
+description edit (CL-2) only and gates nothing now.
 **Blocks**: ENG-96506 Generated report + process parameter modes (functionally) and ENG-95985 Send email attachments
 (link L5, together with ENG-96505: it reuses `BindCollection` and adds its slots to the file-consuming targets).
 ENG-96505 Element readiness and object attachments mode is not blocked functionally but merges after this story, and
 its clio PR merges only after this story's knowledge generation is published. Follow-up stories 2, 3 and 4.
 
-> **Before this docs PR leaves draft** (open question Q9: the follow-ups are created on day 0): create the three
-> follow-up Sub-tasks of ENG-95984 in Jira and replace each pending-key marker with its key: the `jira` field of the
-> three follow-up rows in `spec/sprint-status.yaml` and the **Jira** line of the three story headers (stories 2, 3 and
-> 4); a search for the marker finds exactly those six places. This is not part of this story's Definition of Done.
+> **Done 2026-10-14** (Q9: the follow-ups are created on day 0): the three follow-up Sub-tasks of ENG-95984 exist
+> in Jira as ENG-103162 (story 2), ENG-103163 (story 3) and ENG-103164 (story 4), and their keys are in the story
+> headers and the `jira` fields of the three follow-up rows in `spec/sprint-status.yaml`.
 
 ---
 
@@ -134,9 +134,11 @@ implementation outline)
   `ModifyBusinessProcessCommand.cs`, `ModifyProcessAsNewVersionCommand.cs` with their comment blocks;
   `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`; the enforced-floor sentence in three
   descriptions. Install from the refreshed BUILD OUTPUT, each install after the user's explicit approval.
-- [ ] **CL-2** Descriptions (gated on Q20): type lists in
+- [ ] **CL-2** Descriptions (Q20 = A (2026-10-14): trim, reviewer-approved): type lists in
   `clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs` and `ModifyBusinessProcessTool.cs`
-  (+30 / +28 B) paid by the byte swap Q20 settles; `DescribeProcessTool.cs` decoded-source clause (+40 B);
+  (+30 / +28 B) paid by trimming existing text, each trim approved by the reviewer and measured by lowering the ceiling
+  (the create candidate measured at cut, the modify trim chosen at cut with the reviewer; no ceiling raise);
+  `DescribeProcessTool.cs` decoded-source clause (+40 B);
   `ModifyProcessAsNewVersionTool.cs` floor-history parenthetical rewritten once without its enumeration; the figures in
   the comment of `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` re-measured; no `name=` pointer, no
   binder rules in any description; count words grepped in description and guide together.
@@ -232,9 +234,9 @@ readiness and object attachments mode) and never pushed after an approval. The f
 **clio**
 - [ ] Rebundled with a strictly increasing `-Version`; four pins, three floor literals, the enforced-floor sentences,
       capability-map rows and the e2e `MinimumPackageVersion` all at the final cut.
-- [ ] Type lists and describe clause, paid by the byte swap Q20 settles (the enforced-floor sentence and the
-      `stopped validating formulas` clause left as they are); budget comment re-measured; ceiling unchanged unless Q20
-      is answered B (a reviewed raise).
+- [ ] Type lists and describe clause, paid by the byte swap Q20 settled (Q20 = A (2026-10-14): trim,
+      reviewer-approved; the enforced-floor sentence and the `stopped validating formulas` clause left as they are);
+      budget comment re-measured; ceiling unchanged.
 - [ ] Must stay green: `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`,
       `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`, the seven process-designer contracts within
       19,000 B on the wire (`GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether`),
@@ -283,7 +285,7 @@ readiness and object attachments mode) and never pushed after an approval. The f
 
 - Implementation started:
 - Package cut claimed (number, date, where claimed):
-- Q20 answer and the bytes swapped:
+- Bytes trimmed per Q20 = A (2026-10-14: trim, reviewer-approved), which text per tool and the reviewer's approval:
 - Tests passing (package, clio unit, e2e with Ignored count, knowledge):
 - Stand records (V0-V8):
 - Notes:

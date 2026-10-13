@@ -1,9 +1,10 @@
 # ADR: File process parameter type (ENG-95984)
 
 **Status**: Accepted. Owner questions Q1-Q12 and Q19 were agreed on 2026-10-07 and 2026-10-08 (Q7 answered by stand
-measurement M3 on 2026-10-02). Two items are open: **Q20** decides only where D25's description bytes come from, and
-the test-plan item **O-TP1** decides where the e2e cases on the Process-parameter variant's `Files` run (recommended
-B: in ENG-96506 Generated report + process parameter modes). Neither changes a decision below.
+measurement M3 on 2026-10-02), and **Q20** (where D25's description bytes come from) on 2026-10-14 as A: trim existing
+text per tool, reviewer-approved. One item is open: the test-plan item **O-TP1** decides where the e2e cases on the
+Process-parameter variant's `Files` run (recommended B: in ENG-96506 Generated report + process parameter modes). It
+changes no decision below.
 **Date**: 2026-10-13
 **Jira**: ENG-95984 File process parameter type (Task; epic ENG-92704 Create BP via AI Toolkit)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md)
@@ -329,12 +330,12 @@ a CrtProcessBuilder version appears only as inline evidence.
 
 Tool descriptions: the create and modify type lists only (+30 B / +28 B); NO `name=process-files` pointer yet (the
 routing row reaches agents; the first pointer is ENG-96505's); the describe clause (+40 B, fits). Because of B1 a byte
-swap is needed, and **where the bytes come from is open owner question Q20**: A, trim existing text per tool,
-reviewer-approved, measured by lowering the ceiling (recommended; candidate on create: drop the member list
-`{enabled, executionMode, ignoreErrors}` from the floor clause, about 39 B; on modify, a trim chosen at cut with the
-reviewer); B, a reviewed ceiling raise; C, move the type lists into guidance. Any swap leaves `this clio requires
-<floor>` in all three descriptions and the `stopped validating formulas` clause with no floor literal in the 60
-characters before it (`EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`,
+swap is needed, and **where the bytes come from was owner question Q20, agreed 2026-10-14: A**: trim existing text per
+tool, each trim reviewer-approved, measured by lowering the ceiling (candidate on create, still measured at cut: drop
+the member list `{enabled, executionMode, ignoreErrors}` from the floor clause, about 39 B; on modify, a trim chosen at
+cut with the reviewer). Rejected: B, a reviewed ceiling raise; C, move the type lists into guidance. Any swap leaves
+`this clio requires <floor>` in all three descriptions and the `stopped validating formulas` clause with no floor
+literal in the 60 characters before it (`EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`,
 `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`). MCP prompts need no update: they list no parameter
 types.
 
@@ -345,7 +346,8 @@ inline rule); registering in `GoLiveFloor` (fails the migration test); a `name=`
 
 **Consequences.** Merge order package -> clio -> knowledge; the generation that births `process-files` must be
 published (merged, released, and visible in `info-knowledge`) before the clio PR of ENG-96505 merges; a failed
-`update-knowledge` keeps serving the old guidance silently. Q20 gates the clio description edit only.
+`update-knowledge` keeps serving the old guidance silently. Q20 concerned the clio description edit only; with A
+agreed, the trim is work inside the clio PR.
 
 ### D26 - `[RequiresPackage]` floors and version numbers
 
@@ -424,5 +426,5 @@ remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges bef
 | Q11 / O-2 / D3 FileCollection defaults to Variable | agreed 2026-10-07 |
 | Q12 / O-3, O-4 / D5 P3 resets with a notice; P2 and R-M2 on file-consuming targets only | agreed 2026-10-07 |
 | Q19 / O-6 / D25 Guide name `process-files` | agreed 2026-10-08 |
-| **Q20 / D25 Where the description bytes come from** | **open** (recommended A); gates CL-2 only |
+| Q20 / D25 Where the description bytes come from | agreed 2026-10-14: A (trim existing text per tool, reviewer-approved; no ceiling raise, type lists stay in the descriptions); CL-2 proceeds with it |
 | **O-TP1 (test plan) Where the e2e cases on the Process-parameter variant's `Files` run** | **open** (recommended B: in the clio PR of ENG-96506 Generated report + process parameter modes); moves only the cross-ticket cases XT-14a..d |

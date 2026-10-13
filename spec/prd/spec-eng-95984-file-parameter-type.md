@@ -10,8 +10,8 @@
 lands with the docs PR titled `ENG-92719 File processing element`. This set does not depend on it: every rule it relies
 on is restated here; the analysis holds the evidence.
 **Status**: Accepted. The acceptance criteria and the contract were agreed by the owner on 2026-10-07 and 2026-10-08.
-Two items are open (see "Open owner items"): Q20 (where the description bytes come from; gates the clio description
-edit only) and O-TP1 (where the e2e cases on the Process-parameter variant's `Files` run).
+One item is open (see "Open owner items"): O-TP1 (where the e2e cases on the Process-parameter variant's `Files` run).
+Q20 (where the description bytes come from) was agreed on 2026-10-14 as A: trim existing text, reviewer-approved.
 **Created**: 2026-10-13
 **Size estimate**: one story for the ticket, delivered as one feature PR per repository (CrtProcessBuilder, then clio,
 then clio-knowledge). The /bmad-spec form is used because the ticket is one story (AGENTS.md: fewer than 5 stories);
@@ -158,7 +158,8 @@ bytes (catalogue in the ADR).
 - **C5 Description budget.** On clio master `19e6f9c53` (measured 2026-10-13) create-business-process has 4 B and
   modify-business-process 10 B left under the 35,072 B per-contract ceiling; the type lists cost +30 B and +28 B. The
   seven process-designer contracts requested together sit at 18,986 B of the 19,000 B wire guard; this ticket adds no
-  descriptor member, so the call shapes and the wire guard are unaffected (hypothesis, source).
+  descriptor member, so the call shapes and the wire guard are unaffected (hypothesis, source). The bytes come from a
+  reviewer-approved trim of existing text; the ceiling is not raised (Q20, agreed 2026-10-14: A).
 - **C6 Delivery order.** This docs-only set merges before the package PR opens; then package, clio, knowledge, each
   merged by a human only. The knowledge generation that births `process-files` is published before the clio PR of
   ENG-96505 Element readiness and object attachments mode merges.
@@ -182,12 +183,15 @@ ENG-96506 Generated report + process parameter modes, where that variant is buil
 ticket's evidence for that half of AC-5 and AC-7 is package-unit. Alternative A: in this clio PR through the generic
 `userTask` route, which ENG-96506 later refuses and rewrites.
 
-**Q20. Where do the description bytes come from?** (opened 2026-10-13). Options: **A** (recommended) trim existing text
-per tool, each trim approved by the reviewer and measured by lowering the ceiling; candidate on create: drop the member
-list `{enabled, executionMode, ignoreErrors}` from the floor clause (about 39 B), the modify candidate chosen at cut;
-**B** a reviewed ceiling raise; **C** move the type lists out of the descriptions into guidance. Q20 gates the clio
-description edit (story 1, task CL-2) only, never package code. Whatever the answer, the sentence
-`this clio requires <floor>` and the `stopped validating formulas` clause stay as they are.
+**Q20. Where do the description bytes come from?** (opened 2026-10-13; **agreed 2026-10-14: A**). Options: **A**
+(recommended) trim existing text per tool, each trim approved by the reviewer and measured by lowering the ceiling;
+candidate on create: drop the member list `{enabled, executionMode, ignoreErrors}` from the floor clause (about 39 B),
+the modify candidate chosen at cut; **B** a reviewed ceiling raise; **C** move the type lists out of the descriptions
+into guidance. **Answer (2026-10-14): A.** B and C are rejected: the ceiling is not raised and the type lists stay in
+the descriptions. The create candidate stays a candidate measured at cut, and the modify trim is chosen at cut with the
+reviewer. Q20 concerned the clio description edit (story 1, task CL-2) only, never package code; it no longer gates
+anything, and the trim itself is work inside the clio PR. The sentence `this clio requires <floor>` and the
+`stopped validating formulas` clause stay as they are.
 
 ## Companion notes
 
