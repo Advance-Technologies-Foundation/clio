@@ -47,6 +47,24 @@ internal static class DescribedProcessGraph {
 		return graph!;
 	}
 
+	/// <summary>
+	/// Returns the post-write digest line <c>{"summary":{...},"changes":{...}}</c> a successful process write
+	/// reports (ENG-103023), failing the calling test when the envelope carries none.
+	/// </summary>
+	/// <param name="callResult">The result of a process-designer write tool call.</param>
+	/// <returns>The digest as a parsed object.</returns>
+	internal static JsonObject ReadWriteDigest(CallToolResult callResult) {
+		string text = string.Concat(callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+		JsonNode envelope = JsonNode.Parse(text);
+		envelope.Should().NotBeNull(because: "the MCP tool must answer with a parsable envelope");
+		JsonObject digest = EmbeddedStrings(envelope!)
+			.Select(TryParseObject)
+			.FirstOrDefault(candidate => candidate is not null && candidate["summary"] is JsonObject);
+		digest.Should().NotBeNull(
+			because: $"a successful process write must report its digest line; the envelope was: {text}");
+		return digest!;
+	}
+
 	private static IEnumerable<string> EmbeddedStrings(JsonNode node) {
 		switch (node) {
 			case JsonObject jsonObject:

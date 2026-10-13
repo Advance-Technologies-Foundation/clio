@@ -81,6 +81,18 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-102116: the modify-business-process prompt ties its package-update remedy to the user's approval, like the tool contracts, because the install rebuilds the configuration and restarts the site for every user.")]
+	public void ModifyBusinessProcess_Prompt_ShouldTieThePackageUpdateToTheUsersApproval() {
+		// Arrange, Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		prompt.Should().Contain("(install-process-builder, after user approval)",
+			because: "a prompt that says only 'update it' reads as permission to run the install unasked");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Pins the destructive classification of modify-business-process. This annotation - not the description prose - is what an MCP host reads to decide whether a call needs human approval, so a silent flip back to false would let a host auto-run it.")]
 	public void ModifyBusinessProcess_Should_Be_Marked_As_Destructive() {
 		// Arrange

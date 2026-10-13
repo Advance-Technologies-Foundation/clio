@@ -154,7 +154,7 @@ public static class EmailBlockExpectation {
 			+ "implement IExtensibleDataObject, so it discards the block instead of rejecting it and still answers "
 			+ "success. Either way the element is UNCONFIGURED (no sender, no recipients, no subject or body), so do "
 			+ "not report it as configured. Check the package version, install one that supports sendEmail "
-			+ "(clio install-process-builder) and re-apply the email block, or configure the element in the designer.";
+			+ "(" + Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and re-apply the email block, or configure the element in the designer.";
 	}
 
 	/// <summary>
@@ -232,7 +232,7 @@ public static class EmailBlockExpectation {
 			+ "(the element reports a body but describe returned none). The usual cause is a deployed CrtProcessBuilder "
 			+ "that predates the body-macro feature: it stores the HTML verbatim, so the literal placeholder text "
 			+ "would be emailed to the recipient. Install a package that supports body macros "
-			+ "(clio install-process-builder) and re-apply the body, or insert the process data through the "
+			+ "(" + Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and re-apply the body, or insert the process data through the "
 			+ "designer's Content designer.";
 	}
 
@@ -355,7 +355,7 @@ public static class EmailBlockExpectation {
 			+ "discards the field while answering success. The element is then in the WRONG mode — no mode at all, which "
 			+ "the platform runs as template mode with no template and fails with 'Localizable template not found', or a "
 			+ "custom message with no body when a subject travelled with the template. Do not report it as configured: "
-			+ "install a package that supports template mode (clio install-process-builder) and re-apply the email block, "
+			+ "install a package that supports template mode (" + Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and re-apply the email block, "
 			+ "or pick the template in the designer.";
 	}
 
