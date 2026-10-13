@@ -702,6 +702,74 @@ public sealed class RecordDeletionServiceTests {
 	}
 
 	[Test]
+	[Description("A lookup derived through an intermediate schema (UsrBaseStatus -> BaseLookup) is a lookup; a chain that reaches BaseEntity without a base lookup is not; a chain that cannot be read counts as a lookup.")]
+	public void IsLookup_Should_Walk_The_Parent_Chain_To_A_Base_Lookup() {
+		// Arrange
+		Guid statusUId = Guid.NewGuid();
+		Guid midUId = Guid.NewGuid();
+		Guid baseLookupUId = Guid.NewGuid();
+		Guid plainUId = Guid.NewGuid();
+		Guid plainMidUId = Guid.NewGuid();
+		Guid baseEntityUId = Guid.NewGuid();
+		Guid unreadableUId = Guid.NewGuid();
+		Dictionary<Guid, string> names = new() {
+			[midUId] = "UsrBaseStatus", [baseLookupUId] = "BaseLookup", [plainMidUId] = "UsrBasePlain",
+			[baseEntityUId] = "BaseEntity", [unreadableUId] = "UsrUnreadable"
+		};
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				string body = call.ArgAt<string>(1);
+				string hit = names.Where(pair => body.Contains(pair.Key.ToString("D"))).Select(pair => pair.Value).FirstOrDefault();
+				return hit is null
+					? "{\"success\":true,\"rows\":[]}"
+					: "{\"success\":true,\"rows\":[{\"Name\":\"" + hit + "\"}]}";
+			});
+		IServiceUrlBuilder urls = Substitute.For<IServiceUrlBuilder>();
+		urls.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
+		IRuntimeEntitySchemaReader schemas = Substitute.For<IRuntimeEntitySchemaReader>();
+		schemas.GetByName("UsrStatus", Arg.Any<int>()).Returns(
+			new RuntimeEntitySchemaResult(statusUId, "UsrStatus", Guid.NewGuid(), null, null, [], ParentUId: midUId));
+		schemas.GetByName("UsrBaseStatus", Arg.Any<int>()).Returns(
+			new RuntimeEntitySchemaResult(midUId, "UsrBaseStatus", Guid.NewGuid(), null, null, [], ParentUId: baseLookupUId));
+		schemas.GetByName("UsrPlain", Arg.Any<int>()).Returns(
+			new RuntimeEntitySchemaResult(Guid.NewGuid(), "UsrPlain", Guid.NewGuid(), null, null, [], ParentUId: plainMidUId));
+		schemas.GetByName("UsrBasePlain", Arg.Any<int>()).Returns(
+			new RuntimeEntitySchemaResult(plainMidUId, "UsrBasePlain", Guid.NewGuid(), null, null, [], ParentUId: baseEntityUId));
+		schemas.GetByName("UsrBroken", Arg.Any<int>()).Returns(
+			new RuntimeEntitySchemaResult(Guid.NewGuid(), "UsrBroken", Guid.NewGuid(), null, null, [], ParentUId: unreadableUId));
+		schemas.GetByName("UsrUnreadable", Arg.Any<int>()).Returns(_ => throw new InvalidOperationException("no schema"));
+		RecordDeletionService service = new(client, urls, schemas);
+
+		// Act / Assert
+		service.IsLookup("UsrStatus", 10_000).Should().BeTrue(because: "UsrStatus -> UsrBaseStatus -> BaseLookup");
+		service.IsLookup("UsrPlain", 10_000).Should().BeFalse(because: "its chain ends at BaseEntity with no base lookup");
+		service.IsLookup("UsrBroken", 10_000).Should().BeTrue(because: "a chain that cannot be read must not allow a cascade");
+	}
+
+	[Test]
+	[Description("The cascade plan hash does not depend on the order the walk listed rows in, so an unchanged tree confirms with the hash its dry run gave.")]
+	public void HashPlans_Should_Ignore_The_Order_Of_The_Walk() {
+		// Arrange
+		string id = Guid.NewGuid().ToString("D");
+		RecordKey a = new("UsrChild", Guid.NewGuid().ToString("D"));
+		RecordKey b = new("UsrChild", Guid.NewGuid().ToString("D"));
+		RecordKey c = new("UsrGrand", Guid.NewGuid().ToString("D"));
+		ODataDeleteTool.CascadePlan First(params RecordKey[] order) => new(order.ToList(), [], null, null) {
+			PlatformCascade = order.Reverse().ToList()
+		};
+
+		// Act
+		string one = ODataDeleteTool.HashPlans([(id, First(c, a, b))]);
+		string other = ODataDeleteTool.HashPlans([(id, First(b, c, a))]);
+		string changed = ODataDeleteTool.HashPlans([(id, First(c, a))]);
+
+		// Assert
+		other.Should().Be(one, because: "the same rows in another walk order are the same plan");
+		changed.Should().NotBe(one, because: "a different set of rows is a different plan");
+	}
+
+	[Test]
 	[Description("A truncated reference metadata list keeps every later diagnosis of the same entity incomplete, not only the first one that read it.")]
 	public void Diagnose_Should_Stay_Incomplete_On_A_Cached_Truncated_Reference_List() {
 		// Arrange

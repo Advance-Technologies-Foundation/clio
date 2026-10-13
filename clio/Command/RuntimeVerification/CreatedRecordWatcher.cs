@@ -224,7 +224,7 @@ internal sealed class CreatedRecordWatcher(
 			}
 			JObject anyPrefix = new() { [FilterTypeKey] = 6, ["logicalOperation"] = 1, [IsEnabledKey] = true, ["items"] = variants };
 			return Select(ClassicEntitySchemaQuery.Query("SysSchema",
-					new JObject { ["Name"] = ClassicEntitySchemaQuery.Column("Name") },
+					new JObject { ["Name"] = OrderedNameColumn() },
 					ClassicEntitySchemaQuery.Group(("byPrefix", anyPrefix),
 						("byManager", ClassicEntitySchemaQuery.Eq("ManagerName", "EntitySchemaManager", TextDataValueType))),
 					MaxCanonicalCandidates), Budget(timeoutMs, stopAt))
@@ -237,9 +237,19 @@ internal sealed class CreatedRecordWatcher(
 		}
 	}
 
-	// "ac" -> "ac", "aC", "Ac", "AC".
+	// SysSchema has a row per package, so a short prefix can match more rows than MaxCanonicalCandidates. A longer
+	// prefix narrows the match, and the Name order makes the page that is read the same on every run.
+	private const int CasePrefixLength = 3;
+
+	private static JObject OrderedNameColumn() => new() {
+		["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Name" },
+		["orderDirection"] = OrderAscending,
+		["orderPosition"] = 0
+	};
+
+	// "act" -> "act", "acT", ... "ACT" (every case variant of the first CasePrefixLength letters).
 	internal static IReadOnlyList<string> CasePrefixes(string entity) {
-		string head = entity.Length > 2 ? entity[..2] : entity;
+		string head = entity.Length > CasePrefixLength ? entity[..CasePrefixLength] : entity;
 		List<string> prefixes = [string.Empty];
 		foreach (char letter in head) {
 			char lower = char.ToLowerInvariant(letter);

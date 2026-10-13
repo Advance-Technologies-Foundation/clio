@@ -444,7 +444,7 @@ public sealed class ODataDeleteTool(
 		return (item, plan);
 	}
 
-	// A short, stable digest of what the cascade would delete per id, in the ids' order: the owned rows and the rows
+	// A short, stable digest of what the cascade would delete per id, in the ids' order, each id's rows sorted: the owned rows and the rows
 	// the platform deletes with them, or that the plan is refused or was not built.
 	internal static string HashPlans(IEnumerable<(string Id, CascadePlan Plan)> plans) {
 		System.Text.StringBuilder text = new();
@@ -457,9 +457,11 @@ public sealed class ODataDeleteTool(
 				text.Append("refused");
 			}
 			else {
-				text.AppendJoin(',', plan.Order.Select(key => KeyOf(key.Entity, key.Id)))
+				// Sorted: the walk order comes from selects without ORDER BY, so an unchanged tree can list its rows in
+				// another order. The deletes still run deepest first; only the digest is order-free.
+				text.AppendJoin(',', plan.Order.Select(key => KeyOf(key.Entity, key.Id)).OrderBy(key => key, StringComparer.Ordinal))
 					.Append('|')
-					.AppendJoin(',', plan.PlatformCascade.Select(key => KeyOf(key.Entity, key.Id)));
+					.AppendJoin(',', plan.PlatformCascade.Select(key => KeyOf(key.Entity, key.Id)).OrderBy(key => key, StringComparer.Ordinal));
 			}
 			text.Append(';');
 		}

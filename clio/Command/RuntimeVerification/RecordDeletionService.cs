@@ -129,6 +129,7 @@ internal sealed class RecordDeletionService(
 	private static readonly HashSet<string> LookupBaseSchemas = new(StringComparer.Ordinal) {
 		"BaseLookup", "BaseCodeLookup", "BaseImageLookup", "BaseCodeImageLookup"
 	};
+	private const int MaxParentChainDepth = 12;
 	private readonly Dictionary<string, bool> _lookups = new(StringComparer.OrdinalIgnoreCase);
 
 	// One service instance serves one tool call; a cascade diagnoses many rows of the same entities.
@@ -242,9 +243,39 @@ internal sealed class RecordDeletionService(
 		return lookup;
 	}
 
-	private bool IsLookupBase(Guid parentUId, int timeoutMs) =>
-		Select(ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId([parentUId.ToString("D")]), timeoutMs)
-			.Any(row => LookupBaseSchemas.Contains(row["Name"]?.ToString() ?? string.Empty));
+	// Walks the parent chain up to BaseEntity: a lookup is often derived through an intermediate schema
+	// (UsrBaseStatus -> BaseLookup). Bounded, and anything that cannot be read or looks cyclic counts as a lookup,
+	// because a cascade refused wrongly costs a call and a lookup cascaded costs data.
+	private bool IsLookupBase(Guid parentUId, int timeoutMs) {
+		HashSet<Guid> seen = [];
+		Guid current = parentUId;
+		for (int depth = 0; depth < MaxParentChainDepth; depth++) {
+			if (current == Guid.Empty) {
+				return false;
+			}
+			if (!seen.Add(current)) {
+				return true;
+			}
+			string name = Select(ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId([current.ToString("D")]), timeoutMs)
+				.Select(row => row["Name"]?.ToString() ?? string.Empty)
+				.FirstOrDefault(value => value.Length > 0);
+			if (name is null) {
+				return true;
+			}
+			if (LookupBaseSchemas.Contains(name)) {
+				return true;
+			}
+			if (string.Equals(name, "BaseEntity", StringComparison.Ordinal)) {
+				return false;
+			}
+			RuntimeEntitySchemaResult schema = GetSchema(name, timeoutMs);
+			if (schema is null) {
+				return true;
+			}
+			current = schema.ParentUId ?? Guid.Empty;
+		}
+		return true;
+	}
 
 	// The referencing rows of one entity in a single select; a select that fails or fills its cap falls back to one
 	// select per column, which also tells an unreadable column apart.
