@@ -745,11 +745,13 @@ changes in a real browser without ever seeing the login page.
 
 - `get-browser-session` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`) — authenticates against a forms-auth environment and returns the absolute path to a Playwright-compatible `storageState` file in `session-file-path`. Args: `environment-name` (required), `force-refresh` (optional).
 - `clear-browser-session` (`ReadOnly=false`, `Destructive=true`, `Idempotent=true`) — deletes the cached session so the next call re-authenticates. Args: `environment-name` (required).
+- `page-smoke` (`ReadOnly=false`, `Destructive=false`, `Idempotent=false`, **environment-sensitive**, long-tail via `clio-run`, ENG-103032) — opens a Freedom UI form page (`#Card/{page}/edit/{record-id}`, add mode without `record-id`) in a headless Chromium on the machine clio runs on, with the cached session injected over CDP (`Network.setCookie`), waits for the Freedom UI ready signal (`crt-root` up, splash and `crt-mask` hidden, the named elements in `crt-navigation-schema-outlet` unchanged for 1.5 s; `timeout` 5-45 s, default 30), and returns `buttons`, `fields` and `consoleErrors` (uncaught exceptions, `console.error`, failed requests by path). `click` (opt-in, a WRITE) presses one button by caption or element name and reports `click` {outcome, url, navigations, consoleErrors, dialogs, toasts, invalidFields, created}; `watch` diffs up to 5 entities around the click through the run-process created-record watcher, and nothing it lists is deleted. The browser is killed and its temporary profile deleted on every exit path; the reply stays under 14 KB. Replaces the hand-written Playwright scripts agents wrote to look at a page.
 
 What an external AI can practically do here:
 
 - get a `storageState` file path and feed it to Playwright's `storageState` option to open Creatio already logged in
 - force a fresh login or clear a stale session
+- check a form page at runtime in one call (`page-smoke`) instead of writing a Playwright script: what it shows, what it logs, and what one button click does
 
 Important behavior and safety:
 
