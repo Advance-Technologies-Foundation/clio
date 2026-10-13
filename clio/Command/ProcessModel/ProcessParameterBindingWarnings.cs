@@ -252,7 +252,7 @@ public static class ProcessParameterBindingWarnings {
 			string.Equals(e?.Uid, match.Groups["element"].Value, StringComparison.OrdinalIgnoreCase));
 		DescribedParameter? output = element?.Parameters?.FirstOrDefault(p =>
 			string.Equals(p?.UId, match.Groups["parameter"].Value, StringComparison.OrdinalIgnoreCase));
-		return output is null || string.IsNullOrWhiteSpace(element!.Name) || string.IsNullOrWhiteSpace(output.Name)
+		return output is null || string.IsNullOrWhiteSpace(element.Name) || string.IsNullOrWhiteSpace(output.Name)
 			? null
 			: new ElementSource(element.Name, output.Name, null);
 	}
@@ -277,7 +277,7 @@ public static class ProcessParameterBindingWarnings {
 	private static string Join(string element, string? parameter, string? column) =>
 		string.Join(".", new[] { element, parameter, column }
 			.Where(part => !string.IsNullOrWhiteSpace(part))
-			.Select(part => part!.Trim()));
+			.Select(part => part.Trim()));
 
 	private static string Quote(string text) => $"'{Clip(text)}'";
 
@@ -342,10 +342,8 @@ public static class ProcessParameterBindingWarnings {
 				if (string.Equals(current, target, StringComparison.OrdinalIgnoreCase)) {
 					return true;
 				}
-				foreach (string next in _next.GetValueOrDefault(current) ?? []) {
-					if (seen.Add(next)) {
-						queue.Enqueue(next);
-					}
+				foreach (string next in (_next.GetValueOrDefault(current) ?? []).Where(seen.Add)) {
+					queue.Enqueue(next);
 				}
 			}
 			return false;

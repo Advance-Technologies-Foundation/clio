@@ -430,16 +430,7 @@ public class CreateBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
-			// A process-parameter mapping is a binding, not a flow-time assignment, and nothing on the server says
-			// when two of them collide or when one points at a branch some start never runs (ENG-103081). It runs
-			// after the write landed, so like the guards below it must never turn this success into a failure.
-			try {
-				foreach (string warning in ProcessParameterBindingWarnings.ForDescriptor(options.DescriptorJson)) {
-					logger.WriteWarning(warning);
-				}
-			} catch (Exception analysis) {
-				logger.WriteWarning($"The process was created, but checking its parameter mappings failed: {analysis.Message}.");
-			}
+			WarnOnParameterBindings(options);
 			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
 			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
 			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
@@ -472,6 +463,19 @@ public class CreateBusinessProcessCommand(
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	// A process-parameter mapping is a binding, not a flow-time assignment, and nothing on the server says when two
+	// of them collide or when one points at a branch some start never runs (ENG-103081). It runs after the write
+	// landed, so like the guards it must never turn this success into a failure.
+	private void WarnOnParameterBindings(CreateBusinessProcessOptions options) {
+		try {
+			foreach (string warning in ProcessParameterBindingWarnings.ForDescriptor(options.DescriptorJson)) {
+				logger.WriteWarning(warning);
+			}
+		} catch (Exception analysis) {
+			logger.WriteWarning($"The process was created, but checking its parameter mappings failed: {analysis.Message}.");
 		}
 	}
 
