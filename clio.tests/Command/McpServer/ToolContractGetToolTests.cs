@@ -87,6 +87,31 @@ public sealed class ToolContractGetToolTests {
 			because: "deleting a folder that still holds the element can remove the element from the environment");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Publishes a curated place-section-in-workplace contract whose required fields match the tool and which carries the confirm-with-the-user and re-login duties.")]
+	public void PlaceSectionInWorkplaceContract_ShouldCarryRequiredFieldsAndDuties() {
+		// Arrange
+		ToolContractGetTool tool = new();
+
+		// Act
+		ToolContractGetResponse result =
+			tool.GetToolContracts(new ToolContractGetArgs([PlaceSectionInWorkplaceTool.ToolName]));
+
+		// Assert
+		ToolContractDefinition contract = result.Tools!.Single();
+		contract.InputSchema.Required.Should().Equal(["environment-name", "section-code"],
+			because: "the contract must list exactly the arguments the tool refuses to run without");
+		contract.Description.Should().Contain("Confirm the target workplace and the roles with the user",
+			because: "a grant changes who sees data, so the agent must ask first");
+		contract.Description.Should().Contain("log out and back in",
+			because: "navigation lists are cached per session");
+		contract.Description.Should().Contain("never deletes",
+			because: "the agent must know the tool cannot remove a placement or grant");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["writes-started", "written"],
+			because: "a failure after the first write must be distinguishable from one that changed nothing");
+	}
+
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
 
 	[Test, Category("Unit")]
@@ -1476,8 +1501,10 @@ public sealed class ToolContractGetToolTests {
 				field.Name == "diagnostics" && field.Description.Contains("observed data", StringComparison.Ordinal),
 			because: "an agent reading this field must be told by the contract that its content comes from "
 				+ "the configured repository rather than from clio");
-		contract.OutputContract.Fields.Should().Contain(field => field.Name == "available-guides",
-			because: "failed lookups should expose recovery names");
+		contract.OutputContract.Fields.Should().Contain(field => field.Name == "catalog",
+			because: "name=list is how an agent discovers the active guides");
+		contract.OutputContract.Fields.Should().NotContain(field => field.Name == "available-guides",
+			because: "get-guidance no longer returns the unbounded name dump");
 		contract.Examples.Any(example =>
 			example.Arguments.TryGetValue("name", out object? value)
 			&& string.Equals(value?.ToString(), "page-schema-handlers", StringComparison.Ordinal)).Should().BeTrue(

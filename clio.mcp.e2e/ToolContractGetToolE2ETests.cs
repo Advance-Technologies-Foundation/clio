@@ -1886,7 +1886,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 					because: "include-operations switches between the operation list and the per-type counts"));
 			AllureApi.Step($"Assert {toolName} include-operations is optional", () =>
 				(contract.InputSchema.Required ?? []).Should().NotContain(includeOperations,
-					because: "the argument defaults to true, so omitting it keeps the full operation list"));
+					because: "the argument has a default, so omitting it is always valid"));
 			AllureApi.Step($"Assert {toolName} include-operations names the counts field", () =>
 				field.Description.Should().Contain("viewConfigDiffOpCounts",
 					because: "the caller must be told what replaces the operation list"));

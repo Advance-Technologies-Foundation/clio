@@ -65,6 +65,7 @@ public sealed class ODataUpdateTool(
 	[Description(
 		"Update a single Creatio record via OData v4 (PATCH). " +
 		"Requires the record's GUID id; only the supplied fields are changed. " +
+		"Common synonyms of data - values, payload, body or fields - are accepted and reported in warnings; sending one together with data or rows-file is rejected as ambiguous. " +
 		"Data field NAMES are verified against the entity's OData type ($metadata) before the write: " +
 		"an unknown field fails the call with nothing written. Field VALUES are otherwise not validated, with one " +
 		"exception: a date-time string without a UTC designator or offset (e.g. '2024-01-01T04:00:00') is rejected " +
@@ -84,8 +85,21 @@ public sealed class ODataUpdateTool(
 		//Minted once and stamped on the single exit, so every response carries the correlation-id
 		//core-rules promises - refusals and validation failures included.
 		string correlationId = correlationIds.New();
-		ODataWriteResponse result = UpdateCore(args, out bool attempted, out bool received);
-		return result with { CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
+		//A synonym of data (values, payload, body, fields) is folded into data before the arguments are
+		//examined; an ambiguous combination is refused ahead of the confirmation gate, any file read and any PATCH.
+		ODataWriteArgumentAliases.Resolution payloadAlias = ODataWriteArgumentAliases.Resolve(
+			args.ExtensionData, "data", ODataWriteArgumentAliases.UpdateDataAliases,
+			args.Data is not null, !string.IsNullOrWhiteSpace(args.RowsFile));
+		if (payloadAlias.Warning is not null) {
+			args = args with { Data = payloadAlias.Value, ExtensionData = payloadAlias.Remaining };
+		}
+		bool attempted = false;
+		bool received = false;
+		ODataWriteResponse result = payloadAlias.Error is not null
+			? ODataWriteResponse.Failure(payloadAlias.Error)
+			: UpdateCore(args, out attempted, out received);
+		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,
+			CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
 			args.Entity, null, attempted, received, result.Success, result.Error) };
 	}
 
