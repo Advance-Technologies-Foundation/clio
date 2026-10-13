@@ -100,7 +100,8 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 		return ExecuteWithCleanLog(options, () => {
 			try {
 				IWorkplacePlacementService service = ResolveFromCallContainer<IWorkplacePlacementService>(options);
-				return Success(service.Place(request));
+				WorkplacePlacementResult result = service.Place(request);
+				return result.Error is null ? Success(result) : PartialFailure(result);
 			}
 			catch (Exception ex) {
 				return Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
@@ -117,6 +118,17 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 			Roles = result.Roles,
 			Warnings = result.Warnings.Count == 0 ? null : result.Warnings,
 			SectionWorkplaces = result.SectionWorkplaces,
+			NextStep = result.NextStep
+		};
+
+	private static PlaceSectionInWorkplaceResponse PartialFailure(WorkplacePlacementResult result) =>
+		new() {
+			Success = false,
+			Error = SensitiveErrorTextRedactor.Redact(result.Error),
+			WritesStarted = true,
+			Written = result.Written,
+			PackageName = result.PackageName,
+			Warnings = result.Warnings.Count == 0 ? null : result.Warnings,
 			NextStep = result.NextStep
 		};
 
@@ -211,8 +223,21 @@ public sealed record PlaceSectionInWorkplaceResponse {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string NextStep { get; init; }
 
-	/// <summary>Failure reason. Inputs are resolved before the first write, so an input error changed nothing.</summary>
+	/// <summary>
+	/// Failure reason. Inputs are resolved before the first write, so an error without <see cref="WritesStarted"/>
+	/// changed nothing.
+	/// </summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Error { get; init; }
+
+	/// <summary>Present (true) when the call failed after its first write; <see cref="Written"/> lists those writes.</summary>
+	[JsonPropertyName("writes-started")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public bool? WritesStarted { get; init; }
+
+	/// <summary>After a failure past the first write: every row upsert and binding creation started, the failing one included.</summary>
+	[JsonPropertyName("written")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<WorkplacePlacementWrite> Written { get; init; }
 }

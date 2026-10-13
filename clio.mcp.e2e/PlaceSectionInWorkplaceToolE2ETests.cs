@@ -61,5 +61,6 @@ public sealed class PlaceSectionInWorkplaceToolE2ETests : McpContractFixtureBase
 			because: "an argument mistake must surface as a structured in-tool failure, not an MCP protocol error");
 		result.Success.Should().BeFalse(because: "a section cannot be placed without its code");
 		result.Error.Should().Contain("section-code", because: "the failure names the field the caller has to add");
+		result.WritesStarted.Should().BeNull(because: "an argument failure comes before the first write, so nothing changed");
 	}
 }

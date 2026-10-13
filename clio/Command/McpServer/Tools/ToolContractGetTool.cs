@@ -5082,10 +5082,11 @@ internal static class ToolContractCatalog {
 			"The workplace is matched by workplace-name and client-type (preferring one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's Type and LoaderId read back. " +
 			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added. " +
 			"A move is refused before any write when no role would see the target workplace (pass roles), or when another package ships the moved row (pass that package as package-name). " +
+			"An existing workplace another package ships is used but not bound into package-name (a warning names its owner), and a position change for it is refused. " +
 			"Every row is written live and bound into package-name (SysWorkplace_<Workplace>, SysModuleInWorkplace_<SectionCode>, SysAdminUnitInWorkplace_<Workplace>, or the binding that already ships the row), so it transfers with the package. " +
 			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report), or omitted (reuse or create). " +
 			"section-workplaces always reports where the section is after the call. " +
-			"Inputs are resolved before the first write, so an input error changes nothing. Re-running converges and never duplicates; the tool never deletes a row. " +
+			"Inputs are resolved before the first write, so an input error changes nothing; a failure after the first write returns writes-started=true and the written rows. Re-running converges and never duplicates; the tool never deletes a row. " +
 			"Afterwards tell the user to log out and back in; a refresh is not enough. For the model behind it, call get-guidance with name `workplaces`.",
 			new ToolInputSchemaContract(
 				[EnvironmentNameFieldName, sectionCodeField],
@@ -5105,13 +5106,15 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(PackageNameFieldName, StringType, "Package that ships every row."),
-				Field("workplace", ObjectType, "id, name, client-type, position, created (false: reused), binding-name."),
+				Field("workplace", ObjectType, "id, name, client-type, position, created (false: reused), binding-name (absent when another package ships the workplace)."),
 				Field("section", ObjectType, "section-id, code, placement-id, action (moved, created or already-present), binding-name."),
 				Field(rolesField, ArrayType, "Per role: role-id, name, grant-id, action (granted or already-granted), binding-name."),
-				Field("warnings", ArrayType, "Non-fatal findings to relay: a duplicate workplace name, an adopted workplace, My applications not identified (added, not moved), a workplace with no grant."),
+				Field("warnings", ArrayType, "Non-fatal findings to relay: a duplicate workplace name, an adopted workplace, a workplace another package ships (used, not bound), My applications not identified (added, not moved), a workplace with no grant."),
 				Field("section-workplaces", ArrayType, "Every workplace (id, name) holding the section after the call, read back; the answer to where the section ended up."),
 				Field("next-step", StringType, "Present after a write: tell the user to log out and back in."),
-				Field(ErrorFieldName, StringType, FailureMessageDescription)),
+				Field(ErrorFieldName, StringType, FailureMessageDescription),
+				Field("writes-started", BooleanType, "true when the call failed after its first write; absent otherwise, so an error without it changed nothing."),
+				Field("written", ArrayType, "With writes-started: every row upsert (schema, id, binding-name) and binding creation (schema, binding-name) started before the failure, the failing one included; treat each as possibly on the environment. Re-run the same call to converge.")),
 			CommonErrorContract,
 			[
 				EnvironmentNameParameterAlias(),

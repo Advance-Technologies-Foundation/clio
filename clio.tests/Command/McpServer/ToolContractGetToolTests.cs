@@ -108,6 +108,8 @@ public sealed class ToolContractGetToolTests {
 			because: "navigation lists are cached per session");
 		contract.Description.Should().Contain("never deletes",
 			because: "the agent must know the tool cannot remove a placement or grant");
+		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["writes-started", "written"],
+			because: "a failure after the first write must be distinguishable from one that changed nothing");
 	}
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);

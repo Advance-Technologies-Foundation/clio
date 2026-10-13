@@ -30,7 +30,8 @@ public sealed record SectionModuleRecord(Guid Id, string Code);
 /// <param name="Id">Row identifier.</param>
 /// <param name="WorkplaceId">The workplace the row belongs to.</param>
 /// <param name="TargetId">The section or role the row links to the workplace.</param>
-public sealed record WorkplaceJunctionRecord(Guid Id, Guid WorkplaceId, Guid TargetId);
+/// <param name="WorkplaceName">The workplace's name, read in the same query; null when not read.</param>
+public sealed record WorkplaceJunctionRecord(Guid Id, Guid WorkplaceId, Guid TargetId, string WorkplaceName = null);
 
 /// <summary>A role or user (<c>SysAdminUnit</c>).</summary>
 /// <param name="Id">Identifier.</param>
@@ -40,7 +41,10 @@ public sealed record AdminUnitRecord(Guid Id, string Name);
 /// <summary>A data binding (<c>SysPackageSchemaData</c>) and the package that ships it.</summary>
 /// <param name="PackageName">Package name.</param>
 /// <param name="BindingName">Binding name.</param>
-public sealed record PackageBindingRecord(string PackageName, string BindingName);
+/// <param name="Unverified">
+/// The bound data could not be parsed, so whether the binding ships the row is unknown; read the binding to decide.
+/// </param>
+public sealed record PackageBindingRecord(string PackageName, string BindingName, bool Unverified = false);
 
 /// <summary>
 /// Read-only access to the navigation workplace tables (<c>SysWorkplace</c>, <c>SysModuleInWorkplace</c>,
@@ -83,8 +87,13 @@ public interface IWorkplaceRepository {
 	/// <summary>Lists the names of the packages that ship a data binding with the given name.</summary>
 	IReadOnlyList<string> FindPackagesShippingBinding(string bindingName);
 
-	/// <summary>Lists every data binding, in any package, that ships rows of an entity schema.</summary>
-	IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName);
+	/// <summary>
+	/// Lists every data binding, in any package, that ships the row <paramref name="rowId"/> of an entity schema.
+	/// One query reads the bound data of every binding of the schema, so the cost does not grow with the number of
+	/// packages. A binding whose bound data cannot be parsed is listed with
+	/// <see cref="PackageBindingRecord.Unverified"/> set, never dropped.
+	/// </summary>
+	IReadOnlyList<PackageBindingRecord> FindBindingsShippingRow(string entitySchemaName, Guid rowId);
 }
 
 /// <inheritdoc />
@@ -94,12 +103,16 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	private const string IdColumn = "Id";
 	private const string PackageNameAlias = "PackageName";
 
+	/// <summary>The <c>BaseEntity.Id</c> column UId, which every bound row carries its key under.</summary>
+	private const string IdColumnUId = "ae0e45ca-c495-4fe7-a39d-3ab7278e1617";
+
 	/// <summary>
 	/// Platform-seeded client type ids, used when the name does not match because the profile culture translates
 	/// <c>SysApplicationClientType.Name</c>.
 	/// </summary>
 	private static readonly Dictionary<string, Guid> WellKnownClientTypeIds = new(StringComparer.OrdinalIgnoreCase) {
-		["Web"] = new Guid("195785B4-F55A-4E72-ACE3-6480B54C8FA5")
+		["Web"] = new Guid("195785B4-F55A-4E72-ACE3-6480B54C8FA5"),
+		["Mobile"] = new Guid("BE8AB9EE-344E-4A56-8C97-41C84F22BD88")
 	};
 
 	/// <inheritdoc />
@@ -184,18 +197,73 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	}
 
 	/// <inheritdoc />
-	public IReadOnlyList<PackageBindingRecord> FindBindingsOfSchema(string entitySchemaName) {
+	public IReadOnlyList<PackageBindingRecord> FindBindingsShippingRow(string entitySchemaName, Guid rowId) {
 		return Select("SysPackageSchemaData",
 				[
 					new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", PackageNameAlias),
-					Column("Name")
+					Column("Name"),
+					Column("Data")
 				],
 				[TextFilter("SysSchema.Name", entitySchemaName)])
-			.Select(row => new PackageBindingRecord(ReadString(row, PackageNameAlias), ReadString(row, "Name")))
+			.Select(row => (Row: row, Ships: BindingDataShipsRow(ReadString(row, "Data"), rowId)))
+			.Where(match => match.Ships != false)
+			.Select(match => new PackageBindingRecord(ReadString(match.Row, PackageNameAlias),
+				ReadString(match.Row, "Name"), match.Ships is null))
 			.Where(binding => !string.IsNullOrWhiteSpace(binding.PackageName)
 				&& !string.IsNullOrWhiteSpace(binding.BindingName))
 			.Distinct()
 			.ToArray();
+	}
+
+	/// <summary>
+	/// Whether the bound data of a binding (<c>SysPackageSchemaData.Data</c>: <c>{"PackageData":[{"Row":[...]}]}</c>)
+	/// has a row whose <c>Id</c> column is <paramref name="rowId"/>. DataService returns the binary column as its
+	/// JSON text; base64 text is decoded first.
+	/// </summary>
+	/// <returns>Whether the row is shipped; null when the data is missing or cannot be parsed.</returns>
+	internal static bool? BindingDataShipsRow(string data, Guid rowId) {
+		string json = DecodeBindingData(data);
+		if (json is null) {
+			return null;
+		}
+		try {
+			using JsonDocument document = JsonDocument.Parse(json);
+			if (!document.RootElement.TryGetProperty("PackageData", out JsonElement packageData)
+				|| packageData.ValueKind != JsonValueKind.Array) {
+				return null;
+			}
+			return packageData.EnumerateArray()
+				.Where(item => item.ValueKind == JsonValueKind.Object
+					&& item.TryGetProperty("Row", out JsonElement cells) && cells.ValueKind == JsonValueKind.Array)
+				.SelectMany(item => item.GetProperty("Row").EnumerateArray())
+				.Any(cell => IsIdCell(cell, rowId));
+		}
+		catch (JsonException) {
+			return null;
+		}
+	}
+
+	private static bool IsIdCell(JsonElement cell, Guid rowId) =>
+		cell.ValueKind == JsonValueKind.Object
+		&& cell.TryGetProperty("SchemaColumnUId", out JsonElement columnUId)
+		&& string.Equals(columnUId.ToString(), IdColumnUId, StringComparison.OrdinalIgnoreCase)
+		&& cell.TryGetProperty("Value", out JsonElement value)
+		&& Guid.TryParse(value.ToString(), out Guid id) && id == rowId;
+
+	private static string DecodeBindingData(string data) {
+		if (string.IsNullOrWhiteSpace(data)) {
+			return null;
+		}
+		string trimmed = data.Trim().TrimStart('\uFEFF').TrimStart();
+		if (trimmed.StartsWith('{')) {
+			return trimmed;
+		}
+		try {
+			return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(trimmed)).TrimStart('\uFEFF');
+		}
+		catch (FormatException) {
+			return null;
+		}
 	}
 
 	private IReadOnlyList<WorkplaceJunctionRecord> SelectJunction(string schemaName, string targetColumn,
@@ -204,11 +272,13 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 				[
 					Column(IdColumn),
 					new SelectQueryHelper.SelectQueryColumnDefinition("SysWorkplace.Id", "WorkplaceId"),
+					new SelectQueryHelper.SelectQueryColumnDefinition("SysWorkplace.Name", "WorkplaceName"),
 					new SelectQueryHelper.SelectQueryColumnDefinition($"{targetColumn}.Id", "TargetId")
 				],
 				[filter])
 			.Select(row => new WorkplaceJunctionRecord(
-				ReadGuid(row, IdColumn), ReadGuid(row, "WorkplaceId"), ReadGuid(row, "TargetId")))
+				ReadGuid(row, IdColumn), ReadGuid(row, "WorkplaceId"), ReadGuid(row, "TargetId"),
+				ReadString(row, "WorkplaceName")))
 			.ToArray();
 	}
 

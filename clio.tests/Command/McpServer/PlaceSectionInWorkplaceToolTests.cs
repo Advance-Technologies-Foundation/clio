@@ -170,6 +170,35 @@ public class PlaceSectionInWorkplaceToolTests {
 		response.Success.Should().BeFalse(because: "the service failed");
 		response.Error.Should().NotContain("creatio.local", because: "the host must not cross the MCP boundary");
 		response.NextStep.Should().BeNull(because: "a failure has no re-login step");
+		response.WritesStarted.Should().BeNull(because: "a thrown failure comes before the first write");
+	}
+
+	[Test]
+	[Description("Reports a failure after the first write as success=false with writes-started, the written rows and the re-login step, so the caller does not read it as 'nothing changed'.")]
+	public void PlaceSectionInWorkplace_ShouldReturnWrittenRows_WhenServiceFailsAfterFirstWrite() {
+		// Arrange
+		Guid workplaceId = Guid.NewGuid();
+		IWorkplacePlacementService service = Substitute.For<IWorkplacePlacementService>();
+		service.Place(Arg.Any<WorkplacePlacementRequest>()).Returns(new WorkplacePlacementResult("UsrOrdersApp", null,
+			null, [], ["reset failed"], null, "Tell the user to log out and back in.",
+			"Upsert failed at http://creatio.local:8080/0/DataService",
+			[new WorkplacePlacementWrite("SysWorkplace", workplaceId, "SysWorkplace_Orders")]));
+		PlaceSectionInWorkplaceTool tool = CreateTool(service);
+
+		// Act
+		PlaceSectionInWorkplaceResponse response =
+			tool.PlaceSectionInWorkplace(new PlaceSectionInWorkplaceArgs(EnvironmentName, "UsrOrders", "Orders"));
+		string json = JsonSerializer.Serialize(response);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the call did not finish");
+		response.WritesStarted.Should().BeTrue(because: "rows were written before the failure");
+		response.Written.Should().ContainSingle(write => write.Id == workplaceId,
+			because: "the caller must learn which rows already exist");
+		response.Error.Should().NotContain("creatio.local", because: "the host must not cross the MCP boundary");
+		response.NextStep.Should().Contain("log out", because: "the written rows are visible only after a re-login");
+		json.Should().Contain("\"writes-started\":true").And.Contain("\"written\"",
+			because: "the contract names the fields in kebab-case");
 	}
 
 	private static WorkplacePlacementResult SampleResult() =>

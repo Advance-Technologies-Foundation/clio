@@ -105,6 +105,46 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 		});
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("place-section-in-workplace uses a workplace another package ships without binding it")]
+	[Description("Creates an app and moves its section into a product workplace that another package ships. Verifies the call succeeds, does not bind the workplace row into the app package (no workplace binding-name, a warning names the owning package), and that the app package's placement binding saves and ships the moved row.")]
+	public async Task PlaceSectionInWorkplace_Should_Use_But_Not_Bind_Another_Packages_Workplace() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(10));
+		string? productWorkplace = await FindProductWorkplaceAsync(context);
+		if (productWorkplace is null) {
+			Assert.Ignore("The sandbox has none of the product workplaces this test uses.");
+		}
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		ApplicationContextResponseEnvelope app = await CreateAppAsync(context, suffix);
+
+		// Act
+		PlaceSectionInWorkplaceResponse placed = await PlaceAsync(context, app, productWorkplace, "existing");
+		if (placed.Success && placed.Workplace?.BindingName is not null) {
+			Assert.Inconclusive($"No package ships workplace '{productWorkplace}' on this sandbox.");
+		}
+		string placementBinding = await ReadBindingAsync(context, app.PackageName!, placed.Section?.BindingName);
+
+		// Assert
+		placed.Success.Should().BeTrue(because: placed.Error ?? "a product workplace can hold an app's section");
+		placed.Workplace!.Created.Should().BeFalse(because: "the product workplace is reused");
+		placed.Warnings.Should().Contain(warning => warning.Contains("used but not bound"),
+			because: "the caller learns that the app package depends on the workplace's owner");
+		placed.Section!.Action.Should().Be("moved", because: "create-app put the section in My applications");
+		placementBinding.Should().Contain(placed.Section.PlacementId.ToString(),
+			because: "the placement binding saves and ships the moved row although the workplace is not in the package");
+	}
+
+	private async Task<string?> FindProductWorkplaceAsync(ArrangeContext context) {
+		JsonElement workplaces = await ODataAsync(context,
+			"odata/SysWorkplace?$select=Name&$filter=SysApplicationClientType/Name%20eq%20'Web'");
+		HashSet<string> names = workplaces.GetProperty("value").EnumerateArray()
+			.Select(row => row.GetProperty("Name").GetString() ?? string.Empty)
+			.ToHashSet(StringComparer.Ordinal);
+		return new[] { "Studio", "Sales", "Service", "CRM", "Order and Contract" }.FirstOrDefault(names.Contains);
+	}
+
 	private async Task<ApplicationContextResponseEnvelope> CreateAppAsync(ArrangeContext context, string suffix) {
 		CallToolResult callResult = await context.Session.CallDestructiveAsync(
 			ApplicationCreateTool.ApplicationCreateToolName,

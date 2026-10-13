@@ -49,39 +49,58 @@ public sealed record WorkplaceLocation(
 /// <param name="ClientType">Client type name (Web or Mobile).</param>
 /// <param name="Position">Position read back after the write.</param>
 /// <param name="Created">Whether this call created the workplace (false: an existing one was reused).</param>
-/// <param name="BindingName">Data binding that ships the workplace row.</param>
+/// <param name="BindingName">
+/// Data binding that ships the workplace row; null when another package ships it, so it was used but not bound.
+/// </param>
 public sealed record WorkplacePlacementWorkplace(
 	[property: JsonPropertyName("id")] Guid Id,
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("client-type")] string ClientType,
 	[property: JsonPropertyName("position")] int Position,
 	[property: JsonPropertyName("created")] bool Created,
-	[property: JsonPropertyName("binding-name")] string BindingName);
+	[property: JsonPropertyName("binding-name")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string BindingName);
 
 /// <summary>The section placement (<c>SysModuleInWorkplace</c> row).</summary>
 /// <param name="SectionId">The <c>SysModule</c> id.</param>
 /// <param name="Code">The section code.</param>
 /// <param name="PlacementId">The <c>SysModuleInWorkplace</c> row id.</param>
 /// <param name="Action"><c>moved</c>, <c>created</c> or <c>already-present</c>.</param>
-/// <param name="BindingName">Data binding that ships the placement row.</param>
+/// <param name="BindingName">Data binding that ships the placement row; null when another package ships it.</param>
 public sealed record WorkplacePlacementSection(
 	[property: JsonPropertyName("section-id")] Guid SectionId,
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("placement-id")] Guid PlacementId,
 	[property: JsonPropertyName("action")] string Action,
-	[property: JsonPropertyName("binding-name")] string BindingName);
+	[property: JsonPropertyName("binding-name")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string BindingName);
 
 /// <summary>One role grant (<c>SysAdminUnitInWorkplace</c> row).</summary>
 /// <param name="Name">Role name.</param>
 /// <param name="RoleId">The <c>SysAdminUnit</c> id.</param>
 /// <param name="GrantId">The <c>SysAdminUnitInWorkplace</c> row id.</param>
 /// <param name="Action"><c>granted</c> or <c>already-granted</c>.</param>
-/// <param name="BindingName">Data binding that ships the grant row.</param>
+/// <param name="BindingName">Data binding that ships the grant row; null when another package ships it.</param>
 public sealed record WorkplacePlacementRole(
 	[property: JsonPropertyName("role-id")] Guid RoleId,
 	[property: JsonPropertyName("name")] string Name,
 	[property: JsonPropertyName("grant-id")] Guid GrantId,
 	[property: JsonPropertyName("action")] string Action,
+	[property: JsonPropertyName("binding-name")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	string BindingName);
+
+/// <summary>A write the call started: a row upsert, or (with no <paramref name="Id"/>) the creation of an empty binding.</summary>
+/// <param name="Schema">Entity schema of the row or binding.</param>
+/// <param name="Id">The written row id; null for a created binding.</param>
+/// <param name="BindingName">The binding the row was upserted into, or that was created.</param>
+public sealed record WorkplacePlacementWrite(
+	[property: JsonPropertyName("schema")] string Schema,
+	[property: JsonPropertyName("id")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	Guid? Id,
 	[property: JsonPropertyName("binding-name")] string BindingName);
 
 /// <summary>The outcome of <see cref="IWorkplacePlacementService.Place"/>.</summary>
@@ -92,6 +111,12 @@ public sealed record WorkplacePlacementRole(
 /// <param name="Warnings">Non-fatal findings the caller should relay.</param>
 /// <param name="SectionWorkplaces">Every workplace that holds the section after the call, read back.</param>
 /// <param name="NextStep">After a write: how the user gets to see the change; null when nothing was written.</param>
+/// <param name="Error">
+/// Set when the call failed after its first write: what failed. <paramref name="Written"/> then lists what is already
+/// on the environment, and <paramref name="Workplace"/>, <paramref name="Section"/> and
+/// <paramref name="SectionWorkplaces"/> are null.
+/// </param>
+/// <param name="Written">Every write started before the failure, the failing one included; null on success.</param>
 /// <remarks>With mode <c>none</c>, <paramref name="PackageName"/>, <paramref name="Workplace"/> and
 /// <paramref name="Section"/> are null and nothing was written.</remarks>
 public sealed record WorkplacePlacementResult(
@@ -101,7 +126,9 @@ public sealed record WorkplacePlacementResult(
 	IReadOnlyList<WorkplacePlacementRole> Roles,
 	IReadOnlyList<string> Warnings,
 	IReadOnlyList<WorkplaceLocation> SectionWorkplaces,
-	string NextStep = null);
+	string NextStep = null,
+	string Error = null,
+	IReadOnlyList<WorkplacePlacementWrite> Written = null);
 
 /// <summary>
 /// Places a section in a navigation workplace, grants roles access to it, and ships every row it touches as a
@@ -115,12 +142,19 @@ public interface IWorkplacePlacementService {
 	/// set — grants the roles, binds every row into the package, and reads the result back. Re-running with the
 	/// same request changes nothing. Nothing is deleted: a row the call does not own is left in place and reported
 	/// as a warning. A move out of <c>My applications</c> is refused before any write when no role would see the
-	/// target workplace, or when another package ships the moved row (installing it would undo the move).
+	/// target workplace, or when another package ships the moved row (installing it would undo the move). An
+	/// existing workplace another package ships is used but never bound into the target package, so installing
+	/// either package cannot overwrite or remove the other's workplace; a position change for it is refused.
 	/// </summary>
+	/// <returns>
+	/// The placement; or, when a step failed after the first write, a result whose
+	/// <see cref="WorkplacePlacementResult.Error"/> says what failed and whose
+	/// <see cref="WorkplacePlacementResult.Written"/> lists what is already on the environment. The navigation
+	/// cache is reset in both cases, and a re-run converges.
+	/// </returns>
 	/// <exception cref="InvalidOperationException">
 	/// A precondition failed. Every input (package, client type, section, roles) is resolved before the first
-	/// write, so such a failure changes nothing; a failure during the writes leaves what was already written, and
-	/// a re-run converges.
+	/// write, so such a failure changes nothing.
 	/// </exception>
 	WorkplacePlacementResult Place(WorkplacePlacementRequest request);
 }
@@ -145,6 +179,9 @@ internal sealed class WorkplacePlacementService(
 	// Per call: schema -> binding name -> bound row ids in the target package, so each binding is read once.
 	private readonly Dictionary<string, Dictionary<string, HashSet<string>>> _boundIds =
 		new(StringComparer.OrdinalIgnoreCase);
+
+	// Per call: every write made so far, reported when a later step fails.
+	private readonly List<WorkplacePlacementWrite> _written = [];
 
 	/// <summary>Name of the default workplace <c>create-app</c> places new sections in.</summary>
 	internal const string MyApplicationsWorkplaceName = "My applications";
@@ -173,12 +210,14 @@ internal sealed class WorkplacePlacementService(
 		ArgumentNullException.ThrowIfNull(request);
 		Validate(request);
 		_boundIds.Clear();
+		_written.Clear();
 		List<string> warnings = [];
 		string mode = NormalizeMode(request.Mode);
 		if (mode == ModeNone) {
 			// Leave the section where it is: nothing is resolved for writing and nothing is written.
 			SectionModuleRecord unchanged = ResolveSection(request.SectionCode.Trim());
-			return new WorkplacePlacementResult(null, null, null, [], warnings, ReadSectionWorkplaces(unchanged.Id));
+			return new WorkplacePlacementResult(null, null, null, [], warnings,
+				ToLocations(repository.FindSectionPlacements(unchanged.Id)));
 		}
 
 		// Resolve every input before the first write, so a wrong argument changes nothing.
@@ -197,32 +236,49 @@ internal sealed class WorkplacePlacementService(
 		HashSet<Guid> myApplicationsIds = FindMyApplicationsIds(request, clientTypeId);
 		IReadOnlyList<WorkplaceJunctionRecord> sectionPlacements = repository.FindSectionPlacements(section.Id);
 		HashSet<Guid> holdingSection = sectionPlacements.Select(row => row.WorkplaceId).ToHashSet();
-		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, clientTypeId);
-		CheckMoveBeforeWriting(request, package, workplaceName, clientTypeId, roles, sectionPlacements,
-			myApplicationsIds);
+		IReadOnlyList<WorkplaceRecord> existing = repository.FindWorkplaces(workplaceName, clientTypeId);
+		// Prefer the one that already holds the section, so a re-run never spreads it over two of them.
+		WorkplaceRecord reused = existing.FirstOrDefault(record => holdingSection.Contains(record.Id))
+			?? existing.FirstOrDefault();
+		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, existing);
+		PackageBindingRecord workplaceOwner = FindForeignWorkplaceOwner(request, package, reused);
+		CheckMoveBeforeWriting(request, package, workplaceName, roles, sectionPlacements, myApplicationsIds,
+			existing, reused);
 
-		WorkplaceState workplace = EnsureWorkplace(request, package, workplaceName, clientTypeId, bindingSuffix,
-			holdingSection, warnings);
-		// Grant before placing: a failed grant then leaves the section where it was, not in a workplace nobody sees.
-		List<WorkplacePlacementRole> grants = roles
-			.Select(role => EnsureRoleGrant(request, package, workplace.Record.Id, role, bindingSuffix))
-			.ToList();
-		WorkplacePlacementSection placement = EnsureSectionPlacement(request, package, section, workplace.Record,
-			myApplicationsIds, warnings);
+		WorkplacePlacementResult placed;
+		try {
+			WorkplaceState workplace = EnsureWorkplace(request, package, workplaceName, clientTypeId, bindingSuffix,
+				existing, reused, workplaceOwner, warnings);
+			// Grant before placing: a failed grant then leaves the section where it was, not in a workplace nobody sees.
+			List<WorkplacePlacementRole> grants = roles
+				.Select(role => EnsureRoleGrant(request, package, workplace.Record.Id, role, bindingSuffix))
+				.ToList();
+			WorkplacePlacementSection placement = EnsureSectionPlacement(request, package, section, workplace.Record,
+				sectionPlacements, myApplicationsIds, warnings);
 
-		VerifyReadBack(section, workplace.Record, placement, grants);
-		if (repository.FindRoleGrants(workplace.Record.Id).Count == 0) {
-			warnings.Add("The workplace has no role grant, so nobody sees it. Pass roles to grant access.");
+			ReadBack readBack = VerifyReadBack(section, workplace.Record, placement, grants);
+			if (readBack.GrantCount == 0) {
+				warnings.Add("The workplace has no role grant, so nobody sees it. Pass roles to grant access.");
+			}
+			placed = new WorkplacePlacementResult(
+				package.PackageName,
+				new WorkplacePlacementWorkplace(workplace.Record.Id, workplace.Record.Name, clientTypeName,
+					workplace.Record.Position, workplace.Created, workplace.BindingName),
+				placement,
+				grants,
+				warnings,
+				ToLocations(readBack.Placements));
 		}
-		return new WorkplacePlacementResult(
-			package.PackageName,
-			new WorkplacePlacementWorkplace(workplace.Record.Id, workplace.Record.Name, clientTypeName,
-				workplace.Record.Position, workplace.Created, workplace.BindingName),
-			placement,
-			grants,
-			warnings,
-			ReadSectionWorkplaces(section.Id),
-			ResetNavigationCache(warnings));
+		catch (Exception ex) when (_written.Count > 0 && ex is not OperationCanceledException) {
+			// Writes had started: report what is already on the environment instead of an error that reads as
+			// "nothing changed", and still reset the navigation cache the written rows invalidate.
+			string nextStep = ResetNavigationCache(warnings);
+			return new WorkplacePlacementResult(package.PackageName, null, null, [], warnings, null, nextStep,
+				$"{ex.Message} The call failed after its first write: the rows in 'written' are already on the " +
+				"environment. Re-run the same call to converge.",
+				_written.ToList());
+		}
+		return placed with { NextStep = ResetNavigationCache(warnings) };
 	}
 
 	private string ResetNavigationCache(List<string> warnings) {
@@ -268,11 +324,10 @@ internal sealed class WorkplacePlacementService(
 		string.IsNullOrWhiteSpace(mode) ? null : mode.Trim().ToLowerInvariant();
 
 	private void CheckModeAgainstExistingWorkplaces(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string mode, string workplaceName, Guid clientTypeId) {
+		string mode, string workplaceName, IReadOnlyList<WorkplaceRecord> existing) {
 		if (mode is null) {
 			return;
 		}
-		IReadOnlyList<WorkplaceRecord> existing = repository.FindWorkplaces(workplaceName, clientTypeId);
 		if (mode == ModeExisting && existing.Count == 0) {
 			throw new InvalidOperationException(
 				$"No workplace named '{workplaceName}' exists for this client type; pass mode=new to create it.");
@@ -296,12 +351,12 @@ internal sealed class WorkplacePlacementService(
 	/// target) or that another package would undo on install (it ships the moved row).
 	/// </summary>
 	private void CheckMoveBeforeWriting(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string workplaceName, Guid clientTypeId, IReadOnlyList<AdminUnitRecord> roles,
-		IReadOnlyList<WorkplaceJunctionRecord> sectionPlacements, HashSet<Guid> myApplicationsIds) {
+		string workplaceName, IReadOnlyList<AdminUnitRecord> roles,
+		IReadOnlyList<WorkplaceJunctionRecord> sectionPlacements, HashSet<Guid> myApplicationsIds,
+		IReadOnlyList<WorkplaceRecord> existing, WorkplaceRecord reused) {
 		if (!request.RemoveFromMyApplications) {
 			return;
 		}
-		IReadOnlyList<WorkplaceRecord> existing = repository.FindWorkplaces(workplaceName, clientTypeId);
 		HashSet<Guid> holdingSection = sectionPlacements.Select(row => row.WorkplaceId).ToHashSet();
 		if (existing.Any(workplace => holdingSection.Contains(workplace.Id) || myApplicationsIds.Contains(workplace.Id))) {
 			// Already placed in the target, or the target is My applications itself: nothing is moved.
@@ -312,28 +367,49 @@ internal sealed class WorkplacePlacementService(
 		if (toMove is null) {
 			return;
 		}
-		bool targetHasGrant = existing.Count > 0 && repository.FindRoleGrants(existing[0].Id).Count > 0;
+		bool targetHasGrant = reused is not null && repository.FindRoleGrants(reused.Id).Count > 0;
 		if (roles.Count == 0 && !targetHasGrant) {
 			throw new InvalidOperationException(
 				$"Moving the section out of '{MyApplicationsWorkplaceName}' into '{workplaceName}', which no role sees, " +
 				"would hide the app from everyone. Pass roles, or remove-from-my-applications=false to add a placement.");
 		}
-		if (FindBindingContaining(request, package, SectionPlacementSchema, toMove.Id) is null) {
-			PackageBindingRecord owner = FindBindingInOtherPackage(request, package, SectionPlacementSchema, toMove.Id);
-			if (owner is not null) {
-				throw new InvalidOperationException(
-					$"The section's '{MyApplicationsWorkplaceName}' placement {toMove.Id} is shipped by package " +
-					$"'{owner.PackageName}' (binding {owner.BindingName}), so installing that package would undo the " +
-					$"move. Pass package-name={owner.PackageName}, or remove-from-my-applications=false.");
-			}
+		// Checked even when the target package ships the row too: two packages shipping it is decided by install order.
+		PackageBindingRecord owner = FindBindingInOtherPackage(request, package, SectionPlacementSchema, toMove.Id);
+		if (owner is not null) {
+			throw new InvalidOperationException(
+				$"The section's '{MyApplicationsWorkplaceName}' placement {toMove.Id} is shipped by package " +
+				$"'{owner.PackageName}' (binding {owner.BindingName}), so installing that package would undo the " +
+				$"move. Pass package-name={owner.PackageName}, or remove-from-my-applications=false.");
 		}
+	}
+
+	/// <summary>
+	/// The package that ships the reused workplace when the target package does not: that workplace is used but
+	/// not bound, and a position change for it is refused before any write.
+	/// </summary>
+	private PackageBindingRecord FindForeignWorkplaceOwner(WorkplacePlacementRequest request,
+		PackageTargetResolution package, WorkplaceRecord reused) {
+		if (reused is null || FindBindingContaining(request, package, WorkplaceSchema, reused.Id) is not null) {
+			return null;
+		}
+		PackageBindingRecord owner = FindBindingInOtherPackage(request, package, WorkplaceSchema, reused.Id);
+		if (owner is not null && request.Position is not null && request.Position != reused.Position) {
+			throw new InvalidOperationException(
+				$"Workplace '{reused.Name}' ({reused.Id}) is shipped by package '{owner.PackageName}', so its " +
+				"position is not this package's to change. Omit position, or use a workplace of your own.");
+		}
+		return owner;
 	}
 
 	private PackageBindingRecord FindBindingInOtherPackage(WorkplacePlacementRequest request,
 		PackageTargetResolution package, string schemaName, Guid rowId) {
 		string id = rowId.ToString();
-		foreach (PackageBindingRecord binding in repository.FindBindingsOfSchema(schemaName)
+		foreach (PackageBindingRecord binding in repository.FindBindingsShippingRow(schemaName, rowId)
 			.Where(binding => !string.Equals(binding.PackageName, package.PackageName, StringComparison.OrdinalIgnoreCase))) {
+			if (!binding.Unverified) {
+				return binding;
+			}
+			// Bound data the one-query read could not parse: read that binding alone instead of failing open.
 			BoundBindingProjection rows = dataBindingDbService.ReadBinding(new ReadDataBindingDbOptions {
 				Environment = request.EnvironmentName,
 				PackageName = binding.PackageName,
@@ -347,11 +423,10 @@ internal sealed class WorkplacePlacementService(
 		return null;
 	}
 
-	private IReadOnlyList<WorkplaceLocation> ReadSectionWorkplaces(Guid sectionId) =>
-		repository.FindSectionPlacements(sectionId)
-			.Select(row => row.WorkplaceId)
-			.Distinct()
-			.Select(id => new WorkplaceLocation(id, repository.GetWorkplace(id)?.Name))
+	private static IReadOnlyList<WorkplaceLocation> ToLocations(IReadOnlyList<WorkplaceJunctionRecord> placements) =>
+		placements
+			.GroupBy(row => row.WorkplaceId)
+			.Select(group => new WorkplaceLocation(group.Key, group.First().WorkplaceName))
 			.ToList();
 
 	private static void Validate(WorkplacePlacementRequest request) {
@@ -431,10 +506,20 @@ internal sealed class WorkplacePlacementService(
 	}
 
 	private WorkplaceState EnsureWorkplace(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string workplaceName, Guid clientTypeId, string bindingSuffix, HashSet<Guid> holdingSection,
-		List<string> warnings) {
-		IReadOnlyList<WorkplaceRecord> existing = repository.FindWorkplaces(workplaceName, clientTypeId);
-		bool created = existing.Count == 0;
+		string workplaceName, Guid clientTypeId, string bindingSuffix, IReadOnlyList<WorkplaceRecord> existing,
+		WorkplaceRecord reused, PackageBindingRecord foreignOwner, List<string> warnings) {
+		if (existing.Count > 1) {
+			warnings.Add($"{existing.Count} workplaces are named '{workplaceName}' for this client type " +
+				$"({string.Join(", ", existing.Select(record => record.Id))}); {reused.Id} was used.");
+		}
+		if (foreignOwner is not null) {
+			// Another package owns the row: binding it here too would let either install overwrite or remove it.
+			warnings.Add($"Workplace '{reused.Name}' is shipped by package '{foreignOwner.PackageName}', so it was " +
+				$"used but not bound into '{package.PackageName}'; an environment that installs '{package.PackageName}' " +
+				$"needs '{foreignOwner.PackageName}' for the workplace.");
+			return new WorkplaceState(reused, false, null);
+		}
+		bool created = reused is null;
 		Guid workplaceId;
 		string bindingName;
 		if (created) {
@@ -442,19 +527,14 @@ internal sealed class WorkplacePlacementService(
 			bindingName = WorkplaceBindingName(bindingSuffix);
 			EnsureBinding(request, package, WorkplaceSchema, bindingName);
 			// The live insert lets the platform assign Position, Type and LoaderId; they are read back below.
-			Upsert(request, package, bindingName, new Dictionary<string, object> {
+			Upsert(request, package, WorkplaceSchema, bindingName, new Dictionary<string, object> {
 				["Id"] = workplaceId,
 				["Name"] = workplaceName,
 				["SysApplicationClientType"] = clientTypeId
 			});
 		}
 		else {
-			// Prefer the one that already holds the section, so a re-run never spreads it over two of them.
-			workplaceId = (existing.FirstOrDefault(record => holdingSection.Contains(record.Id)) ?? existing[0]).Id;
-			if (existing.Count > 1) {
-				warnings.Add($"{existing.Count} workplaces are named '{workplaceName}' for this client type " +
-					$"({string.Join(", ", existing.Select(record => record.Id))}); {workplaceId} was used.");
-			}
+			workplaceId = reused.Id;
 			bindingName = FindBindingContaining(request, package, WorkplaceSchema, workplaceId);
 			if (bindingName is null) {
 				bindingName = WorkplaceBindingName(bindingSuffix);
@@ -484,15 +564,15 @@ internal sealed class WorkplacePlacementService(
 			warnings.Add($"Workplace {record.Id} has an empty Type or LoaderId, so its binding cannot carry them " +
 				"and installing the package elsewhere creates an incomplete workplace.");
 		}
-		Upsert(request, package, bindingName, values);
+		Upsert(request, package, WorkplaceSchema, bindingName, values);
 		WorkplaceRecord readBack = repository.GetWorkplace(workplaceId) ?? record;
 		return new WorkplaceState(readBack, created, bindingName);
 	}
 
 	private WorkplacePlacementSection EnsureSectionPlacement(WorkplacePlacementRequest request,
 		PackageTargetResolution package, SectionModuleRecord section, WorkplaceRecord target,
-		HashSet<Guid> myApplicationsIds, List<string> warnings) {
-		IReadOnlyList<WorkplaceJunctionRecord> placements = repository.FindSectionPlacements(section.Id);
+		IReadOnlyList<WorkplaceJunctionRecord> placements, HashSet<Guid> myApplicationsIds, List<string> warnings) {
+		// The placements read before the first write: the workplace and grant writes do not change them.
 		bool myApplicationsUnknown = myApplicationsIds.Count == 0;
 		if (myApplicationsIds.Contains(target.Id)) {
 			// The target is My applications itself: nothing to move out of.
@@ -537,12 +617,17 @@ internal sealed class WorkplacePlacementService(
 		string bindingName = action == ActionCreated
 			? null
 			: FindBindingContaining(request, package, SectionPlacementSchema, placementId);
+		if (action == ActionAlreadyPresent && bindingName is null
+			&& FindBindingInOtherPackage(request, package, SectionPlacementSchema, placementId) is not null) {
+			// Another package ships the placement already in the target: leave it to that package.
+			return new WorkplacePlacementSection(section.Id, section.Code, placementId, action, null);
+		}
 		if (bindingName is null) {
 			bindingName = $"{SectionPlacementSchema}_{BuildBindingSuffix(section.Code, section.Code)}";
 			// A moved row no other package ships (checked before the first write) is now shipped from this one.
 			EnsureBinding(request, package, SectionPlacementSchema, bindingName);
 		}
-		Upsert(request, package, bindingName, new Dictionary<string, object> {
+		Upsert(request, package, SectionPlacementSchema, bindingName, new Dictionary<string, object> {
 			["Id"] = placementId,
 			["SysWorkplace"] = target.Id,
 			["SysModule"] = section.Id
@@ -556,11 +641,16 @@ internal sealed class WorkplacePlacementService(
 			.FirstOrDefault(grant => grant.TargetId == role.Id);
 		Guid grantId = existing?.Id ?? Guid.NewGuid();
 		string bindingName = existing is null ? null : FindBindingContaining(request, package, RoleGrantSchema, grantId);
+		if (existing is not null && bindingName is null
+			&& FindBindingInOtherPackage(request, package, RoleGrantSchema, grantId) is not null) {
+			// Another package ships this grant: it already exists, and binding it here too would make two owners.
+			return new WorkplacePlacementRole(role.Id, role.Name, grantId, ActionAlreadyGranted, null);
+		}
 		if (bindingName is null) {
 			bindingName = $"{RoleGrantSchema}_{bindingSuffix}";
 			EnsureBinding(request, package, RoleGrantSchema, bindingName);
 		}
-		Upsert(request, package, bindingName, new Dictionary<string, object> {
+		Upsert(request, package, RoleGrantSchema, bindingName, new Dictionary<string, object> {
 			["Id"] = grantId,
 			["SysWorkplace"] = workplaceId,
 			["SysAdminUnit"] = role.Id
@@ -569,7 +659,7 @@ internal sealed class WorkplacePlacementService(
 			existing is null ? ActionGranted : ActionAlreadyGranted, bindingName);
 	}
 
-	private void VerifyReadBack(SectionModuleRecord section, WorkplaceRecord target,
+	private ReadBack VerifyReadBack(SectionModuleRecord section, WorkplaceRecord target,
 		WorkplacePlacementSection placement, IReadOnlyList<WorkplacePlacementRole> grants) {
 		IReadOnlyList<WorkplaceJunctionRecord> placements = repository.FindSectionPlacements(section.Id);
 		if (!placements.Any(row => row.Id == placement.PlacementId && row.WorkplaceId == target.Id)) {
@@ -582,6 +672,7 @@ internal sealed class WorkplacePlacementService(
 			throw new InvalidOperationException(
 				$"Read-back failed: role '{missing.Name}' has no grant on workplace {target.Id}.");
 		}
+		return new ReadBack(placements, grantedRoles.Count);
 	}
 
 	private string FindBindingContaining(WorkplacePlacementRequest request, PackageTargetResolution package,
@@ -622,6 +713,8 @@ internal sealed class WorkplacePlacementService(
 		}
 		// Created empty on purpose: create-data-binding-db matches a row by Name before Id, which would bind a
 		// different same-named workplace. Rows go in through the upsert, which matches by Id only.
+		// Recorded before the call: a call that fails half-way may already have changed the environment.
+		_written.Add(new WorkplacePlacementWrite(schemaName, null, bindingName));
 		dataBindingDbService.CreateBinding(new CreateDataBindingDbOptions {
 			Environment = request.EnvironmentName,
 			PackageName = package.PackageName,
@@ -631,8 +724,10 @@ internal sealed class WorkplacePlacementService(
 		bindings[bindingName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 	}
 
-	private void Upsert(WorkplacePlacementRequest request, PackageTargetResolution package, string bindingName,
-		Dictionary<string, object> values) {
+	private void Upsert(WorkplacePlacementRequest request, PackageTargetResolution package, string schemaName,
+		string bindingName, Dictionary<string, object> values) {
+		// Recorded before the call: the upsert writes the live row before it saves the binding.
+		_written.Add(new WorkplacePlacementWrite(schemaName, (Guid)values["Id"], bindingName));
 		dataBindingDbService.UpsertRow(new UpsertDataBindingRowDbOptions {
 			Environment = request.EnvironmentName,
 			PackageName = package.PackageName,
@@ -673,4 +768,6 @@ internal sealed class WorkplacePlacementService(
 	}
 
 	private sealed record WorkplaceState(WorkplaceRecord Record, bool Created, string BindingName);
+
+	private sealed record ReadBack(IReadOnlyList<WorkplaceJunctionRecord> Placements, int GrantCount);
 }
