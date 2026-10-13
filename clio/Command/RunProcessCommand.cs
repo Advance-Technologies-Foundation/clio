@@ -180,6 +180,7 @@ public class RunProcessCommand(
 	private readonly IProcessRunMonitor runMonitor = verification.Monitor;
 	private readonly ICreatedRecordWatcher recordWatcher = verification.Watcher;
 	private readonly ICreatedRecordCleaner recordCleaner = verification.Cleaner;
+	private readonly IRunRecordProvenance recordProvenance = verification.Provenance;
 
 	internal const int DefaultWaitTimeoutSeconds = 20;
 	internal const int MaxWaitTimeoutSeconds = 300;
@@ -391,9 +392,12 @@ public class RunProcessCommand(
 		int reserveMs = WaitReserveMs
 			+ (options.Watch is { Count: > 0 } ? CollectReserveMs : 0)
 			+ (options.Cleanup ? CleanupReserveMs : 0);
-		DateTimeOffset until = DateTimeOffset.UtcNow.AddSeconds(options.WaitTimeoutSeconds);
+		DateTimeOffset started = DateTimeOffset.UtcNow;
+		DateTimeOffset until = started.AddSeconds(options.WaitTimeoutSeconds);
+		bool cutByDeadline = false;
 		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-reserveMs) < until) {
 			until = deadline.AddMilliseconds(-reserveMs);
+			cutByDeadline = true;
 		}
 		// The last state read in full: a read that fails later (a slow stand, one timed-out request) does not discard it,
 		// and the wait goes on until its end.
@@ -434,11 +438,15 @@ public class RunProcessCommand(
 			(response.Warnings ??= []).Add("The last read of the run's state failed (" + readError + "); the state "
 				+ "reported is the one read before it.");
 		}
-		ApplyRunState(response, state, options.WaitTimeoutSeconds);
+		int waitedSeconds = (int)Math.Round((DateTimeOffset.UtcNow - started).TotalSeconds);
+		ApplyRunState(response, state, waitedSeconds, cutByDeadline ? options.WaitTimeoutSeconds : null);
 	}
 
 	// Called only for a run the launch answered `running`, so its result-parameter values are the ones it had then.
-	internal static void ApplyRunState(RunProcessResponse response, ProcessRunState state, int waitTimeoutSeconds) {
+	// waitedSeconds is how long the wait really lasted; requestedSeconds is set when the response deadline cut the
+	// requested wait short, so the answer never claims a wait that did not happen.
+	internal static void ApplyRunState(RunProcessResponse response, ProcessRunState state, int waitedSeconds,
+		int? requestedSeconds) {
 		if (state is null || !state.Found || state.StatusValue is null) {
 			(response.Warnings ??= []).Add($"The run answered `running`, but its SysProcessLog row "
 				+ $"{response.ProcessId} could not be read while waiting, so no later status is known. Read that row "
@@ -468,7 +476,10 @@ public class RunProcessCommand(
 		string elements = state.WaitingOn.Count == 0
 			? "no element is logged as running yet"
 			: "it is parked on " + string.Join(", ", state.WaitingOn.Select(DescribeWaitingElement));
-		(response.Warnings ??= []).Add($"The run is still running after waiting up to {waitTimeoutSeconds} s: {elements}. "
+		string waited = requestedSeconds is { } requested
+			? $"{waitedSeconds} s (the response deadline cut the requested {requested} s wait short)"
+			: $"{waitedSeconds} s";
+		(response.Warnings ??= []).Add($"The run is still running after clio waited {waited}: {elements}. "
 			+ "This is NOT a failure. A user task (for example a Perform task that created an activity) waits for a "
 			+ "person to complete it and never ends on its own, so judge the run by `created` and `waitingOn` rather "
 			+ "than by waiting longer. A timer or background element ends by itself: read SysProcessLog row "
@@ -499,13 +510,19 @@ public class RunProcessCommand(
 		return element.Type is null ? caption : $"{caption} ({element.Type})";
 	}
 
+	internal const string TimeWindowNote = "`created` is a before/after diff of the watched entities, so it also lists "
+		+ "records another session - another user's, or the same login's - created in the same window. cleanup deletes "
+		+ "only records tied to this run: one whose ProcessElementId names an element of the run (or of its "
+		+ "sub-processes), or one whose lookup points at such a record. Everything else, the run's own records with no "
+		+ "such tie included (for example one an Add data element wrote), is listed in cleanup.skipped and left in "
+		+ "place; check each before deleting it with odata-delete.";
+
 	private void CleanUp(RunProcessOptions options, RunProcessResponse response, Guid processId, WatchBaseline baseline) {
 		List<CreatedRecord> created = response.Created ?? [];
 		string me = baseline.CurrentUserContactId;
 		List<CreatedRecord> mine = me is null
 			? []
 			: created.Where(record => string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase)).ToList();
-		List<CreatedRecord> others = created.Except(mine).ToList();
 		// Past the response deadline the tool has already answered still-running, and a caller that cancelled the call
 		// is not reading at all: a cancel or a delete made now would happen without the caller ever being told.
 		// Nothing is done instead.
@@ -513,46 +530,61 @@ public class RunProcessCommand(
 		if (options.IsCallerGone) {
 			return;
 		}
+		(response.Warnings ??= []).Add(TimeWindowNote);
 		if (stopAt is not null && DateTimeOffset.UtcNow >= stopAt) {
-			// Only the caller's own records are offered for deletion; another user's stay in skipped, as always.
-			response.Cleanup = new CleanupReport {
-				Failed = mine.Select(record => new CleanupFailure(record.Entity, record.Id,
-					"not attempted: too little of the response time was left")).ToList(),
-				Skipped = others
-			};
-			(response.Warnings ??= []).Add(me is null
-				? "cleanup did nothing: too little of the response time was left, and the calling user's contact could "
-					+ "not be read, so no record could be shown to be the caller's own. cleanup.skipped lists them; delete "
-					+ "one only after checking that you created it."
-				: "cleanup did nothing: too little of the response time was left to cancel and delete safely. "
-					+ "cleanup.failed lists your own records, which you can delete with odata-delete; cleanup.skipped "
-					+ "lists records another user created, which are not yours to delete.");
+			// Nothing was checked against the run, so nothing is offered for deletion as the run's.
+			response.Cleanup = new CleanupReport { Skipped = [.. created] };
+			if (created.Count > 0) {
+				response.Warnings.Add("cleanup did nothing: too little of the response time was left to tie the records "
+					+ "to the run, cancel it and delete safely. cleanup.skipped lists every record in `created`.");
+			}
 			return;
 		}
+		// Read while the run is still parked: its element data rows, which tie a record to it, go when it stops.
+		HashSet<string> tied = TieToRun(mine, processId, stopAt, response);
+		List<CreatedRecord> ours = mine.Where(record => tied.Contains(record.Id)).ToList();
 		// A record a parked run still uses ("being used in a process" - the activity of a Perform task) cannot be
-		// deleted, so a running run is cancelled first - but only when there is something of the caller's to delete.
-		if (mine.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
+		// deleted, so a running run is cancelled first - but only when there is something of the run's to delete.
+		if (ours.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
 			CancelRun(options, response, processId, stopAt);
 		}
 		// Keyed case-insensitively: a watch name the caller typed in another case is the same schema.
 		Dictionary<string, IReadOnlyCollection<string>> references = baseline.Entities
 			.Where(watch => watch.Error is null)
 			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.OrdinalIgnoreCase);
-		response.Cleanup = recordCleaner.Delete(mine, references, RequestBudget(options.ResponseDeadline), stopAt,
+		response.Cleanup = recordCleaner.Delete(ours, references, RequestBudget(options.ResponseDeadline), stopAt,
 				options.CallerCancellation)
 			?? new CleanupReport();
-		response.Cleanup.Skipped = others;
+		response.Cleanup.Skipped = created.Except(ours).ToList();
 		if (response.Cleanup.Skipped.Count > 0) {
-			(response.Warnings ??= []).Add(me is null
+			response.Warnings.Add(me is null
 				? "cleanup deleted nothing: the calling user's contact could not be read, so no record could be shown "
 					+ "to be the caller's own. cleanup.skipped lists them."
-				: $"cleanup left {response.Cleanup.Skipped.Count} record(s) created in the same window by another "
-					+ "user; cleanup.skipped lists them. A record created meanwhile under the SAME login (another "
-					+ "session of the same user) cannot be told apart and is deleted.");
+				: $"cleanup left {response.Cleanup.Skipped.Count} record(s) it cannot tie to this run; cleanup.skipped "
+					+ "lists them.");
 		}
 		if (response.Cleanup.Failed.Count > 0) {
-			(response.Warnings ??= []).Add($"cleanup left {response.Cleanup.Failed.Count} record(s) in place; "
+			response.Warnings.Add($"cleanup left {response.Cleanup.Failed.Count} record(s) in place; "
 				+ "cleanup.failed names each with the reason.");
+		}
+	}
+
+	// The ids of the caller's records the run provably holds, or that point at such a record.
+	private HashSet<string> TieToRun(List<CreatedRecord> mine, Guid processId, DateTimeOffset? stopAt,
+		RunProcessResponse response) {
+		if (mine.Count == 0 || processId == Guid.Empty) {
+			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		}
+		try {
+			RecordProvenance provenance = recordProvenance.Resolve(mine, [], [processId.ToString("D")],
+				Math.Max(1, BudgetUntil(stopAt)), stopAt);
+			response.Warnings.AddRange(provenance.Warnings);
+			return provenance.Tied;
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			response.Warnings.Add("cleanup could not tie the records to the run, so it deleted none: "
+				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
+			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		}
 	}
 

@@ -168,7 +168,8 @@ public sealed class RunProcessToolE2ETests : McpContractFixtureBase {
 		envelope.Error.Should().BeNull(because: $"a parked run is not a failure. Error: {envelope.Error}");
 		envelope.Created.Should().ContainSingle(record => record.Entity == "Activity",
 			because: "the Perform task created exactly one activity, and the watch must report it under the "
-				+ "platform's spelling of the entity, not the caller's 'activity'");
+				+ $"platform's spelling of the entity, not the caller's 'activity'. Warnings: "
+				+ string.Join(" | ", envelope.Warnings ?? []));
 		envelope.Cleanup.Should().NotBeNull(because: "cleanup was requested");
 		envelope.Cleanup!.Failed.Should().BeEmpty(
 			because: "cleanup cancels the parked run first, so the activity it uses can be deleted");

@@ -56,8 +56,9 @@ public sealed class CleanupReport {
 	public List<CleanupFailure> Failed { get; set; } = [];
 
 	/// <summary>
-	/// Records left alone because the calling user did not create them: on a shared environment another user's
-	/// record can appear in a watched entity during the same window, and a cleanup never deletes it.
+	/// Records left alone because nothing ties them to the action: on a shared environment another session - another
+	/// user's, or the same login's - can create records in a watched entity during the same window, and a cleanup
+	/// never deletes them.
 	/// </summary>
 	[JsonProperty("skipped")]
 	[System.Text.Json.Serialization.JsonPropertyName("skipped")]
@@ -144,9 +145,13 @@ public interface IRunVerificationServices {
 
 	/// <summary>Deletes what a run created.</summary>
 	ICreatedRecordCleaner Cleaner { get; }
+
+	/// <summary>Ties the records that appeared in the window to the run, so a cleanup deletes only those.</summary>
+	IRunRecordProvenance Provenance { get; }
 }
 
 internal sealed record RunVerificationServices(
 	IProcessRunMonitor Monitor,
 	ICreatedRecordWatcher Watcher,
-	ICreatedRecordCleaner Cleaner) : IRunVerificationServices;
+	ICreatedRecordCleaner Cleaner,
+	IRunRecordProvenance Provenance) : IRunVerificationServices;

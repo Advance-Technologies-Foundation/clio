@@ -148,7 +148,7 @@ public sealed class RunProcessTool(
 		+ "user task, timer or wait - is polled until it ends or `wait-timeout` passes (`wait: false` returns at once); "
 		+ "an unfinished run names the elements it waits on in `waitingOn`. `watch` lists entities to diff before and "
 		+ "after the run, and `created` returns [{entity, id, title}] of the records that appeared in them. "
-		+ "`cleanup: true` then deletes those of them the caller created, children first, cancelling a still-running "
+		+ "`cleanup: true` then deletes those of them tied to the run, children first, cancelling a still-running "
 		+ "run first.")]
 	public async Task<RunProcessResponse> RunProcess(
 		[Description("run-process parameters")]
@@ -310,12 +310,14 @@ public sealed record RunProcessArgs {
 
 	[JsonPropertyName("cleanup")]
 	[Description("true deletes the records `created` lists after reporting them - only those the calling user "
-		+ "created (another session under the same login cannot be told apart), nothing else - children before the parents they reference, and cancels a still-running run "
+		+ "created AND that are tied to this run (ProcessElementId names one of its elements, or a lookup points at "
+		+ "such a record), nothing else - children before the parents they reference, and cancels a still-running run "
 		+ "first. The children-first order is approximate: it follows the lookups between the WATCHED entities only, "
 		+ "and records refused in one pass are retried after the others. Requires watch. Nothing is cancelled or "
 		+ "deleted once the call is cancelled. The outcome is in `cleanup` {deleted, failed, skipped}: `deleted` means "
 		+ "the record is gone, also when a cascade removed it first; `failed` lists your records still in place, with "
-		+ "the reason; `skipped` lists records another user created, which are never deleted.")]
+		+ "the reason; `skipped` lists records it cannot tie to the run (another session's, the same login's included, or "
+		+ "the run's own with no such tie), which are never deleted.")]
 	public bool? Cleanup { get; init; }
 
 	[JsonPropertyName("environment-name")]

@@ -64,7 +64,7 @@ public sealed class RunProcessToolTests {
 	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null,
 			IProcessRunLogReader processRunLogReader = null, IProcessVersionLibReader versionLibReader = null,
 			IProcessRunMonitor runMonitor = null, ICreatedRecordWatcher recordWatcher = null,
-			ICreatedRecordCleaner recordCleaner = null) {
+			ICreatedRecordCleaner recordCleaner = null, IRunRecordProvenance provenance = null) {
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
 			.Returns(_ => new ProcessModelType(Guid.NewGuid(), ProcessCode) {
@@ -95,8 +95,24 @@ public sealed class RunProcessToolTests {
 			processRunLogReader ?? NothingLogged(), versionLibReader, ConsoleLogger.Instance,
 			new RunVerificationServices(runMonitor ?? Substitute.For<IProcessRunMonitor>(),
 				recordWatcher ?? Substitute.For<ICreatedRecordWatcher>(),
-				recordCleaner ?? Substitute.For<ICreatedRecordCleaner>())) { Sleep = _ => { } };
+				recordCleaner ?? Substitute.For<ICreatedRecordCleaner>(),
+				provenance ?? TiesEverything())) { Sleep = _ => { } };
 		return new Harness(command, applicationClient, serviceUrlBuilder, versionLibReader, bodies, timeouts, attempts);
+	}
+
+	// Ties every candidate to the run, so a test about something else sees the caller's records deleted as before.
+	private static IRunRecordProvenance TiesEverything() => Ties(_ => true);
+
+	private static IRunRecordProvenance Ties(Func<CreatedRecord, bool> tied) {
+		IRunRecordProvenance provenance = Substitute.For<IRunRecordProvenance>();
+		provenance.Resolve(Arg.Any<IReadOnlyList<CreatedRecord>>(), Arg.Any<IReadOnlyCollection<string>>(),
+				Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>())
+			.Returns(call => {
+				RecordProvenance result = new();
+				result.Tied.UnionWith(call.ArgAt<IReadOnlyList<CreatedRecord>>(0).Where(tied).Select(record => record.Id));
+				return result;
+			});
+		return provenance;
 	}
 
 	private static IProcessRunLogReader NothingLogged() {
@@ -378,7 +394,7 @@ public sealed class RunProcessToolTests {
 		IProcessVersionLibReader reader = ActiveVersion();
 		RunProcessCommand command = new(generator, applicationClient, Substitute.For<IServiceUrlBuilder>(),
 			NothingLogged(), reader, ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
-			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>()));
+			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()));
 
 		// Act
 		command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
@@ -1326,7 +1342,7 @@ public sealed class RunProcessToolTests {
 		ManualResetEventSlim finished)
 		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ActiveVersion(),
 			ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
-				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>())) {
+				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything())) {
 
 		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 			try {
@@ -1777,6 +1793,91 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("QA D1: a record the same login created in the window that the run does not hold is never deleted: it goes to cleanup.skipped, only the run's own record is deleted, and the answer always says created is a time-window diff.")]
+	public void TryRun_Should_Delete_Only_Records_Tied_To_The_Run() {
+		// Arrange
+		CreatedRecord held = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") { CreatedById = CallerContactId };
+		CreatedRecord parallel = new("Activity", "8b2a5bd0-138b-4d52-90f6-a50d5433b9b4", "Parallel session") {
+			CreatedById = CallerContactId
+		};
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(1), RunState(4));
+		IRunRecordProvenance provenance = Ties(record => record == held);
+		ICreatedRecordCleaner cleaner = CleanerReturning(new CleanupReport { Deleted = [held] });
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
+			recordWatcher: WatcherFinding(held, parallel), recordCleaner: cleaner, provenance: provenance);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true, WaitTimeoutSeconds = 0
+		}, out RunProcessResponse response);
+
+		// Assert
+		cleaner.Received(1).Delete(Arg.Is<IReadOnlyList<CreatedRecord>>(records => records.Single() == held),
+			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>(),
+			Arg.Any<CancellationToken>());
+		response.Cleanup.Skipped.Should().Equal([parallel],
+			because: "a record of the same login that the run does not hold may belong to a parallel session");
+		response.Warnings.Should().Contain(RunProcessCommand.TimeWindowNote,
+			because: "the time-window limit is always said, not only when something was skipped");
+		Received.InOrder(() => {
+			provenance.Resolve(Arg.Any<IReadOnlyList<CreatedRecord>>(), Arg.Any<IReadOnlyCollection<string>>(),
+				Arg.Is<IReadOnlyCollection<string>>(runs => runs.Single() == RunningProcessId.ToString("D")), Arg.Any<int>(),
+				Arg.Any<DateTimeOffset?>());
+			monitor.Cancel(RunningProcessId, Arg.Any<int>());
+		});
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA D1: when nothing created is tied to the run, the parked run is not cancelled and nothing is deleted; the records stay in skipped.")]
+	public void TryRun_Should_Not_Cancel_Or_Delete_When_Nothing_Is_Tied_To_The_Run() {
+		// Arrange
+		CreatedRecord parallel = new("Activity", "8b2a5bd0-138b-4d52-90f6-a50d5433b9b4", "Parallel session") {
+			CreatedById = CallerContactId
+		};
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(1));
+		ICreatedRecordCleaner cleaner = CleanerReturning(new CleanupReport());
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
+			recordWatcher: WatcherFinding(parallel), recordCleaner: cleaner, provenance: Ties(_ => false));
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true, WaitTimeoutSeconds = 0
+		}, out RunProcessResponse response);
+
+		// Assert
+		monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		cleaner.Received(1).Delete(Arg.Is<IReadOnlyList<CreatedRecord>>(records => records.Count == 0),
+			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>(),
+			Arg.Any<CancellationToken>());
+		response.Cleanup.Skipped.Should().Equal([parallel], because: "an untied record is reported, never deleted");
+		response.Status.Should().Be("running", because: "a run is cancelled only to free records cleanup deletes");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("QA D3: a still-running answer names how long clio really waited, and says when the response deadline cut the requested wait short.")]
+	public void ApplyRunState_Should_Report_The_Actual_Wait() {
+		// Arrange
+		RunProcessResponse cut = new() { ProcessId = RunningProcessId.ToString("D") };
+		RunProcessResponse full = new() { ProcessId = RunningProcessId.ToString("D") };
+
+		// Act
+		RunProcessCommand.ApplyRunState(cut, RunState(1), 42, 300);
+		RunProcessCommand.ApplyRunState(full, RunState(1), 20, null);
+
+		// Assert
+		cut.Warnings.Should().Contain(warning => warning.Contains("clio waited 42 s")
+				&& warning.Contains("cut the requested 300 s wait short"),
+			because: "the answer must not claim a 300 s wait that the deadline stopped at 42 s");
+		full.Warnings.Should().Contain(warning => warning.Contains("clio waited 20 s") && !warning.Contains("cut"),
+			because: "a full wait is reported as it was");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("cleanup does not cancel a parked run when none of the created records is the caller's: there is nothing to free.")]
 	public void TryRun_Should_Not_Cancel_A_Run_When_Nothing_Of_The_Callers_Was_Created() {
 		// Arrange
@@ -1972,8 +2073,8 @@ public sealed class RunProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("When cleanup runs out of response time, the caller's own records are listed as not deleted, and another user's records stay in skipped, never offered for deletion.")]
-	public void TryRun_Should_Not_Offer_Another_Users_Records_When_Cleanup_Runs_Out_Of_Time() {
+	[Description("When cleanup runs out of response time nothing is tied to the run, so nothing is deleted or offered for deletion: every record stays in skipped.")]
+	public void TryRun_Should_Not_Offer_Any_Record_When_Cleanup_Runs_Out_Of_Time() {
 		// Arrange
 		CreatedRecord mine = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") { CreatedById = CallerContactId };
 		CreatedRecord theirs = new("Activity", "8b2a5bd0-138b-4d52-90f6-a50d5433b9b4", "Call") {
@@ -1991,9 +2092,10 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default, default);
-		response.Cleanup.Failed.Select(failure => failure.Id).Should().Equal([mine.Id],
-			because: "only the caller's own record is reported as not deleted");
-		response.Cleanup.Skipped.Should().Equal([theirs], because: "another user's record is never offered for deletion");
+		response.Cleanup.Failed.Should().BeEmpty(because: "no record was shown to be the run's, so none is offered for deletion");
+		response.Cleanup.Skipped.Should().Equal([mine, theirs], because: "a record not tied to the run is never deleted");
+		response.Warnings.Should().Contain(warning => warning.Contains("too little of the response time"),
+			because: "the caller is told why cleanup did nothing");
 	}
 
 	[Test]
