@@ -31,9 +31,14 @@ namespace Clio.Tests
         // Compared against the shared constant, which catches a site that spells its own hint instead of
         // reusing it. It does NOT prove the hint names a verb that exists - nothing here parses it - so the
         // verb name below is also spelled out literally, and a rename that misses this file fails here.
+        // ENG-102116: it also states the cost (a configuration build and a restart for every user) and asks for
+        // the user's approval, because an agent reads the refusal on a shared stand and took the bare command
+        // as permission to run it.
         private const string ExpectedProcessBuilderHint =
-            "Run 'clio install-process-builder -e <environment>' (or call the install-process-builder MCP tool) "
-            + "to install or update " + BundledPackages.ProcessBuilderPackageName + ".";
+            "Installing or updating " + BundledPackages.ProcessBuilderPackageName + " builds the environment's "
+            + "configuration and restarts the site for every connected user. This refusal is not the user's "
+            + "approval: ask them first, then run 'clio install-process-builder -e <environment>' (or call the "
+            + "install-process-builder MCP tool).";
 
         private static RequiresPackageAttribute GetProcessBuilderRequirement(Type type)
             => (RequiresPackageAttribute[])type.GetCustomAttributes(typeof(RequiresPackageAttribute), inherit: false)

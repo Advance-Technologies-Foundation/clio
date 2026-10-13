@@ -213,7 +213,7 @@ public class CreateBusinessProcessTool(
 		 + "so read a record with a data element to use its columns); an unknown parameter/element/column is REJECTED "
 		 + "naming what was missing (column names are matched case-sensitively), so do not guess: on a CREATE the exact "
 		 + "names come from THIS descriptor's own parameters[]/elements[] you declare here (there is no process to describe yet — describe-business-process is the MODIFY path); a whole raw platform image token, OR a bare [#…#] formula, written by hand passes through unchanged (the escape hatch), while {{…}} is NOT clio macro syntax (that is the content designer's editable template fields) and is left alone; a "
-		 + "server-built body reopens in the designer's Content designer as an editable block — verified on a stand; a CrtProcessBuilder that predates this feature does NOT resolve the macros and stores the text verbatim, so clio warns after the build when the read-back shows the body did not land — update the package (install-process-builder) if you see that warning), "
+		 + "server-built body reopens in the designer's Content designer as an editable block — verified on a stand; a CrtProcessBuilder that predates this feature does NOT resolve the macros and stores the text verbatim, so clio warns after the build when the read-back shows the body did not land — run install-process-builder, with the user's approval, if you see that warning), "
 		 + "bodyFormat?:html, to?/cc?/bcc? (recipient arrays; each entry sets EXACTLY ONE of {value (a constant "
 		 + "address) | processParameter (the recipient mirrors that parameter's type — a Contact-lookup parameter is "
 		 + "resolved to the contact's email at send time) | expression (a raw formula macro; add "

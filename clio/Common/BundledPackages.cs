@@ -78,10 +78,30 @@ public static class BundledPackages {
 	/// Attribute arguments must be compile-time constants, so this is a <c>const</c> built by concatenation
 	/// rather than an interpolated string.
 	/// </para>
+	/// <para>
+	/// It states the COST before the command (ENG-102116): the package ships as source, so installing it runs
+	/// a configuration build on the target and the platform restarts afterwards, for every user of that
+	/// environment. A refusal read by an agent on a shared stand is not the user's consent to that, and a hint
+	/// that only named the command read as one. Keep it short - it is appended to every refusal.
+	/// </para>
 	/// </remarks>
 	public const string ProcessBuilderInstallHint =
-		"Run 'clio install-process-builder -e <environment>' (or call the install-process-builder "
-		+ "MCP tool) to install or update " + ProcessBuilderPackageName + ".";
+		"Installing or updating " + ProcessBuilderPackageName + " builds the environment's configuration and "
+		+ "restarts the site for every connected user. This refusal is not the user's approval: ask them first, "
+		+ "then run 'clio install-process-builder -e <environment>' (or call the install-process-builder MCP tool).";
+
+	/// <summary>
+	/// The remedy clause the post-write read-back warnings put in parentheses after "install a package that
+	/// supports ...": the CLI verb plus the approval it needs.
+	/// </summary>
+	/// <remarks>
+	/// Those warnings ride on a SUCCESSFUL build or modify, so <see cref="ProcessBuilderInstallHint"/> - which
+	/// only a refusal carries - never reaches them; without this clause they told the agent to install
+	/// unconditionally (ENG-102116).
+	/// </remarks>
+	public const string ProcessBuilderInstallRemedy =
+		"clio install-process-builder, once the user approves it - it builds the environment's configuration "
+		+ "and restarts the site";
 
 	/// <summary>
 	/// Package name of the bundled dashboards-migrator package (the "Dashboards migrator" app), which

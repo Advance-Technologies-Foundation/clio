@@ -293,7 +293,7 @@ public static class FlowLabelExpectation {
 				+ "silently. This is USUALLY a CAPABILITY gap rather than an old version number: clio normally "
 				+ "refuses an environment running a package older than the one it ships, so what is missing is "
 				+ "the member rather than a higher number. Reinstall the package clio ships "
-				+ "(clio install-process-builder) and "
+				+ "(" + BundledPackages.ProcessBuilderInstallRemedy + ") and "
 				+ "re-apply the labels, or "
 				+ "label the connectors in the process designer. Until then a decision with two branches "
 				+ "renders as two identical unlabelled arrows.");

@@ -66,9 +66,10 @@ public class ListUserTasksTool(
 		 + "discards the block and still answers success. If an environment rejects one of these types (\"Element type 'sendEmail' is not supported yet\"), its deployed "
 		 + "CrtProcessBuilder predates that element type: for EmailTemplateUserTask and ApprovalUserTask only, "
 		 + "fall back to a generic userTask named after the schema, which older packages do build with the block; "
-		 + "for every other task above, update the package with install-process-builder instead - a generic "
+		 + "for every other task above, run install-process-builder instead, with the user's approval (it builds the "
+		 + "configuration and restarts the site) - a generic "
 		 + "PreconfiguredPageUserTask or OpenEditPageUserTask has no page and fails at run time. Requires the "
-		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment. Install it with install-process-builder.")]
+		 + "ProcessDesignService (CrtProcessBuilder) package on the target environment; install-process-builder installs it, once the user approves.")]
 	public CommandExecutionResult ListUserTasks(
 		[Description("list-user-tasks parameters")] [Required] ListUserTasksArgs args
 	) {

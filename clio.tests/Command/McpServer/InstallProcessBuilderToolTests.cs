@@ -50,6 +50,32 @@ public sealed class InstallProcessBuilderToolTests {
 	/// </summary>
 	internal const string DurationFigurePattern = @"(?i)\d+\s*(" + DurationUnits + @")\b";
 
+	/// <summary>
+	/// The consent rule both agent-facing surfaces must carry (ENG-102116): ask the user before EVERY call.
+	/// </summary>
+	internal const string AskBeforeEveryCallPattern = @"(?i)ask the user before every call";
+
+	/// <summary>
+	/// The cost the consent rule rests on: a configuration build and a restart that reach every user.
+	/// </summary>
+	internal const string ConfigurationBuildAndRestartPattern =
+		@"(?i)builds the environment's configuration and restarts the site for every connected user";
+
+	/// <summary>
+	/// The wording that turned a refusal into permission: "the signal to call this (tool)".
+	/// </summary>
+	internal const string RefusalAsPermissionPattern = @"(?i)signal to call this";
+
+	/// <summary>
+	/// The curated-contract precondition that makes the user's approval part of every call.
+	/// </summary>
+	internal const string ApprovalPreconditionMarker = "approved this install";
+
+	/// <summary>
+	/// Match timeout for the whitespace normalization in the approval test.
+	/// </summary>
+	private static readonly TimeSpan ApprovalRegexTimeout = TimeSpan.FromSeconds(1);
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable install-process-builder MCP tool name so clients, guidance and the curated contract share one identifier.")]
@@ -162,6 +188,34 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "an agent must be told to act on the refusal rather than compare versions itself, AND that "
 				+ "the recorded version list-packages reports is not the same question: it moves when the "
 				+ "archive is accepted, whether or not the target compiled it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102116: the description makes the user's approval a precondition of EVERY call and states why (a configuration build plus a restart for every user), and no longer calls a refusal the signal to run the tool.")]
+	public void InstallProcessBuilder_Description_Should_Require_User_Approval_Before_Every_Call() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute description =
+			(System.ComponentModel.DescriptionAttribute)typeof(InstallProcessBuilderTool)
+				.GetMethod(nameof(InstallProcessBuilderTool.InstallProcessBuilder))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+				.Single();
+
+		// Act
+		string text = System.Text.RegularExpressions.Regex.Replace(description.Description, @"\s+", " ",
+			System.Text.RegularExpressions.RegexOptions.None, ApprovalRegexTimeout);
+
+		// Assert
+		text.Should().MatchRegex(AskBeforeEveryCallPattern,
+			because: "clio-run collapses the inner tool's Destructive annotation, so a host that auto-allows "
+				+ "clio-run runs this install unprompted - the description is the only place that can make the "
+				+ "agent ask");
+		text.Should().MatchRegex(ConfigurationBuildAndRestartPattern,
+			because: "the user can only weigh the request if the cost is named: every user of a shared stand "
+				+ "loses the site while the configuration builds and the platform restarts");
+		text.Should().NotMatchRegex(RefusalAsPermissionPattern,
+			because: "a refusal says the install is NEEDED; calling it the signal to run the tool is exactly the "
+				+ "reading that let an agent install without asking");
 	}
 
 	[Test]

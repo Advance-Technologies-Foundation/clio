@@ -3082,6 +3082,16 @@ public sealed class ToolContractGetToolTests {
 				+ "promise; elapsed time depends on the target's configuration size, host and load");
 		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationFigurePattern,
 			because: "a single figure is the same promise as a range, only harder to spot");
+		curatedDescription.Should().MatchRegex(InstallProcessBuilderToolTests.AskBeforeEveryCallPattern,
+			because: "ENG-102116: this contract is the only description a caller of the non-resident tool gets, "
+				+ "and clio-run collapses its Destructive annotation, so a host that auto-allows clio-run runs it "
+				+ "unprompted: the consent rule has to be stated here or nowhere");
+		curatedDescription.Should().MatchRegex(InstallProcessBuilderToolTests.ConfigurationBuildAndRestartPattern,
+			because: "the cost the user is asked to accept must be named, not implied");
+		curatedDescription.Should().NotMatchRegex(InstallProcessBuilderToolTests.RefusalAsPermissionPattern,
+			because: "a refusal means the install is needed, never that the user approved it");
+		contract.Preconditions.Should().Contain(precondition => precondition.Contains(InstallProcessBuilderToolTests.ApprovalPreconditionMarker),
+			because: "an agent checking preconditions before the call must meet the approval among them");
 		contract.PreferredFlow.Notes.Should().NotMatchRegex(
 			InstallProcessBuilderToolTests.DurationRangePattern,
 			because: "the flow notes are read alongside the description and carry the same weight, so a "

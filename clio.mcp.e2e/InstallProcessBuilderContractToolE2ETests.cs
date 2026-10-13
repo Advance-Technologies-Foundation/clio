@@ -201,6 +201,19 @@ public sealed class InstallProcessBuilderContractToolE2ETests : McpContractFixtu
 				+ "the malformed-bundled-version refusal, which is reachable from MCP");
 		normalizedDescription.Should().MatchRegex(@"(?i)pre-release suffix",
 			because: "an agent meeting the second refusal must find it in the only description it receives");
+		normalizedDescription.Should().MatchRegex(@"(?i)ask the user before every call",
+			because: "ENG-102116: clio-run collapses the tool's Destructive annotation, so a host that auto-allows "
+				+ "clio-run runs it unprompted and this contract is the only thing that can make an agent ask "
+				+ "before a configuration build and a "
+				+ "restart that reach every user of the environment. Mirrors ToolContractGetToolTests");
+		normalizedDescription.Should().MatchRegex(
+			@"(?i)builds the environment's configuration and restarts the site for every connected user",
+			because: "the cost the user is asked to accept must be named, not implied");
+		normalizedDescription.Should().NotMatchRegex(@"(?i)signal to call this",
+			because: "a refusal means the install is needed, never that the user approved it");
+		contract.Preconditions.Should().Contain(precondition => precondition.Contains("approved this install"),
+			because: "an agent checking preconditions before the call must meet the user's approval among them. "
+				+ "Mirrors ToolContractGetToolTests");
 		contract.Description.Should().NotMatchRegex(@"(?i)no\s+(application\s+)?restart",
 			because: "the live runs disproved that claim on both runtimes — .NET Framework recycles itself and the "
 				+ "installer restarts .NET hosts — so the contract must not tell an agent a restart does not happen");
