@@ -1690,7 +1690,7 @@ public sealed class RunProcessToolTests {
 		CleanupReport report = new() { Deleted = [activity] };
 		cleaner.Delete(Arg.Any<IReadOnlyList<CreatedRecord>>(),
 			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(),
-			Arg.Any<DateTimeOffset?>()).Returns(report);
+			Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>()).Returns(report);
 		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
 			recordWatcher: watcher, recordCleaner: cleaner);
 
@@ -1704,7 +1704,7 @@ public sealed class RunProcessToolTests {
 			monitor.Cancel(RunningProcessId, Arg.Any<int>());
 			cleaner.Delete(Arg.Is<IReadOnlyList<CreatedRecord>>(records => records.Single() == activity),
 				Arg.Is<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(map => map["Activity"].Contains("Contact")),
-				Arg.Any<int>(), Arg.Any<DateTimeOffset?>());
+				Arg.Any<int>(), Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>());
 		});
 		response.Status.Should().Be("cancelled", because: "cleanup stopped the parked run");
 		response.Cleanup.Should().BeSameAs(report, because: "the cleanup outcome is reported as is");
@@ -1759,7 +1759,7 @@ public sealed class RunProcessToolTests {
 		ICreatedRecordCleaner cleaner = Substitute.For<ICreatedRecordCleaner>();
 		cleaner.Delete(Arg.Any<IReadOnlyList<CreatedRecord>>(),
 			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(),
-			Arg.Any<DateTimeOffset?>()).Returns(new CleanupReport());
+			Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>()).Returns(new CleanupReport());
 		Harness harness = BuildHarness(MigratorSignature(), recordWatcher: WatcherFinding(mine, theirs),
 			recordCleaner: cleaner);
 
@@ -1769,7 +1769,8 @@ public sealed class RunProcessToolTests {
 
 		// Assert
 		cleaner.Received(1).Delete(Arg.Is<IReadOnlyList<CreatedRecord>>(records => records.Single() == mine),
-			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>());
+			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>(),
+			Arg.Any<CancellationToken>());
 		response.Cleanup.Skipped.Should().Equal([theirs], because: "another user's record is reported, never deleted");
 		response.Created.Should().HaveCount(2, because: "created still reports everything that appeared");
 	}
@@ -1807,7 +1808,7 @@ public sealed class RunProcessToolTests {
 		ICreatedRecordCleaner cleaner = Substitute.For<ICreatedRecordCleaner>();
 		cleaner.Delete(Arg.Any<IReadOnlyList<CreatedRecord>>(),
 			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(),
-			Arg.Any<DateTimeOffset?>()).Returns(new CleanupReport());
+			Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>()).Returns(new CleanupReport());
 		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
 			recordWatcher: WatcherFinding(activity), recordCleaner: cleaner);
 
@@ -1839,6 +1840,199 @@ public sealed class RunProcessToolTests {
 		// Assert
 		response.Warnings.Should().Contain(warning => warning.Contains("could not be read while waiting"),
 			because: "an unknown outcome must be said, not implied by an unchanged status");
+	}
+
+	private static ICreatedRecordCleaner CleanerReturning(CleanupReport report) {
+		ICreatedRecordCleaner cleaner = Substitute.For<ICreatedRecordCleaner>();
+		cleaner.Delete(Arg.Any<IReadOnlyList<CreatedRecord>>(),
+			Arg.Any<IReadOnlyDictionary<string, IReadOnlyCollection<string>>>(), Arg.Any<int>(),
+			Arg.Any<DateTimeOffset?>(), Arg.Any<CancellationToken>()).Returns(report);
+		return cleaner;
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A caller that cancels the call while the run is waited for stops the wait, and no cancel of the run and no delete is sent afterwards: the detached work must not act for a caller who is no longer told.")]
+	public void TryRun_Should_Not_Cancel_Or_Delete_After_The_Caller_Cancelled_During_The_Wait() {
+		// Arrange
+		CreatedRecord activity = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") {
+			CreatedById = CallerContactId
+		};
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(1));
+		ICreatedRecordCleaner cleaner = CleanerReturning(new CleanupReport());
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
+			recordWatcher: WatcherFinding(activity), recordCleaner: cleaner);
+		using CancellationTokenSource caller = new();
+		harness.Command.Sleep = _ => caller.Cancel();
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true, WaitTimeoutSeconds = 20,
+			CallerCancellation = caller.Token
+		}, out _);
+
+		// Assert
+		monitor.Received(1).Read(RunningProcessId, Arg.Any<int>());
+		monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A caller's cancel that arrives after the records were read still stops the cleanup before the cancel of the run and before any delete.")]
+	public void TryRun_Should_Not_Cancel_Or_Delete_When_The_Caller_Cancels_After_The_Records_Were_Read() {
+		// Arrange
+		CreatedRecord activity = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") {
+			CreatedById = CallerContactId
+		};
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(1));
+		ICreatedRecordWatcher watcher = WatcherFinding(activity);
+		using CancellationTokenSource caller = new();
+		watcher.When(w => w.Collect(Arg.Any<WatchBaseline>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>()))
+			.Do(_ => caller.Cancel());
+		ICreatedRecordCleaner cleaner = CleanerReturning(new CleanupReport());
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor,
+			recordWatcher: watcher, recordCleaner: cleaner);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true, WaitTimeoutSeconds = 0,
+			CallerCancellation = caller.Token
+		}, out _);
+
+		// Assert
+		monitor.DidNotReceiveWithAnyArgs().Cancel(default, default);
+		cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default, default);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A read of the run's state that fails during the wait does not end it: the loop retries, and the run's final status is reported.")]
+	public void TryRun_Should_Keep_Waiting_After_A_Failed_Read() {
+		// Arrange
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		int reads = 0;
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(_ => ++reads switch {
+			1 => RunState(1),
+			2 => throw new InvalidOperationException("The operation has timed out."),
+			_ => RunState(2)
+		});
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode, WaitTimeoutSeconds = 20 },
+			out RunProcessResponse response);
+
+		// Assert
+		response.Status.Should().Be("completed", because: "the read after the failed one saw the run end");
+		reads.Should().Be(3, because: "one failed read is retried rather than ending the wait");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A read that keeps failing ends the wait after a few attempts instead of polling until the wait timeout, and the warning says the state could not be read.")]
+	public void TryRun_Should_Stop_Waiting_When_Every_Read_Fails() {
+		// Arrange
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns<ProcessRunState>(_ => throw new InvalidOperationException("401"));
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode, WaitTimeoutSeconds = 20 },
+			out RunProcessResponse response);
+
+		// Assert
+		monitor.Received(3).Read(RunningProcessId, Arg.Any<int>());
+		response.Warnings.Should().Contain(w => w.Contains("could not be read while waiting"),
+			because: "the caller is told no later status is known");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A run the platform queued has not executed yet, so watched entities are not diffed (that would read as `created: []`) and a warning says why.")]
+	public void TryRun_Should_Not_Collect_For_A_Queued_Run() {
+		// Arrange
+		ICreatedRecordWatcher watcher = WatcherFinding();
+		Harness harness = BuildHarness(MigratorSignature(),
+			"""{"processId":"00000000-0000-0000-0000-000000000000","processStatus":0,"success":true}""",
+			recordWatcher: watcher);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true },
+			out RunProcessResponse response);
+
+		// Assert
+		watcher.DidNotReceiveWithAnyArgs().Collect(default, default, default);
+		response.Created.Should().BeNull(because: "an empty list would claim the run created nothing");
+		response.Warnings.Should().Contain(w => w.Contains("had not executed yet"),
+			because: "the caller is told why nothing is reported");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When cleanup runs out of response time, the caller's own records are listed as not deleted, and another user's records stay in skipped, never offered for deletion.")]
+	public void TryRun_Should_Not_Offer_Another_Users_Records_When_Cleanup_Runs_Out_Of_Time() {
+		// Arrange
+		CreatedRecord mine = new("Activity", "489ae227-5516-487b-aa09-77de84b6feb4", "Task") { CreatedById = CallerContactId };
+		CreatedRecord theirs = new("Activity", "8b2a5bd0-138b-4d52-90f6-a50d5433b9b4", "Call") {
+			CreatedById = "c4ed336c-3e9b-40fe-8b82-5632650c7b8d"
+		};
+		ICreatedRecordCleaner cleaner = CleanerReturning(new CleanupReport());
+		Harness harness = BuildHarness(MigratorSignature(), recordWatcher: WatcherFinding(mine, theirs),
+			recordCleaner: cleaner);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions {
+			ProcessName = ProcessCode, Watch = ["Activity"], Cleanup = true,
+			ResponseDeadline = DateTimeOffset.UtcNow.AddMilliseconds(1_000)
+		}, out RunProcessResponse response);
+
+		// Assert
+		cleaner.DidNotReceiveWithAnyArgs().Delete(default, default, default, default, default);
+		response.Cleanup.Failed.Select(failure => failure.Id).Should().Equal([mine.Id],
+			because: "only the caller's own record is reported as not deleted");
+		response.Cleanup.Skipped.Should().Equal([theirs], because: "another user's record is never offered for deletion");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Result-parameter values returned at a `running` launch are dropped once the wait sees the run end: paired with the final status they would read as its results.")]
+	public void TryRun_Should_Drop_Result_Values_Captured_At_A_Running_Launch() {
+		// Arrange
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(2));
+		Harness harness = BuildHarness(MigratorSignature(),
+			"""{"processId":"e29511a0-b05e-4b8f-8155-a8a25b76754e","processStatus":1,"success":true,"resultParameterValues":{"Out":"parked"}}""",
+			runMonitor: monitor);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Status.Should().Be("completed", because: "the wait saw the run end");
+		response.ResultParameterValues.Should().BeNull(because: "the values were the parked run's, not its results");
+		response.Warnings.Should().Contain(w => w.Contains("resultParameterValues are not reported"),
+			because: "the caller is told why the values are missing");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A run cancelled by someone else while it was waited for is a failure, not a success: it did not finish.")]
+	public void TryRun_Should_Fail_When_The_Run_Is_Cancelled_Externally() {
+		// Arrange
+		IProcessRunMonitor monitor = Substitute.For<IProcessRunMonitor>();
+		monitor.Read(RunningProcessId, Arg.Any<int>()).Returns(RunState(4));
+		Harness harness = BuildHarness(MigratorSignature(), RunningLaunch, runMonitor: monitor);
+
+		// Act
+		bool ok = harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		ok.Should().BeFalse(because: "a cancelled run did not finish");
+		response.Status.Should().Be("cancelled", because: "the status is reported as read");
+		response.Error.Should().Contain("cancelled while clio waited", because: "the error says what happened");
 	}
 
 	#endregion

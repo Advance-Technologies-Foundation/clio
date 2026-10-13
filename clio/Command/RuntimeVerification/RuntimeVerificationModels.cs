@@ -86,6 +86,9 @@ public sealed record ProcessRunState(
 
 	/// <summary>Whether the status is final: completed, error or cancelled.</summary>
 	public bool IsTerminal => StatusValue is 2 or 3 or 4;
+
+	/// <summary>Why part of the state is missing (for example the waiting elements could not be read), or <see langword="null"/>.</summary>
+	public string Note { get; init; }
 }
 
 /// <summary>Per-entity state captured before a verified action.</summary>

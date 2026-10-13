@@ -133,24 +133,28 @@ internal sealed class CreatedRecordWatcher(
 		if (!IsValidEntityName(entity)) {
 			return new EntityWatch { Entity = entity, Error = "not a plain entity schema name" };
 		}
+		string name = entity;
 		try {
 			RuntimeEntitySchemaResult schema = schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
+			// The platform's own spelling, not the caller's: References hold the platform's names, and the cleanup orders
+			// children before parents by matching the two.
+			name = IsValidEntityName(schema.Name) ? schema.Name : entity;
 			string titleColumn = schema.PrimaryDisplayColumnName;
 			HashSet<string> references = schema.Columns
 				.Select(column => column.ReferenceSchemaName)
-				.Where(name => !string.IsNullOrWhiteSpace(name))
-				.ToHashSet(StringComparer.Ordinal);
-			string newest = Select(BuildNewestQuery(entity), Budget(timeoutMs, stopAt)).FirstOrDefault()?[CreatedOnColumn]
+				.Where(reference => !string.IsNullOrWhiteSpace(reference))
+				.ToHashSet(StringComparer.OrdinalIgnoreCase);
+			string newest = Select(BuildNewestQuery(name), Budget(timeoutMs, stopAt)).FirstOrDefault()?[CreatedOnColumn]
 				?.ToString();
 			// An empty value is no lower bound: comparing against it could report every existing row as created.
 			newest = string.IsNullOrEmpty(newest) ? null : newest;
 			HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
 			if (newest is not null) {
-				EntityWatch atNewest = new() { Entity = entity, TitleColumn = titleColumn, Baseline = newest };
+				EntityWatch atNewest = new() { Entity = name, TitleColumn = titleColumn, Baseline = newest };
 				JArray atNewestRows = Select(BuildRowsQuery(atNewest, MaxKnownIds + 1, false), Budget(timeoutMs, stopAt));
 				if (atNewestRows.Count > MaxKnownIds) {
 					return new EntityWatch {
-						Entity = entity,
+						Entity = name,
 						Error = $"more than {MaxKnownIds} existing rows share its newest CreatedOn, so new rows cannot be "
 							+ "told apart from them"
 					};
@@ -160,7 +164,7 @@ internal sealed class CreatedRecordWatcher(
 				}
 			}
 			return new EntityWatch {
-				Entity = entity,
+				Entity = name,
 				TitleColumn = titleColumn,
 				References = references,
 				Baseline = newest,
@@ -169,7 +173,7 @@ internal sealed class CreatedRecordWatcher(
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			return new EntityWatch {
-				Entity = entity,
+				Entity = name,
 				Error = UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name
 			};
 		}

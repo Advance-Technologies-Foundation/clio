@@ -52,6 +52,14 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 	// Set by the command when it sends the launch: the version read running alongside it, so the tool's
 	// still-running answer can name the version too. Null until then.
 	internal Task<ProcessVersionFacts> VersionFacts { get; set; }
+
+	// Set by the MCP tool: the request's own token. The work runs detached from the request, so a caller that cancelled
+	// the call (notifications/cancelled, or the server shutting down) is never told what happens next; no cancel or
+	// delete may start after that.
+	internal CancellationToken CallerCancellation { get; set; }
+
+	// Whether the caller has stopped waiting for this answer.
+	internal bool IsCallerGone => CallerCancellation.IsCancellationRequested;
 }
 
 /// <summary>
@@ -180,6 +188,7 @@ public class RunProcessCommand(
 	// Each verification request is bounded by this, and by what is left of the response deadline.
 	private const int VerificationRequestMs = 10_000;
 	private const int PollIntervalMs = 1_000;
+	private const int MaxConsecutiveFailedReads = 3;
 	private const int CancelWaitMs = 10_000;
 	private const int MinimumDestructiveRequestMs = 1_000;
 	private const int CaptureBudgetMs = 12_000;
@@ -211,6 +220,7 @@ public class RunProcessCommand(
 	private const int InactiveStatus = 0;
 	private const int RunningStatus = 1;
 	private const int ErrorStatus = 3;
+	private const int CancelledStatus = 4;
 
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
 
@@ -355,6 +365,18 @@ public class RunProcessCommand(
 		if (baseline is null) {
 			return;
 		}
+		if (response.Status == QueuedBackgroundStatus) {
+			// A queued run has not executed yet, so a diff now would read as "the run created nothing", and a cleanup
+			// could never catch what it creates later.
+			(response.Warnings ??= []).Add("`created` is not reported and nothing was cleaned up: the platform queued "
+				+ "the run, so it had not executed yet when clio could look. Read the watched entities later, or launch "
+				+ "with result-parameters, which makes the run synchronous.");
+			return;
+		}
+		if (options.IsCallerGone) {
+			// Nobody reads this answer any more; nothing is cancelled or deleted on the caller's behalf.
+			return;
+		}
 		// Bounded like every later step, so the records are read before the tool answers rather than after.
 		WatchOutcome outcome = recordWatcher.Collect(baseline, RequestBudget(options.ResponseDeadline),
 			options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs));
@@ -373,30 +395,49 @@ public class RunProcessCommand(
 		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-reserveMs) < until) {
 			until = deadline.AddMilliseconds(-reserveMs);
 		}
+		// The last state read in full: a read that fails later (a slow stand, one timed-out request) does not discard it,
+		// and the wait goes on until its end.
 		ProcessRunState state = null;
-		try {
-			// Read, then sleep only while time is left, so the state reported is the last one read.
-			while (true) {
-				// Bounded by the wait's own end plus its reserve, so a slow read cannot eat the time reserved after it.
-				int readMs = (int)Math.Clamp((until - DateTimeOffset.UtcNow).TotalMilliseconds + WaitReserveMs,
-					1_000, VerificationRequestMs);
+		string readError = null;
+		int failedReads = 0;
+		// Read, then sleep only while time is left, so the state reported is the last one read.
+		while (!options.IsCallerGone) {
+			// Bounded by the wait's own end plus its reserve, so a slow read cannot eat the time reserved after it.
+			int readMs = (int)Math.Clamp((until - DateTimeOffset.UtcNow).TotalMilliseconds + WaitReserveMs,
+				1_000, VerificationRequestMs);
+			try {
 				state = runMonitor.Read(processId, readMs);
-				int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
-				if (state.IsTerminal || leftMs <= 0) {
-					break;
-				}
-				Sleep(Math.Min(PollIntervalMs, leftMs));
+				readError = null;
+				failedReads = 0;
 			}
+			catch (Exception exception) when (exception is not OutOfMemoryException) {
+				readError = UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name;
+				failedReads++;
+			}
+			int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
+			// A read that keeps failing (no rights on SysProcessLog, a login lost) will not recover by waiting longer.
+			if ((readError is null && state.IsTerminal) || leftMs <= 0 || failedReads >= MaxConsecutiveFailedReads) {
+				break;
+			}
+			Sleep(Math.Min(PollIntervalMs, leftMs));
 		}
-		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
-				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name)
-				+ $". Read SysProcessLog row {processId} for the outcome.");
+		if (options.IsCallerGone) {
+			// The caller cancelled the call: nobody reads this answer, and nothing more is done for it.
 			return;
+		}
+		if (state is null && readError is not null) {
+			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
+				+ readError + $". Read SysProcessLog row {processId} for the outcome.");
+			return;
+		}
+		if (readError is not null) {
+			(response.Warnings ??= []).Add("The last read of the run's state failed (" + readError + "); the state "
+				+ "reported is the one read before it.");
 		}
 		ApplyRunState(response, state, options.WaitTimeoutSeconds);
 	}
 
+	// Called only for a run the launch answered `running`, so its result-parameter values are the ones it had then.
 	internal static void ApplyRunState(RunProcessResponse response, ProcessRunState state, int waitTimeoutSeconds) {
 		if (state is null || !state.Found || state.StatusValue is null) {
 			(response.Warnings ??= []).Add($"The run answered `running`, but its SysProcessLog row "
@@ -404,9 +445,20 @@ public class RunProcessCommand(
 				+ "later instead of re-running the process.");
 			return;
 		}
+		if (!string.IsNullOrEmpty(state.Note)) {
+			(response.Warnings ??= []).Add(state.Note);
+		}
 		response.Status = ResolveStatusName(state.StatusValue.Value);
+		DropStaleResultValues(response, state.IsTerminal);
 		if (state.StatusValue == ErrorStatus) {
 			response.Error = DescribeFailure(null, state.ErrorSummary, response.VersionName);
+			return;
+		}
+		if (state.StatusValue == CancelledStatus) {
+			// Cancelled by someone else while clio waited (cleanup's own cancel comes later and is reported there): the
+			// run did not finish, so it is not a success.
+			response.Error = "The run was cancelled while clio waited for it - by a user or by another process - so it "
+				+ "did not finish. What it did before the cancel stays in place.";
 			return;
 		}
 		if (state.IsTerminal) {
@@ -423,6 +475,25 @@ public class RunProcessCommand(
 			+ $"{response.ProcessId} later instead of re-running the process.");
 	}
 
+	// The launch answered `running`, so its result-parameter values are the ones the run had while parked. Paired with a
+	// final status they would read as the run's results, so they are dropped; with a still-running one they are kept and
+	// said to be the launch's.
+	private const string ParkedValuesNote = "resultParameterValues are the values the run had at the launch, while it was ";
+
+	private static void DropStaleResultValues(RunProcessResponse response, bool ended) {
+		if (response.ResultParameterValues is not { Count: > 0 }) {
+			return;
+		}
+		if (ended) {
+			response.ResultParameterValues = null;
+			(response.Warnings ??= []).Add("resultParameterValues are not reported: the platform returned them at the "
+				+ "launch, while the run was still running, so they are not what it ended with. Judge the run by its "
+				+ "effects and `created` instead of re-running it.");
+			return;
+		}
+		(response.Warnings ??= []).Add(ParkedValuesNote + "parked; it is still running, so they are not its results.");
+	}
+
 	private static string DescribeWaitingElement(WaitingElement element) {
 		string caption = UntrustedText.Fenced(element.Caption) ?? "an unnamed element";
 		return element.Type is null ? caption : $"{caption} ({element.Type})";
@@ -434,26 +505,43 @@ public class RunProcessCommand(
 		List<CreatedRecord> mine = me is null
 			? []
 			: created.Where(record => string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase)).ToList();
-		// Past the response deadline the tool has already answered still-running, so a cancel or a delete made now
-		// would happen without the caller ever being told. Nothing is done instead.
+		List<CreatedRecord> others = created.Except(mine).ToList();
+		// Past the response deadline the tool has already answered still-running, and a caller that cancelled the call
+		// is not reading at all: a cancel or a delete made now would happen without the caller ever being told.
+		// Nothing is done instead.
 		DateTimeOffset? stopAt = options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs);
+		if (options.IsCallerGone) {
+			return;
+		}
 		if (stopAt is not null && DateTimeOffset.UtcNow >= stopAt) {
-			response.Cleanup = new CleanupReport { Skipped = created };
-			(response.Warnings ??= []).Add("cleanup did nothing: too little of the response time was left to cancel "
-				+ "and delete safely. cleanup.skipped lists the records; delete them with odata-delete.");
+			// Only the caller's own records are offered for deletion; another user's stay in skipped, as always.
+			response.Cleanup = new CleanupReport {
+				Failed = mine.Select(record => new CleanupFailure(record.Entity, record.Id,
+					"not attempted: too little of the response time was left")).ToList(),
+				Skipped = others
+			};
+			(response.Warnings ??= []).Add(me is null
+				? "cleanup did nothing: too little of the response time was left, and the calling user's contact could "
+					+ "not be read, so no record could be shown to be the caller's own. cleanup.skipped lists them; delete "
+					+ "one only after checking that you created it."
+				: "cleanup did nothing: too little of the response time was left to cancel and delete safely. "
+					+ "cleanup.failed lists your own records, which you can delete with odata-delete; cleanup.skipped "
+					+ "lists records another user created, which are not yours to delete.");
 			return;
 		}
 		// A record a parked run still uses ("being used in a process" - the activity of a Perform task) cannot be
 		// deleted, so a running run is cancelled first - but only when there is something of the caller's to delete.
 		if (mine.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
-			CancelRun(response, processId, stopAt);
+			CancelRun(options, response, processId, stopAt);
 		}
+		// Keyed case-insensitively: a watch name the caller typed in another case is the same schema.
 		Dictionary<string, IReadOnlyCollection<string>> references = baseline.Entities
 			.Where(watch => watch.Error is null)
-			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.Ordinal);
-		response.Cleanup = recordCleaner.Delete(mine, references, RequestBudget(options.ResponseDeadline), stopAt)
+			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.OrdinalIgnoreCase);
+		response.Cleanup = recordCleaner.Delete(mine, references, RequestBudget(options.ResponseDeadline), stopAt,
+				options.CallerCancellation)
 			?? new CleanupReport();
-		response.Cleanup.Skipped = created.Except(mine).ToList();
+		response.Cleanup.Skipped = others;
 		if (response.Cleanup.Skipped.Count > 0) {
 			(response.Warnings ??= []).Add(me is null
 				? "cleanup deleted nothing: the calling user's contact could not be read, so no record could be shown "
@@ -468,14 +556,18 @@ public class RunProcessCommand(
 		}
 	}
 
-	// Every request is bounded by stopAt, and none starts with less than a second left: a cancel that lands after the
-	// tool answered would stop the caller's run without the caller ever being told.
-	private void CancelRun(RunProcessResponse response, Guid processId, DateTimeOffset? stopAt) {
+	// Every request is bounded by stopAt, and none starts with less than a second left, or after the caller cancelled
+	// the call: a cancel that lands after the tool answered would stop the caller's run without the caller ever being
+	// told.
+	private void CancelRun(RunProcessOptions options, RunProcessResponse response, Guid processId, DateTimeOffset? stopAt) {
 		try {
 			int cancelMs = BudgetUntil(stopAt);
 			if (cancelMs < MinimumDestructiveRequestMs) {
 				(response.Warnings ??= []).Add("The still-running run was not cancelled before cleanup: too little of "
 					+ "the response time was left.");
+				return;
+			}
+			if (options.IsCallerGone) {
 				return;
 			}
 			string error = runMonitor.Cancel(processId, cancelMs);
@@ -487,12 +579,15 @@ public class RunProcessCommand(
 			if (stopAt is not null && stopAt < until) {
 				until = stopAt.Value;
 			}
-			while (DateTimeOffset.UtcNow < until) {
-				ProcessRunState state = runMonitor.Read(processId,
+			while (DateTimeOffset.UtcNow < until && !options.IsCallerGone) {
+				// The cancel was accepted; one slow read of its effect is retried, not reported as a failed cancel.
+				ProcessRunState state = TryRead(processId,
 					(int)Math.Max(1, Math.Min(VerificationRequestMs, (until - DateTimeOffset.UtcNow).TotalMilliseconds)));
-				if (state.IsTerminal) {
+				if (state is { IsTerminal: true }) {
 					response.Status = ResolveStatusName(state.StatusValue ?? ErrorStatus);
 					response.WaitingOn = null;
+					(response.Warnings ??= []).RemoveAll(warning => warning.StartsWith(ParkedValuesNote, StringComparison.Ordinal));
+					DropStaleResultValues(response, ended: true);
 					(response.Warnings ??= []).Add("cleanup cancelled the still-running run before deleting what it created.");
 					return;
 				}
@@ -508,6 +603,15 @@ public class RunProcessCommand(
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			(response.Warnings ??= []).Add("The still-running run could not be cancelled before cleanup: "
 				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
+		}
+	}
+
+	private ProcessRunState TryRead(Guid processId, int timeoutMs) {
+		try {
+			return runMonitor.Read(processId, timeoutMs);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
 		}
 	}
 

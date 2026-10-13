@@ -183,7 +183,10 @@ public sealed class RunProcessTool(
 			Password = args.Password,
 			// The same deadline the race below uses, so a failed run's log read never outlives it.
 			ResponseDeadline = DateTimeOffset.UtcNow + (ResponseDeadlineOverride ?? RunProcessResponseDeadline),
-			LaunchGate = new RunProcessLaunchGate()
+			LaunchGate = new RunProcessLaunchGate(),
+			// The work below runs detached from this request, so the token is carried to it: once the caller cancels,
+			// the wait stops and no cancel or delete starts.
+			CallerCancellation = cancellationToken
 		};
 
 		try {
@@ -199,6 +202,8 @@ public sealed class RunProcessTool(
 			// The caller stopped waiting (notifications/cancelled, or the server shutting down) before any answer. A
 			// launch nobody waits for must not start afterwards: its caller, left without an answer, may well call
 			// again, and that would be a second run. A request already sent cannot be taken back.
+			// A launch already sent goes on without its cleanup: the work checks the same token, which is cancelled by now,
+			// before every cancel and delete.
 			options.LaunchGate.TryWithdraw();
 			throw;
 		}
@@ -299,14 +304,18 @@ public sealed record RunProcessArgs {
 	[Description("Entity names to diff before and after the run, e.g. [\"Activity\"], at most 5. The records "
 		+ "that appeared in them come back in `created` as {entity, id, title}. The platform keeps no list of what "
 		+ "a run created, so only watched entities are reported, and a record another user created at the same "
-		+ "moment is reported too.")]
+		+ "moment is reported too. A run the platform queues (`queued-background`) has not executed yet, so nothing "
+		+ "is reported for it.")]
 	public string[]? Watch { get; init; }
 
 	[JsonPropertyName("cleanup")]
 	[Description("true deletes the records `created` lists after reporting them - only those the calling user "
 		+ "created (another session under the same login cannot be told apart), nothing else - children before the parents they reference, and cancels a still-running run "
-		+ "first. Requires watch. The outcome is in `cleanup` {deleted, failed, skipped}; `deleted` means the record "
-		+ "is gone, also when a cascade removed it first.")]
+		+ "first. The children-first order is approximate: it follows the lookups between the WATCHED entities only, "
+		+ "and records refused in one pass are retried after the others. Requires watch. Nothing is cancelled or "
+		+ "deleted once the call is cancelled. The outcome is in `cleanup` {deleted, failed, skipped}: `deleted` means "
+		+ "the record is gone, also when a cascade removed it first; `failed` lists your records still in place, with "
+		+ "the reason; `skipped` lists records another user created, which are never deleted.")]
 	public bool? Cleanup { get; init; }
 
 	[JsonPropertyName("environment-name")]
