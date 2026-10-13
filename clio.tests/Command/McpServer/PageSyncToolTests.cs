@@ -88,6 +88,33 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-103023: a saved page carries a write digest naming the validation verdict and the components its body wrote, so confirming the batch needs no get-page.")]
+	public async Task SyncPages_ShouldReturnAWriteDigest_ForASavedPage() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(
+			out IApplicationClient _, schemaType: 10);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrMobile_FormPage", MobileBodyWithHandlers)],
+			Validate: false);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(because: $"the fixture save succeeds: {response.Pages[0].Error}");
+		response.Pages[0].Digest.Should().NotBeNull(because: "every saved page reports what it wrote");
+		response.Pages[0].Digest.Validation.Should().Be("skipped", because: "validate=false skipped the content chain");
+		response.Pages[0].Digest.Basis.Should().Be("body", because: "sync-pages always writes the whole own body");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("sync-pages validate=true keeps the mobile content chain: the same body is rejected, which is what makes the validate=false test above a real propagation proof.")]
 	public async Task SyncPages_ShouldRejectMobileHandlers_WhenValidateIsTrue() {
 		// Arrange

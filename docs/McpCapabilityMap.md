@@ -336,9 +336,9 @@ This is one of the strongest and most AI-friendly parts of the MCP surface.
   result is cross-checked once with a broader bounded read before absence is reported; failed
   verification returns a failure rather than a definitive empty result.
 - `get-page`
-  Read a page as a merged bundle plus raw editable JavaScript body. `include-operations=false` replaces
-  `page.ownBodySummary.viewConfigDiffOps` in the response with `viewConfigDiffOpCounts` (operations per type);
-  `meta.json` keeps the full list.
+  Read a page as a merged bundle plus raw editable JavaScript body. By default (since ENG-103023) the response
+  carries `page.ownBodySummary.viewConfigDiffOpCounts` (operations per type); `include-operations=true` returns
+  the `viewConfigDiffOps` list instead. `meta.json` keeps the full list.
 - `update-page`
   Write a full page body back to Creatio, optionally in `dry-run` mode; its MCP surface also has an explicit `validate=false` escape hatch for pre-existing content defects while retaining syntax/loadability checks. `include-operations=false` trims the `verify=true` read-back the same way as on `get-page`.
 - `validate-page`

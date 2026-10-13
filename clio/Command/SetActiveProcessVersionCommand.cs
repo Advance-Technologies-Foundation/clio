@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Clio.Command.ProcessModel;
 using Clio.Common;
+using ErrorOr;
 using Clio.UserEnvironment;
 
 namespace Clio.Command;
@@ -103,7 +105,7 @@ public sealed class SetActiveProcessVersionService(
 			throw new InvalidOperationException(
 				"SetActiveProcessVersion returned a response clio could not read, so WHICH version the "
 				+ "environment now runs is UNKNOWN - the write may have taken effect. Read the family back with "
-				+ "describe-business-process and check isActiveVersion before retrying or reporting this. The "
+				+ "describe-business-process mode=versions and check isActiveVersion before retrying or reporting this. The "
 				+ "parser detail is on the inner exception; it names a .NET type and a byte offset, which helps "
 				+ "a developer reading a stack trace and is noise to the caller reading this.",
 				exception);
@@ -183,6 +185,7 @@ public sealed class SetActiveProcessVersionService(
 /// </summary>
 public class SetActiveProcessVersionCommand(
 	ISetActiveProcessVersionService setActiveProcessVersionService,
+	IProcessDescriber processDescriber,
 	ILogger logger)
 	: Command<SetActiveProcessVersionOptions> {
 	/// <inheritdoc />
@@ -201,6 +204,11 @@ public class SetActiveProcessVersionCommand(
 					: "One of --name or --uid is required.");
 			}
 
+			ProcessIdentity target = new(hasName ? options.VersionName : null, hasUid ? options.VersionUid : null, null);
+			// Read BEFORE the write for WHICH version runs now - the version standing only, no graph - so the digest
+			// can compare the activated version with it (ENG-103023). Best-effort and on a short budget: a failed
+			// read only costs the change list.
+			ErrorOr<DescribeProcessResult> before = ProcessWriteDigest.ReadVersionStanding(processDescriber, target);
 			SetActiveProcessVersionResult result = setActiveProcessVersionService.SetActiveVersion(
 				options.Environment,
 				new SetActiveProcessVersionRequest(options.VersionName, options.VersionUid));
@@ -215,11 +223,42 @@ public class SetActiveProcessVersionCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
+			ReportDigest(target, before);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
 		}
+	}
+
+	// The activated version's summary - read WITH its version standing, which is the point of this tool - and
+	// what it changes against the version that ran before (ENG-103023). After the write landed, so nothing here
+	// may change the exit code.
+	private void ReportDigest(ProcessIdentity target, ErrorOr<DescribeProcessResult> before) {
+		ErrorOr<DescribeProcessResult> after = ProcessWriteDigest.Read(processDescriber, target,
+			includeVersionFacts: true);
+		if (before.IsError || after.IsError) {
+			ProcessWriteDigest.Report(logger, after, before.IsError ? before : (ErrorOr<DescribeProcessResult>?)null,
+				versionFactsRead: true);
+			return;
+		}
+		string previousUId = before.Value.ActiveVersionSchemaUId;
+		if (string.IsNullOrWhiteSpace(previousUId)) {
+			ProcessWriteDigest.Report(logger, after, Error.Failure(
+					description: "the version that was active before could not be established"),
+				versionFactsRead: true);
+			return;
+		}
+		if (Guid.TryParse(previousUId, out Guid previous) && Guid.TryParse(after.Value.SchemaUId, out Guid activated)
+			&& previous == activated) {
+			ProcessWriteDigest.Report(logger, after, after, versionFactsRead: true,
+				changesAgainst: "itself: this version was already the active one");
+			return;
+		}
+		ErrorOr<DescribeProcessResult> previousGraph = ProcessWriteDigest.Read(processDescriber,
+			new ProcessIdentity(null, previousUId, null));
+		ProcessWriteDigest.Report(logger, after, previousGraph, versionFactsRead: true,
+			changesAgainst: $"the previously active version '{before.Value.ActiveVersionName ?? previousUId}'");
 	}
 
 	/// <summary>
@@ -257,7 +296,7 @@ public class SetActiveProcessVersionCommand(
 			logger.WriteWarning(
 				"The activation was accepted, but the environment did not report which version is actual, so "
 				+ "clio could NOT confirm the change took effect. Read the family back with "
-				+ "describe-business-process and check isActiveVersion before reporting this as done.");
+				+ "describe-business-process mode=versions and check isActiveVersion before reporting this as done.");
 		} else if (!ReadBackMatchesRequest(options, result)) {
 			logger.WriteWarning(
 				$"The environment reports '{result.ActiveVersionName}' (UId: {result.ActiveVersionSchemaUId}) as "

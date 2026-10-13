@@ -795,4 +795,40 @@ public sealed class ProcessVersionLibReaderTests {
 
 		public List<Dictionary<string, object>> Items => items;
 	}
+
+	[Test]
+	[Description("Review ENG-103023 #5: a member's ModifiedOn is published when the view gives one, and an unread column (default DateTime) becomes null rather than the year 1.")]
+	public void Read_Should_PublishModifiedOn_AndMapAnUnreadDateToNull() {
+		// Arrange
+		DateTime saved = new(2026, 10, 1, 8, 30, 0, DateTimeKind.Utc);
+		Dictionary<string, object> root = Row(RootUId, "UsrInvoice", version: 0, isActive: false, rootUId: RootUId);
+		Dictionary<string, object> child = Row(ChildUId, "UsrInvoiceCustom1", version: 1, isActive: true, rootUId: RootUId);
+		child["ModifiedOn"] = saved;
+		ProcessVersionLibReader sut = ReaderOver(root, child);
+
+		// Act
+		ProcessVersionFacts facts = sut.Read(RootUId.ToString());
+
+		// Assert
+		facts.Versions.Single(member => member.Name == "UsrInvoiceCustom1").ModifiedOn.Should().Be(saved,
+			because: "the library's save date is carried through");
+		facts.Versions.Single(member => member.Name == "UsrInvoice").ModifiedOn.Should().BeNull(
+			because: "a row without the date must not be dated to year 1");
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #4: the version standing can be read by schema name within an explicit budget, without the describe POST.")]
+	public void ReadByName_Should_ReturnTheFamilyFacts() {
+		// Arrange
+		ProcessVersionLibReader sut = ReaderOver(
+			Row(ChildUId, "UsrInvoiceCustom1", version: 1, isActive: true, rootUId: RootUId),
+			Row(RootUId, "UsrInvoice", version: 0, isActive: false, rootUId: RootUId));
+
+		// Act
+		ProcessVersionFacts facts = sut.ReadByName("UsrInvoiceCustom1", TimeSpan.FromSeconds(3));
+
+		// Assert
+		facts.Warning.Should().BeNull(because: "the row and its family were read");
+		facts.ActiveVersionName.Should().Be("UsrInvoiceCustom1", because: "the active member is named");
+	}
 }

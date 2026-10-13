@@ -84,8 +84,8 @@ public class ModifyBusinessProcessTool(
 		 + "keeping its UId and position, which decides branch precedence"
 		 + "), setFlowCondition (with 'source' and "
 		 + "'target' naming an EXISTING flow, plus a non-empty 'condition' — and NOT a 'kind', which it does "
-		 + "not read and REFUSES from 1.6.0.11 (it resolves the flow by its endpoint pair, so an echoed kind "
-		 + "would be dropped while the edit landed on whichever flow that pair resolves to) — a boolean "
+		 + "not read and REFUSES from 1.6.0.11 (an echoed kind would be dropped "
+		 + "while the edit landed on whichever flow the pair resolves to) — a boolean "
 		 + "formula deciding whether "
 		 + "the branch is taken; turns that flow into a CONDITIONAL flow in place, keeping its position, which "
 		 + "matters because sibling branches off one element are evaluated in the order the flows were added and "
@@ -121,9 +121,8 @@ public class ModifyBusinessProcessTool(
 		 + "the build path with flows[].results. get-guidance name=process-branch-conditions routes to the rule's owner "
 		 + "and says what to tell the user first), "
 		 + "A FLOW 'label' is the text the designer draws ON the connector, and on setFlow its three states "
-		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because a "
-		 + "modify normally lands on a designer-authored process where 84.9% of conditional flows already "
-		 + "carry one; pass an EMPTY string to clear it; pass text to replace it. Since 'kind' is mandatory on "
+		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because "
+		 + "designer-authored conditional flows usually carry one; pass an EMPTY string to clear it; pass text to replace it. Since 'kind' is mandatory on "
 		 + "setFlow, relabelling alone means passing the kind the flow ALREADY has - that is a no-op for the "
 		 + "kind and still applies the label. Name the OUTCOME ('Approved', 'User Not Found'), never repeat "
 		 + "the condition. describe-business-process reports each flow's 'label', so read before you write: "
@@ -362,14 +361,14 @@ public class ModifyBusinessProcessTool(
 		 + "Operations apply in order; any failure aborts the edit (unless its error says WAS saved). A SUCCESSFUL edit may still "
 		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
 		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
-		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
+		 + "Some are neutral acknowledgements (a column already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
 		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling (and get-guidance name=process-access-rights for the accessRights block - it owns the permission entries, the grantee kinds, and the two configurations that build green and change nothing) "
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the CrtProcessBuilder package (install-process-builder, after user approval). Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed.")]
+			 + "Requires the CrtProcessBuilder package (install-process-builder, after user approval). Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {

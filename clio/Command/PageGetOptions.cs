@@ -483,7 +483,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		};
 	}
 
-	private static (int count, List<string> requests) ExtractHandlerInfo(string handlers) {
+	internal static (int count, List<string> requests) ExtractHandlerInfo(string handlers) {
 		int count = 0;
 		var requests = new List<string>();
 		if (string.IsNullOrEmpty(handlers) || handlers == "[]")
@@ -506,7 +506,7 @@ public class PageGetCommand : Command<PageGetOptions>, IProcessPageReader {
 		return (count, requests);
 	}
 
-	private static List<PageOperationInfo> ExtractViewConfigOps(PageParsedSchemaBody parsed) {
+	internal static List<PageOperationInfo> ExtractViewConfigOps(PageParsedSchemaBody parsed) {
 		var ops = new List<PageOperationInfo>();
 		if (parsed.ViewConfigDiff is not Newtonsoft.Json.Linq.JArray viewDiff)
 			return ops;
