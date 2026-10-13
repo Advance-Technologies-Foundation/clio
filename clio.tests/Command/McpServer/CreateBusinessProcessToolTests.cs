@@ -327,6 +327,31 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route a flow-time assignment to formulaTask + formula.resultProcessParameter (ENG-103081). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
+	public void ProcessWriteTools_ShouldStateTheBindingSemanticsOfAProcessParameterMapping() {
+		// Arrange
+		string create = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		string modify = typeof(ModifyBusinessProcessTool)
+			.GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		create.Should().Contain("a BINDING, read live, not a flow-time assignment",
+			because: "the build contract must say a mapping is not an assignment made when a branch runs");
+		create.Should().Contain("last per parameter wins (warned)",
+			because: "a second mapping silently replaced the first");
+		create.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
+			because: "the contract must name the flow-time assignment");
+		modify.Should().Contain("A targetProcessParameter mapping is a BINDING, read live, not a flow-time assignment",
+			because: "addMapping shares the semantics and must state them too");
+		modify.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
+			because: "modify has no removeMapping, so the caller needs the flow-time route");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and a package that does not refuse it builds an element that fails at run time, so the prose is what keeps a caller off it.")]
 	public void CreateBusinessProcessTool_ShouldSteerAPreconfiguredPageOffTheGenericUserTaskRoute() {
 		// Arrange
