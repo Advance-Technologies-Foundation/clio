@@ -110,7 +110,7 @@ public sealed class CreateEntitySchemaTool(
 		}
 	}
 
-	private const string TitleLocalizationsArgument = "title-localizations";
+	internal const string TitleLocalizationsArgument = "title-localizations";
 
 	/// <summary>
 	/// The required arguments of <c>create-entity-schema</c> the call lacks. The title counts as supplied when
@@ -162,7 +162,7 @@ public sealed class CreateEntitySchemaTool(
 			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 				titleLocalizations,
 				null,
-				"title-localizations");
+				TitleLocalizationsArgument);
 		return new CreateEntitySchemaOptions {
 			Package = args.PackageName,
 			SchemaName = args.SchemaName,
@@ -222,7 +222,7 @@ public sealed class CreateEntitySchemaTool(
 		return JsonSerializer.Serialize(new Dictionary<string, object?> {
 			["name"] = resolvedName,
 			["type"] = resolvedType,
-			["title-localizations"] = titleLocalizations,
+			[TitleLocalizationsArgument] = titleLocalizations,
 			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
 				? null
 				: resolvedReferenceSchemaName.Trim(),
@@ -251,7 +251,7 @@ public sealed class CreateEntitySchemaTool(
 			["name"] = resolvedName,
 			["override"] = true,
 			["type"] = column.ResolveType()?.Trim(),
-			["title-localizations"] = titleLocalizations,
+			[TitleLocalizationsArgument] = titleLocalizations,
 			["reference-schema-name"] = column.ResolveReferenceSchemaName()?.Trim(),
 			["required"] = column.ResolveRequired(),
 			["default-value-source"] = column.DefaultValueSource,
@@ -505,7 +505,7 @@ public sealed class UpdateEntitySchemaTool(
 			["column-name"] = operation.ResolveColumnName(),
 			["new-name"] = operation.NewName,
 			["type"] = operation.ResolveType(),
-			["title-localizations"] = titleLocalizations,
+			[CreateEntitySchemaTool.TitleLocalizationsArgument] = titleLocalizations,
 			["description-localizations"] = descriptionLocalizations,
 			["reference-schema-name"] = operation.ResolveReferenceSchemaName(),
 			["required"] = operation.ResolveRequired(),
@@ -778,7 +778,7 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
 					titleLocalizations,
 					null,
-					"title-localizations");
+					CreateEntitySchemaTool.TitleLocalizationsArgument);
 			ModifyEntitySchemaColumnOptions options = new() {
 				Environment = args.EnvironmentName,
 				Package = args.PackageName,
