@@ -840,6 +840,7 @@ public class BindingsModule {
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreatePackageTool>();
+		services.AddTransient<PlaceSectionInWorkplaceTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -977,6 +978,8 @@ public class BindingsModule {
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
 		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IWorkplaceRepository, WorkplaceRepository>();
+		services.AddTransient<IWorkplacePlacementService, WorkplacePlacementService>();
 		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
 		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
 		services.AddTransient<GetTargetPackageCommand>();

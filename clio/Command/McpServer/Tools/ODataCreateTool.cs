@@ -120,6 +120,7 @@ public sealed class ODataCreateTool(
 		"The batch stops when it exceeds its wall-clock budget; the first row that was not attempted is then " +
 		"reported with record-created=false and the reason. " +
 		"Returns a created/failed summary and a per-row result array with each created record's Id. " +
+		"Common synonyms of rows - payload, values, body or data (a single object is wrapped into one row) - are accepted and reported in warnings; sending one together with rows or rows-file is rejected as ambiguous. " +
 		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
 		"request - send '...Z' or '...+02:00' instead. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
@@ -139,8 +140,22 @@ public sealed class ODataCreateTool(
 		//Minted once and stamped on the single exit, so every response carries the correlation-id
 		//core-rules promises - request-level refusals included.
 		string correlationId = correlationIds.New();
-		ODataCreateBatchResponse result = CreateCore(args, cancellationToken);
+		//A synonym of rows (payload, values, body, data) is folded into rows BEFORE anything else looks at the
+		//arguments; an ambiguous combination is refused here, ahead of any file read or request.
+		ODataWriteArgumentAliases.Resolution payloadAlias = ODataWriteArgumentAliases.Resolve(
+			args.ExtensionData, "rows", ODataWriteArgumentAliases.CreateRowsAliases,
+			args.Rows is not null, !string.IsNullOrWhiteSpace(args.RowsFile));
+		if (payloadAlias.Warning is not null) {
+			args = args with {
+				Rows = WrapSingleObject(payloadAlias.Value.GetValueOrDefault()),
+				ExtensionData = payloadAlias.Remaining
+			};
+		}
+		ODataCreateBatchResponse result = payloadAlias.Error is not null
+			? ODataCreateBatchResponse.RequestError(payloadAlias.Error)
+			: CreateCore(args, cancellationToken);
 		return result with {
+			Warnings = payloadAlias.WarningFor(result.Error is not null) is { } warning ? [warning] : null,
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
@@ -149,6 +164,12 @@ public sealed class ODataCreateTool(
 			}).ToArray()
 		};
 	}
+
+	/// <summary>A single row object becomes a one-element array; anything else is left for the usual validation.</summary>
+	private static JsonElement WrapSingleObject(JsonElement value) =>
+		value.ValueKind == JsonValueKind.Object
+			? JsonSerializer.SerializeToElement(new[] { value })
+			: value;
 
 	private ODataCreateBatchResponse CreateCore(ODataCreateArgs args, CancellationToken cancellationToken) {
 		//Runs before the payload is resolved, before the environment is resolved and before any POST: an
