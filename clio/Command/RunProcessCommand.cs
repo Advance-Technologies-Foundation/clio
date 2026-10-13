@@ -420,7 +420,7 @@ public class RunProcessCommand(
 			}
 			int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
 			// A read that keeps failing (no rights on SysProcessLog, a login lost) will not recover by waiting longer.
-			if ((readError is null && state.IsTerminal) || leftMs <= 0 || failedReads >= MaxConsecutiveFailedReads) {
+			if ((readError is null && state is { IsTerminal: true }) || leftMs <= 0 || failedReads >= MaxConsecutiveFailedReads) {
 				break;
 			}
 			Sleep(Math.Min(PollIntervalMs, leftMs));

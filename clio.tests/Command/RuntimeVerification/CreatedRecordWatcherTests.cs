@@ -76,9 +76,17 @@ public sealed class CreatedRecordWatcherTests {
 		// Arrange
 		IApplicationClient client = Substitute.For<IApplicationClient>();
 		client.ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(call => JObject.Parse(call.ArgAt<string>(1)).Value<string>("rootSchemaName") == "SysSchema"
-				? "{\"success\":true,\"rows\":[{\"Name\":\"Activity\"}]}"
-				: "{\"success\":true,\"rows\":[]}");
+			.Returns(call => {
+				JObject query = JObject.Parse(call.ArgAt<string>(1));
+				if (query.Value<string>("rootSchemaName") != "SysSchema") {
+					return "{\"success\":true,\"rows\":[]}";
+				}
+				// As PostgreSQL would: a text filter matches exactly, so only a case-blind prefix match finds the name.
+				bool byPrefix = query.ToString().Contains("\"comparisonType\": 9");
+				return byPrefix
+					? "{\"success\":true,\"rows\":[{\"Name\":\"Account\"},{\"Name\":\"ActivityCategory\"},{\"Name\":\"Activity\"}]}"
+					: "{\"success\":true,\"rows\":[]}";
+			});
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
 		IRuntimeEntitySchemaReader schemaReader = Substitute.For<IRuntimeEntitySchemaReader>();
@@ -94,6 +102,18 @@ public sealed class CreatedRecordWatcherTests {
 		EntityWatch watch = baseline.Entities.Single();
 		watch.Error.Should().BeNull(because: "the entity exists; only the case of its name differed");
 		watch.Entity.Should().Be("Activity", because: "the platform's spelling is what is watched and reported");
+	}
+
+	[Test]
+	[Description("The SysSchema lookup is narrowed by every case variant of the name's first two letters, so it is case-blind on PostgreSQL too.")]
+	public void CasePrefixes_Should_List_Every_Case_Variant_Of_The_First_Two_Letters() {
+		// Act
+		IReadOnlyList<string> prefixes = CreatedRecordWatcher.CasePrefixes("activity");
+		IReadOnlyList<string> digits = CreatedRecordWatcher.CasePrefixes("a1x");
+
+		// Assert
+		prefixes.Should().BeEquivalentTo(["ac", "aC", "Ac", "AC"], because: "each letter is tried in both cases");
+		digits.Should().BeEquivalentTo(["a1", "A1"], because: "a character without case is kept as is");
 	}
 
 	[Test]
