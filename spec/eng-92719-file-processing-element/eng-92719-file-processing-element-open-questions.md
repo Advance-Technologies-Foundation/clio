@@ -5,7 +5,7 @@ type (Task) and ENG-92719 File processing element (Story), with its sub-tasks EN
 attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 20 owner questions (Q1-Q20). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
-Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, and Q19 (`process-files`) on 2026-10-08. Q10-Q19 fix the contract. Q20, added on 2026-10-13, asks where the clio description bytes come from. **Part B** holds 27 stand measurements with exact recipes and read-only evidence
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, and Q19 (`process-files`) on 2026-10-08. Q10-Q19 fix the contract. Q20, added on 2026-10-13, asks where the clio description bytes come from; the owner agreed it on 2026-10-14 (A: trim existing text). **Part B** holds 27 stand measurements with exact recipes and read-only evidence
 queries. Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -16,7 +16,7 @@ and two have none scheduled because a refusal covers the case. Nothing in this d
 
 | | |
 |---|---|
-| Status | Open. Written 2026-10-01; Q1-Q12 agreed 2026-10-07 and Q19 2026-10-08; Q13-Q18 and Q20 open (Q20 added 2026-10-13). |
+| Status | Open. Written 2026-10-01; Q1-Q12 agreed 2026-10-07, Q19 2026-10-08 and Q20 2026-10-14 (A; added 2026-10-13); Q13-Q18 open. |
 | Sibling documents | [README](README.md) · [platform-reference](eng-92719-file-processing-element-platform-reference.md) · [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) · [use-cases](eng-92719-file-processing-element-use-cases.md) · [traps](eng-92719-file-processing-element-traps.md) · [reuse](eng-92719-file-processing-element-reuse.md) · [decisions](eng-92719-file-processing-element-decisions.md) · [plan](eng-92719-file-processing-element-plan.md) · [test-plan](eng-92719-file-processing-element-test-plan.md) · [pr-split](eng-92719-file-processing-element-pr-split.md) · [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) · [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) |
 | Numbering | `D1`-`D29` are the decisions in [decisions](eng-92719-file-processing-element-decisions.md). `M1`-`M26` are the measurements of its D29 (M26 is the T-19 probe of [traps](eng-92719-file-processing-element-traps.md)); M3b is added here and is the baseline the [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) calls MI-0. Refusal and notice ids (`F-T*`, `F-M*`, `F-E*`, `F-F*`, `F-R*`, `F-P*`) are those of the decisions' Appendix A. `O1`-`O8`, `L1`-`L7` and the contingencies `X1`-`X8` are in [pr-split](eng-92719-file-processing-element-pr-split.md) sections 11-13; "decisions X1-X7" are the corrections in section 0 of the decisions. |
 | Methods | [test-plan](eng-92719-file-processing-element-test-plan.md) section 8 gives each measurement's method in one row, and its section 9 the evidence queries. Part B here is the full recipe and follows both; Part B and test-plan section 8 now give one recipe for every measurement. Rows 35-37 of Part D record the places where they differed before the reconciliation of 2026-10-01. |
@@ -68,7 +68,7 @@ the owner row of the sibling documents.
 | Q17 | Storage policy details | do not read the designer flag for behaviour; no `linkColumn: "none"`; no SysFile override | PK-OA | D15; decisions row 9 |
 | Q18 | FastReport printables | refused in this work | PK-RP | D17; decisions row 11 |
 | Q19 | Name of the new guide | `process-files` **Agreed 2026-10-08.** | KB-PT | D25; decisions row 15 |
-| Q20 | Where do the description bytes for PT and OA come from? (added 2026-10-13) | A: trim existing text per tool, reviewer-approved, measured by lowering the ceiling | CL-PT's description edit (CL-2) and CL-OA; no package code | D25; ENG-95984 File process parameter type plan CL-2; pr-split X1 |
+| Q20 | Where do the description bytes for PT and OA come from? (added 2026-10-13) | A: trim existing text per tool, reviewer-approved, measured by lowering the ceiling **Agreed 2026-10-14.** | CL-PT's description edit (CL-2) and CL-OA; no package code | D25; ENG-95984 File process parameter type plan CL-2; pr-split X1 |
 
 ### A.1 Jira and delivery (answer before any PR opens)
 
@@ -445,7 +445,14 @@ and `creatio.process-files` are added in sorted order), the routing row (shipped
 article), the banner-less registration that `process-tracing` uses (not in `ProcessGuideSet.GoLiveFloor`), and the
 `get-guidance name=process-files` pointer in the create/modify descriptions.
 
-#### Q20. Where do the description bytes for PT and OA come from? (added 2026-10-13)
+#### Q20. Where do the description bytes for PT and OA come from? (added 2026-10-13; agreed 2026-10-14: A)
+
+**Answer (2026-10-14): A.** Trim existing text per tool, each trim approved by the reviewer, measured by lowering the
+ceiling; B (a ceiling raise) and C (the type lists moved to guidance) are rejected. The create candidate below stays a
+candidate measured at cut, and the modify trim is chosen at cut with the reviewer. OA also trims kept short-form text
+for its call-shape entry under the 19,000 B wire guard. Q20 no longer gates anything as an open decision: CL-2 and
+CL-OA proceed with A, and the trim itself is work inside those clio PRs. X1 stays as written; estimates are unchanged.
+The measurements below are why the question was asked.
 
 **Measured** on clio master `19e6f9c53`, 2026-10-13, by lowering the ceilings to 1 in a scratch export and reading
 the sizes the failing assertions print:
@@ -498,12 +505,13 @@ What PT and OA need:
 | B. A reviewed ceiling raise | one review buys room for PT, OA and RP; it does not touch the separate 19,000 B wire guard, so OA's call-shape entry still needs a wire trim or a second raise (inference); every later feature can cite the raise |
 | C. Move the type lists out of the descriptions into guidance | frees bytes, but an agent that reads only the contract no longer sees File / FileCollection among the valid types and needs a guide read first; it does nothing for OA's call-shape entry (inference) |
 
-**Recommendation: A.** **Gates:** CL-PT's description edit (ENG-95984 File process parameter type plan CL-2) and
-CL-OA; no package code waits on it. **What changes:** CL-2 grows by about 0.5 h (the swap and its re-measure); OA.10
-by about 1 h (the call-shape entry and the wire trim); each clio PR description carries the re-measured figures of
-both guards (pr-split 9.3). X1's condition (the description ceiling blocks the type-list edit) is met by measurement on
-2026-10-13. Its action, a separate early description-budget PR (pr-split section 11), stays optional: by default the
-swap rides in CL-PT's CL-2; Q20 and the reviewer settle which. The PR count stays 14 unless that early PR is opened.
+**Recommendation: A** (agreed 2026-10-14). **Gated, until answered:** CL-PT's description edit (ENG-95984 File process
+parameter type plan CL-2) and CL-OA; no package code waited on it. **What changes:** CL-2 grows by about 0.5 h (the
+swap and its re-measure); OA.10 by about 1 h (the call-shape entry and the wire trim); each clio PR description carries
+the re-measured figures of both guards (pr-split 9.3). X1's condition (the description ceiling blocks the type-list
+edit) is met by measurement on 2026-10-13. Its action, a separate early description-budget PR (pr-split section 11),
+stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which (Q20 = A: trim). The PR count
+stays 14 unless that early PR is opened.
 
 ---
 

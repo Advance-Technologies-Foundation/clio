@@ -25,14 +25,14 @@ readiness and object attachments mode, then ENG-96506 Generated report + process
 Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
 about 7.5-15.5 h of agent time (7-15 h before the 2026-10-13 byte swap) and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
 about 26.5-52.5 h of agent time (+0.5 h from the 2026-10-13 drift) and 15-33.5 h of the owner's time (about 7-10 working days after that); about 2-3 weeks
-from day 0 for both. Seven owner questions are open (Q13-Q18 and Q20): the owner agreed Q1-Q12 on 2026-10-07 and Q19 on 2026-10-08 (Q7 had been answered by M3; Q11 as Variable, which reverses the first recommendation). None of the open ones is needed before ENG-95984 File process parameter type's package code; Q20 (added 2026-10-13: where the description bytes come from) gates CL-PT's description edit (CL-2) and CL-OA. Of the 27 stand measurements, 11 are
+from day 0 for both. Six owner questions are open (Q13-Q18): the owner agreed Q1-Q12 on 2026-10-07, Q19 on 2026-10-08 and Q20 on 2026-10-14 (Q7 had been answered by M3; Q11 as Variable, which reverses the first recommendation). None of the open ones is needed before ENG-95984 File process parameter type's package code. Q20 (added 2026-10-13: where the description bytes come from) is agreed as A: trim existing text per tool, reviewer-approved; CL-PT's description edit (CL-2) and CL-OA proceed with it. Of the 27 stand measurements, 11 are
 done, 2 partly, 1 skipped and 13 open. Every measurement that gates PK-PT or PK-OA code is done; the seven that
 still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 decisions come before any code.
 
 Written 2026-10-01; measured on the stand 2026-10-02. No product code was written. The probes were built in package
 `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
-branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12 and Q19 are
-agreed; Q13-Q18 and Q20 are open.** Every anchor points to these lines (re-pinned 2026-10-13). The stand measurements
+branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12, Q19 and
+Q20 are agreed; Q13-Q18 are open.** Every anchor points to these lines (re-pinned 2026-10-13). The stand measurements
 of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). The stand now runs CrtProcessBuilder 1.6.6.96 (measured
 2026-10-13, `list-packages`, read-only).
 
@@ -76,7 +76,7 @@ titles of that day):
 | ENG-100041 | Sub-process retarget guard scans the live schema instead of the request dependency snapshot | merged 2026-10-12 (package #95, 1.6.6.96; clio #1793; knowledge #273); every refusing dependency guard now asks `IProcessDependencySnapshot`, so D12's source-change refusal does too |
 | ENG-92113 | Deliver clioprocessbuiilder package - CI for adding package into clio release | its "Deliver to clio" stage merged as package #83 (2026-10-08) and produced one automated clio PR (clio #1780, 1.6.6.91); package #92 removed it on 2026-10-09, so every rebundle is manual again and X6 is moot |
 | ENG-102116 | Process tools gated on the CrtProcessBuilder install: state the prerequisite in guidance and the restart in the refusal message | merged 2026-10-13 (clio #1805, knowledge #279); Jira: Ready for Testing; every `install-process-builder` call needs the user's approval each time and restarts the site for every connected user; new read-back warnings append `BundledPackages.ProcessBuilderInstallRemedy`; `process-files` must carry consent wording |
-| ENG-102797 | O4c: make the short modify-business-process / create-business-process contract complete enough that agents stop asking for detail:full | clio #1795; call shapes in the short create / modify contracts are bound to the archive, and the seven process-designer contracts are held to 19,000 B on the wire (14 B left): OA's `fileProcessing` block must fit there (Q20) |
+| ENG-102797 | O4c: make the short modify-business-process / create-business-process contract complete enough that agents stop asking for detail:full | clio #1795; call shapes in the short create / modify contracts are bound to the archive, and the seven process-designer contracts are held to 19,000 B on the wire (14 B left): OA's `fileProcessing` block must fit there (a wire trim, Q20 = A) |
 | ENG-103023 | clio: spill-free reads and post-write summaries (describe-business-process modes, write tools return the result, get-page lean by default) | clio #1801; describe returns a summary above 18,000 B, so every graph check passes `mode=full` or `element=<name>`; the post-write digest sentence helped fill the description budget (Q20) |
 | ENG-103030 | guidance: split the eight process articles the digest routes to that still exceed the 19 KB inline line | knowledge #280 (1.15.139); the 19,000-byte inline rule now covers nine process article pairs, none of which the plan edits; a new `process-files` should target about 21,000 characters rather than 22,000 (inference) |
 
@@ -278,8 +278,8 @@ fit, so X1's condition (the description ceiling blocks the type-list edit) is me
 action, a separate early description-budget PR, stays optional (see the contingency list below). OA pays twice: its
 own description text, and the `fileProcessing` entry in the short create contract's call shape, which ENG-102797
 binds to the archive and holds to 19,000 bytes on the wire for the seven process-designer contracts together (14
-bytes left). Where the bytes come from is owner question Q20 (recommended: trim existing text per tool,
-reviewer-approved). Describe still has room (1,053 bytes).
+bytes left). The bytes are trimmed per Q20 (agreed A, 2026-10-14): existing text per tool, each trim
+reviewer-approved, no ceiling raise. Describe still has room (1,053 bytes).
 
 Separately, CL-OA merges only after KB-PT is published (edge E5). KB-PT creates the new `process-files` guide (Q19,
 agreed 2026-10-08), and CL-OA writes the first `name=process-files`. When the name was chosen, the articles the text
@@ -323,8 +323,8 @@ The BMAD artifacts each issue needs before its package PR opens are tabled in
 Contingency splits fire only on a named trigger (§11):
 - X1, an early clio PR for description bytes. X1's condition (the description ceiling blocks the type-list edit) is
   met by measurement on 2026-10-13 (create has 4 bytes and modify 10 left). Its action, a separate early
-  description-budget PR, stays optional: by default the swap rides in CL-PT's CL-2; Q20 and the reviewer settle
-  which. The PR count stays 14 unless that early PR is opened;
+  description-budget PR, stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which
+  (Q20 = A: trim). The PR count stays 14 unless that early PR is opened;
 - X2, cherry-pick RP's Report half if the Process-parameter half fails its stand proof;
 - X3, swap the RP and SF slots.
 
@@ -407,7 +407,7 @@ changes, are in [open-questions](eng-92719-file-processing-element-open-question
 | Q17 | Storage policy details | the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override | PK-OA |
 | Q18 | FastReport printables | refused in this work | PK-RP |
 | Q19 | Name of the new guide | `process-files` **Agreed 2026-10-08.** | KB-PT |
-| Q20 | Where the description bytes for PT and OA come from (added 2026-10-13) | trim existing text per tool, reviewer-approved, measured by lowering the ceiling; not a ceiling raise, not the type lists moved to guidance | CL-PT's description edit (CL-2) and CL-OA; no package code |
+| Q20 | Where the description bytes for PT and OA come from (added 2026-10-13) | trim existing text per tool, reviewer-approved, measured by lowering the ceiling; not a ceiling raise, not the type lists moved to guidance **Agreed 2026-10-14.** | CL-PT's description edit (CL-2) and CL-OA; no package code |
 
 The owner items O-1..O-10 of the ENG-95984 File process parameter type plan are the same questions: Q10, Q11, Q12,
 Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that table:

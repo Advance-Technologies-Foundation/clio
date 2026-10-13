@@ -4,7 +4,7 @@
 |---|---|
 | Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 6 decisions wait for the owner (section 1, Q13-Q18), plus Q20 (where the description bytes for PT and OA come from, D25), opened 2026-10-13: D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02 |
+| Status | Proposed, 2026-10-01. 6 decisions wait for the owner (section 1, Q13-Q18): D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02. Q20 (where the description bytes for PT and OA come from, D25), opened 2026-10-13, was agreed on 2026-10-14 as A: trim existing text per tool, reviewer-approved |
 | Baselines | Anchors point to CrtProcessBuilder `main` `a6bfcbf6` (package 1.6.6.96, 2026-10-12), clio `master` `19e6f9c53` and clio-knowledge `master` `0b56d4a` (guidance libraryVersion 1.15.142), re-pinned and re-checked for meaning on 2026-10-13 (Appendix B, round 5). The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand runs 1.6.6.96 since (list-packages, read-only, 2026-10-13). Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -129,8 +129,8 @@ docs-only CL-PT-DOC (its plan's O-10), the variant registry as an ADR item (O5),
 disposable stand (O6), merge-commit mode for stacked PRs (O7) and merge windows with in-flight branches (O8). The
 same questions, with their options, are Q1-Q20 in
 [open-questions](eng-92719-file-processing-element-open-questions.md); the row numbers above are the ones it cites.
-Q20 (where the description bytes for PT and OA come from, opened 2026-10-13) has no row above: it belongs to D25's
-tool-description budget and gates the clio description edits only, not package code.
+Q20 (where the description bytes for PT and OA come from, opened 2026-10-13, agreed 2026-10-14: A, trim) has no row
+above: it belongs to D25's tool-description budget and concerned the clio description edits only, not package code.
 
 ## 2. Decision index
 
@@ -160,7 +160,7 @@ tool-description budget and gates the clio description edits only, not package c
 | D22 | Downstream consumers | FE | agreed 2026-10-07 | - |
 | D23 | Jira dependencies | all | agreed 2026-10-07 | - |
 | D24 | Acceptance-criteria corrections (text in Part D) | all | agreed 2026-10-07 | - |
-| D25 | Guidance placement and tool-description budget | all | agreed 2026-10-08 (`process-files`); **yes** for the budget (open, Q20) | - |
+| D25 | Guidance placement and tool-description budget | all | agreed 2026-10-08 (`process-files`); budget: Q20 agreed 2026-10-14: A, trim | - |
 | D26 | `[RequiresPackage]` floors and version numbers | all | no | - |
 | D27 | PR split per repository | all | agreed 2026-10-07 | - |
 | D28 | Test strategy and C# mocking | all | no | - |
@@ -1655,14 +1655,15 @@ palette caption), or one guide per ticket.
   at merge (no placeholder can merge). A CrtProcessBuilder version appears only as inline evidence ("measured on
   CrtProcessBuilder X on <date>"), never as the boundary (KB `AGENTS.md:22`).
 - Tool descriptions:
-  - **Where the bytes come from is open, Q20** (asked 2026-10-13). Create has 4 B and modify 10 B left, so neither
-    PT's nor OA's additions fit: a byte swap is needed again. X1's condition (the description ceiling blocks the
-    type-list edit) is met by measurement on 2026-10-13. Its action, a separate early description-budget PR, stays
-    optional: by default the swap rides in CL-PT's CL-2; Q20 and the reviewer settle which. The PR count stays 14
-    unless that early PR is opened (pr-split X1). Options:
-    A, trim existing text per tool, reviewer-approved, measured by lowering the ceiling (recommended); B, a reviewed
-    ceiling raise; C, move the type lists out of the descriptions into guidance. Q20 gates CL-PT's description edit
-    (CL-2) and CL-OA, not package code. Whoever lands first pays; the order PT then OA makes PT pay first. Cost:
+  - **Where the bytes come from: Q20 agreed 2026-10-14: A, trim** (asked 2026-10-13). Create has 4 B and modify 10 B
+    left, so neither PT's nor OA's additions fit: a byte swap is needed again. X1's condition (the description ceiling
+    blocks the type-list edit) is met by measurement on 2026-10-13. Its action, a separate early description-budget
+    PR, stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which (Q20 = A: trim). The PR
+    count stays 14 unless that early PR is opened (pr-split X1). Options were:
+    A, trim existing text per tool, reviewer-approved, measured by lowering the ceiling (recommended, **chosen**); B, a
+    reviewed ceiling raise (rejected); C, move the type lists out of the descriptions into guidance (rejected). Q20
+    gated CL-PT's description edit (CL-2) and CL-OA, not package code; both now proceed with A, and the trim itself is
+    work inside those clio PRs. Whoever lands first pays; the order PT then OA makes PT pay first. Cost:
     CL-2 grows by about 0.5 h (swap and re-measure), OA.10 by about 1 h (call shape and wire trim).
   - PT: type lists only (create +30, modify +28), no `name=` pointer (the routing row reaches agents); they need a
     byte swap (Q20). Candidate on create (inference, measured at cut): drop the `{enabled, executionMode,
@@ -1737,7 +1738,8 @@ names it merges, because CI checks only the fixture. A failed `update-knowledge`
 check `info-knowledge`'s library version before any guidance-dependent verification. The knowledge half of
 ENG-99970 merged on 2026-10-08 as knowledge #239 (at 1.15.104): it split parameters.md into `parameters.md` +
 `parameters-details.md` and kept the type list and the `typeFromElement` sentence in `parameters.md` (`:19-22`,
-`:37-39`), so no rebase is left. **Owner decision: yes** (the guide name); the description budget is open (Q20).
+`:37-39`), so no rebase is left. **Owner decision: yes** (the guide name); the description budget: Q20 agreed
+2026-10-14: A, trim existing text per tool, each trim reviewer-approved, no ceiling raise.
 
 ## D26. `[RequiresPackage]` floors and version numbers
 
@@ -2313,3 +2315,5 @@ the tool-contract sizes were measured. Behaviour changes absorbed:
   `SetElementOperation` constructor churn (D28).
 - Unchanged and re-confirmed (hypothesis, source): the generic route still builds the same unconfigured file element
   (T-46 / M14), T-68 is still open, describe of a FileCollection and M19 / M20 still hold.
+- Q20 agreed 2026-10-14: A (trim existing text per tool, reviewer-approved; no ceiling raise, type lists stay in the
+  descriptions) (D25).
