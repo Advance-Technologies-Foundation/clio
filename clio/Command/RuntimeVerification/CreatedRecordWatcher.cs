@@ -45,7 +45,8 @@ internal sealed class CreatedRecordWatcher(
 	/// <summary>Most records reported per entity; more is reported as a truncation warning.</summary>
 	internal const int MaxCreatedPerEntity = 100;
 
-	// Ids sharing the newest CreatedOn before the action. More than this many identical timestamps is not realistic.
+	// Ids sharing the newest CreatedOn before the action. A bulk import can stamp more; the entity is then not watched,
+	// because a pre-existing row past the cap would be reported as created - and a cleanup would delete it.
 	private const int MaxKnownIds = 500;
 
 	private const string CreatedOnColumn = "CreatedOn";
@@ -73,7 +74,8 @@ internal sealed class CreatedRecordWatcher(
 		// Read first and inside the same budget, so it cannot push the launch past the capture bound.
 		string currentUserContactId = ReadCurrentUserContactId(Budget(timeoutMs, stopAt));
 		List<EntityWatch> watches = [];
-		foreach (string entity in entities.Distinct(StringComparer.Ordinal)) {
+		// Schema names resolve case-insensitively, so "Activity" and "activity" are one table, watched once.
+		foreach (string entity in entities.Distinct(StringComparer.OrdinalIgnoreCase)) {
 			watches.Add(stopAt is not null && DateTimeOffset.UtcNow >= stopAt
 				? new EntityWatch { Entity = entity, Error = "the baseline read ran out of time before the launch" }
 				: CaptureOne(entity, timeoutMs, stopAt));
@@ -145,7 +147,15 @@ internal sealed class CreatedRecordWatcher(
 			HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
 			if (newest is not null) {
 				EntityWatch atNewest = new() { Entity = entity, TitleColumn = titleColumn, Baseline = newest };
-				foreach (JToken row in Select(BuildRowsQuery(atNewest, MaxKnownIds, false), Budget(timeoutMs, stopAt))) {
+				JArray atNewestRows = Select(BuildRowsQuery(atNewest, MaxKnownIds + 1, false), Budget(timeoutMs, stopAt));
+				if (atNewestRows.Count > MaxKnownIds) {
+					return new EntityWatch {
+						Entity = entity,
+						Error = $"more than {MaxKnownIds} existing rows share its newest CreatedOn, so new rows cannot be "
+							+ "told apart from them"
+					};
+				}
+				foreach (JToken row in atNewestRows) {
 					known.Add(row["Id"]?.ToString() ?? string.Empty);
 				}
 			}
