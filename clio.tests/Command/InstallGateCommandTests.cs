@@ -52,9 +52,10 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 	}
 
 	[Test]
-	[Description("Execute should install the bundled cliogate package and restart the application after success.")]
+	[Description("Execute should install the bundled cliogate package and restart a .NET Framework application after success.")]
 	public void Execute_ShouldInstallCliogateAndRestartApplication() {
 		// Arrange
+		EnvironmentSettings.IsNetCore = false;
 		string expectedPackagePath = Path.Combine(ClioRoot, "cliogate", "cliogate.gz");
 		EnvironmentSettings capturedEnvironmentSettings = null;
 		_packageInstaller
@@ -111,9 +112,44 @@ public class InstallGateCommandTests : BaseCommandTests<InstallGateOptions> {
 	}
 
 	[Test]
+	[Description("ENG-102757: on .NET the installer restarts Creatio through the installation session, so install-gate hands it .NET settings and does not restart it again through another session.")]
+	public void Execute_ShouldNotRestartAgain_WhenEnvironmentIsNetCore() {
+		// Arrange
+		EnvironmentSettings.IsNetCore = true;
+		EnvironmentSettings capturedEnvironmentSettings = null;
+		_packageInstaller
+			.Install(
+				Arg.Any<string>(),
+				Arg.Do<EnvironmentSettings>(settings => capturedEnvironmentSettings = settings),
+				packageInstallOptions: null,
+				reportPath: null,
+				createBackup: true)
+			.Returns(true);
+
+		// Act
+		int result = _command.Execute(new InstallGateOptions());
+
+		// Assert
+		result.Should().Be(0, because: "successful netcore package installation should make install-gate succeed");
+		capturedEnvironmentSettings.Should().NotBeNull(
+			because: "install-gate passes its own copy of the environment settings to the package installer");
+		capturedEnvironmentSettings!.IsNetCore.Should().BeTrue(
+			because: "the installer restarts Creatio only for .NET settings, and install-gate no longer restarts .NET itself");
+		capturedEnvironmentSettings.DeveloperModeEnabled.Should().BeFalse(
+			because: "cliogate installation should not unlock maintainer packages through developer mode");
+		_application.ReceivedCalls()
+			.Count(call => call.GetMethodInfo().Name == nameof(IApplication.Restart))
+			.Should().Be(0,
+				because: "a second restart would log in again and, on a web farm, land on a common node");
+	}
+
+	[Test]
 	[Description("Execute should return failure and skip restart when cliogate installation fails.")]
 	public void Execute_ShouldReturnFailureAndSkipRestart_WhenPackageInstallFails() {
 		// Arrange
+		// The fixture shares one EnvironmentSettings instance; .NET Framework is the only runtime on which
+		// the command restarts by itself, so it is the one that proves a failed installation does not restart.
+		EnvironmentSettings.IsNetCore = false;
 		_packageInstaller
 			.Install(
 				Arg.Any<string>(),
