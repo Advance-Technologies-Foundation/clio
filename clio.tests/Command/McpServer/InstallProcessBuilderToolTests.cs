@@ -285,6 +285,16 @@ public sealed class InstallProcessBuilderToolTests {
 			notice.Should().MatchRegex(@"(?i)do not call\s+install-process-builder\s+again",
 				because: "the notice used to tell the caller to re-run the installer to confirm, which would "
 					+ "start a second install, build and restart on an instance already being rebuilt");
+			notice.Should().Contain("no fixed sleep",
+				because: "ENG-103025: callers slept 60-90 s and called the installer a second time; the notice must say "
+					+ "that the retry of the process-designer tool is the poll");
+			notice.Should().Contain($"at most {InstallProcessBuilderTool.InstallConfirmationRetryLimit} times")
+				.And.Contain("NOT confirmed",
+					because: "an unbounded 'a few times over the next minutes' let an agent keep looping; the notice "
+						+ "gives a retry limit and says what to report once it is reached");
+			notice.Should().Contain("CLIO_MCP_RESPONSE_DEADLINE_SECONDS",
+				because: "the wait this call already did is bounded by the response deadline, and the notice names "
+					+ "the setting that raises it for a client that allows a longer call");
 		} finally {
 			executeGate.Set(); // release the detached work so it finalizes and frees the reservation
 			ConsoleLogger.Instance.ClearMessages();

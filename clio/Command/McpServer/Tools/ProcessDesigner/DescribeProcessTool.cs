@@ -57,6 +57,14 @@ public sealed class DescribeProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: an unambiguous synonym of the process identity (processName, uid, name, caption, ...) runs
+		// and says which canonical argument it was read as; an ambiguous one is refused before anything is read.
+		ProcessToolArgumentAliases.DescribeResolution aliases = ProcessToolArgumentAliases.ResolveDescribe(args);
+		if (aliases.Error is not null) {
+			return CommandExecutionResult.FromValidationError(aliases.Error);
+		}
+		args = aliases.Args;
+
 		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
 		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
 			args.ExtensionData, ValidArgsHint);
@@ -88,7 +96,8 @@ public sealed class DescribeProcessTool(
 			Environment = args.EnvironmentName
 		};
 		try {
-			return InternalExecute<DescribeProcessCommand>(options);
+			return ProcessToolArgumentAliases.WithWarnings(
+				InternalExecute<DescribeProcessCommand>(options), aliases.Warnings);
 		} catch (Exception exception) {
 			return new CommandExecutionResult(1, [new ErrorMessage(exception.Message)]);
 		}
