@@ -148,11 +148,13 @@ internal static class MobileDiffApplyValidator {
 		JToken baseObject = ResolvePathDiffBase(root[baseName], templateConfigProvider, operations);
 		try {
 			new JsonPathDiffApplier().Apply(baseObject, operations);
-		} catch (JsonDiffApplierException ex) {
+		} catch (JsonDiffApplierException ex) when (ex.MergeFailure == JsonDiffApplierMergeFailure.None) {
 			result.IsValid = false;
 			result.Errors.Add($"'{diffName}' cannot be applied by the Creatio differ: {ex.Message}.");
 		} catch (Exception) {
-			// See ApplyViewConfigDiff: non-differ failures are covered by the structural validators.
+			// See ApplyViewConfigDiff: non-differ failures are covered by the structural validators. A merge failure
+			// (single-value target, missing or null values) also lands here: mobile validation accepted these bodies
+			// before the differ typed them, and the update-page merge check reports them instead.
 		}
 	}
 

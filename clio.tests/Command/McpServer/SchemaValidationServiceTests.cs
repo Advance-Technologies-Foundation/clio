@@ -3922,6 +3922,72 @@ public sealed class SchemaValidationServiceTests
 	}
 
 	[Test]
+	[Description("A caption key the target schema already stores resolves even when the call does not repeat it in resources - the layout-only re-save of issue #1740 must not warn once per previously registered key.")]
+	public void ValidateInsertedWidgetCaptionResources_KeyAlreadyPersistedOnTheSchema_ReturnsValid() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		IReadOnlySet<string> persistedKeys = new HashSet<string> { "IndicatorWidget_CriticalRequests_title" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+			body, explicitResources: null, persistedResourceKeysProvider: () => persistedKeys);
+
+		// Assert
+		result.IsValid.Should().BeTrue(
+			because: "a key stored on the schema resolves at runtime whether or not this call re-sends it");
+		result.Errors.Should().BeEmpty(
+			because: "warning about a key that renders correctly buries the real warnings among false ones");
+	}
+
+	[Test]
+	[Description("The persisted keys clear only the bindings they carry: a second caption whose key is stored nowhere is still reported, alone (issue #1740).")]
+	public void ValidateInsertedWidgetCaptionResources_OneKeyPersistedOneMissing_ReportsOnlyTheMissingKey() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			"""
+			[
+				{"operation":"insert","name":"StoredButton","values":{"type":"crt.Button","caption":"$Resources.Strings.StoredButton_caption"}},
+				{"operation":"insert","name":"NewButton","values":{"type":"crt.Button","caption":"#ResourceString(NewButton_caption)#"}}
+			]
+			""",
+			"[]");
+		IReadOnlySet<string> persistedKeys = new HashSet<string> { "StoredButton_caption" };
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+			body, explicitResources: null, persistedResourceKeysProvider: () => persistedKeys);
+
+		// Assert
+		result.IsValid.Should().BeFalse(
+			because: "NewButton_caption is neither sent, stored, DS-bound nor Usr-derivable, so it still renders raw");
+		result.Errors.Should().ContainSingle(
+			because: "only the genuinely missing key may be reported once the stored key is resolved")
+			.Which.Should().Contain("NewButton_caption",
+				because: "the remaining diagnostic must name the key that is actually missing");
+	}
+
+	[Test]
+	[Description("The persisted-key provider is invoked only when the body-only check leaves a binding unresolved, so a clean body never pays the GetSchema round trip behind it.")]
+	public void ValidateInsertedWidgetCaptionResources_EveryKeyResolvedByResources_DoesNotInvokeTheProvider() {
+		// Arrange
+		string body = BuildDiffBackedPageBody(MetricInsertWithMacroTitle, "[]");
+		var resources = new Dictionary<string, string> { ["IndicatorWidget_CriticalRequests_title"] = "Critical Requests" };
+		int providerCalls = 0;
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+			body, resources, () => {
+				providerCalls++;
+				return new HashSet<string>();
+			});
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "the only caption key is registered through resources");
+		providerCalls.Should().Be(0,
+			because: "the provider stands for a remote schema read and must stay off the path of a body that already validates");
+	}
+
+	[Test]
 	[Description("Inserted widget title in the $Resources.Strings binding form (not the macro form) with an unregistered key is rejected — both reference forms are checked.")]
 	public void ValidateInsertedWidgetCaptionResources_DollarBindingTitleUnregistered_ReturnsInvalid() {
 		// Arrange

@@ -179,12 +179,22 @@ DESCRIPTION
     - Inserted widget/metric titles must resolve. A title/caption/tooltip/
       placeholder on a freshly inserted (operation:"insert") widget bound as
       $Resources.Strings.<Key> or #ResourceString(<Key>)# is rejected when <Key>
-      is not registered via --resources and is not Usr*/DS-bound. A metric title
+      is not registered via --resources, is not already stored on the schema or
+      declared by a schema of its designer hierarchy, and is not Usr*/DS-bound.
+      A metric title
       #ResourceString(IndicatorWidget_<slug>_title)# is registered only when you
       pass it in --resources; otherwise it renders raw.
     - Resource keys already stored on the schema count as registered: a later save
       of the same page does NOT have to repeat every key that an earlier save
       registered. --resources is additions/overrides on top of what is persisted.
+    - Rejected on web and mobile pages, also with validate=false: an "insert"
+      or "move" that names a parentName but no propertyName. The differ places
+      the element into the parent's propertyName slot (usually "items");
+      without it the platform refuses the page ("Item <parent> is not a
+      container for other items") and get-page cannot resolve it. Without a
+      parentName the element goes to the root list and needs no slot. A page
+      saved this way by an older clio still reads back: get-page resolves it
+      without that operation and names it in "warnings".
     A malformed VendorPrefix.Name causes a Creatio runtime error:
       "Error when register X. Type property should have format VendorPrefix.TypeName"
     - Call the MCP `get-guidance` tool with `name=page-schema-converters` for converter details
@@ -214,10 +224,14 @@ DESCRIPTION
     false-conflict. A small race window between the check and the save remains
 	(last write wins).
 
-	A write redirected with --target-package-uid or --target-schema-uid skips the
-	on-disk baseline and does not refresh meta.json. A caller-supplied checksum is
-	still compared with the resolved target; a mismatch remains a conflict. With no
-	explicit checksum, the redirected write proceeds unchecked and reports a warning.
+	With --target-package-uid or --target-schema-uid, the on-disk baseline applies
+	only when the target resolves to the page it was captured for: the same editable
+	schema, or, when get-page recorded no editable schema yet, the same design
+	package (--target-package-uid only). A target that resolves elsewhere is a
+	redirect: the baseline is not used and meta.json is not refreshed. A
+	caller-supplied checksum is still compared with the resolved target; a mismatch
+	remains a conflict. With no applicable baseline and no explicit checksum, the
+	write proceeds unchecked and the warning says why.
 
 	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the
@@ -255,6 +269,23 @@ DESCRIPTION
       between your fragment and the server's body.
       Advisory only: a parent schema inserting the same name can make the
       transform apply after all, and clio cannot see the replacing chain.
+    - Warned: a viewModelConfigDiff or modelConfigDiff merge whose "path" does
+      not exist in the config the parent schemas and the body's earlier merges
+      produce, for example path ["dataSources","NewDS"] for a new data source or
+      a nested key the parent data source does not have. The differ skips such a
+      merge, so it is saved but has no effect. Merge into an existing parent
+      instead (path ["dataSources"] with the new key inside values, or path []).
+      "attributes" and "dataSources" always exist at runtime, even on a blank
+      page, so merging into them is safe.
+      clio checks this against the page's real parent schemas, on save and on
+      --dry-run; the save still succeeds.
+    - Rejected: a viewModelConfigDiff or modelConfigDiff merge the runtime
+      throws on, so the page fails to build: a path that ends on a single value
+      (for example "isCollection"), a path whose first segment matches an
+      element _id but whose rest does not exist under it, or no "values" (or
+      "values": null) on a target that exists. The save fails, nothing is
+      written, and the error names each such merge. --dry-run reports it as a
+      warning that says the merge "breaks the page".
 
     APPEND DRY RUN:
     In append mode --dry-run resolves the current server body, computes the
@@ -284,10 +315,10 @@ DESCRIPTION
     is unaffected - it writes verbatim, so there is nothing to project. It is
     NOT an offline check: resolving the schema context still queries the server
     before either mode is chosen. What it skips is the designer GetSchema fetch
-    of the current body. Trade-off: its caption
-    check resolves only against the resources you pass, so it is weaker than
-    the save's. The same projection is returned on a real append
-    save.
+    of the current body. Its caption check resolves against the body and the
+    resources you pass first; only a still-unresolved caption makes it read the
+    keys the schema stores plus those of its designer hierarchy (the set the
+    save accepts). The same projection is returned on a real append save.
     appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
     append unconditionally and cannot lose an entry. Handlers are NOT covered:
     they dedupe by request, and the merge drops every current handler whose
