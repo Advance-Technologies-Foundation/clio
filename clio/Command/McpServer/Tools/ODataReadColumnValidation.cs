@@ -76,14 +76,16 @@ internal static class ODataReadColumnValidation {
 			return response;
 		}
 		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandColumns);
-		return explanation is null
-			? response
-			: response with {
-				Error = $"{response.Error} {explanation.Text}",
-				// An explanation without unknown names (only the plain-column correction) leaves both structured fields absent.
-				UnknownMembers = explanation.Members.Count > 0 ? explanation.Members : null,
-				ValidColumnCount = explanation.Members.Count > 0 ? explanation.ValidColumnCount : null
-			};
+		if (explanation is null) {
+			return response;
+		}
+		// An explanation without unknown names (only the plain-column correction) leaves both structured fields absent.
+		bool hasUnknown = explanation.Members.Count > 0;
+		return response with {
+			Error = $"{response.Error} {explanation.Text}",
+			UnknownMembers = hasUnknown ? explanation.Members : null,
+			ValidColumnCount = hasUnknown ? explanation.ValidColumnCount : null
+		};
 	}
 
 	/// <summary>
