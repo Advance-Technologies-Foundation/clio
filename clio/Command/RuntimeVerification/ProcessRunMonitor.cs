@@ -17,7 +17,7 @@ public interface IProcessRunMonitor {
 	/// is parked on.
 	/// </summary>
 	/// <param name="processId">The run's process id, as the launch returned it.</param>
-	/// <param name="timeoutMs">Bound of each request, in milliseconds.</param>
+	/// <param name="timeoutMs">Bound of the whole read (all its requests together), in milliseconds.</param>
 	/// <returns>The state; <see cref="ProcessRunState.Found"/> is false when the log row does not exist yet.</returns>
 	/// <exception cref="InvalidOperationException">A SelectQuery failed.</exception>
 	ProcessRunState Read(Guid processId, int timeoutMs);
@@ -44,6 +44,8 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 	/// <inheritdoc />
 	public ProcessRunState Read(Guid processId, int timeoutMs) {
 		string id = processId.ToString("D");
+		DateTimeOffset readUntil = DateTimeOffset.UtcNow.AddMilliseconds(Math.Max(1, timeoutMs));
+		int Left() => (int)Math.Max(1, (readUntil - DateTimeOffset.UtcNow).TotalMilliseconds);
 		JArray rootRows = Select(ClassicEntitySchemaQuery.Query("SysProcessLog",
 			new JObject {
 				["StatusValue"] = ClassicEntitySchemaQuery.Column("Status.Value"),
@@ -57,8 +59,8 @@ internal sealed class ProcessRunMonitor(IApplicationClient applicationClient, IS
 		}
 		int? status = root["StatusValue"]?.Type == JTokenType.Integer ? root["StatusValue"].Value<int>() : null;
 		string error = FirstLine(root[ErrorDescriptionColumn]?.ToString())
-			?? (status == ErrorStatusValue ? ReadSubProcessError(id, timeoutMs) : null);
-		IReadOnlyList<WaitingElement> waiting = status == RunningStatusValue ? ReadWaitingElements(id, timeoutMs) : [];
+			?? (status == ErrorStatusValue ? ReadSubProcessError(id, Left()) : null);
+		IReadOnlyList<WaitingElement> waiting = status == RunningStatusValue ? ReadWaitingElements(id, Left()) : [];
 		return new ProcessRunState(true, status, error, waiting);
 	}
 

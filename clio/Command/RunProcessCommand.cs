@@ -181,6 +181,7 @@ public class RunProcessCommand(
 	private const int VerificationRequestMs = 10_000;
 	private const int PollIntervalMs = 1_000;
 	private const int CancelWaitMs = 10_000;
+	private const int MinimumDestructiveRequestMs = 1_000;
 	private const int CaptureBudgetMs = 12_000;
 
 	// Reserved out of the response deadline for what follows the wait, so the answer carries it.
@@ -354,7 +355,9 @@ public class RunProcessCommand(
 		if (baseline is null) {
 			return;
 		}
-		WatchOutcome outcome = recordWatcher.Collect(baseline, RequestBudget(options.ResponseDeadline));
+		// Bounded like every later step, so the records are read before the tool answers rather than after.
+		WatchOutcome outcome = recordWatcher.Collect(baseline, RequestBudget(options.ResponseDeadline),
+			options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs));
 		response.Created = outcome.Created;
 		(response.Warnings ??= []).AddRange(outcome.Warnings);
 		if (options.Cleanup) {
@@ -374,7 +377,10 @@ public class RunProcessCommand(
 		try {
 			// Read, then sleep only while time is left, so the state reported is the last one read.
 			while (true) {
-				state = runMonitor.Read(processId, RequestBudget(options.ResponseDeadline));
+				// Bounded by the wait's own end plus its reserve, so a slow read cannot eat the time reserved after it.
+				int readMs = (int)Math.Clamp((until - DateTimeOffset.UtcNow).TotalMilliseconds + WaitReserveMs,
+					1_000, VerificationRequestMs);
+				state = runMonitor.Read(processId, readMs);
 				int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
 				if (state.IsTerminal || leftMs <= 0) {
 					break;
@@ -440,7 +446,7 @@ public class RunProcessCommand(
 		// A record a parked run still uses ("being used in a process" - the activity of a Perform task) cannot be
 		// deleted, so a running run is cancelled first - but only when there is something of the caller's to delete.
 		if (mine.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
-			CancelRun(options, response, processId);
+			CancelRun(response, processId, stopAt);
 		}
 		Dictionary<string, IReadOnlyCollection<string>> references = baseline.Entities
 			.Where(watch => watch.Error is null)
@@ -462,32 +468,53 @@ public class RunProcessCommand(
 		}
 	}
 
-	private void CancelRun(RunProcessOptions options, RunProcessResponse response, Guid processId) {
+	// Every request is bounded by stopAt, and none starts with less than a second left: a cancel that lands after the
+	// tool answered would stop the caller's run without the caller ever being told.
+	private void CancelRun(RunProcessResponse response, Guid processId, DateTimeOffset? stopAt) {
 		try {
-			string error = runMonitor.Cancel(processId, RequestBudget(options.ResponseDeadline));
+			int cancelMs = BudgetUntil(stopAt);
+			if (cancelMs < MinimumDestructiveRequestMs) {
+				(response.Warnings ??= []).Add("The still-running run was not cancelled before cleanup: too little of "
+					+ "the response time was left.");
+				return;
+			}
+			string error = runMonitor.Cancel(processId, cancelMs);
 			if (!string.IsNullOrEmpty(error)) {
 				(response.Warnings ??= []).Add($"The still-running run was not cancelled before cleanup: {error}.");
 				return;
 			}
 			DateTimeOffset until = DateTimeOffset.UtcNow.AddMilliseconds(CancelWaitMs);
+			if (stopAt is not null && stopAt < until) {
+				until = stopAt.Value;
+			}
 			while (DateTimeOffset.UtcNow < until) {
-				ProcessRunState state = runMonitor.Read(processId, RequestBudget(options.ResponseDeadline));
+				ProcessRunState state = runMonitor.Read(processId,
+					(int)Math.Max(1, Math.Min(VerificationRequestMs, (until - DateTimeOffset.UtcNow).TotalMilliseconds)));
 				if (state.IsTerminal) {
 					response.Status = ResolveStatusName(state.StatusValue ?? ErrorStatus);
 					response.WaitingOn = null;
 					(response.Warnings ??= []).Add("cleanup cancelled the still-running run before deleting what it created.");
 					return;
 				}
-				Sleep(PollIntervalMs);
+				int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
+				if (leftMs <= 0) {
+					break;
+				}
+				Sleep(Math.Min(PollIntervalMs, leftMs));
 			}
 			(response.Warnings ??= []).Add("cleanup asked the platform to cancel the still-running run, but it had not "
-				+ "stopped after 10 s; records it still uses may refuse deletion.");
+				+ "stopped in the time left; records it still uses may refuse deletion.");
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
 			(response.Warnings ??= []).Add("The still-running run could not be cancelled before cleanup: "
 				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
 		}
 	}
+
+	// The time left before stopAt, at most VerificationRequestMs; may be zero or negative.
+	private static int BudgetUntil(DateTimeOffset? stopAt) => stopAt is null
+		? VerificationRequestMs
+		: (int)Math.Min(VerificationRequestMs, (stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds);
 
 	// Each verification request may spend VerificationRequestMs, but never past the response deadline.
 	private static int RequestBudget(DateTimeOffset? responseDeadline) {

@@ -31,8 +31,9 @@ public interface ICreatedRecordWatcher {
 	/// <summary>Reads the records created after <paramref name="baseline"/>.</summary>
 	/// <param name="baseline">What <see cref="Capture"/> returned.</param>
 	/// <param name="timeoutMs">Bound of each request, in milliseconds.</param>
+	/// <param name="stopAt">No request runs past this instant; an entity not read by then is reported unread.</param>
 	/// <returns>The created records and a warning per entity that could not be read in full.</returns>
-	WatchOutcome Collect(WatchBaseline baseline, int timeoutMs);
+	WatchOutcome Collect(WatchBaseline baseline, int timeoutMs, DateTimeOffset? stopAt = null);
 }
 
 internal sealed class CreatedRecordWatcher(
@@ -69,26 +70,41 @@ internal sealed class CreatedRecordWatcher(
 
 	/// <inheritdoc />
 	public WatchBaseline Capture(IReadOnlyList<string> entities, int timeoutMs, DateTimeOffset? stopAt = null) {
+		// Read first and inside the same budget, so it cannot push the launch past the capture bound.
+		string currentUserContactId = ReadCurrentUserContactId(Budget(timeoutMs, stopAt));
 		List<EntityWatch> watches = [];
 		foreach (string entity in entities.Distinct(StringComparer.Ordinal)) {
 			watches.Add(stopAt is not null && DateTimeOffset.UtcNow >= stopAt
 				? new EntityWatch { Entity = entity, Error = "the baseline read ran out of time before the launch" }
-				: CaptureOne(entity, timeoutMs));
+				: CaptureOne(entity, timeoutMs, stopAt));
 		}
-		return new WatchBaseline { Entities = watches, CurrentUserContactId = ReadCurrentUserContactId(timeoutMs) };
+		return new WatchBaseline { Entities = watches, CurrentUserContactId = currentUserContactId };
+	}
+
+	// Each request gets timeoutMs, but never past stopAt.
+	internal static int Budget(int timeoutMs, DateTimeOffset? stopAt) {
+		int bound = Math.Max(1, timeoutMs);
+		return stopAt is null
+			? bound
+			: (int)Math.Clamp((stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds, 1, bound);
 	}
 
 	/// <inheritdoc />
-	public WatchOutcome Collect(WatchBaseline baseline, int timeoutMs) {
+	public WatchOutcome Collect(WatchBaseline baseline, int timeoutMs, DateTimeOffset? stopAt = null) {
 		WatchOutcome outcome = new();
 		foreach (EntityWatch watch in baseline.Entities) {
 			if (watch.Error is not null) {
 				outcome.Warnings.Add($"'{watch.Entity}' was not watched: {watch.Error}");
 				continue;
 			}
+			if (stopAt is not null && DateTimeOffset.UtcNow >= stopAt) {
+				outcome.Warnings.Add($"'{watch.Entity}' was not read after the run: the response deadline was reached, "
+					+ "so what the run created in it is not reported.");
+				continue;
+			}
 			try {
 				JArray rows = Select(BuildRowsQuery(watch, MaxCreatedPerEntity + watch.KnownIds.Count + 1, true),
-					timeoutMs);
+					Budget(timeoutMs, stopAt));
 				List<CreatedRecord> created = rows
 					.Where(row => !watch.KnownIds.Contains(row["Id"]?.ToString() ?? string.Empty))
 					.Select(row => new CreatedRecord(watch.Entity, row["Id"]?.ToString(), ReadTitle(row, watch.TitleColumn)) {
@@ -111,22 +127,25 @@ internal sealed class CreatedRecordWatcher(
 		return outcome;
 	}
 
-	private EntityWatch CaptureOne(string entity, int timeoutMs) {
+	private EntityWatch CaptureOne(string entity, int timeoutMs, DateTimeOffset? stopAt) {
 		if (!IsValidEntityName(entity)) {
 			return new EntityWatch { Entity = entity, Error = "not a plain entity schema name" };
 		}
 		try {
-			RuntimeEntitySchemaResult schema = schemaReader.GetByName(entity, Math.Max(1, timeoutMs));
+			RuntimeEntitySchemaResult schema = schemaReader.GetByName(entity, Budget(timeoutMs, stopAt));
 			string titleColumn = schema.PrimaryDisplayColumnName;
 			HashSet<string> references = schema.Columns
 				.Select(column => column.ReferenceSchemaName)
 				.Where(name => !string.IsNullOrWhiteSpace(name))
 				.ToHashSet(StringComparer.Ordinal);
-			string newest = Select(BuildNewestQuery(entity), timeoutMs).FirstOrDefault()?[CreatedOnColumn]?.ToString();
+			string newest = Select(BuildNewestQuery(entity), Budget(timeoutMs, stopAt)).FirstOrDefault()?[CreatedOnColumn]
+				?.ToString();
+			// An empty value is no lower bound: comparing against it could report every existing row as created.
+			newest = string.IsNullOrEmpty(newest) ? null : newest;
 			HashSet<string> known = new(StringComparer.OrdinalIgnoreCase);
-			if (!string.IsNullOrEmpty(newest)) {
+			if (newest is not null) {
 				EntityWatch atNewest = new() { Entity = entity, TitleColumn = titleColumn, Baseline = newest };
-				foreach (JToken row in Select(BuildRowsQuery(atNewest, MaxKnownIds, false), timeoutMs)) {
+				foreach (JToken row in Select(BuildRowsQuery(atNewest, MaxKnownIds, false), Budget(timeoutMs, stopAt))) {
 					known.Add(row["Id"]?.ToString() ?? string.Empty);
 				}
 			}
@@ -146,7 +165,9 @@ internal sealed class CreatedRecordWatcher(
 		}
 	}
 
-	private static JObject BuildNewestQuery(string entity) {
+	// Rows with no CreatedOn are left out: PostgreSQL sorts NULL first in a descending order, which would make the
+	// baseline empty instead of the newest timestamp.
+	internal static JObject BuildNewestQuery(string entity) {
 		JObject columns = new() {
 			[CreatedOnColumn] = new JObject {
 				["expression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn },
@@ -154,8 +175,15 @@ internal sealed class CreatedRecordWatcher(
 				["orderPosition"] = 0
 			}
 		};
-		return ClassicEntitySchemaQuery.Query(entity, columns, ClassicEntitySchemaQuery.Group(), 1);
+		return ClassicEntitySchemaQuery.Query(entity, columns,
+			ClassicEntitySchemaQuery.Group(("hasCreatedOn", CreatedOnIsNotNull())), 1);
 	}
+
+	// filterType 2 (IsNullFilter), comparisonType 2 (IsNotNull).
+	private static JObject CreatedOnIsNotNull() => new() {
+		["filterType"] = 2, ["comparisonType"] = 2, ["isNull"] = false, ["isEnabled"] = true,
+		["leftExpression"] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = CreatedOnColumn }
+	};
 
 	// Rows at or after the baseline (every row when the table was empty), oldest first.
 	internal static JObject BuildRowsQuery(EntityWatch watch, int rowCount, bool withTitle) {
@@ -175,9 +203,11 @@ internal sealed class CreatedRecordWatcher(
 				&& !string.Equals(watch.TitleColumn, CreatedOnColumn, StringComparison.Ordinal)) {
 			columns[watch.TitleColumn] = ClassicEntitySchemaQuery.Column(watch.TitleColumn);
 		}
+		// A row without CreatedOn predates the run (the platform stamps every row it inserts), so it is never reported.
 		JObject filters = watch.Baseline is null
-			? ClassicEntitySchemaQuery.Group()
-			: ClassicEntitySchemaQuery.Group(("sinceBaseline", AtOrAfter(watch.Baseline)));
+			? ClassicEntitySchemaQuery.Group(("hasCreatedOn", CreatedOnIsNotNull()))
+			: ClassicEntitySchemaQuery.Group(("hasCreatedOn", CreatedOnIsNotNull()),
+				("sinceBaseline", AtOrAfter(watch.Baseline)));
 		return ClassicEntitySchemaQuery.Query(watch.Entity, columns, filters, rowCount);
 	}
 
