@@ -8825,23 +8825,29 @@ public sealed class WebToMobileConversionServiceTests {
 		TabletCellOf(guide, "Notes").Should().Be((1, 1), because: "the only child sits in the only column");
 	}
 
+	private static string[] TabletColumnsOf(MobilePageConversionGuide guide, string gridName) =>
+		Element(guide, gridName).Values!["adaptive"]!["medium"]!["columns"]!.AsArray()
+			.Select(c => c!.GetValue<string>()).ToArray();
+
+	private static string ParentOf(MobilePageConversionGuide guide, string name) =>
+		guide.ViewConfigDiff.Single(op => op.Name == name).ParentName;
+
 	[Test]
-	[Description("Unequal web spans in the reference row become column weights reduced by their GCD (colSpan 2 + colSpan 4 -> 1fr 2fr), a child of another row lands in the slot its web start column falls into, and an inserted grid's base columns carry the same weights.")]
+	[Description("Unequal web spans in a row become column weights reduced by their GCD (colSpan 2 + colSpan 4 -> 1fr 2fr), a child of another row that fits the same columns lands in the column of its web start, and an inserted grid's base columns carry the same weights.")]
 	public void Analyze_UnequalSpans_BecomeTabletColumnWeights() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr", "1fr", "1fr" ]""", """
 			[ { "name": "Left", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
 			  { "name": "Right", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 4, "rowSpan": 1 } },
-			  { "name": "Below", "type": "crt.Input", "layoutConfig": { "column": 5, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
+			  { "name": "Below", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
 			""");
 
 		// Assert
 		TabletColumnsOf(guide).Should().Equal(["1fr", "2fr"], because: "spans 2 and 4 divided by their GCD are 1 and 2");
 		Element(guide, "Grid").Values!["columns"]!.AsArray().Select(c => c!.GetValue<string>())
 			.Should().Equal(["1fr", "2fr"], because: "an inserted grid's base columns are rewritten with the tablet weights");
-		TabletCellOf(guide, "Right").Should().Be((2, 1), because: "the second reference child owns the second slot");
-		TabletCellOf(guide, "Below").Should().Be((2, 2),
-			because: "web column 5 is past the second slot's boundary (3), so the child lands in slot 2 and keeps its row");
+		TabletCellOf(guide, "Right").Should().Be((2, 1), because: "the second web start owns the second column");
+		TabletCellOf(guide, "Below").Should().Be((2, 2), because: "web column 3 is the second column's start, and the row is kept");
 		AdaptiveOf(guide, "Below")["medium"]!["colSpan"]!.GetValue<int>().Should().Be(1,
 			because: "a span only weights a column; a placement's span stays 1");
 	}
@@ -8857,12 +8863,12 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"], because: "two children of equal span make two equal columns");
-		TabletCellOf(guide, "Calls").Should().Be((2, 1), because: "web column 3 is the second slot's boundary");
+		TabletCellOf(guide, "Calls").Should().Be((2, 1), because: "web column 3 is the second column's start");
 	}
 
 	[Test]
-	[Description("The reference row is the row with the most children and, on a tie, the lowest row number: its spans set the weights even when a later row holds as many children with different spans.")]
-	public void Analyze_ReferenceRowTie_UsesTheLowestRow() {
+	[Description("Rows with different column structures cannot share one mobile grid, so each becomes its own band grid stacked in a one-column container, weighted by its own spans (Leads Lead data merge, ENG-94835).")]
+	public void Analyze_RowsWithDifferentColumnStructures_BecomeSeparateBandGrids() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
 			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
@@ -8872,13 +8878,18 @@ public sealed class WebToMobileConversionServiceTests {
 			""");
 
 		// Assert
-		TabletColumnsOf(guide).Should().Equal(["1fr", "3fr"], because: "rows 1 and 2 tie on two children, so row 1 wins");
-		TabletCellOf(guide, "D").Should().Be((2, 2), because: "web column 3 is past the second slot's boundary (2)");
+		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "the container stacks its bands");
+		TabletColumnsOf(guide, "Grid_TabletBand1").Should().Equal(["1fr", "3fr"], because: "row 1 keeps its own 1:3 split");
+		TabletColumnsOf(guide, "Grid_TabletBand2").Should().Equal(["1fr", "1fr"], because: "row 2 keeps its own 2:2 split");
+		new[] { ParentOf(guide, "A"), ParentOf(guide, "D") }.Should().Equal(["Grid_TabletBand1", "Grid_TabletBand2"],
+			because: "each child moves into the band grid of its row");
+		TabletCellOf(guide, "Grid_TabletBand2").Should().Be((1, 2), because: "the second band sits below the first");
+		TabletCellOf(guide, "D").Should().Be((2, 1), because: "D starts the second column of its band");
 	}
 
 	[Test]
-	[Description("A list that spans past its tablet slot below a multi-child row stacks the whole tablet grid like the phone: the runtime cannot widen one item, and a list confined to one slot is the half-empty tab the ticket reports (ENG-94835, Event Target Group).")]
-	public void Analyze_ListSpanningPastItsSlot_StacksTheTabletGrid() {
+	[Description("A toolbar row of two parts above a full-width list keeps its two columns in a band grid, and the list takes the full tablet width below it — one row for the toolbar instead of two (ENG-94835, Event Target Group).")]
+	public void Analyze_ToolbarAboveAFullWidthList_KeepsTheToolbarInOneRow() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
 			[ { "name": "ToolsLeft", "type": "crt.Input",
@@ -8892,19 +8903,16 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		TypeOf(Element(guide, "Audience")).Should().Be("crt.List", because: "the rule must actually map the grid to a list");
-		guide.AdaptiveLayout!.Single().Items.Select(i => i.Name).Should().Equal(["ToolsLeft", "ToolsRight", "Audience"],
-			because: "the reference row needs both toolbar cells, or one column would come from the row count alone");
-		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "a list wider than its slot stacks the tablet grid");
-		foreach (string name in new[] { "ToolsLeft", "ToolsRight", "Audience" }) {
-			JsonObject adaptive = AdaptiveOf(guide, name);
-			adaptive["medium"]!.ToJsonString().Should().Be(adaptive["small"]!.ToJsonString(),
-				because: $"a stacked tablet grid places '{name}' exactly as the phone does");
-		}
+		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "the container stacks the toolbar band and the list");
+		TabletColumnsOf(guide, "Grid_TabletBand1").Should().Equal(["1fr", "1fr"], because: "the toolbar keeps its two parts");
+		TabletCellOf(guide, "ToolsRight").Should().Be((2, 1), because: "the right part stays beside the left one");
+		ParentOf(guide, "Audience").Should().Be("Grid", because: "a full-width list needs no band grid of its own");
+		TabletCellOf(guide, "Audience").Should().Be((1, 2), because: "the list sits below the toolbar band");
 	}
 
 	[Test]
-	[Description("A list that spans past its slot merges only the slots it covers: in a three-column grid a list across web columns 1-2 gets one 2fr column, the child above it in web column 2 stacks in that column instead of taking web column 3's place, and web column 3 keeps a column of its own.")]
-	public void Analyze_ListSpanningTwoOfThreeSlots_MergesOnlyTheSlotsItCovers() {
+	[Description("A list below a row of three fields takes the full tablet width: its row becomes a one-column band, so the empty web column beside it is dropped instead of leaving the list narrower than the tablet.")]
+	public void Analyze_ListBelowAThreeColumnRow_TakesTheFullWidth() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr" ]""", """
 			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
@@ -8916,46 +8924,14 @@ public sealed class WebToMobileConversionServiceTests {
 			""");
 
 		// Assert
-		TypeOf(Element(guide, "Audience")).Should().Be("crt.List", because: "the rule must actually map the grid to a list");
-		TabletColumnsOf(guide).Should().Equal(["2fr", "1fr"],
-			because: "the list's two slots merge into one column carrying both weights, and the third slot stays");
-		TabletCellOf(guide, "A").Should().Be((1, 1), because: "A starts the merged column");
-		TabletCellOf(guide, "B").Should().Be((1, 2),
-			because: "B shares the merged column with A, so it stacks below A rather than taking C's column");
-		TabletCellOf(guide, "C").Should().Be((2, 1), because: "web column 3 keeps a column of its own");
-		TabletCellOf(guide, "Audience").Should().Be((1, 3),
-			because: "the list sits in the merged column below the rows above it");
+		TabletColumnsOf(guide, "Grid_TabletBand1").Should().Equal(["1fr", "1fr", "1fr"], because: "the field row keeps its three columns");
+		ParentOf(guide, "Audience").Should().Be("Grid", because: "the list's row is a one-column band");
+		TabletCellOf(guide, "Audience").Should().Be((1, 2), because: "the list sits below the field band");
 	}
 
 	[Test]
-	[Description("A field displaced by a collision never takes the column merged for a list: it goes to a new row below, and the list keeps the merged column in its own web row.")]
-	public void Analyze_DisplacedField_DoesNotTakeAListsMergedColumn() {
-		// Arrange & Act
-		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
-			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
-			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 4, "row": 1, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "F1", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "F2", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 2, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
-			    "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
-			    "layoutConfig": { "column": 3, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
-			""");
-
-		// Assert
-		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"],
-			because: "A's slot weighs 2 and the list merges B's and C's slots into another 2");
-		TabletCellOf(guide, "C").Should().Be((2, 2),
-			because: "B and C share the merged column, so C stacks below B and every later web row moves down one");
-		TabletCellOf(guide, "Audience").Should().Be((2, 3), because: "the list keeps the column merged for it");
-		TabletCellOf(guide, "F1").Should().Be((1, 3), because: "F1 is first into the first column");
-		TabletCellOf(guide, "F2").Should().Be((1, 4),
-			because: "F2 collides with F1 and must not take the list's merged column, so it goes to a new row");
-	}
-
-	[Test]
-	[Description("A file list that spans past its tablet slot merges the slots it covers exactly like a converted data grid does: crt.FileList is a list too.")]
-	public void Analyze_FileListSpanningPastItsSlot_StacksTheTabletGrid() {
+	[Description("A file list below paired fields takes the full tablet width exactly like a converted data grid does.")]
+	public void Analyze_FileListBelowPairedFields_TakesTheFullWidth() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
 			[ { "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
@@ -8965,7 +8941,172 @@ public sealed class WebToMobileConversionServiceTests {
 
 		// Assert
 		TypeOf(Element(guide, "Files")).Should().Be("crt.FileList", because: "the file list must reach the mobile page as one");
-		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "a file list wider than its slot stacks the tablet grid");
+		ParentOf(guide, "Files").Should().Be("Grid", because: "the file list's row is a one-column band");
+		TabletCellOf(guide, "Files").Should().Be((1, 2), because: "the file list sits below the field band");
+	}
+
+	[Test]
+	[Description("A full-width field below paired fields takes the full tablet width, not one column of the pair: the pairs become a band grid and the field stays in the one-column container below it (Leads OverviewFieldsContainer Details).")]
+	public void Analyze_FullWidthFieldBelowPairedFields_TakesTheFullWidth() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Owner", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "the container stacks the field band and the wide field");
+		TabletColumnsOf(guide, "Grid_TabletBand1").Should().Equal(["1fr", "1fr"], because: "the paired fields keep two columns");
+		ParentOf(guide, "Notes").Should().Be("Grid", because: "a full-width field needs no band grid");
+		TabletCellOf(guide, "Notes").Should().Be((1, 2), because: "the wide field sits below the paired fields");
+	}
+
+	[Test]
+	[Description("A band grid is an ordinary converter-synthesized insert: it has no web name, it comes before the children moved into it, and it spaces its cells with the gap of the grid it was cut from.")]
+	public void Analyze_BandGrid_IsInsertedBeforeItsChildrenWithTheContainerGap() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = Analyze(Bundle("""
+			[ { "name": "Grid", "type": "crt.GridContainer", "columns": [ "1fr", "1fr" ], "gap": { "columnGap": "large", "rowGap": "small" }, "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "Owner", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ] } ]
+			"""), webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)));
+
+		// Assert
+		List<string> order = guide.ViewConfigDiff.Select(op => op.Name).ToList();
+		order.IndexOf("Grid_TabletBand1").Should().BeLessThan(order.IndexOf("Name"),
+			because: "a parent must be created before the children inserted into it");
+		ViewConfigDiffOperation band = Element(guide, "Grid_TabletBand1");
+		band.Operation.Should().Be("insert", because: "a band grid is a new element");
+		band.ParentName.Should().Be("Grid", because: "the band sits in the grid it was cut from");
+		band.Values!["gap"]!.ToJsonString().Should().Be(Element(guide, "Grid").Values!["gap"]!.ToJsonString(),
+			because: "the band spaces its cells like the grid it was cut from");
+		(guide.NameMap ?? new Dictionary<string, string>()).Values.Should().NotContain("Grid_TabletBand1",
+			because: "a synthesized element has no web counterpart");
+	}
+
+	[Test]
+	[Description("A child that spans several rows beside a stack of single-row children keeps both columns in one grid: the runtime draws each column as its own stack, so the spanned child and the stack sit side by side as on the web (BulkEmails bounce widgets).")]
+	public void Analyze_RowSpannedChildBesideAStack_KeepsOneGrid() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "Chart", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 3, "rowSpan": 3 } },
+			  { "name": "W1", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "W2", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "W3", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 3, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr", "3fr"], because: "the stack and the spanned child keep their web proportions");
+		TabletCellOf(guide, "Chart").Should().Be((2, 1), because: "the spanned child owns the second column");
+		TabletCellOf(guide, "W3").Should().Be((1, 3), because: "the stack stays in the first column in web order");
+	}
+
+	[Test]
+	[Description("A row whose own children overlap cannot be cut into bands, so the grid falls back to one reference-row grid instead of guessing a structure.")]
+	public void Analyze_RowWithOverlappingChildren_FallsBackToTheReferenceRowGrid() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "Wide", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "Narrow", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["2fr", "1fr"], because: "the reference row's spans weight the fallback grid");
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("Grid_TabletBand"),
+			because: "no band grid is synthesized when the rows cannot be banded");
+	}
+
+	[Test]
+	[Description("A row that a rowSpan covers but whose structure differs from the spanned child's band cannot start a band of its own, so the grid falls back to one reference-row grid.")]
+	public void Analyze_RowSpannedRowBreakingItsBand_FallsBackToTheReferenceRowGrid() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "Chart", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 2 } },
+			  { "name": "X", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "Y", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("Grid_TabletBand"),
+			because: "row 2 is still covered by Chart, so cutting it off would split the spanned child from its rows");
+		TabletColumnsOf(guide).Should().Equal(["1fr", "2fr"], because: "the reference row's spans weight the fallback grid");
+		TabletCellOf(guide, "Y").Should().Be((2, 2), because: "web column 3 falls into the second slot");
+	}
+
+	[Test]
+	[Description("A web grid renamed onto a template grid is not cut into bands even when its rows differ in structure: the template may own children the converter never sees, and a one-column container would misplace them.")]
+	public void Analyze_TemplateGridWithSeveralBands_KeepsTheReferenceRowGrid() {
+		// Arrange
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "GeneralInfoTabContainer", "type": "crt.GridContainer",
+			    "columns": [ "minmax(32px, 1fr)", "minmax(32px, 1fr)" ], "items": [
+				{ "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "CreatedOn", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+				{ "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle,
+			webByType: Reg(("crt.GridContainer", true), ("crt.Input", false)),
+			containerNameMap: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["GeneralInfoTabContainer"] = "GeneralTabContainer"
+			},
+			mobileTemplateTypesByName: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["GeneralTabContainer"] = "crt.GridContainer"
+			});
+
+		// Assert
+		Element(guide, "GeneralInfoTabContainer").Operation.Should().Be("merge",
+			because: "the grid must actually become a template twin, or the guard is not exercised");
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("GeneralTabContainer_TabletBand"),
+			because: "a template grid keeps one reference-row grid");
+		TabletColumnsOf(guide, "GeneralInfoTabContainer").Should().Equal(["1fr", "1fr"],
+			because: "the paired fields are the reference row");
+	}
+
+	[Test]
+	[Description("A band wider than twelve start columns is not cut into a band grid: the grid falls back to the reference-row grid, which is capped at twelve columns.")]
+	public void Analyze_BandWiderThanTwelve_FallsBackToTheCappedGrid() {
+		// Arrange
+		string columns = "[" + string.Join(",", Enumerable.Repeat("\"1fr\"", 13)) + "]";
+		string items = "[" + string.Join(",", Enumerable.Range(1, 13).Select(c =>
+			$$"""{ "name": "F{{c}}", "type": "crt.Input", "layoutConfig": { "column": {{c}}, "row": 1, "colSpan": 1, "rowSpan": 1 } }"""))
+			+ """, { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 13, "rowSpan": 1 } } ]""";
+
+		// Act
+		MobilePageConversionGuide guide = AnalyzeGrid(columns, items);
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("Grid_TabletBand"),
+			because: "a band grid would get thirteen columns");
+		TabletColumnsOf(guide).Should().HaveCount(12, because: "twelve is the most columns a mobile grid is given");
+	}
+
+	[Test]
+	[Description("Three bands — pairs, a full-width field, pairs — become two numbered band grids around the field, each inserted before its own first child, and a band child's phone placement follows its order inside the band.")]
+	public void Analyze_ThreeBands_AreNumberedAndStackedInWebOrder() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 3, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "D", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 3, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		new[] { TabletCellOf(guide, "Grid_TabletBand1"), TabletCellOf(guide, "Notes"), TabletCellOf(guide, "Grid_TabletBand2") }
+			.Should().Equal([(1, 1), (1, 2), (1, 3)], because: "the container stacks the bands in web row order");
+		new[] { ParentOf(guide, "C"), ParentOf(guide, "D") }.Should().Equal(["Grid_TabletBand2", "Grid_TabletBand2"],
+			because: "the last pair moves into the second band grid");
+		List<string> order = guide.ViewConfigDiff.Select(op => op.Name).ToList();
+		order.IndexOf("Grid_TabletBand2").Should().BeInRange(order.IndexOf("Notes") + 1, order.IndexOf("C") - 1,
+			because: "each band grid is inserted right before its own first child, after the earlier elements");
+		AdaptiveOf(guide, "D")["small"]!["row"]!.GetValue<int>().Should().Be(2,
+			because: "on a phone the band stacks its children in their order inside the band");
 	}
 
 	[Test]
@@ -8998,38 +9139,23 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Control for the list merge rule: a FIELD that spans past its slot keeps the tablet columns and sits in its own slot — merging the columns under every full-width field would cost the side-by-side layout of the whole form.")]
-	public void Analyze_FieldSpanningPastItsSlot_KeepsTheTabletColumns() {
-		// Arrange & Act
-		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
-			[ { "name": "Name", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "Owner", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
-			""");
-
-		// Assert
-		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"], because: "only a list stacks the tablet grid");
-		TabletCellOf(guide, "Notes").Should().Be((1, 2), because: "the wide field keeps the slot of its start column");
-	}
-
-	[Test]
-	[Description("Two children of one row that fall into the same tablet slot do not share it: the later one moves to the next free slot on the right, or — when none is free on the right — to the nearest free slot on the left.")]
+	[Description("Two children of one row that fall into the same tablet column do not share it: the later one moves to the next free column on the right, or — when none is free on the right — to the nearest free column on the left.")]
 	public void Analyze_RowCollision_MovesToAFreeSlot() {
 		// Arrange & Act
-		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
-			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
-			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
 			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "D", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 2, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "E", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 3, "colSpan": 1, "rowSpan": 1 } },
-			  { "name": "F", "type": "crt.Input", "layoutConfig": { "column": 4, "row": 3, "colSpan": 1, "rowSpan": 1 } } ]
+			  { "name": "D", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "E", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 3, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "F", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 3, "colSpan": 1, "rowSpan": 1 } } ]
 			""");
 
 		// Assert
-		TabletCellOf(guide, "C").Should().Be((1, 2), because: "C is first into slot 1");
-		TabletCellOf(guide, "D").Should().Be((2, 2), because: "slot 1 is taken, so D moves right");
-		TabletCellOf(guide, "E").Should().Be((2, 3), because: "E is first into slot 2");
-		TabletCellOf(guide, "F").Should().Be((1, 3), because: "slot 2 is taken and nothing is free on the right, so F moves left");
+		TabletCellOf(guide, "C").Should().Be((1, 2), because: "C is first into column 1");
+		TabletCellOf(guide, "D").Should().Be((2, 2), because: "column 1 is taken, so D moves right");
+		TabletCellOf(guide, "E").Should().Be((2, 3), because: "E is first into column 2");
+		TabletCellOf(guide, "F").Should().Be((1, 3), because: "column 2 is taken and nothing is free on the right, so F moves left");
 	}
 
 	[Test]

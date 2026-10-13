@@ -795,6 +795,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 						+ "drops it to the bottom of a round-robin column");
 				medium["colSpan"]!.GetValue<int>().Should().Be(1,
 					because: $"'{item.Name}': the runtime honours no span, so a placement never claims one");
+				guide.ViewConfigDiff.Where(op => op.Name == item.Name && op.Operation == "insert")
+					.Should().OnlyContain(op => op.ParentName == group.ContainerName,
+						because: $"'{item.Name}' is placed in '{group.ContainerName}', so it must be inserted there, "
+							+ "including a child moved into a synthesized band grid");
 			}
 			group.Items
 				.Select(i => (i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>(),

@@ -1,11 +1,11 @@
 ---
-description: the mobile runtime draws a crt.GridContainer as independent column stacks weighted by `<n>fr` — no spans, no row alignment across columns — so a converted tablet grid takes its column count and weights from one web row, and a list wider than its slot merges the columns it covers
+description: the mobile runtime draws a crt.GridContainer as independent column stacks weighted by `<n>fr` — no spans, no row alignment across columns — so a converted tablet grid is cut into bands of rows that share one column structure, each band with several columns becoming its own synthesized grid
 applies-to:
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobileConversionServiceTests.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobileRealPageRegressionTests.cs
 ticket: ENG-94835
-date: 2026-10-09
+date: 2026-10-13
 ---
 
 **What is true** — the Creatio Mobile runtime (`mobile-app`, `grid_container_component.dart`) renders a
@@ -25,15 +25,22 @@ CSS grid, rows aligned, so its preview does NOT match the device.
 
 **Why it is this way** — with no spans, the only lever for width is the container's columns. Adding
 `colSpan` support to the mobile runtime is not planned (mobile team decision, 2026-10-12), so this is
-the converter's job; if the runtime ever honours spans, revisit the slot merging below. That is
-why `BuildTabletGrid` builds the tablet grid from ONE web row (the one with the most surviving
-children) and turns that row's `colSpan`s into weights. A child elsewhere that spans further than its
-slot cannot be widened. For a field that is accepted: the field gets one slot. For a list
-(`crt.List`, `crt.FileList`) it is not, because a half-width list is the defect ENG-94835 reported,
-so the slots it covers merge into one column carrying their weights (all of them when it spans the
-whole grid, which stacks the grid like the phone). Only a list that is a DIRECT child of the grid counts:
-a list wrapped in a FlexContainer or an ExpansionPanel still gets one slot. That is a known limit, left
-in place because none of the converted pages measured for ENG-94835 has that shape.
+the converter's job; if the runtime ever honours spans, revisit the bands below. A child can only be
+widened by giving it a grid of its own columns, so `SplitIntoBands` cuts the web grid into runs of
+consecutive rows in which no child covers another child's start column (rows a `rowSpan` covers stay
+together, because the runtime's independent column stacks already draw a spanned child beside a stack).
+One band keeps one weighted grid. Several bands make the container one column: a band with one start
+column keeps its children there at full width, a band with several becomes a new `crt.GridContainer`
+`<container>_TabletBand<N>` weighted by its own spans. On the Keimfarben and VTQ corpora (1 151 grids)
+94 % of grids come out unchanged; the rest are mostly paired fields above a full-width list or Details
+field, which the old one-grid rule left at half width.
+
+Banding is skipped — the grid falls back to the one-reference-row grid in `BuildTabletGrid` — when the
+container is not an inserted `crt.GridContainer` (a template grid may own children the converter never
+sees, which a one-column container would misplace), a child is a template twin (a merge cannot be
+re-parented), two children of one row overlap, a `rowSpan`-covered row breaks its band,
+or a band has more than 12 start columns. In that fallback only a list (`crt.List`,
+`crt.FileList`) wider than its slot merges the slots it covers; a wide field just takes its slot.
 
 **What breaks if you ignore it** —
 - Emit equal `1fr` columns from the web column count, as the converter did before ENG-94835, and a
@@ -42,7 +49,9 @@ in place because none of the converted pages measured for ENG-94835 has that sha
   into overflow.
 - A `crt.Toggle` is a fixed 44×26 dp switch, so a column narrower than that squeezes it into a circle
   or a sliver: that is a too-narrow column, not a Checkbox→Toggle mapping or widget defect.
-- Merge the columns under every wide child, not just under a list, and every form with a full-width
-  Notes field loses its side-by-side tablet layout.
+- Widen a full-width child by merging the grid's columns instead of banding, and every form with a
+  full-width Notes field or list loses its side-by-side tablet layout above it.
+- Expect a band grid to exist on the web page: it is synthesized, has no web counterpart, and a later
+  re-conversion recreates it under the same name.
 - Expect fields and their checkboxes in neighbouring columns to line up row by row, and they will
   not: that is the runtime, not the converter.

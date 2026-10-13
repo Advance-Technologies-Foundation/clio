@@ -94,8 +94,8 @@ public sealed class WebToMobileRealPageRegressionTests {
 	}
 
 	[Test]
-	[Description("ENG-94835 on the real page: the tablet columns of every multi-column grid on the OOTB Leads_FormPage match the refinement table — the span-built grids lose their empty columns, the grids of equal one-column cells are unchanged.")]
-	public void Analyze_ShouldDeriveTabletColumnsFromTheReferenceRow_OnTheRealLeadsFormPageShape() {
+	[Description("ENG-94835 on the real page: the tablet columns of every multi-column grid on the OOTB Leads_FormPage match the refinement table — the span-built grids lose their empty columns, the grids of paired fields with a full-width Details field are cut into a one-column stack holding a two-column band grid, the grids of equal one-column cells are unchanged.")]
+	public void Analyze_ShouldDeriveTabletColumnsFromTheWebGrid_OnTheRealLeadsFormPageShape() {
 		// Arrange
 		JsonObject fixture = LoadFixture();
 		IReadOnlySet<string> mobileTypes = MobileTypesResolvingSearchFilter(fixture["viewConfig"]!);
@@ -111,14 +111,16 @@ public sealed class WebToMobileRealPageRegressionTests {
 			["SideAreaProfileFieldGridContainer"] = "1fr 1fr",
 			["OverviewNewAnalyticsContainer"] = "1fr 1fr 1fr 1fr",
 			["OverviewAnalyticsContainer"] = "1fr 1fr",
-			["OverviewFieldsContainer"] = "1fr 1fr",
-			["OpportunityPlanningFieldsContainer"] = "1fr 1fr",
+			["OverviewFieldsContainer"] = "1fr",
+			["OverviewFieldsContainer_TabletBand1"] = "1fr 1fr",
+			["OpportunityPlanningFieldsContainer"] = "1fr",
+			["OpportunityPlanningFieldsContainer_TabletBand1"] = "1fr 1fr",
 			["SimilarLeadListContainer"] = "1fr",
 			["ProductsListContainer"] = "1fr",
 			["StageHistoryListContainer"] = "1fr",
 			["LeadsByCustomerListContainer"] = "1fr",
 			["OpportunitiesByCustomerListContainer"] = "1fr"
-		}, because: "these are the eleven adaptive grids of the refinement table: six change, five stay as they were");
+		}, because: "these are the eleven adaptive grids of the refinement table plus the two band grids cut from the field grids");
 		guide.AdaptiveLayout!.Should().OnlyContain(
 			g => g.ColumnsByBreakpoint["medium"].SequenceEqual(g.ColumnsByBreakpoint["large"]),
 			because: "medium and large are one tablet layout");

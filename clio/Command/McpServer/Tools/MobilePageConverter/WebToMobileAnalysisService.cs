@@ -345,8 +345,8 @@ public static partial class WebToMobileAnalysisService {
 			excludedRemovedMobileNames, actionTargetsProbe, unresolvedTargets);
 
 		// Adaptive (per-breakpoint) layout for multi-column crt.GridContainer: on the phone (small) collapse
-		// to a single column and stack; on tablet (medium/large) derive weighted columns from the web grid's
-		// reference row. A 1-column web grid gets no adaptive. Both the container columns and each child's
+		// to a single column and stack; on tablet (medium/large) derive weighted columns from the web grid,
+		// cutting it into band grids when its rows differ in structure. A 1-column web grid gets no adaptive. Both the container columns and each child's
 		// layoutConfig.adaptive are baked into mobileValues deterministically.
 		List<AdaptiveLayoutGroup> adaptiveLayout =
 			BuildAdaptiveLayout(elementMap, sourceLayouts, gridContainerColumns, mobileContainerParents);
@@ -5103,8 +5103,9 @@ public static partial class WebToMobileAnalysisService {
 	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
 	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet
-	/// (<c>medium</c> / <c>large</c>, identical) it derives weighted columns from the web grid's reference row
-	/// (see <see cref="BuildTabletGrid"/>). A grid with a single web column gets NO adaptive (the mobile client
+	/// (<c>medium</c> / <c>large</c>, identical) it cuts the web grid into bands of rows sharing one column
+	/// structure (see <see cref="SplitIntoBands"/>). One band keeps one weighted grid (see <see cref="BuildTabletGrid"/>);
+	/// several bands become a one-column stack of band grids (see <see cref="PlaceInBands"/>). A grid with a single web column gets NO adaptive (the mobile client
 	/// renders the plain layout). Both sides are baked deterministically: the container columns into the
 	/// container's own mobileValues, and each child's <c>layoutConfig.adaptive</c> (replacing the base
 	/// placement) into the child's mobileValues. Also returns an advisory group per converted container.
@@ -5224,6 +5225,16 @@ public static partial class WebToMobileAnalysisService {
 			list.Add(e);
 		}
 
+		var takenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry e in elementMap) {
+			if (e.WebName is { Length: > 0 } webName) {
+				takenNames.Add(webName);
+			}
+			if (e.Name is { Length: > 0 } mobileName) {
+				takenNames.Add(mobileName);
+			}
+		}
+
 		var groups = new List<AdaptiveLayoutGroup>();
 		foreach (string container in order) {
 			int webCols = colsByMobileParent[container];
@@ -5234,63 +5245,214 @@ public static partial class WebToMobileAnalysisService {
 			List<WebCell> cells = children
 				.Select((child, i) => WebCellOf(sourceLayouts, child.WebName, i, webCols))
 				.ToList();
-			TabletGrid tablet = BuildTabletGrid(children, cells);
-
-			var items = new List<AdaptiveLayoutItem>();
-			for (int i = 0; i < children.Count; i++) {
-				ElementMapEntry child = children[i];
-				JsonObject stacked = Cell(1, i + 1);
-				JsonObject tabletCell = Cell(tablet.ChildColumns[i], tablet.ChildRows[i]);
-				var adaptive = new JsonObject {
-					["small"] = stacked,
-					["medium"] = tabletCell,
-					["large"] = tabletCell.DeepClone()
-				};
-				// Replace layoutConfig with the adaptive form (the tablet slot replaces the web placement).
-				// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge
-				// delta, so the object is created at the one point where it is guaranteed to carry something.
-				child.Values ??= new JsonObject();
-				((JsonObject)child.Values)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
-				items.Add(new AdaptiveLayoutItem { Name = child.Name, LayoutConfigAdaptive = adaptive });
-			}
-
-			// Container columns: small = 1, medium/large = the tablet weights. Fold INTO the container's own
-			// element-map entry (insert or merge twin) so the result is a SINGLE operation on that element — no
-			// separate merge diff for the model to apply on top (which would duplicate the operation).
 			ElementMapEntry containerEntry = elementMap.FirstOrDefault(e =>
 				(IsInsert(e) ||
 				 IsMerge(e)) &&
 				string.Equals(e.Name, container, StringComparison.OrdinalIgnoreCase));
-			if (containerEntry is not null) {
-				if (containerEntry.Values is not JsonObject containerValues) {
-					containerValues = new JsonObject();
-					containerEntry.Values = containerValues;
-				}
-				containerValues["adaptive"] = new JsonObject {
-					["small"] = new JsonObject { ["columns"] = ColumnsNode(StackedColumns) },
-					["medium"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Weights) },
-					["large"] = new JsonObject { ["columns"] = ColumnsNode(tablet.Weights) }
-				};
-				// Only an inserted GRID owns its base columns here: a template twin keeps the template's, and the
-				// capture also counts a DataGrid's or a tab's `columns`, which are not track sizes.
-				if (IsInsert(containerEntry)
-					&& string.Equals(containerEntry.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
-					containerValues["columns"] = ColumnsNode(tablet.Weights);
-				}
+
+			List<List<int>> bands = SplitIntoBands(cells);
+			bool canBand = bands is { Count: > 1 }
+				&& IsInsert(containerEntry)
+				&& string.Equals(containerEntry?.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)
+				&& children.All(IsInsert)
+				&& bands.All(band => band.Select(i => cells[i].Column).Distinct().Count() <= MobileGridMaxColumns);
+			if (canBand) {
+				groups.AddRange(PlaceInBands(elementMap, containerEntry, container, children, cells, bands, takenNames));
+				continue;
 			}
 
-			groups.Add(new AdaptiveLayoutGroup {
-				ContainerName = container,
-				ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
-					["small"] = StackedColumns, ["medium"] = tablet.Weights, ["large"] = tablet.Weights
-				},
-				Items = items
-			});
+			TabletGrid tablet = BuildTabletGrid(children, cells);
+			var items = new List<AdaptiveLayoutItem>();
+			for (int i = 0; i < children.Count; i++) {
+				items.Add(PlaceAdaptive(children[i], AdaptiveCell(1, i + 1), AdaptiveCell(tablet.ChildColumns[i], tablet.ChildRows[i])));
+			}
+			WriteContainerColumns(containerEntry, tablet.Weights);
+			groups.Add(LayoutGroup(container, tablet.Weights, items));
 		}
 		return groups;
+	}
 
-		static JsonObject Cell(int column, int row) =>
-			new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
+	private static JsonObject AdaptiveCell(int column, int row) =>
+		new() { ["row"] = row, ["column"] = column, ["colSpan"] = 1, ["rowSpan"] = 1 };
+
+	private static AdaptiveLayoutGroup LayoutGroup(string container, IReadOnlyList<string> weights, List<AdaptiveLayoutItem> items) =>
+		new() {
+			ContainerName = container,
+			ColumnsByBreakpoint = new Dictionary<string, IReadOnlyList<string>> {
+				["small"] = StackedColumns, ["medium"] = weights, ["large"] = weights
+			},
+			Items = items
+		};
+
+	/// <summary>
+	/// Replaces a child's layoutConfig with its per-breakpoint placement (medium and large are one tablet layout).
+	/// A container twin reaches here with no values of its own: the layoutConfig IS its whole merge delta.
+	/// </summary>
+	private static AdaptiveLayoutItem PlaceAdaptive(ElementMapEntry child, JsonObject phoneCell, JsonObject tabletCell) {
+		var adaptive = new JsonObject {
+			["small"] = phoneCell,
+			["medium"] = tabletCell,
+			["large"] = tabletCell.DeepClone()
+		};
+		child.Values ??= new JsonObject();
+		((JsonObject)child.Values)["layoutConfig"] = new JsonObject { ["adaptive"] = adaptive.DeepClone() };
+		return new AdaptiveLayoutItem { Name = child.Name, LayoutConfigAdaptive = adaptive };
+	}
+
+	/// <summary>
+	/// Folds the per-breakpoint columns INTO the container's own element-map entry (insert or merge twin), so the
+	/// result is a SINGLE operation on that element — no separate merge diff that would duplicate the operation.
+	/// </summary>
+	private static void WriteContainerColumns(ElementMapEntry containerEntry, IReadOnlyList<string> tabletColumns) {
+		if (containerEntry is null) {
+			return;
+		}
+		if (containerEntry.Values is not JsonObject containerValues) {
+			containerValues = new JsonObject();
+			containerEntry.Values = containerValues;
+		}
+		containerValues["adaptive"] = new JsonObject {
+			["small"] = new JsonObject { ["columns"] = ColumnsNode(StackedColumns) },
+			["medium"] = new JsonObject { ["columns"] = ColumnsNode(tabletColumns) },
+			["large"] = new JsonObject { ["columns"] = ColumnsNode(tabletColumns) }
+		};
+		// Only an inserted GRID owns its base columns here: a template twin keeps the template's, and the
+		// capture also counts a DataGrid's or a tab's `columns`, which are not track sizes.
+		if (IsInsert(containerEntry)
+			&& string.Equals(containerEntry.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)) {
+			containerValues["columns"] = ColumnsNode(tabletColumns);
+		}
+	}
+
+	/// <summary>
+	/// Cuts the web grid into horizontal bands of consecutive rows that share one column structure: a row joins
+	/// the current band while no child of the band or the row covers another child's start column. Rows a
+	/// <c>rowSpan</c> covers stay in their band. Returns the child indices of each band, or null when no banding is
+	/// possible — two children of one row overlap, or a spanned row breaks the band's structure.
+	/// </summary>
+	private static List<List<int>> SplitIntoBands(IReadOnlyList<WebCell> cells) {
+		var bands = new List<List<int>>();
+		int coveredThroughRow = 0;
+		foreach (IGrouping<int, int> row in Enumerable.Range(0, cells.Count)
+			.GroupBy(i => cells[i].Row)
+			.OrderBy(g => g.Key)) {
+			List<int> rowChildren = [.. row];
+			if (!SharesColumnStructure(cells, rowChildren)) {
+				return null;
+			}
+			List<int> current = bands.Count > 0 ? bands[^1] : null;
+			List<int> joined = current is null ? null : [.. current, .. rowChildren];
+			bool joins = joined is not null && SharesColumnStructure(cells, joined);
+			if (current is not null && row.Key <= coveredThroughRow && !joins) {
+				return null;
+			}
+			if (joins) {
+				bands[^1] = joined;
+			} else {
+				bands.Add(rowChildren);
+			}
+			coveredThroughRow = Math.Max(coveredThroughRow,
+				rowChildren.Max(i => cells[i].Row + cells[i].RowSpan - 1));
+		}
+		return bands;
+	}
+
+	/// <summary>True when no child of <paramref name="members"/> covers another member's start column.</summary>
+	private static bool SharesColumnStructure(IReadOnlyList<WebCell> cells, IReadOnlyList<int> members) =>
+		members.All(a => members.All(b => a == b
+			|| cells[b].Column <= cells[a].Column
+			|| cells[b].Column > cells[a].Column + cells[a].Span - 1));
+
+	/// <summary>
+	/// Lays a grid of several bands out on tablet as a one-column stack: a band with one column keeps its children
+	/// in the container, a band with several columns becomes a new <c>crt.GridContainer</c> weighted by the band's
+	/// own column structure. The new grids are inserted into the element map right before their first child, so a
+	/// parent is always created before the children moved into it.
+	/// </summary>
+	private static List<AdaptiveLayoutGroup> PlaceInBands(
+		List<ElementMapEntry> elementMap, ElementMapEntry containerEntry, string container,
+		List<ElementMapEntry> children, List<WebCell> cells, List<List<int>> bands, HashSet<string> takenNames) {
+		var groups = new List<AdaptiveLayoutGroup>();
+		var units = new List<AdaptiveLayoutItem>();
+		int bandNumber = 0;
+		foreach (List<int> band in bands) {
+			List<int> ordered = [.. band.OrderBy(i => cells[i].Row).ThenBy(i => cells[i].Column)];
+			int[] starts = [.. ordered.Select(i => cells[i].Column).Distinct().Order()];
+			if (starts.Length == 1) {
+				foreach (int i in ordered) {
+					int unitRow = units.Count + 1;
+					units.Add(PlaceAdaptive(children[i], AdaptiveCell(1, unitRow), AdaptiveCell(1, unitRow)));
+				}
+				continue;
+			}
+
+			int[] spans = [.. starts.Select((start, k) => Math.Min(
+				ordered.Where(i => cells[i].Column == start).Max(i => cells[i].Span),
+				k + 1 < starts.Length ? starts[k + 1] - start : int.MaxValue))];
+			int divisor = spans.Aggregate(0, Gcd);
+			List<string> weights = [.. spans.Select(w => $"{w / divisor}fr")];
+			int firstRow = cells[ordered[0]].Row;
+			List<WebCell> bandCells = [.. ordered.Select(i => cells[i] with { Row = cells[i].Row - firstRow + 1 })];
+			int[] bandColumns = [.. ordered.Select(i => Array.IndexOf(starts, cells[i].Column))];
+			(int[] placedColumns, int[] placedRows) = PlaceInRows(bandCells, bandColumns, new bool[starts.Length]);
+
+			string bandName = BandName(container, ++bandNumber, takenNames);
+			ElementMapEntry bandEntry = BandGridEntry(bandName, container, containerEntry, weights);
+			elementMap.Insert(ordered.Min(i => elementMap.IndexOf(children[i])), bandEntry);
+			int bandRow = units.Count + 1;
+			units.Add(PlaceAdaptive(bandEntry, AdaptiveCell(1, bandRow), AdaptiveCell(1, bandRow)));
+
+			var bandItems = new List<AdaptiveLayoutItem>();
+			for (int j = 0; j < ordered.Count; j++) {
+				ElementMapEntry child = children[ordered[j]];
+				child.ParentName = bandName;
+				child.PropertyName = ItemsPropertyName;
+				bandItems.Add(PlaceAdaptive(child, AdaptiveCell(1, j + 1), AdaptiveCell(placedColumns[j], placedRows[j])));
+			}
+			groups.Add(LayoutGroup(bandName, weights, bandItems));
+		}
+		WriteContainerColumns(containerEntry, StackedColumns);
+		groups.Insert(0, LayoutGroup(container, StackedColumns, units));
+		return groups;
+
+		static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
+	}
+
+	private static string BandName(string container, int bandNumber, HashSet<string> takenNames) {
+		string name = $"{container}_TabletBand{bandNumber}";
+		for (int suffix = 2; !takenNames.Add(name); suffix++) {
+			name = $"{container}_TabletBand{bandNumber}_{suffix}";
+		}
+		return name;
+	}
+
+	/// <summary>
+	/// A converter-synthesized band grid: an ordinary <c>insert</c> with no <c>webName</c>, carrying the band's
+	/// weights as its base and tablet columns and the container's own gap, so the band spaces its cells like the
+	/// grid it was cut from.
+	/// </summary>
+	private static ElementMapEntry BandGridEntry(
+		string name, string container, ElementMapEntry containerEntry, IReadOnlyList<string> weights) {
+		var values = new JsonObject {
+			["type"] = MobileGridContainerComponentType,
+			["columns"] = ColumnsNode(weights),
+			["adaptive"] = new JsonObject {
+				["small"] = new JsonObject { ["columns"] = ColumnsNode(StackedColumns) },
+				["medium"] = new JsonObject { ["columns"] = ColumnsNode(weights) },
+				["large"] = new JsonObject { ["columns"] = ColumnsNode(weights) }
+			}
+		};
+		if ((containerEntry?.Values as JsonObject)?["gap"] is JsonNode gap) {
+			values["gap"] = gap.DeepClone();
+		}
+		return new ElementMapEntry {
+			Operation = ElementMapOperations.Insert,
+			Name = name,
+			MobileType = MobileGridContainerComponentType,
+			ParentName = container,
+			PropertyName = ItemsPropertyName,
+			Values = values
+		};
 	}
 
 	/// <summary>Most columns a mobile grid is given on tablet, whatever the web reference row holds.</summary>
@@ -5302,15 +5464,15 @@ public static partial class WebToMobileAnalysisService {
 	private static readonly IReadOnlyList<string> StackedColumns = ["1fr"];
 
 	/// <summary>
-	/// Mobile list types. A list that spans past its tablet slot on the web merges the slots it covers into one
-	/// column: the runtime draws each column as an independent stack and ignores spans, so otherwise the list
-	/// could only ever be one slot wide.
+	/// Mobile list types. In the reference-row grid, a list that spans past its tablet slot on the web merges the
+	/// slots it covers into one column: the runtime ignores spans, so otherwise the list could only ever be one
+	/// slot wide.
 	/// </summary>
 	private static readonly HashSet<string> MobileListComponentTypes =
 		new(StringComparer.OrdinalIgnoreCase) { "crt.List", "crt.FileList" };
 
 	/// <summary>A child's frozen web grid cell (1-based); <c>Span</c> is the web <c>colSpan</c>.</summary>
-	private readonly record struct WebCell(int Column, int Row, int Span);
+	private readonly record struct WebCell(int Column, int Row, int Span, int RowSpan = 1);
 
 	/// <summary>
 	/// Tablet layout of one grid: the column weights and, per child (same order as the input), its 1-based
@@ -5326,7 +5488,8 @@ public static partial class WebToMobileAnalysisService {
 	/// does not exceed its own start column. A list outside the reference row that spans past its slot merges
 	/// every slot it covers into one column, summing their weights; a wider field just takes its slot. Weights are
 	/// reduced by their GCD. Unused web width (gaps, an empty trailing column) is dropped on purpose, while the
-	/// first boundary is 1 so every child has a slot.
+	/// first boundary is 1 so every child has a slot. Used for a grid of one band, and as the fallback when a grid
+	/// cannot be cut into bands.
 	/// </summary>
 	private static TabletGrid BuildTabletGrid(IReadOnlyList<ElementMapEntry> children, IReadOnlyList<WebCell> cells) {
 		int referenceRow = cells
@@ -5441,7 +5604,8 @@ public static partial class WebToMobileAnalysisService {
 		int column = (lc is null ? null : ReadInt(lc, "column")) ?? (index % cols) + 1;
 		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebRow);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
-		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)));
+		int rowSpan = (lc is null ? null : ReadInt(lc, "rowSpan")) ?? 1;
+		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)), Math.Clamp(rowSpan, 1, MaxWebRow));
 	}
 
 	/// <summary>A JSON array of the given column track sizes.</summary>

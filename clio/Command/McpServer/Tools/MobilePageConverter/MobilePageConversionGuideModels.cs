@@ -1240,8 +1240,10 @@ public sealed class MobilePageConversionGuide {
 	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
 	/// <summary>
 	/// The responsive layout applied to each MULTI-column mobile grid container: the grid columns per
-	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = one weighted column per child of
-	/// the web grid's fullest row, the columns a wider list covers merged into one) and which cell each child occupies.
+	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = weighted columns taken from the web
+	/// grid) and which cell each child occupies. A grid whose rows differ in column structure is stacked on tablet,
+	/// and each band of rows with several columns gets its own synthesized <c>&lt;container&gt;_TabletBand&lt;N&gt;</c>
+	/// grid, listed here as a group of its own.
 	/// Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
