@@ -151,6 +151,12 @@ public sealed class PageUpdateTool(
 		// AppendPersistedResourceKeyWarning reports it below.
 		if (response.Success && !options.DryRun) {
 			persistedResourceKeyReader.Invalidate(options);
+			// ENG-103023: what the save wrote, so confirming it needs no get-page.
+			if (!options.DryRun) {
+				response.Digest = PageWriteDigest.TryBuild(options.Body,
+					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate,
+					response.AppendProjection, response.NewChecksum);
+			}
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
 		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their

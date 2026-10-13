@@ -35,7 +35,9 @@ public static class DescribeProcessPrompt {
 		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
 		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw
-		   metadata.
+		   metadata. A graph whose reply would exceed 18000 bytes comes back as `mode: summary` (elements, flows as
+		   `from -> to`, start signals, parameters, version, checksum) unless you pass `mode: full`; ask
+		   `element: <name>` for one element in full, which is usually what a narration step needs.
 		   Each element also carries its diagram placement as `position` (the shape's TOP-LEFT corner) and
 		   `size`; each flow carries `geometry` - `start`, `points[]`, `end`, `exitSide`, `entrySide` - which
 		   is where the connector runs and the only way to answer a question about the PICTURE. Read `size`

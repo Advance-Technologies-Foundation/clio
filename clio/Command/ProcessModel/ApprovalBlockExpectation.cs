@@ -305,7 +305,7 @@ public static class ApprovalBlockExpectation {
 		// caller to upgrade a server that is behaving correctly.
 		if (missing.Any(m => m.Kind != ApprovalDropKind.DescribeShapedRequest)) {
 			parts.Add("Check the package version, install one that supports what you sent "
-				+ "(clio install-process-builder) and re-apply the approval block, or configure the element in the "
+				+ "(" + Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and re-apply the approval block, or configure the element in the "
 				+ "designer.");
 		}
 

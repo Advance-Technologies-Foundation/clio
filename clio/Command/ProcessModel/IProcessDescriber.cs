@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -47,6 +48,18 @@ public interface IProcessDescriber {
 	/// <returns>The structured description, or an error (not found / unreachable / server failure).</returns>
 	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
 		bool includeVersionFacts = true, bool bestEffort = false);
+
+	/// <summary>
+	/// Reads ONLY the version standing of a process - no graph - as a best-effort read within
+	/// <see cref="ProcessVersionLibReader.BestEffortReadBudget"/> (ENG-103023). For a write path that needs which
+	/// version runs, not what any version does: set-active-process-version reads it before the activation.
+	/// </summary>
+	/// <param name="identity">The process identity (code or uid; a caption is resolved first).</param>
+	/// <returns>
+	/// A result carrying the identity and the version facts only (no elements, flows or parameters), or an error
+	/// when the facts could not be established.
+	/// </returns>
+	ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity);
 }
 
 /// <inheritdoc cref="IProcessDescriber" />
@@ -136,10 +149,18 @@ public sealed class ServerProcessDescriber(
 		// Version facts are overlaid only here, after every refusal path: a described graph without them is
 		// still a correct answer, but a version warning attached to an error would be noise.
 		ApplyVersionFacts(result, includeVersionFacts
-			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId)
+			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId, bestEffort)
 			: VersionFactsNotRequested);
 		return result;
 	}
+
+	// A best-effort read (a write's success path) re-reads by UId on the short budget instead of reusing the row:
+	// the row reuse below only saves a round trip, the budget is what bounds a stalled process library.
+	private ProcessVersionFacts ReadVersionFacts(VwProcessLib resolvedRow, string describedSchemaUId,
+		bool bestEffort) =>
+		bestEffort
+			? versionLibReader.Read(describedSchemaUId, ProcessVersionLibReader.BestEffortReadBudget)
+			: ReadVersionFacts(resolvedRow, describedSchemaUId);
 
 	/// <summary>
 	/// Reads the version facts, reusing the row the caption arm already fetched when it is the same schema.
@@ -157,6 +178,32 @@ public sealed class ServerProcessDescriber(
 		&& resolvedRow.UId == describedUId
 			? versionLibReader.Read(resolvedRow)
 			: versionLibReader.Read(describedSchemaUId);
+
+	/// <inheritdoc />
+	public ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity) {
+		ProcessVersionFacts facts;
+		if (!string.IsNullOrWhiteSpace(identity.UId)) {
+			facts = versionLibReader.Read(identity.UId.Trim(), ProcessVersionLibReader.BestEffortReadBudget);
+		} else if (!string.IsNullOrWhiteSpace(identity.Code)) {
+			facts = versionLibReader.ReadByName(identity.Code, ProcessVersionLibReader.BestEffortReadBudget);
+		} else {
+			ErrorOr<ResolvedIdentity> resolved = BuildIdentityPayload(identity);
+			if (resolved.IsError) {
+				return resolved.Errors;
+			}
+			if (resolved.Value.Row is null) {
+				return Error.Failure(DescribeErrorCode, "the process identity could not be resolved");
+			}
+			facts = versionLibReader.Read(resolved.Value.Row.UId.ToString(),
+				ProcessVersionLibReader.BestEffortReadBudget);
+		}
+		if (facts.Version is null && facts.ActiveVersionSchemaUId is null) {
+			return Error.Failure(DescribeErrorCode, facts.Warning ?? "the version facts were not established");
+		}
+		DescribeProcessResult result = new() { Name = identity.Code, SchemaUId = identity.UId };
+		ApplyVersionFacts(result, facts);
+		return result;
+	}
 
 	/// <summary>
 	/// Overlays the process library's version facts onto a described graph.
@@ -194,7 +241,17 @@ public sealed class ServerProcessDescriber(
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
 			PackageName = member.PackageName,
-			Enabled = member.Enabled
+			Enabled = member.Enabled,
+			ModifiedOn = FormatModifiedOn(member.ModifiedOn)
+		};
+
+	// UTC with a Z when the reader knows the zone; a value of unspecified kind is written without one rather than
+	// being stamped with a zone nobody established.
+	private static string FormatModifiedOn(DateTime? modifiedOn) =>
+		modifiedOn switch {
+			null => null,
+			{ Kind: DateTimeKind.Unspecified } value => value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+			{ } value => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
 		};
 
 	/// <summary>The describe request payload, plus the process-library row the caption arm resolved.</summary>
@@ -510,6 +567,13 @@ public sealed class DescribedProcessVersion {
 	/// </summary>
 	[JsonPropertyName("enabled")]
 	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// When this version was last saved, in UTC (<c>Z</c>) when the zone is known, or absent when the library
+	/// reported none (ENG-103023).
+	/// </summary>
+	[JsonPropertyName("modifiedOn")]
+	public string ModifiedOn { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>
