@@ -47,6 +47,7 @@ internal static class ProcessToolArgumentAliases {
 	private const string CaptionKey = "caption";
 	private const string ElementsKey = "elements";
 	private const string FlowsKey = "flows";
+	private const string DescriptorKey = "descriptor";
 
 	private static readonly JsonSerializerOptions NestedOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -177,7 +178,7 @@ internal static class ProcessToolArgumentAliases {
 				list = [];
 				found[target] = list;
 			}
-			list.Add((key, text!, byShape));
+			list.Add((key, text, byShape));
 		}
 		if (found.Count == 0) {
 			return new IdentityResolution(processName, processUid, processCaption, bag, warnings, null);
@@ -283,35 +284,12 @@ internal static class ProcessToolArgumentAliases {
 		List<string> wrappers = [];
 		// wrappers.Count is the nesting depth reached so far; the loop ends when an object holds no wrapper.
 		while (descriptor.ValueKind == JsonValueKind.Object) {
-			int depth = wrappers.Count;
-			List<JsonProperty> members = descriptor.EnumerateObject().ToList();
-			List<JsonProperty> nested = members.Where(member => IsDescriptorWrapper(member.Name)).ToList();
-			if (nested.Count == 0) {
+			string? error = TryUnwrapOnce(descriptor, wrappers.Count, out JsonElement inner, out string? shown);
+			if (error is not null) {
+				return resolved with { Error = error };
+			}
+			if (shown is null) {
 				break;
-			}
-			string shown = $"'{McpToolArgumentSupport.DescribeCallerKey(nested[0].Name)}'";
-			if (depth >= MaxDescriptorNesting) {
-				return resolved with { Error = $"'descriptor' is nested more than {MaxDescriptorNesting} levels deep, so it is "
-					+ "not clear which object is the process. Send the process fields directly inside 'descriptor'. "
-					+ "Nothing was built." };
-			}
-			if (members.Count > 1) {
-				return resolved with { Error = $"Ambiguous descriptor: 'descriptor' holds {shown} next to other fields, so "
-					+ "it is not clear which object is the process. Send the process fields (name, caption, packageName, "
-					+ "elements, flows, ...) directly inside 'descriptor'. Nothing was built." };
-			}
-			JsonElement inner = nested[0].Value;
-			if (inner.ValueKind == JsonValueKind.String && !TryParseObject(inner, out inner)) {
-				inner = nested[0].Value;
-			}
-			if (inner.ValueKind != JsonValueKind.Object) {
-				return resolved with { Error = $"'descriptor' holds only {shown}, which is not a process object. Send the "
-					+ "process fields directly inside 'descriptor'. Nothing was built." };
-			}
-			if (!inner.EnumerateObject().Any()) {
-				// {"descriptor":{"descriptor":{}}}: unwrapping it would hand the build an empty process.
-				return resolved with { Error = $"'descriptor' holds only {shown}, and it is empty: there is no process "
-					+ "to build. Nothing was built. " + ToolMiniContract.ForCreateBusinessProcess(["descriptor"]) };
 			}
 			descriptor = inner;
 			wrappers.Add(shown);
@@ -325,9 +303,50 @@ internal static class ProcessToolArgumentAliases {
 		return new CreateResolution(resolved.Args with { Descriptor = descriptor.Clone() }, warnings, null);
 	}
 
+	/// <summary>
+	/// Unwraps one level of <paramref name="descriptor"/>: returns a refusal, or null with <paramref name="shown"/>
+	/// naming the wrapper that was removed (null when the object holds no wrapper, so the unwrapping is done).
+	/// </summary>
+	private static string? TryUnwrapOnce(JsonElement descriptor, int depth, out JsonElement inner, out string? shown) {
+		inner = descriptor;
+		shown = null;
+		List<JsonProperty> members = descriptor.EnumerateObject().ToList();
+		List<JsonProperty> nested = members.Where(member => IsDescriptorWrapper(member.Name)).ToList();
+		if (nested.Count == 0) {
+			return null;
+		}
+		string wrapper = $"'{McpToolArgumentSupport.DescribeCallerKey(nested[0].Name)}'";
+		if (depth >= MaxDescriptorNesting) {
+			return $"'descriptor' is nested more than {MaxDescriptorNesting} levels deep, so it is "
+				+ "not clear which object is the process. Send the process fields directly inside 'descriptor'. "
+				+ "Nothing was built.";
+		}
+		if (members.Count > 1) {
+			return $"Ambiguous descriptor: 'descriptor' holds {wrapper} next to other fields, so "
+				+ "it is not clear which object is the process. Send the process fields (name, caption, packageName, "
+				+ "elements, flows, ...) directly inside 'descriptor'. Nothing was built.";
+		}
+		JsonElement value = nested[0].Value;
+		if (value.ValueKind == JsonValueKind.String && TryParseObject(value, out JsonElement parsed)) {
+			value = parsed;
+		}
+		if (value.ValueKind != JsonValueKind.Object) {
+			return $"'descriptor' holds only {wrapper}, which is not a process object. Send the "
+				+ "process fields directly inside 'descriptor'. Nothing was built.";
+		}
+		if (!value.EnumerateObject().Any()) {
+			// {"descriptor":{"descriptor":{}}}: unwrapping it would hand the build an empty process.
+			return $"'descriptor' holds only {wrapper}, and it is empty: there is no process "
+				+ "to build. Nothing was built. " + ToolMiniContract.ForCreateBusinessProcess([DescriptorKey]);
+		}
+		inner = value;
+		shown = wrapper;
+		return null;
+	}
+
 	private static bool IsDescriptorWrapper(string name) {
 		string key = Normalize(name);
-		return key == "descriptor" || DescriptorWrapperAliases.Contains(key);
+		return key == DescriptorKey || DescriptorWrapperAliases.Contains(key);
 	}
 
 	/// <summary>Reads a string holding a JSON object; false for anything else, including a string that is not valid text.</summary>
@@ -373,21 +392,8 @@ internal static class ProcessToolArgumentAliases {
 		if (repeated.Count > 0) {
 			return new CreateResolution(args, warnings, AmbiguousDescriptor(repeated));
 		}
-		if (wrappers.Count == 1 && IsIdentityText(bag[wrappers[0]])) {
-			return new CreateResolution(args, warnings,
-				$"'{McpToolArgumentSupport.DescribeCallerKey(wrappers[0])}' holds text, not a process object. On "
-				+ "create-business-process the process is the 'descriptor' object; a process NAME is what "
-				+ "describe-business-process and modify-business-process take (process-name). Nothing was built.");
-		}
-		// A flat packageName next to the top-level package-name override: in a canonical call the override is
-		// meant to win, but in a flat call both plainly mean "the package", so applying the override could put the
-		// process in the other one. This is a write, so it is refused rather than resolved.
-		if (wrappers.Count == 0 && !string.IsNullOrWhiteSpace(args.PackageName)
-			&& flat.FirstOrDefault(key => Normalize(key) == "packagename") is { } flatPackage) {
-			return new CreateResolution(args, warnings,
-				$"Ambiguous package: '{McpToolArgumentSupport.DescribeCallerKey(flatPackage)}' and 'package-name' both "
-				+ "name the package of a descriptor sent as flat fields. Send the process as the 'descriptor' object "
-				+ "with its packageName, and 'package-name' only to override it. Nothing was built.");
+		if (DescribeWrapperMisuse(args, bag, wrappers, flat) is { } misuse) {
+			return new CreateResolution(args, warnings, misuse);
 		}
 		(JsonElement descriptor, HashSet<string> consumed) = wrappers.Count == 1
 			? TakeWrappedDescriptor(bag, wrappers[0], warnings)
@@ -395,6 +401,32 @@ internal static class ProcessToolArgumentAliases {
 		return new CreateResolution(
 			args with { Descriptor = descriptor, ExtensionData = RemainingBag(bag, consumed) },
 			warnings, null);
+	}
+
+	/// <summary>
+	/// Refusals for a wrapper or flat descriptor that is unambiguous in shape but still cannot be built as sent:
+	/// text under a wrapper synonym, or a flat packageName next to the top-level package-name override.
+	/// </summary>
+	private static string? DescribeWrapperMisuse(CreateBusinessProcessArgs args, Dictionary<string, JsonElement> bag,
+		List<string> wrappers, List<string> flat) {
+		if (wrappers.Count == 1) {
+			return IsIdentityText(bag[wrappers[0]])
+				? $"'{McpToolArgumentSupport.DescribeCallerKey(wrappers[0])}' holds text, not a process object. On "
+					+ "create-business-process the process is the 'descriptor' object; a process NAME is what "
+					+ "describe-business-process and modify-business-process take (process-name). Nothing was built."
+				: null;
+		}
+		// A flat packageName next to the top-level package-name override: in a canonical call the override is
+		// meant to win, but in a flat call both plainly mean "the package", so applying the override could put the
+		// process in the other one. This is a write, so it is refused rather than resolved.
+		string? flatPackage = string.IsNullOrWhiteSpace(args.PackageName)
+			? null
+			: flat.FirstOrDefault(key => Normalize(key) == "packagename");
+		return flatPackage is null
+			? null
+			: $"Ambiguous package: '{McpToolArgumentSupport.DescribeCallerKey(flatPackage)}' and 'package-name' both "
+				+ "name the package of a descriptor sent as flat fields. Send the process as the 'descriptor' object "
+				+ "with its packageName, and 'package-name' only to override it. Nothing was built.";
 	}
 
 	/// <summary>
@@ -415,7 +447,7 @@ internal static class ProcessToolArgumentAliases {
 
 	private static (JsonElement Descriptor, HashSet<string> Consumed) TakeWrappedDescriptor(
 		Dictionary<string, JsonElement> bag, string key, List<string> warnings) {
-		warnings.Add(AcceptedNote(key, "descriptor"));
+		warnings.Add(AcceptedNote(key, DescriptorKey));
 		return (bag[key], [key]);
 	}
 
@@ -453,7 +485,7 @@ internal static class ProcessToolArgumentAliases {
 	internal sealed record GraphResolution(ValidateProcessGraphArgs Args, List<string> Warnings, string? Error);
 
 	private static readonly HashSet<string> GraphWrapperAliases = new(StringComparer.Ordinal) {
-		"graph", "descriptor", "process", "processgraph", "definition"
+		"graph", DescriptorKey, "process", "processgraph", "definition"
 	};
 
 	// Descriptor fields that carry no graph information; tolerated inside a wrapper so a create-business-process
@@ -491,12 +523,7 @@ internal static class ProcessToolArgumentAliases {
 		if (error is not null) {
 			return Refuse(args, warnings, error);
 		}
-		warnings.Add(wrappers.Count == 1
-			? $"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level in future calls."
-			: $"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
-		if (source.ContainsKey(ElementsKey) || source.ContainsKey(FlowsKey)) {
-			warnings.Add(DescriptorOnlyGraphCheckedNote);
-		}
+		AddGraphWarnings(warnings, wrappers.Count == 1, origin, source);
 		if (source.ContainsKey("nodes") && source.ContainsKey(ElementsKey)
 			|| source.ContainsKey("edges") && source.ContainsKey(FlowsKey)) {
 			return Refuse(args, warnings, $"{origin} carries both 'nodes' and 'elements' (or 'edges' and 'flows'); send one.");
@@ -512,6 +539,16 @@ internal static class ProcessToolArgumentAliases {
 		"Only the graph shape was checked: element name and type, and flow source, target, kind, condition and "
 		+ "results. Element configuration (captions, parameters, mappings, filters, ...) was NOT checked; "
 		+ "create-business-process checks it when it builds.";
+
+	private static void AddGraphWarnings(List<string> warnings, bool fromWrapper, string origin,
+		Dictionary<string, JsonElement> source) {
+		warnings.Add(fromWrapper
+			? $"Argument '{origin}' was accepted as the graph; send 'nodes' and 'edges' at the top level in future calls."
+			: $"{origin} were accepted as 'nodes' and 'edges'; send 'nodes' and 'edges' in future calls.");
+		if (source.ContainsKey(ElementsKey) || source.ContainsKey(FlowsKey)) {
+			warnings.Add(DescriptorOnlyGraphCheckedNote);
+		}
+	}
 
 	private static string? DescribeGraphAmbiguity(ValidateProcessGraphArgs args, List<string> wrappers, List<string> flat) {
 		bool canonicalSupplied = args.Nodes is { Count: > 0 } || args.Edges is { Count: > 0 };

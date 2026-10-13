@@ -30,6 +30,8 @@ internal static class ExecuteEsqQueryHints {
 	internal const int MaxRowCount = 10_000;
 
 	// Key()-normalized names of the SelectQuery members this class reads.
+	private const string WhereKey = "where";
+	private const string LimitKey = "limit";
 	private const string RootSchemaNameKey = "rootschemaname";
 	private const string ColumnsKey = "columns";
 	private const string FiltersKey = "filters";
@@ -39,8 +41,8 @@ internal static class ExecuteEsqQueryHints {
 
 	private static readonly string[] SchemaKeys = ["schemaname", RootSchemaNameKey, "entity", "entityname", "table", "tablename", "from", "object"];
 	private static readonly string[] ColumnKeys = [ColumnsKey, "select", "fields"];
-	private static readonly string[] FilterKeys = [FiltersKey, "filter", "where"];
-	private static readonly string[] LimitKeys = [RowCountKey, "top", "limit", "take", "maxrows"];
+	private static readonly string[] FilterKeys = [FiltersKey, "filter", WhereKey];
+	private static readonly string[] LimitKeys = [RowCountKey, "top", LimitKey, "take", "maxrows"];
 	private static readonly string[] SqlKeys = ["sql", "sqlquery", "sqltext", "statement"];
 
 	// Every alias of a query part (schema, columns, filters, row cap, SQL text), Key()-normalized.
@@ -242,7 +244,7 @@ internal static class ExecuteEsqQueryHints {
 	// 'filterGroup', 'criteria') is far likelier a part sent under the wrong name than a new platform member, and
 	// running without it returns the wrong rows with success:true - so it is refused like a misplaced part.
 	private static readonly string[] ReadShapingStems =
-		["column", "filter", "row", "where", "order", "sort", "limit", "select", "criteri", "condition"];
+		["column", "filter", "row", WhereKey, "order", "sort", LimitKey, "select", "criteri", "condition"];
 
 	/// <summary>A query part under a non-SelectQuery name: refused, because the DataService would silently drop it.</summary>
 	private static bool IsMisplacedPart(string key) =>
@@ -334,7 +336,7 @@ internal static class ExecuteEsqQueryHints {
 			return new Hint(SqlPrefix + " 'SELECT *' has no safe SelectQuery equivalent: list the columns you need "
 				+ "(allColumns pulls binary and unrelated fields).", null);
 		}
-		if (match.Groups["top"].Success && match.Groups["limit"].Success) {
+		if (match.Groups["top"].Success && match.Groups[LimitKey].Success) {
 			return new Hint(SqlPrefix + " TOP and LIMIT were both given, so the row cap is ambiguous and no query is "
 				+ "suggested.", null);
 		}
@@ -346,8 +348,8 @@ internal static class ExecuteEsqQueryHints {
 			return new Hint(SqlPrefix + " Aliases, expressions and dotted column paths are not translated.", null);
 		}
 		List<(string Column, JsonElement Value)> filters = [];
-		if (match.Groups["where"].Success) {
-			foreach (string term in AndSeparator.Split(match.Groups["where"].Value)) {
+		if (match.Groups[WhereKey].Success) {
+			foreach (string term in AndSeparator.Split(match.Groups[WhereKey].Value)) {
 				if (TryReadEqualityTerm(term) is not { } filter) {
 					return new Hint(SqlPrefix + " Only 'column = value' terms joined by AND are translated.", null);
 				}
@@ -378,7 +380,7 @@ internal static class ExecuteEsqQueryHints {
 	}
 
 	private static int? ReadRowCount(Match match) {
-		Group group = match.Groups["top"].Success ? match.Groups["top"] : match.Groups["limit"];
+		Group group = match.Groups["top"].Success ? match.Groups["top"] : match.Groups[LimitKey];
 		if (!group.Success) {
 			return null;
 		}
