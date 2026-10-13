@@ -597,6 +597,7 @@ public class BindingsModule {
 		services.AddTransient<Func<IJsonDiffApplier>>(_ => () => new JsonDiffApplier());
 		services.AddTransient<Func<IJsonPathDiffApplier>>(_ => () => new JsonPathDiffApplier());
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddTransient<IPageUnresolvedMergeDetector, PageUnresolvedMergeDetector>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
 		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
