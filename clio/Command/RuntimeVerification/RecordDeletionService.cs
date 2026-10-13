@@ -250,22 +250,8 @@ internal sealed class RecordDeletionService(
 	// select per column, which also tells an unreadable column apart.
 	private void ReadReferencingEntity(string entity, List<string> columns, string id, Func<int> budget,
 		Func<bool> timeIsUp, RecordDeleteDiagnosis diagnosis) {
-		if (columns.Count > 1) {
-			int cap = (MaxIdsPerPair + 1) * columns.Count;
-			JArray rows = TrySelectReferencing(entity, columns, id, cap, budget());
-			if (rows is not null && rows.Count < cap) {
-				string target = Guid.TryParse(id, out Guid parsed) ? parsed.ToString("D") : id;
-				foreach (string column in columns) {
-					List<string> ids = rows.Where(row => string.Equals(RunRecordProvenance.LookupValue(row[column]), target,
-							StringComparison.OrdinalIgnoreCase))
-						.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList();
-					ReferencingRows found = ids.Count == 0 ? null : Classify(entity, column, ids, budget());
-					if (found is not null) {
-						diagnosis.Referencing.Add(found);
-					}
-				}
-				return;
-			}
+		if (columns.Count > 1 && TryReadGrouped(entity, columns, id, budget, diagnosis)) {
+			return;
 		}
 		foreach (string column in columns) {
 			if (timeIsUp()) {
@@ -283,8 +269,29 @@ internal sealed class RecordDeletionService(
 		}
 	}
 
-	// Rows of the entity whose any listed column points at id; null when the select fails.
-	private JArray TrySelectReferencing(string entity, List<string> columns, string id, int cap, int timeoutMs) {
+	// False when the grouped select failed or filled its cap, so the columns must be read one by one.
+	private bool TryReadGrouped(string entity, List<string> columns, string id, Func<int> budget,
+		RecordDeleteDiagnosis diagnosis) {
+		int cap = (MaxIdsPerPair + 1) * columns.Count;
+		if (!TrySelectReferencing(entity, columns, id, cap, budget(), out JArray rows) || rows.Count >= cap) {
+			return false;
+		}
+		string target = Guid.TryParse(id, out Guid parsed) ? parsed.ToString("D") : id;
+		foreach (string column in columns) {
+			List<string> ids = rows.Where(row => string.Equals(RunRecordProvenance.LookupValue(row[column]), target,
+					StringComparison.OrdinalIgnoreCase))
+				.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList();
+			ReferencingRows found = ids.Count == 0 ? null : Classify(entity, column, ids, budget());
+			if (found is not null) {
+				diagnosis.Referencing.Add(found);
+			}
+		}
+		return true;
+	}
+
+	// Rows of the entity whose any listed column points at id; false when the select fails.
+	private bool TrySelectReferencing(string entity, List<string> columns, string id, int cap, int timeoutMs,
+		out JArray rows) {
 		try {
 			JObject selected = new() { ["Id"] = ClassicEntitySchemaQuery.Column("Id") };
 			JObject any = new();
@@ -292,11 +299,13 @@ internal sealed class RecordDeletionService(
 				selected[columns[i]] = ClassicEntitySchemaQuery.Column(columns[i]);
 				any[$"ref{i}"] = ClassicEntitySchemaQuery.Eq(columns[i], id, GuidDataValueType);
 			}
-			return Select(ClassicEntitySchemaQuery.Query(entity, selected, ClassicEntitySchemaQuery.Group(("any", AnyOf(any))),
+			rows = Select(ClassicEntitySchemaQuery.Query(entity, selected, ClassicEntitySchemaQuery.Group(("any", AnyOf(any))),
 				cap), timeoutMs);
+			return true;
 		}
 		catch (Exception exception) when (exception is not OutOfMemoryException) {
-			return null;
+			rows = [];
+			return false;
 		}
 	}
 
