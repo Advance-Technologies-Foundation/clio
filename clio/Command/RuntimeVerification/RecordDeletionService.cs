@@ -33,6 +33,22 @@ public interface IRecordDeletionService {
 	/// <param name="stopAt">No request is started after this instant; the result then says it is partial.</param>
 	/// <returns>The facts found.</returns>
 	RecordDeleteDiagnosis Diagnose(string entity, string id, int timeoutMs, DateTimeOffset stopAt);
+
+	/// <summary>Reads whether the record exists and this user can see it.</summary>
+	/// <param name="entity">Entity schema name.</param>
+	/// <param name="id">Record id.</param>
+	/// <param name="timeoutMs">Bound of the request, in milliseconds.</param>
+	/// <returns><see langword="false"/> when no row came back; <see langword="null"/> when it could not be read.</returns>
+	bool? Exists(string entity, string id, int timeoutMs);
+
+	/// <summary>
+	/// Whether the entity is a lookup (dictionary): registered in <c>SysLookup</c>, or derived from a base lookup schema.
+	/// A row that requires a lookup value only refers to it, so a cascade never treats such rows as owned.
+	/// </summary>
+	/// <param name="entity">Entity schema name.</param>
+	/// <param name="timeoutMs">Bound of each request, in milliseconds.</param>
+	/// <returns><see langword="true"/> when it is one, and also when that could not be established.</returns>
+	bool IsLookup(string entity, int timeoutMs);
 }
 
 /// <summary>The outcome of one DELETE.</summary>
@@ -109,6 +125,11 @@ internal sealed class RecordDeletionService(
 	private const int TextDataValueType = 1;
 	private const int MaxReferenceMetadataRows = 5_000;
 	private const string ProcessElementColumn = "ProcessElementId";
+	// The base schemas a lookup is derived from; one that is not registered in SysLookup is still a dictionary.
+	private static readonly HashSet<string> LookupBaseSchemas = new(StringComparer.Ordinal) {
+		"BaseLookup", "BaseCodeLookup", "BaseImageLookup", "BaseCodeImageLookup"
+	};
+	private readonly Dictionary<string, bool> _lookups = new(StringComparer.OrdinalIgnoreCase);
 
 	// One service instance serves one tool call; a cascade diagnoses many rows of the same entities.
 	private readonly Dictionary<string, (List<(string Entity, string Column)> Pairs, bool Truncated)> _pairsByEntity =
@@ -140,8 +161,15 @@ internal sealed class RecordDeletionService(
 
 	/// <inheritdoc />
 	public RecordDeleteDiagnosis Diagnose(string entity, string id, int timeoutMs, DateTimeOffset stopAt) {
+		// Every request is bounded by what is left before stopAt, and none starts after it: a request started just
+		// before stopAt with its full timeout could otherwise run the whole call past its budget.
+		int Budget() => (int)Math.Clamp((stopAt - DateTimeOffset.UtcNow).TotalMilliseconds, 1, Math.Max(1, timeoutMs));
+		bool TimeIsUp() => DateTimeOffset.UtcNow >= stopAt;
+		if (TimeIsUp()) {
+			return new RecordDeleteDiagnosis { Complete = false };
+		}
 		RecordDeleteDiagnosis diagnosis = new() {
-			Visible = ReadVisibility(entity, id, timeoutMs, out string processElementId),
+			Visible = ReadVisibility(entity, id, Budget(), out string processElementId),
 			ProcessElementId = processElementId
 		};
 		List<(string Entity, string Column)> pairs;
@@ -149,7 +177,11 @@ internal sealed class RecordDeletionService(
 			// The truncation is cached with the pairs: every diagnosis over a truncated list is incomplete, not
 			// only the first one.
 			if (!_pairsByEntity.TryGetValue(entity, out (List<(string Entity, string Column)> Pairs, bool Truncated) cached)) {
-				cached = (ReadReferencePairs(entity, timeoutMs, out bool truncated), truncated);
+				if (TimeIsUp()) {
+					diagnosis.Complete = false;
+					return diagnosis;
+				}
+				cached = (ReadReferencePairs(entity, Budget(), out bool truncated), truncated);
 				_pairsByEntity[entity] = cached;
 			}
 			pairs = cached.Pairs;
@@ -165,22 +197,113 @@ internal sealed class RecordDeletionService(
 			diagnosis.Complete = false;
 			pairs = pairs.Take(MaxReferencePairs).ToList();
 		}
-		foreach ((string referencing, string column) in pairs) {
-			if (DateTimeOffset.UtcNow >= stopAt) {
+		// One select per referencing entity, its referencing columns OR-ed, instead of one per (entity, column) pair.
+		foreach (IGrouping<string, (string Entity, string Column)> group in pairs.GroupBy(pair => pair.Entity, StringComparer.Ordinal)) {
+			if (TimeIsUp()) {
 				diagnosis.Complete = false;
 				break;
 			}
-			ReferencingRows rows = ReadReferencingRows(referencing, column, id, timeoutMs, out bool readable);
+			ReadReferencingEntity(group.Key, group.Select(pair => pair.Column).ToList(), id, Budget, TimeIsUp, diagnosis);
+		}
+		return diagnosis;
+	}
+
+	/// <inheritdoc />
+	public bool? Exists(string entity, string id, int timeoutMs) {
+		try {
+			return Select(ClassicEntitySchemaQuery.Query(entity, new JObject { ["Id"] = ClassicEntitySchemaQuery.Column("Id") },
+				ClassicEntitySchemaQuery.Group(("byId", ClassicEntitySchemaQuery.Eq("Id", id, GuidDataValueType))), 1),
+				timeoutMs).Count > 0;
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
+		}
+	}
+
+	/// <inheritdoc />
+	public bool IsLookup(string entity, int timeoutMs) {
+		if (_lookups.TryGetValue(entity, out bool known)) {
+			return known;
+		}
+		bool lookup;
+		try {
+			RuntimeEntitySchemaResult schema = GetSchema(entity, timeoutMs);
+			lookup = schema is null
+				|| Select(ClassicEntitySchemaQuery.Query("SysLookup", new JObject { ["Id"] = ClassicEntitySchemaQuery.Column("Id") },
+					ClassicEntitySchemaQuery.Group(("bySchema", ClassicEntitySchemaQuery.Eq("SysEntitySchemaUId",
+						schema.UId.ToString("D"), GuidDataValueType))), 1), timeoutMs).Count > 0
+				|| (schema.ParentUId is { } parent && parent != Guid.Empty && IsLookupBase(parent, timeoutMs));
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Not knowing is treated as a lookup: a cascade refused wrongly costs a call, a lookup cascaded costs data.
+			lookup = true;
+		}
+		_lookups[entity] = lookup;
+		return lookup;
+	}
+
+	private bool IsLookupBase(Guid parentUId, int timeoutMs) =>
+		Select(ClassicEntitySchemaQuery.BuildSelectSchemaNamesByUId([parentUId.ToString("D")]), timeoutMs)
+			.Any(row => LookupBaseSchemas.Contains(row["Name"]?.ToString() ?? string.Empty));
+
+	// The referencing rows of one entity in a single select; a select that fails or fills its cap falls back to one
+	// select per column, which also tells an unreadable column apart.
+	private void ReadReferencingEntity(string entity, List<string> columns, string id, Func<int> budget,
+		Func<bool> timeIsUp, RecordDeleteDiagnosis diagnosis) {
+		if (columns.Count > 1) {
+			int cap = (MaxIdsPerPair + 1) * columns.Count;
+			JArray rows = TrySelectReferencing(entity, columns, id, cap, budget());
+			if (rows is not null && rows.Count < cap) {
+				string target = Guid.TryParse(id, out Guid parsed) ? parsed.ToString("D") : id;
+				foreach (string column in columns) {
+					List<string> ids = rows.Where(row => string.Equals(RunRecordProvenance.LookupValue(row[column]), target,
+							StringComparison.OrdinalIgnoreCase))
+						.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList();
+					ReferencingRows found = ids.Count == 0 ? null : Classify(entity, column, ids, budget());
+					if (found is not null) {
+						diagnosis.Referencing.Add(found);
+					}
+				}
+				return;
+			}
+		}
+		foreach (string column in columns) {
+			if (timeIsUp()) {
+				diagnosis.Complete = false;
+				return;
+			}
+			ReferencingRows rows = ReadReferencingRows(entity, column, id, budget(), out bool readable);
 			if (!readable) {
-				diagnosis.Unchecked.Add($"{referencing}.{column}");
+				diagnosis.Unchecked.Add($"{entity}.{column}");
 				diagnosis.Complete = false;
 			}
 			if (rows is not null) {
 				diagnosis.Referencing.Add(rows);
 			}
 		}
-		return diagnosis;
 	}
+
+	// Rows of the entity whose any listed column points at id; null when the select fails.
+	private JArray TrySelectReferencing(string entity, List<string> columns, string id, int cap, int timeoutMs) {
+		try {
+			JObject selected = new() { ["Id"] = ClassicEntitySchemaQuery.Column("Id") };
+			JObject any = new();
+			for (int i = 0; i < columns.Count; i++) {
+				selected[columns[i]] = ClassicEntitySchemaQuery.Column(columns[i]);
+				any[$"ref{i}"] = ClassicEntitySchemaQuery.Eq(columns[i], id, GuidDataValueType);
+			}
+			return Select(ClassicEntitySchemaQuery.Query(entity, selected, ClassicEntitySchemaQuery.Group(("any", AnyOf(any))),
+				cap), timeoutMs);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
+		}
+	}
+
+	// filterType 6 with logicalOperation 1: an OR group.
+	private static JObject AnyOf(JObject items) => new() {
+		["filterType"] = 6, ["logicalOperation"] = 1, ["isEnabled"] = true, ["items"] = items
+	};
 
 	// The record's own row: absent means missing or not readable by this user. ProcessElementId is read when the
 	// entity has it (Activity does): a record a running process element still holds refuses deletion.
@@ -278,6 +401,13 @@ internal sealed class RecordDeletionService(
 		if (rows.Count == 0) {
 			return null;
 		}
+		return Classify(entity, column, rows.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList(),
+			timeoutMs);
+	}
+
+	// Cascade when the platform deletes the row with the record, owned when its lookup is required, linked otherwise.
+	// A DB view cannot block a delete, so it is not reported.
+	private ReferencingRows Classify(string entity, string column, List<string> ids, int timeoutMs) {
 		RuntimeEntitySchemaResult schema = GetSchema(entity, timeoutMs);
 		if (schema?.IsDBView == true) {
 			return null;
@@ -291,7 +421,6 @@ internal sealed class RecordDeletionService(
 		else if (lookup?.IsRequired == true) {
 			kind = ReferencingRows.OwnedKind;
 		}
-		List<string> ids = rows.Select(row => row["Id"]?.ToString()).Where(value => value is not null).ToList();
 		return new ReferencingRows(entity, column, ids.Take(MaxIdsPerPair).ToList(), ids.Count > MaxIdsPerPair, kind);
 	}
 
