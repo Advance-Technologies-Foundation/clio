@@ -112,9 +112,9 @@ internal sealed class GuidanceGetTool {
 			// "index", and intercepting the keyword first would make that guide unreachable. The catalog is the
 			// fallback only when the keyword names no guide.
 			bool noName = string.IsNullOrWhiteSpace(effectiveName);
-			KnowledgeArticleLookup? lookup = noName ? null : _guidanceSource.FindByName(effectiveName!);
+			KnowledgeArticleLookup? lookup = noName ? null : _guidanceSource.FindByName(effectiveName);
 			bool catalogRequested = noName
-				|| (CatalogKeywords.Contains(effectiveName!.Trim())
+				|| (CatalogKeywords.Contains(effectiveName.Trim())
 					&& lookup?.Status is not (KnowledgeArticleLookupStatus.Active or KnowledgeArticleLookupStatus.Ambiguous));
 			if (catalogRequested || lookup is null) {
 				string? catalog = BuildCatalog();
