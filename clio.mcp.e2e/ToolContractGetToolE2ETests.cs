@@ -243,10 +243,12 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			.InputSchema.Properties.Single(field => field.Name == "columns").Description
 			.Should().NotContain("override",
 				because: "a create-lookup schema has a BaseLookup parent, so the override does not apply to it");
-		response.Tools!.Single(tool => tool.Name == SchemaSyncTool.ToolName)
-			.InputSchema.Properties.Single(field => field.Name == "operations").Description
-			.Should().Contain("create-entity `columns` item with `override: true`",
-				because: "sync-schemas create-entity accepts the same override column as create-entity-schema");
+		string syncOperationsDescription = response.Tools!.Single(tool => tool.Name == SchemaSyncTool.ToolName)
+			.InputSchema.Properties.Single(field => field.Name == "operations").Description;
+		syncOperationsDescription.Should().Contain("create-entity `columns` item with `override: true`",
+			because: "sync-schemas create-entity accepts the same override column as create-entity-schema");
+		syncOperationsDescription.Should().Contain("an override item naming an absent or own column is refused",
+			because: "a replay on an existing schema refuses an override that has no inherited column to redirect");
 		McpClientTool? createTool = tools.SingleOrDefault(tool => tool.Name == CreateEntitySchemaTool.CreateEntitySchemaToolName);
 		if (createTool is not null) {
 			createTool.JsonSchema.GetRawText().Should().Contain("\"override\"",

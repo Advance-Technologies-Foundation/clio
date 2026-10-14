@@ -475,6 +475,50 @@ public sealed class SchemaConvergenceServiceTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Refuses an override item whose column the existing schema does not have, instead of adding a column without a type.")]
+	public void Classify_ShouldReturnCollision_WhenOverrideColumnIsAbsent() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(InheritedLookup("Folder", "ContactFolder")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(OverrideColumn("UsrFolder", "ContactFolder")));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Collision,
+			because: "an override applies only to a column the parent declares");
+		plan.Error.Should().Be($"Error: Parent schema 'BaseItemInFolder' of schema '{SchemaName}' has no column "
+			+ "'UsrFolder' to override.", because: "the refusal matches the create-entity-schema message");
+		plan.ColumnsToAdd.Should().BeEmpty(because: "an override never adds a column");
+		plan.ColumnsToModify.Should().BeEmpty(because: "a refused plan carries no mutation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses an override item whose column is an own column of the existing schema, instead of reporting it already satisfied.")]
+	public void Classify_ShouldReturnCollision_WhenOverrideColumnIsOwnColumn() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(Column("Folder", "Lookup") with { ReferenceSchemaName = "ContactFolder" }));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(OverrideColumn("Folder", "ContactFolder")));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Collision,
+			because: "an override cannot converge on an own column");
+		plan.Error.Should().Be($"Error: Column 'Folder' is an own column of schema '{SchemaName}', not an inherited "
+			+ "one; an override applies only to a column inherited from the parent schema.",
+			because: "the refusal matches the create-entity-schema message");
+		plan.ColumnsToModify.Should().BeEmpty(because: "a refused plan carries no mutation");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Keeps comparing an ordinary lookup column by type only: a differing reference on a non-override column is AlreadySatisfied.")]
 	public void Classify_ShouldIgnoreReference_WhenLookupColumnIsNotAnOverride() {
 		// Arrange

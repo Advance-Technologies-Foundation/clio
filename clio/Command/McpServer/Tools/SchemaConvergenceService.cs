@@ -159,7 +159,12 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		}
 
 		(IReadOnlyList<CreateEntitySchemaColumnArgs> columnsToAdd,
-			IReadOnlyList<UpdateEntitySchemaOperationArgs> columnsToModify) = ComputeColumnDelta(target, requestedColumns);
+			IReadOnlyList<UpdateEntitySchemaOperationArgs> columnsToModify, string? overrideError) =
+			ComputeColumnDelta(target, existing.ParentSchemaName, requestedColumns);
+		if (overrideError != null) {
+			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName,
+				$"Error: {overrideError}");
+		}
 
 		if (columnsToAdd.Count == 0 && columnsToModify.Count == 0) {
 			return new SchemaConvergencePlan(SchemaConvergenceOutcome.AlreadySatisfied, [], [], null, null);
@@ -199,12 +204,15 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		return !string.Equals(requestedParent.Trim(), existingParent, StringComparison.OrdinalIgnoreCase);
 	}
 
+	// An override converges only on a column the schema inherits; an absent or own column of that name is
+	// refused with the create-entity-schema message instead of being added or reported as satisfied.
 	private (IReadOnlyList<CreateEntitySchemaColumnArgs> ColumnsToAdd,
-		IReadOnlyList<UpdateEntitySchemaOperationArgs> ColumnsToModify) ComputeColumnDelta(
+		IReadOnlyList<UpdateEntitySchemaOperationArgs> ColumnsToModify, string? OverrideError) ComputeColumnDelta(
 			SchemaConvergenceTarget target,
+			string? parentSchemaName,
 			IReadOnlyList<CreateEntitySchemaColumnArgs> requestedColumns) {
 		if (requestedColumns.Count == 0) {
-			return ([], []);
+			return ([], [], null);
 		}
 
 		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns =
@@ -216,15 +224,24 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			if (string.IsNullOrWhiteSpace(columnName)) {
 				continue;
 			}
-			if (!existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn)) {
-				columnsToAdd.Add(column);
-				continue;
-			}
-			if (column.Override == true && IsInheritedColumn(existingColumn)) {
+			existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
+			if (column.Override == true) {
+				if (existingColumn is null) {
+					return ([], [], EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(target.SchemaName,
+						parentSchemaName, columnName));
+				}
+				if (!IsInheritedColumn(existingColumn)) {
+					return ([], [], EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(target.SchemaName,
+						columnName));
+				}
 				// An override item carries no type; it converges on the inherited column's reference schema.
 				if (!HasSameReference(column, existingColumn)) {
 					columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
 				}
+				continue;
+			}
+			if (existingColumn is null) {
+				columnsToAdd.Add(column);
 				continue;
 			}
 			// Present with a differing type is surfaced to the modify delta. Compare by resolved DataValueType
@@ -235,7 +252,7 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 				columnsToModify.Add(ToModifyOperation(column));
 			}
 		}
-		return (columnsToAdd, columnsToModify);
+		return (columnsToAdd, columnsToModify, null);
 	}
 
 	/// <inheritdoc/>
