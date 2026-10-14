@@ -208,7 +208,8 @@ public sealed class PageSmokeToolTests {
 	[TestCase("yes", null, "browser must be existing, download or none")]
 	[TestCase("download", "/opt/chrome", "browser-path applies only with browser=existing")]
 	[TestCase(null, "/opt/chrome", "browser-path applies only with browser=existing")]
-	[Description("A browser answer outside the three choices, or a browser-path without browser=existing, is refused before any browser is resolved.")]
+	[TestCase("existing", null, "browser=existing needs browser-path")]
+	[Description("A browser answer outside the three choices, a browser-path without browser=existing, or browser=existing without the chosen browser-path is refused before any browser is resolved.")]
 	public void Validate_Should_Refuse_A_Browser_Answer_Outside_The_Choices(string browser, string browserPath, string expected) {
 		// Arrange
 		PageSmokeArgs args = Args() with { Browser = browser, BrowserPath = browserPath };
@@ -221,10 +222,12 @@ public sealed class PageSmokeToolTests {
 	}
 
 	[Test]
-	[Description("With no browser decision, the call is refused with code browser-consent-required and the question to relay, and neither the environment nor the runner is touched.")]
+	[Description("With no browser decision, the call is refused with code browser-consent-required and the question to relay, and no browser is started.")]
 	public async Task Run_Should_Refuse_With_The_Browser_Question_When_The_User_Has_Not_Chosen() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IPageSmokeRunner runner = Substitute.For<IPageSmokeRunner>();
+		resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>()).Returns(runner);
 		IPageSmokeBrowserResolver browser = Substitute.For<IPageSmokeBrowserResolver>();
 		PageSmokeBrowserConsent consent = new() {
 			Why = PageSmokeBrowserResolver.Why,
@@ -239,14 +242,15 @@ public sealed class PageSmokeToolTests {
 		PageSmokeResponse response = await tool.Run(Args());
 
 		// Assert
-		response.Success.Should().BeFalse(because: "no check ran");
+		response.Success.Should().BeNull(because: "a question is not a failure, so clio-run keeps the browser paths in it");
+		response.Message.Should().Be("relay it", because: "the instruction reaches the agent");
 		response.Code.Should().Be("browser-consent-required", because: "the agent must tell this apart from a failure");
 		response.BrowserConsent.Should().BeSameAs(consent, because: "the question and its choices reach the agent");
-		resolver.DidNotReceiveWithAnyArgs().Resolve<IPageSmokeRunner>(default(EnvironmentOptions));
+		await runner.DidNotReceiveWithAnyArgs().RunAsync(default, default);
 	}
 
 	[Test]
-	[Description("The user's answer is passed to the resolver, and the browser it resolves is the one the runner launches.")]
+	[Description("The environment is resolved before the browser (a mistyped environment fails before any download), the user's answer is passed to the resolver, and the browser it resolves is the one the runner launches.")]
 	public async Task Run_Should_Pass_The_Users_Answer_And_Launch_The_Resolved_Browser() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
@@ -262,7 +266,10 @@ public sealed class PageSmokeToolTests {
 		await tool.Run(Args() with { Browser = "existing", BrowserPath = "/Applications/Edge" });
 
 		// Assert
-		await browser.Received(1).ResolveAsync("existing", "/Applications/Edge", Arg.Any<CancellationToken>());
+		Received.InOrder(() => {
+			resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>());
+			browser.ResolveAsync("existing", "/Applications/Edge", Arg.Any<CancellationToken>());
+		});
 		seen.BrowserPath.Should().Be(BrowserExecutable, because: "the runner starts only the browser the resolver chose");
 	}
 }

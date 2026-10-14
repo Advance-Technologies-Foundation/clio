@@ -42,6 +42,7 @@ public sealed class PageSmokeBrowserResolverTests {
 		_installer = Substitute.For<IHeadlessShellInstaller>();
 		_installer.InstallDirectory.Returns("/home/.clio/browsers/155");
 		_installer.FindInstalled().Returns((string)null);
+		_installer.DownloadArchive.Returns(new HeadlessShellRelease.Archive(102_390_341, "pinned"));
 		_settings = Substitute.For<ISettingsRepository>();
 		_fileSystem = Substitute.For<IFileSystem>();
 		_sut = new PageSmokeBrowserResolver(_locator, _cache, _installer, new ChromeForTestingHeadlessShellSource(_ => null),
@@ -52,11 +53,10 @@ public sealed class PageSmokeBrowserResolverTests {
 		_settings.GetPageSmokeBrowser().Returns(new PageSmokeBrowserSettings { Choice = choice, Path = path });
 
 	[Test]
-	[Description("CHROME_PATH, when it names a file, is used without asking and without remembering anything, even over a stored 'no'.")]
+	[Description("CHROME_PATH, when it names a file, is used without asking and without remembering anything.")]
 	public async Task ResolveAsync_Should_Use_Chrome_Path_Without_Asking() {
 		// Arrange
 		_locator.ChromePathOverride().Returns("/opt/custom/chrome");
-		Stored(PageSmokeBrowserSettings.None);
 
 		// Act
 		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync(null, null, CancellationToken.None);
@@ -64,6 +64,23 @@ public sealed class PageSmokeBrowserResolverTests {
 		// Assert
 		resolution.BrowserPath.Should().Be("/opt/custom/chrome", because: "the operator's override wins");
 		_settings.DidNotReceiveWithAnyArgs().SetPageSmokeBrowser(default);
+	}
+
+	[Test]
+	[Description("The user's 'no' wins even over CHROME_PATH, given now or remembered: it is a refusal, not a preference.")]
+	public async Task ResolveAsync_Should_Honour_No_Over_Chrome_Path() {
+		// Arrange
+		_locator.ChromePathOverride().Returns("/opt/custom/chrome");
+
+		// Act
+		PageSmokeBrowserResolution answered = await _sut.ResolveAsync("none", null, CancellationToken.None);
+		Stored(PageSmokeBrowserSettings.None);
+		PageSmokeBrowserResolution remembered = await _sut.ResolveAsync(null, null, CancellationToken.None);
+
+		// Assert
+		answered.BrowserPath.Should().BeNull(because: "no browser is started against the user's refusal");
+		answered.Code.Should().Be(PageSmokeBrowserResolver.DeclinedCode, because: "the user said no");
+		remembered.Code.Should().Be(PageSmokeBrowserResolver.DeclinedCode, because: "the remembered no wins too");
 	}
 
 	[Test]
@@ -90,13 +107,13 @@ public sealed class PageSmokeBrowserResolverTests {
 	}
 
 	[Test]
-	[Description("browser=existing without browser-path takes the first offered browser and remembers it.")]
-	public async Task ResolveAsync_Should_Use_And_Remember_The_First_Existing_Browser() {
+	[Description("browser=existing with an offered browser-path uses that browser and remembers it.")]
+	public async Task ResolveAsync_Should_Use_And_Remember_The_Chosen_Existing_Browser() {
 		// Act
-		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("existing", null, CancellationToken.None);
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("existing", CachedShell, CancellationToken.None);
 
 		// Assert
-		resolution.BrowserPath.Should().Be(CachedShell, because: "the recommended choice is the first one");
+		resolution.BrowserPath.Should().Be(CachedShell, because: "the user picked it");
 		_settings.Received(1).SetPageSmokeBrowser(Arg.Is<PageSmokeBrowserSettings>(stored =>
 			stored.Choice == "existing" && stored.Path == CachedShell && stored.DecidedAt != null));
 	}
@@ -121,7 +138,7 @@ public sealed class PageSmokeBrowserResolverTests {
 		_cache.FindCached().Returns([]);
 
 		// Act
-		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("existing", null, CancellationToken.None);
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("existing", InstalledEdge, CancellationToken.None);
 
 		// Assert
 		resolution.Code.Should().Be(PageSmokeBrowserResolver.NotFoundCode, because: "there is nothing to use");
@@ -205,6 +222,38 @@ public sealed class PageSmokeBrowserResolverTests {
 		// Assert
 		present.BrowserPath.Should().Be(InstalledEdge, because: "the remembered browser is still there");
 		gone.Code.Should().Be(PageSmokeBrowserResolver.ConsentRequiredCode, because: "another browser needs the user's answer");
-		gone.Message.Should().Contain("no longer there", because: "the user learns why they are asked again");
+		gone.Message.Should().Contain("no longer offered", because: "the user learns why they are asked again");
+	}
+
+	[Test]
+	[Description("A remembered path that page-smoke does not offer (an edited setting) is never started; the user is asked again.")]
+	public async Task ResolveAsync_Should_Not_Start_A_Remembered_Path_That_Is_Not_Offered() {
+		// Arrange
+		Stored(PageSmokeBrowserSettings.Existing, "/tmp/evil");
+		_fileSystem.ExistsFile("/tmp/evil").Returns(true);
+
+		// Act
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync(null, null, CancellationToken.None);
+
+		// Assert
+		resolution.BrowserPath.Should().BeNull(because: "only an offered browser is ever started");
+		resolution.Code.Should().Be(PageSmokeBrowserResolver.ConsentRequiredCode, because: "the user chooses again");
+	}
+
+	[Test]
+	[Description("browser=download on a platform without a pinned build is refused and NOT remembered, so later calls do not fail for good.")]
+	public async Task ResolveAsync_Should_Not_Remember_A_Download_That_Cannot_Happen() {
+		// Arrange
+		_installer.DownloadArchive.Returns((HeadlessShellRelease.Archive)null);
+
+		// Act
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("download", null, CancellationToken.None);
+
+		// Assert
+		resolution.Code.Should().Be(PageSmokeBrowserResolver.NotFoundCode, because: "there is nothing to download here");
+		resolution.Consent.Choices.Select(choice => choice.Browser).Should().NotContain("download",
+			because: "a download is not offered where none exists");
+		_settings.DidNotReceiveWithAnyArgs().SetPageSmokeBrowser(default);
+		await _installer.DidNotReceiveWithAnyArgs().InstallAsync(default);
 	}
 }

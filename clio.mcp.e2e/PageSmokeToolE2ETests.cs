@@ -109,22 +109,19 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			async (session, environmentName, _, clioHome, cancellationToken) => {
 				// Act
 				await using WorkerSpawnObserver workers = WorkerSpawnObserver.Start(clioHome);
+				Dictionary<string, object?> args = new() {
+					["environment-name"] = environmentName,
+					["page"] = "Orders_FormPage",
+					["timeout"] = 20,
+					["click"] = "run check",
+					["click-wait"] = 3
+				};
+				await AnswerTheBrowserQuestionAsync(args, clioHome, probe => CallAsync(session, probe, cancellationToken));
 				CallToolResult result = await session.CallToolAsync(ClioRunTool.ToolName,
-					new Dictionary<string, object?> {
-						["command"] = ToolName,
-						["args"] = new Dictionary<string, object?> {
-							["environment-name"] = environmentName,
-							["page"] = "Orders_FormPage",
-							["timeout"] = 20,
-							["click"] = "run check",
-							["click-wait"] = 3,
-							["browser"] = "existing"
-						}
-					},
+					new Dictionary<string, object?> { ["command"] = ToolName, ["args"] = args },
 					cancellationToken);
 				string text = result.Content.OfType<TextContentBlock>().First().Text;
 				JsonElement response = JsonDocument.Parse(text).RootElement.Clone();
-				IgnoreWithoutBrowser(response, clioHome);
 				TestContext.Progress.WriteLine($"page-smoke reply: {System.Text.Encoding.UTF8.GetByteCount(text)} bytes");
 
 				// Assert
@@ -176,15 +173,17 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			async (session, environmentName, _, clioHome, cancellationToken) => {
 				// Act
 				await using WorkerSpawnObserver workers = WorkerSpawnObserver.Start(clioHome);
-				JsonElement asked = await CallAsync(session, environmentName, null, cancellationToken);
-				JsonElement declined = await CallAsync(session, environmentName, "none", cancellationToken);
-				JsonElement remembered = await CallAsync(session, environmentName, null, cancellationToken);
+				Dictionary<string, object?> args = new() { ["environment-name"] = environmentName, ["page"] = "Orders_FormPage" };
+				JsonElement asked = await CallAsync(session, args, cancellationToken);
+				JsonElement declined = await CallAsync(session, new(args) { ["browser"] = "none" }, cancellationToken);
+				JsonElement remembered = await CallAsync(session, args, cancellationToken);
 
 				// Assert
 				workers.Observed.Should().NotBeEmpty(because: "the question is answered by the worker that would run the browser");
-				asked.GetProperty("success").GetBoolean().Should().BeFalse(because: "nothing ran before the user answered");
+				asked.TryGetProperty("success", out JsonElement _).Should().BeFalse(
+					because: "a question is not a failure, so clio-run does not redact the browser paths the user must see");
 				asked.GetProperty("code").GetString().Should().Be("browser-consent-required", because: asked.ToString());
-				asked.GetProperty("error").GetString().Should().Contain("verbatim",
+				asked.GetProperty("message").GetString().Should().Contain("verbatim",
 					because: "the agent is told to relay the question, not to answer it");
 				JsonElement consent = asked.GetProperty("browserConsent");
 				consent.GetProperty("question").GetString().Should().Contain("Which should it use?",
@@ -201,12 +200,40 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			TimeSpan.FromMinutes(3));
 	}
 
-	private static async Task<JsonElement> CallAsync(McpServerSession session, string environmentName, string? browser,
+	[Test]
+	[Explicit("Downloads about 100-125 MB from Google's Chrome for Testing.")]
+	[Category("McpE2E.Download")]
+	[Description("ENG-103287: on 'download', page-smoke downloads the pinned chrome-headless-shell into the user's clio home (answering browser-ready without running the check), and the next call runs the check with it in a worker.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-smoke downloads the headless shell on yes and checks a page with it")]
+	public async Task PageSmoke_Should_Download_The_Headless_Shell_And_Check_With_It() {
+		await StubEnvironmentStand.RunWithClioHomeAsync(
+			"clio-page-smoke-download-e2e",
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: false,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: true,
+				NetFrameworkUiMarkerEnabled: true,
+				ShellPageHtml: StubShellPage),
+			async (session, environmentName, _, clioHome, cancellationToken) => {
+				// Act
+				Dictionary<string, object?> args = new() { ["environment-name"] = environmentName, ["page"] = "Orders_FormPage" };
+				JsonElement downloaded = await CallAsync(session, new(args) { ["browser"] = "download" }, cancellationToken);
+				JsonElement checkedPage = await CallAsync(session, args, cancellationToken);
+
+				// Assert
+				downloaded.GetProperty("code").GetString().Should().Be("browser-ready", because: downloaded.ToString());
+				Directory.GetDirectories(Path.Combine(clioHome, "browsers")).Should().ContainSingle(
+					because: "the pinned version is installed once into the user's clio home");
+				checkedPage.GetProperty("success").GetBoolean().Should().BeTrue(because: checkedPage.ToString());
+				checkedPage.GetProperty("title").GetString().Should().Be("Stub order", because: "the downloaded shell read the page");
+			},
+			TimeSpan.FromMinutes(4));
+	}
+
+	private static async Task<JsonElement> CallAsync(McpServerSession session, Dictionary<string, object?> args,
 		CancellationToken cancellationToken) {
-		Dictionary<string, object?> args = new() { ["environment-name"] = environmentName, ["page"] = "Orders_FormPage" };
-		if (browser is not null) {
-			args["browser"] = browser;
-		}
 		CallToolResult result = await session.CallToolAsync(ClioRunTool.ToolName,
 			new Dictionary<string, object?> { ["command"] = ToolName, ["args"] = args }, cancellationToken);
 		return JsonDocument.Parse(result.Content.OfType<TextContentBlock>().First().Text).RootElement.Clone();
@@ -224,15 +251,15 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
 			"page-smoke MCP E2E requires the configured sandbox environment to be set and reachable.");
 		await using ArrangeContext arrange = Arrange(TimeSpan.FromMinutes(5));
-
-		// Act
-		JsonElement response = await RunAsync(arrange, new Dictionary<string, object?> {
+		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName,
 			["page"] = TaskFormPage,
-			["timeout"] = 45,
-			["browser"] = "existing"
-		});
-		IgnoreWithoutBrowser(response);
+			["timeout"] = 45
+		};
+		await AnswerTheBrowserQuestionAsync(args, null, probe => RunAsync(arrange, probe));
+
+		// Act
+		JsonElement response = await RunAsync(arrange, args);
 
 		// Assert
 		response.GetProperty("success").GetBoolean().Should().BeTrue(because: response.ToString());
@@ -258,16 +285,16 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		string environmentName = await ReachableSandboxEnvironment.ResolveConfiguredOrIgnoreAsync(settings,
 			"page-smoke MCP E2E requires the configured sandbox environment to be set and reachable.");
 		await using ArrangeContext arrange = Arrange(TimeSpan.FromMinutes(5));
-
-		// Act
-		JsonElement response = await RunAsync(arrange, new Dictionary<string, object?> {
+		Dictionary<string, object?> args = new() {
 			["environment-name"] = environmentName,
 			["page"] = TaskFormPage,
 			["timeout"] = 45,
-			["click"] = "BackButton",
-			["browser"] = "existing"
-		});
-		IgnoreWithoutBrowser(response);
+			["click"] = "BackButton"
+		};
+		await AnswerTheBrowserQuestionAsync(args, null, probe => RunAsync(arrange, probe));
+
+		// Act
+		JsonElement response = await RunAsync(arrange, args);
 
 		// Assert
 		response.GetProperty("success").GetBoolean().Should().BeTrue(because: response.ToString());
@@ -278,20 +305,40 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		settled.ValueKind.Should().BeOneOf([JsonValueKind.True, JsonValueKind.False], because: "it is a boolean");
 	}
 
-	// Ignored only when this test process cannot find a browser either, looking with the environment the clio host was
-	// started with (the stub stand points HOME, or LOCALAPPDATA on Windows, at its own folder). page-smoke runs in an MCP
-	// worker started with a cleared environment, so "not found" there while the test process does find one is a
-	// worker-environment regression - the Windows one of ENG-103286 hid behind the old guard - and fails the test.
-	private static void IgnoreWithoutBrowser(JsonElement response, string? clioHostHome = null) {
-		if (!response.TryGetProperty("code", out JsonElement code) || code.GetString() != "browser-not-found") {
+	// Plays the user who answers page-smoke's browser question with the first browser already on the machine, as the
+	// question offers it (a cached headless shell first), and adds that answer to the call's arguments. The question is
+	// asked by a read-only probe of the same page; with CHROME_PATH set it is not asked and nothing is added.
+	//
+	// When the WORKER offers no existing browser the test is ignored only if this test process, looking with the
+	// environment the clio host was started with (the stub stand points HOME, or LOCALAPPDATA on Windows, at its own
+	// folder), cannot find one either. Otherwise it fails: page-smoke runs in an MCP worker started with a cleared
+	// environment, and "nothing found" there while the test process finds a browser is a worker-environment regression -
+	// the Windows one of ENG-103286 hid behind the old guard.
+	private static async Task AnswerTheBrowserQuestionAsync(Dictionary<string, object?> args, string? clioHostHome,
+		Func<Dictionary<string, object?>, Task<JsonElement>> call) {
+		Dictionary<string, object?> probe = new(args);
+		probe.Remove("click");
+		probe.Remove("click-wait");
+		JsonElement answer = await call(probe);
+		if (!answer.TryGetProperty("code", out JsonElement code)) {
 			return;
 		}
-		string? browser = LocateBrowserAsTheHostSeesIt(clioHostHome);
-		if (browser is not null) {
-			Assert.Fail($"The test process finds a browser at '{browser}', but page-smoke in the clio worker answered: "
-				+ response.GetProperty("error").GetString());
+		code.GetString().Should().Be("browser-consent-required", because: answer.ToString());
+		answer.ToString().Should().NotContain("[redacted-path]", because: "the user must see which browser they choose");
+		string? offered = answer.GetProperty("browserConsent").GetProperty("choices").EnumerateArray()
+			.Where(choice => choice.GetProperty("browser").GetString() == "existing")
+			.Select(choice => choice.GetProperty("browser-path").GetString())
+			.FirstOrDefault();
+		if (offered is null) {
+			string? seen = LocateBrowserAsTheHostSeesIt(clioHostHome);
+			if (seen is not null) {
+				Assert.Fail($"The test process finds a browser at '{seen}', but page-smoke in the clio worker offered none: "
+					+ answer.GetProperty("browserConsent").GetProperty("question").GetString());
+			}
+			Assert.Ignore("page-smoke needs a Chromium-based browser on the agent, and none was found.");
 		}
-		Assert.Ignore("page-smoke needs a Chromium-based browser on the agent: " + response.GetProperty("error").GetString());
+		args["browser"] = "existing";
+		args["browser-path"] = offered;
 	}
 
 	private static string? LocateBrowserAsTheHostSeesIt(string? clioHostHome) {

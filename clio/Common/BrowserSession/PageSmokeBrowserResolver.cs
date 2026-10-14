@@ -20,7 +20,7 @@ public interface IPageSmokeBrowserResolver {
 
 	/// <summary>Resolves the browser for one call.</summary>
 	/// <param name="choice">The user's answer passed on this call (<c>existing</c>, <c>download</c>, <c>none</c>); null when none was passed.</param>
-	/// <param name="browserPath">With <c>existing</c>: which of the offered browsers; null picks the first offered.</param>
+	/// <param name="browserPath">With <c>existing</c>: which of the offered browsers (required).</param>
 	/// <param name="ct">Cancels a download.</param>
 	/// <returns>The browser to use, or why there is none yet.</returns>
 	Task<PageSmokeBrowserResolution> ResolveAsync(string choice, string browserPath, CancellationToken ct);
@@ -91,47 +91,57 @@ public sealed class PageSmokeBrowserResolver(
 
 	/// <inheritdoc />
 	public async Task<PageSmokeBrowserResolution> ResolveAsync(string choice, string browserPath, CancellationToken ct) {
+		// The user's "no" - given now or remembered - wins even over CHROME_PATH: it is a refusal, not a preference.
+		if (choice == PageSmokeBrowserSettings.None) {
+			Remember(PageSmokeBrowserSettings.None, null);
+			return new PageSmokeBrowserResolution(null, DeclinedCode,
+				"Remembered: page-smoke will not use or download a browser, so the check was not run; continue without "
+				+ "a UI check.", null);
+		}
+		PageSmokeBrowserSettings stored = choice is null ? settingsRepository.GetPageSmokeBrowser() : null;
+		if (stored?.Choice == PageSmokeBrowserSettings.None) {
+			return new PageSmokeBrowserResolution(null, DeclinedCode,
+				"The user chose earlier that page-smoke must not use or download a browser, so the check was not run; "
+				+ "continue without a UI check. Only if the user now asks for it, put browserConsent's question to them "
+				+ "again by calling page-smoke with browser=existing or browser=download.", null);
+		}
 		string overridden = chromiumLocator.ChromePathOverride();
 		if (overridden is not null) {
 			return Ready(overridden);
 		}
-		if (choice is not null) {
-			return await ApplyAnswerAsync(choice, browserPath, ct).ConfigureAwait(false);
+		if (choice == PageSmokeBrowserSettings.Download) {
+			return await ChooseDownloadAsync(ct).ConfigureAwait(false);
 		}
-		PageSmokeBrowserSettings stored = settingsRepository.GetPageSmokeBrowser();
+		if (choice is not null) {
+			return ChooseExisting(browserPath);
+		}
 		switch (stored?.Choice) {
-			case PageSmokeBrowserSettings.None:
-				return new PageSmokeBrowserResolution(null, DeclinedCode,
-					"The user chose earlier that page-smoke must not use or download a browser, so the check was not run; "
-					+ "continue without a UI check. Only if the user now asks for it, call page-smoke with browser=existing "
-					+ "or browser=download.", null);
-			case PageSmokeBrowserSettings.Existing when stored.Path is not null && FileExists(stored.Path):
-				return Ready(stored.Path);
 			case PageSmokeBrowserSettings.Download:
 				string downloaded = installer.FindInstalled();
 				return downloaded is not null ? Ready(downloaded) : await DownloadAsync(ct).ConfigureAwait(false);
 			case PageSmokeBrowserSettings.Existing:
-				return AskUser("The browser the user chose earlier (" + stored.Path + ") is no longer there. ");
+				// Re-checked against what is offered now, so an edited setting cannot start an arbitrary file and a
+				// browser that went away (or a cache build that was replaced) brings the question back.
+				return IsOffered(stored.Path) && FileExists(stored.Path)
+					? Ready(stored.Path)
+					: AskUser("The browser the user chose earlier (" + stored.Path + ") is no longer offered. ");
 			default:
 				return AskUser(string.Empty);
 		}
 	}
 
-	private async Task<PageSmokeBrowserResolution> ApplyAnswerAsync(string choice, string browserPath, CancellationToken ct) {
-		switch (choice) {
-			case PageSmokeBrowserSettings.None:
-				Remember(PageSmokeBrowserSettings.None, null);
-				return new PageSmokeBrowserResolution(null, DeclinedCode,
-					"Remembered: page-smoke will not use or download a browser, so the check was not run; continue without "
-					+ "a UI check.", null);
-			case PageSmokeBrowserSettings.Download:
-				Remember(PageSmokeBrowserSettings.Download, null);
-				string downloaded = installer.FindInstalled();
-				return downloaded is not null ? Ready(downloaded) : await DownloadAsync(ct).ConfigureAwait(false);
-			default:
-				return ChooseExisting(browserPath);
+	private async Task<PageSmokeBrowserResolution> ChooseDownloadAsync(CancellationToken ct) {
+		if (installer.DownloadArchive is null) {
+			return new PageSmokeBrowserResolution(null, NotFoundCode,
+				$"There is no {source.DisplayName} build for this machine, so browser=download cannot be used and nothing "
+				+ "was remembered. " + RelayRule, BuildConsent(FindExisting()));
 		}
+		Remember(PageSmokeBrowserSettings.Download, null);
+		string downloaded = installer.FindInstalled();
+		return downloaded is not null ? Ready(downloaded) : await DownloadAsync(ct).ConfigureAwait(false);
 	}
+
+	private bool IsOffered(string path) => path is not null && FindExisting().Any(browser => SamePath(browser.Path, path));
 
 	private PageSmokeBrowserResolution ChooseExisting(string browserPath) {
 		IReadOnlyList<InstalledBrowser> existing = FindExisting();
@@ -140,9 +150,7 @@ public sealed class PageSmokeBrowserResolver(
 				"No Chromium-based browser was found on the machine clio runs on, so browser=existing cannot be used. "
 				+ RelayRule, BuildConsent(existing));
 		}
-		InstalledBrowser chosen = browserPath is null
-			? existing[0]
-			: existing.FirstOrDefault(browser => SamePath(browser.Path, browserPath));
+		InstalledBrowser chosen = existing.FirstOrDefault(browser => SamePath(browser.Path, browserPath));
 		if (chosen is null) {
 			return new PageSmokeBrowserResolution(null, NotFoundCode,
 				"browser-path must be one of the browsers page-smoke offers (browserConsent.choices); an arbitrary "
@@ -180,7 +188,7 @@ public sealed class PageSmokeBrowserResolver(
 				Description = $"Use {Describe(browser)}, already on this machine."
 			})
 		];
-		HeadlessShellRelease.Archive archive = source.FindArchive(HeadlessShellRelease.CurrentPlatformKey());
+		HeadlessShellRelease.Archive archive = installer.DownloadArchive;
 		if (archive is not null) {
 			choices.Add(new PageSmokeBrowserChoice {
 				Browser = PageSmokeBrowserSettings.Download,

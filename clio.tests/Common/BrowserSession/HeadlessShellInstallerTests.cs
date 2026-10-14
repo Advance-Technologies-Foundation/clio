@@ -128,6 +128,53 @@ public sealed class HeadlessShellInstallerTests {
 	}
 
 	[Test]
+	[Description("A version directory without its executable (quarantined or emptied by hand) is replaced by a fresh install instead of blocking every later one; leftovers of a killed install are swept.")]
+	public async Task InstallAsync_Should_Repair_A_Version_Directory_Without_Its_Executable() {
+		// Arrange
+		byte[] archive = Zip((Executable, 0x1ED));
+		(HeadlessShellInstaller installer, _) = Create(PinOf(archive), Serve(archive));
+		Directory.CreateDirectory(Path.Combine(_root, "1.2.3", "chrome-headless-shell-mac-arm64"));
+		string leftover = Path.Combine(_root, ".extract-old");
+		Directory.CreateDirectory(leftover);
+		Directory.SetLastWriteTimeUtc(leftover, DateTime.UtcNow.AddHours(-1));
+
+		// Act
+		string executable = await installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		File.Exists(executable).Should().BeTrue(because: "the broken install is replaced");
+		Directory.Exists(leftover).Should().BeFalse(because: "a killed install's leftovers do not pile up");
+	}
+
+	[Test]
+	[Description("A connection reset while the body streams is reported as an install failure the resolver can answer, not as a raw IOException.")]
+	public async Task InstallAsync_Should_Report_A_Broken_Stream_As_An_Install_Failure() {
+		// Arrange
+		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(10, "x"),
+			(_, _) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new BrokenStream()) }));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed"))
+			.Which.Message.Should().Contain("Nothing was installed", because: "the caller learns the state");
+	}
+
+	private sealed class BrokenStream : Stream {
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position { get => 0; set => throw new NotSupportedException(); }
+		public override void Flush() { }
+		public override int Read(byte[] buffer, int offset, int count) => throw new IOException("connection reset");
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+	}
+
+	[Test]
 	[Description("An archive whose SHA-256 differs from the pin is refused and nothing is installed or left behind.")]
 	public async Task InstallAsync_Should_Refuse_An_Archive_With_Another_Checksum() {
 		// Arrange
