@@ -41,43 +41,23 @@ public sealed class HeadlessBrowserLauncherTests {
 	[Description("A launch the OS refuses fails with the browser path and deletes the profile it created.")]
 	public async Task LaunchAsync_Should_Delete_The_Profile_When_The_Browser_Does_Not_Start() {
 		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns("/opt/chrome");
 		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
 		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(new ProcessLaunchResult { Started = false, ErrorMessage = "denied" });
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.GetDirectories(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>()).Returns([]);
 		fileSystem.ExistsDirectory(Arg.Any<string>()).Returns(true);
-		HeadlessBrowserLauncher launcher = new(locator, executor, fileSystem, Substitute.For<IFileSecurityHardening>(),
+		HeadlessBrowserLauncher launcher = new(executor, fileSystem, Substitute.For<IFileSecurityHardening>(),
 			Substitute.For<IHttpClientFactory>());
 
 		// Act
-		Func<Task> act = () => launcher.LaunchAsync(CancellationToken.None);
+		Func<Task> act = () => launcher.LaunchAsync("/opt/chrome", CancellationToken.None);
 
 		// Assert
 		(await act.Should().ThrowAsync<InvalidOperationException>(because: "nothing was started"))
 			.Which.Message.Should().Contain("/opt/chrome", because: "the error names the browser it tried");
 		fileSystem.Received(1).DeleteDirectory(
 			Arg.Is<string>(path => path.Contains(HeadlessBrowserLauncher.ProfilePrefix)), true);
-	}
-
-	[Test]
-	[Description("A missing browser surfaces ChromiumNotFoundException before any profile is created.")]
-	public async Task LaunchAsync_Should_Throw_ChromiumNotFound_Before_Creating_A_Profile() {
-		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns(_ => throw new ChromiumNotFoundException("no browser"));
-		IFileSystem fileSystem = Substitute.For<IFileSystem>();
-		HeadlessBrowserLauncher launcher = new(locator, Substitute.For<IProcessExecutor>(), fileSystem,
-			Substitute.For<IFileSecurityHardening>(), Substitute.For<IHttpClientFactory>());
-
-		// Act
-		Func<Task> act = () => launcher.LaunchAsync(CancellationToken.None);
-
-		// Assert
-		await act.Should().ThrowAsync<ChromiumNotFoundException>(because: "page-smoke reports it as such");
-		fileSystem.DidNotReceive().CreateDirectory(Arg.Any<string>(), Arg.Any<bool>());
 	}
 
 	[Test]
@@ -116,18 +96,16 @@ public sealed class HeadlessBrowserLauncherTests {
 	[Description("The profile is made owner-only before the browser starts, and the browser's stdout/stderr are discarded rather than inherited into the MCP pipe.")]
 	public async Task LaunchAsync_Should_Harden_The_Profile_And_Discard_The_Browser_Output() {
 		// Arrange
-		IChromiumLocator locator = Substitute.For<IChromiumLocator>();
-		locator.Locate().Returns("/opt/chrome");
 		IProcessExecutor executor = Substitute.For<IProcessExecutor>();
 		executor.FireAndForgetAsync(Arg.Any<ProcessExecutionOptions>())
 			.Returns(new ProcessLaunchResult { Started = false, ErrorMessage = "denied" });
 		IFileSystem fileSystem = Substitute.For<IFileSystem>();
 		fileSystem.GetDirectories(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<SearchOption>()).Returns([]);
 		IFileSecurityHardening hardening = Substitute.For<IFileSecurityHardening>();
-		HeadlessBrowserLauncher launcher = new(locator, executor, fileSystem, hardening, Substitute.For<IHttpClientFactory>());
+		HeadlessBrowserLauncher launcher = new(executor, fileSystem, hardening, Substitute.For<IHttpClientFactory>());
 
 		// Act
-		Func<Task> act = () => launcher.LaunchAsync(CancellationToken.None);
+		Func<Task> act = () => launcher.LaunchAsync("/opt/chrome", CancellationToken.None);
 		await act.Should().ThrowAsync<InvalidOperationException>(because: "the fake launch does not start");
 
 		// Assert

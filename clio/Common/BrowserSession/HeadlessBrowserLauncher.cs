@@ -12,10 +12,10 @@ namespace Clio.Common.BrowserSession;
 public interface IHeadlessBrowserLauncher {
 
 	/// <summary>Launches the browser and waits for its page target.</summary>
+	/// <param name="browserPath">The browser executable, chosen by the caller (page-smoke asks the user first).</param>
 	/// <param name="ct">Cancels the launch; a browser already started is killed and its profile deleted.</param>
 	/// <returns>The running browser; disposing it kills the process tree and deletes the profile.</returns>
-	/// <exception cref="ChromiumNotFoundException">No Chromium-based browser could be located.</exception>
-	Task<IHeadlessBrowser> LaunchAsync(CancellationToken ct);
+	Task<IHeadlessBrowser> LaunchAsync(string browserPath, CancellationToken ct);
 }
 
 /// <summary>A running headless browser. Disposal never throws.</summary>
@@ -30,23 +30,22 @@ public interface IHeadlessBrowser : IAsyncDisposable {
 
 /// <inheritdoc cref="IHeadlessBrowserLauncher" />
 public sealed class HeadlessBrowserLauncher(
-	IChromiumLocator chromiumLocator,
 	IProcessExecutor processExecutor,
 	IFileSystem fileSystem,
 	IFileSecurityHardening fileSecurityHardening,
 	IHttpClientFactory httpClientFactory) : IHeadlessBrowserLauncher {
 
 	internal const string ProfilePrefix = "clio-headless-profile-";
-	// ~15 s: a cold Chromium start can take a while to write DevToolsActivePort.
-	private const int PortFilePollAttempts = 60;
+	// ~30 s: a cold Chromium start can take a while to write DevToolsActivePort - measured past 15 s on a loaded
+	// windows-latest agent running the MCP e2e suite. Still well inside page-smoke's 100 s budget.
+	private const int PortFilePollAttempts = 120;
 	private const int PageTargetPollAttempts = 16;
 	private const int PollDelayMs = 250;
 	// A profile this old belongs to no running check (every check ends well within it), so it is a leftover.
 	private static readonly TimeSpan StaleProfileAge = TimeSpan.FromMinutes(10);
 
 	/// <inheritdoc />
-	public async Task<IHeadlessBrowser> LaunchAsync(CancellationToken ct) {
-		string browserPath = chromiumLocator.Locate();
+	public async Task<IHeadlessBrowser> LaunchAsync(string browserPath, CancellationToken ct) {
 		DeleteStaleProfiles();
 		string userDataDir = Path.Combine(Path.GetTempPath(), ProfilePrefix + Guid.NewGuid().ToString("N"));
 		fileSystem.CreateDirectory(userDataDir, throwWhenExists: true);
@@ -84,11 +83,21 @@ public sealed class HeadlessBrowserLauncher(
 			browser.PageWebSocketUrl = new Uri(pageUrl);
 			return browser;
 		}
+		catch (InvalidOperationException exception) when (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+			await browser.DisposeAsync().ConfigureAwait(false);
+			throw new InvalidOperationException(exception.Message + " " + LinuxLibrariesHint, exception);
+		}
 		catch {
 			await browser.DisposeAsync().ConfigureAwait(false);
 			throw;
 		}
 	}
+
+	// A browser that exits at once on Linux is most often missing shared libraries, which a fresh container or a minimal
+	// server lacks; its own stderr is discarded (it would land in the MCP stream), so the likely cause is named here.
+	internal const string LinuxLibrariesHint = "On Linux a browser that never starts usually lacks system libraries "
+		+ "(for example libnss3, libatk-bridge2.0-0, libgbm1, libxkbcommon0, libasound2); install them with the "
+		+ "distribution's package manager, or run the browser once by hand to see which one is missing.";
 
 	// --remote-debugging-port=0 lets Chromium pick a free loopback port and write it to DevToolsActivePort; the
 	// endpoint is unauthenticated and binds to 127.0.0.1 only. The profile is new and private to this run, so nothing of

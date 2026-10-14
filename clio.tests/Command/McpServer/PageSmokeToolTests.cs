@@ -10,6 +10,7 @@ using Clio.Command.McpServer;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.RuntimeVerification;
 using Clio.Common;
+using Clio.Common.BrowserSession;
 using FluentAssertions;
 using ModelContextProtocol.Server;
 using NSubstitute;
@@ -29,6 +30,15 @@ public sealed class PageSmokeToolTests {
 	private const string SuccessFalseClause = "success=false: the page did not open, or the click was not made "
 		+ "(click.outcome says which); with click.outcome=unknown the button may have been pressed, so read "
 		+ "click.created before retrying";
+
+	private const string BrowserExecutable = "/opt/chrome";
+
+	private static IPageSmokeBrowserResolver ReadyBrowser() {
+		IPageSmokeBrowserResolver browser = Substitute.For<IPageSmokeBrowserResolver>();
+		browser.ResolveAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(new PageSmokeBrowserResolution(BrowserExecutable, null, null, null));
+		return browser;
+	}
 
 	private static PageSmokeArgs Args(string page = "UsrOrders_FormPage", string recordId = null, int? timeout = null,
 		string click = null, int? clickWait = null, string[] watch = null,
@@ -86,7 +96,7 @@ public sealed class PageSmokeToolTests {
 	public async Task Run_Should_Answer_An_Alias_With_A_Rename() {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
-		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider());
+		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider(), ReadyBrowser());
 		Dictionary<string, JsonElement> extension = new() { ["schema-name"] = JsonSerializer.SerializeToElement("X") };
 
 		// Act
@@ -109,7 +119,7 @@ public sealed class PageSmokeToolTests {
 		runner.RunAsync(Arg.Do<PageSmokeRequest>(request => seen = request), Arg.Any<CancellationToken>())
 			.Returns(new PageSmokeResult { Success = true, Ready = true, Mode = "edit" });
 		resolver.Resolve<IPageSmokeRunner>(Arg.Is<EnvironmentOptions>(options => options.Environment == "dev")).Returns(runner);
-		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider());
+		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider(), ReadyBrowser());
 
 		// Act
 		PageSmokeResponse response = await tool.Run(Args(page: " UsrOrders_FormPage ", recordId: RecordId, click: " Save "));
@@ -131,7 +141,7 @@ public sealed class PageSmokeToolTests {
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>())
 			.Returns(_ => throw new InvalidOperationException("Unknown environment at http://user:pw@host:88/x"));
-		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider());
+		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider(), ReadyBrowser());
 
 		// Act
 		PageSmokeResponse response = await tool.Run(Args());
@@ -181,8 +191,10 @@ public sealed class PageSmokeToolTests {
 		contract.InputSchema.Required.Should().Equal(["environment-name", "page"],
 			because: "the contract lists exactly the arguments the tool refuses to run without");
 		contract.InputSchema.Properties.Select(field => field.Name).Should().BeEquivalentTo(
-			["environment-name", "page", "record-id", "timeout", "click", "click-wait", "watch"],
+			["environment-name", "page", "record-id", "timeout", "click", "click-wait", "watch", "browser", "browser-path"],
 			because: "the contract fields are the tool's own arguments");
+		contract.Description.Should().Contain("relay browserConsent.question to the user verbatim, never answer it for them",
+			because: "the consent rule is stated where an agent reads the contract");
 		contract.Description.Should().Contain("click is a WRITE", because: "the agent must know a click can create records");
 		contract.Description.Should().Contain("never cleaned up", because: "the agent owns the cleanup of what a click created");
 		contract.Description.Should().Contain(SuccessFalseClause,
@@ -192,5 +204,72 @@ public sealed class PageSmokeToolTests {
 				because: "the success field itself carries the retry rule");
 		contract.AntiPatterns!.Select(pattern => pattern.Pattern).Should().Contain(pattern => pattern.Contains("Playwright"),
 			because: "the tool exists to replace hand-written Playwright scripts");
+	}
+	[TestCase("yes", null, "browser must be existing, download or none")]
+	[TestCase("download", "/opt/chrome", "browser-path applies only with browser=existing")]
+	[TestCase(null, "/opt/chrome", "browser-path applies only with browser=existing")]
+	[TestCase("existing", null, "browser=existing needs browser-path")]
+	[Description("A browser answer outside the three choices, a browser-path without browser=existing, or browser=existing without the chosen browser-path is refused before any browser is resolved.")]
+	public void Validate_Should_Refuse_A_Browser_Answer_Outside_The_Choices(string browser, string browserPath, string expected) {
+		// Arrange
+		PageSmokeArgs args = Args() with { Browser = browser, BrowserPath = browserPath };
+
+		// Act
+		string error = PageSmokeTool.Validate(args);
+
+		// Assert
+		error.Should().Contain(expected, because: "only the user's answer to the question is accepted");
+	}
+
+	[Test]
+	[Description("With no browser decision, the call is refused with code browser-consent-required and the question to relay, and no browser is started.")]
+	public async Task Run_Should_Refuse_With_The_Browser_Question_When_The_User_Has_Not_Chosen() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IPageSmokeRunner runner = Substitute.For<IPageSmokeRunner>();
+		resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>()).Returns(runner);
+		IPageSmokeBrowserResolver browser = Substitute.For<IPageSmokeBrowserResolver>();
+		PageSmokeBrowserConsent consent = new() {
+			Why = PageSmokeBrowserResolver.Why,
+			Question = "Which should it use?",
+			Choices = [new PageSmokeBrowserChoice { Browser = "none", Description = "No" }]
+		};
+		browser.ResolveAsync(null, null, Arg.Any<CancellationToken>()).Returns(new PageSmokeBrowserResolution(null,
+			PageSmokeBrowserResolver.ConsentRequiredCode, "relay it", consent));
+		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider(), browser);
+
+		// Act
+		PageSmokeResponse response = await tool.Run(Args());
+
+		// Assert
+		response.Success.Should().BeNull(because: "a question is not a failure, so clio-run keeps the browser paths in it");
+		response.Message.Should().Be("relay it", because: "the instruction reaches the agent");
+		response.Code.Should().Be("browser-consent-required", because: "the agent must tell this apart from a failure");
+		response.BrowserConsent.Should().BeSameAs(consent, because: "the question and its choices reach the agent");
+		await runner.DidNotReceiveWithAnyArgs().RunAsync(default, default);
+	}
+
+	[Test]
+	[Description("The environment is resolved before the browser (a mistyped environment fails before any download), the user's answer is passed to the resolver, and the browser it resolves is the one the runner launches.")]
+	public async Task Run_Should_Pass_The_Users_Answer_And_Launch_The_Resolved_Browser() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		IPageSmokeRunner runner = Substitute.For<IPageSmokeRunner>();
+		PageSmokeRequest seen = null;
+		runner.RunAsync(Arg.Do<PageSmokeRequest>(request => seen = request), Arg.Any<CancellationToken>())
+			.Returns(new PageSmokeResult { Success = true, Ready = true });
+		resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>()).Returns(runner);
+		IPageSmokeBrowserResolver browser = ReadyBrowser();
+		PageSmokeTool tool = new(resolver, new OperationCorrelationIdProvider(), browser);
+
+		// Act
+		await tool.Run(Args() with { Browser = "existing", BrowserPath = "/Applications/Edge" });
+
+		// Assert
+		Received.InOrder(() => {
+			resolver.Resolve<IPageSmokeRunner>(Arg.Any<EnvironmentOptions>());
+			browser.ResolveAsync("existing", "/Applications/Edge", Arg.Any<CancellationToken>());
+		});
+		seen.BrowserPath.Should().Be(BrowserExecutable, because: "the runner starts only the browser the resolver chose");
 	}
 }
