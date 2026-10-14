@@ -4796,3 +4796,148 @@ stories:
       ENG-95984 File process parameter type from ADR D8. Needs a new typed member on clio's DescribedParameter, which
       has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
       ENG-95984.
+  # --- eng-92719-file-processing-element (ENG-92719 File processing element) - added 2026-10-14 ---
+  # The Story is delivered through its Sub-tasks: story 1 = ENG-96505 Element readiness and object attachments mode,
+  # story 2 = ENG-96506 Generated report + process parameter modes, story 3 = the new Sub-task "SysFile attachment
+  # storage in the Process file element". Stories 4 and 5 are the two side Sub-tasks "Refuse collection parameters as
+  # filter values" and "Builder-made user tasks do not set SerializeToDB". The Sub-tasks of stories 3-5 are NOT created
+  # in Jira as of 2026-10-14, so their jira field is empty ("") until each is created and its key is written here. One
+  # crt-process-builder -> clio -> clio-knowledge triple per story.
+  # Status rule of this block: ready-for-dev only when the story's Jira issue exists and nothing gates its code (no open
+  # owner answer, slot or stand measurement); deferred otherwise. So all five are deferred: stories 1-2 until the owner
+  # answers Q13-Q18 that their "Gating" tables name, stories 3-5 for their slots and measurements. A story moves to
+  # ready-for-dev in the commit that records the last answer it waits for.
+  # Merge order: this BMAD set is the docs-only clio PR titled "ENG-92719 File processing element". It merges after the
+  # ENG-95984 BMAD PR https://github.com/Advance-Technologies-Foundation/clio/pull/1811, which appends its rows at this
+  # same place in this file (this PR merges master in after that PR merges), and before the Story's first package
+  # PR opens. The Story has no row of its own: it is done when stories 1-3 are done (stories 4 and 5 do not gate it),
+  # and its Definition of Done is in story 3's file. story-eng-95984-file-parameter-type-1 arrives with that ENG-95984
+  # PR; ENG-95985 Send email attachments has no story id yet, so it is named by its Jira key.
+  - id: story-eng-92719-file-processing-element-1
+    title: "Element readiness and the Object attachments variant of the Process file element"
+    feature: "eng-92719-file-processing-element"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: L
+    status: deferred
+    jira: ENG-96505
+    file: spec/stories/story-eng-92719-file-processing-element-1.md
+    prd: spec/prd/prd-eng-92719-file-processing-element.md
+    adr: spec/adr/adr-eng-92719-file-processing-element.md
+    test_plan: spec/test-plans/tp-eng-92719-file-processing-element.md
+    depends_on:
+      - story-eng-95984-file-parameter-type-1
+    blocks:
+      - story-eng-92719-file-processing-element-2
+      - ENG-95985
+    note: >-
+      ENG-96505 Element readiness and object attachments mode. OA-1..OA-12 replace the Jira acceptance criteria (agreed
+      2026-10-07). The dependency on ENG-95984 File process parameter type is delivery order, not function (ADR D23:
+      relates): the package PR merges only after ENG-95984's clio PR (it carries the ManagerMap arm for fileprocessing),
+      and this story's clio PR only after ENG-95984's knowledge generation is PUBLISHED (the first
+      name=process-files). Owner questions Q13-Q17 are open and gate the package code AND the acceptance rows OA-1, OA-4
+      (Q13), OA-6 (Q17), OA-7 (Q14, Q16) and OA-9 (Q16), which are pasted into Jira only after the answers; the stand
+      gates M10, M11 (a)(b),
+      M13, M14 and M17-Q7 were done on 2026-10-02; M26 gates only a guide sentence and a knowledge record. In the
+      archive's commit the clio PR adds the fileProcessing key set (ENG-103085 Refuse element and block keys the
+      process builder would drop silently) and the fileProcessing call-shape entry; the description bytes come from a
+      reviewer-approved trim (Q20 = A). Status convention: in-progress when the clio draft opens, review when it leaves
+      draft, done carried by story 2's clio PR and never pushed after an approval; this story's clio PR carries the
+      done flip of story-eng-95984-file-parameter-type-1.
+
+  - id: story-eng-92719-file-processing-element-2
+    title: "Generated report and Process parameter variants of the Process file element"
+    feature: "eng-92719-file-processing-element"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: M
+    status: deferred
+    jira: ENG-96506
+    file: spec/stories/story-eng-92719-file-processing-element-2.md
+    prd: spec/prd/prd-eng-92719-file-processing-element.md
+    adr: spec/adr/adr-eng-92719-file-processing-element.md
+    test_plan: spec/test-plans/tp-eng-92719-file-processing-element.md
+    depends_on:
+      - story-eng-92719-file-processing-element-1
+      - story-eng-95984-file-parameter-type-1
+    blocks:
+      - story-eng-92719-file-processing-element-3
+    note: >-
+      ENG-96506 Generated report + process parameter modes. RP-1..RP-10 replace the Jira acceptance criteria (agreed
+      2026-10-07). Functionally blocked by ENG-95984 File process parameter type (link L2: File and FileCollection,
+      dotted paths, BindCollection) and by story 1 (link L3: the handler and the variant registry). Owner questions Q18
+      (FastReport, recommended refused), Q14 and Q16 are open and gate the package code AND the acceptance rows RP-1 and
+      RP-4, which are pasted into Jira only after the answers. Stand measurement M1 (+ M2) is recorded before the package
+      PR leaves draft and decides the single-file path. A floor raise that lengthens the version literal costs a byte
+      in three descriptions; the budget test catches it at that cut and a reviewer-approved trim pays it (Q20 = A). Two
+      variant registrations, one commit group each, so that contingency X2 can cherry-pick the Report half if the
+      Process half fails its stand proof. Visible change: the four shipped product report processes describe as
+      fileprocessing. Done carried by story 3's clio PR.
+
+  - id: story-eng-92719-file-processing-element-3
+    title: "SysFile attachment storage in the Process file element"
+    feature: "eng-92719-file-processing-element"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: M
+    status: deferred
+    jira: ""
+    file: spec/stories/story-eng-92719-file-processing-element-3.md
+    prd: spec/prd/prd-eng-92719-file-processing-element.md
+    adr: spec/adr/adr-eng-92719-file-processing-element.md
+    test_plan: spec/test-plans/tp-eng-92719-file-processing-element.md
+    depends_on:
+      - story-eng-92719-file-processing-element-2
+    blocks:
+      - story-eng-92719-file-processing-element-5
+    note: >-
+      DEFERRED under this block's status rule: the Jira Sub-task of ENG-92719 File processing element is NOT created yet
+      (owner decision O1 / Q3, agreed 2026-10-07, creates it on day 0), and no code can start before the measurements
+      below; ready-for-dev once the Sub-task exists and the measurements its first code needs are recorded. Write its
+      key into jira, the story file and the PR titles when it exists. SF-1 is the SysFile row of the analysis decisions
+      D-5, proposed and confirmed when the Sub-task is created. The story file also holds the Story-level Definition of
+      Done of ENG-92719. The package code waits on stand measurements M7, M8, M21,
+      M23 (a)-(d) and M25 (three of them designer probes built by the user); a case whose measurement fails keeps story
+      1's refusal. No floor raise (an older server refuses SysFile loudly). Slot after story 2 (link L4); contingency X3
+      swaps the slots. Done carried by the next clio PR that touches this file (by link L5 the first clio PR of
+      ENG-95985 Send email attachments).
+
+  - id: story-eng-92719-file-processing-element-4
+    title: "Refuse collection parameters as filter values"
+    feature: "eng-92719-file-processing-element"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: S
+    status: deferred
+    jira: ""
+    file: spec/stories/story-eng-92719-file-processing-element-4.md
+    prd: spec/prd/prd-eng-92719-file-processing-element.md
+    adr: spec/adr/adr-eng-92719-file-processing-element.md
+    test_plan: spec/test-plans/tp-eng-92719-file-processing-element.md
+    depends_on: []
+    blocks: []
+    note: >-
+      DEFERRED until its Jira Sub-task exists (a side Sub-task of ENG-92719 File processing element, NOT created yet;
+      Q9, agreed 2026-10-07, creates it on day 0) and its slot opens: a gap while story 1's package PR is a draft, never
+      inside a final review window of the main track (every side-lane triple restamps); then ready-for-dev. From ADR D22;
+      not file-specific. Measured as M19 on 2026-10-02: a collection parameter as a filter value is accepted at build
+      and fails at run; one guard in ProcessFilterService.ResolveReference covers all three spellings. Criteria are
+      proposed in the story and confirmed when the Sub-task is created. Does not gate the closure of ENG-92719.
+
+  - id: story-eng-92719-file-processing-element-5
+    title: "Builder-made user tasks do not set SerializeToDB"
+    feature: "eng-92719-file-processing-element"
+    repo: "crt-process-builder + clio + clio-knowledge"
+    size: S
+    status: deferred
+    jira: ""
+    file: spec/stories/story-eng-92719-file-processing-element-5.md
+    prd: spec/prd/prd-eng-92719-file-processing-element.md
+    adr: spec/adr/adr-eng-92719-file-processing-element.md
+    test_plan: spec/test-plans/tp-eng-92719-file-processing-element.md
+    depends_on:
+      - story-eng-92719-file-processing-element-3
+    blocks: []
+    note: >-
+      DEFERRED until story 3's package PR has merged (its slot, analysis plan section 5.4) and its Jira Sub-task exists
+      (a side Sub-task of ENG-92719 File processing element, NOT created yet; Q9, agreed 2026-10-07, creates it on day
+      0); then ready-for-dev. From ADR D20: story 1's dedicated handler writes SerializeToDB from the task schema, and
+      every other builder-made user task keeps the gap (M14 measured BO2 absent on the generic route on 1.6.6.54).
+      Criteria are proposed in the story and confirmed when the Sub-task is created. Does not gate the closure of
+      ENG-92719.
