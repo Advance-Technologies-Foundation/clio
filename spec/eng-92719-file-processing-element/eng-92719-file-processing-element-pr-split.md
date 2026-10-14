@@ -735,7 +735,7 @@ in short (basis = measured once run; the cases and recipes are in the two test p
 **PT, 2026-10-14 (the .NET Framework stand).** The item-only run gave 3 callee runs on 1.6.6.97 against 1 on the
 baseline (pass). SC-4's PK-PT twin (V4) failed on 1.6.6.97: the `File` item of a process-level FileCollection carried
 no `A3` / `A4`; commit `b92547cc` fixed it, and V4 passed on 1.6.6.98. The no-op designer save (V5, M22)
-passed on 1.6.6.98 with only the 6 generic differences any designer save of a builder process makes. V2 (the e2e) is
-not run yet. Details: the
+passed on 1.6.6.98 with only the 6 generic differences any designer save of a builder process makes. V2 (the e2e)
+passed on the clio PR's build, and again on the cut that superseded 1.6.6.98. Details: the
 [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md)
 section 6.

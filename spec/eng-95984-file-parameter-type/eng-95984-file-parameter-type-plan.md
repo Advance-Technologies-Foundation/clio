@@ -716,8 +716,10 @@ H-1.**
 stand once and is burned; `b92547cc` fixed the item stamps V4 found (3426 tests); `d6ca4d79` restamped to 1.6.6.98,
 which was installed on the stand and superseded the same day by the gate-3 fixes `11b8088c`, `21d0b016` and
 `dcfdc83f` (3435 tests), cut as the next claimed number. The number lives in ENG-92719 comment 550565, updated in
-place at each re-cut. CL-PT and KB-PT are not opened. On 2026-10-14 the owner had the package PR opened as a draft
-early (crt-process-builder #96); E9 now gates leaving draft.
+place at each re-cut. On 2026-10-14 the owner had the package PR
+(https://creatio.ghe.com/engineering/crt-process-builder/pull/96) opened as a draft early and later taken out of
+draft before the BMAD PR merged, waiving E9; CL-PT (https://github.com/Advance-Technologies-Foundation/clio/pull/1814)
+and KB-PT (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/285) were opened the same day.
 
 | Repository | PRs | Title (exact) | Branch | Merges after |
 |---|---|---|---|---|
