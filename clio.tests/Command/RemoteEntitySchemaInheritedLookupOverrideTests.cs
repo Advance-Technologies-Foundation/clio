@@ -314,6 +314,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 	[TestCase("\"type\":\"Lookup\"", "type")]
 	[TestCase("\"default-value-source\":\"None\"", "default-value-source")]
 	[TestCase("\"masked\":false", "masked")]
+	[TestCase("\"default-value\":\"Main\"", "default-value")]
+	[TestCase("\"default-value-config\":{\"source\":\"None\"}", "default-value-config")]
 	[Description("Refuses an override that carries a property other than reference-schema-name and title, naming the property.")]
 	public void Create_ShouldRefuseOverride_WhenItCarriesAnotherProperty(string property, string propertyName) {
 		// Arrange
@@ -328,6 +330,22 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 			.WithMessage($"*Override column 'Folder' cannot set '{propertyName}'*");
 		_designer.DidNotReceive().CreateNewSchema(Arg.Any<CreateEntitySchemaRequestDto>(), Arg.Any<RemoteCommandOptions>());
 		_saved.Should().BeEmpty(because: "the column spec is refused before the schema is created");
+	}
+
+	[Test]
+	[Description("Refuses an override without reference-schema-name before the schema is created.")]
+	public void Create_ShouldRefuseOverride_WhenReferenceSchemaNameIsMissing() {
+		// Arrange
+		CreateEntitySchemaOptions options = CreateOptions("{\"name\":\"Folder\",\"override\":true}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "an override needs a target schema")
+			.WithMessage("*Override column 'Folder' must specify reference-schema-name*");
+		_designer.DidNotReceive().CreateNewSchema(Arg.Any<CreateEntitySchemaRequestDto>(), Arg.Any<RemoteCommandOptions>());
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 	}
 
 	[Test]
