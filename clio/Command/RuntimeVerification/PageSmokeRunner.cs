@@ -43,7 +43,7 @@ public sealed class PageClickReport {
 
 	/// <summary>
 	/// <c>clicked</c>; or why nothing was clicked: <c>not-found</c>, <c>ambiguous</c> (several buttons match) or
-	/// <c>disabled</c>.
+	/// <c>disabled</c>; or <c>unknown</c> when the click script did not answer, so the button may have been pressed.
 	/// </summary>
 	[JsonPropertyName("outcome")]
 	public string Outcome { get; set; }
@@ -64,9 +64,16 @@ public sealed class PageClickReport {
 	[JsonPropertyName("url"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Url { get; set; }
 
-	/// <summary>Addresses the page moved to after the click, in order.</summary>
+	/// <summary>
+	/// Addresses the page moved to after the click, in order; a long run keeps its first and last few, and
+	/// <see cref="NavigationsOmitted"/> counts the rest.
+	/// </summary>
 	[JsonPropertyName("navigations"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Navigations { get; set; }
+
+	/// <summary>Navigations after the click not listed in <see cref="Navigations"/>.</summary>
+	[JsonPropertyName("navigationsOmitted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public int? NavigationsOmitted { get; set; }
 
 	/// <summary>Errors logged after the click.</summary>
 	[JsonPropertyName("consoleErrors"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -97,8 +104,10 @@ public sealed class PageClickReport {
 public sealed class PageSmokeResult {
 
 	/// <summary>
-	/// False when the browser or the session could not be started, the page did not become ready, or the requested
-	/// click could not be made. Console errors alone do not make it false: read <see cref="ConsoleErrors"/>.
+	/// False when the page did not open (the browser or the session could not be started, or the page did not become
+	/// ready), or the requested click was not made; <see cref="PageClickReport.Outcome"/> says which. With the outcome
+	/// <c>unknown</c> the button may have been pressed, so <see cref="PageClickReport.Created"/> must be read before a
+	/// retry. Console errors alone do not make it false: read <see cref="ConsoleErrors"/>.
 	/// </summary>
 	[JsonPropertyName("success")]
 	public bool Success { get; set; }
@@ -173,6 +182,10 @@ internal sealed class PageSmokeRunner(
 	internal const int MaxConsoleErrors = 15;
 	// The serialized reply is kept under this; lists are cut, in order of least use, until it fits.
 	internal const int MaxReplyBytes = 14_000;
+	// Room for what the tool adds to the reply after Fit: ,"correlation-id":"<12 characters>" and its serializer's slack.
+	internal const int ToolEnvelopeReserveBytes = 64;
+	// The longest error reported; a page's own exception text inside it is already fenced and cut to 300 characters.
+	internal const int MaxErrorChars = 1_000;
 
 	// The worker's per-call budget is 120 s; everything stops here so the answer always gets out.
 	private const int TotalBudgetMs = 100_000;
@@ -208,11 +221,12 @@ internal sealed class PageSmokeRunner(
 				.ConfigureAwait(false);
 			cdp.EventReceived += events.OnEvent;
 			events.NativeDialogOpened += () => DismissNativeDialog(cdp);
-			await OpenPageAsync(cdp, cookies, url, budget.Token).ConfigureAwait(false);
+			string frameId = await OpenPageAsync(cdp, cookies, url, budget.Token).ConfigureAwait(false);
+			PageScriptRunner scripts = new(cdp, frameId);
 			DateTimeOffset navigatedAt = Clock();
 			int readyMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
 				request.TimeoutSeconds * 1000);
-			PageReadyState state = await WaitForReadyAsync(cdp, events, readyMs, budget.Token).ConfigureAwait(false);
+			PageReadyState state = await WaitForReadyAsync(scripts, events, readyMs, budget.Token).ConfigureAwait(false);
 			if (state.State != "ready") {
 				ReadLoadErrors(result, events, int.MaxValue);
 				result.Error = ExplainNotReady(state, request);
@@ -220,7 +234,7 @@ internal sealed class PageSmokeRunner(
 			}
 			result.Ready = true;
 			result.LoadMs = (long)(Clock() - navigatedAt).TotalMilliseconds;
-			PageInventory inventory = await EvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript,
+			PageInventory inventory = await scripts.EvaluateAsync<PageInventory>(FreedomUiPageScripts.InventoryScript,
 				budget.Token).ConfigureAwait(false);
 			ApplyInventory(result, inventory);
 			result.Success = true;
@@ -228,7 +242,7 @@ internal sealed class PageSmokeRunner(
 				ReadLoadErrors(result, events, int.MaxValue);
 			}
 			else {
-				await ClickAsync(cdp, events, request, result, budgetEnd, budget.Token).ConfigureAwait(false);
+				await ClickAsync(scripts, events, request, result, budgetEnd, budget.Token).ConfigureAwait(false);
 			}
 		}
 		catch (ChromiumNotFoundException exception) {
@@ -254,20 +268,24 @@ internal sealed class PageSmokeRunner(
 		AuthenticatedBrowserLauncher.BuildShellUrl(environment) + "#Card/" + page
 		+ (recordId is null ? "/add" : "/edit/" + recordId);
 
-	// The page address without the environment's own prefix, and never with a query string (it can carry a token).
+	// The page address without the environment's own prefix, never with a query string or a key=value fragment (either
+	// can carry a token: an identity provider's redirect brings #id_token=...), and cut to PageEventCollector's length.
 	private string RelativeUrl(string url) {
 		if (string.IsNullOrEmpty(url)) {
 			return url;
 		}
 		int hash = url.IndexOf('#');
 		string address = hash >= 0 ? url[..hash] : url;
-		string fragment = hash >= 0 ? url[hash..] : string.Empty;
-		url = StripQuery(address) + StripQuery(fragment);
+		string fragment = hash >= 0 ? StripQuery(url[hash..]) : string.Empty;
+		url = StripQuery(address) + (fragment.Contains('=') ? RedactedFragment : fragment);
 		string baseUri = environment.Uri?.TrimEnd('/') ?? string.Empty;
-		return baseUri.Length > 0 && url.StartsWith(baseUri, StringComparison.OrdinalIgnoreCase)
+		return PageEventCollector.Cap(baseUri.Length > 0 && url.StartsWith(baseUri, StringComparison.OrdinalIgnoreCase)
 			? url[baseUri.Length..]
-			: url;
+			: url);
 	}
+
+	// A Creatio route is a path (#Card/Page/edit/id); a fragment of key=value pairs is a parameter set, not a route.
+	internal const string RedactedFragment = "#[redacted]";
 
 	// A query in the address or in a hash route can carry a token, so it is never reported.
 	private static string StripQuery(string part) {
@@ -312,7 +330,8 @@ internal sealed class PageSmokeRunner(
 
 	// Network is enabled only for the cookies and disabled again, so its per-request events do not flood the session;
 	// failed requests still arrive through Log.
-	private async Task OpenPageAsync(ICdpSession cdp, IReadOnlyList<BrowserCookie> cookies, string url,
+	// Returns the main frame's id, which the page scripts' isolated world is created in.
+	private async Task<string> OpenPageAsync(ICdpSession cdp, IReadOnlyList<BrowserCookie> cookies, string url,
 		CancellationToken ct) {
 		await SendAsync(cdp, "Runtime.enable", null, ct).ConfigureAwait(false);
 		await SendAsync(cdp, "Log.enable", null, ct).ConfigureAwait(false);
@@ -329,17 +348,20 @@ internal sealed class PageSmokeRunner(
 			throw new InvalidOperationException($"The browser could not open the environment: {errorText.GetString()}. "
 				+ "Check that the environment answers (ping-app).");
 		}
+		return navigation.TryGetProperty("frameId", out JsonElement frameId) && frameId.ValueKind == JsonValueKind.String
+			? frameId.GetString()
+			: throw new InvalidOperationException("The browser did not name the page's frame, so the page cannot be read.");
 	}
 
 	// Polls the ready script until the page is ready and quiet, it lands on the login form or a Classic UI page twice in
 	// a row, or the wait ends. A script that fails while the page navigates counts as still loading.
-	private async Task<PageReadyState> WaitForReadyAsync(ICdpSession cdp, PageEventCollector events, int waitMs,
+	private async Task<PageReadyState> WaitForReadyAsync(PageScriptRunner scripts, PageEventCollector events, int waitMs,
 		CancellationToken ct) {
 		DateTimeOffset deadline = Clock().AddMilliseconds(waitMs);
 		PageReadyState last = new("loading", "the page has not answered yet", null, null);
 		ReadyTracker tracker = new();
 		while (true) {
-			PageReadyState state = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
+			PageReadyState state = await scripts.TryEvaluateAsync<PageReadyState>(FreedomUiPageScripts.ReadyScript, ct)
 				.ConfigureAwait(false) ?? last with { State = "loading", Why = "the page is navigating" };
 			if (tracker.IsDone(state, events.NavigationCount, Clock())) {
 				return state;
@@ -402,7 +424,7 @@ internal sealed class PageSmokeRunner(
 		}
 	}
 
-	private async Task ClickAsync(ICdpSession cdp, PageEventCollector events, PageSmokeRequest request,
+	private async Task ClickAsync(PageScriptRunner scripts, PageEventCollector events, PageSmokeRequest request,
 		PageSmokeResult result, DateTimeOffset budgetEnd, CancellationToken ct) {
 		WatchBaseline baseline = request.Watch.Count > 0
 			? recordWatcher.Capture(request.Watch, RequestMs, WatchStop(budgetEnd))
@@ -414,7 +436,7 @@ internal sealed class PageSmokeRunner(
 		try {
 			PageClickOutcome outcome;
 			try {
-				outcome = await EvaluateAsync<PageClickOutcome>(cdp, FreedomUiPageScripts.BuildClickScript(request.Click), ct)
+				outcome = await scripts.EvaluateAsync<PageClickOutcome>(FreedomUiPageScripts.BuildClickScript(request.Click), ct)
 					.ConfigureAwait(false);
 			}
 			catch (Exception exception) when (exception is InvalidOperationException or CdpCommandException
@@ -444,7 +466,7 @@ internal sealed class PageSmokeRunner(
 			}
 			int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
 				request.ClickWaitSeconds * 1000);
-			await ReadWhatFollowedAsync(cdp, events, report, result, mark, settleMs, ct).ConfigureAwait(false);
+			await ReadWhatFollowedAsync(scripts, events, report, result, mark, settleMs, ct).ConfigureAwait(false);
 			if (report.Settled == false) {
 				result.Warnings.Add($"The page was still changing when click-wait ({request.ClickWaitSeconds} s) ended; "
 					+ "what followed may be incomplete.");
@@ -462,23 +484,23 @@ internal sealed class PageSmokeRunner(
 
 	// What a pressed button led to: the settle wait, then the page address, overlays and invalid fields. The button was
 	// pressed, so a read that fails now must not hide that: an oversized reply costs only its own part of the report.
-	private async Task ReadWhatFollowedAsync(ICdpSession cdp, PageEventCollector events, PageClickReport report,
+	private async Task ReadWhatFollowedAsync(PageScriptRunner scripts, PageEventCollector events, PageClickReport report,
 		PageSmokeResult result, int mark, int settleMs, CancellationToken ct) {
 		bool followedReported = false;
 		try {
-			report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
+			report.Settled = await WaitToSettleAsync(scripts, events, settleMs, ct).ConfigureAwait(false);
 			ReportWhatFollowed(report, events, mark, result);
 			followedReported = true;
-			PageReadyState after = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
+			PageReadyState after = await scripts.TryEvaluateAsync<PageReadyState>(FreedomUiPageScripts.ReadyScript, ct)
 				.ConfigureAwait(false);
 			report.Url = after?.Href is null ? null : RelativeUrl(after.Href);
-			PageOverlays overlays = await TryEvaluateAsync<PageOverlays>(cdp, FreedomUiPageScripts.OverlayScript, ct)
+			PageOverlays overlays = await scripts.TryEvaluateAsync<PageOverlays>(FreedomUiPageScripts.OverlayScript, ct)
 				.ConfigureAwait(false);
 			if (overlays?.Dialogs is { Count: > 0 } dialogs) {
 				report.Dialogs = [.. report.Dialogs ?? [], .. dialogs.Select(Untrusted)];
 			}
 			report.Toasts = overlays?.Toasts is { Count: > 0 } toasts ? toasts.Select(Untrusted).ToList() : null;
-			PageInventory inventory = await TryEvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript, ct)
+			PageInventory inventory = await scripts.TryEvaluateAsync<PageInventory>(FreedomUiPageScripts.InventoryScript, ct)
 				.ConfigureAwait(false);
 			List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
 			report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
@@ -494,8 +516,9 @@ internal sealed class PageSmokeRunner(
 	// The navigations, errors and native dialogs that followed the click.
 	private static void ReportWhatFollowed(PageClickReport report, PageEventCollector events, int mark,
 		PageSmokeResult result) {
-		IReadOnlyList<string> navigations = events.NavigationsSince(mark);
+		IReadOnlyList<string> navigations = events.NavigationsSince(mark, out int navigationsOmitted);
 		report.Navigations = navigations.Count > 0 ? navigations : null;
+		report.NavigationsOmitted = navigationsOmitted > 0 ? navigationsOmitted : null;
 		IReadOnlyList<PageConsoleError> errors = events.ErrorsSince(mark, MaxConsoleErrors, out int omitted);
 		report.ConsoleErrors = errors.Count > 0 ? errors : null;
 		NoteOmitted(result, omitted, "click");
@@ -515,14 +538,14 @@ internal sealed class PageSmokeRunner(
 
 	// The page has settled when nothing masks it and neither its address, its named elements nor its overlays changed for
 	// the quiet period; a click that navigates resets the wait.
-	private async Task<bool> WaitToSettleAsync(ICdpSession cdp, PageEventCollector events, int waitMs,
+	private async Task<bool> WaitToSettleAsync(PageScriptRunner scripts, PageEventCollector events, int waitMs,
 		CancellationToken ct) {
 		DateTimeOffset start = Clock();
 		DateTimeOffset deadline = start.AddMilliseconds(waitMs);
 		string signature = null;
 		DateTimeOffset stableSince = start;
 		while (true) {
-			PageReadyState state = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
+			PageReadyState state = await scripts.TryEvaluateAsync<PageReadyState>(FreedomUiPageScripts.ReadyScript, ct)
 				.ConfigureAwait(false);
 			string current = state is null || state.State == "loading"
 				? null
@@ -560,44 +583,88 @@ internal sealed class PageSmokeRunner(
 		}
 	}
 
-	private static async Task<T> EvaluateAsync<T>(ICdpSession cdp, string script, CancellationToken ct) {
-		JsonElement answer = await SendAsync(cdp, EvaluateMethod, new {
-			expression = script,
-			returnByValue = true
-		}, ct).ConfigureAwait(false);
-		if (answer.TryGetProperty("exceptionDetails", out JsonElement details)) {
-			throw new InvalidOperationException("The page script failed: " + DescribeScriptError(details));
+	// The page scripts run in an ISOLATED world of the page's main frame, not in the page's own: they share its DOM but
+	// none of its JavaScript, so a page that overrides a global or a prototype can neither make them throw text of its
+	// choosing nor steer which button the click script matches. A world lives as long as its document, so it is made
+	// again after a navigation replaces the document.
+	private sealed class PageScriptRunner(ICdpSession cdp, string frameId) {
+
+		internal const string WorldName = "clio-page-smoke";
+		private int? _contextId;
+
+		public async Task<T> EvaluateAsync<T>(string script, CancellationToken ct) {
+			JsonElement answer = await EvaluateInWorldAsync(script, ct).ConfigureAwait(false);
+			if (answer.TryGetProperty("exceptionDetails", out JsonElement details)) {
+				throw new InvalidOperationException("The page script failed: " + DescribeScriptError(details));
+			}
+			if (!answer.TryGetProperty("result", out JsonElement result) || !result.TryGetProperty("value", out JsonElement json)) {
+				throw new InvalidOperationException("The page script returned no value.");
+			}
+			return FreedomUiPageScripts.Read<T>(json);
 		}
-		if (!answer.TryGetProperty("result", out JsonElement result) || !result.TryGetProperty("value", out JsonElement json)) {
-			throw new InvalidOperationException("The page script returned no value.");
+
+		// While the page navigates its document is replaced, and an evaluation in flight fails; that is not an error,
+		// just "not yet".
+		public async Task<T> TryEvaluateAsync<T>(string script, CancellationToken ct) where T : class {
+			try {
+				return await EvaluateAsync<T>(script, ct).ConfigureAwait(false);
+			}
+			catch (Exception exception) when (exception is (InvalidOperationException
+					and not (CdpSessionClosedException or CdpReplyTooLargeException))
+				or CdpCommandException or JsonException) {
+				return null;
+			}
 		}
-		return FreedomUiPageScripts.Read<T>(json);
+
+		// A world whose document is gone answers "Cannot find context": the script never ran there, so it is sent again
+		// in a new world (twice at most, for a chain of navigations). Any other failure keeps the world and is not
+		// retried - for the click that would risk a second press.
+		private async Task<JsonElement> EvaluateInWorldAsync(string script, CancellationToken ct) {
+			for (int attempt = 0; ; attempt++) {
+				int contextId = _contextId ??= await CreateWorldAsync(ct).ConfigureAwait(false);
+				try {
+					return await SendAsync(cdp, EvaluateMethod, new {
+						expression = script,
+						contextId,
+						returnByValue = true
+					}, ct).ConfigureAwait(false);
+				}
+				catch (CdpCommandException exception) when (IsContextGone(exception)) {
+					_contextId = null;
+					if (attempt >= MaxWorldRecreations) {
+						throw;
+					}
+				}
+			}
+		}
+
+		private const int MaxWorldRecreations = 2;
+
+		private async Task<int> CreateWorldAsync(CancellationToken ct) {
+			JsonElement world = await SendAsync(cdp, "Page.createIsolatedWorld", new {
+				frameId,
+				worldName = WorldName
+			}, ct).ConfigureAwait(false);
+			return world.TryGetProperty("executionContextId", out JsonElement id) && id.TryGetInt32(out int contextId)
+				? contextId
+				: throw new InvalidOperationException("The browser did not create the page scripts' isolated world.");
+		}
+
+		private static bool IsContextGone(CdpCommandException exception) =>
+			exception.Message.Contains("Cannot find context", StringComparison.OrdinalIgnoreCase);
 	}
 
+	// The page's own exception text: page-authored, so scrubbed, flattened, capped and fenced like every other page text.
 	private static string DescribeScriptError(JsonElement details) {
-		if (details.TryGetProperty("exception", out JsonElement exception)
-			&& exception.TryGetProperty("description", out JsonElement description)) {
-			return description.GetString();
-		}
-		return details.TryGetProperty("text", out JsonElement text) ? text.GetString() : "unknown error";
-	}
-
-	// While the page navigates its execution context is replaced, and an evaluation in flight fails; that is not an
-	// error, just "not yet".
-	private static async Task<T> TryEvaluateAsync<T>(ICdpSession cdp, string script, CancellationToken ct)
-		where T : class {
-		try {
-			return await EvaluateAsync<T>(cdp, script, ct).ConfigureAwait(false);
-		}
-		catch (Exception exception) when (exception is (InvalidOperationException
-				and not (CdpSessionClosedException or CdpReplyTooLargeException))
-			or CdpCommandException or JsonException) {
-			return null;
-		}
+		string text = details.TryGetProperty("exception", out JsonElement exception)
+			&& exception.TryGetProperty("description", out JsonElement description)
+				? description.GetString()
+				: details.TryGetProperty("text", out JsonElement plain) ? plain.GetString() : null;
+		return UntrustedText.Fenced(text) ?? "unknown error";
 	}
 
 	// Room kept for the warnings Fit itself adds, so adding them cannot push the reply back over the bound.
-	private const int FitWarningReserveBytes = 400;
+	private const int FitWarningReserveBytes = 600;
 
 	// Keeps the reply under MaxReplyBytes. The diagnostics give way first: field values, then fields, buttons, the
 	// load errors and the click's candidates, invalid fields and errors, all halved together each round, down to empty
@@ -605,10 +672,13 @@ internal sealed class PageSmokeRunner(
 	// caller needs whole to report and clean up: it is touched only when the reply is still too big with every
 	// diagnostic list empty, and then titles go (last record first) before any record does.
 	internal static PageSmokeResult Fit(PageSmokeResult result) {
-		if (Size(result) <= MaxReplyBytes) {
+		result.Error = SensitiveErrorTextRedactor.ClampPreservingFence(result.Error, MaxErrorChars);
+		// The tool adds the correlation-id after this, so the bound kept here leaves room for it: the cap is hard.
+		const int limit = MaxReplyBytes - ToolEnvelopeReserveBytes;
+		if (Size(result) <= limit) {
 			return result;
 		}
-		const int target = MaxReplyBytes - FitWarningReserveBytes;
+		const int target = limit - FitWarningReserveBytes;
 		if (result.Fields is { Count: > 0 }) {
 			result.Fields = result.Fields.Select(field => field with { Value = null }).ToList();
 			result.Warnings.Add("Field values were dropped to keep the reply small.");
@@ -626,7 +696,14 @@ internal sealed class PageSmokeRunner(
 			new DiagnosticList("click.invalidFields", () => click?.InvalidFields?.Count ?? 0,
 				count => click.InvalidFields = click.InvalidFields.Take(count).ToList()),
 			new DiagnosticList("click.consoleErrors", () => click?.ConsoleErrors?.Count ?? 0,
-				count => click.ConsoleErrors = click.ConsoleErrors.Take(count).ToList())
+				count => click.ConsoleErrors = click.ConsoleErrors.Take(count).ToList()),
+			// The ends are kept, as the collector keeps them: the last navigation is where the click landed.
+			new DiagnosticList("click.navigations", () => click?.Navigations?.Count ?? 0,
+				count => {
+					click.NavigationsOmitted = (click.NavigationsOmitted ?? 0) + click.Navigations.Count - count;
+					click.Navigations = [.. click.Navigations.Take(count - count / 2),
+						.. click.Navigations.Skip(click.Navigations.Count - count / 2)];
+				})
 		];
 		int[] before = diagnostics.Select(list => list.Count()).ToArray();
 		while (Size(result) > target && diagnostics.Any(list => list.Count() > 0)) {

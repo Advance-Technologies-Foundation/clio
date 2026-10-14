@@ -25,6 +25,8 @@ public sealed class CdpSession : ICdpSession {
 	private readonly CancellationTokenSource _lifetime = new();
 	private readonly Task _receiveLoop;
 	private int _lastId;
+	private readonly object _disposeGate = new();
+	private Task _disposal;
 	private volatile string _closedReason;
 
 	private sealed record PendingCommand(string Method, TaskCompletionSource<JsonElement> Completion);
@@ -51,7 +53,16 @@ public sealed class CdpSession : ICdpSession {
 			string message = JsonSerializer.Serialize(new { id, method, @params = parameters ?? new { } });
 			await _sendLock.WaitAsync(ct).ConfigureAwait(false);
 			try {
+				// The session may have closed while this sender waited for the lock.
+				ThrowIfClosed(method);
 				await _transport.SendAsync(message, ct).ConfigureAwait(false);
+			}
+			catch (Exception exception) when (IsTransportFailure(exception)) {
+				// The socket dropped between ThrowIfClosed and the send: the same "the session is gone" every caller
+				// already handles, not a raw socket error that slips past their filters.
+				throw new CdpSessionClosedException(
+					$"CDP command '{method}' could not be sent: the DevTools connection failed ({exception.Message}).",
+					exception);
 			}
 			finally {
 				_sendLock.Release();
@@ -68,7 +79,15 @@ public sealed class CdpSession : ICdpSession {
 	}
 
 	/// <inheritdoc />
-	public async ValueTask DisposeAsync() {
+	public ValueTask DisposeAsync() {
+		// Idempotent, and a second (or concurrent) call waits for the first one's cleanup instead of returning early.
+		lock (_disposeGate) {
+			_disposal ??= DisposeCoreAsync();
+			return new ValueTask(_disposal);
+		}
+	}
+
+	private async Task DisposeCoreAsync() {
 		_closedReason ??= "the session was disposed";
 		await _lifetime.CancelAsync().ConfigureAwait(false);
 		try {
@@ -81,11 +100,14 @@ public sealed class CdpSession : ICdpSession {
 		try {
 			await _receiveLoop.ConfigureAwait(false);
 		}
-		catch (OperationCanceledException) {
-			// The loop ends by cancellation on dispose.
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// The loop records its own end in _closedReason. A fault here must neither replace the caller's real error
+			// nor skip the cleanup below.
 		}
 		FailPending();
-		_sendLock.Dispose();
+		// _sendLock is deliberately not disposed: a sender queued on it would never be woken (SemaphoreSlim.Dispose
+		// does not release waiters). Without an AvailableWaitHandle it holds nothing to free; a woken sender sees the
+		// closed session and fails at once.
 		_lifetime.Dispose();
 	}
 
@@ -103,14 +125,22 @@ public sealed class CdpSession : ICdpSession {
 		catch (OperationCanceledException) {
 			_closedReason ??= "the session was disposed";
 		}
-		catch (Exception exception) when (exception is WebSocketException or IOException or ObjectDisposedException
-			or InvalidOperationException) {
+		catch (Exception exception) when (IsTransportFailure(exception)) {
 			_closedReason ??= "the DevTools connection failed: " + exception.Message;
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Anything else (a regex timeout in the oversized-reply sentinel, say) ends the loop just the same, so the
+			// session must read as closed: otherwise every later command passes ThrowIfClosed and waits out its timeout.
+			_closedReason ??= "the DevTools session stopped reading: " + exception.Message;
 		}
 		finally {
 			FailPending();
 		}
 	}
+
+	private static bool IsTransportFailure(Exception exception) =>
+		exception is WebSocketException or IOException or ObjectDisposedException
+			or (InvalidOperationException and not CdpSessionClosedException);
 
 	// A message that is not JSON, or has neither an id nor a method, is ignored: the browser never sends one, and one
 	// bad frame must not stop every later answer.

@@ -21,19 +21,31 @@ internal static class DevToolsEndpoint {
 		string portFile = Path.Combine(userDataDir, "DevToolsActivePort");
 		for (int attempt = 0; attempt < attempts; attempt++) {
 			ct.ThrowIfCancellationRequested();
-			if (fileSystem.ExistsFile(portFile)) {
-				string firstLine = fileSystem.ReadAllText(portFile)
-					.Split('\n', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } lines
-					? lines[0].Trim()
-					: string.Empty;
-				if (int.TryParse(firstLine, out int port) && port > 0) {
-					return port;
-				}
+			if (fileSystem.ExistsFile(portFile) && TryReadPort(fileSystem, portFile, out int port)) {
+				return port;
 			}
 			await Task.Delay(delayMs, ct).ConfigureAwait(false);
 		}
 		throw new InvalidOperationException(
 			"Error: timed out waiting for the browser's remote-debugging endpoint (DevToolsActivePort).");
+	}
+
+	// On Windows Chromium writes the file non-atomically under an exclusive share mode, so a read that lands while it
+	// writes fails with a sharing violation (IOException), or with access denied while the file is delete-pending: both
+	// are "not yet", like a missing or half-written file.
+	private static bool TryReadPort(IFileSystem fileSystem, string portFile, out int port) {
+		port = 0;
+		string content;
+		try {
+			content = fileSystem.ReadAllText(portFile);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return false;
+		}
+		string firstLine = content.Split('\n', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } lines
+			? lines[0].Trim()
+			: string.Empty;
+		return int.TryParse(firstLine, out port) && port > 0;
 	}
 
 	/// <summary>Resolves the WebSocket URL of a page target from the local DevTools JSON endpoint.</summary>

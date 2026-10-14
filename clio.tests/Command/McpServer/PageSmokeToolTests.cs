@@ -25,6 +25,11 @@ public sealed class PageSmokeToolTests {
 
 	private const string RecordId = "8D6A5C4E-0F1B-4D6F-9D0A-2B9C1E7F3A10";
 
+	// The retry rule d-krestov asked for on #1812, word for word in both the description and the contract.
+	private const string SuccessFalseClause = "success=false: the page did not open, or the click was not made "
+		+ "(click.outcome says which); with click.outcome=unknown the button may have been pressed, so read "
+		+ "click.created before retrying";
+
 	private static PageSmokeArgs Args(string page = "UsrOrders_FormPage", string recordId = null, int? timeout = null,
 		string click = null, int? clickWait = null, string[] watch = null,
 		Dictionary<string, JsonElement> extension = null) => new() {
@@ -137,7 +142,7 @@ public sealed class PageSmokeToolTests {
 	}
 
 	[Test]
-	[Description("page-smoke is advertised as a destructive write, like trigger-smoke, because its click can delete or change records; it runs in a worker, shares the browser-session cache, and is not resident.")]
+	[Description("page-smoke is advertised as a destructive write, like trigger-smoke, because its click can delete or change records; it is a worker-cohort member (so it really runs in a worker), shares the browser-session cache, is not resident, and says that success=false after a click may follow a press.")]
 	public void Tool_Should_Be_A_Long_Tail_Destructive_Write() {
 		// Arrange
 		MethodInfo method = typeof(PageSmokeTool).GetMethod(nameof(PageSmokeTool.Run))!;
@@ -154,12 +159,17 @@ public sealed class PageSmokeToolTests {
 		execution.SharedFileResource.Should().Be(McpToolSharedFileResource.BrowserSessionCache,
 			because: "it reads the cached browser session get-browser-session writes");
 		description.Should().Contain("is a WRITE", because: "the click must be flagged as a write");
+		description.Should().Contain(SuccessFalseClause,
+			because: "an agent that reads success=false after a click as 'nothing happened' may press Save twice");
+		execution.Location.Should().Be(McpToolExecutionLocation.Worker, because: "a headless browser never lives in the host");
+		McpWorkerCohort.ShippedNames.Should().Contain("page-smoke",
+			because: "the router relays only cohort members, so without membership the Worker declaration is not where it runs");
 		McpCoreToolProfile.CoreToolTypes.Should().NotContain(typeof(PageSmokeTool),
 			because: "a long-tail tool must not grow the resident tools/list");
 	}
 
 	[Test]
-	[Description("The curated contract names the required fields, flags the click as a write, and warns that success is not error-free.")]
+	[Description("The curated contract names the required fields, flags the click as a write, warns that success is not error-free, and states the success=false retry rule in its description and its success field.")]
 	public void Contract_Should_Flag_The_Click_As_A_Write() {
 		// Arrange
 		ToolContractGetTool tool = new();
@@ -175,6 +185,11 @@ public sealed class PageSmokeToolTests {
 			because: "the contract fields are the tool's own arguments");
 		contract.Description.Should().Contain("click is a WRITE", because: "the agent must know a click can create records");
 		contract.Description.Should().Contain("never cleaned up", because: "the agent owns the cleanup of what a click created");
+		contract.Description.Should().Contain(SuccessFalseClause,
+			because: "the contract states the same retry rule as the tool description");
+		contract.OutputContract.Fields.Single(field => field.Name == "success").Description
+			.Should().Contain("click.outcome=unknown the button may have been pressed, so read click.created before retrying",
+				because: "the success field itself carries the retry rule");
 		contract.AntiPatterns!.Select(pattern => pattern.Pattern).Should().Contain(pattern => pattern.Contains("Playwright"),
 			because: "the tool exists to replace hand-written Playwright scripts");
 	}

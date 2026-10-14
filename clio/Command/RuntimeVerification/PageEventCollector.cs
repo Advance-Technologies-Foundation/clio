@@ -33,12 +33,17 @@ internal sealed class PageEventCollector {
 	internal const int MaxDistinctPerPhase = 200;
 	// A page looping on an error is still bounded.
 	internal const int MaxStoredEvents = 20_000;
-	private const int MaxUrlLength = 120;
+	// A reported address (a failed request's path, a navigation) is cut to this many characters.
+	internal const int MaxUrlLength = 120;
+	// A navigation loop is reported by its first and last few steps and a count of the rest.
+	internal const int NavigationsKeptAtEachEnd = 3;
 
 	private readonly object _gate = new();
 	// Kind is null for an occurrence that was dropped by a cap; it is counted as omitted.
 	private readonly List<(int Sequence, string Kind, string Text, string Url)> _errors = [];
 	private readonly HashSet<(string Kind, string Text, string Url)> _phaseKeys = [];
+	// Occurrences dropped once _errors is full, as runs that a Mark() closes, so each phase still counts its own.
+	private readonly List<DroppedRun> _droppedAtCap = [];
 	private readonly List<(int Sequence, string Url)> _navigations = [];
 	private readonly List<(int Sequence, string Text)> _dialogs = [];
 	private readonly Func<string, string> _relativeUrl;
@@ -66,6 +71,9 @@ internal sealed class PageEventCollector {
 	public int Mark() {
 		lock (_gate) {
 			_phaseKeys.Clear();
+			if (_droppedAtCap.Count > 0) {
+				_droppedAtCap[^1].Closed = true;
+			}
 			return _sequence;
 		}
 	}
@@ -108,10 +116,13 @@ internal sealed class PageEventCollector {
 	/// <summary>The distinct errors logged after <paramref name="after"/> and up to <paramref name="upTo"/>.</summary>
 	public IReadOnlyList<PageConsoleError> ErrorsBetween(int after, int upTo, int max, out int omitted) {
 		List<(int Sequence, string Kind, string Text, string Url)> errors;
+		int droppedAtCap;
 		lock (_gate) {
 			errors = _errors.Where(error => error.Sequence > after && error.Sequence <= upTo).ToList();
+			// A run never spans a Mark(), so a window that starts and ends at marks counts each run whole.
+			droppedAtCap = _droppedAtCap.Where(run => run.First > after && run.First <= upTo).Sum(run => run.Count);
 		}
-		int dropped = errors.Count(error => error.Kind is null);
+		int dropped = errors.Count(error => error.Kind is null) + droppedAtCap;
 		List<PageConsoleError> distinct = errors
 			.Where(error => error.Kind is not null)
 			.GroupBy(error => (error.Kind, error.Text, error.Url))
@@ -122,8 +133,12 @@ internal sealed class PageEventCollector {
 		return distinct.Take(max).ToList();
 	}
 
-	/// <summary>The URLs the main frame moved to after <paramref name="mark"/>, consecutive repeats folded.</summary>
-	public IReadOnlyList<string> NavigationsSince(int mark) {
+	/// <summary>
+	/// The URLs the main frame moved to after <paramref name="mark"/>, consecutive repeats folded; a longer list keeps its
+	/// first and last <see cref="NavigationsKeptAtEachEnd"/> and counts the rest in <paramref name="omitted"/>.
+	/// </summary>
+	/// <remarks>A page whose click starts a route ping-pong or a pushState loop must not grow the reply without bound.</remarks>
+	public IReadOnlyList<string> NavigationsSince(int mark, out int omitted) {
 		List<string> urls;
 		lock (_gate) {
 			urls = _navigations.Where(navigation => navigation.Sequence > mark).Select(navigation => navigation.Url).ToList();
@@ -134,7 +149,11 @@ internal sealed class PageEventCollector {
 				folded.Add(url);
 			}
 		}
-		return folded;
+		const int kept = NavigationsKeptAtEachEnd * 2;
+		omitted = Math.Max(0, folded.Count - kept);
+		return omitted == 0
+			? folded
+			: [.. folded.Take(NavigationsKeptAtEachEnd), .. folded.Skip(folded.Count - NavigationsKeptAtEachEnd)];
 	}
 
 	/// <summary>The native dialogs the page opened after <paramref name="mark"/> (<c>type: message</c>), at most three.</summary>
@@ -152,6 +171,7 @@ internal sealed class PageEventCollector {
 		lock (_gate) {
 			_sequence++;
 			if (_errors.Count >= MaxStoredEvents) {
+				CountDroppedAtCap(_sequence);
 				return;
 			}
 			bool known = _phaseKeys.Contains((kind, firstLines, url));
@@ -164,6 +184,22 @@ internal sealed class PageEventCollector {
 		}
 	}
 
+	private void CountDroppedAtCap(int sequence) {
+		if (_droppedAtCap.Count > 0 && !_droppedAtCap[^1].Closed) {
+			_droppedAtCap[^1].Count++;
+			return;
+		}
+		_droppedAtCap.Add(new DroppedRun { First = sequence, Count = 1 });
+	}
+
+	private sealed class DroppedRun {
+		public int First { get; init; }
+
+		public int Count { get; set; }
+
+		public bool Closed { get; set; }
+	}
+
 	private void AddNavigation(string url) {
 		if (string.IsNullOrWhiteSpace(url) || url.StartsWith("about:", StringComparison.OrdinalIgnoreCase)) {
 			return;
@@ -172,7 +208,7 @@ internal sealed class PageEventCollector {
 			_sequence++;
 			_navigationCount++;
 			if (_navigations.Count < MaxStoredEvents) {
-				_navigations.Add((_sequence, _relativeUrl(url)));
+				_navigations.Add((_sequence, Cap(_relativeUrl(url))));
 			}
 		}
 	}
@@ -232,7 +268,10 @@ internal sealed class PageEventCollector {
 		if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out Uri uri)) {
 			return null;
 		}
-		string path = uri.AbsolutePath;
-		return path.Length > MaxUrlLength ? path[..(MaxUrlLength - 1)] + "…" : path;
+		return Cap(uri.AbsolutePath);
 	}
+
+	/// <summary>Cuts an address to <see cref="MaxUrlLength"/> characters, marking the cut.</summary>
+	internal static string Cap(string url) =>
+		url is not null && url.Length > MaxUrlLength ? url[..(MaxUrlLength - 1)] + "…" : url;
 }

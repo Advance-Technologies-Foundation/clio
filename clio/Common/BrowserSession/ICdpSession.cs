@@ -69,6 +69,12 @@ public sealed class CdpSessionClosedException : InvalidOperationException {
 	/// <param name="message">What could not complete, and why the session closed.</param>
 	public CdpSessionClosedException(string message) : base(message) {
 	}
+
+	/// <summary>Creates the exception around the transport failure that closed the session.</summary>
+	/// <param name="message">What could not complete, and why the session closed.</param>
+	/// <param name="innerException">The transport's own failure.</param>
+	public CdpSessionClosedException(string message, Exception innerException) : base(message, innerException) {
+	}
 }
 
 /// <summary>Opens <see cref="ICdpSession"/> instances.</summary>

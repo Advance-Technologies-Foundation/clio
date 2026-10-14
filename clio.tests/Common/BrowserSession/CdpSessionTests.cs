@@ -27,6 +27,12 @@ public sealed class CdpSessionTests {
 
 		public Func<JsonElement, string> Responder { get; set; }
 
+		// Thrown by the next SendAsync, as a socket that dropped mid-send.
+		public Exception SendException { get; set; }
+
+		// Thrown by ReceiveAsync once set, as a failure the receive loop does not expect.
+		public Exception ReceiveException { get; set; }
+
 		public bool Disposed { get; private set; }
 
 		public void Push(string message) => _incoming.Writer.TryWrite(message);
@@ -34,6 +40,9 @@ public sealed class CdpSessionTests {
 		public void Close() => _incoming.Writer.TryComplete();
 
 		public Task SendAsync(string message, CancellationToken ct) {
+			if (SendException is not null) {
+				return Task.FromException(SendException);
+			}
 			JsonElement sent = JsonDocument.Parse(message).RootElement.Clone();
 			Sent.Enqueue(sent);
 			string reply = Responder?.Invoke(sent);
@@ -44,6 +53,9 @@ public sealed class CdpSessionTests {
 		}
 
 		public async Task<string> ReceiveAsync(CancellationToken ct) {
+			if (ReceiveException is not null) {
+				throw ReceiveException;
+			}
 			try {
 				return await _incoming.Reader.ReadAsync(ct);
 			}
@@ -255,6 +267,57 @@ public sealed class CdpSessionTests {
 
 		// Assert
 		transport.Disposed.Should().BeTrue(because: "the session owns the transport");
+	}
+
+	[Test]
+	[Description("A receive-loop failure outside the transport filter (a regex timeout, say) still closes the session: later commands fail at once, and DisposeAsync neither throws nor fails when called twice.")]
+	public async Task ReceiveLoop_Should_Close_The_Session_On_An_Unexpected_Failure() {
+		// Arrange
+		FakeTransport transport = new() {
+			ReceiveException = new System.Text.RegularExpressions.RegexMatchTimeoutException("x", "y", TimeSpan.FromSeconds(1))
+		};
+		CdpSession session = new(transport);
+		DateTime until = DateTime.UtcNow + Wait;
+		Exception refused = null;
+		while (refused is null && DateTime.UtcNow < until) {
+			try {
+				await session.SendAsync("Page.enable", null, new CancellationTokenSource(TimeSpan.FromMilliseconds(200)).Token);
+			}
+			catch (CdpSessionClosedException exception) {
+				refused = exception;
+			}
+			catch (OperationCanceledException) {
+				// The loop had not failed yet; ask again.
+			}
+		}
+
+		// Act
+		Func<Task> dispose = async () => {
+			await session.DisposeAsync();
+			await session.DisposeAsync();
+		};
+
+		// Assert
+		refused.Should().NotBeNull(because: "a session whose loop died must refuse commands instead of letting them wait out a timeout");
+		refused!.Message.Should().Contain("stopped reading", because: "the reason names the failure");
+		await dispose.Should().NotThrowAsync(because: "a faulted loop must not replace the caller's real error, and a second dispose is a no-op");
+		transport.Disposed.Should().BeTrue(because: "the transport is still released");
+	}
+
+	[Test]
+	[Description("A socket that drops while a command is sent fails it with CdpSessionClosedException (the inner exception kept), not a raw WebSocketException that slips past the callers' filters.")]
+	public async Task SendAsync_Should_Wrap_A_Transport_Send_Failure() {
+		// Arrange
+		FakeTransport transport = new() { SendException = new System.Net.WebSockets.WebSocketException("reset") };
+		await using CdpSession session = new(transport);
+
+		// Act
+		Func<Task> send = () => session.SendAsync("Runtime.evaluate", null, CancellationToken.None);
+
+		// Assert
+		(await send.Should().ThrowAsync<CdpSessionClosedException>(because: "the session is gone for every caller alike"))
+			.Which.InnerException.Should().BeOfType<System.Net.WebSockets.WebSocketException>(
+				because: "the transport's own failure is kept for diagnosis");
 	}
 
 	private static async Task WaitForSentAsync(FakeTransport transport, int count) {

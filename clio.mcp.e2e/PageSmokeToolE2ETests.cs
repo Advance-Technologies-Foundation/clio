@@ -92,11 +92,11 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.NoEnvironment")]
-	[Description("Through clio-run, page-smoke logs in to a loopback Creatio stub, injects the session into a headless Chromium (the stub serves the Shell only with the session cookie), reads the page, clicks a button and reports the navigation and the errors that followed - with no cookie in the reply.")]
+	[Description("Through clio-run, page-smoke runs in a worker child (observed in the host's worker registry), logs in to a loopback Creatio stub, injects the session into a headless Chromium (the stub serves the Shell only with the session cookie), reads the page, clicks a button and reports the navigation and the errors that followed - with no cookie in the reply, and with the browser's own output kept out of the JSON-RPC stream.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-smoke reads and clicks a page served by a Creatio stub")]
+	[AllureName("page-smoke runs in a worker, and reads and clicks a page served by a Creatio stub")]
 	public async Task PageSmoke_Should_Read_And_Click_A_Stub_Page_End_To_End() {
-		await StubEnvironmentStand.RunAsync(
+		await StubEnvironmentStand.RunWithClioHomeAsync(
 			"clio-page-smoke-e2e",
 			new RuntimeDetectionStubServerConfiguration(
 				NetCoreHealthEnabled: false,
@@ -105,8 +105,9 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 				NetFrameworkServiceEnabled: true,
 				NetFrameworkUiMarkerEnabled: true,
 				ShellPageHtml: StubShellPage),
-			async (session, environmentName, _, cancellationToken) => {
+			async (session, environmentName, _, clioHome, cancellationToken) => {
 				// Act
+				await using WorkerSpawnObserver workers = WorkerSpawnObserver.Start(clioHome);
 				CallToolResult result = await session.CallToolAsync(ClioRunTool.ToolName,
 					new Dictionary<string, object?> {
 						["command"] = ToolName,
@@ -125,6 +126,10 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 				TestContext.Progress.WriteLine($"page-smoke reply: {System.Text.Encoding.UTF8.GetByteCount(text)} bytes");
 
 				// Assert
+				workers.ReadFailures.Should().BeEmpty(because: "a failed registry read would make the worker observation meaningless");
+				workers.Observed.Should().NotBeEmpty(
+					because: "page-smoke is a worker-cohort member: a browser started in the host would inherit its JSON-RPC "
+						+ "stdout and outlive a killed client, so the call must be relayed to a worker child");
 				response.GetProperty("success").GetBoolean().Should().BeTrue(because: text);
 				response.GetProperty("ready").GetBoolean().Should().BeTrue(
 					because: "the stub served the page, so the session cookie reached the browser");
@@ -214,9 +219,12 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		settled.ValueKind.Should().BeOneOf([JsonValueKind.True, JsonValueKind.False], because: "it is a boolean");
 	}
 
+	// Only the missing-browser answer is ignored; any other launch failure (a Linux regression, say) must fail the test.
+	private const string NoBrowserMarker = "needs a Chromium-based browser on the machine clio runs on";
+
 	private static void IgnoreWithoutBrowser(JsonElement response) {
 		if (response.TryGetProperty("error", out JsonElement error)
-			&& error.GetString()?.Contains("Chromium", StringComparison.OrdinalIgnoreCase) == true) {
+			&& error.GetString()?.Contains(NoBrowserMarker, StringComparison.Ordinal) == true) {
 			Assert.Ignore("page-smoke needs a Chromium-based browser on the agent: " + error.GetString());
 		}
 	}
