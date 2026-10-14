@@ -379,22 +379,25 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 					["authorSysAdminUnit"] = new JsonObject { ["id"] = rule.AuthorId.ToString() },
 					["granteeSysAdminUnit"] = new JsonObject { ["id"] = rule.GranteeId.ToString() }
 				};
-			// Only what the plan changes is written: a field the change does not touch stays exactly as read.
-			DefaultRecordRule readRule = index >= 0 ? read[index].Read : null;
-			foreach (RecordOperation operation in RecordRightNames.AllOperations) {
-				if (readRule is null || readRule.LevelOf(operation) != rule.LevelOf(operation)) {
-					ruleNode[LevelField(operation)] = (int)rule.LevelOf(operation);
-				}
-			}
-			if (readRule is null || readRule.DoNotApplyForManager != rule.DoNotApplyForManager) {
-				ruleNode["doNotApplyForManager"] = rule.DoNotApplyForManager;
-			}
+			WriteChangedFields(ruleNode, index >= 0 ? read[index].Read : null, rule);
 			if (index >= 0) {
 				read.RemoveAt(index);
 			}
 			rules.Add(ruleNode);
 		}
 		return rules;
+	}
+
+	// Only what the plan changes is written: a field the change does not touch stays exactly as read.
+	private static void WriteChangedFields(JsonObject ruleNode, DefaultRecordRule readRule, DefaultRecordRule rule) {
+		IEnumerable<RecordOperation> changed = RecordRightNames.AllOperations
+			.Where(operation => readRule is null || readRule.LevelOf(operation) != rule.LevelOf(operation));
+		foreach (RecordOperation operation in changed) {
+			ruleNode[LevelField(operation)] = (int)rule.LevelOf(operation);
+		}
+		if (readRule is null || readRule.DoNotApplyForManager != rule.DoNotApplyForManager) {
+			ruleNode["doNotApplyForManager"] = rule.DoNotApplyForManager;
+		}
 	}
 
 	// Every default record rule, in the order the service returned it. A missing level is "not set"; a stored number

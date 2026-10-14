@@ -60,16 +60,19 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 	private readonly IRecordRightsActualization _actualization;
 	private readonly IObjectRecordCounter _recordCounter;
 	private readonly IRetryDelay _delay;
+	private readonly TimeProvider _clock;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
 	public ApplyDefaultRecordRightsCommand(IObjectRightsReader reader, IRecordRightsActualization actualization,
-		IObjectRecordCounter recordCounter, IRetryDelay delay, IInteractiveConsole console, ILogger logger) {
+		IObjectRecordCounter recordCounter, IRetryDelay delay, TimeProvider clock, IInteractiveConsole console,
+		ILogger logger) {
 		_reader = reader;
 		_actualization = actualization;
 		_recordCounter = recordCounter;
 		_delay = delay;
+		_clock = clock;
 		_console = console;
 		_logger = logger;
 	}
@@ -83,21 +86,10 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			_logger.WriteError("Error: --timeout-seconds must be a positive number of seconds.");
 			return 1;
 		}
-		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget);
+		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget,
+			_clock);
 		ObjectRightsInfo info = _reader.GetObjectRights(schemaName, requestOptions);
-		if (!info.IsRead) {
-			_logger.WriteError($"Error: '{schemaName}': {info.FailureReason}. Nothing was started.");
-			return 1;
-		}
-		if (!info.AdministratedByRecords) {
-			_logger.WriteError($"Error: record permissions on '{schemaName}' are OFF, so its record rights are not "
-				+ "evaluated and there is nothing to apply. Turn them on first with set-default-record-rights "
-				+ "--enable-record-permissions. Nothing was started.");
-			return 1;
-		}
-		if (info.SchemaUId == Guid.Empty) {
-			_logger.WriteError($"Error: '{schemaName}': the service did not return the object's schema UId. Nothing was "
-				+ "started.");
+		if (!CanApplyTo(schemaName, info)) {
 			return 1;
 		}
 		WarnIfAnUpdateIsRunning(schemaName, requestOptions);
@@ -109,9 +101,10 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		string summary = $"Apply the default record rules of '{schemaName}' to its existing records{count}. Rights that "
 			+ "came from default rules are replaced by the current rules; rights granted by hand stay. The run is heavy on "
 			+ "large tables.";
-		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, CommandName, "record rights",
-					summary, new[] { $"Current rules: {DefaultRecordRightsFormat.Rules(info.RecordState.Rules)}." },
-					"Record-rights update cancelled.", hasPreview: false)) {
+		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, new ConfirmRequest(CommandName,
+					"record rights", summary,
+					new[] { $"Current rules: {DefaultRecordRightsFormat.Rules(info.RecordState.Rules)}." },
+					"Record-rights update cancelled.", HasPreview: false))) {
 			case ConfirmDecision.Cancelled:
 				return 0;
 			case ConfirmDecision.Refused:
@@ -131,11 +124,7 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 			return ReportLaunchFailure(schemaName, ex);
 		}
 		if (started.Error is not null) {
-			if (started.Status == RecordRightsActualizationClient.OutcomeUnknownStatus) {
-				return ReportLaunchOutcomeUnknown(schemaName, started.Error);
-			}
-			_logger.WriteError($"Error: '{schemaName}': {ObjectRightsSupport.DisplayError(started.Error)}");
-			return 1;
+			return ReportLaunchError(schemaName, started);
 		}
 		if (!Guid.TryParse(started.ProcessId, out Guid processId) || processId == Guid.Empty) {
 			// Queued in background: the platform gives no id to follow, and the launch itself is the outcome.
@@ -147,6 +136,25 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		return options.Wait ?? true
 			? WaitForEnd(schemaName, processId, options.TimeoutSeconds, requestOptions)
 			: ReportStillRunning(schemaName, processId, waited: false);
+	}
+
+	private bool CanApplyTo(string schemaName, ObjectRightsInfo info) {
+		if (!info.IsRead) {
+			_logger.WriteError($"Error: '{schemaName}': {info.FailureReason}. Nothing was started.");
+			return false;
+		}
+		if (!info.AdministratedByRecords) {
+			_logger.WriteError($"Error: record permissions on '{schemaName}' are OFF, so its record rights are not "
+				+ "evaluated and there is nothing to apply. Turn them on first with set-default-record-rights "
+				+ "--enable-record-permissions. Nothing was started.");
+			return false;
+		}
+		if (info.SchemaUId == Guid.Empty) {
+			_logger.WriteError($"Error: '{schemaName}': the service did not return the object's schema UId. Nothing was "
+				+ "started.");
+			return false;
+		}
+		return true;
 	}
 
 	// A second run started while one is going doubles the load and, for the same object, does the same work twice. The
@@ -184,6 +192,14 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		return 1;
 	}
 
+	private int ReportLaunchError(string schemaName, RunProcessResponse started) {
+		if (started.Status == RecordRightsActualizationClient.OutcomeUnknownStatus) {
+			return ReportLaunchOutcomeUnknown(schemaName, started.Error);
+		}
+		_logger.WriteError($"Error: '{schemaName}': {ObjectRightsSupport.DisplayError(started.Error)}");
+		return 1;
+	}
+
 	// The launch may have started the run though no usable answer came back — no answer, or a body a proxy replaced (an
 	// empty or non-JSON 502/504 page).
 	private int ReportLaunchOutcomeUnknown(string schemaName, string reason) {
@@ -204,35 +220,40 @@ public class ApplyDefaultRecordRightsCommand : Command<ApplyDefaultRecordRightsO
 		if (requestOptions.Deadline is { } call && call.Remaining < waitFor) {
 			waitFor = call.Remaining;
 		}
-		RequestDeadline wait = new(waitFor);
+		RequestDeadline wait = new(waitFor, _clock);
 		CreatioRequestOptions pollOptions = requestOptions with { Deadline = wait };
 		bool statusSeen = false;
 		int reads = 0;
 		string lastReadError = null;
 		while (!wait.IsSpent) {
 			reads++;
-			try {
-				ProcessRunStatus status = _actualization.ReadStatus(processId, pollOptions);
-				if (status is not null) {
-					statusSeen = true;
-					if (status.IsFinal) {
-						return ReportEnd(schemaName, processId, status);
-					}
-				}
+			ProcessRunStatus status = TryReadStatus(processId, pollOptions, ref lastReadError);
+			if (status?.IsFinal == true) {
+				return ReportEnd(schemaName, processId, status);
 			}
-			catch (Exception ex) {
-				lastReadError = ObjectRightsSupport.DisplayFailure(ex);
-			}
+			statusSeen |= status is not null;
 			if (wait.IsSpent) {
 				break;
 			}
 			_delay.Wait(wait.Remaining < PollInterval ? wait.Remaining : PollInterval);
 		}
-		return statusSeen
-			? ReportStillRunning(schemaName, processId, waited: true)
-			: ReportStatusUnknown(schemaName, processId, reads == 0
-				? "the wait ended before the status could be read"
-				: lastReadError ?? "no SysProcessLog row was found");
+		if (statusSeen) {
+			return ReportStillRunning(schemaName, processId, waited: true);
+		}
+		string reason = reads == 0
+			? "the wait ended before the status could be read"
+			: lastReadError ?? "no SysProcessLog row was found";
+		return ReportStatusUnknown(schemaName, processId, reason);
+	}
+
+	private ProcessRunStatus TryReadStatus(Guid processId, CreatioRequestOptions pollOptions, ref string lastReadError) {
+		try {
+			return _actualization.ReadStatus(processId, pollOptions);
+		}
+		catch (Exception ex) {
+			lastReadError = ObjectRightsSupport.DisplayFailure(ex);
+			return null;
+		}
 	}
 
 	// The run was started, but no status of it was ever read (no SysProcessLog row, or every read failed): clio cannot

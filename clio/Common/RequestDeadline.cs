@@ -19,6 +19,14 @@ public sealed class RequestDeadline {
 
 	private RequestDeadline(TimeSpan budget, Stopwatch stopwatch) : this(budget, () => stopwatch.Elapsed) { }
 
+	/// <summary>Starts a deadline of <paramref name="budget"/> from now, measured on <paramref name="clock"/>.</summary>
+	/// <param name="budget">The time the whole call may take.</param>
+	/// <param name="clock">The clock the elapsed time is read from.</param>
+	public RequestDeadline(TimeSpan budget, TimeProvider clock) : this(budget, clock, clock.GetTimestamp()) { }
+
+	private RequestDeadline(TimeSpan budget, TimeProvider clock, long started)
+		: this(budget, () => clock.GetElapsedTime(started)) { }
+
 	/// <summary>A deadline whose elapsed time is read from <paramref name="elapsed"/>; for tests.</summary>
 	/// <param name="budget">The time the whole call may take.</param>
 	/// <param name="elapsed">Returns the time spent so far.</param>

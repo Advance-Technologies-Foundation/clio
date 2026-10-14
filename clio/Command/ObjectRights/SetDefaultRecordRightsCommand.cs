@@ -124,16 +124,8 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 			return 1;
 		}
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget);
-		DefaultRecordRuleChange ruleChange = null;
-		if (rule is not null) {
-			if (!ObjectRightsCommandInput.TryResolveUnitName(_unitLookup, rule.Author, "author", requestOptions, _logger,
-					out string authorName)
-				|| !ObjectRightsCommandInput.TryResolveUnitName(_unitLookup, rule.Grantee, "grantee", requestOptions,
-					_logger, out string granteeName)) {
-				return 1;
-			}
-			ruleChange = new DefaultRecordRuleChange(rule.Author, authorName, rule.Grantee, granteeName, rule.Operations,
-				rule.Level, options.DoNotApplyForManager, options.Revoke);
+		if (!TryResolveRule(options, rule, requestOptions, out DefaultRecordRuleChange ruleChange)) {
+			return 1;
 		}
 		ObjectRightsInfo before = _reader.GetObjectRights(schemaName, requestOptions);
 		if (!before.IsRead) {
@@ -161,18 +153,16 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 		// or in the result of a confirmed call — never for a run that is about to be refused for want of a --confirm.
 		// While the switch stays off there is nothing to apply (apply is refused), so neither the count nor the hint.
 		bool countShown = options.Preview || options.Confirm || _console.IsInteractive;
-		if ((plan.Enables || plan.ChangesRules) && plan.After.AdministratedByRecords && countShown) {
-			facts.Add($"'{schemaName}' has {ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName,
-				requestOptions, out _)}. Applying the rules to existing records is a separate, heavy step "
-				+ "(apply-default-record-rights): ask the user whether and when to run it.");
+		if (countShown && plan.After.AdministratedByRecords && (plan.Enables || plan.ChangesRules)) {
+			facts.Add(ApplyHint(schemaName, requestOptions));
 		}
 		if (options.Preview) {
 			_logger.WriteInfo($"PREVIEW — nothing was changed. {change.Summary}");
 			WriteFacts(facts);
 			return 0;
 		}
-		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, CommandName, "record permissions",
-					change.Summary, facts, "Record-permissions change cancelled.")) {
+		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, new ConfirmRequest(CommandName,
+					"record permissions", change.Summary, facts, "Record-permissions change cancelled."))) {
 			case ConfirmDecision.Cancelled:
 				return 0;
 			case ConfirmDecision.Refused:
@@ -187,6 +177,28 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
 		return save.Succeeded ? ReportSaved(change, facts, actual) : ReportFailedSave(change, facts, save, actual);
 	}
+
+	private bool TryResolveRule(SetDefaultRecordRightsOptions options, RuleInput rule,
+		CreatioRequestOptions requestOptions, out DefaultRecordRuleChange ruleChange) {
+		ruleChange = null;
+		if (rule is null) {
+			return true;
+		}
+		if (!ObjectRightsCommandInput.TryResolveUnitName(_unitLookup, rule.Author, "author", requestOptions, _logger,
+				out string authorName)
+			|| !ObjectRightsCommandInput.TryResolveUnitName(_unitLookup, rule.Grantee, "grantee", requestOptions,
+				_logger, out string granteeName)) {
+			return false;
+		}
+		ruleChange = new DefaultRecordRuleChange(rule.Author, authorName, rule.Grantee, granteeName, rule.Operations,
+			rule.Level, options.DoNotApplyForManager, options.Revoke);
+		return true;
+	}
+
+	private string ApplyHint(string schemaName, CreatioRequestOptions requestOptions) =>
+		$"'{schemaName}' has {ObjectRightsCommandInput.DescribeRecordCount(_recordCounter, schemaName, requestOptions,
+			out _)}. Applying the rules to existing records is a separate, heavy step (apply-default-record-rights): ask "
+		+ "the user whether and when to run it.";
 
 	// The parsed rule arguments of a rule change.
 	private sealed record RuleInput(Guid Author, Guid Grantee, IReadOnlyCollection<RecordOperation> Operations,
@@ -211,14 +223,22 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 				if (Rule is not null) {
 					parts.Add(Rule.Revoke
 						? $"revoke [{DefaultRecordRightsFormat.Operations(Rule.Operations)}] of rule {Pair}"
-						: $"grant [{DefaultRecordRightsFormat.Operations(Rule.Operations)}] "
-							+ $"{RecordRightNames.Of(Rule.Level)} by rule {Pair}"
-							+ (Rule.DoNotApplyForManager is { } flag ? $", do not apply for manager: {Lower(flag)}" : ""));
+						: GrantSummary);
 				}
 				if (Request.DisableRecordPermissions) {
 					parts.Add("turn record permissions OFF");
 				}
 				return $"On '{SchemaName}': {string.Join("; ", parts)}.";
+			}
+		}
+
+		private string GrantSummary {
+			get {
+				string manager = Rule.DoNotApplyForManager is { } flag
+					? $", do not apply for manager: {Lower(flag)}"
+					: "";
+				return $"grant [{DefaultRecordRightsFormat.Operations(Rule.Operations)}] "
+					+ $"{RecordRightNames.Of(Rule.Level)} by rule {Pair}{manager}";
 			}
 		}
 
@@ -254,9 +274,16 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 			|| !TryParseUnit(options.Grantee, "--grantee", out Guid grantee)) {
 			return false;
 		}
-		if (!TryParseOperations(options.Operations, out IReadOnlyCollection<RecordOperation> operations)) {
+		if (!TryParseOperations(options.Operations, out IReadOnlyCollection<RecordOperation> operations)
+			|| !RuleFlagsAgree(options)
+			|| !TryParseLevel(options.Level, out RecordRightLevel level)) {
 			return false;
 		}
+		rule = new RuleInput(author, grantee, operations, level);
+		return true;
+	}
+
+	private bool RuleFlagsAgree(SetDefaultRecordRightsOptions options) {
 		// The switch and the rules change separately (as ENG-99741 D9): a disable is a call of its own, and a revoke never
 		// changes the switch. Only a grant may carry the enable.
 		if (options.DisableRecordPermissions) {
@@ -274,14 +301,17 @@ public class SetDefaultRecordRightsCommand : Command<SetDefaultRecordRightsOptio
 				+ "operations to 'not set'.");
 			return false;
 		}
-		RecordRightLevel level = RecordRightLevel.Granted;
-		if (options.Level is not null && !RecordRightNames.TryParseGrantLevel(options.Level.Trim(), out level)) {
-			_logger.WriteError($"Error: --level: unknown level '{ObjectRightsSupport.Display(options.Level)}'. Use "
-				+ $"{RecordRightNames.AcceptedLevels}.");
-			return false;
-		}
-		rule = new RuleInput(author, grantee, operations, level);
 		return true;
+	}
+
+	private bool TryParseLevel(string raw, out RecordRightLevel level) {
+		level = RecordRightLevel.Granted;
+		if (raw is null || RecordRightNames.TryParseGrantLevel(raw.Trim(), out level)) {
+			return true;
+		}
+		_logger.WriteError($"Error: --level: unknown level '{ObjectRightsSupport.Display(raw)}'. Use "
+			+ $"{RecordRightNames.AcceptedLevels}.");
+		return false;
 	}
 
 	private bool TryParseSwitchOnly(SetDefaultRecordRightsOptions options) {

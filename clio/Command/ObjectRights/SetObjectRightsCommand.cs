@@ -148,8 +148,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			WriteFacts(facts);
 			return 0;
 		}
-		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, "set-object-rights",
-					"object permissions", change.Summary, facts, "Object-permissions change cancelled.")) {
+		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, new ConfirmRequest(
+					"set-object-rights", "object permissions", change.Summary, facts,
+					"Object-permissions change cancelled."))) {
 			case ConfirmDecision.Cancelled:
 				return 0;
 			case ConfirmDecision.Refused:

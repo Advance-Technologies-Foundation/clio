@@ -711,9 +711,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 			.Returns(WithRecords("UsrOrder", false, RecordRule(Employees, Role)));
 
 		// Act
-		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
 
 		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo(Arg.Is<string>(line => line.Contains("Record permissions: OFF")
 			&& line.Contains("not in effect while record permissions are off")));
 	}
@@ -725,9 +726,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_rightsReader.GetObjectRights("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(WithRecords("UsrOrder", true));
 
 		// Act
-		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
 
 		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo(Arg.Is<string>(line => line.Contains("NO default record rules")
 			&& line.Contains("every user sees only the records they create")));
 	}
@@ -825,9 +827,10 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		_recordCounter.CountRecords("UsrOrder", Arg.Any<CreatioRequestOptions>()).Returns(42L);
 
 		// Act
-		_command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
+		int exitCode = _command.Execute(new GetObjectRightsOptions { EntitySchemaName = "UsrOrder" });
 
 		// Assert
+		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo("  UsrOrder: 42 existing record(s), counted under the calling account.");
 	}
 

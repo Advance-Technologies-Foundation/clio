@@ -28,6 +28,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 	private IRecordRightsActualization _actualization;
 	private IObjectRecordCounter _counter;
 	private IRetryDelay _delay;
+	private ManualClock _clock;
 	private IInteractiveConsole _console;
 	private ILogger _logger;
 	private List<string> _errors;
@@ -58,6 +59,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		_actualization.FindRunning(Arg.Any<CreatioRequestOptions>()).Returns(Array.Empty<RunningUpdate>());
 		_counter = Substitute.For<IObjectRecordCounter>();
 		_delay = Substitute.For<IRetryDelay>();
+		_clock = new ManualClock();
 		_console = Substitute.For<IInteractiveConsole>();
 		_logger = Substitute.For<ILogger>();
 		_errors = new List<string>();
@@ -70,6 +72,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		containerBuilder.AddTransient(_ => _actualization);
 		containerBuilder.AddTransient(_ => _counter);
 		containerBuilder.AddSingleton(_ => _delay);
+		containerBuilder.AddSingleton<TimeProvider>(_ => _clock);
 		containerBuilder.AddTransient(_ => _console);
 		containerBuilder.AddTransient(_ => _logger);
 	}
@@ -144,8 +147,8 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		// Arrange
 		ObjectIs(true);
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>()).Returns(Status(ProcessRunStatus.Running, "Running"));
-		// Each poll interval passes for real time: the wait of one second ends after a few polls.
-		_delay.When(d => d.Wait(Arg.Any<TimeSpan>())).Do(call => System.Threading.Thread.Sleep((TimeSpan)call[0]));
+		// Each poll interval passes on the clock: the wait of one second ends after a few polls.
+		ClockDelay();
 
 		// Act
 		int exitCode = _command.Execute(Options(o => o.TimeoutSeconds = 1));
@@ -271,16 +274,26 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 	}
 
 
-	// Each poll interval passes for real time, so a wait that is never ended by a final status ends by the clock.
-	private void RealDelay() =>
-		_delay.When(d => d.Wait(Arg.Any<TimeSpan>())).Do(call => System.Threading.Thread.Sleep((TimeSpan)call[0]));
+	// Each poll interval passes on the clock, so a wait that is never ended by a final status ends by the clock.
+	private void ClockDelay() =>
+		_delay.When(d => d.Wait(Arg.Any<TimeSpan>())).Do(call => _clock.Advance((TimeSpan)call[0]));
+
+	private sealed class ManualClock : TimeProvider {
+		private long _ticks;
+
+		public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+		public override long GetTimestamp() => _ticks;
+
+		public void Advance(TimeSpan by) => _ticks += by.Ticks;
+	}
 
 	[Test]
 	[Description("When every status read fails, the result says the status could not be read — not 'still running' — and the reads go on until the wait ends instead of stopping at the first fault.")]
 	public void Execute_ShouldReportStatusUnknown_WhenEveryReadFails() {
 		// Arrange
 		ObjectIs(true);
-		RealDelay();
+		ClockDelay();
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
 			.Returns(_ => throw new InvalidOperationException("SelectQuery failed: denied"));
 
@@ -301,7 +314,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 	public void Execute_ShouldReportStatusUnknown_WhenNoLogRow() {
 		// Arrange
 		ObjectIs(true);
-		RealDelay();
+		ClockDelay();
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>()).Returns((ProcessRunStatus)null);
 
 		// Act
@@ -336,7 +349,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 	public void Execute_ShouldCutTheWaitToTheCallBudget() {
 		// Arrange
 		ObjectIs(true);
-		RealDelay();
+		ClockDelay();
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
 			.Returns(new ProcessRunStatus(ProcessRunStatus.Running, "Running"));
 		System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
@@ -511,7 +524,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 		// Arrange
 		ObjectIs(true);
 		_actualization.Start(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns(_ => {
-			System.Threading.Thread.Sleep(300);
+			_clock.Advance(TimeSpan.FromMilliseconds(300));
 			return new RunProcessResponse { Status = "running", ProcessId = ProcessId.ToString() };
 		});
 
@@ -533,7 +546,7 @@ public class ApplyDefaultRecordRightsCommandTests : BaseCommandTests<ApplyDefaul
 	public void Execute_ShouldReportStatusUnknown_WhenAReadThrowsUnexpectedly() {
 		// Arrange
 		ObjectIs(true);
-		RealDelay();
+		ClockDelay();
 		_actualization.ReadStatus(ProcessId, Arg.Any<CreatioRequestOptions>())
 			.Returns(_ => throw new System.Text.Json.JsonException("'<' is an invalid start of a value."));
 

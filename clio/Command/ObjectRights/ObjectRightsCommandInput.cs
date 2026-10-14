@@ -12,6 +12,16 @@ internal enum ConfirmDecision {
 	Refused
 }
 
+/// <summary>What the destructive gate of an object-rights write shows and says.</summary>
+/// <param name="CommandName">The command, for the refusal.</param>
+/// <param name="What">What changes, for the prompt: <c>object permissions</c>.</param>
+/// <param name="Summary">The one-line summary of the change.</param>
+/// <param name="Facts">The facts the operator approves.</param>
+/// <param name="Cancelled">What is written when the user answers no.</param>
+/// <param name="HasPreview">The command has a <c>--preview</c> dry run, which the refusal then suggests.</param>
+internal sealed record ConfirmRequest(string CommandName, string What, string Summary, IEnumerable<string> Facts,
+	string Cancelled, bool HasPreview = true);
+
 /// <summary>
 /// What a name the caller passed resolved to. <see cref="ByCode"/> is the read of the object with that code — not found
 /// when no object has it, <see langword="null"/> when the name is not a schema identifier; <see cref="TitleMatches"/> are
@@ -138,10 +148,12 @@ internal static class ObjectRightsCommandInput {
 	/// <param name="options">The command's options.</param>
 	/// <param name="callBudget">The time every request of the call may take together; <see langword="null"/>: no limit
 	/// beyond each request's timeout.</param>
+	/// <param name="clock">The clock the deadline is measured on; <see langword="null"/>: the system clock.</param>
 	/// <returns>The request options for the service calls.</returns>
-	internal static CreatioRequestOptions RequestOptions(RemoteCommandOptions options, TimeSpan? callBudget = null) => new() {
+	internal static CreatioRequestOptions RequestOptions(RemoteCommandOptions options, TimeSpan? callBudget = null,
+		TimeProvider clock = null) => new() {
 		TimeOut = options.TimeOut, MaxAttempts = options.MaxAttempts, RetryDelay = options.RetryDelay,
-		Deadline = callBudget is { } budget ? new RequestDeadline(budget) : null
+		Deadline = callBudget is { } budget ? new RequestDeadline(budget, clock ?? TimeProvider.System) : null
 	};
 
 	/// <summary>
@@ -222,29 +234,24 @@ internal static class ObjectRightsCommandInput {
 	/// <param name="confirm">The caller passed <c>--confirm</c>.</param>
 	/// <param name="console">The console to prompt on.</param>
 	/// <param name="logger">Where the prompt and the refusal are written.</param>
-	/// <param name="commandName">The command, for the refusal.</param>
-	/// <param name="what">What changes, for the prompt: <c>object permissions</c>.</param>
-	/// <param name="summary">The one-line summary of the change.</param>
-	/// <param name="facts">The facts the operator approves.</param>
-	/// <param name="cancelled">What is written when the user answers no.</param>
-	/// <param name="hasPreview">The command has a <c>--preview</c> dry run, which the refusal then suggests.</param>
+	/// <param name="request">What the gate shows and says.</param>
 	/// <returns>Whether to apply, the user cancelled, or the run was refused.</returns>
-	internal static ConfirmDecision Confirm(bool confirm, IInteractiveConsole console, ILogger logger, string commandName,
-		string what, string summary, IEnumerable<string> facts, string cancelled, bool hasPreview = true) {
+	internal static ConfirmDecision Confirm(bool confirm, IInteractiveConsole console, ILogger logger,
+		ConfirmRequest request) {
 		if (confirm) {
 			return ConfirmDecision.Approved;
 		}
 		if (!console.IsInteractive) {
-			logger.WriteError($"Error: {commandName} is destructive and needs confirmation. Re-run with --confirm to "
-				+ $"apply the change{(hasPreview ? " (or --preview to see it first)" : "")}: {summary}");
+			logger.WriteError($"Error: {request.CommandName} is destructive and needs confirmation. Re-run with --confirm "
+				+ $"to apply the change{(request.HasPreview ? " (or --preview to see it first)" : "")}: {request.Summary}");
 			return ConfirmDecision.Refused;
 		}
-		logger.WriteWarning($"About to change {what}: {summary}");
-		foreach (string fact in facts) {
+		logger.WriteWarning($"About to change {request.What}: {request.Summary}");
+		foreach (string fact in request.Facts) {
 			logger.WriteWarning($"  {fact}");
 		}
 		if (!console.Prompt("Apply this change?")) {
-			logger.WriteInfo(cancelled);
+			logger.WriteInfo(request.Cancelled);
 			return ConfirmDecision.Cancelled;
 		}
 		return ConfirmDecision.Approved;
