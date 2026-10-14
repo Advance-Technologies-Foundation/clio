@@ -50,7 +50,7 @@ public sealed class SqlSchemaGetCommandTests {
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema).Returns(GetSchemaUrl);
 		_command = new SqlSchemaGetCommand(
 			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger,
-			_captionCultureResolver);
+			_captionCultureResolver, new EnvironmentSettings());
 	}
 
 	[Test]
@@ -171,6 +171,7 @@ public sealed class SqlSchemaGetCommandTests {
 			.And.NotContain("Error reading JObject",
 				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
+
 	[Test]
 	[Description("TryGetSchema returns the caption in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
 	public void TryGetSchema_Returns_Caption_In_Profile_Culture() {
@@ -194,7 +195,7 @@ public sealed class SqlSchemaGetCommandTests {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
 		var options = new SqlSchemaGetOptions { SchemaName = "UsrSchema" };
-		_captionCultureResolver.Resolve(options, null).Returns("uk-UA");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("uk-UA");
 
 		// Act
 		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);

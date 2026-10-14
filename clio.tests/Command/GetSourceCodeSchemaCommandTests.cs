@@ -50,7 +50,7 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		_serviceUrlBuilder.Build("ServiceModel/SourceCodeSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
 		_command = new GetSourceCodeSchemaCommand(
 			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger,
-			_captionCultureResolver);
+			_captionCultureResolver, new EnvironmentSettings());
 	}
 
 	[Test]
@@ -127,6 +127,7 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		result.Should().BeFalse();
 		response.Error.Should().Contain("UsrHelper").And.Contain("SourceCodeSchemaDesignerService");
 	}
+
 	[Test]
 	[Description("TryGetSchema returns the caption in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
 	public void TryGetSchema_Returns_Caption_In_Profile_Culture() {
@@ -150,7 +151,7 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
 		var options = new GetSourceCodeSchemaOptions { SchemaName = "UsrSchema" };
-		_captionCultureResolver.Resolve(options, null).Returns("uk-UA");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("uk-UA");
 
 		// Act
 		bool result = _command.TryGetSchema(options, out GetSourceCodeSchemaResponse response);

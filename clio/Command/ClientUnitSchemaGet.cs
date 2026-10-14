@@ -86,6 +86,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 	private readonly ICaptionCultureResolver _captionCultureResolver;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	/// <summary>
 	/// Creates the command with the collaborators it needs to fetch and persist client-unit schemas.
@@ -95,6 +96,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
 	/// <param name="captionCultureResolver">Resolves the profile culture the returned caption is picked in.</param>
+	/// <param name="environmentSettings">The environment the schema is read from; its user's profile culture picks the caption.</param>
 	/// <remarks>
 	/// Every write this command performs goes through <c>OutputPathConfinement</c>, which takes
 	/// <see cref="IoFileSystem"/> — so that is the only file-system abstraction it needs.
@@ -104,12 +106,14 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		IServiceUrlBuilder serviceUrlBuilder,
 		IoFileSystem ioFileSystem,
 		ILogger logger,
-		ICaptionCultureResolver captionCultureResolver) {
+		ICaptionCultureResolver captionCultureResolver,
+		EnvironmentSettings environmentSettings) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 		_captionCultureResolver = captionCultureResolver;
+		_environmentSettings = environmentSettings;
 	}
 
 	/// <summary>
@@ -146,7 +150,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
 			string caption = SchemaDesignerHelper.ExtractCaption(
-				schema, () => _captionCultureResolver.Resolve(options, null));
+				schema, ResolveCaptionCulture);
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetClientUnitSchemaResponse {
@@ -209,6 +213,12 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 			_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
 		return (resolvedUId, resolveError);
 	}
+
+	// The profile culture of the environment this command reads from. The injected settings, not the options: an
+	// mcp-http passthrough request carries its tenant in the container's settings and no environment name, so a
+	// name-based lookup would read the culture of the host's active environment. Null falls back to en-US.
+	private string ResolveCaptionCulture() =>
+		_environmentSettings is null ? null : _captionCultureResolver.Resolve(_environmentSettings, null);
 
 	public override int Execute(GetClientUnitSchemaOptions options) {
 		bool success = TryGetSchema(options, out GetClientUnitSchemaResponse response);

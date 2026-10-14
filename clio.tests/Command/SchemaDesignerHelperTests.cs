@@ -621,13 +621,29 @@ public sealed class SchemaDesignerHelperTests {
 	[Description("ExtractCaption matches the culture name case-insensitively.")]
 	public void ExtractCaption_ShouldMatchCultureCaseInsensitively() {
 		// Arrange
-		JObject schema = SchemaWithCaptions(("ru-RU", "Страница записи"), ("en-us", "Form page"));
+		JObject schema = SchemaWithCaptions(
+			("ru-RU", "Страница записи"), ("en-US", "Form page"), ("it-it", "Pagina"));
 
 		// Act
-		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "EN-US");
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "IT-IT");
 
 		// Assert
-		caption.Should().Be("Form page", because: "Creatio and .NET spell culture names with different casing");
+		caption.Should().Be("Pagina", because: "Creatio and .NET spell culture names with different casing");
+	}
+
+	[Test]
+	[Description("ExtractCaption falls back to en-US when the profile culture cannot be resolved.")]
+	public void ExtractCaption_ShouldFallBackToEnUs_WhenProfileCultureIsBlank() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("ru-RU", "Страница записи"), ("en-US", "Form page"));
+
+		// Act
+		string nullCulture = SchemaDesignerHelper.ExtractCaption(schema, () => null);
+		string blankCulture = SchemaDesignerHelper.ExtractCaption(schema, () => "  ");
+
+		// Assert
+		nullCulture.Should().Be("Form page", because: "a missing profile culture must not fall through to the first entry");
+		blankCulture.Should().Be("Form page", because: "a blank profile culture is treated as missing");
 	}
 
 	[Test]

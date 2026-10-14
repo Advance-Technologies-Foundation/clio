@@ -146,7 +146,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 			    "caption": [
 			      {"cultureName": "ru-RU", "value": "Страница записи"},
 			      {"cultureName": "id-ID", "value": "Halaman tab dengan area kiri"},
-			      {"cultureName": "en-US", "value": "Form page"}
+			      {"cultureName": "en-US", "value": "Form page"},
+			      {"cultureName": "de-DE", "value": "Formularseite"}
 			    ],
 			    "package": {"name": "Custom"}
 			  }
@@ -155,16 +156,16 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
 		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper" };
-		_captionCultureResolver.Resolve(options, null).Returns("en-US");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("de-DE");
 
 		// Act
 		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
 
 		// Assert
 		result.Should().BeTrue(because: "the schema loads successfully");
-		response.Caption.Should().Be("Form page",
-			because: "the caption must be in the user's profile culture (en-US), not the first listed ru-RU entry");
-		_captionCultureResolver.Received(1).Resolve(options, null);
+		response.Caption.Should().Be("Formularseite",
+			because: "the caption must be in the user's profile culture (de-DE), not the first listed ru-RU entry");
+		_captionCultureResolver.Received(1).Resolve(Arg.Any<EnvironmentSettings>(), null);
 	}
 
 	[Test]

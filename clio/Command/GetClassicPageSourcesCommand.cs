@@ -196,6 +196,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 	private readonly ICaptionCultureResolver _captionCultureResolver;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	/// <summary>
 	/// Creates the command with the collaborators it needs to resolve a classic page hierarchy and write its sources.
@@ -217,6 +218,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
 	/// <param name="captionCultureResolver">Resolves the profile culture detail titles are picked in.</param>
+	/// <param name="environmentSettings">The environment the sources are read from; its user's profile culture picks detail titles.</param>
 	/// <remarks>
 	/// One file-system abstraction, not two: the confinement guard (<c>OutputPathConfinement</c>) and the cwd anchor
 	/// resolution both take <see cref="IoFileSystem"/>, so routing the default-path write through it as well keeps
@@ -232,7 +234,8 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		IClassicEnumVocabularyResolver enumVocabularyResolver,
 		IoFileSystem ioFileSystem,
 		ILogger logger,
-		ICaptionCultureResolver captionCultureResolver) {
+		ICaptionCultureResolver captionCultureResolver,
+		EnvironmentSettings environmentSettings) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_columnManager = columnManager;
@@ -243,6 +246,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 		_captionCultureResolver = captionCultureResolver;
+		_environmentSettings = environmentSettings;
 	}
 
 	// Per-invocation caches: one GetSchema per (UId, hierarchy mode) and one layer enumeration per name for
@@ -285,7 +289,10 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				response = Fail(PageSchemaMetadataHelper.SchemaNameFormatError);
 				return false;
 			}
-			var ctx = new PageSourcesRunContext(() => _captionCultureResolver.Resolve(options, null));
+			var ctx = new PageSourcesRunContext(
+				// The injected settings, not the options: an mcp-http passthrough request carries its tenant only in the
+				// container's settings. Null falls back to en-US.
+				() => _environmentSettings is null ? null : _captionCultureResolver.Resolve(_environmentSettings, null));
 
 			// 1-3. Resolve the page's full replacing-layer chain (schemas[]) AND the parent-template seed[] in ONE
 			//      GetParentSchemas designer round-trip (useFullHierarchy=true returns the whole effective chain),

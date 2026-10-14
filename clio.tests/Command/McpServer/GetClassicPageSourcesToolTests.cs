@@ -160,7 +160,7 @@ public class GetClassicPageSourcesToolTests {
 				Substitute.For<IClassicEnumVocabularyResolver>(),
 				Substitute.For<System.IO.Abstractions.IFileSystem>(),
 				ConsoleLogger.Instance,
-				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>(), new EnvironmentSettings()) {
 		}
 
 		public override bool TryAssemblePageSources(

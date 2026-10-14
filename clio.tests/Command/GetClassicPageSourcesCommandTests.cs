@@ -2640,6 +2640,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 					new("Account", Guid.Empty, "own", "Customer", null, "Lookup", false, false, "Account")
 				}));
 	}
+
 	[Test]
 	[Description("TryAssemblePageSources picks a detail's title in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
 	public void TryAssemblePageSources_ShouldPickDetailTitle_InProfileCulture() {
@@ -2658,7 +2659,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 			new JObject { ["cultureName"] = "de-DE", ["value"] = "Notizen" }
 		};
 		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
-		_captionCultureResolver.Resolve(options, null).Returns("de-DE");
+		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("de-DE");
 
 		// Act
 		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);

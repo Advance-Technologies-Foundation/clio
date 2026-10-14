@@ -146,7 +146,7 @@ public class GetClientUnitSchemaToolTests {
 		public FakeGetClientUnitSchemaCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(),
 				new System.IO.Abstractions.TestingHelpers.MockFileSystem(), ConsoleLogger.Instance,
-				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>(), new EnvironmentSettings()) {
 		}
 
 		public override bool TryGetSchema(GetClientUnitSchemaOptions options, out GetClientUnitSchemaResponse response) {

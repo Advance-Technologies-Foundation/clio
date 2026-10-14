@@ -64,18 +64,21 @@ public class GetSourceCodeSchemaCommand : Command<GetSourceCodeSchemaOptions> {
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
 	private readonly ICaptionCultureResolver _captionCultureResolver;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	public GetSourceCodeSchemaCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IoFileSystem ioFileSystem,
 		ILogger logger,
-		ICaptionCultureResolver captionCultureResolver) {
+		ICaptionCultureResolver captionCultureResolver,
+		EnvironmentSettings environmentSettings) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
 		_captionCultureResolver = captionCultureResolver;
+		_environmentSettings = environmentSettings;
 	}
 
 	public virtual bool TryGetSchema(GetSourceCodeSchemaOptions options, out GetSourceCodeSchemaResponse response) {
@@ -110,7 +113,7 @@ public class GetSourceCodeSchemaCommand : Command<GetSourceCodeSchemaOptions> {
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
 			string caption = SchemaDesignerHelper.ExtractCaption(
-				schema, () => _captionCultureResolver.Resolve(options, null));
+				schema, ResolveCaptionCulture);
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetSourceCodeSchemaResponse {
@@ -136,6 +139,12 @@ public class GetSourceCodeSchemaCommand : Command<GetSourceCodeSchemaOptions> {
 			return false;
 		}
 	}
+
+	// The profile culture of the environment this command reads from. The injected settings, not the options: an
+	// mcp-http passthrough request carries its tenant in the container's settings and no environment name, so a
+	// name-based lookup would read the culture of the host's active environment. Null falls back to en-US.
+	private string ResolveCaptionCulture() =>
+		_environmentSettings is null ? null : _captionCultureResolver.Resolve(_environmentSettings, null);
 
 	public override int Execute(GetSourceCodeSchemaOptions options) {
 		bool success = TryGetSchema(options, out GetSourceCodeSchemaResponse response);
