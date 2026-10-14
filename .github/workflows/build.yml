@@ -242,6 +242,10 @@ jobs:
   # BoundedGetDeadlineTests is in the same filter for the same reason: its owner-only staging-directory
   # regression is Platform(Exclude = "Win"), so the Windows unit job skips it and only this leg gates the
   # 0700-at-creation guarantee for the raw response staged under the shared OS temp root.
+  # PipeBrowserSpawnerTests and HeadlessPageIntegrationTests ride along for the same reason (ENG-103330): page-smoke's
+  # browser gets its DevTools pipe through posix_spawn file actions whose opaque struct sizes and spawn flags differ
+  # between glibc and Darwin, and the Windows integration shards only exercise the CreateProcess path. The page test
+  # drives the runner's installed Chrome and also proves no browser process listens on a TCP socket.
   unix-file-mode-tests:
     name: Unix File Mode Tests (${{ matrix.os }})
     needs: changes
@@ -274,7 +278,7 @@ jobs:
           # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&TestCategory=Integration" \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests)&TestCategory=Integration" \
             -p:RunAnalyzers=false \
             | tee unix-file-mode-tests.log
           # Executed-count floor: a mis-selected filter that ran nothing (or a stray subset) must not pass
