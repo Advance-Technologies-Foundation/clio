@@ -29,6 +29,12 @@ internal static class UnixPipeSpawn {
 	private const int SigKill = 9;
 	// Darwin's posix_spawn extension: every descriptor not named by a file action is closed in the child.
 	private const short PosixSpawnCloexecDefault = 0x4000;
+	// The same values in glibc and Darwin.
+	private const short PosixSpawnSetPGroup = 0x02;
+	private const short PosixSpawnSetSigDef = 0x04;
+	private const short PosixSpawnSetSigMask = 0x08;
+	private const int SigPipe = 13;
+	private const int SigSetBytes = 128;
 	private const int ReapPollMs = 50;
 	private const string AddDup2Function = "posix_spawn_file_actions_adddup2";
 
@@ -61,19 +67,19 @@ internal static class UnixPipeSpawn {
 		using NativeStrings envp = new(CurrentEnvironment());
 		using NativeStrings devNull = new(["/dev/null"]);
 		IntPtr actions = Marshal.AllocHGlobal(OpaqueBufferBytes);
-		IntPtr attributes = IntPtr.Zero;
+		IntPtr attributes = Marshal.AllocHGlobal(OpaqueBufferBytes);
+		// sigset_t is 4 bytes on Darwin and 128 in glibc; a zeroed buffer of the larger size is an empty set on both.
+		IntPtr emptySet = Marshal.AllocHGlobal(SigSetBytes);
+		IntPtr defaultSet = Marshal.AllocHGlobal(SigSetBytes);
 		bool actionsReady = false;
 		bool attributesReady = false;
 		try {
 			Check(Interop.FileActionsInit(actions), "posix_spawn_file_actions_init");
 			actionsReady = true;
 			AddFileActions(actions, devNull.Pointers[0], browserRead, browserWrite);
-			if (OperatingSystem.IsMacOS()) {
-				attributes = Marshal.AllocHGlobal(OpaqueBufferBytes);
-				Check(Interop.AttrInit(attributes), "posix_spawnattr_init");
-				attributesReady = true;
-				Check(Interop.AttrSetFlags(attributes, PosixSpawnCloexecDefault), "posix_spawnattr_setflags");
-			}
+			Check(Interop.AttrInit(attributes), "posix_spawnattr_init");
+			attributesReady = true;
+			SetSignalAttributes(attributes, emptySet, defaultSet);
 			Check(Interop.PosixSpawn(out int pid, path.Pointers[0], actions, attributes, argv.Array, envp.Array),
 				"posix_spawn");
 			return pid;
@@ -82,14 +88,32 @@ internal static class UnixPipeSpawn {
 			if (attributesReady) {
 				Interop.AttrDestroy(attributes);
 			}
-			if (attributes != IntPtr.Zero) {
-				Marshal.FreeHGlobal(attributes);
-			}
 			if (actionsReady) {
 				Interop.FileActionsDestroy(actions);
 			}
+			Marshal.FreeHGlobal(defaultSet);
+			Marshal.FreeHGlobal(emptySet);
+			Marshal.FreeHGlobal(attributes);
 			Marshal.FreeHGlobal(actions);
 		}
+	}
+
+	// What System.Diagnostics.Process gives its own children: no blocked signals (posix_spawn otherwise hands down the
+	// calling thread's mask) and the default action for SIGPIPE, which .NET ignores and exec would keep ignored.
+	private static void SetSignalAttributes(IntPtr attributes, IntPtr emptySet, IntPtr defaultSet) {
+		Check(Interop.SigEmptySet(emptySet), "sigemptyset");
+		Check(Interop.SigEmptySet(defaultSet), "sigemptyset");
+		Check(Interop.SigAddSet(defaultSet, SigPipe), "sigaddset");
+		Check(Interop.AttrSetSigMask(attributes, emptySet), "posix_spawnattr_setsigmask");
+		Check(Interop.AttrSetSigDefault(attributes, defaultSet), "posix_spawnattr_setsigdefault");
+		// Its own process group, as Puppeteer and Playwright start a browser (detached): nothing the browser or its helpers
+		// signal to their group reaches clio's, and the whole group is ended together.
+		Check(Interop.AttrSetPGroup(attributes, 0), "posix_spawnattr_setpgroup");
+		short flags = PosixSpawnSetPGroup | PosixSpawnSetSigDef | PosixSpawnSetSigMask;
+		if (OperatingSystem.IsMacOS()) {
+			flags |= PosixSpawnCloexecDefault;
+		}
+		Check(Interop.AttrSetFlags(attributes, flags), "posix_spawnattr_setflags");
 	}
 
 	// The pipe ends are first copied to two scratch descriptors, so that neither can be overwritten by the other's dup2
@@ -165,7 +189,10 @@ internal static class UnixPipeSpawn {
 		}
 
 		public void Terminate() {
-			if (Volatile.Read(ref _reaped) == 0) {
+			// Not reaped, so the id (and the group it leads) is still the browser's; a pid of 0 or 1 would name clio's
+			// own group or init, and is never signalled.
+			if (Volatile.Read(ref _reaped) == 0 && pid > 1) {
+				Interop.Kill(-pid, SigKill);
 				Interop.Kill(pid, SigKill);
 			}
 		}
@@ -270,6 +297,21 @@ internal static class UnixPipeSpawn {
 
 		[DllImport("libc", EntryPoint = "posix_spawnattr_setflags")]
 		internal static extern int AttrSetFlags(IntPtr attributes, short flags);
+
+		[DllImport("libc", EntryPoint = "posix_spawnattr_setpgroup")]
+		internal static extern int AttrSetPGroup(IntPtr attributes, int processGroup);
+
+		[DllImport("libc", EntryPoint = "posix_spawnattr_setsigmask")]
+		internal static extern int AttrSetSigMask(IntPtr attributes, IntPtr signals);
+
+		[DllImport("libc", EntryPoint = "posix_spawnattr_setsigdefault")]
+		internal static extern int AttrSetSigDefault(IntPtr attributes, IntPtr signals);
+
+		[DllImport("libc", EntryPoint = "sigemptyset")]
+		internal static extern int SigEmptySet(IntPtr signals);
+
+		[DllImport("libc", EntryPoint = "sigaddset")]
+		internal static extern int SigAddSet(IntPtr signals, int signal);
 
 		[DllImport("libc", EntryPoint = "kill", SetLastError = true)]
 		internal static extern int Kill(int pid, int signal);

@@ -263,8 +263,8 @@ jobs:
             pipe-tests: "|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests"
             pipe-test-names: "Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page"
           - os: macos-latest
-            pipe-tests: "|FullyQualifiedName~PipeBrowserSpawnerTests"
-            pipe-test-names: "Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4"
+            pipe-tests: "|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests"
+            pipe-test-names: "Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page"
     steps:
       - uses: actions/checkout@v5
         with:

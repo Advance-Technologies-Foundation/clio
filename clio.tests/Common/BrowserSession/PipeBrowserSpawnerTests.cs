@@ -78,12 +78,13 @@ public sealed class PipeBrowserSpawnerTests {
 	[Test]
 	[Category("Integration")]
 	[Platform(Exclude = "Win", Reason = "The Unix contract (descriptors 3 and 4) is exercised here; Windows takes inherited handles, covered by the real-Chromium tests.")]
-	[Description("posix_spawn gives the child the pipe on descriptors 3 (read) and 4 (write), nothing on the scratch descriptors, the pipe switch in its argv, and /dev/null as stdout; the child is reaped on disposal.")]
+	[Description("posix_spawn gives the child the pipe on descriptors 3 (read) and 4 (write), nothing on the scratch descriptors, the pipe switch in its argv, its own process group, and /dev/null as stdout; the child is reaped on disposal.")]
 	public async Task Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4() {
 		// Arrange
 		const string script = """
 			for fd in 5 6 7 8 9; do if [ -e /dev/fd/$fd ]; then printf 'leaked %s;' "$fd" >&4; fi; done
 			printf 'argv %s;' "$0" >&4
+			if [ "$(ps -o pgid= -p $$ | tr -d ' ')" = "$$" ]; then printf 'leader;' >&4; fi
 			if [ /dev/fd/1 -ef /dev/null ] && [ /dev/fd/2 -ef /dev/null ]; then printf 'quiet;' >&4; fi
 			cat <&3 >&4
 			""";
@@ -98,8 +99,8 @@ public sealed class PipeBrowserSpawnerTests {
 		bool exited = process.WaitForExit(10_000);
 
 		// Assert
-		output.Should().Be($"argv {PipeBrowserSpawner.PipeSwitch};quiet;hello",
-			because: "the child reads commands on 3, writes on 4, sees the pipe switch, has /dev/null for stdout and stderr (clio's stdout is the MCP stream), and inherits no scratch descriptor");
+		output.Should().Be($"argv {PipeBrowserSpawner.PipeSwitch};leader;quiet;hello",
+			because: "the child reads commands on 3, writes on 4, sees the pipe switch, leads its own process group, has /dev/null for stdout and stderr (clio's stdout is the MCP stream), and inherits no scratch descriptor");
 		exited.Should().BeTrue(because: "the child sees the end of its command pipe once clio closes it (no copy of clio's end leaked into it), ends, and is reaped by clio");
 		process.StartedAtUtc.Should().NotBeNull(because: "the start time identifies the process for the kill");
 	}
