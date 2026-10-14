@@ -56,9 +56,13 @@ Platform and corpus (source unless marked):
   item are refused; GUIDs are stored lower-cased; nested-item tokens such as `Files.File` and `ObjectFiles.File` are
   accepted.
 
-Stand measurements of 2026-10-02 (CrtProcessBuilder 1.6.6.54; the stand runs 1.6.6.96 since):
+Stand measurements of 2026-10-02 (CrtProcessBuilder 1.6.6.54; the stand ran 1.6.6.96 from 2026-10-13 and this
+ticket's cut 1.6.6.98 since 2026-10-14):
 - **M3** refuted H-1 (the ENG-96230 Collection process parameter type mirror bound root-only would read null rows):
   3 iterations, all values set; the outer Script mapping copies the whole collection value, items included.
+  (2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name,
+  which would have voided M3; a gateway probe the same day refuted it, 3 of 3 iterations received the mapped value,
+  so M3 stands.)
 - **MI-0** an item-only `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name` mapping ran ONE iteration
   over 3 contacts (the baseline for the post-cut proof).
 - **M6** a flat File mapped from a collection item outside a row context read null while the source held two files.
@@ -68,8 +72,8 @@ Stand measurements of 2026-10-02 (CrtProcessBuilder 1.6.6.54; the stand runs 1.6
   the nested items of a user task synced in the same request carry `ProcessSchema == null`, because the platform's
   copy constructor copies template items whose owner is a `ProcessUserTaskSchema`, so `GetMetaPath()` threw; the
   modify path loads items through the metadata reader, which owns them. The for-mapping walk now adopts each
-  descended item, and the regression test drives the platform's real sync. Stand proof owed: E2E-06, manual TC-04 on
-  ENG-95984.
+  descended item, and the regression test drives the platform's real sync. On the stand on 2026-10-14 (1.6.6.97)
+  such a create ran without the exception (2 processes), and manual TC-04 on ENG-95984 passed; E2E-06 passed on the clio PR's build the same day.
 
 Re-checked on 2026-10-13 (clio master `19e6f9c53`, package main 1.6.6.96, knowledge 1.15.142):
 - **B1 Description budget measured full.** Under the unchanged ceiling 137 x 256 = 35,072 B
@@ -98,6 +102,7 @@ Re-checked on 2026-10-13 (clio master `19e6f9c53`, package main 1.6.6.96, knowle
   (since ENG-102111 create-business-process / modify-business-process: allow switching on process tracing
   (IsTracing)); 1.6.6.87, 1.6.6.89 and 1.6.6.94 are burned and no branch or tag holds a number above 1.6.6.96. The CI
   "Deliver to clio" stage came and went (2026-10-08/09); every bundle now moves by hand inside a feature clio PR.
+  This ticket's cut is 1.6.6.98 since 2026-10-14; 1.6.6.97 is burned (D26).
 
 ---
 
@@ -148,7 +153,10 @@ on another shape is refused (D7). Two shipped statements gain a documented excep
 what describe reports back" (rationale of the knowledge pin `CollectionParameterGuidanceTests`) and "feed a described
 collection back through `typeFromElement`, never by re-typing the shape" (`parameters.md`); the knowledge PR amends
 both. The fixed item name `File` equals the consumer side's item names (`ObjectFiles.File`, `ReportFiles.File`,
-`Files.File`), which makes D5's pairing trivial.
+`Files.File`), which makes D5's pairing trivial. Stand check V4 (2026-10-14) found that on 1.6.6.97 this item carried
+no `CreatedInSchemaUId` / `ModifiedInSchemaUId` (`A3` / `A4`), which the designer writes on every such item (678 of
+678 in the shipped corpus), so the first designer save rewrote it; the package now stamps both on the item it creates
+and on every mirror clone (commit `b92547cc`), and 1.6.6.98 passes V4 and V5.
 
 ### D3 - Direction and Tag defaults
 
@@ -226,8 +234,8 @@ on `IProcessMappingService` (type-agnostic mechanics; null pairs mean the P2 pol
 **Open item (recorded 2026-10-14, not decided).** A single-instance sub-process's FileCollection-shaped `In`
 parameter is not a file-consuming target as written above, so an outer-only `SP.Docs <- OF1.ObjectFiles` gets neither
 P2 nor R-M2. M3 measured an outer-only binding onto a process parameter only. A stand measurement (M27 of the
-analysis) settles whether the callee reads the files; the owner decides afterwards whether the set widens. No code
-change in this story.
+analysis, not run as of 2026-10-14) settles whether the callee reads the files; the owner decides afterwards whether
+the set widens. No code change in this story.
 
 **Rejected.** (1) Explicit dotted mappings only: cheapest, but an outer-only mapping stays a saved-green crash and
 agents must know the two-level rule. (3) Type-agnostic P2 (name pairing for every collection): it also changes what an
@@ -241,7 +249,8 @@ approvals) must stay green unchanged. P1 changes what an item-only multi-instanc
 passages that state "one iteration" are rewritten under a version gate, D25). P1 and P2 change what an existing
 operation writes, so the floor moves (D26). The create path is covered too: T-68 is root-caused before the binder code
 and pinned by a test that builds an element and a nested mapping in ONE create request (done in the package PR: the
-test drives the platform's real sync; the stand proof is owed). Regressions that must hold:
+test drives the platform's real sync; on the stand on 2026-10-14 no exception on 1.6.6.97, manual TC-04 passed, and
+E2E-06 passed). Regressions that must hold:
 (1) a multi-instance sub-process whose callee has a Guid and a File parameter, iterated over `CreatedObjectFileIds`
 or over Read data rows, is ACCEPTED with the P2-MI notice and no item written; (2) explicit outer plus per-item
 mappings write exactly what 1.6.6.54 writes; (3) an `expression` onto `Files` and then onto `Files.File` writes both
@@ -310,7 +319,10 @@ another element's output" (about +40 B of 1,053 B left). Three `DescribedParamet
 
 ### D9 - The collection mirror binds the outer level only (H-1, refuted)
 
-**Decision.** M3 refuted H-1 on 2026-10-02, so no Sub-task exists (contingency X4). The mirror
+**Decision.** M3 refuted H-1 on 2026-10-02, so no Sub-task exists (contingency X4). (2026-10-14: the process trace
+suggested a callee parameter named `Name` receives the sub-process element's name, which would have voided M3; a
+gateway probe the same day refuted it, 3 of 3 iterations received the mapped value, so M3 stands; manual case TC-06
+also measured per-item file delivery.) The mirror
 (`BindMirroredCollection`) still binds every item to the source item of the same name through `BindCollection` with
 the clone pairs, as one parity commit in this ticket's package PR (the shipped shape: 60 of 61 bound collections with
 items bind their items), and the code comment that predicted null rows is narrowed. As built in the package PR, the
@@ -392,11 +404,12 @@ agreed, the trim is work inside the clio PR.
 ### D26 - `[RequiresPackage]` floors and version numbers
 
 **Decision.** Numbers are rules, not projections. The cut takes the first free number ABOVE the highest number claimed
-anywhere at cut time (main, any branch or tag of either repository, a clio bundle): 1.6.6.97 or higher today (B4),
-re-checked with `git ls-remote --tags` in both repositories. The number is claimed BEFORE cutting, in the PR
-description AND in the one shared cut claim, a comment on ENG-92719 File processing element; the shared claim guards
-against the double stamp measured in git history, when two package PRs in review at the same time stamped the same
-number. Cut with
+anywhere at cut time (main, any branch or tag of either repository, a clio bundle): 1.6.6.97 or higher on 2026-10-13
+(B4), and 1.6.6.98 since 2026-10-14, when the package PR burned 1.6.6.97 after one stand install (the shared claim
+updated in place); re-checked with `git ls-remote --tags` in both repositories. The number is claimed BEFORE cutting,
+in the PR description AND in the one shared cut claim, a comment on ENG-92719 File processing element; the shared
+claim guards against the double stamp measured in git history, when two package PRs in review at the same time stamped
+the same number. Cut with
 `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`; restamp last; tag
 `crtprocessbuilder-<version>` verified on the remote. The three floors (create-business-process,
 modify-business-process, modify-process-as-new-version; 1.6.6.92 today) move to the **final** cut of this clio PR,
@@ -476,16 +489,17 @@ file-consuming targets.
 ## Implementation outline
 
 One story ([story 1](../stories/story-eng-95984-file-parameter-type-1.md)) carries the work packages: PB-1..PB-10 in
-crt-process-builder, planned as ten commits (the analysis's pr-split §5.2; the draft is one commit, `b6dcd2c1`, and
-the split before leaving draft is the owner's call), each mapped to its decision in the PR description: (1) D1
-aliases and the Binary / BLOB refusal; (2) D2 `FileCollection` write alias and describe predicate, with D3's defaults; (3) D4
-`ResolveProcessParameterPath`, both callers switched, behaviour-neutral; (4) D5 binder rules and the whole
-`BindCollection` API; (5) D6 dotted-mirror refusal; (6) D7 constants, `referenceSchema`, delete guard, `setParameter`
-shape; (7) D8 nested-only listing and the element-source decode; (8) D9 parity, the mirror binds its items; (9)
-`docs/file-parameter-capture.md`; (10) the restamp, last. Then CL-1..CL-7 in clio (rebundle and floor, descriptions, `ManagerMap` arm, capability map, unit tests and DTO doc
+crt-process-builder, planned as ten commits (the analysis's pr-split §5.2; the draft began as one commit, `b6dcd2c1`,
+and has four since 2026-10-14, head `d6ca4d79`; the split before leaving draft is the owner's call), each mapped to
+its decision in the PR description: (1) D1 aliases and the Binary / BLOB refusal; (2) D2 `FileCollection` write alias
+and describe predicate, with D3's defaults; (3) D4 `ResolveProcessParameterPath`, both callers switched,
+behaviour-neutral; (4) D5 binder rules and the whole `BindCollection` API; (5) D6 dotted-mirror refusal; (6) D7
+constants, `referenceSchema`, delete guard, `setParameter` shape; (7) D8 nested-only listing and the element-source
+decode; (8) D9 parity, the mirror binds its items; (9) `docs/file-parameter-capture.md`; (10) the restamp, last. Then
+CL-1..CL-7 in clio (rebundle and floor, descriptions, `ManagerMap` arm, capability map, unit tests and DTO doc
 comments, the e2e fixture, knowledge records and status flips) and KB-1..KB-3 in clio-knowledge. One feature PR per
-repository, titled `ENG-95984 File process parameter type`, merged by a human in the order package (tag verified on the
-remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges before the package PR leaves draft.
+repository, titled `ENG-95984 File process parameter type`, merged by a human in the order package (tag verified on
+the remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges before the package PR leaves draft.
 
 ## Owner decisions
 

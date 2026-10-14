@@ -85,8 +85,8 @@ in short.
 
 **CrtProcessBuilder** (base `main`; planned as ten commits (the analysis's pr-split section 5.2), each mapped to its
 decision in the PR description: D1; D2 with D3; D4; D5 with `BindCollection`; D6; D7; D8; D9;
-`docs/file-parameter-capture.md`; the restamp last - the ADR's implementation outline. The draft is one commit,
-`b6dcd2c1`, and the split before leaving draft is the owner's call)
+`docs/file-parameter-capture.md`; the restamp last - the ADR's implementation outline. The draft began as one
+commit, `b6dcd2c1`, and has four since 2026-10-14, head `d6ca4d79`; the split before leaving draft is the owner's call)
 
 - [ ] **PB-1** (D1) `PB/Parameters/ProcessParameterService.cs` `NormalizeParameterTypeName`: file aliases to the
   canonical FileLocator name; dedicated Binary / Blob refusal (F-T1); generic list adds `File, FileCollection`; doc
@@ -132,8 +132,8 @@ decision in the PR description: D1; D2 with D3; D4; D5 with `BindCollection`; D6
 
 - [ ] **CL-1** Rebundle and floor: `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head>
   -Version <claimed>`, where `<claimed>` is the number claimed before cutting in the PR description AND in the one
-  shared cut claim on ENG-92719 File processing element (the first free number above every claim; 1.6.6.97 or higher
-  at the 2026-10-13 claims); `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in
+  shared cut claim on ENG-92719 File processing element (the first free number above every claim; 1.6.6.98 or higher
+  since 2026-10-14, 1.6.6.97 being burned); `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in
   `clio.tests/Common/BundledProcessBuilderPackageTests.cs`; floor literals in `clio/Command/CreateBusinessProcessCommand.cs`,
   `ModifyBusinessProcessCommand.cs`, `ModifyProcessAsNewVersionCommand.cs` with their comment blocks;
   `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`; the enforced-floor sentence in three
@@ -201,6 +201,12 @@ no-op save changes nothing), V6 (`info-knowledge` shows the new libraryVersion);
 Every write and every `install-process-builder` needs the user's explicit go-ahead; one at a time. Details: the test
 plan's manual cases.
 
+**Results, 2026-10-14** (the .NET Framework stand): V0 PASS (read-only, 1.6.6.96 / 1.6.6.97); V1 PASS on 1.6.6.97
+and again on 1.6.6.98; V3 PASS on 1.6.6.97 (3 callee runs); V4 FAIL on 1.6.6.97 (the item stamps, ADR D2), PASS on
+1.6.6.98; V5 PASS on 1.6.6.98 (only the 6 generic differences of any designer save); V7 PASS on 1.6.6.98; V2 PASS on the clio PR's build
+(MCP e2e 13/13 on net10.0 and net8.0, Ignored = 0); V6 and V8 not run. T-68: no exception on 1.6.6.97 (2 processes). The 12 manual cases of ENG-95984 comment 550561 passed as
+direct tool calls and designer steps.
+
 ## Status convention
 
 The tracker lives in clio, so a status flip needs a clio commit: `in-progress` was flipped in this BMAD PR on
@@ -222,8 +228,10 @@ mode) and never pushed after an approval. The follow-up stories 2-4 do not gate 
       applies); `BindCollection` on `IProcessMappingService`.
 - [ ] D6 and D7 refusals; item-aware delete guard; the D9 mirror item binding.
 - [ ] D8 describe listing and single-token element-source decode.
-- [ ] T-68 root-caused; a nested-item mapping in ONE create request binds as it does through `addMapping` (no bare
-      NullReferenceException), pinned by a regression test.
+- [x] T-68 root-caused; a nested-item mapping in ONE create request binds as it does through `addMapping` (no bare
+      NullReferenceException), pinned by a regression test. (Ticked 2026-10-14: root cause and regression test in the
+      package PR; on the stand no exception on 1.6.6.97 for 2 processes, and manual TC-04 passed. E2E-06 passed
+      with V2.)
 - [ ] All new package fixtures carry the crt-process-builder house rule
       `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and nothing else (a crt-process-builder rule only:
       clio's `project-context.md` bans `UnitTests` for clio fixtures); AAA, `because:`, `[Description]`; the Binary
@@ -290,16 +298,23 @@ mode) and never pushed after an approval. The follow-up stories 2-4 do not gate 
 ## Dev Agent Record
 
 - Implementation started: 2026-10-13 (package, PK-PT).
-- Package cut claimed (number, date, where claimed): 1.6.6.97, claimed in ENG-92719 comment 550565; not stamped and
-  not tagged yet (the stamp and the tag come with the final cut).
+- Package cut claimed (number, date, where claimed): 1.6.6.98, 2026-10-14, in ENG-92719 comment 550565 (updated in
+  place: ".97 burned, .98 claimed"); stamped in `d6ca4d79` and installed on the stand. 1.6.6.97 (`260bb8ce`) was
+  installed once and burned. The tag is not recorded in the 2026-10-14 results.
 - Bytes trimmed per Q20 = A (2026-10-14: trim, reviewer-approved), which text per tool and the reviewer's approval:
-- Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3424 passed
-  (`dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`, 187 of them new);
-  clio, e2e and knowledge not started.
-- Stand records (V0-V8):
+- Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3424 passed at `b6dcd2c1`
+  (`dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`, 187 of them new),
+  3426 at `b92547cc`; clio (with the MCP e2e) and knowledge opened as drafts on 2026-10-14.
+- Stand records (V0-V8): 2026-10-14, the .NET Framework stand (ENG-95984 comment 550775). V0 PASS (1.6.6.96 /
+  1.6.6.97); V1 PASS (1.6.6.97, again on 1.6.6.98); V3 PASS (1.6.6.97, 3 callee runs against 1 on 1.6.6.54); V4 FAIL
+  on 1.6.6.97 (item `A3` / `A4` missing), PASS on 1.6.6.98; V5 on 1.6.6.97: 4 item differences and 6 generic ones, on
+  1.6.6.98 PASS with only the 6 generic ones; V7 PASS (1.6.6.98); V2 PASS (the clio PR's build); V6, V8 not run.
 - Notes: PK-PT is a draft PR, https://creatio.ghe.com/engineering/crt-process-builder/pull/96, opened 2026-10-14
-  (one commit, b6dcd2c1; review gate 1 run, three lenses, all findings applied). T-68 is root-caused and fixed in code
-  (the nested items of a user task synced in the same request had no owning schema; the for-mapping walk adopts them;
-  the regression test drives the platform's real sync); its stand proof, E2E-06 and manual TC-04 on ENG-95984, is
-  owed. Open, not decided: whether a single-instance sub-process's FileCollection-shaped `In` parameter joins the
-  file-consuming targets (spec "Open owner items"). CL-PT and KB-PT not opened.
+  (first commit b6dcd2c1; review gate 1 run, three lenses, all findings applied; head `d6ca4d79` after `260bb8ce`,
+  the burned 1.6.6.97 restamp, `b92547cc`, the item-stamp fix V4 found, and `d6ca4d79`, the 1.6.6.98 restamp). T-68 is
+  root-caused and fixed in code (the nested items of a user task synced in the same request had no owning schema; the
+  for-mapping walk adopts them; the regression test drives the platform's real sync); on the stand manual TC-04 on
+  ENG-95984 passed on 2026-10-14, and E2E-06 passed with V2. Open, not decided: whether a
+  single-instance sub-process's FileCollection-shaped `In` parameter joins the file-consuming targets (spec "Open
+  owner items"). CL-PT (https://github.com/Advance-Technologies-Foundation/clio/pull/1814) and KB-PT
+  (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/285) were opened as drafts on 2026-10-14.

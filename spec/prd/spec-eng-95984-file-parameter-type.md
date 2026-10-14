@@ -162,14 +162,16 @@ of `ProcessMappingService`.
   Mirror the constants (schema UIds, parameter names, `ResultActionType` integers). Package sources are C# 7.3.
 - **C3 One funnel.** The rules live in `ApplyMapping`, so every caller inherits them; the callers whose targets are
   scalar (`setConnections`, approvals) must stay green unchanged.
-- **C4 Versions.** CrtProcessBuilder `main` and clio's bundle are at 1.6.6.96; the next cut is 1.6.6.97 or higher: the
-  first free number above the highest number claimed anywhere at cut time (1.6.6.87, 1.6.6.89 and 1.6.6.94 are
-  burned; re-check with `git ls-remote --tags` in both repositories). The number is claimed BEFORE cutting, in the PR
-  description AND in the one shared cut claim, a comment on ENG-92719 File processing element; the shared claim
-  guards against the double stamp measured in git history, when two package PRs in review at the same time stamped
-  the same number.
-  The three `[RequiresPackage]` floors are 1.6.6.92 today and move to this ticket's FINAL cut. The bundle moves only
-  by the manual `rebundle-process-builder.ps1 -Version <claimed>`; the version only goes up.
+- **C4 Versions.** CrtProcessBuilder `main` and clio's bundle are at 1.6.6.96; the cut is the first free number above
+  the highest number claimed anywhere at cut time (1.6.6.87, 1.6.6.89 and 1.6.6.94 are burned; re-check with
+  `git ls-remote --tags` in both repositories). On 2026-10-13 that was 1.6.6.97 or higher. On 2026-10-14 the package
+  PR installed 1.6.6.97 on the stand once, burned it, and cut **1.6.6.98**, stamped and installed; the shared claim
+  (ENG-92719 comment 550565) was updated in place. So 1.6.6.98 is this ticket's cut unless a later re-cut moves it.
+  The number is claimed BEFORE cutting, in the PR description AND in the one shared cut claim, a comment on ENG-92719
+  File processing element; the shared claim guards against the double stamp measured in git history, when two package
+  PRs in review at the same time stamped the same number. The three `[RequiresPackage]` floors are 1.6.6.92 today and
+  move to this ticket's FINAL cut. The bundle moves only by the manual
+  `rebundle-process-builder.ps1 -Version <claimed>`; the version only goes up.
 - **C5 Description budget.** On clio master `19e6f9c53` (measured 2026-10-13) create-business-process had 4 B and
   modify-business-process 10 B left under the 35,072 B per-contract ceiling; the type lists cost +30 B and +28 B. On
   clio master `79fab4786` (2026-10-14), ENG-103081 Warn when a process-parameter mapping is bound twice or to a branch
@@ -204,7 +206,8 @@ ticket's evidence for that half of AC-5 and AC-7 is package-unit. Alternative A:
 **Open item (recorded 2026-10-14, not decided): a single-instance sub-process's FileCollection input.** A
 single-instance sub-process's FileCollection-shaped `In` parameter is not a file-consuming target (the list above, as
 written), so an outer-only `SP.Docs <- OF1.ObjectFiles` gets neither P2 nor R-M2. Stand measurement M3 measured an
-outer-only binding onto a process parameter only. A stand measurement (M27 of the analysis) settles whether the callee
+outer-only binding onto a process parameter only. A stand measurement (M27 of the analysis, not run as of 2026-10-14)
+settles whether the callee
 reads the files; the owner decides afterwards whether the set widens. No code change is planned for it in this story.
 
 **Q20. Where do the description bytes come from?** (opened 2026-10-13; **agreed 2026-10-14: A**). Options: **A**
@@ -233,12 +236,21 @@ anything, and the trim itself is work inside the clio PR. The sentence `this cli
   and adds its attachment slots to the file-consuming targets.
 - **Day-0 measurements, done on 2026-10-02 (CrtProcessBuilder 1.6.6.54):** M3 refuted the suspected defect that the
   ENG-96230 mirror reads null rows (3 iterations, all values set), so no extra Sub-task exists and binding the mirror's
-  items is one parity commit; the item-only multi-instance baseline (MI-0) ran 1 iteration; M6 read a flat File taken
+  items is one parity commit (2026-10-14: the process trace suggested a callee parameter named `Name` receives the
+  sub-process element's name, which would have voided M3; a gateway probe the same day refuted it, 3 of 3 iterations
+  received the mapped value, so M3 stands); the item-only multi-instance baseline (MI-0) ran 1 iteration; M6 read a
+  flat File taken
   from a collection item as null, so R-M1 stays a refusal; and a nested-item mapping in `mappings[]` on the create
   path threw a bare NullReferenceException (trap T-68). The package PR root-caused and fixed it (draft, 2026-10-14):
   the nested items of a user task synced in the same request have no owning `ProcessSchema` (the platform's copy
   constructor copies template items owned by a `ProcessUserTaskSchema`), so `GetMetaPath()` threw; the modify path
   loads items through the metadata reader, which owns them. The for-mapping walk now adopts each descended item, and
-  the regression test drives the platform's real sync. The stand proof is owed (E2E-06, manual TC-04 on ENG-95984).
+  the regression test drives the platform's real sync. On the stand on 2026-10-14 such a create ran without the
+  exception on 1.6.6.97 (2 processes), and manual TC-04 on ENG-95984 passed; E2E-06 passed on the clio PR's build the same day.
+- **Stand results, 2026-10-14** (the .NET Framework stand; ENG-95984 comment 550775): V0, V1 and V3 pass; V4 failed
+  on 1.6.6.97 (the `File` item of a process-level FileCollection lacked `CreatedInSchemaUId` /
+  `ModifiedInSchemaUId`, ADR D2) and passes on 1.6.6.98, as does V5; V7 passes on 1.6.6.98; V2 (MCP e2e) passes on the clio PR's build; V6 and V8 are not run.
+  The 12 manual cases of comment 550561 pass, run as direct tool calls and designer steps, not through an agent with
+  the prompts. Details: the test plan's manual cases.
 - **Estimate** (an AI agent writes the code): about 7.5-15.5 h of agent time and 4.5-10 h of the owner's time; about
   3-5 working days of calendar from day 0.

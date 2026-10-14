@@ -65,7 +65,7 @@ or **Runtime** (the process ran and `SysProcessElementLog` shows it).
 | R-3 | P1 changes what an existing item-only multi-instance mapping writes (1 iteration becomes N) and nobody notices | Certain (intended) | Med | stated as visible change (1) in the PR; TC-U-29, TC-U-46, TC-I-06; TC-M-13 measures 3 against 1; guidance rewritten under a version gate (TC-U-73) |
 | R-4 | The rules leak to callers with scalar targets (`setConnections`, approvals) or to non-file collections | Med | High | the whole package suite before every push; TC-U-36, TC-U-37, TC-U-42 (Read data -> multi-instance untouched) |
 | R-5 | A refusal fires after a partial write | Low | High | TC-U-44 (every target resolved and type-checked before the first write); every refusal case asserts the schema unchanged |
-| R-6 | The create path still throws on a nested-item mapping (T-68) | Low (fixed in code in the package PR, 2026-10-14; not yet proven on a stand) | Med | TC-U-55 drives the platform's real sync, builds the elements and a nested mapping in ONE create request, and asserts the value `addMapping` stores; TC-I-06 sends one over the wire, and manual TC-04 on ENG-95984 repeats it |
+| R-6 | The create path still throws on a nested-item mapping (T-68) | Low (fixed in code in the package PR; on the stand on 2026-10-14 such a create ran without the exception on 1.6.6.97, and manual TC-04 passed; TC-I-06 still owed) | Med | TC-U-55 drives the platform's real sync, builds the elements and a nested mapping in ONE create request, and asserts the value `addMapping` stores; TC-I-06 sends one over the wire, and manual TC-04 on ENG-95984 repeats it |
 | R-7 | Describe reports a decoded pair the write side would not store the same way, so a replay changes the binding | Med | High | TC-U-49, TC-U-54 (negative set), TC-U-52 round trip; the decode names a source only when replaying it changes no other level (ADR D8) |
 | R-8 | The serialization comparison "passes" by a rule nobody wrote down | Med | Med | the AC-8 comparison rule below is a finite list; anything else is a DIFF (TC-U-13, TC-M-14) |
 | R-9 | A description edit breaks the floor guards or the budget | High (budget full) | High | TC-U-66, TC-U-67; the swap is a reviewer-approved trim (Q20 = A, 2026-10-14) |
@@ -351,13 +351,18 @@ names the package version. Every write and every `install-process-builder` needs
 row (an install restarts the site for every connected user). Schema writes and runs go one at a time. Runtime evidence
 comes from `SysProcessElementLog`, read with one `execute-esq` call at a time (a `SysProcessLog` root row with no
 `CompleteDate` is parked, not hung). UI results are checked by the user. Cleanup goes through one
-`execute-dataservice-batch` after the user's go-ahead.
+`execute-dataservice-batch` after the user's go-ahead. A callee's input values are read through a gateway oracle in
+the callee (an exclusive gateway whose conditional flow, for example `string.IsNullOrEmpty([#Email#])` or
+`[#File#] == null`, leads to a Formula task captioned "M empty" and whose default flow leads to one captioned "M set";
+count the `SysProcessElementLog` rows by caption), never through process tracing, which shows a multi-instance
+callee's In parameters as null in every iteration (and showed a parameter named `Name` holding the caller element's
+name although the mapped value arrived) and does not trace Formula tasks.
 
 ### Day 0 (before code; done on 2026-10-02, CrtProcessBuilder 1.6.6.54)
 
 | ID | Orig | What | Result | Reaches |
 |---|---|---|---|---|
-| TC-M-01 | M3 | does an ENG-96230 Collection process parameter type mirror bound root-only read null rows (H-1)? | refuted: 3 iterations, all values set (the outer Script mapping copies the whole value). No Sub-task; TC-U-53 is a parity commit | Runtime |
+| TC-M-01 | M3 | does an ENG-96230 Collection process parameter type mirror bound root-only read null rows (H-1)? | refuted: 3 iterations, all values set (the outer Script mapping copies the whole value). No Sub-task; TC-U-53 is a parity commit. 2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name, which would have voided M3; a gateway probe the same day refuted it (3 of 3 iterations received the mapped value), so M3 stands | Runtime |
 | TC-M-02 | MI-0 | an item-only `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name` over 3 contacts | 1 iteration: the baseline for TC-M-13 | Runtime |
 | TC-M-03 | M6 | a flat File mapped from a collection item outside a row context | read null while the source held two files: R-M1 stays a refusal (TC-U-40, TC-I-10) | Runtime |
 
@@ -377,6 +382,44 @@ comes from `SysProcessElementLog`, read with one `execute-esq` call at a time (a
 
 If TC-M-17 fails while TC-M-13 passes, the binder writes the right metadata and the runtime does not read it the way
 the source trace says: hold the clio and knowledge PRs and record the measured outcome before changing any rule.
+
+### Results, 2026-10-14
+
+The .NET Framework stand; ENG-95984 comment 550775. The package PR's cut is CrtProcessBuilder 1.6.6.98; 1.6.6.97 was
+installed once, failed TC-M-14 and is burned.
+
+| ID | Orig | Version | Result |
+|---|---|---|---|
+| TC-M-10 | V0 | 1.6.6.96 / 1.6.6.97 | PASS (read-only): a plain Add writes Variable and an empty Tag; the designer stamps the item as created in the schema |
+| TC-M-11 | V1 | 1.6.6.97, again on 1.6.6.98 | PASS |
+| TC-M-12 | V2 | the clio PR's build, 1.6.6.98 | PASS: `FileParameterToolE2ETests` 13/13 on net10.0 and net8.0; the must-stay-green fixtures 20/20 on net10.0; Ignored = 0 |
+| TC-M-13 | V3 | 1.6.6.97 | PASS: 3 callee runs (1 on 1.6.6.54, TC-M-02) |
+| TC-M-14 | V4 | 1.6.6.97 | FAIL: the `File` item of a process-level FileCollection had no `A3` / `A4` (`CreatedInSchemaUId` / `ModifiedInSchemaUId`), which the designer writes on every such item (ADR D2) |
+| TC-M-14 | V4 re-check | 1.6.6.98 | PASS: the items carry `A3` / `A4` equal to the process UId |
+| TC-M-15 | V5 | 1.6.6.97 | 4 item differences (the defect) and 6 generic ones |
+| TC-M-15 | V5 re-check | 1.6.6.98 | PASS: only the 6 generic differences |
+| TC-M-16 | V6 | - | not run |
+| TC-M-17 | V7 | 1.6.6.98 | PASS: `OF1` and `PF1` Completed; 3 new attachment rows on the target, names and bytes equal to the sources |
+| TC-M-18 | V8 | - | not run |
+| (TC-U-55) | T-68 | 1.6.6.97 | PASS on the stand: a nested-item mapping in one create request, no NullReferenceException (2 processes) |
+
+- The 6 generic differences come with a designer save of any builder process, one without file parameters included,
+  so they are not this ticket's: `BK3[0].BL7` added, `BK3[0].BM4[0].CD6` removed, `BK37.A3` / `BK37.A4` changed to
+  the process UId, `BK37.L8.GS5` added, `IJ8 = true` added; plus one added resource row
+  `NotificationCaption.DisplayValue`, which the no-file control process gets too. clio's `export-schema` silently
+  skips the metadata projection when the payload has raw CRLF (`SchemaBundleStore.ParsePayload`; a clio defect outside
+  this ticket, not filed as of 2026-10-14).
+- TC-M-17 as run: the process was not built in the designer from scratch but from a builder skeleton (Start -> `OF1`
+  -> `PF1` -> End, In parameter `SourceContactId`) configured in the designer (`OF1`: Object attachments of Contact,
+  filter Contact = `[#SourceContactId#]`, use in process; `PF1`: Process parameter, target the target contact's
+  attachments); then the builder steps of the row, with both notices; describe `mode=full` showed both levels; one run
+  over a source contact with 3 attachments. This does not change the verdict.
+- The 12 manual cases of ENG-95984 comment 550561 all passed on 2026-10-14, run as direct tool calls and designer
+  steps, not through an agent with the prompts (the prompts themselves are untested). TC-06 (3 attachments, 3 callee
+  runs) shows through a gateway oracle in a File callee that each run received a non-null file, not which file each
+  run got.
+- The first create right after an install restart failed once with a `ConfActivityLog` foreign-key error and was
+  rolled back; the retry succeeded (transient).
 
 ---
 
@@ -408,7 +451,7 @@ scope (Q12), M3 (no mirror defect), M6 (R-M1 stays a refusal).
 | AC-8 serialization equals the shipped captures | TC-U-13 (06 for the non-empty container) | - | - | - | TC-M-10, 14, 15 |
 | AC-9 consumption by the Process variant (design time here) | TC-U-39 | - | - | (XT-14c in ENG-96506) | TC-M-17, 18 |
 | AC-10 floor, descriptions, guide, e2e | - | TC-U-63..70 | TC-U-71..75 | all | TC-M-11, 12, 16 |
-| D9 mirror binds items (no AC) | TC-U-53 | - | - | - | TC-M-01 |
+| D9 mirror binds items (no AC) | TC-U-53 | - | - | - | TC-M-01; manual TC-06 on ENG-95984 |
 
 ## Follow-up stories
 
