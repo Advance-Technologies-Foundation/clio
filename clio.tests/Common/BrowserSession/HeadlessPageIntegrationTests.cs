@@ -82,11 +82,13 @@ public sealed class HeadlessPageIntegrationTests {
 		HeadlessBrowserLauncher launcher = CreateLauncher(fileSystem);
 		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(60));
 		IHeadlessBrowser browser = await LaunchOrIgnoreAsync(launcher, timeout.Token);
+		TestContext.Progress.WriteLine("page test: browser attached over its pipe");
 		string profile = browser.ProfileDirectory;
 		bool profileCreated = Directory.Exists(profile);
 		try {
 			ICdpSession cdp = browser.Page;
 			IReadOnlyList<int> listeningBrowserProcesses = ListeningProcessesOf(profile);
+			TestContext.Progress.WriteLine("page test: listening sockets checked");
 			// Only the route is kept: the fixture's file:// address is longer than the collector's 120-character cut.
 			PageEventCollector events = new(url => url.Contains('#') ? url[url.IndexOf('#')..] : "page.html");
 			cdp.EventReceived += events.OnEvent;
@@ -153,7 +155,9 @@ public sealed class HeadlessPageIntegrationTests {
 				because: "the page replaced Array.from in its own world, which the isolated world does not share");
 		}
 		finally {
+			TestContext.Progress.WriteLine("page test: disposing the browser");
 			await browser.DisposeAsync();
+			TestContext.Progress.WriteLine("page test: browser disposed");
 		}
 		profileCreated.Should().BeTrue(because: "every launch gets a fresh temporary profile");
 		Directory.Exists(profile).Should().BeFalse(because: "disposing the browser kills it and deletes its own profile");
@@ -191,7 +195,7 @@ public sealed class HeadlessPageIntegrationTests {
 		HashSet<string> browser = [.. Run("pgrep", "-f", profile).Split('\n', StringSplitOptions.RemoveEmptyEntries)];
 		browser.Should().NotBeEmpty(because: "pgrep must find the running browser, or the socket check proves nothing");
 		// -F p prints one "p<pid>" line per process with a listening TCP socket.
-		return [.. Run("lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "p").Split('\n', StringSplitOptions.RemoveEmptyEntries)
+		return [.. Run("lsof", "-b", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "p").Split('\n', StringSplitOptions.RemoveEmptyEntries)
 			.Where(line => line.StartsWith('p') && browser.Contains(line[1..]))
 			.Select(line => int.Parse(line[1..], System.Globalization.CultureInfo.InvariantCulture))];
 	}
@@ -202,9 +206,12 @@ public sealed class HeadlessPageIntegrationTests {
 			start.ArgumentList.Add(argument);
 		}
 		using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
-		string output = process.StandardOutput.ReadToEnd();
-		process.WaitForExit();
-		return output;
+		Task<string> output = process.StandardOutput.ReadToEndAsync();
+		if (!process.WaitForExit(30_000)) {
+			process.Kill(entireProcessTree: true);
+			Assert.Fail($"{program} did not finish within 30 s.");
+		}
+		return output.GetAwaiter().GetResult();
 	}
 
 	private static async Task<IHeadlessBrowser> LaunchOrIgnoreAsync(HeadlessBrowserLauncher launcher, CancellationToken ct) {

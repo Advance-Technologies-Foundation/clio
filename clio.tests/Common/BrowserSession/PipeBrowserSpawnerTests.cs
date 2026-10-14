@@ -105,11 +105,11 @@ public sealed class PipeBrowserSpawnerTests {
 	}
 
 	private static async Task<string> ReadToEndAsync(Stream stream) {
-		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(10));
 		using MemoryStream collected = new();
 		byte[] buffer = new byte[256];
 		while (true) {
-			int read = await stream.ReadAsync(buffer, timeout.Token);
+			// A blocking pipe read ignores a token; the wait does not, so a child that never closes its end fails the test.
+			int read = await stream.ReadAsync(buffer).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 			if (read == 0) {
 				return Encoding.ASCII.GetString(collected.ToArray());
 			}

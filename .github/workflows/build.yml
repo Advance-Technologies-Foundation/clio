@@ -281,6 +281,7 @@ jobs:
             --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests)&TestCategory=Integration" \
             -p:RunAnalyzers=false \
             --logger "console;verbosity=normal" \
+            --blame-hang-timeout 5m \
             | tee unix-file-mode-tests.log
           # The pipe tests must have RUN: HeadlessPageIntegrationTests ignores itself when no Chromium is found, and the
           # confinement cases alone would still clear the floor below.
