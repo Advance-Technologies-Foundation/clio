@@ -690,6 +690,7 @@ internal static class ToolContractCatalog {
 	private const string PasswordFieldName = "password";
 	private const string PagesFieldName = "pages";
 	private const string PageSchemaNameFieldName = "page-schema-name";
+	private const string CamelCaseSchemaNameFieldName = "schemaName";
 	private const string ParentSchemaNameFieldName = "parent-schema-name";
 	private const string ParameterScope = "parameter";
 	private const string QueryCorrelationIdentifierDescription = "Query correlation identifier when available.";
@@ -5226,12 +5227,11 @@ internal static class ToolContractCatalog {
 			CommonErrorContract,
 			[
 				EnvironmentNameParameterAlias(),
-				Alias(ParameterScope, pageField, "schema-name", RejectedStatus, $"Use '{pageField}' instead of 'schema-name'."),
-				Alias(ParameterScope, pageField, "schemaName", RejectedStatus, $"Use '{pageField}' instead of 'schemaName'."),
-				Alias(ParameterScope, pageField, "page-name", RejectedStatus, $"Use '{pageField}' instead of 'page-name'."),
-				Alias(ParameterScope, recordIdField, "recordId", RejectedStatus, $"Use '{recordIdField}' instead of 'recordId'."),
-				Alias(ParameterScope, recordIdField, "id", RejectedStatus, $"Use '{recordIdField}' instead of 'id'."),
-				Alias(ParameterScope, clickField, "button", RejectedStatus, $"Use '{clickField}' instead of 'button'.")
+				.. new[] {
+					(pageField, "schema-name"), (pageField, CamelCaseSchemaNameFieldName), (pageField, "page-name"),
+					(recordIdField, "recordId"), (recordIdField, "id"), (clickField, "button")
+				}.Select(rename => Alias(ParameterScope, rename.Item1, rename.Item2, RejectedStatus,
+					$"Use '{rename.Item1}' instead of '{rename.Item2}'."))
 			],
 			[
 				Default("timeout", "30", "A cold page load can take 10-20 s on a sandbox."),
@@ -6042,7 +6042,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
-				Field("schemaName", StringType, "Page schema name."),
+				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
 				Field("appendProjection", ObjectType, "What the append merge did - or, on a dry run, WOULD do - to the page's viewConfigDiff. Present for `mode: append` whenever a merge ran; absent for `replace` (writes verbatim) and absent when the stored body is empty (nothing to merge into). Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount` (compare this against the count you expect), `addedOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix - do not read any one of them as the whole story: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives - the likeliest one to hit, reported here as data and deliberately NOT warned about because the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: the sibling `*_DIFF` arrays append unconditionally and cannot lose an entry, but handlers are NOT covered - they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
@@ -6134,7 +6134,7 @@ internal static class ToolContractCatalog {
 					SuccessFalseSignal
 				],
 				Field(SuccessFieldName, BooleanType, "True when every supplied value is stored (verified by reading the schema back) or, for a report-only call, when coverage was read."),
-				Field("schemaName", StringType, "Page schema name."),
+				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("schemaUId", StringType, "UId of the edited schema (the page's schema in its design package)."),
 				Field(CamelCasePackageNameFieldName, StringType, "Package of the edited schema."),
 				Field(CultureFieldName, StringType, "Target culture in the SysCulture spelling."),
@@ -6358,7 +6358,7 @@ internal static class ToolContractCatalog {
 	}
 
 	private static ToolContractAlias SchemaNameParameterAlias() {
-		return Alias(ParameterScope, SchemaNameFieldName, "schemaName", RejectedStatus,
+		return Alias(ParameterScope, SchemaNameFieldName, CamelCaseSchemaNameFieldName, RejectedStatus,
 			$"Use '{SchemaNameFieldName}' instead of 'schemaName'.");
 	}
 
