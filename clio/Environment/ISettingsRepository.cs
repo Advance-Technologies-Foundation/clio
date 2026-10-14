@@ -204,6 +204,13 @@ namespace Clio.UserEnvironment
 		/// <returns>The configured root, sources, and topic pins.</returns>
 		KnowledgeConfiguration GetKnowledgeConfiguration();
 
+		/// <summary>Gets the user's remembered page-smoke browser answer; null when none was given yet.</summary>
+		Clio.Common.BrowserSession.PageSmokeBrowserSettings GetPageSmokeBrowser();
+
+		/// <summary>Remembers the user's page-smoke browser answer; null forgets it, so the question is asked again.</summary>
+		/// <param name="value">The answer, or null.</param>
+		void SetPageSmokeBrowser(Clio.Common.BrowserSession.PageSmokeBrowserSettings value);
+
 		/// <summary>
 		/// Replaces the complete multi-source knowledge configuration atomically.
 		/// </summary>

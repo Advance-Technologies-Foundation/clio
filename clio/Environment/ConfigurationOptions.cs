@@ -676,6 +676,10 @@ namespace Clio
 		[JsonProperty("dbhub")]
 		public DbHubSettings DbHub { get; set; }
 
+		/// <summary>Gets or sets the user's answer to page-smoke's browser question (installed, download or none).</summary>
+		[JsonProperty("page-smoke-browser", NullValueHandling = NullValueHandling.Ignore)]
+		public Clio.Common.BrowserSession.PageSmokeBrowserSettings PageSmokeBrowser { get; set; }
+
 		public EnvironmentSettings GetActiveEnvironment() {
 			if (string.IsNullOrEmpty(ActiveEnvironmentKey)
 				|| !Environments.ContainsKey(ActiveEnvironmentKey)) {
@@ -1822,6 +1826,20 @@ namespace Clio
 			});
 			return resolved;
 		}
+
+		/// <inheritdoc />
+		public Clio.Common.BrowserSession.PageSmokeBrowserSettings GetPageSmokeBrowser() {
+			Clio.Common.BrowserSession.PageSmokeBrowserSettings stored = _settings.PageSmokeBrowser;
+			return stored is null ? null : new Clio.Common.BrowserSession.PageSmokeBrowserSettings {
+				Choice = stored.Choice,
+				Path = stored.Path,
+				DecidedAt = stored.DecidedAt
+			};
+		}
+
+		/// <inheritdoc />
+		public void SetPageSmokeBrowser(Clio.Common.BrowserSession.PageSmokeBrowserSettings value) =>
+			UpdateSettings(settings => settings.PageSmokeBrowser = value);
 
 		/// <inheritdoc />
 		public KnowledgeConfiguration GetKnowledgeConfiguration() {

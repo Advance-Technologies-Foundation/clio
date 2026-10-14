@@ -2,6 +2,7 @@ using System.Text.Json;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.BrowserSession;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Creatio;
 using Clio.Mcp.E2E.Support.Mcp;
@@ -116,13 +117,14 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 							["page"] = "Orders_FormPage",
 							["timeout"] = 20,
 							["click"] = "run check",
-							["click-wait"] = 3
+							["click-wait"] = 3,
+							["browser"] = "existing"
 						}
 					},
 					cancellationToken);
 				string text = result.Content.OfType<TextContentBlock>().First().Text;
 				JsonElement response = JsonDocument.Parse(text).RootElement.Clone();
-				IgnoreWithoutBrowser(response);
+				IgnoreWithoutBrowser(response, clioHome);
 				TestContext.Progress.WriteLine($"page-smoke reply: {System.Text.Encoding.UTF8.GetByteCount(text)} bytes");
 
 				// Assert
@@ -156,6 +158,61 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Category("McpE2E.NoEnvironment")]
+	[Description("ENG-103287: with no browser decision, page-smoke (in a worker, through clio-run) refuses with browser-consent-required and the question with its choices, without touching the environment; the user's 'no' is then remembered across calls.")]
+	[AllureTag(ToolName)]
+	[AllureName("page-smoke asks before it uses or downloads a browser, and remembers no")]
+	public async Task PageSmoke_Should_Ask_For_A_Browser_And_Remember_No() {
+		if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CHROME_PATH"))) {
+			Assert.Ignore("CHROME_PATH is set on this agent, so page-smoke uses it without asking.");
+		}
+		await StubEnvironmentStand.RunWithClioHomeAsync(
+			"clio-page-smoke-consent-e2e",
+			new RuntimeDetectionStubServerConfiguration(
+				NetCoreHealthEnabled: false,
+				NetFrameworkHealthEnabled: true,
+				NetCoreServiceEnabled: false,
+				NetFrameworkServiceEnabled: true),
+			async (session, environmentName, _, clioHome, cancellationToken) => {
+				// Act
+				await using WorkerSpawnObserver workers = WorkerSpawnObserver.Start(clioHome);
+				JsonElement asked = await CallAsync(session, environmentName, null, cancellationToken);
+				JsonElement declined = await CallAsync(session, environmentName, "none", cancellationToken);
+				JsonElement remembered = await CallAsync(session, environmentName, null, cancellationToken);
+
+				// Assert
+				workers.Observed.Should().NotBeEmpty(because: "the question is answered by the worker that would run the browser");
+				asked.GetProperty("success").GetBoolean().Should().BeFalse(because: "nothing ran before the user answered");
+				asked.GetProperty("code").GetString().Should().Be("browser-consent-required", because: asked.ToString());
+				asked.GetProperty("error").GetString().Should().Contain("verbatim",
+					because: "the agent is told to relay the question, not to answer it");
+				JsonElement consent = asked.GetProperty("browserConsent");
+				consent.GetProperty("question").GetString().Should().Contain("Which should it use?",
+					because: "the question is worded for the user");
+				consent.GetProperty("choices").EnumerateArray().Select(choice => choice.GetProperty("browser").GetString())
+					.Should().EndWith("none", because: "no is always a choice")
+					.And.Contain("download", because: "a download is offered on every platform with a pinned build");
+				declined.GetProperty("code").GetString().Should().Be("browser-declined", because: declined.ToString());
+				remembered.GetProperty("code").GetString().Should().Be("browser-declined",
+					because: "an explicit no is remembered in clio settings, so the user is not asked again");
+				File.ReadAllText(Path.Combine(clioHome, "appsettings.json")).Should().Contain("page-smoke-browser",
+					because: "the answer is kept in the user's clio settings");
+			},
+			TimeSpan.FromMinutes(3));
+	}
+
+	private static async Task<JsonElement> CallAsync(McpServerSession session, string environmentName, string? browser,
+		CancellationToken cancellationToken) {
+		Dictionary<string, object?> args = new() { ["environment-name"] = environmentName, ["page"] = "Orders_FormPage" };
+		if (browser is not null) {
+			args["browser"] = browser;
+		}
+		CallToolResult result = await session.CallToolAsync(ClioRunTool.ToolName,
+			new Dictionary<string, object?> { ["command"] = ToolName, ["args"] = args }, cancellationToken);
+		return JsonDocument.Parse(result.Content.OfType<TextContentBlock>().First().Text).RootElement.Clone();
+	}
+
+	[Test]
 	[Category("McpE2E.Sandbox")]
 	[Description("A Freedom UI form page in add mode opens ready, with its visible buttons and fields listed and no cookie in the reply.")]
 	[AllureTag(ToolName)]
@@ -172,7 +229,8 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		JsonElement response = await RunAsync(arrange, new Dictionary<string, object?> {
 			["environment-name"] = environmentName,
 			["page"] = TaskFormPage,
-			["timeout"] = 45
+			["timeout"] = 45,
+			["browser"] = "existing"
 		});
 		IgnoreWithoutBrowser(response);
 
@@ -206,7 +264,8 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			["environment-name"] = environmentName,
 			["page"] = TaskFormPage,
 			["timeout"] = 45,
-			["click"] = "BackButton"
+			["click"] = "BackButton",
+			["browser"] = "existing"
 		});
 		IgnoreWithoutBrowser(response);
 
@@ -219,14 +278,36 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 		settled.ValueKind.Should().BeOneOf([JsonValueKind.True, JsonValueKind.False], because: "it is a boolean");
 	}
 
-	// Only the missing-browser answer is ignored; any other launch failure (a Linux regression, say) must fail the test.
-	private const string NoBrowserMarker = "needs a Chromium-based browser on the machine clio runs on";
-
-	private static void IgnoreWithoutBrowser(JsonElement response) {
-		if (response.TryGetProperty("error", out JsonElement error)
-			&& error.GetString()?.Contains(NoBrowserMarker, StringComparison.Ordinal) == true) {
-			Assert.Ignore("page-smoke needs a Chromium-based browser on the agent: " + error.GetString());
+	// Ignored only when this test process cannot find a browser either, looking with the environment the clio host was
+	// started with (the stub stand points HOME, or LOCALAPPDATA on Windows, at its own folder). page-smoke runs in an MCP
+	// worker started with a cleared environment, so "not found" there while the test process does find one is a
+	// worker-environment regression - the Windows one of ENG-103286 hid behind the old guard - and fails the test.
+	private static void IgnoreWithoutBrowser(JsonElement response, string? clioHostHome = null) {
+		if (!response.TryGetProperty("code", out JsonElement code) || code.GetString() != "browser-not-found") {
+			return;
 		}
+		string? browser = LocateBrowserAsTheHostSeesIt(clioHostHome);
+		if (browser is not null) {
+			Assert.Fail($"The test process finds a browser at '{browser}', but page-smoke in the clio worker answered: "
+				+ response.GetProperty("error").GetString());
+		}
+		Assert.Ignore("page-smoke needs a Chromium-based browser on the agent: " + response.GetProperty("error").GetString());
+	}
+
+	private static string? LocateBrowserAsTheHostSeesIt(string? clioHostHome) {
+		string homeVariable = OperatingSystem.IsWindows() ? "LOCALAPPDATA" : "HOME";
+		Func<string, string?> readEnvironment = name => clioHostHome is not null && name == homeVariable
+			? clioHostHome
+			: Environment.GetEnvironmentVariable(name);
+		System.Runtime.InteropServices.OSPlatform platform = OperatingSystem.IsWindows()
+			? System.Runtime.InteropServices.OSPlatform.Windows
+			: OperatingSystem.IsMacOS() ? System.Runtime.InteropServices.OSPlatform.OSX : System.Runtime.InteropServices.OSPlatform.Linux;
+		System.IO.Abstractions.FileSystem fileSystem = new();
+		ChromiumLocator installed = new(new Clio.Common.FileSystem(fileSystem), readEnvironment!, platform);
+		BrowserCacheLocator cached = new(fileSystem, readEnvironment!, platform);
+		return installed.ChromePathOverride()
+			?? cached.FindCached().Select(found => found.Path).FirstOrDefault()
+			?? installed.FindInstalled().Select(found => found.Path).FirstOrDefault();
 	}
 
 	private static async Task<JsonElement> RunAsync(ArrangeContext arrange, Dictionary<string, object?> args) {

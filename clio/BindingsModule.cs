@@ -444,6 +444,10 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		services.AddTransient<Clio.Common.BrowserSession.IHeadlessBrowserLauncher, Clio.Common.BrowserSession.HeadlessBrowserLauncher>();
 		services.AddTransient<Clio.Common.BrowserSession.ICdpSessionFactory, Clio.Common.BrowserSession.CdpSessionFactory>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserCacheLocator, Clio.Common.BrowserSession.BrowserCacheLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellSource, Clio.Common.BrowserSession.ChromeForTestingHeadlessShellSource>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellInstaller, Clio.Common.BrowserSession.HeadlessShellInstaller>();
+		services.AddTransient<Clio.Common.BrowserSession.IPageSmokeBrowserResolver, Clio.Common.BrowserSession.PageSmokeBrowserResolver>();
 		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
 		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();
 		IDeserializer deserializer = new DeserializerBuilder()
