@@ -25,11 +25,35 @@ internal static class StubEnvironmentStand {
 	/// <param name="configuration">Stub behaviour for this run.</param>
 	/// <param name="act">Assertions to run against the session, the environment name and the stub.</param>
 	/// <param name="timeout">Wall-clock budget for the whole run.</param>
-	public static async Task RunAsync(
+	public static Task RunAsync(
 		string homePrefix,
 		RuntimeDetectionStubServerConfiguration configuration,
 		Func<McpServerSession, string, RuntimeDetectionStubServer, CancellationToken, Task> act,
-		TimeSpan? timeout = null) {
+		TimeSpan? timeout = null) =>
+		RunCoreAsync(homePrefix, configuration, (session, environmentName, stubServer, _, ct) =>
+			act(session, environmentName, stubServer, ct), timeout, pinClioHome: false);
+
+	/// <summary>
+	/// Runs <paramref name="act"/> like <see cref="RunAsync"/>, with <c>CLIO_HOME</c> pinned to the isolated home and
+	/// that home passed to the caller, so it can watch the host's worker registry (<see cref="WorkerSpawnObserver"/>).
+	/// </summary>
+	/// <param name="homePrefix">Prefix of the isolated home directory, used to tell fixtures apart on disk.</param>
+	/// <param name="configuration">Stub behaviour for this run.</param>
+	/// <param name="act">Assertions to run against the session, the environment name, the stub and the clio home.</param>
+	/// <param name="timeout">Wall-clock budget for the whole run.</param>
+	public static Task RunWithClioHomeAsync(
+		string homePrefix,
+		RuntimeDetectionStubServerConfiguration configuration,
+		Func<McpServerSession, string, RuntimeDetectionStubServer, string, CancellationToken, Task> act,
+		TimeSpan? timeout = null) =>
+		RunCoreAsync(homePrefix, configuration, act, timeout, pinClioHome: true);
+
+	private static async Task RunCoreAsync(
+		string homePrefix,
+		RuntimeDetectionStubServerConfiguration configuration,
+		Func<McpServerSession, string, RuntimeDetectionStubServer, string, CancellationToken, Task> act,
+		TimeSpan? timeout,
+		bool pinClioHome) {
 		string tempHome = Path.Combine(Path.GetTempPath(), $"{homePrefix}-{Guid.NewGuid():N}");
 		Directory.CreateDirectory(tempHome);
 		try {
@@ -37,6 +61,9 @@ internal static class StubEnvironmentStand {
 			McpE2ESettings settings = TestConfiguration.Load();
 			settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
 			settings.ProcessEnvironmentVariables[envVarName] = tempHome;
+			if (pinClioHome) {
+				settings.ProcessEnvironmentVariables["CLIO_HOME"] = tempHome;
+			}
 			using TemporaryClioSettingsOverride settingsOverride = TemporaryClioSettingsOverride.ReplaceContent(
 				"""
 				{
@@ -52,7 +79,7 @@ internal static class StubEnvironmentStand {
 			string environmentName = $"{homePrefix}-env-{Guid.NewGuid():N}";
 			await RegisterEnvironmentAsync(session, environmentName, stubServer.BaseUrl, cancellationTokenSource.Token);
 
-			await act(session, environmentName, stubServer, cancellationTokenSource.Token);
+			await act(session, environmentName, stubServer, tempHome, cancellationTokenSource.Token);
 		} finally {
 			TryDeleteDirectory(tempHome);
 		}
