@@ -12,7 +12,7 @@ date: 2026-09-27
 - `CurrentPackageId` stores a `SysPackage.UId`, not a `SysPackage.Id`. It is a Lookup on `VwSysPackages`, whose `Id` column is `SysPackage.UId`.
 - The platform writes it and reads it as a UId: `Terrasoft.Core/Packages/WorkspaceUtilities.cs` `ForceGetCurrentPackageUId`, `PackageDBDeterminer`, `AppManager`, `ProcessSchemaManagerService`.
 - It is created with `IsPersonal = false` (`WorkspaceUtilities.CreateCurrentPackageIdSettingsIfNeed`). Its value is therefore the single All-employees default, and there are no per-user rows.
-- Measured on d_krestov_n (Creatio 10.1.37, .NET Framework) on 2026-09-27:
+- Measured on a .NET Framework stand (Creatio 10.1.37) on 2026-09-27:
   - the setting has `IsPersonal: false` and exactly one `SysSettingsValue` row: All employees, `IsDef: true`, `a00051f4-cde3-4f3f-b08e-c5ad1a5c735a`;
   - that value is the UId of `Custom`, whose Id is `84076ac3-ce2d-4716-887a-7fcf5858e2b6`.
 

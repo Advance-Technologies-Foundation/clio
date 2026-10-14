@@ -12,7 +12,7 @@ platform's full process validation before it saves, and that validation rejects 
 whose value references a parameter the owning element no longer has. The call answers exit code 1 with
 `Process validation failed: The "SubProcess2" element has an invalid value for the parameter
 "InputRecordCollection". It references the parameter … of the element 'SubProcess1', which that element
-does not have.` — the reader is named, and nothing is saved. Measured on the `d_krestov_n.tscrm.com:40001`
+does not have.` — the reader is named, and nothing is saved. Measured on a .NET Framework
 stand (CrtProcessBuilder 1.6.6.13) for an element iterating the output collection and for a process
 parameter reading `TotalIterationsCount`; pinned by
 `ModifyBusinessProcess_Should_RefuseADeconversion_WhileTheServiceParametersAreStillRead`. A reader in a

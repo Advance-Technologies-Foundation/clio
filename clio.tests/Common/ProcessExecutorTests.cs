@@ -72,6 +72,25 @@ public class ProcessExecutorTests {
 	}
 
 	[Test]
+	[Description("Verifies that a detached child whose output is discarded still starts, and that the launch reports the process's own start time so a later kill can check the id still names it.")]
+	public async Task FireAndForgetAsync_ShouldDiscardOutputAndReportTheProcessStartTime() {
+		// Arrange
+		ILogger logger = Substitute.For<ILogger>();
+		ProcessExecutor sut = new(logger);
+		(string program, string arguments) = GetDotNetCommand("--info");
+		ProcessExecutionOptions options = new(program, arguments) { DiscardOutput = true };
+
+		// Act
+		ProcessLaunchResult result = await sut.FireAndForgetAsync(options);
+
+		// Assert
+		result.Started.Should().BeTrue(because: "discarding output must not stop the launch");
+		result.ProcessStartedAtUtc.Should().NotBeNull(because: "a just-started process's start time is readable");
+		result.ProcessStartedAtUtc!.Value.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromMinutes(1),
+			because: "it is the start time of the process just launched");
+	}
+
+	[Test]
 	[Description("Verifies that capture mode waits for process completion and returns standard output with exit metadata.")]
 	public async Task ExecuteAndCaptureAsync_ReturnsOutput() {
 		// Arrange

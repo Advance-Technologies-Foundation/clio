@@ -184,8 +184,8 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
 		string[] names = unknownFirst
-			? ["page-updte", known, "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()]
-			: [known, "page-updte", "missing-tool-two", " PAGE-UPDTE ", known.ToUpperInvariant()];
+			? ["update-pgae", known, "missing-tool-two", " UPDATE-PGAE ", known.ToUpperInvariant()]
+			: [known, "update-pgae", "missing-tool-two", " UPDATE-PGAE ", known.ToUpperInvariant()];
 
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(names));
@@ -195,7 +195,7 @@ public sealed class ToolContractGetToolTests {
 		result.Tools!.Select(item => item.Name).Should().Equal([known],
 			because: "unknown guesses must not discard valid contracts or introduce duplicates");
 		result.Error.Should().BeNull(because: "individual misses belong in not-found for a partial success");
-		result.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+		result.NotFound!.Select(item => item.Name).Should().Equal(["update-pgae", "missing-tool-two"],
 			because: "each distinct miss must be reported in request order");
 		result.NotFound[0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
 			because: "suggestions must correspond to the individual miss");
@@ -209,7 +209,7 @@ public sealed class ToolContractGetToolTests {
 		ToolContractGetTool tool = BuildToolWithRegistry();
 
 		// Act
-		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["page-updte", "missing-tool-two"]));
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(["update-pgae", "missing-tool-two"]));
 
 		// Assert
 		result.Success.Should().BeFalse(because: "no requested contract resolved");
@@ -2933,7 +2933,7 @@ public sealed class ToolContractGetToolTests {
 
 		// Act
 		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs([
-			"page-updte"
+			"update-pgae"
 		]));
 
 		// Assert
