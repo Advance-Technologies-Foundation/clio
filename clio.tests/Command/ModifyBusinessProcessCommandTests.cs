@@ -52,6 +52,64 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An addMapping onto a process parameter the process already binds to a DIFFERENT element succeeds and warns, naming the binding it replaced (ENG-103081). The before-read the digest already takes is what makes the replaced binding visible; modify has no removeMapping, so the overwrite was silent.")]
+	public void Execute_ShouldWarn_WhenAnAddMappingReplacesAStoredBinding() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"addMapping","mapping":{"targetProcessParameter":"PName","sourceElement":"ReadB",
+					"sourceElementParameter":"ResultEntity","sourceColumn":"Name"}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [],
+				Parameters = [new DescribedParameter {
+					Name = "PName", Source = "Script", Value = "[#...#]", SourceElement = "ReadA",
+					SourceElementParameter = "ResultEntity", SourceColumn = "Name"
+				}]
+			});
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the binding warning is a caveat on an edit that applied");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
+			text.Contains("replaced the existing binding of process parameter 'PName'")
+			&& text.Contains("was ReadA.ResultEntity.Name")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An addMapping onto a parameter with no stored binding raises no binding warning - the channel stays quiet for the ordinary single mapping, so the warning cannot train a reader to ignore it.")]
+	public void Execute_ShouldNotWarn_WhenAnAddMappingBindsAnUnboundParameter() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"addMapping","mapping":{"targetProcessParameter":"PName","sourceElement":"ReadB",
+					"sourceElementParameter":"ResultEntity","sourceColumn":"Name"}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an ordinary mapping edit succeeds");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains("process parameter 'PName'")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Reads the process back by UId when the edit was addressed by uid and the server omitted the schema name, instead of reporting the permissions check as unperformable.")]
 	public void Execute_ShouldVerifyByUid_WhenTheResultCarriesNoSchemaName() {
 		// Arrange

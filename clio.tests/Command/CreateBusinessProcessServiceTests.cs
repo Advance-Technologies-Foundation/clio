@@ -57,6 +57,24 @@ public sealed class CreateBusinessProcessServiceTests {
 		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
 	}
 
+	[Test]
+	[Description("ENG-103085: a filter nested inside a readData block STOPS the build before anything is posted - the server would drop it silently and every run would read the first record - and the refusal points to the element-level filter.")]
+	public void BuildProcess_ShouldNotPost_WhenABlockCarriesAKeyTheServerWouldDrop() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		CreateBusinessProcessService service = CreateService(client, out EnvironmentSettings _);
+		const string descriptor = "{\"name\":\"UsrP\",\"elements\":[{\"name\":\"Read1\",\"type\":\"readData\","
+			+ "\"readData\":{\"source\":\"Contact\",\"filter\":{\"object\":\"Contact\"}}}],\"flows\":[]}";
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(descriptor));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*'readData.filter'*ELEMENT-level 'filter'*",
+			because: "the refusal names the misplaced key and where it belongs");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
 	private static CreateBusinessProcessService CreateService(IApplicationClient client,
 			out EnvironmentSettings env) {
 		env = new EnvironmentSettings { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };

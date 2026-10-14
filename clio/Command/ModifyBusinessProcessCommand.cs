@@ -278,6 +278,9 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
+		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		ProcessBlockKeyCheck.Enforce(requestObject["operations"], logger);
 		// ALWAYS sent, true or false, because the server reads its ABSENCE as a third answer. A caller that
 		// omits the member is one built before the gate existed and unable to answer a refusal, so the server
 		// applies the edit rather than blocking a client that cannot respond; sending false is how this client
@@ -489,6 +492,7 @@ public class ModifyBusinessProcessCommand(
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
 			}
+			WarnOnParameterBindings(options, before, saved);
 			// The digest rides the SAME read-back as the guards (ENG-103023).
 			if (saved is { } readBack) {
 				ProcessWriteDigest.Report(logger, readBack, before, versionFactsRead: true,
@@ -503,6 +507,22 @@ public class ModifyBusinessProcessCommand(
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
+		}
+	}
+
+	// A process-parameter mapping is a binding, not a flow-time assignment (ENG-103081): say when this edit replaced
+	// one or bound a parameter to an element some start never reaches. Judged on the reads the command already took,
+	// so it costs no round trip, and guarded like them: the edit already landed, so it must never fail the command.
+	private void WarnOnParameterBindings(ModifyBusinessProcessOptions options, ErrorOr<DescribeProcessResult> before,
+		ErrorOr<DescribeProcessResult>? saved) {
+		try {
+			foreach (string warning in ProcessParameterBindingWarnings.ForOperations(options.OperationsJson,
+				before.IsError ? null : before.Value,
+				saved is { IsError: false } savedRead ? savedRead.Value : null)) {
+				logger.WriteWarning(warning);
+			}
+		} catch (Exception analysis) {
+			logger.WriteWarning($"The edit was applied, but checking its parameter mappings failed: {analysis.Message}.");
 		}
 	}
 

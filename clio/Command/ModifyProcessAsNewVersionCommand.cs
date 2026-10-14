@@ -146,6 +146,9 @@ public sealed class ModifyProcessAsNewVersionService(
 		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
+		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		ProcessBlockKeyCheck.Enforce(requestObject["operations"], logger);
 
 		// The SAME pre-check both sibling write paths run, and skipping it here was not a decision anyone made:
 		// this path takes the identical operations vocabulary, so an invented button or data-source name survives

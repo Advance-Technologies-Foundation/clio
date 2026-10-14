@@ -416,6 +416,94 @@ public sealed class ODataReadColumnValidationTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("ENG-103117: every name is valid (ExternalId is a plain string column) and the query is rejected for an operand-type mismatch: the plain-column correction is still shown and no unknown members are reported.")]
+	public void Read_Should_Show_The_Plain_Column_Correction_When_No_Name_Is_Unknown() {
+		// Arrange
+		_metadataBody = Csdl.Replace("<Property Name=\"Title\" Type=\"Edm.String\" />",
+			"<Property Name=\"Title\" Type=\"Edm.String\" /><Property Name=\"ExternalId\" Type=\"Edm.String\" />");
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", filters: new ODataFilters {
+			All = [new ODataFilterCondition { Field = "ExternalId", Op = "eq", Value = JsonSerializer.SerializeToElement(123) }]
+		}));
+
+		// Assert
+		response.Error.Should().Contain("'ExternalId' is an ordinary column of Activity",
+			because: "the rejection's name-only hint suggests External/Id and the metadata proves that wrong");
+		response.Error.Should().Contain("the rejection has another cause",
+			because: "no name is unknown, and the explanation must not assert which other cause applies");
+		response.Error.Should().NotContain("operand types", because: "the cause was never verified");
+		response.UnknownMembers.Should().BeNull(because: "nothing is unknown");
+		response.ValidColumnCount.Should().BeNull(because: "it is present only with unknown-members");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103117: a plain Id column used only in order-by gets no correction, because the lookup hint is built from filters only.")]
+	public void Read_Should_Return_The_Rejection_Unchanged_When_Plain_Id_Column_Is_Only_In_OrderBy() {
+		// Arrange
+		ODataReadTool baselineTool = BuildTool();
+		_metadataBody = string.Empty;
+		ODataReadArgs args = Args("Activity", orderBy: "ExternalId");
+		string rejection = baselineTool.Read(args).Error;
+		_metadataBody = Csdl.Replace("<Property Name=\"Title\" Type=\"Edm.String\" />",
+			"<Property Name=\"Title\" Type=\"Edm.String\" /><Property Name=\"ExternalId\" Type=\"Edm.String\" />");
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Error.Should().Be(rejection, because: "no lookup hint was generated for an order-by name");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103117: every name is valid and a real lookup is filtered through its navigation path: no explanation is added, the rejection is returned unchanged.")]
+	public void Read_Should_Return_The_Rejection_Unchanged_When_Names_Are_Valid_And_No_Plain_Id_Column() {
+		// Arrange
+		ODataReadTool baselineTool = BuildTool();
+		_metadataBody = string.Empty;
+		ODataReadArgs args = Args("Activity", filters: Filter("ActivityCategory/Id"));
+		string rejection = baselineTool.Read(args).Error;
+		_metadataBody = Csdl;
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(args);
+
+		// Assert
+		response.Error.Should().Be(rejection, because: "nothing in the metadata contradicts the request");
+		response.UnknownMembers.Should().BeNull(because: "no name is unknown");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103117: a real lookup column in a filter still gets its /Id hint next to an ordinary Id column's correction.")]
+	public void Read_Should_Keep_The_Lookup_Hint_Beside_The_Plain_Column_Correction() {
+		// Arrange
+		_metadataBody = Csdl.Replace("<Property Name=\"Title\" Type=\"Edm.String\" />",
+			"<Property Name=\"Title\" Type=\"Edm.String\" /><Property Name=\"ExternalId\" Type=\"Edm.String\" />");
+		ODataReadTool tool = BuildTool();
+
+		// Act
+		ODataReadResponse response = tool.Read(Args("Activity", filters: new ODataFilters {
+			All = [
+				new ODataFilterCondition { Field = "ExternalId", Op = "eq", Value = JsonSerializer.SerializeToElement(123) },
+				new ODataFilterCondition { Field = "ActivityCategoryId", Op = "eq", Value = JsonSerializer.SerializeToElement("x") }
+			]
+		}));
+
+		// Assert
+		response.UnknownMembers.Should().ContainSingle(because: "only the lookup is reported").Which
+			.Suggestions[0].Should().Be("ActivityCategory/Id");
+		response.Error.Should().Contain("'ExternalId' is an ordinary column");
+		response.Error.Should().NotContain("'ActivityCategoryId' is an ordinary column");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Review #1798: the metadata is fetched once per rejected query, as one attempt bounded by MetadataTimeoutMs.")]
 	public void Read_Should_Fetch_Metadata_Once_With_A_Bounded_Timeout() {
 		// Arrange

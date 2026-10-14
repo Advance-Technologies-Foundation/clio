@@ -206,6 +206,14 @@ public sealed class ToolContractPayloadBudgetTests {
 	// dead once the floor reached 1.6.6.92, since clio refuses such an environment up front. Re-measured by
 	// lowering the ceiling: modify-business-process 35048, create-business-process 35027,
 	// describe-business-process 33463 - 24 and 45 bytes of headroom.
+	//
+	// ENG-103081 (2026-10-13, a targetProcessParameter mapping is a binding, not a flow-time assignment) added
+	// one sentence to each process-write contract and paid by SWAP again, with version text the 1.6.6.92 floor made
+	// dead: create's "From 1.6.6.40 a condition can also name a read record's COLUMN" (the flows[] paragraph
+	// already names the column form) and "from 1.6.2.23", modify's "from 1.6.0.11", "from 1.6.2.23" and the
+	// "older-than-required environment is refused" clause. Re-measured by lowering the ceiling: modify-business-
+	// process 35070, create-business-process 35061 - 2 and 11 bytes of headroom. The next sentence on either
+	// contract needs a swap or a move into the process guides.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
