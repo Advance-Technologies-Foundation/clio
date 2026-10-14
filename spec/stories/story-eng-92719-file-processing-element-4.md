@@ -8,7 +8,7 @@ key (`<KEY>` below) is assigned on creation. Not created as of 2026-10-14.
 Sub-tasks)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D22
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md) - the
-story 4 rows (TC-U-101..TC-U-104, TC-I-101, TC-M-51)
+story 4 rows (TC-U-101..TC-U-106, TC-I-101, TC-M-51)
 **Status**: deferred (moves to ready-for-dev when its Sub-task exists and its slot opens: a gap while story 1's package
 PR is a draft, never inside a final review window of the main track, because every side-lane triple restamps)
 **Size**: S (about 4-6 h for its triple, inference; outside the ENG-92719 estimate)
@@ -60,7 +60,9 @@ filter is written, and name the route that does work.
 
 Package unit cases in `PBT/` (the filter-service tests): one per spelling (TC-U-101 `processParameter`, TC-U-102
 `elementParameter`, TC-U-103 `expression`), each asserting the refusal and an unchanged schema, and TC-U-104, the
-regression set of scalar values. One MCP e2e refusal case (TC-I-101) if clio advertises the rule. One stand case
+regression set of scalar values; TC-U-105 (criterion 3): a modify that does not write a filter already stored with a
+collection value leaves it byte-identical; TC-U-106 (criterion 5, clio-knowledge): a pin test of the guidance
+sentence. One MCP e2e refusal case (TC-I-101) if clio advertises the rule. One stand case
 (TC-M-51): the M19 recipe re-run on the cut, using Read data as the consumer, never Modify or Delete data (a filter that
 is evaluated wrongly there would touch every record). Ids are this story's rows of the test plan; they are refined with
 the criteria.

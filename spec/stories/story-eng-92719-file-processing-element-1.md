@@ -8,7 +8,8 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D10-D16, D19,
 D20, D21, O5; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: ready-for-dev
+**Status**: ready-for-dev (its Jira issue exists and its code can start as a stacked draft; the open owner answers gate
+as "Gating" says)
 **Size**: L (about 15.5-27.5 h of AI-agent time and 5.5-13 h of the owner's time; about 4-6 working days of calendar;
 the package PR is estimated at 6-6.8k added lines, the largest of the cycle)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -21,7 +22,8 @@ draft only after ENG-95984's package PR merged (E3) and merges only after ENG-95
 https://github.com/Advance-Technologies-Foundation/clio/pull/1814 merged, because that PR carries the `ManagerMap` arm
 for `fileprocessing` / `processfile` (E4, E6); this story's clio PR merges only after ENG-95984's knowledge generation
 https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/285 is PUBLISHED, because it writes the first
-`name=process-files` (E5). Owner questions Q13-Q17 answered before the package code (see "Gating").
+`name=process-files` (E5). Owner questions Q13-Q17 answered before the package code and before the conditional
+acceptance rows are pasted into Jira (see "Gating").
 **Blocks**: story 2, ENG-96506 Generated report + process parameter modes (Jira link L3: RP registers its variants in
 the handler and registry this story introduces); ENG-95985 Send email attachments (link L5, together with ENG-95984).
 
@@ -46,11 +48,12 @@ refused, and an element built in the designer or by an earlier generation reads 
 ## Acceptance Criteria
 
 The full text is the PRD's OA table (it replaces the Jira acceptance criteria; agreed 2026-10-07). Each line below is
-that criterion in short.
+that criterion in short. A row marked "conditional on Qnn" encodes the recommended answer to an open owner question; it
+is pasted into Jira (plan FE.0b) only after the answer, and a different answer rewrites it.
 
-- [ ] **OA-1** - `{type: fileProcessing}` (alias `processFile`) with an `attachments` group is added through create and
-  `addElement`, connected like any element, and drawn as the designer draws it (`ManagerItemUId` = `SchemaUId`, 69x55,
-  in a lane, `SerializeToDB` from the task schema).
+- [ ] **OA-1** (conditional on Q13) - `{type: fileProcessing}` (alias `processFile`) with an `attachments` group is
+  added through create and `addElement`, connected like any element, and drawn as the designer draws it
+  (`ManagerItemUId` = `SchemaUId`, 69x55, in a lane, `SerializeToDB` from the task schema).
 - [ ] **OA-2** - describe returns a `fileProcessing` block in the write vocabulary with effective values, identity
   checks and describe-only members; feeding the write members back rebuilds the element. Designer-built and
   builder-built Object elements read back and survive a modify. Report and Process-parameter elements are described and
@@ -59,24 +62,27 @@ that criterion in short.
   naming SF.
 - [ ] **OA-3** - `ObjectFiles` / `ObjectFiles.File` and `CreatedObjectFileIds.Id` can be mapped by more than one
   downstream element in one request (a FileCollection and a multi-instance sub-process).
-- [ ] **OA-4** - the variant registry resolves the Object schema by name; the group sent is the variant; no group, two
-  groups, another variant's group on update, a mismatching `source` and a contradicting `userTaskName` are refused.
+- [ ] **OA-4** (conditional on Q13) - the variant registry resolves the Object schema by name; the group sent is the
+  variant; no group, two groups, another variant's group on update, a mismatching `source` and a contradicting
+  `userTaskName` are refused.
 - [ ] **OA-5** - `{type: userTask, userTaskName: ObjectFileProcessingUserTask}` (any case, padding, the `performTask`
   alias, another name resolving to the same UId) is refused on create with a message pointing to `fileProcessing`; the
   Report and Process generic routes still build in this cut.
-- [ ] **OA-6** - `attachments.object` takes the record object or its file object; storage is derived as the designer
-  derives it; SysFile-mode sources and targets are refused with the D15 text.
-- [ ] **OA-7** - `attachments.recordId` from a constant (existence-checked), a process parameter, an element output (+
-  `sourceColumn`) or `[#SysVariable.CurrentUserContact#]` compiles into the filter; `numberOfRecords` 1..5000, default
-  50 with a notice; one sort column of the runtime root.
+- [ ] **OA-6** (conditional on Q17 for the details) - `attachments.object` takes the record object or its file object;
+  storage is derived as the designer derives it; SysFile-mode sources and targets are refused with the D15 text.
+- [ ] **OA-7** (conditional on Q16 and Q14) - `attachments.recordId` from a constant (existence-checked), a process
+  parameter, an element output (+ `sourceColumn`) or `[#SysVariable.CurrentUserContact#]` compiles into the filter;
+  `numberOfRecords` 1..5000, default 50 with a notice; one sort column of the runtime root.
 - [ ] **OA-8** - `saveTo` writes the legacy target pair and the link column; a constant `saveTo.recordId` must be an
   existing record of the target object; a mapped one gets the "may be empty at run time" notice; `action` is inferred
-  on create and always written.
-- [ ] **OA-9** - a saving Object element with no record scope and no filter condition at the end of the request is
-  refused before the pre-save gate with `failedOperationIndex: null`; a "use in process" one gets a notice; untouched
-  elements are never examined.
+  on create and always written (the inference is conditional on Q15; the PRD row itself encodes no open answer).
+- [ ] **OA-9** (conditional on Q16) - a saving Object element with no record scope and no filter condition at the end
+  of the request is refused before the pre-save gate with `failedOperationIndex: null`; a "use in process" one gets a
+  notice; untouched elements are never examined.
 - [ ] **OA-10** - the builder's Object element equals SkillFilesValidationProcess (read side) and FileCopyProcessPP
-  (save side) under the TC-41 comparison rule.
+  (save side) under the TC-41 comparison rule, with the parameters FileCopyProcessPP predates (`ConsiderTimeInFilter`,
+  `SourceDataEntitySchemaUId`, `TargetDataEntitySchemaUId`) excluded and named in the test until SC-1's E2 replaces
+  that oracle.
 - [ ] **OA-11** - `process-files` gains the element and Object sections, with the endpoint sentence "most shipped uses
   end in a record's attachments; when a following element needs the files, map the element's output collection" and
   never "rarely an endpoint".
@@ -89,7 +95,7 @@ that criterion in short.
 
 | Item | State (2026-10-14) | What waits on it |
 |---|---|---|
-| Q13 token and discriminator; Q14 naming bundle; Q15 action inference; Q16 record scope and empty-filter policy; Q17 storage details | **open** (each written in the ADR as recommended; Q16 to be answered knowing the ENG-102537 Process elements built without their configuration block save green and fail or hang at run time precedent) | the package code (OA.1-OA.4). If Q16 is answered "notice everywhere", OA.4 drops the pre-gate refusal and its touched-element record |
+| Q13 token and discriminator; Q14 naming bundle; Q15 action inference; Q16 record scope and empty-filter policy; Q17 storage details | **open** (each written in the ADR as recommended; Q16 to be answered knowing the ENG-102537 Process elements built without their configuration block save green and fail or hang at run time precedent) | the package code (OA.1-OA.4) AND the acceptance rows OA-1, OA-4 (Q13), OA-6 (Q17), OA-7 (Q14, Q16), OA-9 (Q16) and the action inference of OA-8 (Q15): their paste into Jira (plan FE.0b) waits for the answers, and a different answer rewrites them. If Q16 is answered "notice everywhere", OA.4 drops the pre-gate refusal and its touched-element record |
 | Q20 description bytes | agreed 2026-10-14: A (a reviewer-approved trim per tool) | the clio descriptions (OA.10) |
 | M10, M11 (a)(b), M14, M17-Q7, M13 | done 2026-10-02 (CrtProcessBuilder 1.6.6.54) | the package code: refusal set R3-R5, the H-G3-1 issue severity (not reproduced in memory; the guide warning and the bug-report Sub-task follow only if the optional M11 (c) or DT-01 confirms it), the D20 pins, the empty-record notice wording, the TC-45 Object fixtures |
 | M24 | done 2026-10-02 | the guide sentence on `attachments.sort`: a wrong JSON shape is nulled by the WCF binder and refused later with a misleading text |
@@ -220,9 +226,9 @@ to one tree)
     create element and the `setElement` update; `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` and
     `ReadBackFields_Should_BeDescribeOnlyMembers` (`clio.tests/Command/ProcessModel/ProcessBlockKeyCheckTests.cs`)
     green. Without it clio refuses every create or `setElement` that carries the block before it reaches the server.
-  - (d) in the commit that writes the first `name=process-files`, `clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json`
-    re-pinned to the PUBLISHED generation that carries `process-files`, with `process-files` and
-    `creatio.process-files` added in sorted order.
+  - (d) in the commit that writes the first `name=process-files`,
+    `clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` re-pinned to the PUBLISHED generation that
+    carries `process-files`, with `process-files` and `creatio.process-files` added in sorted order.
   - (e) typed `DescribedFileProcessing` in `clio/Command/ProcessModel/IProcessDescriber.cs`, `[JsonExtensionData]` on
     every nested type, `///` summaries on every new type and public member; "forwards the block verbatim" tests; a
     permanent capability probe on `ProcessElementUpdateDescriptor.FileProcessing`; capability-map rows.
@@ -234,25 +240,36 @@ to one tree)
     D12 merge rule; `DescribeProcessPrompt` lists `fileProcessing`; each pinned.
 - [ ] **OA.11** e2e: NEW `clio.mcp.e2e/ProcessFileElementToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`,
   `MinimumPackageVersion` = the floor, every describe through `ProcessDesignerE2EArrange.DescribeAsync` or with
-  `mode=full` / `element=<name>`): Object create + describe in dedicated storage; `saveTo.recordId` from a constant, a
-  process parameter, `sourceColumn` and `[#SysVariable.CurrentUserContact#]`; Read data -> Process file (TC-70);
-  Process file -> Modify data re-finding the created file (TC-71, built and described, not run); two consumers of
-  `ObjectFiles`; a multi-instance sub-process per file (TC-72, needs ENG-95984's File parameter); a partial
-  `setElement` that keeps the sort; the refusals (generic route, source change, filter root, empty-filter save, a
-  SysFile source and target); two cases on `UsrFpOaDesignerFixture` (TC-46): F1 described read-only and its
-  `setElement` / `setFilter` refused naming SF, F1 unchanged on re-read; an unrelated `addParameter` leaves F2's
-  `SysSchema.MetaData` node and resource rows byte-identical (read from the raw `SysSchema` row, never from describe).
-  When the fixture is absent: `Assert.Ignore` with the build instructions. Must stay green: `ListUserTasksToolE2ETests`,
-  `ValidateProcessGraphToolE2ETests`, `DescribeProcessToolE2ETests`, `SubProcessMultiInstanceToolE2ETests`,
-  `RecordColumnSourceToolE2ETests`, the ENG-95984 fixture `FileParameterToolE2ETests`.
-- [ ] **Knowledge records and status** (analysis plan section 7), in this clio PR: NEW
-  `docs/knowledge/platform/the-process-file-source-is-three-user-task-schemas.md`,
-  `platform/an-unset-result-action-type-runs-as-save-to-files.md`,
-  `platform/object-file-processing-filters-on-the-file-object.md`,
-  `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md`,
-  `platform/a-file-copy-without-a-link-column-lands-on-the-source-record.md`,
+  `mode=full` / `element=<name>`):
+  - Object create + describe in dedicated storage (TC-I-06); `attachments.recordId` per source (TC-I-18);
+    `saveTo.recordId` from a constant, a process parameter, `sourceColumn` and `[#SysVariable.CurrentUserContact#]`
+    (TC-I-28);
+  - Read data -> Process file (TC-I-70); Process file -> Modify data re-finding the created file (TC-I-71, built and
+    described, not run); two consumers of `ObjectFiles` (TC-I-35); a multi-instance sub-process per file (TC-I-72,
+    needs ENG-95984's File parameter); a partial `setElement` that keeps the sort (extends TC-I-06);
+  - the refusals: the generic route (TC-I-12), the empty-filter save with `failedOperationIndex: null` (TC-I-22), a
+    SysFile source and target (TC-I-17), and the source change and the filter root (extending TC-I-17);
+  - `validate-process-graph` over a described `fileprocessing` element (TC-I-86);
+  - two cases on `UsrFpOaDesignerFixture` (TC-I-46): F1 described read-only and its `setElement` / `setFilter` refused
+    naming SF, F1 unchanged on re-read; an unrelated `addParameter` leaves F2's `SysSchema.MetaData` node and resource
+    rows byte-identical (read from the raw `SysSchema` row, never from describe). When the fixture is absent:
+    `Assert.Ignore` with the build instructions.
+  - must stay green (TC-I-87): `ListUserTasksToolE2ETests`, `ValidateProcessGraphToolE2ETests`,
+    `DescribeProcessToolE2ETests`, `SubProcessMultiInstanceToolE2ETests`, `RecordColumnSourceToolE2ETests`, the
+    ENG-95984 fixture `FileParameterToolE2ETests`.
+- [ ] **Knowledge records and status** (analysis plan section 7), in this clio PR; each record states its basis: NEW
+  `docs/knowledge/platform/the-process-file-source-is-three-user-task-schemas.md` (the palette and the replacement
+  measured in the designer, 2026-10-01; the rest source),
+  `platform/an-unset-result-action-type-runs-as-save-to-files.md` (basis: source, not measured: the runtime reading of an
+  unset value),
+  `platform/object-file-processing-filters-on-the-file-object.md` (basis: source, not measured: the runtime root, the
+  zero-file read and the arbitrary-file read),
+  `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md` (the per-object choice measured in the designer,
+  UO-2..UO-4; the SysFile link and target keys source),
+  `platform/a-file-copy-without-a-link-column-lands-on-the-source-record.md` (basis: source, not measured:
+  `CopyAttributes`),
   `platform/a-server-built-user-task-takes-the-existing-process-default.md` (M14 measured it),
-  `platform/designer-stamps-modified-in-schema-only-on-a-changed-value.md`,
+  `platform/designer-stamps-modified-in-schema-only-on-a-changed-value.md` (measured over the corpus),
   `ProcessModel/report-and-parameter-file-elements-stay-generic-until-eng-96506.md` (temporary; deleted by RP),
   `ProcessModel/process-file-sysfile-storage-is-refused-until-sf.md` (temporary; deleted by SF);
   `platform/after-saving-object-files-points-at-the-source-files.md` only after M26; UPDATE
@@ -330,8 +347,9 @@ an approval.
       `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and nothing else, with AAA, `because:` and
       `[Description]`; the sort codec extracted with `ReadDataConfigBinderTests` and `ReadDataConfigApplierTests` green
       and their assertions unedited.
-- [ ] `docs/process-file-element-capture.md` matches SkillFilesValidationProcess under the TC-41 rule; architecture rows
-      and the diary entry added; restamped last; tag pushed and verified on the remote.
+- [ ] `docs/process-file-element-capture.md` matches SkillFilesValidationProcess (read side) and FileCopyProcessPP (save
+      side, its predated parameters excluded and named) under the TC-41 rule; architecture rows and the diary entry
+      added; restamped last; tag pushed and verified on the remote.
 
 **clio**
 - [ ] Rebundled to the final cut with a strictly increasing `-Version`; four pins; the three floors equal the final cut,
@@ -369,10 +387,12 @@ an approval.
 
 **Process**
 - [ ] This BMAD set merged before the package PR opened (E7).
+- [ ] Jira: OA-1..OA-12 pasted as this issue's acceptance criteria, the rows conditional on Q13-Q17 only after those are
+      answered (rewritten first if an answer differs from the recommendation); link L1 (ENG-95984 relates to this issue)
+      in place of the "blocks" link 560203.
 - [ ] M26 recorded before the OA.12 sentence and its record are written; `UsrFpOaDesignerFixture` built; ST-01, ST-02,
-      DT-01, DT-02 and SC-4 passed and recorded with dates, package version and basis.
-- [ ] Every test-plan case whose PR column names this story's package or clio PR implemented; the AC traceability rows
-      of OA filled.
+      DT-01, DT-02 and SC-4 (TC-M-20, the story 1 rows) passed and recorded with dates, package version and basis.
+- [ ] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
 - [ ] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
       (comprehensive) before ready-to-merge; no open Blocker or High.
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.

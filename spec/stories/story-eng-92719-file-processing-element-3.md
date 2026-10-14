@@ -9,7 +9,8 @@ share of FE-1, FE-5)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D15 (SysFile
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: ready-for-dev (its package code waits on five stand measurements; see "Gating")
+**Status**: deferred (no Jira issue yet, and no code can start before five stand measurements; it moves to
+ready-for-dev when the Sub-task exists and the measurements its first code needs are recorded; see "Gating")
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -44,8 +45,10 @@ record's Freedom UI attachment list
 
 ## Acceptance Criteria
 
-The full text is the PRD's SF-1 (decisions D-5, the SysFile row). Each line below is part of it in short. A case whose
-measurement fails keeps story 1's refusal, and this story narrows to the cases that passed.
+The full text is the PRD's SF-1 (decisions D-5, the SysFile row). It is **proposed, confirmed when the SF Sub-task is
+created**: Q1 agreed the criteria of ENG-95984, FE, OA and RP only. Each line below is part of it in short. A case
+whose measurement fails keeps story 1's refusal, and this story narrows to the cases that passed (a PRD addition taken
+from D15's fallback); what FE-1 then means is an open owner item in the PRD.
 
 - [ ] **SF-1a** - `Resolve` lifts SysFile mode per variant through the registry: an Object source on a SysFile-stored
   object (`SourceEntitySchemaUId` = SysFile, `SourceDataEntitySchemaUId` = the record object), and SysFile targets for
@@ -81,8 +84,9 @@ one at a time. Status on 2026-10-14: none of them run.
 | M25 | `Features.GetIsEnabled` reads the storage flag as true on the stand, and its code name | a designer-built script-task probe that throws the three reads (partly answered: the client read is true) | SF-1e only |
 
 Not gating: M9 (a SysFile sort on a record-object column throws; the refusal severity) and M12 (a later SysFile
-override). M17's SysFile half (an empty `ConnectedObjectId` orphans a SysFile file; `SysFile.RecordId` has no foreign
-key, measured 2026-10-02) sets the notice wording.
+override). M17's SysFile half sets the notice wording: `SysFile.RecordId` has no foreign key (measured 2026-10-02,
+M17-Q7), so an empty `ConnectedObjectId` is predicted to orphan the file instead of failing (source, not measured; the
+M17 runs are owed).
 
 If the owner had rejected O1, this content would fold back into story 1 with these five measurements on its path;
 O1 was agreed on 2026-10-07.
@@ -103,9 +107,10 @@ Ids are the analysis plan's work packages (section 5.3).
 - [ ] **SF.1** `Resolve` SysFile mode lifted per variant through the registry (Object read and write; Report and
   Process targets), only for the cases whose measurement passed; the SysFile scope in the shape M7 captured, `Split`
   accepting both shapes; the SysFile-root sort rule (record-object columns refused); the `RecordSchemaName`
-  expectations; the M25 designer-flag notice (only if M25 confirmed the read) through the feature seam of story 2;
-  the SysFile-to-SysFile retarget. Files: `PB/FileProcessing/AttachmentStorageResolver.cs`,
-  `FileProcessingScopeFilter.cs`, `PB/Filters/FileProcessingFilterTarget.cs`, `PB/FileProcessing/FileProcessingFeatureReader.cs`.
+  expectations; the M25 designer-flag notice (only if M25 confirmed the read) through the feature seam of story 2; the
+  SysFile-to-SysFile retarget. Files: `PB/FileProcessing/AttachmentStorageResolver.cs`,
+  `FileProcessingScopeFilter.cs`, `PB/Filters/FileProcessingFilterTarget.cs`,
+  `PB/FileProcessing/FileProcessingFeatureReader.cs`.
 - [ ] **SF.2** Tests: the resolver in SysFile mode; scope compile and `Split`; the Account address -> Contact address
   retarget clears the scope; the SysFile-root sort rule; the notice through the faked seam (ON: none; OFF: notice;
   never a refusal); the registry test with the SysFile switch flipped; the capture doc checked against M21. Restamp
@@ -148,8 +153,8 @@ After the cut, before the package PR leaves draft (the common protocol of story 
   sees the files in the Freedom UI attachment list.
 - **DT-04** the user opens ST-08's elements and compares with the M21 capture: metadata unchanged by a no-op save, and
   equal to M21 under the TC-41 rule.
-- **SC-4** the builder twin of SC-1's E3, E4, E5 and E11: equal under the TC-41 rule; this closes the SF serialization
-  criterion.
+- **SC-4 (TC-M-20)** the builder twin of SC-1's E3, E4, E5 and E11: equal under the TC-41 rule; this closes the SF
+  serialization criterion.
 - **e2e** `ProcessFileSysFileStorageToolE2ETests` and story 1's re-pointed case: Passed with Ignored = 0.
 
 A failing case keeps its refusal and narrows this story (D15 fallback: if M23 fails, SysFile sources only, if M8
@@ -157,9 +162,11 @@ passed).
 
 ## Status convention
 
-As in story 1: `in-progress` when this story's clio draft opens; `review` when it leaves draft. This is the last story
-of the main chain, so its `done` flip rides in the next clio PR that touches `spec/sprint-status.yaml`, by link L5 the
-first clio PR of ENG-95985 Send email attachments, and is never pushed after an approval.
+`ready-for-dev` when the Sub-task exists and the measurements are recorded (a clio commit); then as in story 1:
+`in-progress` when this story's clio draft opens; `review` when it leaves draft. This is the last story of the main
+chain, so its `done` flip rides in the next clio PR that touches `spec/sprint-status.yaml`, whichever that is
+(pr-split section 5.6 expects the first clio PR of ENG-95985 Send email attachments, by link L5), and is never pushed
+after an approval.
 
 ## Definition of Done
 
@@ -172,13 +179,30 @@ first clio PR of ENG-95985 Send email attachments, and is never pushed after an 
       green; the PR-description statements of story 1.
 - [ ] clio-knowledge: the storage section rewritten; the knowledge suites green; published, and `info-knowledge` shows
       it.
-- [ ] ST-08 and DT-04 passed; the user confirmed each written file in the record's Freedom UI attachment list; every
-      test-plan case whose PR column names this story's package or clio PR implemented.
+- [ ] ST-08, DT-04 and SC-4 (TC-M-20, the story 3 rows) passed; the user confirmed each written file in the record's
+      Freedom UI attachment list; every test-plan case whose Story column names 3 implemented.
 - [ ] Review gates 1, 2 (per commit, tier stated) and 3; no open Blocker or High.
 - [ ] The Sub-task created in Jira and its key written into this file, its `spec/sprint-status.yaml` row and every
-      `<SF-KEY>` placeholder; PR titles exactly `<SF-KEY> SysFile attachment storage in the Process file element`;
-      merged by a human package -> clio -> knowledge.
-- [ ] ENG-92719 File processing element closes after this story's knowledge PR merges (with stories 1 and 2 done).
+      `<SF-KEY>` placeholder; SF-1 confirmed (or narrowed) by the owner and pasted as its acceptance criteria; link L4
+      (ENG-96506 blocks this Sub-task) in place; PR titles exactly
+      `<SF-KEY> SysFile attachment storage in the Process file element`; merged by a human package -> clio -> knowledge.
+
+### Story-level Definition of Done: ENG-92719 File processing element
+
+The Story has no row of its own in `spec/sprint-status.yaml`; its Definition of Done (analysis plan section 11) lives
+here, because this story is the last of its main chain. ENG-92719 closes when all of these hold:
+- [ ] This BMAD set (the docs-only clio PR titled `ENG-92719 File processing element`) merged before the first FE code
+      PR opened.
+- [ ] ENG-96505 Element readiness and object attachments mode (story 1), ENG-96506 Generated report + process parameter
+      modes (story 2) and this Sub-task done, each when its own knowledge PR merged. Stories 4 and 5 do not gate it.
+- [ ] Jira: the Story's acceptance criteria replaced with FE-1..FE-6 (FE-1 after Q13 is answered, and amended if SF
+      narrowed: the PRD's open item "What FE-1 means if SF narrows"); the Sub-tasks' criteria replaced (stories 1-3);
+      the D23 re-links L1-L5 done.
+- [ ] Each FE row traceable to a test or a guide section (the test plan's traceability table): FE-1 and FE-2 (the OA and
+      RP e2e), FE-3 (`process-files`, the D17 refusal), FE-4 (ENG-95984 plus the value-source e2e), FE-5 (the three
+      captures plus M21), FE-6 (Read data -> Process file, the Modify data re-find and the per-file multi-instance case in
+      story 1; the Object -> Process chain and Add data -> report in story 2; Send email in ENG-95985 Send email
+      attachments; Creatio.ai stated as not buildable).
 
 ## Dev Agent Record
 

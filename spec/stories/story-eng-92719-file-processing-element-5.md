@@ -8,12 +8,13 @@ its key (`<KEY>` below) is assigned on creation. Not created as of 2026-10-14.
 Sub-tasks)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D20
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md) - the
-story 5 rows (TC-U-111..TC-U-113, TC-M-52)
+story 5 rows (TC-U-111..TC-U-114, TC-M-52)
 **Status**: deferred (its slot is after story 3's package PR, SysFile storage; it moves to ready-for-dev then, once its
 Sub-task exists)
 **Size**: S (about 4-6 h for its triple, inference; outside the ENG-92719 estimate)
-**Repo**: crt-process-builder, then clio (the rebundle), then clio-knowledge only if the change is advertised: its own
-triple, titled `<KEY> Builder-made user tasks do not set SerializeToDB`
+**Repo**: its own triple, as the analysis plan section 5.4 sizes it: crt-process-builder, then clio (the rebundle),
+then clio-knowledge (whether that PR changes any guidance text is settled when the criteria are refined); each titled
+`<KEY> Builder-made user tasks do not set SerializeToDB`
 **Depends on**: story 3 (slot only, analysis plan section 5.4 and pr-split section 12.3; no functional dependency)
 **Blocks**: nothing; it does not gate the closure of ENG-92719 File processing element
 
@@ -51,7 +52,9 @@ user-task schema.
 
 Package unit cases (the user-task handler tests): TC-U-111, a generic-route create stores `SerializeToDB` from the task
 schema, for a schema whose value is true and one whose value is false; TC-U-112, the dedicated handlers' output is
-unchanged; TC-U-113, an untouched element of a modify is not rewritten. One stand case (TC-M-52): M14's recipe on the
+unchanged; TC-U-113, an untouched element of a modify is not rewritten; TC-U-114, a generic-route user task compared
+key for key with a designer capture of the same task shows no `BO2` difference (criterion 3; the capture is a shipped
+element or SC-1's, chosen when refined). One stand case (TC-M-52): M14's recipe on the
 cut, read from the raw `SysSchema` row (never from describe, which does not report the key), plus the user's no-op
 designer save. Ids are this story's rows of the test plan; they are refined with the criteria.
 

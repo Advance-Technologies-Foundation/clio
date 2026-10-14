@@ -8,8 +8,9 @@ O4-O8 (Q8), among them **O5: the variant registry is OA's design**. **Open**: Q1
 Q14 (D11, naming bundle), Q15 (D14, action inference), Q16 (D16, record scope and empty-filter policy, to be answered
 knowing the precedent of ENG-102537 Process elements built without their configuration block save green and fail or
 hang at run time), Q17 (D15, storage details) and Q18 (D17, FastReport). Each open decision is written below as
-recommended; a different answer changes only the decision named. Test-plan item O-TP1 (where TC-91 runs) is open too,
-recommended B: in RP's clio PR.
+recommended. A different answer changes the decision named AND the acceptance rows the PRD marks "conditional on" that
+question (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1, RP-4), whose paste into Jira waits for the answers, AND the test
+cases the test plan lists for it. Test-plan item O-TP1 (where TC-91 runs) is open too, recommended B: in RP's clio PR.
 **Date**: 2026-10-14
 **Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); Sub-tasks ENG-96505
 Element readiness and object attachments mode (OA), ENG-96506 Generated report + process parameter modes (RP), and SF,
@@ -58,34 +59,42 @@ Platform and corpus (source unless marked; Creatio core 10.1.37 and the CrtProce
   the stored `rootSchemaName` is ignored and every read adds `Type = File`. The Report root is the printable's entity
   (`SysModuleReport.SysEntitySchema`, else the section entity).
 - **F4 Storage per object.** The designer keeps the legacy encoding for an object with an eligible `<X>File`
-  (`FileLead` for Lead) and writes SysFile `70ec5d9f-a55e-4f5c-8f59-30d2c5149c4a` + `RecordId` +
-  `*DataEntitySchemaUId` for every other eligible object (measured, UO-2..UO-4, 2026-10-01). The server never reads the
-  designer flag `UseSysFileInObjectFileProcessing`. 0 of 30 shipped elements use SysFile (corpus). `CopyAttributes`
-  copies only what the target has not set, so a same-schema copy with no link column lands on the source record.
-- **F5 Reports.** Dispatch by `Type.Name`: MS Word and FastReport run, DevExpress throws `NotSupportedException`. Word
-  always writes one file per record (`IsSeparateReports` changes naming only). The stand has 5 MS Word printables, none
-  for Account or Contact, `ConvertInPDF` false on all, and no FastReport package or printable (measured, M15).
+  (`FileLead` for Lead) and chooses SysFile `70ec5d9f-a55e-4f5c-8f59-30d2c5149c4a` for every other eligible object.
+  Measured in the designer, in memory (UO-2..UO-4, 2026-10-01): the per-object choice, and for a SysFile source the
+  file object SysFile with `SourceDataEntitySchemaUId` = the record object (UO-3). Source, not measured: the
+  `RecordId` link column and scope, and a SysFile target's `TargetDataEntitySchemaUId` (pending M7, M21, M23). The
+  server never reads the designer flag `UseSysFileInObjectFileProcessing`. 0 of 30 shipped elements use SysFile
+  (corpus). `CopyAttributes` copies only what the target has not set, so a same-schema copy with no link column lands
+  on the source record.
+- **F5 Reports** (source, not measured, unless marked). Dispatch by `Type.Name`: MS Word runs; FastReport is
+  dispatched, but its process path is unverified (it resolves the generator without the process's user connection);
+  DevExpress throws `NotSupportedException`. Word always writes one file per record (`IsSeparateReports` changes naming
+  only). Measured (2026-10-01 and M15): the stand has 5 MS Word printables, none for Account or Contact, `ConvertInPDF`
+  false on all, and no FastReport package or printable.
 - **F6 The Process variant's input.** `Files` is a required In collection with one FileLocator item `File`; its output
   item is `ObjectFile` (the copies). A nested-only `Files.File` from a single file is read as one row (pending M1); an
   outer-only binding gives rows `{File: null}`.
 - **F7 Nothing is validated.** No variant overrides `Validate`; `IsRequired` is never enforced.
 
 Package (source; CrtProcessBuilder 1.6.6.96, re-read 2026-10-13):
-- **P1** The generic route builds the same unconfigured element for the three file schemas. `UserTaskElementHandler.Create`
-  already refuses the generic Pre-configured page (ENG-102112 create-business-process silently accepts a generic userTask
-  PreconfiguredPageUserTask without the preconfiguredPage block, `PB/Elements/UserTaskElementHandler.cs:86`) and
-  Auto-generated page / User dialog (ENG-102537, `:87`), keyed on the resolved schema UId.
+- **P1** The generic route builds the same unconfigured element for the three file schemas.
+  `UserTaskElementHandler.Create` already refuses the generic Pre-configured page (ENG-102112 create-business-process
+  silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage block,
+  `PB/Elements/UserTaskElementHandler.cs:86`) and Auto-generated page / User dialog (ENG-102537, `:87`), keyed on the
+  resolved schema UId.
 - **P2** `DataNodeFilterTarget` claims any node with `DataSourceFilters` and roots the filter on whatever object the
   caller names, unchecked (`PB/Filters/DataNodeFilterTarget.cs:57-91`).
-- **P3** The element-configuration ledger of ENG-102537 (`IElementConfigurationLedger`) evaluates every touched element
-  at the end of the request, raises NOTICES and never refusals (owner decision, `PB/Elements/IElementConfigurationLedger.cs:22-27`),
-  reconciles AFTER the pre-save gate, and has no rule for the three file schemas. The one end-of-request refusal before
-  the gate is `EnsureFormulasStillBelongOnTouchedConnectors` (`PB/Design/ProcessEditPipeline.cs:130-133`).
+- **P3** The element-configuration ledger of ENG-102537 (`IElementConfigurationLedger`) evaluates every touched
+  element at the end of the request, raises NOTICES and never refusals (owner decision,
+  `PB/Elements/IElementConfigurationLedger.cs:22-27`), reconciles AFTER the pre-save gate, and has no rule for the
+  three file schemas. The one end-of-request refusal before the gate is `EnsureFormulasStillBelongOnTouchedConnectors`
+  (`PB/Design/ProcessEditPipeline.cs:130-133`).
 - **P4** Since ENG-100041 Sub-process retarget guard scans the live schema instead of the request dependency snapshot
   (1.6.6.96) every refusing dependency guard asks the request's `IProcessDependencySnapshot`, which throws before
   `Capture` runs.
 - **P5** The readData sort helpers (`ResolveOrderInfoValue`, `ParseSortDirection`, `DescribeSort`,
-  `DescribeSortDirection`) are `private static` and worded "Read data '<label>': ..." (`PB/Elements/ReadDataConfigBinder.cs:793-825, 917-962`).
+  `DescribeSortDirection`) are `private static` and worded "Read data '<label>': ..."
+  (`PB/Elements/ReadDataConfigBinder.cs:793-825, 917-962`).
 - **P6** `UserTaskSchemaIdentity` resolves a task schema by NAME (`FindInstanceByName`); production code cannot
   reference `Terrasoft.Configuration`.
 - **P7** Raw `addMapping` writes a correct schema UId onto the storage parameters since 1.6.6.69 (ENG-102113
@@ -327,7 +336,8 @@ in OA for both modes, so describe reports designer-built SysFile elements.
   target" (M17-Q7 measured the foreign keys).
 - Refusals R1-R9 (object not found; the abstract `File`; SysFile named directly; an object inheriting SysFile; a
   virtual, view, tag or folder object; several attachment objects; no SysFile and no dedicated object; no link column;
-  a `linkColumn` that is not a lookup) and warnings W6, W7.
+  a `linkColumn` that is not a lookup) and warnings W6 (an explicit `linkColumn` that differs from the designer's
+  column) and W7 (the record object also has files in an unpaired file object).
 - Invariants: never write `SourceDataEntitySchemaUId` for a legacy source; always write `*DataEntitySchemaUId` in
   SysFile mode; rewrite the whole pair from `Resolve` whenever a request writes the block.
 
@@ -474,8 +484,12 @@ tolerating N10, the owner's call if strict parity is wanted.
 
 **Consequences.** The comparison rule for the AC (PRD): UIds ignored, `IL2` of nested items compared, `GS5` normalised
 for template-default values, tolerated N2 (`BL8` absent; generic, recorded for every builder element, no Sub-task), N9,
-N10, N13; normalised N11, N14-N16; anything else fails. The generic-route `SerializeToDB` gap for every other user task
-is the side Sub-task of story 5.
+N10, N13; normalised N11, N14-N16; parameters a shipped oracle predates excluded and NAMED in the test until the SC-1
+designer capture replaces that oracle (FileCopyProcessPP: `ConsiderTimeInFilter`, `SourceDataEntitySchemaUId`,
+`TargetDataEntitySchemaUId`; FileParameterProcess: `TargetDataEntitySchemaUId`, with its item `FileCollectionParameter`
+role-normalised to `File`; PrintInvoiceReport: whatever SC-0 records, none expected); anything else fails. The
+exclusion class is the analysis test plan's (TC-41, TC-69) and clarifies decisions Part D's "any other difference
+fails". The generic-route `SerializeToDB` gap for every other user task is the side Sub-task of story 5.
 
 ### D21 - Reuse map (no owner decision)
 
@@ -536,12 +550,15 @@ per-file test needs a callee File parameter.
 
 ### D24 - Acceptance-criteria corrections (agreed 2026-10-07, Q1)
 
-**Decision.** FE, OA and RP take the replacement text of the analysis decisions Part D (D-2, D-3, D-4), copied into the
-PRD; SF takes the SysFile row of D-5. "Binary / File" becomes File + FileCollection; serialization is compared per
-variant and per storage under a written rule; "rarely an endpoint" becomes the measured shipped pattern; Send email
-moves and the Creatio.ai pattern leaves; the source object is a schema choice and the record a value of the element;
-Report and Process stay generic until RP; SysFile moves to SF; a printable is an MS Word printable of the reported
-object; "use in process" does not exist for the Process-parameter source.
+**Decision.** FE, OA and RP take the replacement text of the analysis decisions Part D (D-2, D-3, D-4), copied into
+the PRD. The rows that encode a recommended answer to an open question (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1,
+RP-4) are conditional on that answer and pasted into Jira only after it. SF takes the SysFile row of D-5 as a
+proposal, confirmed when the SF Sub-task is created (Q1 covered ENG-95984, FE, OA and RP only). "Binary / File"
+becomes File + FileCollection; serialization is compared per variant and per storage under a written rule; "rarely an
+endpoint" becomes the measured shipped pattern; Send email moves and the Creatio.ai pattern leaves; the source object
+is a schema choice and the record a value of the element; Report and Process stay generic until RP; SysFile moves to
+SF; a printable is an MS Word printable of the reported object; "use in process" does not exist for the
+Process-parameter source.
 
 **Consequences.** The Story is done only when OA, RP and SF are done. OA, RP and SF each move to done when their own
 knowledge PR merges. The two side Sub-tasks do not gate the Story; the owner confirms the Jira workflow allows closing
@@ -568,11 +585,14 @@ Tool descriptions: OA adds the token, the block clause with `get-guidance name=p
 modify have no room (K3), so **the bytes come from a reviewer-approved trim of existing text per tool (Q20 = A)**,
 measured by lowering the ceiling; the `fileProcessing` call-shape entry (about 25-30 B, never cut) is paid by trimming
 kept short-form text of one of the seven contracts under the 19,000 B wire guard. The curated fixture
-`curated-knowledge-names.json` is re-pinned to the PUBLISHED generation that carries `process-files` in the same commit
-as the first `name=process-files`. In the create, modify and describe descriptions RP moves only the floor clause
-(byte-neutral while the cut stays below 1.6.6.100); SF changes none. MCP prompts change per cut: `ListUserTasksPrompt` (the claimed schemas leave the
-generic-`userTask` advice), `CreateBusinessProcessPrompt` (the `fileProcessing` sentence), `ModifyBusinessProcessPrompt`
-(the D12 merge rule, OA), `DescribeProcessPrompt` (the block name, OA). Resources and `clio/tpl` need no update.
+`curated-knowledge-names.json` is re-pinned to the PUBLISHED generation that carries `process-files` in the same
+commit as the first `name=process-files`. RP changes only the enforced floor clause, in the create, modify and
+modify-as-new-version descriptions (describe stays presence-only). It is not byte-neutral: ENG-95984's cut is
+1.6.6.98, so OA's is 1.6.6.99 or higher and RP's 1.6.6.100 or higher, and the longer literal costs one byte in each of
+the three contracts, paid by a reviewer-approved trim (Q20 = A). SF changes no description. MCP prompts change per
+cut: `ListUserTasksPrompt` (the claimed schemas leave the generic-`userTask` advice), `CreateBusinessProcessPrompt`
+(the `fileProcessing` sentence), `ModifyBusinessProcessPrompt` (the D12 merge rule, OA), `DescribeProcessPrompt` (the
+block name, OA). Resources and `clio/tpl` need no update.
 
 **Rejected.** `process-file` (reads as the element only) or one guide per ticket. B, a reviewed ceiling raise, and C,
 moving the type lists into guidance (Q20). Registering in `GoLiveFloor` (fails `GuidanceMigrationTests`).
@@ -724,14 +744,18 @@ remote before its clio PR merges.
 | Q4 / O3 RP before SF | agreed 2026-10-07 |
 | Q5 / D22 Consumers: Send email to ENG-95985, Creatio.ai out of scope | agreed 2026-10-07 |
 | Q6 / D27 One PR per Jira issue per repository (14 PRs) | agreed 2026-10-07 |
+| Q7 Where the mirror defect H-1 is fixed (ENG-95984) | answered by M3 on 2026-10-02: H-1 refuted, no Sub-task |
 | Q8 / O4-O8 Docs-only PRs first, the variant registry in this ADR (O5), merge commits, merge windows, a second stand | agreed 2026-10-07 |
 | Q9 Follow-up Sub-tasks: the unconditional ones on day 0 | agreed 2026-10-07; SF and the two side Sub-tasks not created as of 2026-10-14 |
+| Q10-Q12 FileCollection declared as `type: FileCollection`; its Variable default; the binder policy (ENG-95984's contract, which D18 relies on) | agreed 2026-10-07 |
 | Q19 / D25 Guide name `process-files` | agreed 2026-10-08 |
 | Q20 / D25 Description bytes: a reviewer-approved trim per tool | agreed 2026-10-14 (A) |
-| **Q13 / D10 Token `fileProcessing` (alias `processFile`); the group is the variant** | **open** |
-| **Q14 / D11 Naming bundle; `numberOfRecords` defaults to 50** | **open** |
-| **Q15 / D14 Action inferred from `saveTo` on create, always written** | **open** |
-| **Q16 / D16 Record scope in the group; refuse saving and Word elements with no selecting filter** | **open** (weigh the ENG-102537 "notice, never a refusal" precedent) |
-| **Q17 / D15 Flag not read for behaviour; no `linkColumn: "none"`; no SysFile override** | **open** |
-| **Q18 / D17 FastReport refused** | **open** |
+| **Q13 / D10 Token `fileProcessing` (alias `processFile`); the group is the variant** | **open**; conditional AC rows FE-1, OA-1, OA-4 |
+| **Q14 / D11 Naming bundle; `numberOfRecords` defaults to 50** | **open**; conditional AC rows OA-7, RP-1 (and member names everywhere) |
+| **Q15 / D14 Action inferred from `saveTo` on create, always written** | **open**; no AC row encodes it, the stories' and tests' action inference does |
+| **Q16 / D16 Record scope in the group; refuse saving and Word elements with no selecting filter** | **open** (weigh the ENG-102537 "notice, never a refusal" precedent); conditional AC rows OA-7, OA-9, RP-1, RP-4 |
+| **Q17 / D15 Flag not read for behaviour; no `linkColumn: "none"`; no SysFile override** | **open**; conditional AC row OA-6 |
+| **Q18 / D17 FastReport refused** | **open**; conditional AC row RP-1 |
 | **O-TP1 Where TC-91 runs** | **open** (recommended B: in RP's clio PR) |
+| **Nested `BK15` rows (D20)** | **open** (recommended: tolerated as N10; the alternative is writing the rows in the handler's create path) |
+| **What FE-1 means if SF narrows** | **open** (PRD "Open owner items") |

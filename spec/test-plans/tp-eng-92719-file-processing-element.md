@@ -36,7 +36,7 @@ Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/
 | Unit, knowledge | clio-knowledge `automation/Clio.Knowledge.Bundle.Tests` | TC-U-88 | TC-88 (level K) | the guide states each rule; sizes; registration; the dedicated-type count | whether agents follow it |
 | Integration (MCP e2e) | `clio.mcp.e2e`, category `McpE2E.ProcessDesigner` | TC-I-nn | TC-nn with level E | JSON member names, build + describe round trips and refusal texts over the real MCP path, against a stand on the cut | run-time behaviour (these fixtures build and read; they do not run processes). TeamCity excludes the category, so a manual run is the only e2e evidence |
 | Manual (stand) | the .NET Framework stand, core 10.1.37 | TC-M-01..TC-M-08 (= ST-01..ST-08); TC-M-11..TC-M-14 (= DT-01..DT-04); TC-M-15..TC-M-17 (per-cut protocol); TC-M-18..TC-M-20 (capture session SC-0, SC-1 + SC-2, SC-4); TC-M-21..TC-M-46 (TC-M-(20+n) = Mn) | ST, DT, SC, M | files really moved, storage, names, temporary files, iteration counts; the designer opening builder output | - |
-| Side Sub-tasks | as above | TC-U-101..TC-U-104, TC-I-101, TC-M-51 (story 4); TC-U-111..TC-U-113, TC-M-52 (story 5) | new, proposed | as above | - |
+| Side Sub-tasks | as above | TC-U-101..TC-U-106, TC-I-101, TC-M-51 (story 4); TC-U-111..TC-U-114, TC-M-52 (story 5) | new, proposed | as above | - |
 
 The rule: one analysis case keeps its number. A case at a unit level (P, C or K) becomes TC-U-nn, a case at level E
 becomes TC-I-nn, so a case marked "P, E" maps to both TC-U-nn and TC-I-nn. The "Repo" column says which repository's
@@ -220,7 +220,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-38 | TC-38 | pkg | 1 | nested UIds re-minted on create only; kept on modify with their consumers | FE-5 |
 | TC-U-39 | TC-39 | pkg | 1 | nested-source display value in the designer form | FE-5 |
 | TC-U-40 | TC-40 | pkg | 1 | a template parameter missing after `GetDesignInstance`: refused, never hand-created | OA-1 |
-| TC-U-41 | TC-41 | pkg | 1 | parity with SkillFilesValidationProcess (read side) and FileCopyProcessPP (save side) under the TC-41 rule | OA-10, FE-5 |
+| TC-U-41 | TC-41 | pkg | 1 | parity with SkillFilesValidationProcess (read side) and FileCopyProcessPP (save side) under the TC-41 rule; the parameters FileCopyProcessPP predates (`ConsiderTimeInFilter`, `SourceDataEntitySchemaUId`, `TargetDataEntitySchemaUId`) are excluded and named in the test until SC-1's E2 replaces that oracle | OA-10, FE-5 |
 
 ### Describe (D19) and the clio read path
 
@@ -230,7 +230,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-43 | TC-43 | pkg | 1 | `issues` per hazard | OA-2 |
 | TC-U-44 | TC-44 | pkg | 1, 2 | round trip: describe -> drop describe-only -> resubmit unchanged; identity check equal accepted, changed refused; a uk-UA caption | OA-2, RP-7 |
 | TC-U-45 | TC-45 | pkg | 1, 2 | snapshot tolerance per variant (M13: `Guid` + `referenceSchema`; a Lookup-typed `ConnectedObjectId` reads like a Guid) | OA-2, RP-7 |
-| TC-U-46, TC-I-46 | TC-46 | pkg, e2e | 1 | per-cut preservation: Report and Process stay generic and byte-identical through a modify; a designer-built SysFile element described and its change refused (on `UsrFpOaDesignerFixture`) | OA-2 |
+| TC-U-46, TC-I-46 | TC-46 | pkg, e2e | 1, 2 | per-cut preservation: Report and Process stay generic and byte-identical through a modify; a designer-built SysFile element described and its change refused (on `UsrFpOaDesignerFixture`); story 2 extends TC-I-46: the fixture's F2 now describes as `fileprocessing`, read-only | OA-2, RP-7 |
 | TC-U-47 | TC-47 | clio | 1, 2 | `DescribedFileProcessing` keeps an unknown member at every level; outbound wire names pinned | OA-2 |
 | TC-U-48 | TC-48 | clio | 1 | an older clio keeps the block through `DescribedElement`'s bag | OA-2 |
 | TC-U-49 | TC-49 | clio | 1 | create and modify forward the block verbatim | OA-1 |
@@ -248,8 +248,8 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-56 | TC-56 | pkg | 2 | Word with no selecting filter refused before the gate; the "all N files to one record" notice | RP-4 |
 | TC-U-57 | TC-57 | pkg | 2 | printable change: same object keeps filter, scope and suffix column; another object clears them | RP-7 |
 | TC-U-58 | TC-58 | pkg | 2 | notices through the faked feature seam (feature off; `ConvertInPDF`); never a refusal | RP-1 |
-| TC-U-59 | TC-59 | pkg | 2 | parity with PrintInvoiceReport under the TC-41 rule | RP-8, FE-5 |
-| TC-I-60 | TC-60 | e2e | 2 | Word "save to attachments" built and described; `Assert.Ignore` when `list-printables` has 0 rows | RP-1, RP-7 |
+| TC-U-59 | TC-59 | pkg | 2 | parity with PrintInvoiceReport under the TC-41 rule; its exclusions are taken from the TC-M-18 (SC-0) record of the parameter set the stand holds, each named in the test (none expected: the corpus copy carries the full set) | RP-8, FE-5 |
+| TC-I-60 | TC-60 | e2e | 2 | Word "save to attachments" built and described, with the `separateReports: false` notice and the refusals of an unknown printable (the Report setup hint) and a non-text name column; `Assert.Ignore` when `list-printables` has 0 rows | RP-1, RP-3, RP-7 |
 | TC-I-61 | TC-61 | e2e | 2 | read-only describe of the four shipped product processes: `buildType: fileprocessing`, block decoded, raw parameters lossless; never modified | RP-7 |
 
 ### Process parameter (D18)
@@ -263,7 +263,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-66, TC-I-66 | TC-66 | pkg, e2e | 2 | refusals: `value`, no FileLocator item, outer-only, none, a mapping FROM `Files`, `useInProcess`, `saveTo` missing | RP-6 |
 | TC-U-67 | TC-67 | pkg | 2 | outputs `ObjectFiles` (item `ObjectFile`) and `CreatedObjectFileIds` mappable downstream | RP-6 |
 | TC-U-68 | TC-68 | pkg | 2 | describe of `files` and `bindingLevels`; resubmitting an outer-only element repairs it to both | RP-7 |
-| TC-U-69 | TC-69 | pkg | 2 | parity with FileParameterProcess (element source, process-parameter source) under the TC-41 rule | RP-8, FE-5 |
+| TC-U-69 | TC-69 | pkg | 2 | parity with FileParameterProcess (element source, process-parameter source) under the TC-41 rule, both binding levels included; `TargetDataEntitySchemaUId`, which both captures predate, is excluded and named in the test, and the source FileCollection's item `FileCollectionParameter` is role-normalised to `File`, until SC-1's E8 and E9 replace these oracles | RP-8, FE-5 |
 | TC-I-91 | TC-91 | e2e | 2 | the `Files` mapping rules over the wire on a builder-configured Process variant (ENG-95984's E2E-14a-d, its XT-14a-d; O-TP1 option B) | RP-5 |
 
 ### Pattern tests over MCP (FE-6)
@@ -294,7 +294,7 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 
 | ID | Orig | Repo | Story | Case | AC |
 |---|---|---|---|---|---|
-| TC-U-82 | TC-82 | clio | 1, 2 | `ToolContractPayloadBudgetTests`: under the unchanged 35,072 B ceiling after the reviewer-approved trims (Q20 = A); the comment's figures re-measured (on `79fab4786` create had 11 B and modify 2 B left before ENG-95984's trim) | OA-12 |
+| TC-U-82 | TC-82 | clio | 1, 2 | `ToolContractPayloadBudgetTests`: under the unchanged 35,072 B ceiling after the reviewer-approved trims (Q20 = A); the comment's figures re-measured (on `79fab4786` create had 11 B and modify 2 B left before ENG-95984's trim); story 2: the floor literal at 1.6.6.100 or higher adds one byte to each of the create, modify and modify-as-new-version contracts, paid by a reviewer-approved trim | OA-12, RP-10 |
 | TC-U-92 | TC-92 | clio | 1, 2 | the seven process-designer contracts within 19,000 B on the wire; `CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` green with `fileProcessing` in `CreateElementBlockShape`; the two modify call-shape tests green | OA-12, RP-10 |
 | TC-U-83 | TC-83 | clio | 1 | the first `name=process-files`: `curated-knowledge-names.json` re-pinned in the same commit; `UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` green | OA-12 |
 | TC-U-84 | TC-84 | clio | 1, 2, 3 | pins and floors; the e2e `MinimumPackageVersion` equals the floor (story 3: no floor raise) | OA-12, RP-10 |
@@ -314,10 +314,13 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 | TC-U-102 | 4 | pkg | the same through `elementParameter` (`RD1.ResultCompositeObjectList`, `OF1.CreatedObjectFileIds`) | story 4 |
 | TC-U-103 | 4 | pkg | the same through an `expression` token | story 4 |
 | TC-U-104 | 4 | pkg | every scalar right-hand value keeps today's behaviour (the existing filter tests run unchanged) | story 4 |
+| TC-U-105 | 4 | pkg | a modify that does not write a filter already stored with a collection value leaves it byte-identical (criterion 3) | story 4 |
+| TC-U-106 | 4 | kb | a pin test of the filter-value sentence in the process filter guidance (criterion 5) | story 4 |
 | TC-I-101 | 4 | e2e | the refusal over the wire, only if clio advertises the rule | story 4 |
 | TC-U-111 | 5 | pkg | a generic-route user task stores `SerializeToDB` from the task schema (a true and a false schema) | story 5 |
 | TC-U-112 | 5 | pkg | the dedicated handlers' output unchanged | story 5 |
 | TC-U-113 | 5 | pkg | an untouched element of a modify is not rewritten | story 5 |
+| TC-U-114 | 5 | pkg | a generic-route user task compared key for key with a designer capture of the same task: no `BO2` difference (criterion 3) | story 5 |
 
 ---
 
@@ -370,7 +373,7 @@ folder, plus the stored resources; never from describe, and never compared by ey
 
 | ID | Orig | What | Pass | Reaches |
 |---|---|---|---|---|
-| TC-M-18 | SC-0 | read-only calibration: export PrintInvoiceReport and diff it with its shipped copy | equal apart from recorded install artefacts, so no read-path artefact is charged to the builder | Stored |
+| TC-M-18 | SC-0 | read-only calibration: export PrintInvoiceReport and diff it with its shipped copy; record the parameter set its Report element holds on the stand | equal apart from recorded install artefacts, so no read-path artefact is charged to the builder; the recorded parameter set fixes TC-U-59's named exclusions (none expected) | Stored |
 | TC-M-19 | SC-1 + SC-2 | the user builds `UsrFpSc1Capture` (E1-E11) in the designer and saves once; read back by `pull-pkg` / `export-schema` | the predictions checked one by one; M7's stored form and M21's capture half recorded | Stored |
 | TC-M-20 | SC-4 | per cut, the builder twin `UsrFpSc4<Cut>` in one create request: story 1 E1, E2 (E3-E5 refused); story 2 E6-E9 (E10 only if M1 passed); story 3 E3, E4, E5, E11 | equal under the TC-41 rule; one DIFF fails | Stored |
 
@@ -415,19 +418,24 @@ M3, M3b (MI-0), M6 and M27 belong to ENG-95984's test plan; M5 is skipped (refus
 
 ## Cases that move with an open decision
 
-| Trigger | Cases affected | If it goes the other way |
-|---|---|---|
-| Q13 (token, discriminator) | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change |
-| Q14 (naming bundle) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 |
-| Q15 (action inference) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
-| Q16 (empty-filter policy) | TC-U-22, TC-I-22, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, and the `failedOperationIndex: null` assertion goes |
-| Q17 (storage details) | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
-| Q18 (FastReport) | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal |
-| O-TP1 (where TC-91 runs) | TC-I-91 | option A: the cases move to ENG-95984's clio PR on the generic route, which story 2 later refuses and rewrites |
-| M1 / M2 | TC-U-64, TC-M-03, TC-M-20 (E10) | M1 fails: TC-U-64 asserts the refusal, TC-M-03 is dropped, E10 leaves SC-4 |
-| M7, M8, M21, M23, M25 | TC-U-76..TC-U-80, TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |
-| M26 | TC-U-88 | not confirmed: the sentence and the record are not written, and TC-U-88 asserts their absence |
-| Contingency X2 (RP's Process half fails ST-04) | TC-U-62..TC-U-69, TC-I-91, TC-I-73, TC-M-03..TC-M-05 | the Process-parameter cases move to a new Sub-task "Process parameter source of the Process file element" |
+The "AC affected" column names the PRD acceptance rows that encode the trigger's recommended answer ("conditional on"
+in the PRD). Those rows are pasted into Jira only after the answer (plan FE.0b), and a different answer rewrites them
+together with the cases listed here.
+
+| Trigger | AC affected | Cases affected | If it goes the other way |
+|---|---|---|---|
+| Q13 (token, discriminator) | FE-1, OA-1, OA-4 | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change; FE-1, OA-1 and OA-4 are rewritten |
+| Q14 (naming bundle) | OA-7, RP-1 (and member names in every row) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 and rewrites OA-7 |
+| Q15 (action inference) | none (OA-8's text encodes no answer; the stories' action inference does) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
+| Q16 (record scope, empty-filter policy) | OA-7, OA-9, RP-1, RP-4 | TC-U-18, TC-U-20, TC-U-21, TC-U-22, TC-I-22, TC-U-52, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, the `failedOperationIndex: null` assertion goes, and OA-9 and RP-4 are rewritten; a record scope in `filter` instead of the group rewrites OA-7, RP-1 and the scope cases |
+| Q17 (storage details) | OA-6 | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
+| Q18 (FastReport) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
+| O-TP1 (where TC-91 runs) | none | TC-I-91 | option A: the cases move to ENG-95984's clio PR on the generic route, which story 2 later refuses and rewrites |
+| M1 / M2 | RP-5 (already written both ways) | TC-U-64, TC-M-03, TC-M-20 (E10) | M1 fails: TC-U-64 asserts the refusal, TC-M-03 is dropped, E10 leaves SC-4 |
+| M7, M8, M21, M23, M25 | SF-1 (proposed), FE-1 (the PRD's open item "What FE-1 means if SF narrows") | TC-U-76..TC-U-80, TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |
+| M26 | OA-11 (the guide sentence) | TC-U-88 | not confirmed: the sentence and the record are not written, and TC-U-88 asserts their absence |
+| SC-0 (TC-M-18) | RP-8 | TC-U-59 | PrintInvoiceReport on the stand lacks a parameter: TC-U-59 excludes it and names it (the PRD's predated-parameter class) |
+| Contingency X2 (RP's Process half fails ST-04) | RP-5, RP-6 and the Process half of RP-7, RP-8 | TC-U-62..TC-U-69, TC-I-91, TC-I-73, TC-M-03..TC-M-05 | the Process-parameter cases move to a new Sub-task "Process parameter source of the Process file element" |
 
 Decided and reflected above: SysFile in its own Sub-task (Q3), RP before SF (Q4), the consumer split (Q5), the guide
 name (Q19), the description bytes by trim (Q20).
@@ -456,12 +464,12 @@ name (Q19), the description bytes by trim (Q20).
 | OA-12 | - | TC-U-82..85, 89, 90, 92, 93 | TC-U-88 | TC-I-87 | TC-M-15..17 |
 | RP-1 | TC-U-50..54, 58 | - | - | TC-I-52, 60 | TC-M-06 |
 | RP-2 | TC-U-55 | - | - | TC-I-73 | TC-M-06, 07 |
-| RP-3 | TC-U-50, 51 | - | - | - | - |
+| RP-3 | TC-U-50, 51 | - | - | TC-I-60 | - |
 | RP-4 | TC-U-56 | - | - | - | - |
 | RP-5 | TC-U-62..65 | - | - | TC-I-91 | TC-M-03, 04, 21 |
 | RP-6 | TC-U-63, 66, 67 | - | - | TC-I-66 | TC-M-04 |
-| RP-7 | TC-U-44, 45, 57, 68 | TC-U-47 | - | TC-I-60, 61 | - |
-| RP-8 | TC-U-59, 69 | - | - | - | TC-M-13, 20 |
+| RP-7 | TC-U-44, 45, 57, 68 | TC-U-47 | - | TC-I-46, 60, 61 | - |
+| RP-8 | TC-U-59, 69 | - | - | - | TC-M-13, 18, 20 |
 | RP-9 | - | - | TC-U-88 | TC-I-74 | - |
 | RP-10 | - | TC-U-82, 84, 89, 90, 92, 93 | TC-U-88 | TC-I-87 | TC-M-15..17 |
 | SF-1 | TC-U-05, 76..80 | TC-U-84 | TC-U-88 | TC-I-81 | TC-M-08, 14, 20, 27, 28, 41, 43, 45 |
@@ -473,10 +481,13 @@ Per story, before its package PR leaves draft and before its clio PR is handed t
   cut, Ignored = 0, `UsrFpOaDesignerFixture` present); the package suite, the clio full unit suite and the knowledge
   suite green; TC-M-01, TC-M-02, TC-M-11, TC-M-12, TC-M-15..TC-M-17 and TC-M-20 (story 1 rows) executed and recorded;
   TC-M-46 recorded before the guide sentence is written.
-- **Story 2**: the same for Story 2 cases; TC-M-03 (only if TC-M-21 passed), TC-M-04..TC-M-07, TC-M-13, TC-M-15..TC-M-17,
-  TC-M-20 (story 2 rows); TC-I-61 recorded read-only; or contingency X2 executed and the owner informed.
+- **Story 2**: TC-M-21 and TC-M-22 (M1, M2) recorded before the package PR leaves draft; TC-M-18 (SC-0) recorded
+  before TC-U-59's exclusions are fixed; the same for Story 2 cases; TC-M-03 (only if TC-M-21 passed),
+  TC-M-04..TC-M-07, TC-M-13, TC-M-15..TC-M-17, TC-M-20 (story 2 rows); TC-I-61 recorded read-only; or contingency X2
+  executed and the owner informed.
 - **Story 3**: TC-M-27, TC-M-28, TC-M-41, TC-M-43, TC-M-45 recorded before the dependent code; the Story 3 cases;
   TC-M-08, TC-M-14, TC-M-15..TC-M-17, TC-M-20 (story 3 rows).
 - **Stories 4 and 5**: their rows refined and implemented when their Sub-tasks are created.
 - No case reworded to pass: a difference outside the TC-41 rule is fixed, or recorded with the owner as a new tolerated
-  row.
+  row. The rule's predated-parameter class is not such a row: it excludes only parameters a shipped oracle predates,
+  each NAMED in its test (TC-U-41, TC-U-59, TC-U-69), until the SC-1 capture replaces that oracle.
