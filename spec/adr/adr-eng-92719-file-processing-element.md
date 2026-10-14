@@ -23,7 +23,8 @@ Element readiness and object attachments mode (OA), ENG-96506 Generated report +
 [5](../stories/story-eng-92719-file-processing-element-5.md) (side Sub-tasks)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Analysis**: [decisions](../eng-92719-file-processing-element/eng-92719-file-processing-element-decisions.md) argues
-D10-D29 in full, with their options and source anchors; this ADR condenses them. D1-D9 (the File and FileCollection
+D10-D29 in full, with their options and source anchors; this ADR condenses them. D30 is a documentation rule (the
+documents name no current or future package cut number) and has no entry here. D1-D9 (the File and FileCollection
 parameter types and the two-level binder) belong to ENG-95984 File process parameter type and its own ADR; this ADR
 relies on them where it says so.
 

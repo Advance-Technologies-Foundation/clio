@@ -55,7 +55,7 @@ package version in the `PB` row, read on 2026-10-13. *doc* means Creatio Academy
 text. The designer observations UO-1 to UO-4 were measured on 2026-10-01 in the classic designer, on a new unsaved
 process, by reading `Terrasoft.ProcessSchemaManager.items[0].instance.flowElements`; nothing was saved.
 
-**Measurement IDs** M1-M26 are the stand measurements defined in [decisions](eng-92719-file-processing-element-decisions.md)
+**Measurement IDs** M1-M27 are the stand measurements defined in [decisions](eng-92719-file-processing-element-decisions.md)
 (D29) and scheduled in the [test plan](eng-92719-file-processing-element-test-plan.md).
 
 **Metadata keys** used throughout (`CORE83/Terrasoft.Core/Process/ProcessSchemaParameter.cs:123-140`,

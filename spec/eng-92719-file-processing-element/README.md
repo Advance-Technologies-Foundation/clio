@@ -93,7 +93,7 @@ titles of that day, and those added on 2026-10-14 the titles of their merged cli
 | ENG-103085 | Refuse element and block keys the process builder would drop silently | clio #1808, on master `79fab4786`; clio refuses element and block keys it does not know (`ProcessBlockKeyCheck`), so CL-OA adds the `fileProcessing` block to that allow-list in the rebundle's commit (plan OA.10, pr-split §5.3); PT adds no key |
 | ENG-103117 | Explain odata-read rejections whose names are all valid but include a plain Id column | clio #1810, on master `79fab4786`; touches none of these documents' surfaces, cited only as part of the master move |
 
-PR ids: `PK-` = crt-process-builder, `CL-` = clio, `KB-` = clio-knowledge (for example PK-OA). D1-D29, M1-M26 and
+PR ids: `PK-` = crt-process-builder, `CL-` = clio, `KB-` = clio-knowledge (for example PK-OA). D1-D30, M1-M27 and
 Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md) and
 [open-questions](eng-92719-file-processing-element-open-questions.md).
 
@@ -108,7 +108,7 @@ Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
 | 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 59 of them silent (T-8 among them, refuted by M3; T-54 since CrtProcessBuilder 1.6.6.69; T-68 added on 2026-10-02, root-caused and fixed in code by PK-PT on 2026-10-14, and run without the exception on the stand on 1.6.6.97 the same day; its e2e E2E-06 is owed).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
-| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 6 of them wait for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
+| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D30 with options and consequences; 6 of them wait for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6 with their results of 2026-10-14, the defect V4 found, the estimate, the Definition of Done, and owner items O-1..O-10. |
 | 8 | [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) | **How the parameter type is tested.** Package (PU), clio (CU), e2e, knowledge (KU) and stand (V0-V8) cases, traced to AC-1..AC-10. The package mocking recipe. The cases that move with an open decision. |
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
@@ -228,7 +228,7 @@ Text: decisions D10, D12, D13.
 - an unset `ResultActionType` runs as SaveToFiles, while the designer defaults to Use in process;
 - a same-schema copy with no link column lands on the source record as a duplicate.
 
-[traps](eng-92719-file-processing-element-traps.md) holds 67 traps, and 57 of them are silent. The answer is in
+[traps](eng-92719-file-processing-element-traps.md) holds 68 traps, and 59 of them are silent. The answer is in
 decisions D14-D16 and D19:
 - a record scope inside the group, compiled into `DataSourceFilters`;
 - a dedicated filter target rooted on the runtime root;

@@ -21,7 +21,7 @@ Sibling documents: [README](README.md) ·
 [open-questions](eng-92719-file-processing-element-open-questions.md) ·
 [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) ·
 [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md).
-D-numbers (D1-D29), measurement ids (M1-M26) and refusal/notice ids (F-T*, F-M*, F-E*, F-F*, F-R*, F-P*) are the ones
+D-numbers (D1-D30), measurement ids (M1-M27) and refusal/notice ids (F-T*, F-M*, F-E*, F-F*, F-R*, F-P*) are the ones
 defined in [decisions](eng-92719-file-processing-element-decisions.md) (measurements: D29; refusals: Appendix A).
 M26 is the T-19 probe described under the banner and listed in D29. The rule ids that decisions uses without a
 number, or that only the research carried (FB-n, V-n), are listed under [How to read this](#how-to-read-this).

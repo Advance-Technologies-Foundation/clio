@@ -8,8 +8,8 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: ready-for-dev (its Jira issue exists and its code can start as a stacked draft; the owner answers and M1
-gate as "Gating" says)
+**Status**: deferred (its Jira issue exists; it moves to ready-for-dev once the owner answers and M1 that "Gating"
+names are recorded)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled

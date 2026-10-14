@@ -13,7 +13,7 @@ Jira as of 2026-10-14, its key is assigned on creation)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Analysis**: [`spec/eng-92719-file-processing-element/`](../eng-92719-file-processing-element/README.md) on the same
 branch (README first). It holds the evidence: the platform reference, the serialization capture, the use-case
-inventory, traps T-1..T-68, decisions D1-D29 with their source anchors, the plan, the test plan TC-01..TC-92, the PR
+inventory, traps T-1..T-68, decisions D1-D30 with their source anchors, the plan, the test plan TC-01..TC-92, the PR
 split and the open questions. This PRD restates what the stories need; where it is shorter, the analysis holds the
 detail.
 **Status**: Accepted in part. The owner agreed Q1-Q12 on 2026-10-07 (Q7 answered by stand measurement M3), Q19 on

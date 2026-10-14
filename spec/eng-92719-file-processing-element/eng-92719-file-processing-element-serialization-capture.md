@@ -63,7 +63,7 @@ expected to write, derived from source plus corpus; section 12 measures it.
 `6c620dd2…` or `c2bf0416…`), `<E>` = the element UId, `<lane>` = the lane UId. `…` elides a UId's tail or a long string.
 Fragments are trimmed: `BL1` and the repeated `A3`/`A4`/`IL2` of parameters are dropped once section 3 has stated them.
 
-**Measurement IDs.** M1-M26 are the stand measurements of [decisions](eng-92719-file-processing-element-decisions.md)
+**Measurement IDs.** M1-M27 are the stand measurements of [decisions](eng-92719-file-processing-element-decisions.md)
 D29, tracked in [open-questions](eng-92719-file-processing-element-open-questions.md) section B. SC-0 to SC-4 are the
 capture steps defined in section 12 of this document. UO-1 to UO-4 are the designer observations of 2026-10-01,
 documented in [platform-reference](eng-92719-file-processing-element-platform-reference.md) §7.4.
