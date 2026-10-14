@@ -241,6 +241,44 @@ public sealed class HeadlessShellInstallerTests {
 	}
 
 	[Test]
+	[Description("An archive that matches its pin but is not a readable zip is reported as an install failure, not as a raw InvalidDataException.")]
+	public async Task InstallAsync_Should_Report_A_Corrupt_Archive_As_An_Install_Failure() {
+		// Arrange
+		byte[] archive = System.Text.Encoding.ASCII.GetBytes("not a zip archive at all");
+		(HeadlessShellInstaller installer, _) = Create(PinOf(archive), Serve(archive));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed"))
+			.Which.Message.Should().Contain("Nothing was installed", because: "the caller learns the state and that a retry is safe");
+		installer.FindInstalled().Should().BeNull(because: "nothing was installed");
+	}
+
+	[Test]
+	[Description("A mirror URL with user:password never puts the credentials into the error text that reaches the MCP reply.")]
+	public async Task InstallAsync_Should_Not_Echo_Mirror_Credentials() {
+		// Arrange
+		StubHandler handler = new((_, _) => throw new HttpRequestException("No such host is known."));
+		IHttpClientFactory factory = Substitute.For<IHttpClientFactory>();
+		factory.CreateClient(HeadlessShellInstaller.HttpClientName).Returns(_ => new HttpClient(handler));
+		ChromeForTestingHeadlessShellSource source = new(name =>
+			name == HeadlessShellRelease.MirrorEnvVar ? "https://agent:s3cr3t@mirror.corp:8443/cft" : null);
+		HeadlessShellInstaller installer = new(factory, source, new System.IO.Abstractions.FileSystem(), TimeProvider.System,
+			_root, "win64");
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		string message = (await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the mirror is unreachable"))
+			.Which.Message;
+		message.Should().Contain("https://mirror.corp:8443", because: "the caller still learns which host failed");
+		message.Should().NotContain("s3cr3t").And.NotContain("agent:", because: "mirror credentials never reach the reply");
+	}
+
+	[Test]
 	[Description("An archive entry that would land outside the extraction folder is refused, and nothing is installed.")]
 	public async Task InstallAsync_Should_Refuse_An_Entry_Outside_Its_Folder() {
 		// Arrange
@@ -253,7 +291,8 @@ public sealed class HeadlessShellInstallerTests {
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "a zip-slip entry is refused"))
 			.Which.Message.Should().Contain("outside its folder", because: "the reason is named");
-		File.Exists(Path.Combine(Path.GetDirectoryName(_root)!, "escaped")).Should().BeFalse(because: "nothing escaped");
+		File.Exists(Path.Combine(_root, "escaped")).Should().BeFalse(
+			because: "'../escaped' from the extraction folder would land in the browsers root, and nothing may");
 		installer.FindInstalled().Should().BeNull(because: "nothing was installed");
 	}
 

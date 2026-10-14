@@ -123,7 +123,7 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		using CancellationTokenSource budgetTimer = new(DownloadBudget, _timeProvider);
 		using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(ct, budgetTimer.Token);
 		Uri url = _source.ArchiveUrl(_platformKey);
-		string host = url.GetLeftPart(UriPartial.Authority);
+		string host = HostOf(url);
 		string token = Guid.NewGuid().ToString("N");
 		string archivePath = Path.Combine(_browsersRoot, $".download-{token}.zip");
 		string extractDirectory = Path.Combine(_browsersRoot, $".extract-{token}");
@@ -199,6 +199,11 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 			throw Mismatch($"its SHA-256 is {actual}, expected {archive.Sha256}");
 		}
 	}
+
+	// Scheme, host and port only: Uri.Authority (and GetLeftPart) keep a mirror's user:password@, which would then reach
+	// the error text and the MCP reply.
+	internal static string HostOf(Uri url) =>
+		url.IsDefaultPort ? $"{url.Scheme}://{url.Host}" : $"{url.Scheme}://{url.Host}:{url.Port}";
 
 	private static string MirrorHint =>
 		$"On a network that reaches only a mirror of Chrome for Testing, set {HeadlessShellRelease.MirrorEnvVar} to its base URL.";
