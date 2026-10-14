@@ -12,6 +12,12 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <WarningsAsErrors>$(WarningsAsErrors);NU1903</WarningsAsErrors>
     
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Transitive pinning: every PackageVersion below also governs the transitive graph, so a
+         vulnerable transitive version cannot silently win restore if the dependency graph shifts. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <!-- cliogate / cliogate.tests are the legacy net472 / netstandard2.0 island (VersionOverride pins such as
+         Npgsql 8.0.3); the clio-wide pins (Npgsql 10.x, ...) are not compatible with those frameworks. -->
+    <CentralPackageTransitivePinningEnabled Condition="$(MSBuildProjectName.StartsWith('cliogate'))">false</CentralPackageTransitivePinningEnabled>
     
     <MsPackageVersion>10.0.13</MsPackageVersion>
     <SIOVersion>22.2.0</SIOVersion>
@@ -60,15 +66,21 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="8.0.11"
                     Condition="'$(TargetFramework)' != 'net10.0'" />
     <!-- CVE-2026-50648 (GHSA-23rf-6693-g89p, DoS via crafted encrypted XML) affects <= 10.0.9 and fires
-         NU1903 Warning-As-Error at restore; $(MsPackageVersion) is patched, so this rides the
-         shared property like every other family member instead of a standalone override. Test projects
-         pin it directly too (see clio.tests / clio.mcp.e2e) so the transitive 10.0.6 pulled via
-         PowerShell.SDK is also lifted to the patched version. -->
+         NU1903 Warning-As-Error at restore; $(MsPackageVersion) is patched. System.Security.Cryptography.Xml,
+         .Pkcs and SignalR.Common are only reached transitively (PowerShell.SDK / SignalR.Client); they are
+         lifted by CentralPackageTransitivePinningEnabled, so no per-csproj reference is needed. -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="$(MsPackageVersion)" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="$(MsPackageVersion)" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Common" Version="$(MsPackageVersion)" />
     <!-- Kept on the resolver's proven netstandard2.0 compatibility line. -->
-    <PackageVersion Include="System.Text.Json" Version="8.0.5" />
+    <PackageVersion Include="System.Text.Json" Version="8.0.5" Condition="$(MSBuildProjectName.StartsWith('Creatio.ConflictResolver'))" />
+    <!-- With transitive pinning on, a fixed 8.0.5 would downgrade the 10.0.x System.Text.Json that
+         JsonhCs / Microsoft.Extensions.Configuration.Json require (NU1109) in the net8.0/net10.0 apps. -->
+    <PackageVersion Include="System.Text.Json" Version="$(MsPackageVersion)" Condition="!$(MSBuildProjectName.StartsWith('Creatio.ConflictResolver'))" />
     <PackageVersion Include="System.IO.Abstractions" Version="$(SIOVersion)" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" />
+    <!-- Scoped to the Roslyn analyzer projects: with transitive pinning enabled an unconditional pin would also
+         force Roslyn 5.6 into the PowerShell.SDK graph (Add-Type) of clio / clio.tests / clio.mcp.e2e. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.6.0" Condition="$(MSBuildProjectName.StartsWith('Clio.Analyzers'))" />
     <!-- IdentityModel requires every library in its recursive runtime family to use the same version. -->
     <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="$(IdentityModelVersion)" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="$(IdentityModelVersion)" />
@@ -95,7 +107,11 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="JsonhCs" Version="7.8.0" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
     <PackageVersion Include="System.IO.Compression" Version="4.3.0" />
-    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.6.3" />
+    <!-- net8.0 stays on the 7.4 LTS line (clio.csproj VersionOverride [7.4.13,7.5.0)). With transitive pinning
+         a single 7.6.3 pin falls outside that range and silently drops PowerShell.SDK from the net8.0
+         graph of every project that references clio (clio.mcp.e2e), so pin per TFM. -->
+    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.6.3" Condition="'$(TargetFramework)' != 'net8.0'" />
+    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.4.13" Condition="'$(TargetFramework)' == 'net8.0'" />
     <PackageVersion Include="Microsoft.Dism" Version="6.1.0" />
     <PackageVersion Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
     <PackageVersion Include="Microsoft.Web.Administration" Version="11.1.0"/>
@@ -106,7 +122,9 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="System.IO.Abstractions.TestingHelpers" Version="$(SIOVersion)" />
     <PackageVersion Include="FluentAssertions" Version="7.2.2" />
-    <PackageVersion Include="JsonSchema.Net" Version="9.2.2" />
+    <!-- Scoped to ClioRing.Tests: unconditionally pinned, it would also lift JsonSchema.Net 7 -> 9 inside
+         Microsoft.PowerShell.Commands.Utility (Test-Json) in the clio graph once transitive pinning is on. -->
+    <PackageVersion Include="JsonSchema.Net" Version="9.2.2" Condition="'$(MSBuildProjectName)' == 'ClioRing.Tests'" />
     <PackageVersion Include="nunit" Version="4.6.1" />
     <PackageVersion Include="NUnit3TestAdapter" Version="6.2.0" />
     <PackageVersion Include="ATF.Repository.Mock" Version="2.0.3.1" />
