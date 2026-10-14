@@ -216,13 +216,16 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 	// host blocked) is a failure even with an older partial kept, or the agent would call again forever.
 	private HeadlessShellInstallException Stopped(DownloadProgress progress, long keptBefore, HeadlessShellRelease.Archive archive,
 		string host, string reason, Exception cause) {
+		reason = WithoutUrlCredentials(reason);
 		if (progress.AddedThisCall > 0) {
 			return Incomplete(progress, archive, reason);
 		}
 		string kept = keptBefore > 0 ? $" {Megabytes(keptBefore)} MB from an earlier call are kept for when it works again." : string.Empty;
+		string advice = IsProxyLoginRequired(cause)
+			? $"{kept} {ProxyLoginHint}"
+			: $" The machine may be offline or the host blocked.{kept} {NetworkHint}";
 		return new HeadlessShellInstallException(
-			$"{_source.DisplayName} could not be downloaded from {host}: {reason}; nothing arrived on this call. The machine "
-			+ $"may be offline or the host blocked.{kept} {NetworkHint}", cause);
+			$"{_source.DisplayName} could not be downloaded from {host}: {reason}; nothing arrived on this call.{advice}", cause);
 	}
 
 	private long KeptBytes(string partialPath) {
@@ -286,7 +289,8 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 			target.SetLength(0);
 			throw new HeadlessShellInstallException(
 				$"Downloading {_source.DisplayName} {_source.Version} from {host} failed: HTTP "
-				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. {NetworkHint}");
+				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. "
+				+ (response.StatusCode == HttpStatusCode.ProxyAuthenticationRequired ? ProxyLoginHint : NetworkHint));
 		}
 		target.SetLength(0);
 		if (response.Content.Headers.ContentLength is long announced && announced != archive.Size) {
@@ -339,6 +343,27 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 	// the error text and the MCP reply.
 	internal static string HostOf(Uri url) =>
 		url.IsDefaultPort ? $"{url.Scheme}://{url.Host}" : $"{url.Scheme}://{url.Host}:{url.Port}";
+
+	// A proxy that wants a login gets none unless HTTPS_PROXY carries it: the user's Windows credentials are never sent
+	// to a system or PAC-chosen proxy (AmbientProxy).
+	private const string ProxyLoginHint = "The proxy asked for a login (HTTP 407): set HTTPS_PROXY to the proxy with "
+		+ "its credentials (https_proxy=http://user:password@proxy:port); clio does not send the Windows login to a "
+		+ "system or auto-detected proxy.";
+
+	// net10 sets StatusCode on a proxy-tunnel 407; net8 leaves it null and only the message names the status, so the
+	// exact phrase is matched (a bare "407" would also match a port such as :4070).
+	private static bool IsProxyLoginRequired(Exception exception) =>
+		exception is HttpRequestException { StatusCode: HttpStatusCode.ProxyAuthenticationRequired }
+		|| exception?.Message.Contains("status code '407'", StringComparison.Ordinal) == true;
+
+	// Defence in depth: a scheme://user:password@ anywhere in a transport message loses its user info before the text
+	// can reach the reply.
+	internal static string WithoutUrlCredentials(string text) =>
+		text is null ? null : UrlUserInfo.Replace(text, "$1");
+
+	private static readonly System.Text.RegularExpressions.Regex UrlUserInfo = new(
+		@"([A-Za-z][A-Za-z0-9+.\-]*://)[^/@\s'""]+@", System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+		TimeSpan.FromSeconds(1));
 
 	private static string NetworkHint =>
 		"The download goes through HTTPS_PROXY / HTTP_PROXY when they are set and the system proxy (PAC included) "
