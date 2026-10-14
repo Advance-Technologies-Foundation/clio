@@ -294,7 +294,7 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 
 | ID | Orig | Repo | Story | Case | AC |
 |---|---|---|---|---|---|
-| TC-U-82 | TC-82 | clio | 1, 2 | `ToolContractPayloadBudgetTests`: under the unchanged 35,072 B ceiling after the reviewer-approved trims (Q20 = A); the comment's figures re-measured (on `79fab4786` create had 11 B and modify 2 B left before ENG-95984's trim); story 2: the floor literal at 1.6.6.100 or higher adds one byte to each of the create, modify and modify-as-new-version contracts, paid by a reviewer-approved trim | OA-12, RP-10 |
+| TC-U-82 | TC-82 | clio | 1, 2 | `ToolContractPayloadBudgetTests`: under the unchanged 35,072 B ceiling after the reviewer-approved trims (Q20 = A); the comment's figures re-measured (on `79fab4786` create had 11 B and modify 2 B left before ENG-95984's trim); stories 1 and 2: the budget test stays green after the floor raise (a longer literal is paid by a reviewer-approved trim, Q20 = A) | OA-12, RP-10 |
 | TC-U-92 | TC-92 | clio | 1, 2 | the seven process-designer contracts within 19,000 B on the wire; `CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` green with `fileProcessing` in `CreateElementBlockShape`; the two modify call-shape tests green | OA-12, RP-10 |
 | TC-U-83 | TC-83 | clio | 1 | the first `name=process-files`: `curated-knowledge-names.json` re-pinned in the same commit; `UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` green | OA-12 |
 | TC-U-84 | TC-84 | clio | 1, 2, 3 | pins and floors; the e2e `MinimumPackageVersion` equals the floor (story 3: no floor raise) | OA-12, RP-10 |
@@ -383,7 +383,7 @@ folder, plus the stored resources; never from describe, and never compared by ey
 |---|---|---|---|---|
 | TC-M-21 | M1 | yes | story 2: the single-file path | open |
 | TC-M-22 | M2 | yes | story 2: the guide wording for an unset single File | open |
-| TC-M-24 | M4 | yes | verification (repeated as TC-M-04) | open; the builder-written repeat V7 passed on ENG-95984's cut 1.6.6.98 |
+| TC-M-24 | M4 | yes | verification (repeated as TC-M-04) | open; the builder-written repeat V7 passed on 1.6.6.98 (2026-10-14) |
 | TC-M-27 | M7 | no | story 3: the SysFile scope shape | open |
 | TC-M-28 | M8 | yes | story 3: SysFile sources | open |
 | TC-M-29 | M9 | yes | no code (refusal severity) | open |

@@ -31,17 +31,17 @@ still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 
 
 Written 2026-10-01; measured on the stand 2026-10-02. This analysis wrote no product code. The probes were built in
 package `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
-branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12, Q19 and
-Q20 are agreed; Q13-Q18 are open.** PK-PT: draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96
-opened 2026-10-14 (first commit b6dcd2c1, 3424 tests; head d6ca4d79, 3426 tests). Its cut is CrtProcessBuilder
-1.6.6.98, stamped and installed on the stand; 1.6.6.97 was installed once and burned (ENG-92719 comment 550565 updated
-in place). **2026-10-14, stand results on the PT cut:** V0, V1, V3, V4, V5 and V7 pass (V4 and V5 after an item-stamp
-fix that made 1.6.6.98), V2 (MCP e2e) passes on the CL-PT build, V6 and V8 are not run, and the 12 manual cases of ENG-95984 comment 550561 pass
-(ENG-95984 File process parameter type plan section 6). The three
+branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12, Q19 and Q20
+are agreed; Q13-Q18 are open.** PK-PT: draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96 opened
+2026-10-14 (first commit b6dcd2c1, 3424 tests; 3426 at d6ca4d79, 3435 with the gate-3 fixes). Its cut is the number in
+the shared claim list (ENG-92719 comment 550565); 1.6.6.97 was installed once and burned, and 1.6.6.98 was installed and
+superseded the same day (decisions D30). **2026-10-14, stand results on the PT cut:** V0, V1, V3, V4, V5 and V7 pass (V4
+and V5 after an item-stamp fix that made 1.6.6.98), V2 (MCP e2e) passes on the CL-PT build, V6 and V8 are not run, and
+the 12 manual cases of ENG-95984 comment 550561 pass (ENG-95984 File process parameter type plan section 6). The three
 PT follow-up Sub-tasks were created on 2026-10-14: ENG-103162, ENG-103163, ENG-103164 (pr-split 12.3). Every anchor
-points to these lines (re-pinned 2026-10-13). The stand measurements
-of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). The stand ran CrtProcessBuilder 1.6.6.96 on 2026-10-13
-(`list-packages`, read-only) and carries PT's cut 1.6.6.98 since 2026-10-14.
+points to these lines (re-pinned 2026-10-13). The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54
+(`3f4cce50`). The stand ran CrtProcessBuilder 1.6.6.96 on 2026-10-13 (`list-packages`, read-only) and carries PT's cut
+since 2026-10-14.
 
 | Source | Version the anchors point to |
 |---|---|
@@ -440,7 +440,7 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 ## Stand measurements pending
 
 Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54 when measured on 2026-10-02, and 1.6.6.96
-on 2026-10-13 (`list-packages`, read-only); since 2026-10-14 it carries PT's cut 1.6.6.98. A clio built from master (bundle 1.6.6.96 since 2026-10-12, floors
+on 2026-10-13 (`list-packages`, read-only); since 2026-10-14 it carries PT's cut. A clio built from master (bundle 1.6.6.96 since 2026-10-12, floors
 1.6.6.92) runs the process tools against the stand as it is now, and refuses them against any stand below 1.6.6.96.
 Repeating a 1.6.6.54 measurement now needs a downgrade and an older clio (open-questions B.0), and every record names
 the package version.
@@ -469,7 +469,7 @@ Rules for every measurement:
 - probes that need a File parameter or a configured Process file element are built by a human in the classic
   designer;
 - probes that characterise shipped CrtProcessBuilder behaviour run on 1.6.6.54, before any cut is installed (all of
-  them ran on 2026-10-02; on 2026-10-13 the stand carries 1.6.6.96, since 2026-10-14 PT's cut 1.6.6.98);
+  them ran on 2026-10-02; on 2026-10-13 the stand carries 1.6.6.96, since 2026-10-14 PT's cut);
 - a callee's inputs are read through a gateway oracle, never from the process trace, which can show them wrongly
   ([open-questions](eng-92719-file-processing-element-open-questions.md) B.1);
 - a describe that a check reads the graph from passes `mode=full` or `element=<name>`, because since ENG-103023 a

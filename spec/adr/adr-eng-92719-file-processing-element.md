@@ -587,9 +587,10 @@ measured by lowering the ceiling; the `fileProcessing` call-shape entry (about 2
 kept short-form text of one of the seven contracts under the 19,000 B wire guard. The curated fixture
 `curated-knowledge-names.json` is re-pinned to the PUBLISHED generation that carries `process-files` in the same
 commit as the first `name=process-files`. RP changes only the enforced floor clause, in the create, modify and
-modify-as-new-version descriptions (describe stays presence-only). It is not byte-neutral: ENG-95984's cut is
-1.6.6.98, so OA's is 1.6.6.99 or higher and RP's 1.6.6.100 or higher, and the longer literal costs one byte in each of
-the three contracts, paid by a reviewer-approved trim (Q20 = A). SF changes no description. MCP prompts change per
+modify-as-new-version descriptions (describe stays presence-only). Raising the floor can lengthen the version literal
+(a new digit, e.g. at 1.6.6.100), which costs one byte in each of the create, modify and modify-as-new-version
+descriptions. `ToolContractPayloadBudgetTests` catches it at the cut that does it; that PR pays it under Q20=A (a
+reviewer-approved trim, no ceiling raise). SF changes no description. MCP prompts change per
 cut: `ListUserTasksPrompt` (the claimed schemas leave the generic-`userTask` advice), `CreateBusinessProcessPrompt`
 (the `fileProcessing` sentence), `ModifyBusinessProcessPrompt` (the D12 merge rule, OA), `DescribeProcessPrompt` (the
 block name, OA). Resources and `clio/tpl` need no update.
@@ -605,8 +606,9 @@ knowledge PR bumps libraryVersion above master and every branch claim at merge (
 
 **Decision.** Numbers are rules, not projections: each cut claims, in its PR description AND in the one shared cut
 claim on ENG-92719 File processing element, the first free number above the highest number claimed anywhere at cut time
-(1.6.6.99 or higher since ENG-95984 cut 1.6.6.98 on 2026-10-14; re-check with `git ls-remote --tags` in both
-repositories). The create, modify and modify-as-new-version floors move to the **final** cut of OA's and RP's clio PRs,
+(re-check with `git ls-remote --tags` in both repositories). The claim list (comment 550565), with the tag and
+`descriptor.json`, is the one place a number lives; this set names no current or future cut (owner decision,
+2026-10-14). The create, modify and modify-as-new-version floors move to the **final** cut of OA's and RP's clio PRs,
 equal to `ExpectedArchiveVersion` when each merges; SF raises none (an older server refuses SysFile loudly, the
 ENG-96230 Collection process parameter type precedent). describe-business-process, list-user-tasks and
 validate-process-graph stay presence-only.

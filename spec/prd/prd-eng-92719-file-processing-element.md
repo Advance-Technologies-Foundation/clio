@@ -32,9 +32,10 @@ Story has five stories.
 
 Baselines: CrtProcessBuilder `main` at 1.6.6.96 (`a6bfcbf6`); clio `master` `79fab4786` (bundles CrtProcessBuilder
 1.6.6.96; the create, modify and modify-as-new-version floors at 1.6.6.92); clio-knowledge `master` at libraryVersion
-1.15.143. ENG-95984 File process parameter type, which this work follows, is in flight: its package cut is
-CrtProcessBuilder 1.6.6.98 in the draft https://creatio.ghe.com/engineering/crt-process-builder/pull/96 (1.6.6.97 was
-installed once and burned), and its clio and knowledge PRs are open as
+1.15.143. ENG-95984 File process parameter type, which this work follows, is in flight: its package cut, the number
+in the shared claim list (ENG-92719 comment 550565), is in the draft
+https://creatio.ghe.com/engineering/crt-process-builder/pull/96 (1.6.6.97 was installed once and burned, 1.6.6.98
+superseded), and its clio and knowledge PRs are open as
 https://github.com/Advance-Technologies-Foundation/clio/pull/1814 and
 https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/285. The analysis anchors point to clio
 `19e6f9c53` and clio-knowledge `0b56d4a`; the description budget and the client-side key check below are read on clio
@@ -250,9 +251,10 @@ confirmed when their Sub-tasks are created.
   release is self-consistent.
 - **C3 Versions and floors.** A cut takes the first free number above the highest number claimed anywhere at cut time
   (clio's bundle, package `main`, every branch and tag of both repositories), claimed before cutting in the PR
-  description and in the one shared cut claim, a comment on ENG-92719 File processing element. On 2026-10-14
-  ENG-95984's cut is 1.6.6.98, so the next claim is 1.6.6.99 or higher. The create, modify and modify-as-new-version
-  floors move to the FINAL cut of the OA and RP clio PRs; SF raises no floor (an older server refuses SysFile loudly).
+  description and in the one shared cut claim, a comment on ENG-92719 File processing element (comment 550565),
+  which alone holds the numbers: each cut takes the next free number in it at cut time. The create, modify and
+  modify-as-new-version floors move to the FINAL cut of the OA and RP clio PRs; SF raises no floor (an older server
+  refuses SysFile loudly).
   Each rebundle goes through `rebundle-process-builder.ps1 -Version <claimed>`; the version only goes up.
 - **C4 Description budget.** On clio `79fab4786` (2026-10-14) create-business-process has 11 B and
   modify-business-process 2 B left under the 35,072 B per-contract ceiling; ENG-95984's clio PR trims first. OA adds
@@ -260,8 +262,8 @@ confirmed when their Sub-tasks are created.
   call shape (about 25-30 B, never cut) lands under the 19,000 B wire guard for the seven process-designer contracts,
   which had 14 B left (18,986 B measured on clio `19e6f9c53`). The bytes come from reviewer-approved trims of existing
   text (Q20, agreed 2026-10-14: A); the ceilings are not raised. Describe had 1,053 B left (measured on clio
-  `19e6f9c53`, 2026-10-13) and OA's +128 B fits. RP's floor clause grows by one character in each of the create,
-  modify and modify-as-new-version descriptions (its cut is 1.6.6.100 or higher), paid the same way.
+  `19e6f9c53`, 2026-10-13) and OA's +128 B fits. A floor raise that lengthens the version literal costs a byte
+  in three descriptions; the budget test catches it at that cut (ADR D25).
 - **C5 Client-side key check.** Since ENG-103085 Refuse element and block keys the process builder would drop silently
   (clio master `79fab4786`), clio refuses an element or block key it does not know before sending the request
   (`clio/Command/ProcessModel/ProcessBlockKeyCheck.cs`). OA's clio PR adds a `fileProcessing` key set in the commit

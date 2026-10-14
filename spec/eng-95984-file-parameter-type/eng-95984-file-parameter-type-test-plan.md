@@ -458,8 +458,8 @@ it. It looks a parameter up by its whole name (`:233-235`), so a dotted target m
 
 New fixture `clio.mcp.e2e/FileParameterToolE2ETests.cs`: `[TestFixture]`, `[AllureNUnit]`,
 `[NonParallelizable]`, `[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = this ticket's final
-package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR: 1.6.6.98
-or higher; PK-PT's cut is 1.6.6.98 since 2026-10-14, 1.6.6.97 being burned). Each test creates its own processes
+package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR and in
+the shared claim list, ENG-92719 comment 550565). Each test creates its own processes
 (`UsrClioBpFile<Case>E2e{Guid:N}`) and asserts on the tool result JSON and on a `describe-business-process` read-back
 with `mode=full` (or `element=<name>`): since ENG-103023 describe without a mode returns the full graph only up to
 18,000 B and otherwise a summary of at most 3,072 B without blocks, so a read-back without it can lose the very
@@ -543,7 +543,7 @@ Where it runs is owner decision **O-TP1**:
 ## 8. Stand verification (V)
 
 Rules for every row: stand `Creatio` (core 10.1.37, .NET Framework; CrtProcessBuilder 1.6.6.54 when measured on
-2026-10-02, 1.6.6.96 on 2026-10-13, this ticket's cut 1.6.6.98 since 2026-10-14). A clio built from master (bundle 1.6.6.96, floors 1.6.6.92) refuses the
+2026-10-02, 1.6.6.96 on 2026-10-13, this ticket's cut since 2026-10-14). A clio built from master (bundle 1.6.6.96, floors 1.6.6.92) refuses the
 process tools against any stand below 1.6.6.96, so the stand must hold the base package or the cut under test, and
 every record names the package version. Every write (a saved process, a run, a fixture
 record, an upload) needs the user's explicit go-ahead, row by row, and so does every `install-process-builder`, each
@@ -585,14 +585,16 @@ V1-V6 are the plan's rows (section 6), repeated here with their pass conditions;
 | V7 | **a file passed through a builder-written FileCollection is consumed** (optional, recommended before the guide teaches the pattern) | fixtures: contact `G1 Probe Source` with 2 attachments (ContactFile rows), contact `G1 Probe Target`. The user builds `UsrPtFilesFlowProbe` in the designer: Start -> `OF1` (Object attachments, source `Contact (Contact attachment)`, filter Contact = G1 Probe Source, Use in process) -> `PF1` (Process parameter source, target `Contact (Contact attachment)`, record = G1 Probe Target, Files bound to `OF1.ObjectFiles.File`, which also binds `Files` to `OF1.ObjectFiles`) -> End; saves. Then the BUILDER writes, through `modify-business-process`: `addParameter {name: Docs, type: FileCollection}`; `addMapping {targetProcessParameter: Docs, sourceElement: OF1, sourceElementParameter: ObjectFiles}` (P2 pairs `Docs.File`); `addMapping {elementName: PF1, elementParameter: Files, processParameter: Docs}` (P2 rebinds the stale `Files.File`, with its notice). Describe with `mode=full` (or `element=PF1`), then run once | yes | describe shows both levels of `PF1.Files` on `Docs` and both levels of `Docs` on `OF1.ObjectFiles`; `OF1` and `PF1` Completed in `SysProcessElementLog`; 2 new ContactFile rows on G1 Probe Target, names equal to the sources | Runtime | AC-5, AC-6, AC-9 |
 | V8 | a single builder-declared File is consumed (only if M1 passed) | `create-business-process` a callee `UsrPtFileCallee` with `F` (`File`, In); the user opens it in the designer (this is also a V5 check), adds a Process file element with source Process parameter, the "Files" field (caption `FilesCaption`, `CrtProcessDesigner/branches/7.8.0/Resources/ProcessFileProcessingUserTaskPropertiesPage.ClientUnit/resource.en-US.xml`) set to the parameter `F`, which binds `Files.File` only (the nested-only single-file shape), target as V7, and saves. Caller: a designer-built Start -> `OF1` (as V7) -> End; the builder adds a multi-instance `subProcess` on the callee between them (`removeFlow`, `addElement`, two `addFlow`) and only `InputRecordCollection.F <- OF1.ObjectFiles.File`. Describe with `mode=full`, then run once | yes | describe: `InputRecordCollection` bound to `OF1.ObjectFiles` (P1); 2 callee iterations; 2 new ContactFile rows on G1 Probe Target | Runtime | AC-5, AC-9 |
 
-**Results, 2026-10-14** (the .NET Framework stand; stand results comment 550775 on ENG-95984). The cut is
-CrtProcessBuilder 1.6.6.98; 1.6.6.97 was installed once, failed V4 and is burned.
+**Results, 2026-10-14** (the .NET Framework stand; stand results comment 550775 on ENG-95984). The cut is the
+number in the shared claim list (ENG-92719 comment 550565). 1.6.6.97 was installed once, failed V4 and is burned;
+1.6.6.98 was installed, measured below and superseded the same day by the package PR's gate-3 fixes.
 
 | ID | Version | Result |
 |---|---|---|
 | V0 | 1.6.6.96 / 1.6.6.97 | PASS (read-only): a plain Add writes Variable and an empty Tag; the designer stamps the item as created in the schema (`A3` / `A4`) |
 | V1 | 1.6.6.97, again on 1.6.6.98 | PASS |
 | V2 | CL-PT clio build, CrtProcessBuilder 1.6.6.98, 2026-10-14 | PASS: `FileParameterToolE2ETests` 13/13 on net10.0 and on net8.0; the must-stay-green fixtures (`SubProcessMultiInstanceToolE2ETests`, `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`, `DescribeProcessToolE2ETests`) 20/20 on net10.0; Ignored = 0 |
+| V2 re-run | the cut that superseded 1.6.6.98 (1.6.6.99, 2026-10-14) | PASS for this ticket: `FileParameterToolE2ETests` 13/13, `ProcessParameterBindingToolE2ETests` 4/4, `SubProcessElementToolE2ETests` 10/12 on net10.0 and on net8.0 (the two failures are the `DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption_*` cases, a clio master regression since ENG-103023 clio: spill-free reads and post-write summaries, bisected to clio `3715cd23c`, not this ticket's); the must-stay-green fixtures 20/20 on net10.0; package tests 3435 |
 | V3 | 1.6.6.97 | PASS: 3 callee runs over 3 contacts (1 on 1.6.6.54, MI-0) |
 | V4 | 1.6.6.97 | FAIL against `FileParameterProcess` and `MarkProcessesToCancel`: the `File` item of a process-level FileCollection had no `A3` / `A4`, for a fresh FileCollection and for the mirror's item clones ([plan](eng-95984-file-parameter-type-plan.md) section 5.1) |
 | V4 re-check | 1.6.6.98 | PASS: the items carry `A3` / `A4` equal to the process UId |

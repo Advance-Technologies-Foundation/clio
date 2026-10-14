@@ -4761,8 +4761,8 @@ stories:
       dotted paths, BindCollection) and by story 1 (link L3: the handler and the variant registry). Owner questions Q18
       (FastReport, recommended refused), Q14 and Q16 are open and gate the package code AND the acceptance rows RP-1 and
       RP-4, which are pasted into Jira only after the answers. Stand measurement M1 (+ M2) is recorded before the package
-      PR leaves draft and decides the single-file path. The floor literal (cut 1.6.6.100 or higher) adds one byte to
-      each of the create, modify and modify-as-new-version descriptions, paid by a reviewer-approved trim (Q20 = A). Two
+      PR leaves draft and decides the single-file path. A floor raise that lengthens the version literal costs a byte
+      in three descriptions; the budget test catches it at that cut and a reviewer-approved trim pays it (Q20 = A). Two
       variant registrations, one commit group each, so that contingency X2 can cherry-pick the Report half if the
       Process half fails its stand proof. Visible change: the four shipped product report processes describe as
       fileprocessing. Done carried by story 3's clio PR.

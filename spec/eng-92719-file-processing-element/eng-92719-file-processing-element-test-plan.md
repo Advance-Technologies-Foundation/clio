@@ -691,7 +691,7 @@ How these probes are run:
   2026-10-12; clio master bundles 1.6.6.96 and its floors are 1.6.6.92, so a clio built from master refuses the
   process tools against any stand below 1.6.6.96. The stand ran 1.6.6.96 on 2026-10-13 (measured with
   `list-packages`, read-only), so a repeat there runs on 1.6.6.96, not on the 1.6.6.54 of the recorded rows, and every
-  record names the package version. Since 2026-10-14 the stand carries PT's cut 1.6.6.98.
+  record names the package version. Since 2026-10-14 the stand carries PT's cut.
 
 | M | Method | Write? | Pass / record |
 |---|---|---|---|

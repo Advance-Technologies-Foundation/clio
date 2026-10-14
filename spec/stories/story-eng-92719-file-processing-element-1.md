@@ -195,8 +195,8 @@ is pasted into Jira (plan FE.0b) only after the answer, and a different answer r
 - [ ] **OA.8** Package docs and restamp: NEW `docs/process-file-element-capture.md` (the convention of the existing
   `docs/*-capture.md`), `docs/process-builder-architecture.md` rows, `.codex/workspace-diary.md` entry; restamp
   `packages/CrtProcessBuilder/descriptor.json` LAST to the number claimed before cutting, in the PR description AND in
-  the one shared cut claim (a comment on ENG-92719 File processing element; 1.6.6.99 or higher on 2026-10-14); tag
-  `crtprocessbuilder-<version>` pushed and verified with `git ls-remote --tags origin`.
+  the one shared cut claim (a comment on ENG-92719 File processing element; the next free number in it at cut time);
+  tag `crtprocessbuilder-<version>` pushed and verified with `git ls-remote --tags origin`.
 
 **clio** (base `master`; one PR, because the guards bind archive, pins, floors, descriptions, call shapes and key sets
 to one tree)
@@ -207,7 +207,8 @@ to one tree)
   `ModifyBusinessProcessCommand.cs`, `ModifyProcessAsNewVersionCommand.cs`) to the FINAL cut with their comment blocks;
   `ProcessDesignerRequiresPackageAttributeTests`; the enforced-floor clause in three descriptions; `McpCapabilityMap.md`
   floor rows; the new fixture's `MinimumPackageVersion`; all in the archive's commit. Install from the refreshed BUILD
-  OUTPUT, each install after the user's explicit approval.
+  OUTPUT, each install after the user's explicit approval. A longer floor literal (a new digit) costs a byte in three
+  descriptions: the budget test catches it, this PR trims (ADR D25).
 - [ ] **OA.10** Descriptions, call shape, key set, DTO, prompts (D11, D13, D19, D25):
   - (a) create / modify / describe descriptions: the token in the type list, the block clause naming
     `get-guidance name=process-files`, the `addElement` / `setElement` lists, the describe clause (about +128 / +74 /

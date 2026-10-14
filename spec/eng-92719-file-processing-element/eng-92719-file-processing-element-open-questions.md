@@ -528,7 +528,7 @@ stays 14 unless that early PR is opened.
 ### B.0 Rules for every measurement
 
 - **Stand:** clio environment `Creatio` (core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54 when measured on
-  2026-10-02, 1.6.6.96 on 2026-10-13: `list-packages`, read-only, and PT's cut 1.6.6.98 since 2026-10-14). Package main and clio's bundle are at 1.6.6.96
+  2026-10-02, 1.6.6.96 on 2026-10-13: `list-packages`, read-only, and PT's cut since 2026-10-14). Package main and clio's bundle are at 1.6.6.96
   since 2026-10-12, and the create / modify / modify-as-new-version floors at 1.6.6.92. A clio built from master
   refuses the process tools against any stand below 1.6.6.96, and runs them against the stand as it is now; a
   1.6.6.54 re-measurement needs a downgrade and an older clio (below), and every record names the package version.

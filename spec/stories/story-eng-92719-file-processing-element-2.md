@@ -92,7 +92,7 @@ is pasted into Jira (plan FE.0b) only after the answer, and a different answer r
 | M15 FastReport packages and printables | done 2026-10-02 (none) | Q18 stands as recommended |
 | M16 lifetime of temporary report files | open; a write | the notice wording (D14, D17) and the RP-2 lifetime wording; no code; ST-07 closes it after the cut |
 | M18 a constant file-name suffix under another culture | open; after this story's cut | the culture note in the guide; no code |
-| M4 the end-to-end Object -> FileCollection -> Process chain | open as a designer probe; its builder-written repeat V7 passed on ENG-95984's cut 1.6.6.98 (2026-10-14) | verification only; ST-04 repeats it on this cut |
+| M4 the end-to-end Object -> FileCollection -> Process chain | open as a designer probe; its builder-written repeat V7 passed on 1.6.6.98 (2026-10-14) | verification only; ST-04 repeats it on this cut |
 | O-TP1 where TC-91 (ENG-95984's E2E-14a-d) runs | open (recommended B: in this story's clio PR) | TC-I-91 in RP.7 |
 
 Contingency X2: if the Process-parameter half fails its stand proof (the M4 chain, ST-04) while the Report half is
@@ -143,24 +143,22 @@ registrations, one commit group each, so that X2 can cherry-pick.
   `[Description]` as in story 1.
 - [ ] **RP.5** Capture-doc sections for both variants in `docs/process-file-element-capture.md`; diary entry; restamp
   LAST to the number claimed before cutting (PR description AND the shared cut claim on ENG-92719 File processing
-  element; 1.6.6.100 or higher, because ENG-95984 cut 1.6.6.98 and story 1 takes 1.6.6.99 or higher); tag
+  element; the next free number in it at cut time); tag
   `crtprocessbuilder-<version>` verified on the remote.
 
 **clio** (base `master`)
 
-- [ ] **RP.6** Rebundle; floor raise to the final cut. The floor clause is NOT byte-neutral: the cut is 1.6.6.100 or
-  higher, so the literal grows by one character in each of the create, modify and modify-as-new-version descriptions
-  (describe stays presence-only); that byte per contract is paid by a reviewer-approved trim of existing text (Q20 =
-  A), measured by lowering the ceiling, and the budget-test comment is rewritten. Capability-map rows; typed `report`
-  / `files` members of `DescribedFileProcessing`, each with a `[JsonExtensionData]` bag and `///` summaries;
-  `clio.mcp.e2e/Support/Results/ListPrintablesEnvelope.cs` gains `count` and `printables`; the `list-user-tasks`
-  exceptions and `ListUserTasksPrompt` extended to ReportFileProcessingUserTask and ProcessFileProcessingUserTask;
-  `CreateBusinessProcessPrompt`'s `fileProcessing` sentence extended to the `report` and `files` groups (TC-U-89 and
-  TC-U-90 extended); in the archive's commit, the `fileProcessing` key set of story 1 (`ProcessBlockKeyCheck`) gains
-  the `report` and `files` members this cut adds to the server contract (inference:
-  `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` holds the key sets equal to the archive; the analysis
-  plan names this step, from ENG-103085 Refuse element and block keys the process builder would drop silently, for OA
-  only; TC-U-93); no new `CLIO*` analyzer warning.
+- [ ] **RP.6** Rebundle; floor raise to the final cut (describe stays presence-only). A longer floor literal (a new
+  digit) costs a byte in three descriptions: the budget test catches it, this PR trims (ADR D25). Capability-map rows;
+  typed `report` / `files` members of `DescribedFileProcessing`, each with a `[JsonExtensionData]` bag and `///`
+  summaries; `clio.mcp.e2e/Support/Results/ListPrintablesEnvelope.cs` gains `count` and `printables`; the
+  `list-user-tasks` exceptions and `ListUserTasksPrompt` extended to ReportFileProcessingUserTask and
+  ProcessFileProcessingUserTask; `CreateBusinessProcessPrompt`'s `fileProcessing` sentence extended to the `report` and
+  `files` groups (TC-U-89 and TC-U-90 extended); in the archive's commit, the `fileProcessing` key set of story 1
+  (`ProcessBlockKeyCheck`) gains the `report` and `files` members this cut adds to the server contract (inference:
+  `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` holds the key sets equal to the archive; the analysis plan
+  names this step, from ENG-103085 Refuse element and block keys the process builder would drop silently, for OA only;
+  TC-U-93); no new `CLIO*` analyzer warning.
 - [ ] **RP.7** e2e (extend `ProcessFileElementToolE2ETests` or NEW
   `clio.mcp.e2e/ProcessFileReportAndParameterToolE2ETests.cs`):
   - Word SaveToFiles with `report.recordId` (TC-I-52, TC-I-60), with the `separateReports: false` notice and the
@@ -234,7 +232,7 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
 - [ ] Package tests green on `-c dev-nf` (short-path worktree) and `-c dev-n8`; capture sections match PrintInvoiceReport
       and FileParameterProcess under the TC-41 rule with its named exclusions (TC-U-59, TC-U-69); restamped last; tag
       verified on the remote.
-- [ ] clio: rebundle; floors to the final cut, the one byte per contract paid by a reviewer-approved trim and the budget
+- [ ] clio: rebundle; floors to the final cut, the budget test green after the raise and its
       figures re-measured; `ListPrintablesEnvelope`; DTO members with bags and `///` summaries; the key set extended; no
       new `CLIO*` analyzer warning; `list-user-tasks` exceptions, `ListUserTasksPrompt` and `CreateBusinessProcessPrompt`
       extended and pinned (TC-U-89, TC-U-90); TC-I-91 Passed; full unit suite green (`TestCategory=Unit`,
@@ -265,7 +263,8 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
 - M1 / M2 results (date, package version, verdict on the single-file path):
 - SC-0 record of PrintInvoiceReport's parameter set (date) and the exclusions TC-U-59 takes from it:
 - Package cut claimed (number, date, where claimed):
-- Bytes trimmed per Q20 = A for the floor literal (which text per contract, and the reviewer's approval):
+- Bytes trimmed per Q20 = A, if the floor raise lengthened the literal (which text per contract, the reviewer's
+  approval):
 - Tests passing (package, clio unit, e2e with Ignored count, knowledge):
 - Stand records (ST-03..ST-07, DT-03, SC-4):
 - Notes (X2 fired or not):

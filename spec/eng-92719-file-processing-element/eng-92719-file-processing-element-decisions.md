@@ -165,6 +165,7 @@ above: it belongs to D25's tool-description budget and concerned the clio descri
 | D27 | PR split per repository | all | agreed 2026-10-07 | - |
 | D28 | Test strategy and C# mocking | all | no | - |
 | D29 | Stand measurements that precede code | all | no (each write needs the user's go-ahead) | - |
+| D30 | No cut number in plan documents | all | agreed 2026-10-14 | - |
 
 ---
 
@@ -1709,6 +1710,10 @@ palette caption), or one guide per ticket.
     gated CL-PT's description edit (CL-2) and CL-OA, not package code; both now proceed with A, and the trim itself is
     work inside those clio PRs. Whoever lands first pays; the order PT then OA makes PT pay first. Cost:
     CL-2 grows by about 0.5 h (swap and re-measure), OA.10 by about 1 h (call shape and wire trim).
+  - **A longer floor literal.** Raising the floor can lengthen the version literal (a new digit, e.g. at 1.6.6.100),
+    which costs one byte in each of the create, modify and modify-as-new-version descriptions.
+    `ToolContractPayloadBudgetTests` catches it at the cut that does it; that PR pays it under Q20=A (a
+    reviewer-approved trim, no ceiling raise). That cut is not forecast here (D30).
   - PT: type lists only (create +30, modify +28), no `name=` pointer (the routing row reaches agents); they need a
     byte swap (Q20). Candidate on create (inference, measured at cut): drop the `{enabled, executionMode,
     ignoreErrors}` member list from the floor clause "(for isTracing, ... subProcess.multiInstanceOptions {enabled,
@@ -1732,9 +1737,8 @@ palette caption), or one guide per ticket.
     `CLIO/clio.tests/Command/McpServer/Fixtures/curated-knowledge-names.json` (1.15.124 on 2026-10-13, without
     `process-files`) is re-pinned in the same commit to the PUBLISHED PT generation, with `process-files` and
     `creatio.process-files` added in sorted order. The end state is re-measured in the PR.
-  - RP: the enforced floor clause moves to RP's final cut (byte-neutral below 1.6.6.100; at .100 or above the
-    literal grows by one character in three descriptions, inference), plus the capability-map floor rows and the e2e
-    floor. No other description change: the block pointer is variant-neutral.
+  - RP: the enforced floor clause moves to RP's final cut (a longer literal: the floor-literal rule above), plus the
+    capability-map floor rows and the e2e floor. No other description change: the block pointer is variant-neutral.
   - SF: no description change and no floor raise (D26).
 - `CLIO/docs/McpCapabilityMap.md` rows for create, modify and describe: type names, the block, the describe decode,
   the floor.
@@ -1805,11 +1809,10 @@ twice (1.6.6.42 and 1.6.6.49, measured from git history).
 **Decision.** Numbers are rules, not projections.
 - Each cut claims, in its PR description and in one shared claim on ENG-92719 File processing element, the first
   free number ABOVE the highest number claimed anywhere at cut time (main, any branch or tag of either repository, a
-  clio bundle), never reusing a number another branch holds. On 2026-10-13 that meant 1.6.6.97 or higher (re-check
-  with `git ls-remote --tags` in both repositories at cut time), because main and clio's bundle are at 1.6.6.96 and
-  nothing higher was claimed. On 2026-10-14 PK-PT installed 1.6.6.97 on the stand once, burned it and cut 1.6.6.98
-  (ENG-92719 comment 550565 updated in place), so the next claim is 1.6.6.99 or higher. A cut below a merged higher bundle would be a downgrade
-  the convergence check refuses. Re-cuts burn numbers. Cut with
+  clio bundle), never reusing a number another branch holds; re-check with `git ls-remote --tags` in both
+  repositories at cut time. The claim list, ENG-92719 comment 550565 (with the tag and `descriptor.json`), is the one
+  place a number lives; no plan document names a current or future cut (D30). A cut below a merged higher bundle
+  would be a downgrade the convergence check refuses. Re-cuts burn numbers. Cut with
   `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`. This manual cut is
   the only route: ENG-92113 Deliver clioprocessbuiilder package - CI for adding package into clio release added a
   "Deliver to clio" stage as package #83 (2026-10-08), which opened exactly one bot PR (clio #1780, bundle 1.6.6.91),
@@ -1998,6 +2001,26 @@ B.2).
 
 M5 (outer-only `Files` gives an NRE) is skipped: the case is refused anyway. **Owner decision: no** for the plan;
 every row with "Write? yes" needs the user's go-ahead before it runs.
+
+## D30. No cut number in plan documents
+
+**Context.** Re-cuts happen. On 2026-10-14 PK-PT's 1.6.6.97 was installed on the stand once and burned (V4 found the
+missing item stamps, D2). 1.6.6.98 was installed on the stand and superseded the same day: the package PR's gate-3
+review found two gaps (M1: the element dependency guards read process parameters at the top level only, so a retarget
+could strand a reference held by an item such as `Docs.File`; M2: a re-mirror gave every item a new UId, so a
+reference to an unchanged column dangled); their fix (`11b8088c`, `21d0b016`, `dcfdc83f`) was cut as the next claimed
+number. Every cut number written into prose forced a sweep of about 60 sites across the plan and the BMAD sets.
+
+**Decision.** The plan and BMAD documents name no current or future CrtProcessBuilder cut, and nothing derived from
+one (a floor value, which cut pays a byte). The number lives in one place: the shared claim list, ENG-92719 File
+processing element comment 550565, plus the tag and `descriptor.json`. The documents state the rule instead: the cut
+is the first free number above the highest claimed anywhere (D26), claimed before stamping, the producing commit
+tagged, and the floor equals the PR's final cut. A longer floor literal is not forecast either:
+`ToolContractPayloadBudgetTests` catches it at the cut that causes it, and that PR pays it under Q20 = A (D25).
+Measurements and events keep their version ("V4 failed on 1.6.6.97"): they are facts about the past.
+
+**Consequences.** A re-cut touches no document; only the claim list, the tag and the descriptor move. A reader who
+needs the current number reads the claim list. **Owner decision: yes** (agreed 2026-10-14).
 
 ---
 
@@ -2436,8 +2459,8 @@ accordingly (source, read in PK-PT `b6dcd2c1` and on clio master `79fab4786`):
 ### Round 8: stand results on the PT cut, 2026-10-14
 
 The stand run of 2026-10-14 (ENG-95984 comment 550775; measured) changed this document as follows:
-- D26: PK-PT's 1.6.6.97 was installed once and burned; its cut is 1.6.6.98 (head `d6ca4d79`, 3426 tests), claimed in
-  ENG-92719 comment 550565, updated in place. The next claim is 1.6.6.99 or higher.
+- D26: PK-PT's 1.6.6.97 was installed once and burned; it cut 1.6.6.98 next (head `d6ca4d79`, 3426 tests), claimed
+  in ENG-92719 comment 550565, updated in place (superseded the same day: D30).
 - D2: V4 found that on 1.6.6.97 the `File` item of a process-level FileCollection carried no `A3` / `A4` (the designer
   writes both on all 678 such items in the shipped corpus), so the first designer save rewrote them; commit
   `b92547cc` (2 new unit tests) stamps both on the created item and on every mirror clone, and V4 and V5 pass on 1.6.6.98 (ENG-95984 File
