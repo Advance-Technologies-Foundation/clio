@@ -128,6 +128,7 @@ Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | How to mock the C# tests | [test-plan](eng-92719-file-processing-element-test-plan.md) §3-§4; [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) §3 |
 | Real shipped processes with the element: how and why | [use-cases](eng-92719-file-processing-element-use-cases.md) §2-§4; [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) §1 and §4 |
 | One PR or several per repository | [pr-split](eng-92719-file-processing-element-pr-split.md) §2 and §10; [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) §10 |
+| The repository-convention (BMAD) artifacts of plan FE.0c, added 2026-10-14 | [PRD](../prd/prd-eng-92719-file-processing-element.md) · [ADR](../adr/adr-eng-92719-file-processing-element.md) · stories [1](../stories/story-eng-92719-file-processing-element-1.md) (OA), [2](../stories/story-eng-92719-file-processing-element-2.md) (RP), [3](../stories/story-eng-92719-file-processing-element-3.md) (SF), [4](../stories/story-eng-92719-file-processing-element-4.md), [5](../stories/story-eng-92719-file-processing-element-5.md) (side Sub-tasks) · [test plan](../test-plans/tp-eng-92719-file-processing-element.md) (TC-nn mapped to TC-U- / TC-I- / TC-M- ids) · `spec/sprint-status.yaml` rows `story-eng-92719-file-processing-element-1`..`-5`; they restate this folder, which holds the evidence |
 
 ---
 
