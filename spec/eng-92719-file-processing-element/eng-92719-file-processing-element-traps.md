@@ -198,7 +198,7 @@ M-G6-4), [T-43](#t-43).
 | T-65 | Unit tests cannot prove runtime behaviour | **yes** | source | stand runs (D28, D29) |
 | T-66 | Academy wording differs from the product | **yes** | source | guide (D25) |
 | T-67 | Consumers the builder cannot wire; a collection as a filter value | **yes** | source | guide (D22), Sub-task |
-| T-68 | A nested-item mapping on the create path throws a bare NRE | no (loud, uninformative) | measured on 1.6.6.54; root-caused (synced nested items have no owning schema) and fixed in code in PK-PT, draft PR #96, 2026-10-14; stand proof owed (E2E-06, manual TC-04 on ENG-95984) | PT (the for-mapping walk adopts each descended item; regression test on the platform's real sync) |
+| T-68 | A nested-item mapping on the create path throws a bare NRE | no (loud, uninformative) | measured on 1.6.6.54; root-caused (synced nested items have no owning schema) and fixed in code in PK-PT, draft PR #96, 2026-10-14; on the stand on 2026-10-14 (1.6.6.97, 2 processes) no exception, and manual TC-04 on ENG-95984 passed; E2E-06 owed | PT (the for-mapping walk adopts each descended item; regression test on the platform's real sync) |
 
 ---
 
@@ -314,6 +314,9 @@ M-G6-4), [T-43](#t-43).
   data row reads null. No shipped process has that shape (0 of 61 bound top-level collections bind the outer level only).
 - **Measured: refuted.** M3 on 2026-10-02 (CrtProcessBuilder 1.6.6.54): 3 iterations, all `M3 name set`. The outer
   Script mapping copies the whole collection value, items included, so the unbound item does not matter for reading.
+  2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name,
+  which would have voided M3; a gateway probe the same day refuted it (3 of 3 iterations received the mapped value),
+  so M3 stands.
 - **Silent or loud.** It would have been silent; M3 found no null rows.
 - **Basis / evidence.** source: `PB/Parameters/ProcessParameterService.cs:500-512`;
   `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:441-488`. measured (corpus): 0/61. measured
@@ -403,6 +406,7 @@ M-G6-4), [T-43](#t-43).
 - **Neutraliser.** D5 P1, including `InputRecordCollection.<F>`; both guide passages rewritten in the PT knowledge PR
   with a version gate (the "send both" advice stays, it is right on older servers), and pinned. Stand proof on the PT
   cut: 3 iterations over 3 contacts, against 1 on the 1.6.6.54 baseline ([pr-split](eng-92719-file-processing-element-pr-split.md)).
+  Measured on 2026-10-14 on 1.6.6.97: 3 callee runs (V3 of the ENG-95984 File process parameter type test-plan).
 
 ### T-14
 **A multi-instance sub-process over non-file rows leaves the callee's File empty.**
@@ -1064,6 +1068,9 @@ M-G6-4), [T-43](#t-43).
 - **Neutraliser.** D8: describe also lists a parameter when ANY nested item carries a value stamped with this schema;
   D19: the block reports `files` and `bindingLevels` (`both | itemOnly | outerOnly | none`); FB-14. PBT: a `Files` input
   bound only on `Files.File` is listed. Designer probes read the in-memory element, not describe (T-61).
+- **Observed 2026-10-14.** Describe in element mode also hides an UNBOUND input of a builder-created user task:
+  `PF1.Files` exists in the metadata but is not listed until it is bound. Known behaviour, not a defect of ENG-95984
+  File process parameter type.
 
 ### T-56
 **Describe today returns these elements as a generic user task with raw GUIDs.**
@@ -1247,8 +1254,9 @@ M-G6-4), [T-43](#t-43).
   ONE modify batch reaches the same state (inference; the sibling regression test asserts that state as its
   precondition; never measured on a stand).
 - **Status.** **Fixed in code** in PK-PT (draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96,
-  2026-10-14, not yet merged); **stand proof owed** (E2E-06 of the ENG-95984 File process parameter type test-plan, and
-  manual TC-04 on ENG-95984).
+  2026-10-14, not yet merged). **Measured on the stand on 2026-10-14** (1.6.6.97): a nested-item mapping in one create
+  request ran with no NullReferenceException (2 processes), and manual TC-04 on ENG-95984 passed. E2E-06 of the
+  ENG-95984 File process parameter type test-plan is still owed.
 - **Neutraliser.** The for-mapping walk adopts each descended item: `ResolveElementParameterForMapping` (and
   `AdoptItemForMapping` for the items the binder pairs) backfills `ContainerUId` and, when it is null, `ProcessSchema`,
   the value a load would have given, so a created and a loaded element store the same meta path

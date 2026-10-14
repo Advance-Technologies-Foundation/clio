@@ -33,11 +33,15 @@ Written 2026-10-01; measured on the stand 2026-10-02. This analysis wrote no pro
 package `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
 branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12, Q19 and
 Q20 are agreed; Q13-Q18 are open.** PK-PT: draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96
-opened 2026-10-14 (commit b6dcd2c1, 3424 tests; not stamped; 1.6.6.97 claimed in ENG-92719 comment 550565). The three
+opened 2026-10-14 (first commit b6dcd2c1, 3424 tests; head d6ca4d79, 3426 tests). Its cut is CrtProcessBuilder
+1.6.6.98, stamped and installed on the stand; 1.6.6.97 was installed once and burned (ENG-92719 comment 550565 updated
+in place). **2026-10-14, stand results on the PT cut:** V0, V1, V3, V4, V5 and V7 pass (V4 and V5 after an item-stamp
+fix that made 1.6.6.98), V2 (MCP e2e) passes on the CL-PT build, V6 and V8 are not run, and the 12 manual cases of ENG-95984 comment 550561 pass
+(ENG-95984 File process parameter type plan section 6). The three
 PT follow-up Sub-tasks were created on 2026-10-14: ENG-103162, ENG-103163, ENG-103164 (pr-split 12.3). Every anchor
 points to these lines (re-pinned 2026-10-13). The stand measurements
-of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). The stand now runs CrtProcessBuilder 1.6.6.96 (measured
-2026-10-13, `list-packages`, read-only).
+of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). The stand ran CrtProcessBuilder 1.6.6.96 on 2026-10-13
+(`list-packages`, read-only) and carries PT's cut 1.6.6.98 since 2026-10-14.
 
 | Source | Version the anchors point to |
 |---|---|
@@ -102,10 +106,10 @@ Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 1 | [platform-reference](eng-92719-file-processing-element-platform-reference.md) | **What the platform does, end to end.** The three schemas and their 13 / 8 / 13 parameters. The runtime per variant. `ResultActionType`: Object and Report produce their output collections for both values, and the Process variant supports SaveToFiles only. The file data model. Storage chosen per entity. The classic designer field by field. The diagram, the feature flags, and what the server validates (almost nothing). §13 lists every load-bearing claim that is still only source-traced. |
 | 2 | [use-cases](eng-92719-file-processing-element-use-cases.md) | **Why customers use the element, and how the product uses it.** Academy and Community. All 16 shipped processes with the element (30 elements), of which 4 are product processes that follow one recipe. The five Jira patterns tested against the corpus. The recommended scope per pattern, and the "which variant for which intent" guidance. Proposed as the "attached use-case inventory" that the Story refers to; Jira has no such attachment today. |
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
-| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 59 of them silent (T-8 among them, refuted by M3; T-54 since CrtProcessBuilder 1.6.6.69; T-68 added on 2026-10-02, root-caused and fixed in code by PK-PT on 2026-10-14, its stand proof owed).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
+| 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 59 of them silent (T-8 among them, refuted by M3; T-54 since CrtProcessBuilder 1.6.6.69; T-68 added on 2026-10-02, root-caused and fixed in code by PK-PT on 2026-10-14, and run without the exception on the stand on 1.6.6.97 the same day; its e2e E2E-06 is owed).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
 | 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D29 with options and consequences; 6 of them wait for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
-| 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6, the estimate, the Definition of Done, and owner items O-1..O-10. |
+| 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6 with their results of 2026-10-14, the defect V4 found, the estimate, the Definition of Done, and owner items O-1..O-10. |
 | 8 | [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) | **How the parameter type is tested.** Package (PU), clio (CU), e2e, knowledge (KU) and stand (V0-V8) cases, traced to AC-1..AC-10. The package mocking recipe. The cases that move with an open decision. |
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
 | 10 | [test-plan](eng-92719-file-processing-element-test-plan.md) | **How the element is tested.** The harness per repository, and the C# mocking recipes adapted from `C:/Projects/UnitTests`. TC-01..TC-92 traced to the AC, stand scenarios ST-01..ST-08, and designer checks DT-01..DT-04. The methods for M1-M26 and the read-only evidence queries. |
@@ -435,7 +439,7 @@ Q7, Q19, Q1, Q2 and Q8 (O-10 is part of Q8). Two smaller items sit outside that 
 ## Stand measurements pending
 
 Stand `Creatio`: core 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.54 when measured on 2026-10-02, and 1.6.6.96
-on 2026-10-13 (`list-packages`, read-only). A clio built from master (bundle 1.6.6.96 since 2026-10-12, floors
+on 2026-10-13 (`list-packages`, read-only); since 2026-10-14 it carries PT's cut 1.6.6.98. A clio built from master (bundle 1.6.6.96 since 2026-10-12, floors
 1.6.6.92) runs the process tools against the stand as it is now, and refuses them against any stand below 1.6.6.96.
 Repeating a 1.6.6.54 measurement now needs a downgrade and an older clio (open-questions B.0), and every record names
 the package version.
@@ -445,8 +449,9 @@ M19, M20 and M24 (C.7) were run. M3 was run the same day and refuted H-1, so MH 
 found a new defect, a bare NullReferenceException for a nested-item mapping on the create path
 ([traps](eng-92719-file-processing-element-traps.md) T-68). PK-PT root-caused and fixed it in code on 2026-10-14
 (draft PR #96: the nested items of a user task synced in the same request have no owning schema, so `GetMetaPath()`
-threw; the for-mapping walk now adopts them, and the regression test runs the platform's real sync); the stand proof
-(E2E-06, manual TC-04 on ENG-95984) is owed. Fifteen measurements gate code; eight are done, and the seven left gate only PK-RP (M1, M2) and PK-SF (M7,
+threw; the for-mapping walk now adopts them, and the regression test runs the platform's real sync); on the stand
+the create ran without the exception on 1.6.6.97 on 2026-10-14, and manual TC-04 on ENG-95984 passed; E2E-06 is
+owed. Fifteen measurements gate code; eight are done, and the seven left gate only PK-RP (M1, M2) and PK-SF (M7,
 M8, M21, M23, M25). M27 (added 2026-10-14) gates no code: it measures the open item of the ENG-95984 File process
 parameter type plan §3.1, a single-instance sub-process's FileCollection-shaped input bound on its outer level only.
 Recipes and status are in [open-questions](eng-92719-file-processing-element-open-questions.md) Part B, and methods
@@ -463,7 +468,9 @@ Rules for every measurement:
 - probes that need a File parameter or a configured Process file element are built by a human in the classic
   designer;
 - probes that characterise shipped CrtProcessBuilder behaviour run on 1.6.6.54, before any cut is installed (all of
-  them ran on 2026-10-02; on 2026-10-13 the stand carries 1.6.6.96);
+  them ran on 2026-10-02; on 2026-10-13 the stand carries 1.6.6.96, since 2026-10-14 PT's cut 1.6.6.98);
+- a callee's inputs are read through a gateway oracle, never from the process trace, which can show them wrongly
+  ([open-questions](eng-92719-file-processing-element-open-questions.md) B.1);
 - a describe that a check reads the graph from passes `mode=full` or `element=<name>`, because since ENG-103023 a
   plain describe of a process above 18,000 bytes returns a summary without blocks.
 
@@ -471,7 +478,7 @@ Rules for every measurement:
 |---|---|---|---|
 | PK-PT | **M3**: does the shipped collection mirror read null rows (H-1)? **Done 2026-10-02: no, H-1 refuted** (3 iterations, all "name set"); no MH, X4 applies | yes | builder + one designer step |
 | | **M6**: a flat File taken from a collection item outside a row context. **Done 2026-10-02: it reads null** (the source held two files), so R-M1 stays a refusal | yes | designer + builder |
-| PK-PT verification baseline (no code waits) | **M3b** (MI-0 in the ENG-95984 File process parameter type test-plan): baseline, an item-only multi-instance mapping runs one iteration on 1.6.6.54. It is the baseline for the post-cut proof V3 and for the PT row of [pr-split](eng-92719-file-processing-element-pr-split.md) §14 | yes | builder |
+| PK-PT verification baseline (no code waits) | **M3b** (MI-0 in the ENG-95984 File process parameter type test-plan): baseline, an item-only multi-instance mapping runs one iteration on 1.6.6.54. It is the baseline for the post-cut proof V3 and for the PT row of [pr-split](eng-92719-file-processing-element-pr-split.md) §14. V3 passed on 1.6.6.97 on 2026-10-14 (3 callee runs) | yes | builder |
 | PT open item (no code waits; added 2026-10-14) | **M27**: does a single-instance sub-process's FileCollection-shaped `In` parameter bound on its OUTER level only (`SP1.Docs <- OF1.ObjectFiles`, which gets neither P2 nor R-M2) deliver the files to the callee, or rows `{File: null}`? On the PT cut | yes | designer + builder |
 | PK-OA | **M10**: the designer's object list against the resolver's prediction. **Done 2026-10-02: matches** | no | UO method |
 | | **M11 (a)(b)**: H-G3-1, does a designer open-and-close write `SourceDataEntitySchemaUId = <X>File`? **Done 2026-10-02 in memory: not reproduced on either half**; the optional save variant (c) remains | no (in memory) | UO method |
@@ -493,12 +500,13 @@ pending too:
 - **SC-0**: calibrates the read path on PrintInvoiceReport (read-only).
 - **SC-1**: one designer-built process `UsrFpSc1Capture`, never run, saved once by the user. It covers the missing
   captures, M7, and the capture half of M21.
-- **SC-4**: the builder twin of each cut.
+- **SC-4**: the builder twin of each cut. PT's twin ran as V4 on 2026-10-14: it failed on 1.6.6.97 (the `File` item
+  of a FileCollection carried no `A3` / `A4`) and passed on 1.6.6.98.
 
 The ENG-95984 File process parameter type test-plan adds three rows:
-- V0, a read-only designer read;
-- V7, recommended: a builder-written FileCollection that is consumed;
-- V8, a single builder-declared File, run only if M1 passed.
+- V0, a read-only designer read (passed 2026-10-14);
+- V7, recommended: a builder-written FileCollection that is consumed (passed on 1.6.6.98, 2026-10-14);
+- V8, a single builder-declared File, run only if M1 passed (not run).
 
 Order ([open-questions](eng-92719-file-processing-element-open-questions.md) B.2): on day 0, on 1.6.6.54, before
 the first PT cut is installed: M13, then M6, M3, M3b, M14, M19, M20 and M24, one at a time. The

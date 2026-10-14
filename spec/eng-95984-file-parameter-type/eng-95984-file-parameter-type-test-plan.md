@@ -377,7 +377,7 @@ notice list the build or modify result returns (`Warnings`, `PB/Contracts/BuildC
 | PU-45 | `BindCollection` | explicit pairs; null pairs = the P2 policy | pairs written as given; null pairs behave as PU-31/PU-32 | AC-5 |
 | PU-46 | dotted source (extend) | `ApplyMapping_ShouldResolveADottedSource_WhenTheValueComesFromAnotherCollection` (`PBT/MultiInstanceMappingTests.cs:294`) | add the P1 assertion: `InputRecordCollection` now bound to `ReadOrders.ResultCompositeObjectList` | AC-5 |
 
-**T-68 on the create path: fixed in code, stand proof owed.** A nested-item mapping in `mappings[]` of ONE create
+**T-68 on the create path: fixed in code; on the stand, no exception on 1.6.6.97 (2026-10-14); E2E-06 owed.** A nested-item mapping in `mappings[]` of ONE create
 request threw a bare NullReferenceException on 1.6.6.54 (measured 2026-10-02;
 [traps](../eng-92719-file-processing-element/eng-92719-file-processing-element-traps.md) T-68). PK-PT (draft PR #96,
 2026-10-14) root-caused it (plan PB-4): the nested items of a user task synced in the same request carry
@@ -389,8 +389,9 @@ runs the platform's REAL sync through the recipe of section 3 item 6, builds the
 in ONE request through `ProcessBuildHandler`, asserts as a precondition that the synced nested item has no owning
 schema, and asserts that the create path stores exactly the value `addMapping` stores on the same elements loaded for
 modify, P1's parent included, with no exception and no notice. A sibling covers `addElement` + `addMapping` in one
-modify batch. The proof on a real server is still owed: E2E-06 sends such a create, and manual TC-04 on ENG-95984
-repeats it. A create that builds a file element also runs the configuration ledger's reconcile after the gate; the
+modify batch. On a real server, on 2026-10-14, such a create ran with no NullReferenceException on 1.6.6.97 (2
+processes), and manual TC-04 on ENG-95984 passed; E2E-06, which sends such a create over the wire, is still owed
+(V2). A create that builds a file element also runs the configuration ledger's reconcile after the gate; the
 ledger has no rule for the three file schemas, so it adds no notice (the test asserts `Warnings` null), and the
 notice-list assertions stay exact.
 
@@ -457,8 +458,8 @@ it. It looks a parameter up by its whole name (`:233-235`), so a dotted target m
 
 New fixture `clio.mcp.e2e/FileParameterToolE2ETests.cs`: `[TestFixture]`, `[AllureNUnit]`,
 `[NonParallelizable]`, `[Category(McpE2ECategories.ProcessDesigner)]`, `MinimumPackageVersion` = this ticket's final
-package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR: 1.6.6.97
-or higher at today's claims, with package `main` and clio's bundle at 1.6.6.96). Each test creates its own processes
+package cut (the first free number above the highest number claimed anywhere at cut time, claimed in the PR: 1.6.6.98
+or higher; PK-PT's cut is 1.6.6.98 since 2026-10-14, 1.6.6.97 being burned). Each test creates its own processes
 (`UsrClioBpFile<Case>E2e{Guid:N}`) and asserts on the tool result JSON and on a `describe-business-process` read-back
 with `mode=full` (or `element=<name>`): since ENG-103023 describe without a mode returns the full graph only up to
 18,000 B and otherwise a summary of at most 3,072 B without blocks, so a read-back without it can lose the very
@@ -542,7 +543,7 @@ Where it runs is owner decision **O-TP1**:
 ## 8. Stand verification (V)
 
 Rules for every row: stand `Creatio` (core 10.1.37, .NET Framework; CrtProcessBuilder 1.6.6.54 when measured on
-2026-10-02, 1.6.6.96 on 2026-10-13). A clio built from master (bundle 1.6.6.96, floors 1.6.6.92) refuses the
+2026-10-02, 1.6.6.96 on 2026-10-13, this ticket's cut 1.6.6.98 since 2026-10-14). A clio built from master (bundle 1.6.6.96, floors 1.6.6.92) refuses the
 process tools against any stand below 1.6.6.96, so the stand must hold the base package or the cut under test, and
 every record names the package version. Every write (a saved process, a run, a fixture
 record, an upload) needs the user's explicit go-ahead, row by row, and so does every `install-process-builder`, each
@@ -554,14 +555,14 @@ so pass the CLI `--timeout`. Runtime evidence comes from `SysProcessElementLog` 
 guidance-dependent run, `info-knowledge` must show the expected libraryVersion: a failed `update-knowledge` keeps
 serving the old guidance silently.
 
-### 8.1 Before code (W0 of the plan), and V0 (owed before the package PR leaves draft: the code already exists)
+### 8.1 Before code (W0 of the plan), and V0 (owed before the package PR leaves draft: the code already exists; done 2026-10-14)
 
 | ID | What (basis today) | Method | Write? | Decides | Reaches |
 |---|---|---|---|---|---|
-| M3 | an ENG-96230 Collection process parameter type mirror bound root-only reads null rows (source; **refuted 2026-10-02**: 3 iterations, all "name set") | as plan W0 and open-questions B.4. Callee `UsrFpM3Callee` records the result in branch captions (`M3 name empty` / `M3 name set`). Probe `UsrFpM3MirrorProbe`: Read data collection -> mirror `P` -> multi-instance sub-process over `P`, plus ONE designer step by the user mapping the callee's `Name` from `P > Name` (1.6.6.54 refuses the dotted `P.Name` from the builder, D4). Control `UsrFpM3Control` on element paths only. Count the caption rows per caller run (EV-4) | yes | O-5 and where PU-53 lives (decided: O-5 moot, PU-53 in PK-PT) | Runtime |
+| M3 | an ENG-96230 Collection process parameter type mirror bound root-only reads null rows (source; **refuted 2026-10-02**: 3 iterations, all "name set"; 2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name, which would have voided M3; a gateway probe the same day refuted it (3 of 3 iterations received the mapped value), so M3 stands.) | as plan W0 and open-questions B.4. Callee `UsrFpM3Callee` records the result in branch captions (`M3 name empty` / `M3 name set`). Probe `UsrFpM3MirrorProbe`: Read data collection -> mirror `P` -> multi-instance sub-process over `P`, plus ONE designer step by the user mapping the callee's `Name` from `P > Name` (1.6.6.54 refuses the dotted `P.Name` from the builder, D4). Control `UsrFpM3Control` on element paths only. Count the caption rows per caller run (EV-4) | yes | O-5 and where PU-53 lives (decided: O-5 moot, PU-53 in PK-PT) | Runtime |
 | MI-0 | an item-only multi-instance mapping runs ONE iteration on 1.6.6.54 (measured on 1.6.6.22 per `sub-process.md:137-141`) | `InputRecordCollection.Name <- RD.ResultCompositeObjectList.Name` only, 3 contacts | yes | the baseline for V3 | Runtime |
 | M6 | a flat FileLocator from a collection item outside row context: semantics unknown | designer-built probe, one run | yes | PU-40, E2E-10: refusal stays, or "first row" | Runtime |
-| V0 | owed before the package PR leaves draft (the code already exists): the shipped captures still describe what today's designer writes. They are old: `FileParameterProcess` carries `B8` = `7.17.3.396` (source) | the UO method of 2026-10-01 (a NEW unsaved process in the classic designer at `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/`, the route needs `?vm=SchemaDesigner`; read `Terrasoft.ProcessSchemaManager.items[0].instance` in memory, where UO-2..UO-4 read `.flowElements`; confirm the parameters collection's property name on first use): plain Add > Other > File; Add > Other > Collection of records, then the nested Add > Other > File. Read direction, Tag, item name, item direction; close the tab unsaved. Serialization itself is server code shared with the builder, so field values are what this needs to compare (inference) | no | the expected values of PU-11 and PU-13 (Variable, no Tag on plain Add; source `PD/ProcessSchemaPropertiesPage/ProcessSchemaPropertiesPage.js:1204-1236`) | Design time |
+| V0 | **done 2026-10-14, PASS** (section 8.2, results); was owed before the package PR leaves draft (the code already exists): the shipped captures still describe what today's designer writes. They are old: `FileParameterProcess` carries `B8` = `7.17.3.396` (source) | the UO method of 2026-10-01 (a NEW unsaved process in the classic designer at `/0/Nui/ViewModule.aspx?vm=SchemaDesigner#process/`, the route needs `?vm=SchemaDesigner`; read `Terrasoft.ProcessSchemaManager.items[0].instance` in memory, where UO-2..UO-4 read `.flowElements`; confirm the parameters collection's property name on first use): plain Add > Other > File; Add > Other > Collection of records, then the nested Add > Other > File. Read direction, Tag, item name, item direction; close the tab unsaved. Serialization itself is server code shared with the builder, so field values are what this needs to compare (inference) | no | the expected values of PU-11 and PU-13 (Variable, no Tag on plain Add; source `PD/ProcessSchemaPropertiesPage/ProcessSchemaPropertiesPage.js:1204-1236`) | Design time |
 
 M1 (a single File bound on `Files.File` only copies one file) and M2 (unset File gives an element Error) are
 ENG-96506 Generated report + process parameter modes measurements; they decide AC-9's wording and the guide's
@@ -584,6 +585,47 @@ V1-V6 are the plan's rows (section 6), repeated here with their pass conditions;
 | V7 | **a file passed through a builder-written FileCollection is consumed** (optional, recommended before the guide teaches the pattern) | fixtures: contact `G1 Probe Source` with 2 attachments (ContactFile rows), contact `G1 Probe Target`. The user builds `UsrPtFilesFlowProbe` in the designer: Start -> `OF1` (Object attachments, source `Contact (Contact attachment)`, filter Contact = G1 Probe Source, Use in process) -> `PF1` (Process parameter source, target `Contact (Contact attachment)`, record = G1 Probe Target, Files bound to `OF1.ObjectFiles.File`, which also binds `Files` to `OF1.ObjectFiles`) -> End; saves. Then the BUILDER writes, through `modify-business-process`: `addParameter {name: Docs, type: FileCollection}`; `addMapping {targetProcessParameter: Docs, sourceElement: OF1, sourceElementParameter: ObjectFiles}` (P2 pairs `Docs.File`); `addMapping {elementName: PF1, elementParameter: Files, processParameter: Docs}` (P2 rebinds the stale `Files.File`, with its notice). Describe with `mode=full` (or `element=PF1`), then run once | yes | describe shows both levels of `PF1.Files` on `Docs` and both levels of `Docs` on `OF1.ObjectFiles`; `OF1` and `PF1` Completed in `SysProcessElementLog`; 2 new ContactFile rows on G1 Probe Target, names equal to the sources | Runtime | AC-5, AC-6, AC-9 |
 | V8 | a single builder-declared File is consumed (only if M1 passed) | `create-business-process` a callee `UsrPtFileCallee` with `F` (`File`, In); the user opens it in the designer (this is also a V5 check), adds a Process file element with source Process parameter, the "Files" field (caption `FilesCaption`, `CrtProcessDesigner/branches/7.8.0/Resources/ProcessFileProcessingUserTaskPropertiesPage.ClientUnit/resource.en-US.xml`) set to the parameter `F`, which binds `Files.File` only (the nested-only single-file shape), target as V7, and saves. Caller: a designer-built Start -> `OF1` (as V7) -> End; the builder adds a multi-instance `subProcess` on the callee between them (`removeFlow`, `addElement`, two `addFlow`) and only `InputRecordCollection.F <- OF1.ObjectFiles.File`. Describe with `mode=full`, then run once | yes | describe: `InputRecordCollection` bound to `OF1.ObjectFiles` (P1); 2 callee iterations; 2 new ContactFile rows on G1 Probe Target | Runtime | AC-5, AC-9 |
 
+**Results, 2026-10-14** (the .NET Framework stand; stand results comment 550775 on ENG-95984). The cut is
+CrtProcessBuilder 1.6.6.98; 1.6.6.97 was installed once, failed V4 and is burned.
+
+| ID | Version | Result |
+|---|---|---|
+| V0 | 1.6.6.96 / 1.6.6.97 | PASS (read-only): a plain Add writes Variable and an empty Tag; the designer stamps the item as created in the schema (`A3` / `A4`) |
+| V1 | 1.6.6.97, again on 1.6.6.98 | PASS |
+| V2 | CL-PT clio build, CrtProcessBuilder 1.6.6.98, 2026-10-14 | PASS: `FileParameterToolE2ETests` 13/13 on net10.0 and on net8.0; the must-stay-green fixtures (`SubProcessMultiInstanceToolE2ETests`, `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`, `DescribeProcessToolE2ETests`) 20/20 on net10.0; Ignored = 0 |
+| V3 | 1.6.6.97 | PASS: 3 callee runs over 3 contacts (1 on 1.6.6.54, MI-0) |
+| V4 | 1.6.6.97 | FAIL against `FileParameterProcess` and `MarkProcessesToCancel`: the `File` item of a process-level FileCollection had no `A3` / `A4`, for a fresh FileCollection and for the mirror's item clones ([plan](eng-95984-file-parameter-type-plan.md) section 5.1) |
+| V4 re-check | 1.6.6.98 | PASS: the items carry `A3` / `A4` equal to the process UId |
+| V5 | 1.6.6.97 | 4 item differences (the defect) and 6 generic ones |
+| V5 re-check | 1.6.6.98 (probe `UsrPtV98Probe`) | PASS: only the 6 generic differences |
+| V6 | - | not run |
+| V7 | 1.6.6.98 | PASS: as built, see below; 3 new ContactFile rows on the target contact, names and `Data` bytes equal to the sources |
+| V8 | - | not run |
+
+The 6 generic differences come with a designer save of any builder process, one without file parameters included,
+so they are not this ticket's: `BK3[0].BL7` added, `BK3[0].BM4[0].CD6` removed, `BK37.A3` / `BK37.A4` changed to the
+process UId, `BK37.L8.GS5` added, `IJ8 = true` added; plus one added resource row `NotificationCaption.DisplayValue`
+(`[#[PropertyValue:Caption]#]`), which the no-file control process gets too. clio's `export-schema` silently skips the
+metadata projection when the payload has raw CRLF (`SchemaBundleStore.ParsePayload`, a clio defect outside this
+ticket, not filed as of 2026-10-14), so check that an export carries the metadata before diffing it for V4 or V5.
+
+V7 as run differs from the row above in how the process was built, not in the verdict: it was not built in the
+designer from scratch but from a builder skeleton (Start -> `OF1` -> `PF1` -> End; `OF1` =
+`ObjectFileProcessingUserTask`, `PF1` = `ProcessFileProcessingUserTask`, In parameter `SourceContactId`) configured
+in the designer: `OF1` = Object attachments, Contact (Contact attachment), filter Contact = `[#SourceContactId#]`, Use
+in process; `PF1` = Process parameter, Files = `[#Read source files.Collection of files:File#]`, target Contact
+(Contact attachment), record = a target contact; saved in the designer. The builder steps were those of the row, with
+both notices (`Docs.File` bound to `OF1.ObjectFiles.File`; `Files.File` rebound from `OF1.ObjectFiles.File` to
+`Docs.File`). Describe `mode=full` showed `Docs` <- `OF1.ObjectFiles` at both levels, `PF1.Files` <- `Docs` and
+`Files.File` <- `Docs.File`. One run with a source contact holding 3 attachments: `OF1` and `PF1` Completed in
+`SysProcessElementLog`. The designer card of `PF1` afterwards shows Files = `[#Documents:File#]`.
+
+The 12 manual cases of ENG-95984 comment 550561 all passed on 2026-10-14, run as direct tool calls and designer
+steps, not through an agent with the prompts (the prompts themselves are untested). TC-06 (3 attachments, 3 callee
+runs) shows through a gateway oracle in a File callee that each run received a non-null file (3 x "M set"), not which
+file each run got. The first create right after an install restart failed once with a `ConfActivityLog` foreign-key
+error and was rolled back; the retry succeeded (transient). Still open: V6, V8, M27 (V2 passed on the CL-PT clio build).
+
 Evidence for V3, V7 and V8 follows the read-only recipe EV-0..EV-6 of the element
 [test plan](../eng-92719-file-processing-element/eng-92719-file-processing-element-test-plan.md) (section 9), one
 `execute-esq` call at a time: an `Id` baseline of the target's ContactFile rows BEFORE the run (never a `CreatedOn`
@@ -591,7 +633,8 @@ filter: ESQ resolves dates in the profile's time zone); the instance from `SysPr
 first; every element in `SysProcessElementLog` filtered by `SysProcess = <instance>` (`Caption`, `Status.Name`,
 `CompleteDate`, `ErrorDescription`), which is the evidence; for V3 and V8 the callee's `SysProcessLog` rows outside
 the child baseline, which is the iteration count; after the run, the ContactFile rows NOT IN the baseline (`Name`,
-`Size`, `Version`, `Type.Name`) against the source rows for name and size parity. Hazards behind each query are in the
+`Size`, `Version`, `Type.Name`) against the source rows for name and size parity. A callee's input values are read
+through the gateway oracle of the element test plan section 9.1, never from the process trace. Hazards behind each query are in the
 [traps](../eng-92719-file-processing-element/eng-92719-file-processing-element-traps.md) document. Cleanup (go-ahead first): the probe processes through the designer or `delete-schema --timeout`, the two
 contacts and the copied ContactFile rows in one `execute-dataservice-batch`, then re-run the counts.
 

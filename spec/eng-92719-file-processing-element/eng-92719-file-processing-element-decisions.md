@@ -569,6 +569,9 @@ Sub-task, fixed first; (c) do nothing until it is reported.
 M3 ran on CrtProcessBuilder 1.6.6.54 on 2026-10-02: 3 iterations, all `M3 name set`
 ([open-questions](eng-92719-file-processing-element-open-questions.md) C.7). The outer Script mapping copies the whole
 collection value, items included, so the unbound item does not matter for reading.
+2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name, which
+would have voided M3; a gateway probe the same day refuted it (3 of 3 iterations received the mapped value), so M3
+stands.
 - **Confirmed (not taken):** (b). A new Sub-task MH under ENG-95984 File process parameter type, "typeFromElement collection
   mirror leaves its items unbound", is delivered FIRST as its own package, clio and knowledge triple. It introduces
   `BindCollection` with explicit pairs only, and the mirror calls it with the clone pairs (names are identical by
@@ -1802,9 +1805,10 @@ twice (1.6.6.42 and 1.6.6.49, measured from git history).
 **Decision.** Numbers are rules, not projections.
 - Each cut claims, in its PR description and in one shared claim on ENG-92719 File processing element, the first
   free number ABOVE the highest number claimed anywhere at cut time (main, any branch or tag of either repository, a
-  clio bundle), never reusing a number another branch holds. Today that means 1.6.6.97 or higher (re-check with
-  `git ls-remote --tags` in both repositories at cut time), because main and clio's bundle are at 1.6.6.96 and
-  nothing higher is claimed. A cut below a merged higher bundle would be a downgrade
+  clio bundle), never reusing a number another branch holds. On 2026-10-13 that meant 1.6.6.97 or higher (re-check
+  with `git ls-remote --tags` in both repositories at cut time), because main and clio's bundle are at 1.6.6.96 and
+  nothing higher was claimed. On 2026-10-14 PK-PT installed 1.6.6.97 on the stand once, burned it and cut 1.6.6.98
+  (ENG-92719 comment 550565 updated in place), so the next claim is 1.6.6.99 or higher. A cut below a merged higher bundle would be a downgrade
   the convergence check refuses. Re-cuts burn numbers. Cut with
   `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head> -Version <claimed>`. This manual cut is
   the only route: ENG-92113 Deliver clioprocessbuiilder package - CI for adding package into clio release added a
@@ -2428,3 +2432,17 @@ accordingly (source, read in PK-PT `b6dcd2c1` and on clio master `79fab4786`):
   D5 as built. An outer mapping onto a file-consuming collection is paired (P2), and a file item P2 cannot pair gets a
   notice, not a refusal; the shape refusals are R-M2 (a source with no File item) and R-M1 (an item into a single
   File).
+
+### Round 8: stand results on the PT cut, 2026-10-14
+
+The stand run of 2026-10-14 (ENG-95984 comment 550775; measured) changed this document as follows:
+- D26: PK-PT's 1.6.6.97 was installed once and burned; its cut is 1.6.6.98 (head `d6ca4d79`, 3426 tests), claimed in
+  ENG-92719 comment 550565, updated in place. The next claim is 1.6.6.99 or higher.
+- D2: V4 found that on 1.6.6.97 the `File` item of a process-level FileCollection carried no `A3` / `A4` (the designer
+  writes both on all 678 such items in the shipped corpus), so the first designer save rewrote them; commit
+  `b92547cc` (2 new unit tests) stamps both on the created item and on every mirror clone, and V4 and V5 pass on 1.6.6.98 (ENG-95984 File
+  process parameter type plan section 5.1).
+- D9: a dated note records that the process trace suggested a callee parameter named `Name` receives the
+  sub-process element's name, which would have voided M3; a gateway probe the same day refuted it (3 of 3 iterations
+  received the mapped value), so M3 and D9 stand.
+- D5: T-68 ran without the exception on 1.6.6.97 (2 processes); E2E-06 is still owed. M27 is not run.

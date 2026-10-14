@@ -691,7 +691,7 @@ How these probes are run:
   2026-10-12; clio master bundles 1.6.6.96 and its floors are 1.6.6.92, so a clio built from master refuses the
   process tools against any stand below 1.6.6.96. The stand ran 1.6.6.96 on 2026-10-13 (measured with
   `list-packages`, read-only), so a repeat there runs on 1.6.6.96, not on the 1.6.6.54 of the recorded rows, and every
-  record names the package version.
+  record names the package version. Since 2026-10-14 the stand carries PT's cut 1.6.6.98.
 
 | M | Method | Write? | Pass / record |
 |---|---|---|---|
@@ -743,6 +743,15 @@ baseline** before the run, and compare after it.
 | EV-9 | after | the user opens the record page | the files show in the attachment list |
 
 Exclude configuration-log noise from SysFile reads (`RecordSchemaName <> 'ConfActivityLog'`, C7).
+
+**Callee inputs (added 2026-10-14).** Never read a callee's inputs from the process trace (`SysPrcElementTraceLog`):
+it showed a multi-instance callee's In parameters (and the caller's sub-process element data) as null in every
+iteration although the values arrived, and it showed a callee parameter named `Name` holding the sub-process
+element's name although the mapped value arrived. Formula tasks are not traced at all. The reliable oracle is a gateway
+in the callee: an exclusive gateway with a conditional flow (`string.IsNullOrEmpty([#Email#])`, or `[#File#] == null`
+for a file) to a Formula task captioned "M empty", and a default flow to one captioned "M set"; count the
+`SysProcessElementLog` rows by `Caption`, filtered on `SysProcess.SysSchema.Name` (EV-4). The oracle shows that a value
+or a file arrived, not which one.
 
 ### 9.2 Recording
 
