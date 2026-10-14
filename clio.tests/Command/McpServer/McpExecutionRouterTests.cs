@@ -413,8 +413,8 @@ public sealed class McpExecutionRouterTests {
 		})];
 
 		// Assert
-		cohortNames.Should().HaveCount(11,
-			because: "the shipped cohort is story 6's FOUR remaining database reads — the three schema-designer reads were withdrawn on 2026-08-19 because a worker reads them on its own Creatio session — story 7's FIVE shipped sticky tools — install-process-builder and create-app-section are supported but deliberately withheld until Stage 10 weighs them against the kill-safety audit — and story 8's two terminal-stage deploy tools; a changed count is a rollout decision and must be made deliberately, not drift in");
+		cohortNames.Should().HaveCount(12,
+			because: "the shipped cohort is story 6's FOUR remaining database reads — the three schema-designer reads were withdrawn on 2026-08-19 because a worker reads them on its own Creatio session — story 7's FIVE shipped sticky tools — install-process-builder and create-app-section are supported but deliberately withheld until Stage 10 weighs them against the kill-safety audit — story 8's two terminal-stage deploy tools, and ENG-103032's headless-browser check page-smoke; a changed count is a rollout decision and must be made deliberately, not drift in");
 		declared.Should().NotContainNulls(
 			because: "a cohort name with no declared metadata would be routed on a guess — or, worse, silently fall through the reader's fail-closed unclassified branch and never relay at all");
 		declared.Should().OnlyContain(metadata => metadata.Location == McpToolExecutionLocation.Worker,
@@ -438,7 +438,7 @@ public sealed class McpExecutionRouterTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The shipped cohort is exactly the seven tools story 6 names, the seven story 7 names and the two story 8 names, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
+	[Description("The shipped cohort is exactly the tools story 6 names, the ones story 7 and story 8 name and ENG-103032's page-smoke, pinned as LITERAL names — so changing membership has to change a test on purpose instead of passing because the assertion and the router read the same source.")]
 	public void ShippedCohort_ShouldBeExactlyTheNamesStoriesSixSevenAndEightPromise() {
 		// Arrange — literals, transcribed from spec/stories/story-mcp-worker-execution-boundary-6.md and
 		// -8.md, NOT from Tools.*.ToolName constants. Every other cohort assertion in this fixture compares
@@ -496,17 +496,24 @@ public sealed class McpExecutionRouterTests {
 			"deploy-creatio",
 			"uninstall-creatio"
 		];
+		// ENG-103032: the headless-browser check. A Chromium started in the host would inherit its stdout (the
+		// JSON-RPC pipe), escape containment when the client kills clio, and take no admission slot.
+		string[] browserCheckNames = [
+			"page-smoke"
+		];
 
 		// Act
 		IReadOnlySet<string> shipped = new McpWorkerCohort().Names;
 
 		// Assert
-		shipped.Should().BeEquivalentTo([.. storySixNames, .. storySevenNames, .. storyEightNames],
-			because: "story 6 promises the seven retry-safe stdio reads agents were forced off MCP onto the CLI, story 7 adds the four sticky long-running families whole, and story 8 adds exactly the two terminal-stage deploy tools; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
+		shipped.Should().BeEquivalentTo([.. storySixNames, .. storySevenNames, .. storyEightNames, .. browserCheckNames],
+			because: "story 6 promises the seven retry-safe stdio reads agents were forced off MCP onto the CLI, story 7 adds the four sticky long-running families whole, story 8 adds exactly the two terminal-stage deploy tools, and ENG-103032 adds the headless-browser check; adding, dropping or swapping one is a rollout decision that must be argued for here rather than discovered in production");
 		McpWorkerCohort.StageSixNames.Should().BeEquivalentTo(storySixNames,
 			because: "stories 7 and 8 expanded the cohort by ADDING a list, not by editing story 6's — keeping them separate is what lets each stage's promise stay independently falsifiable");
 		McpWorkerCohort.StageSevenNames.Should().BeEquivalentTo(storySevenNames,
 			because: "a family added by halves is worse than not moving it at all, so the list that carries story 7's promise is pinned as a whole rather than only through the union above");
+		McpWorkerCohort.BrowserCheckNames.Should().BeEquivalentTo(browserCheckNames,
+			because: "a headless browser must run in a worker, whose containment takes it down with the child, never in the host");
 		McpWorkerCohort.StageEightNames.Should().BeEquivalentTo(storyEightNames,
 			because: "the deploy family is exactly two tools, and the Deploy ⇒ Worker + TerminalStage cross-field invariant is what keeps it that way");
 		foreach (string withheld in supportedButNotShippedNames) {

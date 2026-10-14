@@ -414,6 +414,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
 			["trigger-smoke"] = PassthroughClassification.NotApplicable, // ENG-103024: class (b) - one commandResolver.Resolve<ITriggerSmokeRunner>(...) per call, same pattern as odata-delete
+			["page-smoke"] = PassthroughClassification.NotApplicable, // ENG-103032: class (b) - one commandResolver.Resolve<IPageSmokeRunner>(...) per call, same pattern as trigger-smoke
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,

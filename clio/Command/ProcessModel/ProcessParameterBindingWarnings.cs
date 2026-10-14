@@ -92,6 +92,18 @@ public static class ProcessParameterBindingWarnings {
 	}
 
 	/// <summary>
+	/// Whether a MODIFY operations array binds a process parameter through <c>addMapping</c>, so
+	/// <see cref="ForOperations"/> needs the read taken after the write to judge it.
+	/// </summary>
+	/// <param name="operationsJson">The operations array as the command received it.</param>
+	public static bool BindsAProcessParameter(string operationsJson) =>
+		BlockExpectationJson.Parse(operationsJson) is JsonArray operations
+		&& operations.OfType<JsonObject>().Any(op =>
+			string.Equals(BlockExpectationJson.ReadText(op[OpKey]), AddMappingOp, StringComparison.OrdinalIgnoreCase)
+			&& op[MappingKey] is JsonObject mapping
+			&& !string.IsNullOrWhiteSpace(BlockExpectationJson.ReadText(mapping[TargetProcessParameterKey])));
+
+	/// <summary>
 	/// The warnings for a MODIFY operations array: a process parameter bound by more than one <c>addMapping</c>
 	/// in the array, one whose <c>addMapping</c> replaced a binding to a DIFFERENT element output the process
 	/// already stored, and - judged on the saved graph - an added binding whose source element some start event

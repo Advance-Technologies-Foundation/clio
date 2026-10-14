@@ -149,57 +149,12 @@ public sealed class AuthenticatedBrowserLauncher : IAuthenticatedBrowserLauncher
 		}
 	}
 
-	// Reads the port Chromium chose from the DevToolsActivePort handshake file (line 1). Polls because
-	// the file appears a moment after process start.
-	private async Task<int> ReadDevToolsPortAsync(string userDataDir, CancellationToken ct) {
-		string portFile = Path.Combine(userDataDir, "DevToolsActivePort");
-		for (int attempt = 0; attempt < PortFilePollAttempts; attempt++) {
-			ct.ThrowIfCancellationRequested();
-			if (_fileSystem.ExistsFile(portFile)) {
-				string firstLine = _fileSystem.ReadAllText(portFile)
-					.Split('\n', StringSplitOptions.RemoveEmptyEntries) is { Length: > 0 } lines
-					? lines[0].Trim()
-					: string.Empty;
-				if (int.TryParse(firstLine, out int port) && port > 0) {
-					return port;
-				}
-			}
-			await Task.Delay(PollDelayMs, ct).ConfigureAwait(false);
-		}
-		throw new InvalidOperationException(
-			"Error: timed out waiting for the browser's remote-debugging endpoint (DevToolsActivePort).");
-	}
+	// The port and page-target discovery is shared with the headless page-smoke launcher.
+	private Task<int> ReadDevToolsPortAsync(string userDataDir, CancellationToken ct) =>
+		DevToolsEndpoint.ReadPortAsync(_fileSystem, userDataDir, PortFilePollAttempts, PollDelayMs, ct);
 
-	// Resolves a CDP page target's WebSocket URL from the local DevTools JSON endpoint.
-	// NOTE: http://127.0.0.1:{port}/json is the browser's own local control endpoint, NOT a Creatio
-	// service, so it deliberately does NOT go through IApplicationClient (which is Creatio-only).
-	private async Task<string> FindPageTargetAsync(int port, CancellationToken ct) {
-		using HttpClient http = _httpClientFactory.CreateClient();
-		string listUrl = $"http://127.0.0.1:{port}/json";
-		for (int attempt = 0; attempt < PageTargetPollAttempts; attempt++) {
-			ct.ThrowIfCancellationRequested();
-			try {
-				string body = await http.GetStringAsync(listUrl, ct).ConfigureAwait(false);
-				using JsonDocument doc = JsonDocument.Parse(body);
-				foreach (JsonElement target in doc.RootElement.EnumerateArray()) {
-					if (target.TryGetProperty("type", out JsonElement type) && type.GetString() == "page"
-						&& target.TryGetProperty("webSocketDebuggerUrl", out JsonElement ws)) {
-						string url = ws.GetString();
-						if (!string.IsNullOrEmpty(url)) {
-							return url;
-						}
-					}
-				}
-			} catch (HttpRequestException) {
-				// Endpoint not accepting connections yet — keep polling.
-			} catch (JsonException) {
-				// Partial/empty body during startup — keep polling.
-			}
-			await Task.Delay(PollDelayMs, ct).ConfigureAwait(false);
-		}
-		throw new InvalidOperationException(
-			"Error: could not obtain a CDP page target from the launched browser.");
-	}
+	private Task<string> FindPageTargetAsync(int port, CancellationToken ct) =>
+		DevToolsEndpoint.FindPageTargetAsync(_httpClientFactory, port, PageTargetPollAttempts, PollDelayMs, ct);
 
 	// Drives the page-level CDP session: enable Network, set every harvested cookie (HttpOnly included —
 	// the whole point, since document.cookie cannot), then navigate to the Creatio URI.

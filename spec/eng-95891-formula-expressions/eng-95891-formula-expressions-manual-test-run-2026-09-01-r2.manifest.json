@@ -6,7 +6,7 @@
   "supersedes": "916fc5e0-5432-4de9-8b73-a8aeb3d36216",
   "stand": {
     "alias": "krestov-test",
-    "url": "http://d_krestov_n.tscrm.com:1026"
+    "url": "http://<dev-stand>:1026"
   },
   "packageVersion": "1.4.0.18",
   "guidance": {

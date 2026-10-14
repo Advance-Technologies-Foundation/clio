@@ -85,12 +85,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Measured 47495 bytes with it registered (238 for its index entry); next 256-byte step is 47616 (186).
 	// Re-pinned for ENG-103024: trigger-smoke is one more long-tail tool on top of that (about 190 for its index
 	// entry); next 256-byte step is 47872 (187).
+	// Re-pinned for ENG-103032: page-smoke is one more long-tail tool with a curated contract. Measured 47786 bytes
+	// without it and 47973 with it (186 bytes for its index entry, shorter than trigger-smoke's 223), 101 over the
+	// 47872 ceiling; next 256-byte step is 48128 (188). Marking it destructive in review made its object entry one
+	// byte shorter ("true" vs "false") and its line-index entry three bytes longer ("(D)"); both ceilings still hold.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
 	// Since ENG-102796 this ceiling covers the OBJECT index, which a no-names call returns only for
 	// detail=index-entries (ClioRing asks for it); the default reply is the line index below.
-	private const int MaxCompactIndexSerializedBytes = 187 * 256;
+	private const int MaxCompactIndexSerializedBytes = 188 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
