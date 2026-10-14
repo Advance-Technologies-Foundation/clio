@@ -491,7 +491,7 @@ public class ModifyBusinessProcessCommand(
 			ErrorOr<DescribeProcessResult>? saved = null;
 			bool readFailureReported = false;
 			try {
-				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, out saved);
+				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, before, out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
@@ -547,9 +547,9 @@ public class ModifyBusinessProcessCommand(
 	// Since ENG-103023 the read-back always runs, even for an array with no blocks and no labels, because it is
 	// also the post-write summary: the guards below still run only when the operations asked for them. Hands out
 	// the read-back for the digest (null when there was no identity to read back by) as soon as it is taken, and
-	// returns whether a guard already warned that the read-back failed or could not be taken, so the digest does not warn about it twice.
+	// returns whether the reply already says why there is no read-back (a guard warned that it failed or could not be taken, or a caller was not read back), so the digest does not say it twice.
 	private bool WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options,
-		string? schemaName, out ErrorOr<DescribeProcessResult>? readBack) {
+		string? schemaName, ErrorOr<DescribeProcessResult> before, out ErrorOr<DescribeProcessResult>? readBack) {
 		readBack = null;
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -592,6 +592,16 @@ public class ModifyBusinessProcessCommand(
 			bool rightsWarned = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noIdentity);
 			bool labelsWarned = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noIdentity);
 			return rightsWarned || labelsWarned;
+		}
+		// A read would pin a CALLER to its callees' current parameters (ENG-103165), so a caller is read back only
+		// when a guard or the process-parameter binding check needs the read, as before ENG-103023. The read BEFORE
+		// the write pins nothing once the edit saves: the save drops the instance it built. When that read failed, whether the process
+		// calls another one is unknown, and it is treated as a caller: a lost summary costs less than a pinned
+		// caller. The reply says why there is no summary.
+		string? notReadBack = guarded ? null : ProcessWriteDigest.WhyAnEditIsNotReadBack(options.OperationsJson, before);
+		if (notReadBack is not null) {
+			logger.WriteInfo(notReadBack);
+			return true;
 		}
 
 		// Version facts ARE read, best-effort on a short budget: the guards consume elements[] only, but the digest
