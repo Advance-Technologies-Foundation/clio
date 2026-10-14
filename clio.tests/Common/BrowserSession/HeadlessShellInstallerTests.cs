@@ -513,4 +513,21 @@ public sealed class HeadlessShellInstallerTests {
 		await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the server refused the resume");
 		(File.Exists(partial) ? new FileInfo(partial).Length : 0).Should().Be(0, because: "the next call starts from zero");
 	}
+
+	[Test]
+	[Description("A proxy that asks for a login (407) is answered with a hint to put credentials into HTTPS_PROXY, since clio never sends the Windows login to a system or auto-detected proxy.")]
+	public async Task InstallAsync_Should_Explain_A_Proxy_That_Asks_For_A_Login() {
+		// Arrange
+		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(1, "x"),
+			(_, _) => throw new HttpRequestException("The proxy tunnel request to proxy failed with status code '407'.", null,
+				HttpStatusCode.ProxyAuthenticationRequired));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the proxy refused the download"))
+			.Which.Message.Should().Contain("HTTP 407").And.Contain("set HTTPS_PROXY to the proxy with its credentials",
+				because: "the user learns how to authenticate without clio handing out the Windows login");
+	}
 }
