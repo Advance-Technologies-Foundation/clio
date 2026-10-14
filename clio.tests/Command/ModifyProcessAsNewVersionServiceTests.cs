@@ -44,6 +44,25 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-103085: a filter nested inside setElement's readData STOPS the version before anything is posted. It matters most here - a version cannot be deleted, so one saved with the filter dropped would read the first record on every run for good.")]
+	public void ModifyAsNewVersion_ShouldNotPost_WhenABlockCarriesAKeyTheServerWouldDrop() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ModifyProcessAsNewVersionService service = CreateService(client);
+		const string operations = "[{\"op\":\"setElement\",\"elementName\":\"Read1\",\"elementUpdate\":"
+			+ "{\"readData\":{\"source\":\"Contact\",\"filter\":{}}}}]";
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*'elementUpdate.readData.filter'*setFilter*",
+			because: "the refusal names the misplaced key and the operation that sets a filter");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Posts the source identity + operations wrapped under 'request' to the ModifyProcessAsNewVersion route and reports every fact the platform allocated: the version's UId, the name IT composed, the number, the family root and the applied-operation count.")]
 	public void ModifyAsNewVersion_ShouldPostWrappedRequest_AndReturnEveryAllocatedFact_OnSuccess() {
 		// Arrange

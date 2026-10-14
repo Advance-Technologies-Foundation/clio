@@ -464,6 +464,64 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("Over the real MCP path, the ENG-103085 repro - a Read data whose filter is nested inside its readData block - is refused before anything is built and pointed to the element-level filter; the same element with the filter beside the block builds, and describe-business-process shows the filter decoded with its DataSourceFilters parameter. Before the fix the nested filter was dropped by the server's serializer, the process saved green and every run read the first record.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a filter nested inside readData and builds the element-level one")]
+	public async Task CreateBusinessProcess_Should_RefuseAFilterNestedInReadData_AndBuildTheElementLevelOne() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string refusedName = $"UsrClioBpNestedFilterE2e{Guid.NewGuid():N}";
+		string builtName = $"UsrClioBpElementFilterE2e{Guid.NewGuid():N}";
+		const string filter = "{\"object\":\"Contact\",\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\","
+			+ "\"elementParameter\":{\"elementName\":\"ContactAddedSignal\",\"parameter\":\"RecordId\"}}]}";
+
+		try {
+			// Act
+			string refused = ToolText(await CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildSignalReadDescriptor(refusedName,
+					"\"readData\":{\"source\":\"Contact\",\"mode\":\"first\",\"filter\":" + filter + "}")
+			}));
+			string refusedDescribe = JsonSerializer.Serialize(await DescribeAsync(context, refusedName));
+			string built = ToolText(await CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildSignalReadDescriptor(builtName,
+					"\"readData\":{\"source\":\"Contact\",\"mode\":\"first\"},\"filter\":" + filter)
+			}));
+			DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, builtName));
+
+			// Assert
+			refused.Should().Contain("'readData.filter' is not a key of the 'readData' block",
+				because: "the nested filter is refused instead of being dropped by the server");
+			refused.Should().Contain("ELEMENT-level 'filter'", because: "the refusal points to where the filter belongs");
+			refusedDescribe.Should().Contain("was not found", because: "a refused descriptor builds nothing");
+			built.Should().Contain("created (UId:", because: "the element-level filter is the documented shape and builds");
+			DescribedElement read = graph.Elements.Single(element => element.Name == "ReadFiledContact");
+			read.Filter.Should().NotBeNull(because: "the element-level filter landed on the Read data element");
+			read.Filter!.Conditions.Should().Contain(condition => condition.Column == "Id",
+				because: "the decoded filter carries the Id condition bound to the signal's record");
+			read.Parameters.Should().Contain(parameter => parameter.Name == "DataSourceFilters",
+				because: "the filter is persisted in the element's DataSourceFilters parameter");
+		} finally {
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, refusedName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, refusedName);
+			}
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, builtName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, builtName);
+			}
+		}
+	}
+
+	private static string BuildSignalReadDescriptor(string processName, string readElementBody) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Read Filter Placement E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"ContactAddedSignal\",\"type\":\"signalStart\","
+		+ "\"signal\":{\"entity\":\"Contact\",\"on\":\"added\"}},"
+		+ "{\"name\":\"ReadFiledContact\",\"type\":\"readData\"," + readElementBody + "},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"ContactAddedSignal\",\"target\":\"ReadFiledContact\"},"
+		+ "{\"source\":\"ReadFiledContact\",\"target\":\"EndEvent1\"}]}";
+
 	/// <summary>The tool's text content, unescaped - the serialized result escapes the quotes messages use.</summary>
 	private static string ToolText(CallToolResult callResult) =>
 		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));

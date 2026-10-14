@@ -3321,6 +3321,50 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path (ENG-103085): a filter nested inside a Read data block - on addElement and on setElement - is refused before anything is sent, each pointed to where the filter really goes (the element-level filter, the setFilter operation), and the process is left unchanged. Before the fix the server's serializer dropped the nested filter and the edit saved green.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a filter nested inside readData")]
+	public async Task ModifyBusinessProcess_Should_RefuseAFilterNestedInReadData() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpNestedFilterModE2e{Guid.NewGuid():N}";
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildPerformTaskDescriptor(processName)
+		});
+		SerializeToolText(created).Should().Contain("created (UId:",
+			because: $"the arrange must actually create '{processName}', or the test measures nothing");
+		try {
+			// Act
+			CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """
+					[
+					  { "op": "addElement", "element": { "name": "ReadNested", "type": "readData",
+					    "readData": { "source": "Contact", "filter": { "object": "Contact", "conditions": [] } } } },
+					  { "op": "setElement", "elementName": "ReadNested",
+					    "elementUpdate": { "readData": { "source": "Contact", "filter": { "object": "Contact" } } } }
+					]
+					"""
+			});
+			string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+
+			// Assert
+			string text = SerializeToolText(callResult);
+			text.Should().Contain("'element.readData.filter' is not a key of the 'readData' block",
+				because: "the addElement block's nested filter is refused instead of dropped");
+			text.Should().Contain("ELEMENT-level 'filter'", because: "addElement is pointed to the element-level filter");
+			text.Should().Contain("'elementUpdate.readData.filter'", because: "the setElement block's nested filter is refused too");
+			text.Should().Contain("setFilter", because: "setElement is pointed to the setFilter operation");
+			describeJson.Should().NotContain("ReadNested",
+				because: "the refusal comes before anything is sent, so the process is left unchanged");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
 	[Description("Over the real MCP path: one modify request adds two Read data elements without their block and finishes ONE of them with setElement.readData in the same request. Only the one still unconfigured at the END of the request is reported (ENG-102537): the check is judged on the final schema, so the documented addElement -> setElement flow raises nothing for the element it completed, and the edit itself is not refused. Needs CrtProcessBuilder 1.6.6.90 on the stand.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process warns only about elements left unconfigured at the end of the request")]
