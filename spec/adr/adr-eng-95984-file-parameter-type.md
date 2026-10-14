@@ -509,7 +509,7 @@ file-consuming targets.
 
 One story ([story 1](../stories/story-eng-95984-file-parameter-type-1.md)) carries the work packages: PB-1..PB-10 in
 crt-process-builder, planned as ten commits (the analysis's pr-split §5.2; the draft began as one commit, `b6dcd2c1`,
-and has four since 2026-10-14, head `d6ca4d79`; the split before leaving draft is the owner's call), each mapped to
+and grew review-fix commits, listed in its description; whether to split before merge is the owner's call), each mapped to
 its decision in the PR description: (1) D1 aliases and the Binary / BLOB refusal; (2) D2 `FileCollection` write alias
 and describe predicate, with D3's defaults; (3) D4 `ResolveProcessParameterPath`, both callers switched,
 behaviour-neutral; (4) D5 binder rules and the whole `BindCollection` API; (5) D6 dotted-mirror refusal; (6) D7

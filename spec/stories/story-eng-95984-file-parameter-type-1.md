@@ -86,7 +86,8 @@ in short.
 **CrtProcessBuilder** (base `main`; planned as ten commits (the analysis's pr-split section 5.2), each mapped to its
 decision in the PR description: D1; D2 with D3; D4; D5 with `BindCollection`; D6; D7; D8; D9;
 `docs/file-parameter-capture.md`; the restamp last - the ADR's implementation outline. The draft began as one
-commit, `b6dcd2c1`, and has four since 2026-10-14, head `d6ca4d79`; the split before leaving draft is the owner's call)
+commit, `b6dcd2c1`, and grew review-fix commits, listed in its description; whether to split before merge is the
+owner's call)
 
 - [ ] **PB-1** (D1) `PB/Parameters/ProcessParameterService.cs` `NormalizeParameterTypeName`: file aliases to the
   canonical FileLocator name; dedicated Binary / Blob refusal (F-T1); generic list adds `File, FileCollection`; doc
