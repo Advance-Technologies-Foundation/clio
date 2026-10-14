@@ -8,7 +8,7 @@ marks *source-derived, NOT measured*, and whose answer the ADR makes the refacto
 
 | | |
 |---|---|
-| Stand | `krestov-test` — `http://d_krestov_n.tscrm.com:1026`, which is **this machine**; IIS site `Creatio` serving `C:\Projects\Creatio\TSBpm\Src\Lib\Terrasoft.WebApp.Loader`, i.e. the same source tree the citations below come from |
+| Stand | `krestov-test` — `http://<dev-stand>:1026`, which is **this machine**; IIS site `Creatio` serving `C:\Projects\Creatio\TSBpm\Src\Lib\Terrasoft.WebApp.Loader`, i.e. the same source tree the citations below come from |
 | Core | `10.0.731.0` (`clio get-info -e krestov-test`) |
 | File-system mode | on (`get-fsm-mode` → `mode: "on"`, `useStaticFileContent: false`) |
 | Package | `CrtProcessBuilder` 1.4.0.40 from `feature/ENG-95891-formula-expressions`, net472/Debug, rebuilt and reinstalled with `clio push-workspace -e krestov-test` per probe pass |
