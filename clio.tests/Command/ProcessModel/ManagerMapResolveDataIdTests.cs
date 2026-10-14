@@ -72,6 +72,17 @@ public sealed class ManagerMapResolveDataIdTests {
 	// builds happily was reported as UNKNOWN by validate-process-graph.
 	[TestCase("preconfiguredpage", ManagerMap.EventType.UserTask)]
 	[TestCase("preconfiguredPage", ManagerMap.EventType.UserTask)]
+	// The Process file element's build token and its alias (ENG-96505), carried one release before any package
+	// emits them: none ends in "usertask", so without the explicit entry a described file-processing element would
+	// resolve to Unknown and validate-process-graph would reject a graph the server builds. The three data-ids end
+	// in the suffix and classify through the fallback arm.
+	[TestCase("fileProcessing", ManagerMap.EventType.UserTask)]
+	[TestCase("fileprocessing", ManagerMap.EventType.UserTask)]
+	[TestCase("processFile", ManagerMap.EventType.UserTask)]
+	[TestCase("processfile", ManagerMap.EventType.UserTask)]
+	[TestCase("objectFileProcessingUserTask", ManagerMap.EventType.UserTask)]
+	[TestCase("processFileProcessingUserTask", ManagerMap.EventType.UserTask)]
+	[TestCase("reportFileProcessingUserTask", ManagerMap.EventType.UserTask)]
 	[TestCase("eventSubProcessExpanded", ManagerMap.EventType.EventSubProcess)]
 	public void ResolveDataId_ShouldReturnActivityEventType_WhenActivityDataId(string dataId, ManagerMap.EventType expected) {
 		// Act
