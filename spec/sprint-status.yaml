@@ -4748,8 +4748,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D2, rejected option C: generic itemProperties on a declared
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D2, rejected option C: generic itemProperties on a declared
       Collection, after which FileCollection is sugar for a Collection with one File item. Needs its own floor raise,
       because an older server silently drops the member and saves a shapeless collection. Does not gate the closure of
       ENG-95984.
@@ -4771,8 +4771,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D6, rejected option b. Gated on a recorded scan of the output
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D6, rejected option b. Gated on a recorded scan of the output
       types shipped user tasks expose, so that no mirror accepted today is refused unannounced. Does not gate the
       closure of ENG-95984.
 
@@ -4793,8 +4793,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D8. Needs a new typed member on clio's DescribedParameter, which
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D8. Needs a new typed member on clio's DescribedParameter, which
       has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
       ENG-95984.
   # --- eng-92719-file-processing-element (ENG-92719 File processing element) - added 2026-10-14 ---
