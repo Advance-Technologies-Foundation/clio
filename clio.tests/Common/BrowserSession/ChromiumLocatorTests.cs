@@ -89,4 +89,42 @@ public sealed class ChromiumLocatorTests {
 		act.Should().Throw<ChromiumNotFoundException>(
 			"because a stale CHROME_PATH must not be returned when the file is gone");
 	}
+	[Test]
+	[Description("ENG-103287: every installed macOS browser is listed with its name and the version from its app bundle, in preference order.")]
+	public void FindInstalled_Should_List_Each_Browser_With_Name_And_Version_On_MacOs() {
+		// Arrange
+		const string chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+		const string edge = "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge";
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile(Arg.Any<string>()).Returns(call =>
+			call.Arg<string>() is chrome or edge or "/Applications/Microsoft Edge.app/Contents/Info.plist");
+		fileSystem.ReadAllText("/Applications/Microsoft Edge.app/Contents/Info.plist").Returns(
+			"<dict><key>CFBundleShortVersionString</key>\n\t<string>130.0.2849.80</string></dict>");
+		ChromiumLocator locator = new(fileSystem, _ => null, System.Runtime.InteropServices.OSPlatform.OSX);
+
+		// Act
+		var found = locator.FindInstalled();
+
+		// Assert
+		found.Should().Equal([new InstalledBrowser("Google Chrome", null, chrome), new InstalledBrowser("Microsoft Edge", "130.0.2849.80", edge)],
+			because: "the user is offered every browser by name and, where it can be read, version");
+	}
+
+	[Test]
+	[Description("ENG-103287: CHROME_PATH is reported as the override only when it names an existing file.")]
+	public void ChromePathOverride_Should_Require_An_Existing_File() {
+		// Arrange
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		fileSystem.ExistsFile("/opt/chrome").Returns(true);
+		ChromiumLocator present = new(fileSystem, _ => "/opt/chrome", System.Runtime.InteropServices.OSPlatform.Linux);
+		ChromiumLocator missing = new(fileSystem, _ => "/opt/missing", System.Runtime.InteropServices.OSPlatform.Linux);
+
+		// Act
+		string used = present.ChromePathOverride();
+		string ignored = missing.ChromePathOverride();
+
+		// Assert
+		used.Should().Be("/opt/chrome", because: "an existing override wins without asking");
+		ignored.Should().BeNull(because: "a stale override is ignored, as Locate ignores it");
+	}
 }

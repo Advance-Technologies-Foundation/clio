@@ -30,13 +30,17 @@ public interface IPageSmokeRunner {
 /// <param name="Click">Caption or element name of the button to click; null clicks nothing.</param>
 /// <param name="ClickWaitSeconds">How long to wait for the page to settle after the click.</param>
 /// <param name="Watch">Entities diffed around the click to report the records it created.</param>
+/// <param name="BrowserPath">The browser to run, as the user chose it (<see cref="IPageSmokeBrowserResolver"/>).</param>
+/// <param name="BrowserNote">Why this browser was used when it was not the user's answer; reported as a warning.</param>
 public sealed record PageSmokeRequest(
 	string Page,
 	string RecordId,
 	int TimeoutSeconds,
 	string Click,
 	int ClickWaitSeconds,
-	IReadOnlyList<string> Watch);
+	IReadOnlyList<string> Watch,
+	string BrowserPath,
+	string BrowserNote = null);
 
 /// <summary>What happened after the click.</summary>
 public sealed class PageClickReport {
@@ -171,7 +175,8 @@ internal sealed class PageSmokeRunner(
 	IFileSystem fileSystem,
 	IHeadlessBrowserLauncher browserLauncher,
 	ICdpSessionFactory cdpSessionFactory,
-	ICreatedRecordWatcher recordWatcher)
+	ICreatedRecordWatcher recordWatcher,
+	TimeProvider timeProvider)
 	: IPageSmokeRunner {
 
 	internal const int DefaultTimeoutSeconds = 30;
@@ -200,29 +205,34 @@ internal sealed class PageSmokeRunner(
 	private const int AnswerReserveMs = 5_000;
 	private const string EvaluateMethod = "Runtime.evaluate";
 
-	// Test seams: how the waits sleep, and the clock they measure with.
-	internal Func<int, CancellationToken, Task> Delay { get; set; } = (ms, ct) => Task.Delay(ms, ct);
+	// Test seams: how the waits sleep, and the clock they measure with. Both default to the registered TimeProvider,
+	// which also drives the budget and per-command timers, so a test can move all of them with one clock.
+	internal Func<int, CancellationToken, Task> Delay { get; set; } =
+		(ms, ct) => Task.Delay(TimeSpan.FromMilliseconds(ms), timeProvider, ct);
 
-	internal Func<DateTimeOffset> Clock { get; set; } = () => DateTimeOffset.UtcNow;
+	internal Func<DateTimeOffset> Clock { get; set; } = timeProvider.GetUtcNow;
 
 	/// <inheritdoc />
 	public async Task<PageSmokeResult> RunAsync(PageSmokeRequest request, CancellationToken ct) {
 		PageSmokeResult result = new() { Mode = request.RecordId is null ? "add" : "edit" };
+		if (request.BrowserNote is not null) {
+			result.Warnings.Add(request.BrowserNote);
+		}
 		string url = BuildCardUrl(environment, request.Page, request.RecordId);
 		result.Url = RelativeUrl(url);
-		using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
-		budget.CancelAfter(TotalBudgetMs);
+		using CancellationTokenSource budgetTimer = new(TimeSpan.FromMilliseconds(TotalBudgetMs), timeProvider);
+		using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(ct, budgetTimer.Token);
 		DateTimeOffset budgetEnd = Clock().AddMilliseconds(TotalBudgetMs);
 		PageEventCollector events = new(RelativeUrl);
 		try {
 			IReadOnlyList<BrowserCookie> cookies = await ReadSessionCookiesAsync(budget.Token).ConfigureAwait(false);
-			await using IHeadlessBrowser browser = await browserLauncher.LaunchAsync(budget.Token).ConfigureAwait(false);
+			await using IHeadlessBrowser browser = await browserLauncher.LaunchAsync(request.BrowserPath, budget.Token).ConfigureAwait(false);
 			await using ICdpSession cdp = await cdpSessionFactory.ConnectAsync(browser.PageWebSocketUrl, budget.Token)
 				.ConfigureAwait(false);
 			cdp.EventReceived += events.OnEvent;
-			events.NativeDialogOpened += () => DismissNativeDialog(cdp);
+			events.NativeDialogOpened += () => DismissNativeDialog(cdp, timeProvider);
 			string frameId = await OpenPageAsync(cdp, cookies, url, budget.Token).ConfigureAwait(false);
-			PageScriptRunner scripts = new(cdp, frameId);
+			PageScriptRunner scripts = new(cdp, frameId, timeProvider);
 			DateTimeOffset navigatedAt = Clock();
 			int readyMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
 				request.TimeoutSeconds * 1000);
@@ -244,9 +254,6 @@ internal sealed class PageSmokeRunner(
 			else {
 				await ClickAsync(scripts, events, request, result, budgetEnd, budget.Token).ConfigureAwait(false);
 			}
-		}
-		catch (ChromiumNotFoundException exception) {
-			result.Error = exception.Message + " page-smoke needs a Chromium-based browser on the machine clio runs on.";
 		}
 		catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
 			ReadLoadErrors(result, events, int.MaxValue);
@@ -306,11 +313,11 @@ internal sealed class PageSmokeRunner(
 	// A native alert/confirm/prompt/beforeunload blocks the page until it is answered, which would stall every later
 	// evaluation. It is dismissed, never accepted - page-smoke never confirms anything - and reported. The answer is
 	// sent without waiting: this runs on the session's receive loop, which must stay free to deliver the reply.
-	private static void DismissNativeDialog(ICdpSession cdp) =>
+	private static void DismissNativeDialog(ICdpSession cdp, TimeProvider timeProvider) =>
 		_ = Task.Run(async () => {
 			try {
 				await cdp.SendAsync("Page.handleJavaScriptDialog", new { accept = false }, CancellationToken.None)
-					.WaitAsync(TimeSpan.FromMilliseconds(CommandMs)).ConfigureAwait(false);
+					.WaitAsync(TimeSpan.FromMilliseconds(CommandMs), timeProvider).ConfigureAwait(false);
 			}
 			catch (Exception exception) when (exception is InvalidOperationException or CdpCommandException
 				or TimeoutException) {
@@ -333,16 +340,16 @@ internal sealed class PageSmokeRunner(
 	// Returns the main frame's id, which the page scripts' isolated world is created in.
 	private async Task<string> OpenPageAsync(ICdpSession cdp, IReadOnlyList<BrowserCookie> cookies, string url,
 		CancellationToken ct) {
-		await SendAsync(cdp, "Runtime.enable", null, ct).ConfigureAwait(false);
-		await SendAsync(cdp, "Log.enable", null, ct).ConfigureAwait(false);
-		await SendAsync(cdp, "Page.enable", null, ct).ConfigureAwait(false);
-		await SendAsync(cdp, "Network.enable", null, ct).ConfigureAwait(false);
+		await SendAsync(cdp, "Runtime.enable", null, timeProvider, ct).ConfigureAwait(false);
+		await SendAsync(cdp, "Log.enable", null, timeProvider, ct).ConfigureAwait(false);
+		await SendAsync(cdp, "Page.enable", null, timeProvider, ct).ConfigureAwait(false);
+		await SendAsync(cdp, "Network.enable", null, timeProvider, ct).ConfigureAwait(false);
 		foreach (BrowserCookie cookie in cookies) {
 			await SendAsync(cdp, "Network.setCookie", AuthenticatedBrowserLauncher.BuildSetCookieParams(cookie, environment.Uri),
-				ct).ConfigureAwait(false);
+				timeProvider, ct).ConfigureAwait(false);
 		}
-		await SendAsync(cdp, "Network.disable", null, ct).ConfigureAwait(false);
-		JsonElement navigation = await SendAsync(cdp, "Page.navigate", new { url }, ct).ConfigureAwait(false);
+		await SendAsync(cdp, "Network.disable", null, timeProvider, ct).ConfigureAwait(false);
+		JsonElement navigation = await SendAsync(cdp, "Page.navigate", new { url }, timeProvider, ct).ConfigureAwait(false);
 		if (navigation.TryGetProperty("errorText", out JsonElement errorText)
 			&& !string.IsNullOrWhiteSpace(errorText.GetString())) {
 			throw new InvalidOperationException($"The browser could not open the environment: {errorText.GetString()}. "
@@ -572,9 +579,9 @@ internal sealed class PageSmokeRunner(
 	}
 
 	private static async Task<JsonElement> SendAsync(ICdpSession cdp, string method, object parameters,
-		CancellationToken ct) {
-		using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-		timeout.CancelAfter(CommandMs);
+		TimeProvider timeProvider, CancellationToken ct) {
+		using CancellationTokenSource timer = new(TimeSpan.FromMilliseconds(CommandMs), timeProvider);
+		using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(ct, timer.Token);
 		try {
 			return await cdp.SendAsync(method, parameters, timeout.Token).ConfigureAwait(false);
 		}
@@ -587,7 +594,7 @@ internal sealed class PageSmokeRunner(
 	// none of its JavaScript, so a page that overrides a global or a prototype can neither make them throw text of its
 	// choosing nor steer which button the click script matches. A world lives as long as its document, so it is made
 	// again after a navigation replaces the document.
-	private sealed class PageScriptRunner(ICdpSession cdp, string frameId) {
+	private sealed class PageScriptRunner(ICdpSession cdp, string frameId, TimeProvider timeProvider) {
 
 		internal const string WorldName = "clio-page-smoke";
 		private int? _contextId;
@@ -628,7 +635,7 @@ internal sealed class PageSmokeRunner(
 						expression = script,
 						contextId,
 						returnByValue = true
-					}, ct).ConfigureAwait(false);
+					}, timeProvider, ct).ConfigureAwait(false);
 				}
 				catch (CdpCommandException exception) when (IsContextGone(exception)
 					&& recreations < MaxWorldRecreations) {
@@ -644,7 +651,7 @@ internal sealed class PageSmokeRunner(
 			JsonElement world = await SendAsync(cdp, "Page.createIsolatedWorld", new {
 				frameId,
 				worldName = WorldName
-			}, ct).ConfigureAwait(false);
+			}, timeProvider, ct).ConfigureAwait(false);
 			return world.TryGetProperty("executionContextId", out JsonElement id) && id.TryGetInt32(out int contextId)
 				? contextId
 				: throw new InvalidOperationException("The browser did not create the page scripts' isolated world.");

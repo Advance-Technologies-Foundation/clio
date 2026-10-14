@@ -4694,10 +4694,11 @@ stories:
   # --- eng-95984-file-parameter-type (ENG-95984 File process parameter type) - added 2026-10-13 ---
   # One story carries the whole ticket (crt-process-builder -> clio -> clio-knowledge, one feature PR each); this BMAD
   # set is the docs-only clio PR that merges before the package PR leaves draft. Stories 2-4 are the three follow-up
-  # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14). They
-  # stay deferred until ENG-96506 Generated report + process parameter modes has merged its package PR. ENG-96506 and
-  # ENG-95985 have no story id in this tracker yet (ENG-96506's arrives with the docs PR titled "ENG-92719 File
-  # processing element"), so the dependencies name their Jira keys.
+  # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14 under
+  # ENG-95984 and moved the same day to the Task ENG-103304 File and collection process parameters: follow-ups, so
+  # that ENG-95984 can close). They stay deferred until ENG-96506 Generated report + process parameter modes has
+  # merged its package PR. ENG-96506 and ENG-95985 have no story id in this tracker yet (ENG-96506's arrives with the
+  # docs PR titled "ENG-92719 File processing element"), so the dependencies name their Jira keys.
   - id: story-eng-95984-file-parameter-type-1
     title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
     feature: "eng-95984-file-parameter-type"
@@ -4747,8 +4748,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D2, rejected option C: generic itemProperties on a declared
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D2, rejected option C: generic itemProperties on a declared
       Collection, after which FileCollection is sugar for a Collection with one File item. Needs its own floor raise,
       because an older server silently drops the member and saves a shapeless collection. Does not gate the closure of
       ENG-95984.
@@ -4770,8 +4771,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D6, rejected option b. Gated on a recorded scan of the output
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D6, rejected option b. Gated on a recorded scan of the output
       types shipped user tasks expose, so that no mirror accepted today is refused unannounced. Does not gate the
       closure of ENG-95984.
 
@@ -4792,8 +4793,8 @@ stories:
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up Sub-task of
-      ENG-95984 File process parameter type from ADR D8. Needs a new typed member on clio's DescribedParameter, which
+      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D8. Needs a new typed member on clio's DescribedParameter, which
       has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
       ENG-95984.
   # --- eng-92719-file-processing-element (ENG-92719 File processing element) - added 2026-10-14 ---

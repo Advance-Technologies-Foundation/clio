@@ -444,6 +444,15 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		services.AddTransient<Clio.Common.BrowserSession.IHeadlessBrowserLauncher, Clio.Common.BrowserSession.HeadlessBrowserLauncher>();
 		services.AddTransient<Clio.Common.BrowserSession.ICdpSessionFactory, Clio.Common.BrowserSession.CdpSessionFactory>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserCacheLocator, Clio.Common.BrowserSession.BrowserCacheLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellSource, Clio.Common.BrowserSession.ChromeForTestingHeadlessShellSource>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellInstaller, Clio.Common.BrowserSession.HeadlessShellInstaller>();
+		// The browser download honours HTTPS_PROXY / HTTP_PROXY / NO_PROXY even in MCP mode, where the default proxy is
+		// cleared for calls to Creatio (see AmbientProxy). Its time is bounded by the installer's own budget.
+		services.AddHttpClient(Clio.Common.BrowserSession.HeadlessShellInstaller.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+			.ConfigurePrimaryHttpMessageHandler(Clio.Common.BrowserSession.HeadlessShellInstaller.CreateHttpHandler);
+		services.AddTransient<Clio.Common.BrowserSession.IPageSmokeBrowserResolver, Clio.Common.BrowserSession.PageSmokeBrowserResolver>();
 		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
 		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();
 		IDeserializer deserializer = new DeserializerBuilder()

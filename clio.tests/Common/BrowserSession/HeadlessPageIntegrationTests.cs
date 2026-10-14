@@ -180,18 +180,20 @@ public sealed class HeadlessPageIntegrationTests {
 	private static HeadlessBrowserLauncher CreateLauncher(ClioFileSystem fileSystem) {
 		IHttpClientFactory httpClientFactory = new ServiceCollection().AddHttpClient().BuildServiceProvider()
 			.GetRequiredService<IHttpClientFactory>();
-		return new HeadlessBrowserLauncher(new ChromiumLocator(fileSystem), new ProcessExecutor(Substitute.For<ILogger>()),
-			fileSystem, new FileSecurityHardening(), httpClientFactory);
+		return new HeadlessBrowserLauncher(new ProcessExecutor(Substitute.For<ILogger>()), fileSystem,
+			new FileSecurityHardening(), httpClientFactory);
 	}
 
 	private static async Task<IHeadlessBrowser> LaunchOrIgnoreAsync(HeadlessBrowserLauncher launcher, CancellationToken ct) {
+		string browserPath;
 		try {
-			return await launcher.LaunchAsync(ct);
+			browserPath = new ChromiumLocator(new ClioFileSystem(new System.IO.Abstractions.FileSystem())).Locate();
 		}
 		catch (ChromiumNotFoundException) {
 			Assert.Ignore("No Chromium-based browser on this machine.");
 			throw;
 		}
+		return await launcher.LaunchAsync(browserPath, ct);
 	}
 
 	private static async Task<PageReadyState> PollReadyAsync(ICdpSession cdp, string frameId, CancellationToken ct) {
