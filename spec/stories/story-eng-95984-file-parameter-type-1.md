@@ -5,7 +5,7 @@
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) - AC-1..AC-10
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D1-D9, D23, D25, D26
 **Test plan**: [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md)
-**Status**: in-progress (implementation started 2026-10-13; flipped in this BMAD PR on 2026-10-14)
+**Status**: review (implementation started 2026-10-13; `review` since 2026-10-14, when the clio feature PR https://github.com/Advance-Technologies-Foundation/clio/pull/1814 left draft)
 **Size**: L (about 7.5-15.5 h of AI-agent time and 4.5-10 h of the owner's time; about 3-5 working days of calendar)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one feature PR each, titled
 `ENG-95984 File process parameter type`, branch `feature/ENG-95984-file-process-parameter-type`)

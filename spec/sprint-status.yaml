@@ -4703,7 +4703,7 @@ stories:
     feature: "eng-95984-file-parameter-type"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
-    status: in-progress
+    status: review
     jira: ENG-95984
     file: spec/stories/story-eng-95984-file-parameter-type-1.md
     prd: spec/prd/spec-eng-95984-file-parameter-type.md

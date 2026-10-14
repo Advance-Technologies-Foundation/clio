@@ -326,7 +326,7 @@ avoids the generic `userTask` route for the three Process file schemas.
 | TC-I-10 | E2E-10 | `ModifyBusinessProcess_Should_RefuseACollectionItemIntoASingleFile` | `addMapping {targetProcessParameter: Doc, processParameter: "Docs.File"}` | refused (R-M1), naming FileCollection and multi-instance | AC-5 |
 | TC-I-11 | E2E-11 | `ModifyBusinessProcess_Should_RefuseADottedMirrorSource` | `addParameter {name: P, typeFromElement: ReadData1, typeFromElementParameter: "ResultCompositeObjectList.Name"}` | refused naming the item and its collection; no `P` | AC-6 |
 | TC-I-12 | E2E-12 | `DescribeBusinessProcess_Should_DecodeAnElementOutputSource` | the TC-I-07 caller | `InputRecordCollection` reports `sourceElement: ReadData1`, `sourceElementParameter: ResultCompositeObjectList`; item `ContactId` reports `"ResultCompositeObjectList.Id"`; no `sourceColumn` | AC-7 |
-| TC-I-13 | E2E-13 | `ModifyBusinessProcess_Should_BindOnlyTheItem_WhenAPlainFileFeedsAMultiInstanceInput` | multi-instance caller; `InputRecordCollection.F <- Doc` (a single File) | no binder notice; `InputRecordCollection` Source None, item `F` bound to `Doc` (a regression check of the binder, not the proof of the nested-only listing) | AC-5 |
+| TC-I-13 | E2E-13 | `ModifyBusinessProcess_Should_BindOnlyTheItem_WhenAPlainFileFeedsAMultiInstanceInput` | multi-instance caller whose `InputRecordCollection` is already bound to its FileCollection `Docs`; `InputRecordCollection.F <- Doc` (a single File) | no binder notice; `InputRecordCollection` stays bound to `Docs` (P3 exempts a multi-instance owner), item `F` bound to `Doc` | AC-5 |
 
 ### Cross-ticket cases (planned in ENG-96506; not in this story's exit criteria)
 
