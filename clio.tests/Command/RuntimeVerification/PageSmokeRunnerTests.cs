@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Clio.Command.RuntimeVerification;
 using Clio.Common;
 using Clio.Common.BrowserSession;
+using Clio.Tests.Common.BrowserSession;
 using FluentAssertions;
 using NSubstitute;
 using NUnit.Framework;
@@ -22,6 +23,7 @@ public sealed class PageSmokeRunnerTests {
 	private const string EnvUri = "http://sandbox";
 	private const string RecordId = "8d6a5c4e-0f1b-4d6f-9d0a-2b9c1e7f3a10";
 	private const string CookieValue = "SECRET-COOKIE-VALUE";
+	private const string BrowserPath = "/opt/chrome";
 	private const string Ready = """{"state":"ready","href":"http://sandbox/0/Shell/#Card/UsrOrders_FormPage/edit/1","signature":"s1"}""";
 	private const string Inventory = """
 		{"title":"Order 1","scope":"page","totalButtons":2,"totalFields":1,
@@ -63,6 +65,11 @@ public sealed class PageSmokeRunnerTests {
 
 		public bool Disposed { get; private set; }
 
+		// A command the browser never answers: it completes only when the token it was sent with is cancelled.
+		public string HangOn { get; set; }
+
+		public TaskCompletionSource<CancellationToken> Hung { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
 		public event EventHandler<CdpEvent> EventReceived;
 
 		public void QueueReady(params string[] states) {
@@ -78,6 +85,10 @@ public sealed class PageSmokeRunnerTests {
 			JsonElement sent = JsonSerializer.SerializeToElement(parameters ?? new { });
 			lock (Calls) {
 				Calls.Add((method, sent));
+			}
+			if (method == HangOn) {
+				Hung.TrySetResult(ct);
+				return new TaskCompletionSource<JsonElement>().Task.WaitAsync(ct);
 			}
 			if (method == "Runtime.evaluate" && EvaluateException is not null) {
 				return Task.FromException<JsonElement>(EvaluateException);
@@ -147,7 +158,9 @@ public sealed class PageSmokeRunnerTests {
 		IHeadlessBrowserLauncher Launcher,
 		ICreatedRecordWatcher Watcher);
 
-	private static Harness Create(FakeCdpSession cdp = null) {
+	// With a time provider the runner's own clock, waits and timers all run on it; without one the waits are skipped
+	// on a fixed clock and the real timers (100 s, 10 s) never fire within a test.
+	private static Harness Create(FakeCdpSession cdp = null, TimeProvider timeProvider = null) {
 		cdp ??= new FakeCdpSession();
 		EnvironmentSettings environment = new() { Uri = EnvUri, IsNetCore = false };
 		IBrowserSessionService sessions = Substitute.For<IBrowserSessionService>();
@@ -158,26 +171,26 @@ public sealed class PageSmokeRunnerTests {
 			            {"name":".ASPXAUTH","value":"{{CookieValue}}","domain":"sandbox","path":"/","httpOnly":true}],"origins":[]}
 			""");
 		IHeadlessBrowser browser = Substitute.For<IHeadlessBrowser>();
-		browser.PageWebSocketUrl.Returns(new Uri("ws://127.0.0.1:9222/devtools/page/1"));
+		browser.Page.Returns(cdp);
 		IHeadlessBrowserLauncher launcher = Substitute.For<IHeadlessBrowserLauncher>();
-		launcher.LaunchAsync(Arg.Any<CancellationToken>()).Returns(browser);
-		ICdpSessionFactory factory = Substitute.For<ICdpSessionFactory>();
-		factory.ConnectAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>()).Returns(cdp);
+		launcher.LaunchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(browser);
 		ICreatedRecordWatcher watcher = Substitute.For<ICreatedRecordWatcher>();
 		DateTimeOffset now = new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
-		PageSmokeRunner runner = new(environment, sessions, fileSystem, launcher, factory, watcher) {
-			Clock = () => now,
-			Delay = (ms, _) => {
+		PageSmokeRunner runner = new(environment, sessions, fileSystem, launcher, watcher,
+			timeProvider ?? TimeProvider.System);
+		if (timeProvider is null) {
+			runner.Clock = () => now;
+			runner.Delay = (ms, _) => {
 				now = now.AddMilliseconds(ms);
 				return Task.CompletedTask;
-			}
-		};
+			};
+		}
 		return new Harness(runner, cdp, browser, launcher, watcher);
 	}
 
 	private static PageSmokeRequest Request(string recordId = RecordId, string click = null, int timeout = 30,
 		IReadOnlyList<string> watch = null) =>
-		new("UsrOrders_FormPage", recordId, timeout, click, 8, watch ?? []);
+		new("UsrOrders_FormPage", recordId, timeout, click, 8, watch ?? [], BrowserPath);
 
 	[Test]
 	[Description("A page that becomes ready and stays quiet is reported with its buttons, fields and load errors; the session cookies are injected before navigation to the edit URL, and the browser is disposed.")]
@@ -210,6 +223,7 @@ public sealed class PageSmokeRunnerTests {
 			.Should().Be(EnvUri + "/0/Shell/#Card/UsrOrders_FormPage/edit/" + RecordId, because: "the card URL is opened");
 		harness.Cdp.Disposed.Should().BeTrue(because: "the session is closed when the check ends");
 		await harness.Browser.Received(1).DisposeAsync();
+		await harness.Launcher.Received(1).LaunchAsync(BrowserPath, Arg.Any<CancellationToken>());
 	}
 
 	[Test]
@@ -365,19 +379,19 @@ public sealed class PageSmokeRunnerTests {
 	}
 
 	[Test]
-	[Description("A missing browser is reported as such, not thrown.")]
-	public async Task RunAsync_Should_Report_A_Missing_Browser() {
+	[Description("A chosen browser that does not start is reported as such, not thrown.")]
+	public async Task RunAsync_Should_Report_A_Browser_That_Does_Not_Start() {
 		// Arrange
 		Harness harness = Create();
-		harness.Launcher.LaunchAsync(Arg.Any<CancellationToken>())
-			.Returns<IHeadlessBrowser>(_ => throw new ChromiumNotFoundException("Error: Chromium binary not found."));
+		harness.Launcher.LaunchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns<IHeadlessBrowser>(_ => throw new InvalidOperationException("Error: failed to launch the browser at '/opt/chrome'."));
 
 		// Act
 		PageSmokeResult result = await harness.Runner.RunAsync(Request(), CancellationToken.None);
 
 		// Assert
 		result.Success.Should().BeFalse(because: "nothing could be opened");
-		result.Error.Should().Contain("Chromium-based browser", because: "the caller learns what to install");
+		result.Error.Should().Contain("failed to launch the browser", because: "the caller learns the chosen browser did not start");
 	}
 
 	[Test]
@@ -817,5 +831,87 @@ public sealed class PageSmokeRunnerTests {
 		// Assert
 		JsonSerializer.SerializeToUtf8Bytes(response).Length.Should().BeLessThanOrEqualTo(PageSmokeRunner.MaxReplyBytes,
 			because: "the correlation-id is reserved for, not added on top");
+	}
+
+	// A wall-clock guard for awaiting the runner: the test's own clock decides when it ends, this only stops a broken
+	// test from hanging the run.
+	private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
+
+	[Test]
+	[Description("A browser command that never answers fails the check after exactly 10 s on the injected clock, names the command, and still disposes the session and the browser.")]
+	public async Task RunAsync_Should_Fail_A_Command_The_Browser_Does_Not_Answer_Within_10_Seconds() {
+		// Arrange
+		ManualTimeProvider time = new();
+		FakeCdpSession cdp = new() { HangOn = "Page.navigate" };
+		Harness harness = Create(cdp, time);
+		Task<PageSmokeResult> run = harness.Runner.RunAsync(Request(), CancellationToken.None);
+		CancellationToken commandToken = await cdp.Hung.Task.WaitAsync(Guard);
+
+		// Act
+		time.Advance(TimeSpan.FromMilliseconds(9_999));
+		bool cancelledEarly = commandToken.IsCancellationRequested;
+		time.Advance(TimeSpan.FromMilliseconds(1));
+		PageSmokeResult result = await run.WaitAsync(Guard);
+
+		// Assert
+		cancelledEarly.Should().BeFalse(because: "the per-command bound is 10 s, not less");
+		commandToken.IsCancellationRequested.Should().BeTrue(because: "the command is abandoned when its 10 s pass");
+		result.Success.Should().BeFalse(because: "the page never opened");
+		result.Error.Should().Be("The browser did not answer Page.navigate within 10 s.",
+			because: "the caller learns which command the browser did not answer");
+		cdp.Disposed.Should().BeTrue(because: "the session is closed on every exit path");
+		await harness.Browser.Received(1).DisposeAsync();
+	}
+
+	[Test]
+	[Description("A step no command bound covers (launching the browser and attaching to its page) ends at the 100 s budget on the injected clock, with the budget reply; the launch is handed the budget token, so a browser it started is its own to dispose.")]
+	public async Task RunAsync_Should_Stop_At_The_100_Second_Budget() {
+		// Arrange
+		ManualTimeProvider time = new();
+		Harness harness = Create(timeProvider: time);
+		TaskCompletionSource<CancellationToken> launching = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		harness.Launcher.LaunchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call => {
+			CancellationToken token = call.ArgAt<CancellationToken>(1);
+			launching.TrySetResult(token);
+			return new TaskCompletionSource<IHeadlessBrowser>().Task.WaitAsync(token);
+		});
+		Task<PageSmokeResult> run = harness.Runner.RunAsync(Request(), CancellationToken.None);
+		CancellationToken budgetToken = await launching.Task.WaitAsync(Guard);
+
+		// Act
+		time.Advance(TimeSpan.FromMilliseconds(99_999));
+		bool cancelledEarly = budgetToken.IsCancellationRequested;
+		time.Advance(TimeSpan.FromMilliseconds(1));
+		PageSmokeResult result = await run.WaitAsync(Guard);
+
+		// Assert
+		cancelledEarly.Should().BeFalse(because: "the budget is 100 s, not less");
+		budgetToken.IsCancellationRequested.Should().BeTrue(because: "every step runs under the budget token");
+		result.Success.Should().BeFalse(because: "the check did not finish");
+		result.Error.Should().Be("The check ran out of its 100 s budget; what was read before is reported.",
+			because: "the answer gets out inside the worker's 120 s, saying the budget ended it");
+	}
+
+	[Test]
+	[Description("A caller that cancels mid-check gets the cancellation, not a reply, and the session and the browser are still disposed; no timer has to fire for it.")]
+	public async Task RunAsync_Should_Dispose_The_Browser_When_The_Caller_Cancels() {
+		// Arrange
+		ManualTimeProvider time = new();
+		FakeCdpSession cdp = new() { HangOn = "Page.navigate" };
+		Harness harness = Create(cdp, time);
+		using CancellationTokenSource caller = new();
+		Task<PageSmokeResult> run = harness.Runner.RunAsync(Request(), caller.Token);
+		CancellationToken commandToken = await cdp.Hung.Task.WaitAsync(Guard);
+
+		// Act
+		await caller.CancelAsync();
+		Func<Task> act = () => run.WaitAsync(Guard);
+
+		// Assert
+		await act.Should().ThrowAsync<OperationCanceledException>(
+			because: "a caller's cancellation is the caller's, and is not turned into a budget or browser error");
+		commandToken.IsCancellationRequested.Should().BeTrue(because: "the command in flight is cancelled with the call");
+		cdp.Disposed.Should().BeTrue(because: "the session is closed when the call is cancelled");
+		await harness.Browser.Received(1).DisposeAsync();
 	}
 }

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,15 +9,13 @@ using Clio.Command.RuntimeVerification;
 using Clio.Common;
 using Clio.Common.BrowserSession;
 using FluentAssertions;
-using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using NUnit.Framework;
 using ClioFileSystem = Clio.Common.FileSystem;
 
 namespace Clio.Tests.Common.BrowserSession;
 
 /// <summary>
-/// ENG-103032: the headless launcher, the CDP session and the Freedom UI page scripts against a REAL Chromium and a
+/// ENG-103032: the headless launcher (over its DevTools pipe), the CDP session and the Freedom UI page scripts against a REAL Chromium and a
 /// static page that reproduces the Freedom UI DOM contract. Ignored where no Chromium-based browser is installed.
 /// </summary>
 [TestFixture]
@@ -78,17 +75,20 @@ public sealed class HeadlessPageIntegrationTests {
 	}
 
 	[Test]
-	[Description("A real headless Chromium reports the fixture page ready, lists only its visible top-level buttons and fields from an isolated world, refuses an ambiguous caption, clicks a button, and the collector sees the console error, the uncaught exception and the hash navigation that followed; the page overriding a global after the click does not break the next script.")]
+	[Description("A real headless Chromium, driven over its DevTools pipe with no port open (no DevToolsActivePort, no listening TCP socket), reports the fixture page ready, lists only its visible top-level buttons and fields from an isolated world, refuses an ambiguous caption, clicks a button, and the collector sees the console error, the uncaught exception and the hash navigation that followed; the page overriding a global after the click does not break the next script.")]
 	public async Task HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page() {
 		// Arrange
 		ClioFileSystem fileSystem = new(new System.IO.Abstractions.FileSystem());
 		HeadlessBrowserLauncher launcher = CreateLauncher(fileSystem);
 		using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(60));
 		IHeadlessBrowser browser = await LaunchOrIgnoreAsync(launcher, timeout.Token);
+		TestContext.Progress.WriteLine("page test: browser attached over its pipe");
 		string profile = browser.ProfileDirectory;
 		bool profileCreated = Directory.Exists(profile);
 		try {
-			await using ICdpSession cdp = await new CdpSessionFactory().ConnectAsync(browser.PageWebSocketUrl, timeout.Token);
+			ICdpSession cdp = browser.Page;
+			IReadOnlyList<int> listeningBrowserProcesses = ListeningProcessesOf(profile);
+			TestContext.Progress.WriteLine("page test: listening sockets checked");
 			// Only the route is kept: the fixture's file:// address is longer than the collector's 120-character cut.
 			PageEventCollector events = new(url => url.Contains('#') ? url[url.IndexOf('#')..] : "page.html");
 			cdp.EventReceived += events.OnEvent;
@@ -112,6 +112,10 @@ public sealed class HeadlessPageIntegrationTests {
 			PageInventory afterTampering = await EvaluateAsync<PageInventory>(cdp, world, FreedomUiPageScripts.InventoryScript, timeout.Token);
 
 			// Assert
+			File.Exists(Path.Combine(profile, "DevToolsActivePort")).Should().BeFalse(
+				because: "Chromium writes DevToolsActivePort only when it opens a remote-debugging port, and page-smoke opens none");
+			listeningBrowserProcesses.Should().BeEmpty(
+				because: "no process of this browser may listen on a TCP socket another local process could attach to");
 			ready.State.Should().Be("ready", because: "the fixture has crt-root, the outlet, named elements and a hidden mask");
 			inventory.Title.Should().Be("Order 42", because: "the title is the PageTitle element");
 			inventory.Scope.Should().Be("page", because: "the outlet exists");
@@ -151,7 +155,9 @@ public sealed class HeadlessPageIntegrationTests {
 				because: "the page replaced Array.from in its own world, which the isolated world does not share");
 		}
 		finally {
+			TestContext.Progress.WriteLine("page test: disposing the browser");
 			await browser.DisposeAsync();
+			TestContext.Progress.WriteLine("page test: browser disposed");
 		}
 		profileCreated.Should().BeTrue(because: "every launch gets a fresh temporary profile");
 		Directory.Exists(profile).Should().BeFalse(because: "disposing the browser kills it and deletes its own profile");
@@ -177,21 +183,47 @@ public sealed class HeadlessPageIntegrationTests {
 		return world.GetProperty("executionContextId").GetInt32();
 	}
 
-	private static HeadlessBrowserLauncher CreateLauncher(ClioFileSystem fileSystem) {
-		IHttpClientFactory httpClientFactory = new ServiceCollection().AddHttpClient().BuildServiceProvider()
-			.GetRequiredService<IHttpClientFactory>();
-		return new HeadlessBrowserLauncher(new ChromiumLocator(fileSystem), new ProcessExecutor(Substitute.For<ILogger>()),
-			fileSystem, new FileSecurityHardening(), httpClientFactory);
+	private static HeadlessBrowserLauncher CreateLauncher(ClioFileSystem fileSystem) =>
+		new(new PipeBrowserSpawner(), fileSystem, new FileSecurityHardening());
+
+	// The ids of this browser's processes (every one carries its profile path on its command line) that hold a listening
+	// TCP socket, read with pgrep and lsof. Empty on Windows, where only the DevToolsActivePort check applies.
+	private static IReadOnlyList<int> ListeningProcessesOf(string profile) {
+		if (OperatingSystem.IsWindows()) {
+			return [];
+		}
+		HashSet<string> browser = [.. Run("pgrep", "-f", profile).Split('\n', StringSplitOptions.RemoveEmptyEntries)];
+		browser.Should().NotBeEmpty(because: "pgrep must find the running browser, or the socket check proves nothing");
+		// -F p prints one "p<pid>" line per process with a listening TCP socket.
+		return [.. Run("lsof", "-b", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "p").Split('\n', StringSplitOptions.RemoveEmptyEntries)
+			.Where(line => line.StartsWith('p') && browser.Contains(line[1..]))
+			.Select(line => int.Parse(line[1..], System.Globalization.CultureInfo.InvariantCulture))];
+	}
+
+	private static string Run(string program, params string[] arguments) {
+		System.Diagnostics.ProcessStartInfo start = new(program) { RedirectStandardOutput = true, UseShellExecute = false };
+		foreach (string argument in arguments) {
+			start.ArgumentList.Add(argument);
+		}
+		using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
+		Task<string> output = process.StandardOutput.ReadToEndAsync();
+		if (!process.WaitForExit(30_000)) {
+			process.Kill(entireProcessTree: true);
+			Assert.Fail($"{program} did not finish within 30 s.");
+		}
+		return output.GetAwaiter().GetResult();
 	}
 
 	private static async Task<IHeadlessBrowser> LaunchOrIgnoreAsync(HeadlessBrowserLauncher launcher, CancellationToken ct) {
+		string browserPath;
 		try {
-			return await launcher.LaunchAsync(ct);
+			browserPath = new ChromiumLocator(new ClioFileSystem(new System.IO.Abstractions.FileSystem())).Locate();
 		}
 		catch (ChromiumNotFoundException) {
 			Assert.Ignore("No Chromium-based browser on this machine.");
 			throw;
 		}
+		return await launcher.LaunchAsync(browserPath, ct);
 	}
 
 	private static async Task<PageReadyState> PollReadyAsync(ICdpSession cdp, string frameId, CancellationToken ct) {

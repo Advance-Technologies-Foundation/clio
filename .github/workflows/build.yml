@@ -242,6 +242,10 @@ jobs:
   # BoundedGetDeadlineTests is in the same filter for the same reason: its owner-only staging-directory
   # regression is Platform(Exclude = "Win"), so the Windows unit job skips it and only this leg gates the
   # 0700-at-creation guarantee for the raw response staged under the shared OS temp root.
+  # PipeBrowserSpawnerTests and HeadlessPageIntegrationTests ride along for the same reason (ENG-103330): page-smoke's
+  # browser gets its DevTools pipe through posix_spawn file actions whose opaque struct sizes and spawn flags differ
+  # between glibc and Darwin, and the Windows integration shards only exercise the CreateProcess path. The page test
+  # drives the runner's installed Chrome and also proves no browser process listens on a TCP socket.
   unix-file-mode-tests:
     name: Unix File Mode Tests (${{ matrix.os }})
     needs: changes
@@ -267,6 +271,8 @@ jobs:
 
       - name: Run Unix file-mode confidentiality tests
         shell: bash
+        # The leg takes about 3 minutes; a bound turns a hang into a failure that keeps its log.
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           # TestCategory, not the Category alias: the NUnit adapter can classify a mixed Category +
@@ -274,11 +280,22 @@ jobs:
           # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests)&TestCategory=Integration" \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests)&TestCategory=Integration" \
             -p:RunAnalyzers=false \
+            --logger "console;verbosity=normal" \
+            --blame-hang-timeout 5m \
             | tee unix-file-mode-tests.log
+          # The pipe tests must have RUN: HeadlessPageIntegrationTests ignores itself when no Chromium is found, and the
+          # confinement cases alone would still clear the floor below.
+          for name in Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page; do
+            if ! grep -Eq "Passed ${name}" unix-file-mode-tests.log; then
+              echo "::error::${name} did not pass on this leg (skipped, or no Chromium found)." >&2
+              exit 1
+            fi
+          done
           # Executed-count floor: a mis-selected filter that ran nothing (or a stray subset) must not pass
-          # silently. Both legs currently execute 32 cases; the floor leaves room for platform skips.
+          # silently. Both legs execute 32 confinement cases plus the two pipe tests; the floor leaves room for platform
+          # skips.
           passed=$(grep -Eo 'Passed:[[:space:]]+[0-9]+' unix-file-mode-tests.log | tail -1 | grep -Eo '[0-9]+' || echo 0)
           echo "Executed (passed) confinement cases: ${passed}"
           if [ "${passed}" -lt 20 ]; then

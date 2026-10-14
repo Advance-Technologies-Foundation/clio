@@ -84,6 +84,27 @@
 			"$ref": "#/definitions/dbhubsettings",
 			"description": "Local dbHub HTTP MCP server integration"
 		},
+		"page-smoke-browser": {
+			"type": "object",
+			"description": "The user's answer to page-smoke's browser question, so it is asked once. Delete this key to be asked again.",
+			"additionalProperties": false,
+			"properties": {
+				"choice": {
+					"type": "string",
+					"enum": ["existing", "download", "none"],
+					"description": "existing: use the browser at 'path' (installed, or cached by Playwright or Puppeteer); download: use chrome-headless-shell from Chrome for Testing, downloaded into ~/.clio/browsers/<version>/; none: page-smoke stays off"
+				},
+				"path": {
+					"type": "string",
+					"description": "With choice=existing: the browser executable the user chose"
+				},
+				"decided-at": {
+					"type": "string",
+					"format": "date-time",
+					"description": "When the user answered"
+				}
+			}
+		},
 		"Environments": {
 			"type": "object",
 			"patternProperties": {

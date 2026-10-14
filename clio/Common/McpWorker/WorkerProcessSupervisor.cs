@@ -189,6 +189,31 @@ public sealed class WorkerProcessSupervisor : IWorkerProcessSupervisor, IWorkerP
 		// cluster nobody chose, or a valid deployment rejected because the default context cannot see it.
 		// It is a path to a config file, not a secret.
 		"KUBECONFIG",
+		// WHERE WINDOWS INSTALLS PROGRAMS, and the operator's browser override (ENG-103286). page-smoke is
+		// worker-routed and launches a browser through ChromiumLocator, which expands %ProgramFiles% and
+		// %ProgramFiles(x86)% and honours CHROME_PATH. Without them a worker finds only a per-user Chrome
+		// under %LocalAppData%: Edge, which every Windows machine has under Program Files, and a machine-wide
+		// Chrome are missed, CHROME_PATH is ignored, and page-smoke answers "Chromium binary not found" while
+		// the CLI on the same machine finds the browser. The Program Files three are machine-wide install
+		// locations Windows sets for EVERY process (SystemRoot and windir are already here for the same
+		// reason): no cohort tool treats them as policy or as a secret, and the ones that start programs
+		// (deploy-creatio / uninstall-creatio) only get the environment the CLI already gives them.
+		// ProgramW6432 is the 64-bit location a 32-bit process sees instead of ProgramFiles. CHROME_PATH is a
+		// path to an executable the operator chose for clio; only ChromiumLocator reads it, and the parent
+		// would launch the same file.
+		"ProgramFiles",
+		"ProgramFiles(x86)",
+		"ProgramW6432",
+		"CHROME_PATH",
+		// Where page-smoke looks for a browser another tool already downloaded, and where it downloads one from
+		// (ENG-103287). Playwright's and Puppeteer's own cache overrides (and XDG_CACHE_HOME, which moves
+		// Playwright's Linux cache) are paths the user set for those tools; without them a worker offers a different
+		// list of browsers than the user's machine has. The Chrome for Testing mirror is a URL an operator sets for a
+		// network that reaches only a mirror; a worker without it would try Google directly and fail.
+		"PLAYWRIGHT_BROWSERS_PATH",
+		"PUPPETEER_CACHE_DIR",
+		"XDG_CACHE_HOME",
+		"CLIO_CHROME_FOR_TESTING_MIRROR",
 		"CLIO_MCP_RESPECT_AMBIENT_PROXY",
 		"CLIO_MCP_HEARTBEAT_INTERVAL_SECONDS",
 		"CLIO_CREATE_SECTION_TIMEOUT_SECONDS",
