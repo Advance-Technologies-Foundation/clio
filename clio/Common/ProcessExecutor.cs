@@ -125,6 +125,18 @@ public sealed record ProcessExecutionOptions {
 	public long? MaximumCapturedOutputCharacters { get; init; }
 
 	/// <summary>
+	/// Gets a value indicating whether a fire-and-forget child's standard output and standard error are
+	/// redirected and drained into nothing instead of inherited.
+	/// </summary>
+	/// <remarks>
+	/// Only <see cref="IProcessExecutor.FireAndForgetAsync"/> reads it. A detached child otherwise inherits this
+	/// process's stdout and stderr, and under the MCP server stdout is the JSON-RPC pipe: a chatty child (a
+	/// browser logging "DevTools listening on ...") would write into the protocol stream. The pipes are read to
+	/// the end in the background so the child can never block on a full one.
+	/// </remarks>
+	public bool DiscardOutput { get; init; }
+
+	/// <summary>
 	/// Gets the optional directory whose aggregate file size is monitored while the process runs.
 	/// </summary>
 	public string MonitoredDirectory { get; init; }
@@ -230,6 +242,16 @@ public sealed record ProcessLaunchResult {
 	/// Gets the UTC timestamp when launch was attempted.
 	/// </summary>
 	public DateTimeOffset StartedAtUtc { get; init; }
+
+	/// <summary>
+	/// Gets the started process's own start time (UTC), as the operating system records it, when it could be read.
+	/// </summary>
+	/// <remarks>
+	/// Half of the process identity: identifiers are reused, so a caller that later acts on
+	/// <see cref="ProcessId"/> (to kill it, say) must first check that the process carrying that id still has
+	/// this start time.
+	/// </remarks>
+	public DateTimeOffset? ProcessStartedAtUtc { get; init; }
 }
 
 /// <summary>
@@ -344,22 +366,34 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 		ValidateOptions(options);
 		DateTimeOffset startedAt = DateTimeOffset.UtcNow;
 
+		Process process = new();
+		bool drained = false;
 		try {
-			using Process process = new();
-			process.StartInfo = CreateStartInfo(options, redirectOutput: false);
+			process.StartInfo = CreateStartInfo(options, redirectOutput: options.DiscardOutput);
 
 			bool started = process.Start();
+			DateTimeOffset? processStartedAt = null;
 			if (started) {
 				// Closed explicitly rather than left to Process.Dispose, which only closes an unread
 				// StandardInput as an undocumented side effect of Close(). A detached child must reach EOF the
 				// moment it is launched: it outlives this method, and until the write end is closed it is
 				// holding a handle to whatever stdin this process has - the MCP server's JSON-RPC pipe included.
 				TryCloseStandardInput(process);
+				processStartedAt = TryReadStartTime(process);
+			}
+			// Read before the drain takes the Process: a child that already closed both pipes lets the drain finish,
+			// and dispose the Process, synchronously.
+			int? processId = started ? process.Id : null;
+			if (started && options.DiscardOutput) {
+				// The pipes outlive this method, so the drain owns the Process and disposes it once both end.
+				drained = true;
+				_ = DrainThenDisposeAsync(process);
 			}
 			return Task.FromResult(new ProcessLaunchResult {
 				Started = started,
-				ProcessId = started ? process.Id : null,
-				StartedAtUtc = startedAt
+				ProcessId = processId,
+				StartedAtUtc = startedAt,
+				ProcessStartedAtUtc = processStartedAt
 			});
 		}
 		catch (Exception ex) {
@@ -368,6 +402,38 @@ public class ProcessExecutor(ILogger logger) : IProcessExecutor{
 				ErrorMessage = ex.Message,
 				StartedAtUtc = startedAt
 			});
+		}
+		finally {
+			if (!drained) {
+				process.Dispose();
+			}
+		}
+	}
+
+	private static DateTimeOffset? TryReadStartTime(Process process) {
+		try {
+			return new DateTimeOffset(process.StartTime.ToUniversalTime(), TimeSpan.Zero);
+		}
+		catch (Exception exception) when (exception is InvalidOperationException or NotSupportedException
+			or System.ComponentModel.Win32Exception) {
+			// Exited already, or not readable: the caller then has no identity to check and must not act on the id.
+			return null;
+		}
+	}
+
+	// Reads both pipes to their end (the child's exit) into nothing, then releases the handle.
+	private static async Task DrainThenDisposeAsync(Process process) {
+		try {
+			await Task.WhenAll(
+				process.StandardOutput.BaseStream.CopyToAsync(Stream.Null),
+				process.StandardError.BaseStream.CopyToAsync(Stream.Null)).ConfigureAwait(false);
+		}
+		catch (Exception exception) when (exception is IOException or ObjectDisposedException
+			or InvalidOperationException) {
+			// A pipe that breaks is as finished as one that ends.
+		}
+		finally {
+			process.Dispose();
 		}
 	}
 

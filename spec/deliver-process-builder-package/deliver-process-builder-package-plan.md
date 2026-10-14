@@ -38,7 +38,7 @@ This plan deliberately implements the **clio-side half only**, with the artifact
 | Source on GHE | **Already done** — `creatio.ghe.com/engineering/crt-process-builder`, branch `main` | — |
 | Rename package → `CrtProcessBuilder` | **IN SCOPE** (P0) | this ticket |
 | CI build (TeamCity, composable-app style) | **SKIPPED** — manual, documented runbook instead | ENG-92113 |
-| Deliver `.gz` to `\\tscrm.com\dfs-ts\…` + build registration | **SKIPPED** | ENG-92113 |
+| Deliver `.gz` to `<SDLC build share>\…` + build registration | **SKIPPED** | ENG-92113 |
 | `.gz` committed into clio + bundled in the packed tool | **IN SCOPE** (P2) | this ticket |
 | clio release ships it | **IN SCOPE** (P2 — falls out of the csproj `Content` entry) | this ticket |
 | clio detects the package is required and offers the install | **IN SCOPE** (P3, P4) | this ticket |

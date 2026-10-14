@@ -497,7 +497,7 @@ public class CreateBusinessProcessCommand(
 	// ENG-103023 the read-back always runs, because the same read is the post-write summary the caller gets
 	// instead of a describe of its own - the guards below still run only when the descriptor asked for them.
 	// Hands out the read-back for the digest (null when there was nothing to read back) as soon as it is taken,
-	// and returns whether a guard already warned that the read-back failed or could not be taken, so the digest does not warn about it twice.
+	// and returns whether the reply already says why there is no read-back (a guard warned that it failed or could not be taken, or a caller was not read back), so the digest does not say it twice.
 	private bool WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options,
 		string? schemaName, out ErrorOr<DescribeProcessResult>? readBack) {
 		readBack = null;
@@ -519,6 +519,12 @@ public class CreateBusinessProcessCommand(
 			bool rightsWarned = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noName);
 			bool labelsWarned = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noName);
 			return rightsWarned || labelsWarned;
+		}
+		// A read would pin a CALLER to its callees' current parameters (ENG-103165), so a caller is read back only
+		// when a guard needs the read, as before ENG-103023. The reply says why there is no summary.
+		if (!guarded && ProcessWriteDigest.DescriptorCallsAnotherProcess(options.DescriptorJson)) {
+			logger.WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+			return true;
 		}
 
 		// Version facts ARE read, best-effort on a short budget: the guards consume elements[] only, but the digest

@@ -507,7 +507,7 @@ by the other two routes.
 
 ## DQ-25 — the manual pass, and the one gap it turns into a decision
 
-Run 2026-09-17 against `http://d_krestov_n.tscrm.com:40001/` at CrtProcessBuilder **1.6.3.6**, knowledge
+Run 2026-09-17 against `http://<dev-stand>:40001/` at CrtProcessBuilder **1.6.3.6**, knowledge
 library 1.16.0, in an isolated session. **11 PASS / 2 FAIL, nothing blocked.** Report:
 `C:\Projects\eng92707-manual-test\eng-92707-manual-test-report.md`.
 

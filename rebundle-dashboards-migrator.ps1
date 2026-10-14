@@ -22,10 +22,10 @@
     SHA-256 of the build zip.
 
 .PARAMETER BuildZip
-    The SDLC build zip, e.g. \\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip
+    The SDLC build zip, e.g. <SDLC build share>\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip
 
 .EXAMPLE
-    ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip' -Configuration Debug -Framework net8.0
+    PS> ./rebundle-dashboards-migrator.ps1 -BuildZip '<SDLC build share>\ComposableApps\CrtDashboardsMigratorApp\1.1.4\CrtDashboardsMigratorApp_1.1.4.zip' -Configuration Debug -Framework net8.0
 #>
 [CmdletBinding()]
 param(

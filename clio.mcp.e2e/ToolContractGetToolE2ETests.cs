@@ -89,8 +89,8 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
 		string[] names = unknownFirst
-			? ["page-updte", known, "missing-tool-two"]
-			: [known, "page-updte", "missing-tool-two"];
+			? ["update-pgae", known, "missing-tool-two"]
+			: [known, "update-pgae", "missing-tool-two"];
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(context.Session,
@@ -104,7 +104,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			response.Tools!.Select(item => item.Name).Should().Equal([known],
 				because: "unknown names must not discard the registered tool contract"));
 		AllureApi.Step("Assert every miss is identified", () =>
-			response.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+			response.NotFound!.Select(item => item.Name).Should().Equal(["update-pgae", "missing-tool-two"],
 				because: "both unknown names need separate diagnostics"));
 		AllureApi.Step("Assert suggestions survive serialization", () =>
 			response.NotFound![0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
@@ -1186,7 +1186,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["tool-names"] = new[] { "page-updte" }
+				["tool-names"] = new[] { "update-pgae" }
 			});
 
 		// Assert

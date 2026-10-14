@@ -597,10 +597,16 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	internal static CallToolResult BudgetExpiredResult(
 		string toolName, TimeSpan budget, WorkerStandardErrorTail standardErrorTail) {
 		string seconds = FormatSeconds(budget);
+		// A browser check may have pressed the button it was asked to click before it was killed, so "safe to
+		// retry" would invite a second press: the caller is told to look before it repeats a click.
+		bool mayHaveWritten = McpWorkerCohort.BrowserCheckNames.Contains(toolName, StringComparer.OrdinalIgnoreCase);
 		string text = WithStandardErrorBoundNote(
 			$"MCP tool '{toolName}' did not answer within its {seconds}s worker budget "
 			+ $"(error-class={BudgetExpiredErrorClass}), so clio terminated the worker process that was "
-			+ "running it. Nothing else in this environment was affected and the call is safe to retry.",
+			+ (mayHaveWritten
+				? "running it. If the call asked for a click, the button may have been pressed: read the watched "
+					+ "entities before retrying. Without a click the call is safe to retry."
+				: "running it. Nothing else in this environment was affected and the call is safe to retry."),
 			standardErrorTail);
 		JsonObject payload = new() {
 			["success"] = false,
@@ -609,12 +615,15 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 			["tool"] = toolName,
 			["budget-seconds"] = int.Parse(seconds, CultureInfo.InvariantCulture),
 			["error"] = text,
-			["retry-guidance"] =
-				"The Creatio stand did not answer in time. Unlike the in-process deadline this replaces, the "
-				+ "work was terminated rather than abandoned, so no later call for this environment is "
-				+ "affected: retry the same call, or narrow it (smaller limit, tighter filter) and retry. "
-				+ $"Raise the budget with the {BudgetOverrideEnvVar} environment variable if the stand is "
-				+ "legitimately slow."
+			["retry-guidance"] = mayHaveWritten
+				? "The worker was terminated mid-check. A click may already have been pressed and its records "
+					+ "written (nothing reported them), so read the watched entities before repeating a click; a "
+					+ "check without a click can be retried as is, or with a shorter timeout."
+				: "The Creatio stand did not answer in time. Unlike the in-process deadline this replaces, the "
+					+ "work was terminated rather than abandoned, so no later call for this environment is "
+					+ "affected: retry the same call, or narrow it (smaller limit, tighter filter) and retry. "
+					+ $"Raise the budget with the {BudgetOverrideEnvVar} environment variable if the stand is "
+					+ "legitimately slow."
 		};
 		AttachWorkerDiagnostics(payload, standardErrorTail);
 		return new CallToolResult {
