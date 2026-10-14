@@ -68,6 +68,13 @@ public sealed class AmbientProxy : IWebProxy {
 		return null;
 	}
 
+	// The handler embeds the proxy URI in its own error text (a 407 tunnel failure names it), so the URI it gets never
+	// carries the user:password; CredentialFor still finds the credentials by scheme, host and port.
+	private static Uri WithoutUserInfo(Uri proxy) =>
+		proxy is null || string.IsNullOrEmpty(proxy.UserInfo)
+			? proxy
+			: new UriBuilder(proxy) { UserName = string.Empty, Password = string.Empty }.Uri;
+
 	private static Uri Parse(string configured) {
 		if (configured is null) {
 			return null;
@@ -81,7 +88,7 @@ public sealed class AmbientProxy : IWebProxy {
 	/// <inheritdoc />
 	public Uri GetProxy(Uri destination) {
 		string configured = Configured(destination);
-		return configured is null ? SystemProxyFor(destination) : Parse(configured);
+		return configured is null ? SystemProxyFor(destination) : WithoutUserInfo(Parse(configured));
 	}
 
 	/// <inheritdoc />

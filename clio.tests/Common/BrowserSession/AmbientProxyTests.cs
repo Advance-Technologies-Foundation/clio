@@ -131,4 +131,20 @@ public sealed class AmbientProxyTests {
 		forSystemProxy.Should().BeNull(because: "a credential written for proxy.corp never reaches another proxy");
 		forOtherPort.Should().BeNull(because: "the credential is keyed by scheme, host AND port");
 	}
+
+	[Test]
+	[Description("The proxy URI handed to the handler carries no user:password (the handler writes it into its own error text), while the credentials are still found for that proxy.")]
+	public void GetProxy_Should_Return_The_Proxy_Without_Its_User_Info() {
+		// Arrange
+		AmbientProxy proxy = Proxy(new() { ["HTTPS_PROXY"] = "http://agent:s3cr3t@proxy.corp:3128" });
+
+		// Act
+		Uri used = proxy.GetProxy(new Uri("https://storage.googleapis.com/x.zip"));
+
+		// Assert
+		used.UserInfo.Should().BeEmpty(because: "a password in the URI would surface in a 407 error message");
+		used.ToString().Should().NotContain("s3cr3t", because: "the URI text is what .NET embeds in its errors");
+		proxy.Credentials.GetCredential(used, "Basic").Password.Should().Be("s3cr3t",
+			because: "the handler still authenticates to the proxy the user configured");
+	}
 }
