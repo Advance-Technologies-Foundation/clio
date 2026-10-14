@@ -2400,7 +2400,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: addParameter rejects an unsupported (complex) type — Binary — with a clear error, even though the platform resolves that type name.")]
+	[Description("Over the real MCP path: addParameter rejects Binary with a clear error, even though the platform resolves that type name. Refused for good: a file is type File - a process parameter carries a file by reference (File, or FileCollection for several), never its bytes.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects an unsupported parameter type")]
 	public async Task ModifyBusinessProcess_Should_RejectUnsupportedParameterType() {
@@ -2412,7 +2412,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["descriptor"] = BuildDescriptor(processName)
 		});
 
-		// Act — try to add a Binary parameter (a deferred complex type)
+		// Act — try to add a Binary parameter (refused for good: a file is type File)
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -2422,7 +2422,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Assert
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("not supported",
-			because: "only the supported scalar / lookup types may be created");
+			because: "Binary is never a supported process parameter type: a file is carried by reference as File or FileCollection");
 		callResultJson.Should().Contain("Binary",
 			because: "the rejection names the unsupported type");
 	}
