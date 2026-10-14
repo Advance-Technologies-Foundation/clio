@@ -2087,8 +2087,8 @@ public sealed class DescribedParameter {
 	/// an item of a collection output included), or that reads ONE column of a record another element returned (the
 	/// three-segment <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
 	/// <see cref="SourceElementParameter"/> (and <see cref="SourceColumn"/> for the column form) only when the server
-	/// can name them AND those names re-apply to the identical stored value without changing any other level of the
-	/// binding, so they feed straight back into <c>addMapping</c>. Null for every other value. The column form needs a
+	/// can name them AND those names re-apply to the identical stored value (for the element-output form, also without
+	/// changing any other level of the binding), so they feed straight back into <c>addMapping</c>. Null for every other value. The column form needs a
 	/// <c>CrtProcessBuilder</c> from 1.6.6.40, the element-output form one from 1.6.6.98; an older one omits them.
 	/// </summary>
 	[JsonPropertyName("sourceElement")]

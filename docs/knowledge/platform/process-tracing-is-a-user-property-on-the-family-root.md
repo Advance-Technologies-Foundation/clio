@@ -4,7 +4,7 @@ applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
   - clio.mcp.e2e/ProcessTracingToolE2ETests.cs
 ticket: ENG-102111
-date: 2026-10-09
+date: 2026-10-14
 ---
 
 **What is true** — the "Enable tracing" switch of a business process (`BaseProcessSchema.IsTracing`) is a platform
@@ -16,8 +16,10 @@ the family root, so the root's switch traces every version. Switching it off wri
 (measured 2026-10-09 on a .NET Framework stand); the platform's daily `ProcessTracingDisablerJob` writes the same
 `False` once `ProcessParameterTracingDisableTimeoutDays` days have passed since the switch-on (0 = never). The trace
 itself lands in `SysPrcElementTraceLog`, two rows per executed task (events write none, and neither do Formula
-tasks: measured 2026-10-14). The switch traces only its own process: a called process's elements are traced
-only when the callee itself is switched on. A trace is not evidence of a callee's inputs
+tasks: measured 2026-10-14). On 2026-10-14 a traced caller's MULTI-INSTANCE callee wrote trace rows for its own
+elements only once the callee itself was switched on; the platform source suggests a traced caller traces its callee
+(`Process.GetIsTracing` reads `Owner.IsTracing`, `Terrasoft.Core/Process/Process.cs:700-709`), so the multi-instance
+case is unexplained - switch the callee on when you need its trace. A trace is not evidence of a callee's inputs
 (`process-tracing-shows-a-callee-input-as-null.md`).
 
 **Why it is this way** — the platform models tracing as an environment-local, temporary diagnostic, not as part of the

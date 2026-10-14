@@ -20,8 +20,7 @@ parameters before the per-iteration values are applied; the `Name` value is what
 point, not what the callee's elements read.
 
 **What breaks if you ignore it** — the trace makes a working multi-instance mapping look broken, and an evidence
-review built on it discards a valid measurement (it nearly voided a correct "3 iterations, all values set"
-result of ENG-92719 the same day). The reliable oracle: in the callee, an exclusive gateway with a conditional flow
+review built on it discards a valid measurement. The reliable oracle: in the callee, an exclusive gateway with a conditional flow
 (`string.IsNullOrEmpty([#Email#])`, or `[#File#] == null`) to a Formula task captioned "M empty" and a default flow
 to one captioned "M set"; then count `SysProcessElementLog` rows by `Caption`, filtered on
 `SysProcess.SysSchema.Name` (ESQ). It proves a value arrived, not which one; a further conditional flow comparing

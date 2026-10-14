@@ -19,4 +19,4 @@ parameter; the designer's client never writes the key for a process-level parame
 **What breaks if you ignore it** — nothing at run time. The trap is in verification: a byte comparison
 of builder metadata against a designer capture reports `IL2` as a difference on every parameter and
 hides the real ones. Normalise it (the ENG-95984 comparison treated a process-level `IL2` equal to the
-process UId as absent) instead of "fixing" the builder, which would change the stored shape of every process it has ever created.
+process UId as absent) instead of "fixing" the builder: removing it would change only future writes, so old and new builder processes would then differ, for no run-time gain.

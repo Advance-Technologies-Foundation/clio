@@ -7,8 +7,10 @@ date: 2026-10-14
 ---
 
 **What is true** — the schema key `B8` in a process `metadata.json` is `CreatedInVersion`
-(`Terrasoft.Core/Schema.cs:82`, platform source), stamped when the schema is created (`:143`;
-`Terrasoft.Core/Process/BaseProcessSchemaManager.cs:903`) and never on a later save. When a shipped
+(`Terrasoft.Core/Schema.cs:82`, platform source). It is stamped with the running platform version when a design
+instance is created (`Terrasoft.Core/Process/BaseProcessSchemaManager.cs:903`) or a schema object is copied
+(`Schema.cs:143`), and read back from the metadata on load (`Schema.cs:496`), so a save of a loaded schema keeps
+it: a designer save of a builder process left `B8` unchanged (measured 2026-10-14). When a shipped
 capture was last saved by a designer is therefore not recorded anywhere in it. The only datable signal is
 parameter-set drift: an element that lacks a parameter its user-task template gained later (for example
 `TargetDataEntitySchemaUId` on a Process file element) was last saved before the template gained it.

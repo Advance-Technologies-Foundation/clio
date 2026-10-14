@@ -397,6 +397,21 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The describe prompt narrates both decoded parameter sources the tool reports - a whole element output and one column of a record - so an agent does not read an element-output binding (sourceElement without sourceColumn) as a column (ENG-95984, gate-3 review).")]
+	public void DescribeProcessPrompt_ShouldNarrateTheElementOutputSource_WhenRendered() {
+		// Arrange
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Act
+		// (nothing to act on - the prompt text is the contract under test)
+
+		// Assert
+		prompt.Should().Contain("another element's output and a value reading ONE column of its record",
+			because: "the prompt must match the tool contract, which decodes a whole element output as well as one column");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe contract's rebuild rule names its FileCollection exception (ENG-95984, gate-1 review): a parameter described as FileCollection carries no tag and has no source element to mirror, so 'feed it back through typeFromElement' cannot be followed for it; it is declared by type, and the rebuild names its item File.")]
 	public void DescribeProcess_ShouldNameTheFileCollectionException_ToTheRebuildRule() {
 		// Arrange
