@@ -5102,10 +5102,11 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Builds the per-breakpoint layout for every MULTI-column <c>crt.GridContainer</c>: on the phone
-	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order (web row order inside a band grid); on tablet
+	/// (<c>small</c>) it collapses to ONE column and stacks the children in tree order; on tablet
 	/// (<c>medium</c> / <c>large</c>, identical) it cuts the web grid into bands of rows sharing one column
-	/// structure (see <see cref="SplitIntoBands"/>). One band keeps one weighted grid (see <see cref="BuildTabletGrid"/>);
-	/// several bands become a one-column stack of band grids (see <see cref="PlaceInBands"/>). A grid with a single web column gets NO adaptive (the mobile client
+	/// structure (see <see cref="BandsOf"/>). One band keeps one grid weighted by <see cref="LayOutBand"/>; several
+	/// bands become a one-column stack of band grids (see <see cref="PlaceInBands"/>); a grid that cannot be banded
+	/// falls back to <see cref="BuildTabletGrid"/>. A grid with a single web column gets NO adaptive (the mobile client
 	/// renders the plain layout). Both sides are baked deterministically: the container columns into the
 	/// container's own mobileValues, and each child's <c>layoutConfig.adaptive</c> (replacing the base
 	/// placement) into the child's mobileValues. Also returns an advisory group per converted container.
@@ -5250,24 +5251,33 @@ public static partial class WebToMobileAnalysisService {
 				 IsMerge(e)) &&
 				string.Equals(e.Name, container, StringComparison.OrdinalIgnoreCase));
 
-			List<List<int>> bands = SplitIntoBands(cells);
-			bool canBand = bands is { Count: > 1 }
-				&& IsInsert(containerEntry)
-				&& string.Equals(containerEntry?.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)
-				&& children.All(IsInsert)
-				&& bands.All(band => band.Select(i => cells[i].Column).Distinct().Count() <= MobileGridMaxColumns);
-			if (canBand) {
+			List<List<int>> bands = BandsOf(containerEntry, children, cells);
+			if (bands is { Count: > 1 }) {
 				groups.AddRange(PlaceInBands(elementMap, containerEntry, container, children, cells, bands, takenNames));
 				continue;
 			}
 
-			TabletGrid tablet = BuildTabletGrid(children, cells);
+			IReadOnlyList<string> weights;
+			var tabletCells = new (int Column, int Row)[children.Count];
+			if (bands is { Count: 1 }) {
+				BandLayout layout = LayOutBand(cells, bands[0]);
+				weights = layout.Weights;
+				foreach (KeyValuePair<int, (int Column, int Row)> cell in layout.Cells) {
+					tabletCells[cell.Key] = cell.Value;
+				}
+			} else {
+				TabletGrid tablet = BuildTabletGrid(children, cells);
+				weights = tablet.Weights;
+				for (int i = 0; i < children.Count; i++) {
+					tabletCells[i] = (tablet.ChildColumns[i], tablet.ChildRows[i]);
+				}
+			}
 			var items = new List<AdaptiveLayoutItem>();
 			for (int i = 0; i < children.Count; i++) {
-				items.Add(PlaceAdaptive(children[i], AdaptiveCell(1, i + 1), AdaptiveCell(tablet.ChildColumns[i], tablet.ChildRows[i])));
+				items.Add(PlaceAdaptive(children[i], AdaptiveCell(1, i + 1), AdaptiveCell(tabletCells[i].Column, tabletCells[i].Row)));
 			}
-			WriteContainerColumns(containerEntry, tablet.Weights);
-			groups.Add(LayoutGroup(container, tablet.Weights, items));
+			WriteContainerColumns(containerEntry, weights);
+			groups.Add(LayoutGroup(container, weights, items));
 		}
 		return groups;
 	}
@@ -5325,6 +5335,25 @@ public static partial class WebToMobileAnalysisService {
 	}
 
 	/// <summary>
+	/// The bands of a grid this pass lays out with band weights, or null when it falls back to
+	/// <see cref="BuildTabletGrid"/>: a template grid may own children the converter never sees, a template-twin
+	/// child cannot be re-parented, a child of one row covers another's start column, a spanned row breaks its band,
+	/// or a band has more than <see cref="MobileGridMaxColumns"/> start columns.
+	/// </summary>
+	private static List<List<int>> BandsOf(
+		ElementMapEntry containerEntry, IReadOnlyList<ElementMapEntry> children, IReadOnlyList<WebCell> cells) {
+		if (!IsInsert(containerEntry)
+			|| !string.Equals(containerEntry.MobileType, MobileGridContainerComponentType, StringComparison.OrdinalIgnoreCase)
+			|| !children.All(IsInsert)) {
+			return null;
+		}
+		List<List<int>> bands = SplitIntoBands(cells);
+		return bands is not null && bands.All(band => band.Select(i => cells[i].Column).Distinct().Count() <= MobileGridMaxColumns)
+			? bands
+			: null;
+	}
+
+	/// <summary>
 	/// Cuts the web grid into horizontal bands of consecutive rows that share one column structure: a row joins
 	/// the current band while no child of the band or the row covers another child's start column. Rows a
 	/// <c>rowSpan</c> covers stay in their band. Returns the child indices of each band, or null when no banding is
@@ -5341,7 +5370,7 @@ public static partial class WebToMobileAnalysisService {
 				return null;
 			}
 			List<int> current = bands.Count > 0 ? bands[^1] : null;
-			bool joins = current is not null && SharesColumnStructure(cells, current, rowChildren);
+			bool joins = current is not null && RowFitsBand(cells, current, rowChildren);
 			if (current is not null && row.Key <= coveredThroughRow && !joins) {
 				return null;
 			}
@@ -5361,10 +5390,10 @@ public static partial class WebToMobileAnalysisService {
 		members.All(a => members.All(b => a == b || !Covers(cells[a], cells[b])));
 
 	/// <summary>
-	/// <see cref="SharesColumnStructure(IReadOnlyList{WebCell}, IReadOnlyList{int})"/> for the union of two
-	/// groups that each already share one: only the pairs across the groups are checked.
+	/// True when <paramref name="row"/> joins <paramref name="band"/> without breaking its column structure. Both
+	/// already share one, so only the pairs across them are checked.
 	/// </summary>
-	private static bool SharesColumnStructure(IReadOnlyList<WebCell> cells, IReadOnlyList<int> band, IReadOnlyList<int> row) =>
+	private static bool RowFitsBand(IReadOnlyList<WebCell> cells, IReadOnlyList<int> band, IReadOnlyList<int> row) =>
 		band.All(a => row.All(b => !Covers(cells[a], cells[b]) && !Covers(cells[b], cells[a])));
 
 	private static bool Covers(WebCell wide, WebCell other) =>
@@ -5372,55 +5401,77 @@ public static partial class WebToMobileAnalysisService {
 
 	/// <summary>
 	/// Lays a grid of several bands out on tablet as a one-column stack: a band with one column keeps its children
-	/// in the container, a band with several columns becomes a new <c>crt.GridContainer</c> weighted by the band's
-	/// own column structure. The new grids are inserted into the element map right before their first child, so a
-	/// parent is always created before the children moved into it.
+	/// in the container, a band with several columns becomes a new <c>crt.GridContainer</c> laid out by
+	/// <see cref="LayOutBand"/>. The new grids are inserted into the element map right before their first child, so
+	/// a parent is always created before the children moved into it. The phone keeps tree order, inside a band grid
+	/// and between the container's rows alike.
 	/// </summary>
 	private static List<AdaptiveLayoutGroup> PlaceInBands(
 		List<ElementMapEntry> elementMap, ElementMapEntry containerEntry, string container,
 		List<ElementMapEntry> children, List<WebCell> cells, List<List<int>> bands, HashSet<string> takenNames) {
 		var groups = new List<AdaptiveLayoutGroup>();
-		var units = new List<AdaptiveLayoutItem>();
+		var units = new List<(ElementMapEntry Entry, int TreeIndex)>();
 		int bandNumber = 0;
 		foreach (List<int> band in bands) {
 			List<int> ordered = [.. band.OrderBy(i => cells[i].Row).ThenBy(i => cells[i].Column)];
-			int[] starts = [.. ordered.Select(i => cells[i].Column).Distinct().Order()];
-			if (starts.Length == 1) {
-				foreach (int i in ordered) {
-					int unitRow = units.Count + 1;
-					units.Add(PlaceAdaptive(children[i], AdaptiveCell(1, unitRow), AdaptiveCell(1, unitRow)));
-				}
+			if (ordered.Select(i => cells[i].Column).Distinct().Count() == 1) {
+				units.AddRange(ordered.Select(i => (children[i], i)));
 				continue;
 			}
 
-			int[] spans = [.. starts.Select((start, k) => Math.Min(
-				ordered.Where(i => cells[i].Column == start).Max(i => cells[i].Span),
-				k + 1 < starts.Length ? starts[k + 1] - start : int.MaxValue))];
-			int divisor = spans.Aggregate(0, Gcd);
-			List<string> weights = [.. spans.Select(w => $"{w / divisor}fr")];
-			int firstRow = cells[ordered[0]].Row;
-			List<WebCell> bandCells = [.. ordered.Select(i => cells[i] with { Row = cells[i].Row - firstRow + 1 })];
-			int[] bandColumns = [.. ordered.Select(i => Array.IndexOf(starts, cells[i].Column))];
-			(int[] placedColumns, int[] placedRows) = PlaceInRows(bandCells, bandColumns, new bool[starts.Length]);
-
+			BandLayout layout = LayOutBand(cells, band);
 			string bandName = BandName(container, ++bandNumber, takenNames);
-			ElementMapEntry bandEntry = BandGridEntry(bandName, container, containerEntry, weights);
-			elementMap.Insert(ordered.Min(i => elementMap.IndexOf(children[i])), bandEntry);
-			int bandRow = units.Count + 1;
-			units.Add(PlaceAdaptive(bandEntry, AdaptiveCell(1, bandRow), AdaptiveCell(1, bandRow)));
+			ElementMapEntry bandEntry = BandGridEntry(bandName, container, containerEntry, layout.Weights);
+			elementMap.Insert(band.Min(i => elementMap.IndexOf(children[i])), bandEntry);
+			units.Add((bandEntry, band.Min()));
 
+			List<int> treeOrder = [.. band.Order()];
 			var bandItems = new List<AdaptiveLayoutItem>();
-			for (int j = 0; j < ordered.Count; j++) {
-				ElementMapEntry child = children[ordered[j]];
+			foreach (int i in ordered) {
+				ElementMapEntry child = children[i];
 				child.ParentName = bandName;
 				child.PropertyName = ItemsPropertyName;
-				bandItems.Add(PlaceAdaptive(child, AdaptiveCell(1, j + 1), AdaptiveCell(placedColumns[j], placedRows[j])));
+				child.Index = null;
+				(int column, int row) = layout.Cells[i];
+				bandItems.Add(PlaceAdaptive(child, AdaptiveCell(1, treeOrder.IndexOf(i) + 1), AdaptiveCell(column, row)));
 			}
-			groups.Add(LayoutGroup(bandName, weights, bandItems));
+			groups.Add(LayoutGroup(bandName, layout.Weights, bandItems));
 		}
+		List<int> phoneOrder = [.. Enumerable.Range(0, units.Count).OrderBy(u => units[u].TreeIndex)];
+		List<AdaptiveLayoutItem> unitItems = [.. units.Select((unit, u) =>
+			PlaceAdaptive(unit.Entry, AdaptiveCell(1, phoneOrder.IndexOf(u) + 1), AdaptiveCell(1, u + 1)))];
 		WriteContainerColumns(containerEntry, StackedColumns);
-		groups.Insert(0, LayoutGroup(container, StackedColumns, units));
+		groups.Insert(0, LayoutGroup(container, StackedColumns, unitItems));
 		return groups;
+	}
+
+	/// <summary>Tablet layout of one band: column weights, and each band child's 1-based cell keyed by child index.</summary>
+	private sealed record BandLayout(IReadOnlyList<string> Weights, IReadOnlyDictionary<int, (int Column, int Row)> Cells);
+
+	/// <summary>
+	/// Lays one band out: a column per distinct start column, weighted by the widest <c>colSpan</c> starting there
+	/// (clipped at the next start) and reduced by the GCD; each child goes to the column of its start, rows counted
+	/// from the band's first row.
+	/// </summary>
+	private static BandLayout LayOutBand(IReadOnlyList<WebCell> cells, IReadOnlyList<int> band) {
+		List<int> ordered = [.. band.OrderBy(i => cells[i].Row).ThenBy(i => cells[i].Column)];
+		int[] starts = [.. ordered.Select(i => cells[i].Column).Distinct().Order()];
+		int[] spans = [.. starts.Select((start, k) => Math.Min(
+			ordered.Where(i => cells[i].Column == start).Max(i => cells[i].Span),
+			k + 1 < starts.Length ? starts[k + 1] - start : int.MaxValue))];
+		int firstRow = cells[ordered[0]].Row;
+		List<WebCell> bandCells = [.. ordered.Select(i => cells[i] with { Row = cells[i].Row - firstRow + 1 })];
+		int[] bandColumns = [.. ordered.Select(i => Array.IndexOf(starts, cells[i].Column))];
+		(int[] placedColumns, int[] placedRows) = PlaceInRows(bandCells, bandColumns, new bool[starts.Length]);
+		return new BandLayout(
+			ReducedWeights(spans),
+			ordered.Select((i, j) => (i, j)).ToDictionary(p => p.i, p => (placedColumns[p.j], placedRows[p.j])));
+	}
+
+	/// <summary>The weights as <c>"&lt;n&gt;fr"</c> tracks, divided by their GCD.</summary>
+	private static List<string> ReducedWeights(IReadOnlyList<int> weights) {
+		int divisor = weights.Aggregate(0, Gcd);
+		return [.. weights.Select(w => $"{w / divisor}fr")];
 
 		static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
 	}
@@ -5495,8 +5546,7 @@ public static partial class WebToMobileAnalysisService {
 	/// does not exceed its own start column. A list outside the reference row that spans past its slot merges
 	/// every slot it covers into one column, summing their weights; a wider field just takes its slot. Weights are
 	/// reduced by their GCD. Unused web width (gaps, an empty trailing column) is dropped on purpose, while the
-	/// first boundary is 1 so every child has a slot. Used for a grid of one band, and as the fallback when a grid
-	/// cannot be cut into bands.
+	/// first boundary is 1 so every child has a slot. The fallback for a grid <see cref="BandsOf"/> does not lay out.
 	/// </summary>
 	private static TabletGrid BuildTabletGrid(IReadOnlyList<ElementMapEntry> children, IReadOnlyList<WebCell> cells) {
 		int referenceRow = cells
@@ -5535,15 +5585,12 @@ public static partial class WebToMobileAnalysisService {
 			weights[columnOfSlot[k]] += reference[k].Span;
 			slotsPerColumn[columnOfSlot[k]]++;
 		}
-		int divisor = weights.Aggregate(0, Gcd);
-		List<string> columns = weights.Select(w => $"{w / divisor}fr").ToList();
+		List<string> columns = ReducedWeights(weights);
 
 		int[] childColumns = slots.Select(s => columnOfSlot[s]).ToArray();
 		bool[] isMergedColumn = slotsPerColumn.Select(n => n > 1).ToArray();
 		(int[] placedColumns, int[] placedRows) = PlaceInRows(cells, childColumns, isMergedColumn);
 		return new TabletGrid(columns, placedColumns, placedRows);
-
-		static int Gcd(int a, int b) => b == 0 ? a : Gcd(b, a % b);
 	}
 
 	/// <summary>Index of the last boundary not greater than <paramref name="column"/>; 0 when none is.</summary>
@@ -5601,8 +5648,9 @@ public static partial class WebToMobileAnalysisService {
 	/// Falls back to a left-to-right flow (<paramref name="cols"/> per row) using the child's
 	/// <paramref name="index"/> when the source declared no position, and to a span of 1.
 	/// <para>
-	/// The span feeds only the tablet column WEIGHTS (<see cref="BuildTabletGrid"/>); it never reaches a placement,
-	/// because a mobile grid gives every item exactly one cell — see <see cref="SpanKeys"/>.
+	/// The span decides the tablet bands, the column weights and, in the fallback, list-slot merging; it never reaches a
+	/// placement, because a mobile grid gives every item exactly one cell — see <see cref="SpanKeys"/>. It is clamped to
+	/// the web columns left from the child's start.
 	/// </para>
 	/// </summary>
 	private static WebCell WebCellOf(
@@ -5612,7 +5660,7 @@ public static partial class WebToMobileAnalysisService {
 		int row = Math.Clamp((lc is null ? null : ReadInt(lc, "row")) ?? (index / cols) + 1, 1, MaxWebPosition);
 		int span = (lc is null ? null : ReadInt(lc, "colSpan")) ?? 1;
 		int rowSpan = (lc is null ? null : ReadInt(lc, "rowSpan")) ?? 1;
-		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols)), Math.Clamp(rowSpan, 1, MaxWebPosition));
+		return new WebCell(column, row, Math.Clamp(span, 1, Math.Max(1, cols - column + 1)), Math.Clamp(rowSpan, 1, MaxWebPosition));
 	}
 
 	/// <summary>A JSON array of the given column track sizes.</summary>

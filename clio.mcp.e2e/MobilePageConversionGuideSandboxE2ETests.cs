@@ -807,6 +807,15 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 					i.LayoutConfigAdaptive["medium"]!["row"]!.GetValue<int>()))
 				.Should().OnlyHaveUniqueItems(
 					because: $"'{group.ContainerName}': two children in one tablet cell overlap on the designer canvas");
+			Enumerable.Range(1, tablet.Count)
+				.Should().OnlyContain(column => group.Items.Any(i => i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>() == column),
+					because: $"'{group.ContainerName}': a tablet column with no child is the empty half-width column ENG-94835 removed");
+		}
+		List<string> order = guide.ViewConfigDiff.Select(op => op.Name).ToList();
+		foreach (ViewConfigDiffOperation band in guide.ViewConfigDiff.Where(op => op.Name.Contains("_TabletBand"))) {
+			guide.ViewConfigDiff.Where(op => op.ParentName == band.Name)
+				.Should().OnlyContain(child => order.IndexOf(child.Name) > order.IndexOf(band.Name),
+					because: $"'{band.Name}' must be inserted before the children moved into it");
 		}
 	}
 

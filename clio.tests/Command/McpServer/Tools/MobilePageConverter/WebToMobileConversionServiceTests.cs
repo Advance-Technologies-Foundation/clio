@@ -9159,18 +9159,107 @@ public sealed class WebToMobileConversionServiceTests {
 	}
 
 	[Test]
-	[Description("Two reference-row children that start in the same web column still get a column each: both weights are kept and the collision rule moves the later child to the free slot.")]
-	public void Analyze_SharedStartColumnInTheReferenceRow_GivesEachChildItsOwnColumn() {
+	[Description("Two children of one row that start in the same web column share one tablet column: they stack in it on separate rows, and every later web row moves down to make room.")]
+	public void Analyze_SharedStartColumnInOneRow_StacksBothChildrenAndShiftsLaterRows() {
 		// Arrange & Act
 		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
 			[ { "name": "Wide", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
-			  { "name": "Narrow", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } } ]
+			  { "name": "Narrow", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Below", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
 			""");
 
 		// Assert
-		TabletColumnsOf(guide).Should().Equal(["2fr", "1fr"], because: "each reference child keeps its own weight");
-		new[] { TabletCellOf(guide, "Wide").Column, TabletCellOf(guide, "Narrow").Column }
-			.Should().BeEquivalentTo([1, 2], because: "two children of one row must not share a tablet column");
+		TabletColumnsOf(guide).Should().Equal(["1fr"], because: "one start column is one tablet column");
+		new[] { TabletCellOf(guide, "Wide"), TabletCellOf(guide, "Narrow"), TabletCellOf(guide, "Below") }
+			.Should().Equal([(1, 1), (1, 2), (1, 3)], because: "two children of one cell stack, and the next web row moves down");
+	}
+
+	[Test]
+	[Description("The phone keeps tree order wherever a grid is cut into bands: a grid filled column by column stacks its left column first, and a full-width row that comes first in the tree comes first on the phone although it is the last tablet row.")]
+	public void Analyze_BandedGrid_KeepsTreeOrderOnThePhone() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, """
+			[ { "name": "Notes", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 3, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "L1", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "L2", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "R1", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "R2", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		new[] { "L1", "L2", "R1", "R2" }.Select(n => AdaptiveOf(guide, n)["small"]!["row"]!.GetValue<int>())
+			.Should().Equal([1, 2, 3, 4], because: "inside the band grid the phone follows the tree, left column first");
+		new[] { "Notes", "Grid_TabletBand1" }.Select(n => AdaptiveOf(guide, n)["small"]!["row"]!.GetValue<int>())
+			.Should().Equal([1, 2], because: "Notes comes first in the tree");
+		new[] { TabletCellOf(guide, "Grid_TabletBand1"), TabletCellOf(guide, "Notes") }
+			.Should().Equal([(1, 1), (1, 2)], because: "the tablet follows the web rows");
+	}
+
+	[Test]
+	[Description("A grid of one band is weighted like a band: a column per start column, weighted by the widest span that starts there, not by the spans of one reference row.")]
+	public void Analyze_SingleBand_IsWeightedByTheWidestSpanPerStartColumn() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "D", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("Grid_TabletBand"),
+			because: "both rows share one column structure");
+		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"], because: "each start column is as wide as its widest child");
+	}
+
+	[Test]
+	[Description("A start column the fullest web row does not use still gets a tablet column: three web columns used across two rows stay three columns.")]
+	public void Analyze_StartColumnMissingFromTheFullestRow_KeepsItsColumn() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 2, "colSpan": 1, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr", "1fr"], because: "every start column is a tablet column");
+		new[] { TabletCellOf(guide, "C"), TabletCellOf(guide, "A") }.Should().Equal([(1, 2), (2, 1)],
+			because: "each child sits in the column of its own web start");
+	}
+
+	[Test]
+	[Description("A web colSpan that runs past the last web column is clamped to the columns left from the child's start, so it cannot weight its column beyond the grid.")]
+	public void Analyze_ColSpanPastTheLastWebColumn_IsClampedToTheRemainingColumns() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 4, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"], because: "B has only two web columns left from column 3");
+	}
+
+	[Test]
+	[Description("In the fallback grid a list that spans only part of the slots merges just the slots it covers, and their weights add up.")]
+	public void Analyze_FallbackListSpanningPartOfTheSlots_MergesOnlyThoseSlots() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid("""[ "1fr", "1fr", "1fr" ]""", """
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 2, "rowSpan": 1 } },
+			  { "name": "B", "type": "crt.Input", "layoutConfig": { "column": 2, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "C", "type": "crt.Input", "layoutConfig": { "column": 3, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
+			    "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
+			    "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } } ]
+			""");
+
+		// Assert
+		guide.ViewConfigDiff.Should().NotContain(op => op.Name.StartsWith("Grid_TabletBand"),
+			because: "A covers B's start in one row, so the grid falls back to the reference row");
+		TabletColumnsOf(guide).Should().Equal(["3fr", "1fr"], because: "the list merges the first two slots (2 + 1) and leaves the third");
+		TabletCellOf(guide, "Audience").Should().Be((1, 3),
+			because: "the list takes the merged column; B, sharing it in row 1, moves to a new row and pushes the list down");
 	}
 
 	[Test]

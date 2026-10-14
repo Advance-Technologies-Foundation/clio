@@ -673,7 +673,7 @@ public sealed class ElementMapEntry {
 	/// <item><description><c>"page"</c> — the parent is inserted by this map, from the source page.
 	/// </description></item>
 	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized (a
-	/// tab-body grid or its Area card), so it carries no <see cref="WebName"/>.</description></item>
+	/// tab-body grid or its Area card, or a tablet band grid), so it carries no <see cref="WebName"/>.</description></item>
 	/// <item><description><c>"unknown"</c> — NEITHER this map nor the template provides it. This is the one
 	/// value that reaches the caller, projected into
 	/// <see cref="MobilePageConversionGuide.UnresolvedParents"/>, which owns the caller-facing contract.

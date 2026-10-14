@@ -19,7 +19,7 @@ placement disagreeing with what renders; width at a breakpoint comes from the CO
 Hence the asymmetry in `FillPlacementKeys`: a POSITION is the caller's own answer and is filled only
 when absent, while both SPANS are written as 1 whatever they held and whoever declared them — a web
 page, a mobile template's own anchor placement, or a value pasted into the tree. `WebCellOf` reads the
-web span only to weight the tablet columns and never writes it into a placement, so the guide's
+web span to cut the tablet bands and weight their columns, and never writes it into a placement, so the guide's
 `adaptiveLayout` index, built from its own object rather than the one pasted into values, cannot
 outlive the correction either.
 

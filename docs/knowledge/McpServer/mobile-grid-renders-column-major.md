@@ -29,13 +29,14 @@ the converter's job; if the runtime ever honours spans, revisit the bands below.
 widened by giving it a grid of its own columns, so `SplitIntoBands` cuts the web grid into runs of
 consecutive rows in which no child covers another child's start column (rows a `rowSpan` covers stay
 together, because the runtime's independent column stacks already draw a spanned child beside a stack).
-One band keeps one weighted grid. Several bands make the container one column: a band with one start
-column keeps its children there at full width, a band with several becomes a new `crt.GridContainer`
-`<container>_TabletBand<N>` weighted by its own spans. On the Keimfarben and VTQ corpora (1 151 grids)
+Every band is laid out by one rule (`LayOutBand`): a column per start column, weighted by the widest
+span that starts there. One band keeps one grid; several bands make the container one column: a band
+with one start column keeps its children there at full width, a band with several becomes a new
+`crt.GridContainer` `<container>_TabletBand<N>`. The phone keeps tree order on both paths. On the Keimfarben and VTQ corpora (1 151 grids)
 94 % of grids come out unchanged; the rest are mostly paired fields above a full-width list or Details
 field, which the old one-grid rule left at half width.
 
-Banding is skipped — the grid falls back to the one-reference-row grid in `BuildTabletGrid` — when the
+Banding is skipped — the grid falls back to the one-reference-row grid in `BuildTabletGrid` (`BandsOf` holds the list) — when the
 container is not an inserted `crt.GridContainer` (a template grid may own children the converter never
 sees, which a one-column container would misplace), a child is a template twin (a merge cannot be
 re-parented), a child of one row covers another's start column (children that only share a start column are banded and placed side by side), a `rowSpan`-covered row breaks its band,
