@@ -797,10 +797,13 @@ proceed with A, and the trim itself is work inside those clio PRs.
 
 ---
 
-## 12. Out of scope (proposed Sub-tasks of ENG-95984 File process parameter type)
+## 12. Out of scope (Sub-tasks of ENG-103304 File and collection process parameters: follow-ups)
 
 All are type Sub-task, each with its own PR triple, off this ticket's path. The three day-0 Sub-tasks were created on
-2026-10-14: ENG-103162, ENG-103163 and ENG-103164.
+2026-10-14 under ENG-95984 File process parameter type: ENG-103162, ENG-103163 and ENG-103164. The same day they were
+moved to the new Task ENG-103304 File and collection process parameters: follow-ups (it relates to ENG-95984 and is
+blocked by ENG-96506 Generated report + process parameter modes), because a Jira parent cannot close while it has
+open Sub-tasks.
 
 | Sub-task | From | Earliest slot |
 |---|---|---|

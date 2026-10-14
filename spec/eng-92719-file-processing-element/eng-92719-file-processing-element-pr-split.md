@@ -596,9 +596,9 @@ MH is not created (M3 refuted H-1), so it needs no link.
 | typeFromElement collection mirror leaves its items unbound (**MH**) | ENG-95984 File process parameter type | not created: M3 refuted H-1 (O2) | - |
 | Refuse collection parameters as filter values (D22) | ENG-92719 File processing element | day 0 | side lane, while PK-OA is still a draft (touches only `PB/Filters/ProcessFilterService.cs:533-595`; since 1.6.6.75 one guard in `ResolveReference` covers all three spellings, and M19 still holds on 1.6.6.96: the file is unchanged since 1.6.6.85) |
 | Builder-made user tasks do not set SerializeToDB (D20) | ENG-92719 File processing element | day 0 | after PK-SF |
-| Allow-list the data types a typeFromElement mirror may copy (D6) | ENG-95984 File process parameter type | day 0: **created 2026-10-14 as ENG-103163** | after PK-RP |
-| Describe: decode process-parameter sources into re-appliable names (D8) | ENG-95984 File process parameter type | day 0: **created 2026-10-14 as ENG-103164** | after PK-RP |
-| Declared item shape for Collection process parameters (D2) | ENG-95984 File process parameter type | day 0: **created 2026-10-14 as ENG-103162** | after PK-RP |
+| Allow-list the data types a typeFromElement mirror may copy (D6) | ENG-103304 File and collection process parameters: follow-ups (created under ENG-95984 File process parameter type, moved 2026-10-14) | day 0: **created 2026-10-14 as ENG-103163** | after PK-RP |
+| Describe: decode process-parameter sources into re-appliable names (D8) | ENG-103304 File and collection process parameters: follow-ups (created under ENG-95984 File process parameter type, moved 2026-10-14) | day 0: **created 2026-10-14 as ENG-103164** | after PK-RP |
+| Declared item shape for Collection process parameters (D2) | ENG-103304 File and collection process parameters: follow-ups (created under ENG-95984 File process parameter type, moved 2026-10-14) | day 0: **created 2026-10-14 as ENG-103162** | after PK-RP |
 | Report the designer storage re-save defect to CrtProcessDesigner (H-G3-1; D15) | ENG-92719 File processing element | only if M11 confirms it | no PR in these repositories |
 | Process parameter source of the Process file element | ENG-92719 File processing element | only on contingency X2 | replaces RP's Process half |
 
