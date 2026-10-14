@@ -27,8 +27,11 @@ timeout, and version facts on `ProcessVersionLibReader.BestEffortReadBudget` (3 
 A failed read becomes one warning or `changesUnavailable`, never an exit code.
 
 The one exception (ENG-103165): create and modify do NOT read back a process that carries a sub-process element
-(in the descriptor, in an `addElement`, or in modify's read before the write) unless a configuration guard needs
-the read. They log `ProcessWriteDigest.CallerNotReadBack` as info instead of a digest. A describe returns the
+(in the descriptor, in an `addElement`/`setElement`, or in modify's read before the write and not removed by a
+`removeElement` of the same edit) unless a configuration guard or the process-parameter binding check needs the
+read. They log `ProcessWriteDigest.CallerNotReadBack` as info instead of a digest. A modify whose read before the
+write FAILED cannot tell whether the process is a caller, so it is treated as one (log
+`ProcessWriteDigest.PossibleCallerNotReadBack`): a lost summary costs less than a pinned caller. A describe returns the
 server's cached schema instance (`ProcessSchemaRepository.LoadForDescribe` -> `FindInstanceByName`/`ByUId`), the
 first read builds it with the callees' parameters of that moment, and only a save of the caller drops it - so a
 read-back right after the write pins the caller, and a parameter a callee gains afterwards is missing from every

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Clio.Common;
 using ErrorOr;
@@ -43,8 +45,20 @@ internal static class ProcessWriteDigest {
 		+ "sub-process elements on the called processes' current parameters until it is saved again. Read it with "
 		+ "describe-business-process once the processes it calls are final.";
 
+	/// <summary>
+	/// The reply line of a modify whose post-write read-back was skipped because the read before the edit failed,
+	/// so whether the process calls another process is unknown, and no configuration guard needed the read
+	/// (ENG-103165): a lost summary costs less than a caller pinned to its callees' current parameters.
+	/// </summary>
+	internal const string PossibleCallerNotReadBack =
+		"No summary is returned: the read before the edit failed, so whether this process calls another process is "
+		+ "unknown, and reading a process that does back now would keep its sub-process elements on the called "
+		+ "processes' current parameters until it is saved again. Read it with describe-business-process to confirm "
+		+ "the edit once the processes it calls are final.";
+
 	private const string SubProcessBlockKey = "subProcess";
 	private const string SubProcessBuildType = "subprocess";
+	private const string RemoveElementOp = "removeElement";
 
 	/// <summary>
 	/// Whether a created process calls another process, so its post-write read may be skipped (ENG-103165).
@@ -64,16 +78,29 @@ internal static class ProcessWriteDigest {
 	/// <summary>
 	/// Whether an edited process may call another process after the edit, so its post-write read may be skipped
 	/// (ENG-103165, see <see cref="DescriptorCallsAnotherProcess"/>): the read before the edit shows a sub-process
-	/// element, or the edit configures one through <c>addElement</c> or <c>setElement</c>.
+	/// element the edit does not remove, or the edit configures one through <c>addElement</c> or <c>setElement</c>.
 	/// </summary>
 	/// <param name="operationsJson">The operations array.</param>
 	/// <param name="before">The read taken before the edit, or <c>null</c> when it failed.</param>
 	/// <returns><c>true</c> when the edited process may carry a sub-process element.</returns>
-	internal static bool EditedProcessCallsAnotherProcess(string operationsJson, DescribeProcessResult before) =>
-		BlockExpectationJson.AddElementTargets(operationsJson, SubProcessBlockKey).Count > 0
-		|| BlockExpectationJson.SetElementTargets(operationsJson, SubProcessBlockKey).Count > 0
-		|| (before?.Elements?.Exists(element => element?.SubProcess is not null
-			|| string.Equals(element?.BuildType, SubProcessBuildType, StringComparison.OrdinalIgnoreCase)) ?? false);
+	internal static bool EditedProcessCallsAnotherProcess(string operationsJson, DescribeProcessResult before) {
+		if (BlockExpectationJson.AddElementTargets(operationsJson, SubProcessBlockKey).Count > 0
+				|| BlockExpectationJson.SetElementTargets(operationsJson, SubProcessBlockKey).Count > 0) {
+			return true;
+		}
+		if (before?.Elements is not { Count: > 0 } elements) {
+			return false;
+		}
+		// removeElement accepts the element's name or its UId, resolved the way the guards resolve a target.
+		HashSet<DescribedElement> removed = [
+			.. BlockExpectationJson.OperationTargets(operationsJson, RemoveElementOp)
+				.Select(target => BlockExpectationJson.ResolveElement(before, target))
+				.Where(element => element is not null)
+		];
+		return elements.Exists(element => element is not null && !removed.Contains(element)
+			&& (element.SubProcess is not null
+				|| string.Equals(element.BuildType, SubProcessBuildType, StringComparison.OrdinalIgnoreCase)));
+	}
 
 	/// <summary>Reads a process for the digest, as a best-effort read that never throws.</summary>
 	/// <param name="describer">The describer.</param>
