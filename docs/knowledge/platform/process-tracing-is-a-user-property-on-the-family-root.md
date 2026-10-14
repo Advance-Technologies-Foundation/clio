@@ -13,7 +13,7 @@ ROOT, where the Process Library record page writes it. It is not in the schema m
 clears it; and since no packaging code in the platform source reads `SysSchemaUserProperty`, an exported package does
 not carry it either (source-read, not measured). The runtime reads the running schema, its calling process and
 the family root, so the root's switch traces every version. Switching it off writes `False` and keeps the row
-(measured 2026-10-09 on d_krestov_n, .NET Framework); the platform's daily `ProcessTracingDisablerJob` writes the same
+(measured 2026-10-09 on a .NET Framework stand); the platform's daily `ProcessTracingDisablerJob` writes the same
 `False` once `ProcessParameterTracingDisableTimeoutDays` days have passed since the switch-on (0 = never). The trace
 itself lands in `SysPrcElementTraceLog`, two rows per executed task (events write none).
 

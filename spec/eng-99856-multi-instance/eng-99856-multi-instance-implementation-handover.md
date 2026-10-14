@@ -95,7 +95,7 @@ mappings.
   **not pushed**, no PR.
 - **Worktree** `C:\Users\d.krestov\AppData\Local\Temp\claude\wt-eng92707`. The name is the PARENT ticket's —
   it predates this work. Either keep it or make a fresh one; do not be confused by the name.
-- **Stand `Creatio`** (`http://d_krestov_n.tscrm.com:40001`) was raised from CrtProcessBuilder **1.6.3.14 to
+- **Stand `Creatio`** (`http://<dev-stand>:40001`) was raised from CrtProcessBuilder **1.6.3.14 to
   1.6.3.31** for the describe measurement. `CrtBase 7.8.0` is installed, so it carries the shipped
   multi-instance fixture `ExpireLicenseNotificationProcess` → element `SubProcess2`. Most other registered
   stands are expired (404).
