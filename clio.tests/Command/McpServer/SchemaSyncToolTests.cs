@@ -293,6 +293,126 @@ public sealed class SchemaSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Forwards an override column of a create-entity operation to the create command with override set to true.")]
+	public async Task SchemaSync_CreateEntity_ShouldForwardOverride_WhenColumnOverridesInheritedLookup() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
+			.Returns(fakeCreateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, Convergence());
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(FolderOverrideArgs("ContactFolder"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "an override column is a valid create-entity column");
+		response.Results[0].Outcome.Should().Be("created", because: "the schema was absent");
+		using JsonDocument document = JsonDocument.Parse(fakeCreateCommand.CapturedOptions!.Columns!.Single());
+		document.RootElement.GetProperty("override").GetBoolean().Should().BeTrue(
+			because: "the create command must receive the override flag to redirect the inherited lookup");
+		document.RootElement.GetProperty("reference-schema-name").GetString().Should().Be("ContactFolder",
+			because: "the create command must receive the requested reference");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports already-satisfied and issues no write when a create-entity replay requests the reference the inherited lookup already has.")]
+	public async Task SchemaSync_CreateEntityReplay_ShouldBeAlreadySatisfied_WhenOverrideReferenceIsUnchanged() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = ExistingFolderItemResolver("ContactFolder", fakeCreateCommand, fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new SchemaConvergenceService(commandResolver));
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(FolderOverrideArgs("ContactFolder"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a verbatim replay is a successful no-op");
+		response.Results[0].Outcome.Should().Be("already-satisfied",
+			because: "the inherited lookup already references the requested schema");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(because: "nothing has to change");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(because: "an existing schema is never recreated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reconciles a create-entity replay whose override requests a different reference through one update-entity-schema modify carrying reference-schema-name.")]
+	public async Task SchemaSync_CreateEntityReplay_ShouldReconcileWithReferenceModify_WhenOverrideReferenceChanges() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = ExistingFolderItemResolver("ContactFolder", fakeCreateCommand, fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new SchemaConvergenceService(commandResolver));
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(FolderOverrideArgs("UsrContactSubFolder"));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the redirect is written through the update command");
+		response.Results[0].Outcome.Should().Be("reconciled",
+			because: "the stored inherited reference differs from the requested one");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(because: "an existing schema is never recreated");
+		fakeUpdateCommand.CapturedOptions.Should().NotBeNull(because: "the redirect must be written");
+		string serializedOperation = fakeUpdateCommand.CapturedOptions!.Operations.Should().ContainSingle(
+			because: "only the inherited lookup changes").Subject;
+		using JsonDocument document = JsonDocument.Parse(serializedOperation);
+		JsonElement operation = document.RootElement;
+		operation.GetProperty("action").GetString().Should().Be("modify",
+			because: "the redirect goes through the column-manager modify path");
+		operation.GetProperty("column-name").GetString().Should().Be("Folder",
+			because: "the modify targets the inherited column");
+		operation.GetProperty("reference-schema-name").GetString().Should().Be("UsrContactSubFolder",
+			because: "the modify carries the requested reference");
+		operation.GetProperty("type").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "the type of an inherited column is read-only");
+		operation.GetProperty("required").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "the required flag of an inherited column is read-only");
+	}
+
+	private static SchemaSyncArgs FolderOverrideArgs(string referenceSchemaName) {
+		return new SchemaSyncArgs(
+			"dev", "UsrPkg",
+			[new SchemaSyncOperation("create-entity", "UsrContactInFolder",
+				TitleLocalizations: Localizations("Contact in folder"),
+				ParentSchemaName: "BaseItemInFolder",
+				Columns: [
+					new CreateEntitySchemaColumnArgs("Folder", null, null, referenceSchemaName) { Override = true }
+				])]);
+	}
+
+	private static IToolCommandResolver ExistingFolderItemResolver(string storedReferenceSchemaName,
+		FakeCreateEntitySchemaCommand createCommand, FakeUpdateEntitySchemaCommand updateCommand) {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(createCommand);
+		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>()).Returns(updateCommand);
+		FindEntitySchemaCommand find = Substitute.For<FindEntitySchemaCommand>(
+			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>());
+		find.FindSchemas(Arg.Any<FindEntitySchemaOptions>()).Returns([
+			new EntitySchemaSearchResult("UsrContactInFolder", "UsrPkg", "Contact in folder", "BaseItemInFolder")
+		]);
+		commandResolver.Resolve<FindEntitySchemaCommand>(Arg.Any<EnvironmentOptions>()).Returns(find);
+		GetEntitySchemaPropertiesCommand properties = Substitute.For<GetEntitySchemaPropertiesCommand>(
+			Substitute.For<IRemoteEntitySchemaColumnManager>(), Substitute.For<ILogger>());
+		properties.GetSchemaProperties(Arg.Any<GetEntitySchemaPropertiesOptions>()).Returns(
+			new EntitySchemaPropertiesInfo(
+				Name: "UsrContactInFolder", Title: "Contact in folder", Description: null, PackageName: "UsrPkg",
+				ParentSchemaName: null, ExtendParent: false, PrimaryColumnName: "Id", PrimaryDisplayColumnName: null,
+				OwnColumnCount: 0, InheritedColumnCount: 1, IndexesCount: null, TrackChangesInDb: false, DbView: false,
+				SspAvailable: null, Virtual: false, UseRecordDeactivation: null, ShowInAdvancedMode: false,
+				AdministratedByOperations: false, AdministratedByColumns: false, AdministratedByRecords: false,
+				UseDenyRecordRights: null, UseLiveEditing: null,
+				Columns: [
+					new EntitySchemaPropertyColumnInfo("Folder", Guid.NewGuid(), "inherited", "Folder", null, "Lookup",
+						false, true, storedReferenceSchemaName)
+				]));
+		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<EnvironmentOptions>()).Returns(properties);
+		return commandResolver;
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Routes update-entity operation through UpdateEntitySchemaCommand")]
 	public async Task SchemaSync_UpdateEntity_Should_Route_Through_UpdateEntitySchemaCommand() {
 		// Arrange

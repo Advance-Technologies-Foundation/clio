@@ -14,7 +14,7 @@ public enum SchemaConvergenceOutcome {
 	/// <summary>The schema is absent and must be created.</summary>
 	Create,
 
-	/// <summary>The schema already exists in the target package and must be converged: the missing columns are added and any present-but-type-divergent columns are modified to the requested shape.</summary>
+	/// <summary>The schema already exists in the target package and must be converged: the missing columns are added, any present-but-type-divergent columns are modified to the requested shape, and an inherited lookup whose requested override reference differs from the stored one is redirected.</summary>
 	Reconcile,
 
 	/// <summary>The schema already exists in the target package and matches the requested shape; no mutation is required.</summary>
@@ -220,6 +220,13 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 				columnsToAdd.Add(column);
 				continue;
 			}
+			if (column.Override == true && IsInheritedColumn(existingColumn)) {
+				// An override item carries no type; it converges on the inherited column's reference schema.
+				if (!HasSameReference(column, existingColumn)) {
+					columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
+				}
+				continue;
+			}
 			// Present with a differing type is surfaced to the modify delta. Compare by resolved DataValueType
 			// ordinal (not friendly-name string) so a column whose read-back vocabulary diverges from the
 			// request vocabulary (e.g. phoneNumber read back as "42", text50 as ShortText) is not misclassified
@@ -251,6 +258,23 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			columns[column.Name] = column;
 		}
 		return columns;
+	}
+
+	private static bool IsInheritedColumn(EntitySchemaPropertyColumnInfo column) {
+		return string.Equals(column.Source, RemoteEntitySchemaColumnManager.InheritedColumnSource, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool HasSameReference(CreateEntitySchemaColumnArgs column, EntitySchemaPropertyColumnInfo existingColumn) {
+		return string.Equals(column.ResolveReferenceSchemaName()?.Trim(), existingColumn.ReferenceSchemaName?.Trim(),
+			StringComparison.OrdinalIgnoreCase);
+	}
+
+	// Carries only the column name and reference schema: every other property of an inherited column is read-only.
+	private static UpdateEntitySchemaOperationArgs ToInheritedReferenceModifyOperation(CreateEntitySchemaColumnArgs column) {
+		return new UpdateEntitySchemaOperationArgs(
+			Action: "modify",
+			ColumnName: column.ResolveName() ?? string.Empty,
+			ReferenceSchemaName: column.ResolveReferenceSchemaName()?.Trim());
 	}
 
 	private static UpdateEntitySchemaOperationArgs ToModifyOperation(CreateEntitySchemaColumnArgs column) {

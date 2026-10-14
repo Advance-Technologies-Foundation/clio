@@ -71,7 +71,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
 	/// </summary>
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
-	private const string InheritedColumnSource = "inherited";
+	internal const string InheritedColumnSource = "inherited";
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;

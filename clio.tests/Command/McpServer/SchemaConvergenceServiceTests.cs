@@ -423,6 +423,90 @@ public sealed class SchemaConvergenceServiceTests {
 			because: "only the missing column belongs to the reconcile add delta");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies an override item whose reference matches the stored reference of the inherited lookup as AlreadySatisfied.")]
+	public void Classify_ShouldReturnAlreadySatisfied_WhenOverrideReferenceMatchesInheritedReference() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(InheritedLookup("Folder", "ContactFolder")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(OverrideColumn("Folder", "contactfolder")));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.AlreadySatisfied,
+			because: "the inherited lookup already references the requested schema (compared case-insensitively)");
+		plan.ColumnsToModify.Should().BeEmpty(
+			because: "a matching reference needs no redirect");
+		plan.ColumnsToAdd.Should().BeEmpty(
+			because: "an override never adds a column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Classifies an override item whose reference differs from the stored reference of the inherited lookup as Reconcile with a modify that carries only the column name and reference-schema-name.")]
+	public void Classify_ShouldReconcileWithReferenceModify_WhenOverrideReferenceDiffersFromInheritedReference() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(InheritedLookup("Folder", "ContactFolder")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(OverrideColumn("Folder", " UsrContactSubFolder ")));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Reconcile,
+			because: "the stored inherited reference differs from the requested one");
+		plan.ColumnsToAdd.Should().BeEmpty(
+			because: "an override never adds a column");
+		UpdateEntitySchemaOperationArgs modify = plan.ColumnsToModify.Should().ContainSingle(
+			because: "the redirect is applied through one modify of the inherited column").Subject;
+		modify.Action.Should().Be("modify", because: "the redirect goes through the column-manager modify path");
+		modify.ColumnName.Should().Be("Folder", because: "the modify targets the inherited column");
+		modify.ReferenceSchemaName.Should().Be("UsrContactSubFolder",
+			because: "the modify carries the trimmed requested reference");
+		modify.Type.Should().BeNull(because: "the type of an inherited column is read-only");
+		modify.IsRequired.Should().BeNull(because: "the required flag of an inherited column is read-only");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Keeps comparing an ordinary lookup column by type only: a differing reference on a non-override column is AlreadySatisfied.")]
+	public void Classify_ShouldIgnoreReference_WhenLookupColumnIsNotAnOverride() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Customer", "BaseLookup")]);
+		FakeProperties(resolver, Properties(Column("UsrOwner", "Lookup") with { ReferenceSchemaName = "Contact" }));
+		SchemaConvergenceService service = new(resolver);
+		CreateEntitySchemaColumnArgs requested = new("UsrOwner", "Lookup", null, "Account");
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(LookupTarget(requested));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.AlreadySatisfied,
+			because: "only an override item converges on the reference schema");
+		plan.ColumnsToModify.Should().BeEmpty(
+			because: "an ordinary lookup column is compared by type only");
+	}
+
+	private static SchemaConvergenceTarget FolderItemTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
+		return new SchemaConvergenceTarget(
+			"dev", TargetPackage, SchemaName, "BaseItemInFolder", IsLookup: false, ExtendParent: false, requestedColumns);
+	}
+
+	private static CreateEntitySchemaColumnArgs OverrideColumn(string name, string referenceSchemaName) {
+		return new CreateEntitySchemaColumnArgs(name, null, null, referenceSchemaName) { Override = true };
+	}
+
+	private static EntitySchemaPropertyColumnInfo InheritedLookup(string name, string referenceSchemaName) {
+		return Column(name, "Lookup") with { Source = "inherited", ReferenceSchemaName = referenceSchemaName };
+	}
+
 	private static SchemaConvergenceTarget LookupTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
 		return new SchemaConvergenceTarget(
 			"dev", TargetPackage, SchemaName, "BaseLookup", IsLookup: true, ExtendParent: false, requestedColumns);
