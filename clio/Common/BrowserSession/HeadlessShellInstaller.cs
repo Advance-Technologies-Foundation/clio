@@ -237,28 +237,38 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		}
 		using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
 			.ConfigureAwait(false);
+		long resumeAt = ResumeOffset(response, existing, archive, host, target);
+		progress.Bytes = resumeAt;
+		target.Seek(resumeAt, SeekOrigin.Begin);
+		await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+		await CopyBodyAsync(source, target, archive, progress, ct).ConfigureAwait(false);
+	}
+
+	// Where the body continues the kept file: at its length for a matching 206, at zero (the file truncated) for a 200.
+	private long ResumeOffset(HttpResponseMessage response, long existing, HeadlessShellRelease.Archive archive, string host,
+		Stream target) {
 		if (response.StatusCode == HttpStatusCode.PartialContent && existing > 0) {
 			ContentRangeHeaderValue range = response.Content.Headers.ContentRange;
 			if (range?.From != existing || range.Length != archive.Size) {
 				target.SetLength(0);
 				throw Mismatch($"the server resumed it as {range}, expected bytes {existing}-/{archive.Size}");
 			}
+			return existing;
 		}
-		else if (response.IsSuccessStatusCode) {
-			target.SetLength(0);
-			existing = 0;
-			progress.Bytes = 0;
-			if (response.Content.Headers.ContentLength is long announced && announced != archive.Size) {
-				throw Mismatch($"its size is {announced} bytes, expected {archive.Size}");
-			}
-		}
-		else {
+		if (!response.IsSuccessStatusCode) {
 			throw new HeadlessShellInstallException(
 				$"Downloading {_source.DisplayName} {_source.Version} from {host} failed: HTTP "
 				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. {NetworkHint}");
 		}
-		target.Seek(existing, SeekOrigin.Begin);
-		await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+		target.SetLength(0);
+		if (response.Content.Headers.ContentLength is long announced && announced != archive.Size) {
+			throw Mismatch($"its size is {announced} bytes, expected {archive.Size}");
+		}
+		return 0;
+	}
+
+	private async Task CopyBodyAsync(Stream source, Stream target, HeadlessShellRelease.Archive archive,
+		DownloadProgress progress, CancellationToken ct) {
 		byte[] buffer = new byte[CopyBufferBytes];
 		progress.Receiving = true;
 		int read;
