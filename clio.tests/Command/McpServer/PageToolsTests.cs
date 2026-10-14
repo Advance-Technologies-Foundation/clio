@@ -2555,7 +2555,7 @@ public class PageToolsTests
 			viewConfigDiff: """
 				[
 					{"operation":"insert","name":"OwnerFlex","values":{"type":"crt.FlexContainer","direction":"column"}},
-					{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
+					{"operation":"insert","name":"UsrPhoto","parentName":"OwnerFlex","propertyName":"items","values":{"type":"crt.ImageInput","value":"$UsrPhoto","size":"large","tooltip":"Upload a photo of the task owner"}}
 				]
 				""",
 			viewModelConfigDiff: """[{"operation":"merge","path":[],"values":{"attributes":{"UsrPhoto":{"modelConfig":{"path":"PDS.UsrPhoto"}}}}}]""");
@@ -3916,19 +3916,19 @@ public class PageToolsTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("The default get-page response (page metadata and the meta.json it writes) serializes to the pinned JSON; include-operations must not change it when omitted.")]
-	public void PageGetTool_DefaultResponse_ShouldMatchPinnedJson() {
+	[Description("get-page with include-operations=true (the opt-in since ENG-103023 made counts the default) serializes to the pinned JSON the default used to produce, and the meta.json it writes is unchanged.")]
+	public void PageGetTool_IncludeOperationsTrue_ShouldMatchPinnedJson() {
 		// Arrange
 		(PageGetTool tool, MockFileSystem mockFs) = CreatePageGetToolWithBody(
 			CreatePageBody(viewConfigDiff: PageBodyViewConfigDiffWithOperations).ReplaceLineEndings("\n"));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
+		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", IncludeOperations: true));
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the fixture page is readable");
 		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedPageWireJson,
-			because: "the page block of the MCP response is the default and stays byte-for-byte unchanged");
+			because: "an explicit opt-in caller receives the operation list byte-for-byte as before");
 		McpResponseBaseline.Serialize(response.Editable).Should().Be(PinnedEditableWireJson,
 			because: "the editable block of the MCP response stays byte-for-byte unchanged");
 		System.Text.RegularExpressions.Regex.Replace(
@@ -3938,18 +3938,21 @@ public class PageToolsTests
 
 	[Test]
 	[Category("Unit")]
-	[Description("get-page with include-operations=true serializes exactly as the default response.")]
-	public void PageGetTool_IncludeOperationsTrue_ShouldMatchDefaultResponse() {
+	[Description("ENG-103023: get-page without include-operations serializes exactly as include-operations=false - counts per operation type, no operation list.")]
+	public void PageGetTool_DefaultResponse_ShouldMatchIncludeOperationsFalse() {
 		// Arrange
 		(PageGetTool tool, _) = CreatePageGetToolWithBody(
 			CreatePageBody(viewConfigDiff: PageBodyViewConfigDiffWithOperations).ReplaceLineEndings("\n"));
 
 		// Act
-		PageGetResponse response = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", IncludeOperations: true));
+		PageGetResponse byDefault = tool.GetPage(new PageGetArgs("UsrMcp_FormPage"));
+		PageGetResponse optedOut = tool.GetPage(new PageGetArgs("UsrMcp_FormPage", IncludeOperations: false));
 
 		// Assert
-		McpResponseBaseline.Serialize(response.Page).Should().Be(PinnedPageWireJson,
-			because: "include-operations=true is the default and must not change the response");
+		byDefault.Page.OwnBodySummary.ViewConfigDiffOps.Should().BeNull(
+			because: "the operation list is opt-in since ENG-103023");
+		McpResponseBaseline.Serialize(byDefault.Page).Should().Be(McpResponseBaseline.Serialize(optedOut.Page),
+			because: "omitting include-operations is the same as passing false");
 	}
 
 	[Test]
@@ -4865,7 +4868,7 @@ public class PageToolsTests
 					_ => saveResponse.ToString()
 				};
 			});
-		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
+		string incomingFragment = "/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"TestButton\",\"values\":{\"type\":\"crt.Button\",\"caption\":\"Test\"},\"parentName\":\"ActionButtonsContainer\",\"propertyName\":\"items\"}]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[{request:\"usr.TestRequest\",handler:()=>alert(\"Test\")}]/**SCHEMA_HANDLERS*/";
 		var command = new PageUpdateCommand(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 		bool ok = command.TryUpdatePage(new PageUpdateOptions {

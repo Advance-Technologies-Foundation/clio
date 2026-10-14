@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -47,6 +48,18 @@ public interface IProcessDescriber {
 	/// <returns>The structured description, or an error (not found / unreachable / server failure).</returns>
 	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
 		bool includeVersionFacts = true, bool bestEffort = false);
+
+	/// <summary>
+	/// Reads ONLY the version standing of a process - no graph - as a best-effort read within
+	/// <see cref="ProcessVersionLibReader.BestEffortReadBudget"/> (ENG-103023). For a write path that needs which
+	/// version runs, not what any version does: set-active-process-version reads it before the activation.
+	/// </summary>
+	/// <param name="identity">The process identity (code or uid; a caption is resolved first).</param>
+	/// <returns>
+	/// A result carrying the identity and the version facts only (no elements, flows or parameters), or an error
+	/// when the facts could not be established.
+	/// </returns>
+	ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity);
 }
 
 /// <inheritdoc cref="IProcessDescriber" />
@@ -136,10 +149,18 @@ public sealed class ServerProcessDescriber(
 		// Version facts are overlaid only here, after every refusal path: a described graph without them is
 		// still a correct answer, but a version warning attached to an error would be noise.
 		ApplyVersionFacts(result, includeVersionFacts
-			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId)
+			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId, bestEffort)
 			: VersionFactsNotRequested);
 		return result;
 	}
+
+	// A best-effort read (a write's success path) re-reads by UId on the short budget instead of reusing the row:
+	// the row reuse below only saves a round trip, the budget is what bounds a stalled process library.
+	private ProcessVersionFacts ReadVersionFacts(VwProcessLib resolvedRow, string describedSchemaUId,
+		bool bestEffort) =>
+		bestEffort
+			? versionLibReader.Read(describedSchemaUId, ProcessVersionLibReader.BestEffortReadBudget)
+			: ReadVersionFacts(resolvedRow, describedSchemaUId);
 
 	/// <summary>
 	/// Reads the version facts, reusing the row the caption arm already fetched when it is the same schema.
@@ -157,6 +178,32 @@ public sealed class ServerProcessDescriber(
 		&& resolvedRow.UId == describedUId
 			? versionLibReader.Read(resolvedRow)
 			: versionLibReader.Read(describedSchemaUId);
+
+	/// <inheritdoc />
+	public ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity) {
+		ProcessVersionFacts facts;
+		if (!string.IsNullOrWhiteSpace(identity.UId)) {
+			facts = versionLibReader.Read(identity.UId.Trim(), ProcessVersionLibReader.BestEffortReadBudget);
+		} else if (!string.IsNullOrWhiteSpace(identity.Code)) {
+			facts = versionLibReader.ReadByName(identity.Code, ProcessVersionLibReader.BestEffortReadBudget);
+		} else {
+			ErrorOr<ResolvedIdentity> resolved = BuildIdentityPayload(identity);
+			if (resolved.IsError) {
+				return resolved.Errors;
+			}
+			if (resolved.Value.Row is null) {
+				return Error.Failure(DescribeErrorCode, "the process identity could not be resolved");
+			}
+			facts = versionLibReader.Read(resolved.Value.Row.UId.ToString(),
+				ProcessVersionLibReader.BestEffortReadBudget);
+		}
+		if (facts.Version is null && facts.ActiveVersionSchemaUId is null) {
+			return Error.Failure(DescribeErrorCode, facts.Warning ?? "the version facts were not established");
+		}
+		DescribeProcessResult result = new() { Name = identity.Code, SchemaUId = identity.UId };
+		ApplyVersionFacts(result, facts);
+		return result;
+	}
 
 	/// <summary>
 	/// Overlays the process library's version facts onto a described graph.
@@ -194,7 +241,17 @@ public sealed class ServerProcessDescriber(
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
 			PackageName = member.PackageName,
-			Enabled = member.Enabled
+			Enabled = member.Enabled,
+			ModifiedOn = FormatModifiedOn(member.ModifiedOn)
+		};
+
+	// UTC with a Z when the reader knows the zone; a value of unspecified kind is written without one rather than
+	// being stamped with a zone nobody established.
+	private static string FormatModifiedOn(DateTime? modifiedOn) =>
+		modifiedOn switch {
+			null => null,
+			{ Kind: DateTimeKind.Unspecified } value => value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+			{ } value => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
 		};
 
 	/// <summary>The describe request payload, plus the process-library row the caption arm resolved.</summary>
@@ -510,6 +567,13 @@ public sealed class DescribedProcessVersion {
 	/// </summary>
 	[JsonPropertyName("enabled")]
 	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// When this version was last saved, in UTC (<c>Z</c>) when the zone is known, or absent when the library
+	/// reported none (ENG-103023).
+	/// </summary>
+	[JsonPropertyName("modifiedOn")]
+	public string ModifiedOn { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>
@@ -1940,7 +2004,12 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
 
-	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
+	/// <summary>
+	/// Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>, or <c>FileLocator</c> for a
+	/// single file). A PROCESS parameter that is a collection with no tag and exactly one FileLocator item reads back
+	/// as <c>FileCollection</c> (from <c>CrtProcessBuilder</c> 1.6.6.99; an older one reports
+	/// <c>CompositeObjectList</c>); an element parameter always keeps <c>CompositeObjectList</c>. Null when unset.
+	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
 
@@ -2014,20 +2083,25 @@ public sealed class DescribedParameter {
 	public string ValueDisplay { get; set; }
 
 	/// <summary>
-	/// For a <see cref="Value"/> that reads ONE column of a record another element returned (the three-segment
-	/// <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
-	/// <see cref="SourceElementParameter"/> and <see cref="SourceColumn"/> only when the server can name all three
-	/// AND those names re-apply to the identical stored value, so the trio feeds straight back into
-	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.40.
+	/// For a <see cref="Value"/> that IS another element's output (a single <c>[Element].[Parameter]</c> meta path,
+	/// an item of a collection output included), or that reads ONE column of a record another element returned (the
+	/// three-segment <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
+	/// <see cref="SourceElementParameter"/> (and <see cref="SourceColumn"/> for the column form) only when the server
+	/// can name them AND those names re-apply to the identical stored value (for the element-output form, also without
+	/// changing any other level of the binding), so they feed straight back into <c>addMapping</c>. Null for every other value. The column form needs a
+	/// <c>CrtProcessBuilder</c> from 1.6.6.40, the element-output form one from 1.6.6.99; an older one omits them.
 	/// </summary>
 	[JsonPropertyName("sourceElement")]
 	public string SourceElement { get; set; }
 
-	/// <summary>The record parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>.</summary>
+	/// <summary>
+	/// The output parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>; on a collection item it
+	/// is the dotted item path, for example <c>ObjectFiles.File</c>.
+	/// </summary>
 	[JsonPropertyName("sourceElementParameter")]
 	public string SourceElementParameter { get; set; }
 
-	/// <summary>The column of that record, by its code, for example <c>Owner</c>.</summary>
+	/// <summary>The column of that record, by its code, for example <c>Owner</c>; null unless the value reads one column.</summary>
 	[JsonPropertyName("sourceColumn")]
 	public string SourceColumn { get; set; }
 
@@ -2055,7 +2129,9 @@ public sealed class DescribedParameter {
 	/// Reading a tag as a required field is how a consumer written against the first case silently rejects every
 	/// instance of the second.</para>
 	/// <para>Feed a described collection back through <c>addParameter</c>'s <c>typeFromElement</c> naming its
-	/// source, never by re-typing the shape.</para>
+	/// source, never by re-typing the shape. The one exception is a process parameter described as
+	/// <c>FileCollection</c>: it has no source to mirror, so it is declared by <c>type: FileCollection</c>, and the
+	/// rebuild names its one item <c>File</c> whatever the described item was called.</para>
 	/// </summary>
 	[JsonPropertyName("itemProperties")]
 	public List<DescribedParameter> ItemProperties { get; set; }

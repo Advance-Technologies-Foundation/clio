@@ -265,6 +265,8 @@ public sealed class ServerProcessDescriberTests {
 		IProcessVersionLibReader reader = Substitute.For<IProcessVersionLibReader>();
 		reader.Read(Arg.Any<string>()).Returns(facts);
 		reader.Read(Arg.Any<VwProcessLib>()).Returns(facts);
+		reader.Read(Arg.Any<string>(), Arg.Any<TimeSpan>()).Returns(facts);
+		reader.ReadByName(Arg.Any<string>(), Arg.Any<TimeSpan>()).Returns(facts);
 		return reader;
 	}
 
@@ -487,6 +489,75 @@ public sealed class ServerProcessDescriberTests {
 			because: "an untagged parameter must OMIT the field rather than emit null, so an older server and an untagged parameter read alike");
 		output["parameters"]![1]!.AsObject().ContainsKey("itemProperties").Should().BeFalse(
 			because: "a shapeless parameter must omit the shape for the same reason");
+	}
+
+	[Test]
+	[Description("Deserializes the two file types a CrtProcessBuilder from 1.6.6.99 reports - FileLocator for a single file and FileCollection for a collection whose only item is a file - verbatim into the DescribedParameter DTO, keeps the collection's File item, and omits the absent tag on re-serialization (ENG-95984, CU-01).")]
+	public void Describe_ShouldReadFileLocatorAndFileCollectionTypes_WhenServerReportsThem() {
+		// Arrange — a single-file parameter and a file collection declared by type (no tag: it mirrors no element)
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"Contract\",\"uid\":\"f1\",\"type\":\"FileLocator\",\"direction\":\"In\",\"source\":\"None\"},"
+			+ "{\"name\":\"Archive\",\"uid\":\"f2\",\"type\":\"FileCollection\",\"direction\":\"Out\",\"source\":\"None\","
+			+ "\"itemProperties\":[{\"name\":\"File\",\"uid\":\"f3\",\"type\":\"FileLocator\",\"direction\":\"Variable\"}]}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Parameters[0].Type.Should().Be("FileLocator",
+			because: "the type is a string carried verbatim, so a file type the client has no enum for still reaches the caller");
+		DescribedParameter collection = result.Value.Parameters[1];
+		collection.Type.Should().Be("FileCollection",
+			because: "the server names a collection of one file item FileCollection, the same token the write side accepts");
+		collection.ItemProperties.Should().ContainSingle(
+			because: "a FileCollection carries exactly one item, its File");
+		collection.ItemProperties[0].Name.Should().Be("File", because: "the item keeps the name the server reports");
+		collection.ItemProperties[0].Type.Should().Be("FileLocator", because: "the item of a file collection is a single file");
+		JsonNode output = JsonNode.Parse(JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions));
+		output["parameters"]![1]!["type"]!.GetValue<string>().Should().Be("FileCollection",
+			because: "the type must survive re-serialization to the caller, not merely deserialization into the DTO");
+		output["parameters"]![1]!["itemProperties"]![0]!["type"]!.GetValue<string>().Should().Be("FileLocator",
+			because: "the item type must survive re-serialization too");
+		output["parameters"]![1]!.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "a file collection declared by type carries no provenance, and an absent tag is omitted, not null");
+	}
+
+	[Test]
+	[Description("Deserializes the decoded source of a value that IS another element's output - sourceElement / sourceElementParameter without sourceColumn - on a collection and on its item (the dotted item path), and omits the absent sourceColumn on re-serialization (ENG-95984, CU-02).")]
+	public void Describe_ShouldReadElementOutputSource_WhenValueIsAnotherElementsOutput() {
+		// Arrange — an element input bound to another element's collection output, its item to that output's item
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000002\",\"name\":\"PF1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\","
+			+ "\"parameters\":[{\"name\":\"Files\",\"uid\":\"p1\",\"type\":\"CompositeObjectList\",\"direction\":\"In\",\"source\":\"Script\","
+			+ "\"value\":\"[#...#]\",\"sourceElement\":\"OF1\",\"sourceElementParameter\":\"ObjectFiles\","
+			+ "\"itemProperties\":[{\"name\":\"File\",\"uid\":\"p2\",\"type\":\"FileLocator\",\"direction\":\"In\",\"source\":\"Script\","
+			+ "\"value\":\"[#...#]\",\"sourceElement\":\"OF1\",\"sourceElementParameter\":\"ObjectFiles.File\"}]}]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter files = result.Value.Elements[0].Parameters[0];
+		files.SourceElement.Should().Be("OF1", because: "the outer level names the element whose output it is");
+		files.SourceElementParameter.Should().Be("ObjectFiles", because: "the outer level names that output");
+		files.SourceColumn.Should().BeNull(because: "a value that IS an output reads no column of it");
+		DescribedParameter item = files.ItemProperties[0];
+		item.SourceElement.Should().Be("OF1", because: "the item level is decoded too, so both levels feed back into addMapping");
+		item.SourceElementParameter.Should().Be("ObjectFiles.File",
+			because: "an item's source is the dotted item path of the source collection");
+		JsonNode output = JsonNode.Parse(JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions));
+		JsonObject outer = output["elements"]![0]!["parameters"]![0]!.AsObject();
+		outer["sourceElementParameter"]!.GetValue<string>().Should().Be("ObjectFiles",
+			because: "the decoded pair must survive re-serialization to the caller");
+		outer.ContainsKey("sourceColumn").Should().BeFalse(
+			because: "an absent column is omitted rather than written as null, so it never reads as a column named null");
 	}
 
 	[Test]
@@ -2365,4 +2436,65 @@ public sealed class ServerProcessDescriberTests {
 		untraced.Value.Tracing.Should().BeNull(because: "an absent block means runs are not traced");
 	}
 
+
+	[Test]
+	[Description("Review ENG-103023 #5: versions[].modifiedOn is written in UTC with a Z for a dated kind, without a zone for an unspecified kind, and left out when the library gave none.")]
+	public void Describe_ShouldFormatModifiedOn_ForEveryDateKind() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		ProcessVersionFamilyMember utc = Member(RootUId, "UsrProc", 0, false, true) with {
+			ModifiedOn = new DateTime(2026, 10, 1, 8, 30, 0, DateTimeKind.Utc)
+		};
+		ProcessVersionFamilyMember unspecified = Member(ChildUId, "UsrProcCustom1", 1, true, false) with {
+			ModifiedOn = new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Unspecified)
+		};
+		ProcessVersionFamilyMember undated = Member(OtherFamilyUId, "UsrProcCustom2", 2, false, false);
+		ServerProcessDescriber describer = CreateDescriber(client, ReaderReturning(new ProcessVersionFacts {
+			Version = 0, IsActiveVersion = false, Versions = [utc, unspecified, undated]
+		}));
+
+		// Act
+		DescribeProcessResult result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null).Value;
+
+		// Assert
+		result.Versions.Select(version => version.ModifiedOn).Should().Equal(
+			["2026-10-01T08:30:00Z", "2026-10-02T09:00:00", null],
+			because: "a zone is written only when the reader knows it, and an absent date stays absent");
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #4: a best-effort describe reads the version facts on the short best-effort budget, not the reader's 10 s default.")]
+	public void Describe_ShouldReadVersionFactsOnTheShortBudget_WhenBestEffort() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts { Version = 1, IsActiveVersion = true });
+		ServerProcessDescriber describer = CreateDescriber(client, reader);
+
+		// Act
+		describer.Describe(new ProcessIdentity("UsrProc", null, null), null, includeVersionFacts: true, bestEffort: true);
+
+		// Assert
+		reader.Received(1).Read(RootUId, ProcessVersionLibReader.BestEffortReadBudget);
+		reader.DidNotReceive().Read(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Review ENG-103023 #4: ReadVersionFacts establishes the version standing without the describe POST.")]
+	public void ReadVersionFacts_ShouldNotPostADescribe() {
+		// Arrange
+		IApplicationClient client = ClientReturning(GraphResponse(RootUId));
+		IProcessVersionLibReader reader = ReaderReturning(new ProcessVersionFacts {
+			Version = 1, IsActiveVersion = false, ActiveVersionSchemaUId = ChildUId, ActiveVersionName = "UsrProcCustom1"
+		});
+		ServerProcessDescriber describer = CreateDescriber(client, reader);
+
+		// Act
+		DescribeProcessResult result = describer.ReadVersionFacts(new ProcessIdentity("UsrProc", null, null)).Value;
+
+		// Assert
+		result.ActiveVersionName.Should().Be("UsrProcCustom1", because: "the standing comes from the process library");
+		result.Elements.Should().BeNullOrEmpty(because: "no graph is read");
+		client.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		reader.Received(1).ReadByName("UsrProc", ProcessVersionLibReader.BestEffortReadBudget);
+	}
 }

@@ -38,10 +38,11 @@ there is no need to copy vendor bodies or override the target package.
 > disk instead, at the paths reported in `files.bodyFile` / `files.bundleFile`. MCP callers
 > read `files.bodyFile`; there is no `raw` property in the MCP response.
 >
-> **`include-operations` (MCP only, default `true`).** With `false` the MCP response leaves
+> **`include-operations` (MCP only, default `false`).** By default the MCP response leaves
 > `page.ownBodySummary.viewConfigDiffOps` out and returns `page.ownBodySummary.viewConfigDiffOpCounts`
-> (number of operations per operation type) in its place. `meta.json` is written first and keeps the
-> full list either way.
+> (number of operations per operation type) in its place; pass `true` to get the per-operation list in
+> the response. `meta.json` is written first and keeps the full list either way. (The default was
+> `true` before ENG-103023; a page's own body routinely names dozens of components.)
 >
 > **`editable` is optional.** The capture is best-effort: when the `SysSchema` checksum row
 > is missing or the query fails, the successful envelope carries no `editable` key at all.
@@ -57,6 +58,14 @@ there is no need to copy vendor bodies or override the target package.
 > so a second `get-page` of the same schema destroys an edit made in place (and anything
 > else kept in that directory). Send the edit through `update-page` / `sync-pages`, or copy
 > it out first.
+>
+> **`warnings` is optional.** A schema chain that the Creatio differ rejects fails get-page with
+> an error naming the page. One shape is read anyway so the page can be repaired: a
+> `viewConfigDiff` `insert` or `move` with a `parentName` but no `propertyName` (older clio
+> versions saved it). get-page then resolves the bundle without that operation and returns a
+> `warnings` entry naming the schema, the operation index and the fix; `raw.body` / `body.js`
+> still contains the operation. Add the parent's slot (e.g. `"propertyName": "items"`) or remove
+> the operation, then save with `update-page`.
 
 ## Conflict-Detection Baseline
 

@@ -27,10 +27,10 @@ namespace Clio.Tests.Command.McpServer;
 /// <para>
 /// These ratchets do not shrink anything. They make growth a decision defended at review — raising a
 /// ceiling here is the moment to ask whether the text belongs in a <c>[Description]</c> at all — rather
-/// than an accident nobody measures. Both ceilings follow the <see cref="McpProfileGatingTests"/>
+/// than an accident nobody measures. The ceilings follow the <see cref="McpProfileGatingTests"/>
 /// convention when one has to move: re-pin to the MEASURED size rounded up to the next 256 bytes, never
 /// to the next whole kilobyte, so the ratchet keeps ratcheting instead of handing the surface silent
-/// room. Both also measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
+/// room. All of them measure the DEFAULT surface (every feature-gated type off, matching a fresh install),
 /// for the same reason that fixture does.
 /// </para>
 /// <para>
@@ -81,13 +81,44 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-pinned for ENG-99741: set-object-rights and get-object-rights are two more long-tail tools. Measured 47257
 	// bytes on the default surface with them registered as well (469 bytes for the two); next 256-byte step is
 	// 47360 (185).
-	// Re-pinned for ENG-100406: set-default-record-rights and apply-default-record-rights are two more long-tail tools.
-	// Measured 47768 bytes on the default surface with them registered (511 bytes for the two, the first sentence of
-	// get-object-rights unchanged); next 256-byte step is 47872 (187).
+	// Re-pinned for ENG-103017: place-section-in-workplace is one more long-tail tool with a curated contract.
+	// Measured 47495 bytes with it registered (238 for its index entry); next 256-byte step is 47616 (186).
+	// Re-pinned for ENG-103024: trigger-smoke is one more long-tail tool on top of that (about 190 for its index
+	// entry); next 256-byte step is 47872 (187).
+	// Re-pinned for ENG-103032: page-smoke is one more long-tail tool with a curated contract. Measured 47786 bytes
+	// without it and 47973 with it (186 bytes for its index entry, shorter than trigger-smoke's 223), 101 over the
+	// 47872 ceiling; next 256-byte step is 48128 (188). Marking it destructive in review made its object entry one
+	// byte shorter ("true" vs "false") and its line-index entry three bytes longer ("(D)"); both ceilings still hold.
 	// Serialization uses the default JSON encoder,
 	// which escapes non-ASCII (a purpose ellipsis is written as a 6-byte escape), so it over-counts the real
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
-	private const int MaxCompactIndexSerializedBytes = 187 * 256;
+	// Since ENG-102796 this ceiling covers the OBJECT index, which a no-names call returns only for
+	// detail=index-entries (ClioRing asks for it); the default reply is the line index below.
+	// Re-pinned for ENG-100406 after merging master: set-default-record-rights and apply-default-record-rights are
+	// two more long-tail tools. Measured 48483 bytes with them registered (355 over 48128); next 256-byte step is
+	// 48640 (190).
+	private const int MaxCompactIndexSerializedBytes = 190 * 256;
+
+	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
+	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
+	// index above is ~47 KB and Copilot CLI spills any tool result past ~20 KB to a file the agent then reads
+	// back in pieces, which it did 15 times in one CAADT release build. Unlike the object index, this ceiling
+	// has a hard upper bound: MaxInlineWireReplyBytes, the inline limit below. It follows the next-256 convention rather than the object index's
+	// three-tools-of-slack deviation: a new tool already re-pins that ceiling, so this one moving with it adds no
+	// review, and every re-pin is then a moment to read the distance left to that limit. Measured 17636
+	// bytes for 228 tools on the default surface (about 75 bytes a line; 216 of the 228 purposes are cut); next
+	// 256-byte step is 17664 (69). The same reply is 16871 bytes on the wire, where the MCP result encoder writes
+	// the ellipsis and the legend's quotes unescaped - so the spill line is about 30 tools away for an agent
+	// (2129 bytes at ~72 a line) and about 18 for this conservative measure.
+	//
+	// Re-pinned to 70 * 256 = 17920 before the first release, by a legend sentence rather than a tool: the review
+	// found that "(D) = destructive" read as "a line without (D) is read-only", which install-gate and reg-web-app
+	// (destructive=false, both write) contradict, so the legend now says a line without (D) can still write.
+	// Measured 17675 for the same 228 tools; the reply on the wire stays about 2 KB under the spill line.
+	//
+	// Re-pinned for ENG-100406: set-default-record-rights and apply-default-record-rights add two lines. Measured
+	// 18075 bytes (155 over 17920); next 256-byte step is 18176 (71), still under the 19000-byte spill line.
+	private const int MaxToolIndexSerializedBytes = 71 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
@@ -181,6 +212,24 @@ public sealed class ToolContractPayloadBudgetTests {
 	// dead once the floor reached 1.6.6.92, since clio refuses such an environment up front. Re-measured by
 	// lowering the ceiling: modify-business-process 35048, create-business-process 35027,
 	// describe-business-process 33463 - 24 and 45 bytes of headroom.
+	//
+	// ENG-103081 (2026-10-13, a targetProcessParameter mapping is a binding, not a flow-time assignment) added
+	// one sentence to each process-write contract and paid by SWAP again, with version text the 1.6.6.92 floor made
+	// dead: create's "From 1.6.6.40 a condition can also name a read record's COLUMN" (the flows[] paragraph
+	// already names the column form) and "from 1.6.2.23", modify's "from 1.6.0.11", "from 1.6.2.23" and the
+	// "older-than-required environment is refused" clause. Re-measured by lowering the ceiling: modify-business-
+	// process 35070, create-business-process 35061 - 2 and 11 bytes of headroom. The next sentence on either
+	// contract needs a swap or a move into the process guides.
+	//
+	// ENG-95984 (2026-10-14, the File and FileCollection process parameter types) named the two types in each
+	// write contract's type list, "or File" in its constant clause and "a FileCollection to Variable" beside the
+	// Collection direction default, gave describe's rebuild rule its FileCollection exception and widened its
+	// decoded-source clause to a whole element output, and moved the floor literal to 1.6.6.99 (same length). It
+	// paid by SWAP, per owner decision Q20 (trim, no ceiling raise): both write contracts dropped the mirror
+	// refusal's rationale "the mirror would be a bound, tagged, unbindable empty shape", which the package's refusal
+	// states itself, and create dropped the member list "{enabled, executionMode, ignoreErrors}" from its floor
+	// clause, as modify had already done. Re-measured by lowering the ceiling: modify-business-process 35053,
+	// create-business-process 35007, describe-business-process 34195 - 19 and 65 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -197,7 +246,7 @@ public sealed class ToolContractPayloadBudgetTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The compact discovery index returned by a no-arguments get-tool-contract call stays within its byte budget, ratcheting the cost every long-tail discovery call pays.")]
+	[Description("The compact discovery index returned by a no-arguments get-tool-contract call - one line per tool plus the legend - stays within its byte budget, which sits below the size at which an agent CLI spills a tool result to a file.")]
 	public void GetToolContracts_ShouldKeepCompactIndexSerializedSizeWithinBudget_WhenCalledWithoutToolNames() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
@@ -207,10 +256,31 @@ public sealed class ToolContractPayloadBudgetTests {
 		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
 
 		// Assert
-		response.Index.Should().NotBeNullOrEmpty(
+		response.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "a no-arguments call is the discovery entry point and must answer with the compact index");
+		payloadBytes.Should().BeLessThanOrEqualTo(MaxToolIndexSerializedBytes,
+			because: $"the line index is paid on every discovery call, and every session makes one; measured {payloadBytes} bytes against the {MaxToolIndexSerializedBytes}-byte ceiling. Past {MaxInlineWireReplyBytes} bytes it spills to a file in an agent CLI - shorten the purpose cut or the legend before raising this");
+		MaxToolIndexSerializedBytes.Should().BeLessThanOrEqualTo(MaxInlineWireReplyBytes,
+			because: "a ceiling raised past the spill line would let the index grow back into the read-back it was cut to remove");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The object index returned for detail=index-entries - the shape ClioRing parses - stays within its byte budget, ratcheting the per-tool flags it carries.")]
+	public void GetToolContracts_ShouldKeepIndexEntriesSerializedSizeWithinBudget_WhenDetailIsIndexEntries() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse response = tool.GetToolContracts(
+			new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail));
+		int payloadBytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
+
+		// Assert
+		response.Index.Should().NotBeNullOrEmpty(
+			because: "detail=index-entries must answer with the per-tool objects");
 		payloadBytes.Should().BeLessThanOrEqualTo(MaxCompactIndexSerializedBytes,
-			because: $"the compact index is paid on every long-tail discovery call; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
+			because: $"the object index grows by tool count like the line index does; measured {payloadBytes} bytes against the {MaxCompactIndexSerializedBytes}-byte ceiling");
 	}
 
 	[Test]
@@ -225,7 +295,7 @@ public sealed class ToolContractPayloadBudgetTests {
 		// CanonicalToolNames, the CURATED catalog only, and would drop every uncurated tool, which is where
 		// the unbounded [Description] attributes actually live.)
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? [])
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? [])
 			.Select(entry => entry.Name)
 			.ToArray();
 
@@ -268,7 +338,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	public void GetToolContracts_ShouldFitEverySingleToolLookupInline_WhenDetailIsOmitted() {
 		// Arrange
 		ToolContractGetTool tool = BuildToolOverDefaultSurface();
-		string[] toolNames = (tool.GetToolContracts().Index ?? []).Select(entry => entry.Name).ToArray();
+		string[] toolNames = (tool.GetToolContracts(new ToolContractGetArgs(Detail: ToolContractCatalog.IndexEntriesDetail)).Index ?? []).Select(entry => entry.Name).ToArray();
 
 		// Act
 		(string Name, int Bytes, string? Detail)[] replies = toolNames

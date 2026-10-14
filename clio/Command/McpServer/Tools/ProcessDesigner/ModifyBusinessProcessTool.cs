@@ -84,8 +84,8 @@ public class ModifyBusinessProcessTool(
 		 + "keeping its UId and position, which decides branch precedence"
 		 + "), setFlowCondition (with 'source' and "
 		 + "'target' naming an EXISTING flow, plus a non-empty 'condition' — and NOT a 'kind', which it does "
-		 + "not read and REFUSES from 1.6.0.11 (it resolves the flow by its endpoint pair, so an echoed kind "
-		 + "would be dropped while the edit landed on whichever flow that pair resolves to) — a boolean "
+		 + "not read and REFUSES (an echoed kind would be dropped "
+		 + "while the edit landed on whichever flow the pair resolves to) — a boolean "
 		 + "formula deciding whether "
 		 + "the branch is taken; turns that flow into a CONDITIONAL flow in place, keeping its position, which "
 		 + "matters because sibling branches off one element are evaluated in the order the flows were added and "
@@ -108,7 +108,7 @@ public class ModifyBusinessProcessTool(
 		 + "condition written onto one is stored and never evaluated. ALSO refused whenever the SOURCE "
 		 + "enumerates results at all: the designer offers no formula field there, so a condition would run "
 		 + "while the card opened empty. The refusal names the deciding activity and what to pass instead), "
-		 + "setFlowResults (from 1.6.2.23; with 'source' and 'target' naming an EXISTING flow, plus a "
+		 + "setFlowResults (with 'source' and 'target' naming an EXISTING flow, plus a "
 		 + "non-empty 'results' - the RESULT CAPTIONS selecting this branch, or their record ids, e.g. "
 		 + "['Positive'] on an Approval. This is a conditional flow's OTHER predicate slot, not a spelling of "
 		 + "setFlowCondition: which slot a connector takes is decided by its SOURCE, not by you. The two are "
@@ -121,9 +121,8 @@ public class ModifyBusinessProcessTool(
 		 + "the build path with flows[].results. get-guidance name=process-branch-conditions routes to the rule's owner "
 		 + "and says what to tell the user first), "
 		 + "A FLOW 'label' is the text the designer draws ON the connector, and on setFlow its three states "
-		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because a "
-		 + "modify normally lands on a designer-authored process where 84.9% of conditional flows already "
-		 + "carry one; pass an EMPTY string to clear it; pass text to replace it. Since 'kind' is mandatory on "
+		 + "are different: OMIT it and the flow keeps the label it has - which is what you want, because "
+		 + "designer-authored conditional flows usually carry one; pass an EMPTY string to clear it; pass text to replace it. Since 'kind' is mandatory on "
 		 + "setFlow, relabelling alone means passing the kind the flow ALREADY has - that is a no-op for the "
 		 + "kind and still applies the label. Name the OUTCOME ('Approved', 'User Not Found'), never repeat "
 		 + "the condition. describe-business-process reports each flow's 'label', so read before you write: "
@@ -133,14 +132,14 @@ public class ModifyBusinessProcessTool(
 		 + "flow label - one PREDATING it discards the field silently, so clio reads the flows back "
 		 + "and warns when a label you sent is not what is drawn), "
 		 + "addParameter (with a 'parameter': name, type "
-		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Collection - plus Lookup, which is "
+		 + "one of Text/Long text/Integer/Float/Money/Boolean/Date/Date-time/Time/Guid/Collection/File/FileCollection - plus Lookup, which is "
 		 + "requested through referenceSchema rather than through type; anything else is rejected), "
-		 + "direction? (a Collection defaults to Out unless you set one), caption?, description?, optional value (a literal constant, not a formula; refused on a Collection), or "
+		 + "direction? (a Collection defaults to Out, a FileCollection to Variable, unless you set one), caption?, description?, optional value (a literal constant, not a formula; refused on a Collection or File), or "
 		 + "referenceSchema for a Lookup to an object e.g. City (refused on a DECLARED Collection, ignored on a mirror), or typeFromElement + typeFromElementParameter to "
 		 + "copy an element parameter's exact type — mirroring a COLLECTION output (e.g. a "
 		 + "readData element's ResultCompositeObjectList) also copies its per-column itemProperties, "
 		 + "stamps tag '<element>.<parameter>' and binds the parameter to that output in the same step, exactly as the "
-		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag — the mirror would be a bound, tagged, unbindable empty shape — so mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type Collection is an opaque list with no shape), "
+		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag; mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type Collection is an opaque list with no shape), "
 		 + "addMapping (with a 'mapping' whose keys are FLAT, not "
 		 + "nested under a 'target' object: a target of either 'targetProcessParameter' or 'elementName' + "
 		 + "'elementParameter', and one source of {sourceElement, sourceElementParameter (+ sourceColumn)} "
@@ -157,7 +156,7 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.92, for "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.99, for "
 		 + "setTracing, the meta-path checks, sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions; "
 		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
 		 + "reference must resolve in THIS process - a UId meta path exactly as the platform does (every segment "
@@ -175,8 +174,8 @@ public class ModifyBusinessProcessTool(
 		 + "invalid line break symbol' and quotes the expression as EMPTY; an unresolvable [#…#] parameter "
 		 + "reference is not in this family at all - it names the reference and the remedy. Must be "
 		 + "one line; "
-		 + "a Lookup target's 'value' takes a bare non-empty record Guid (ships from CrtProcessBuilder 1.3.1.1; an "
-		 + "older-than-required environment is refused naming the version) - describe reports its resolved NAME "
+		 + "a Lookup target's 'value' takes a bare non-empty record Guid (from CrtProcessBuilder 1.3.1.1) - describe "
+		 + "reports its resolved NAME "
 		 + "as valueDisplay beside the unchanged Guid, and an already-composed [#Lookup…#] macro is also accepted "
 		 + "and decoded, so a described value re-submits unchanged; a non-Guid value, Guid.Empty, or a Guid of "
 		 + "the WRONG entity (e.g. a role id on the Contact-typed OwnerId - use the element-level 'performer' "
@@ -184,8 +183,9 @@ public class ModifyBusinessProcessTool(
 		 + "EntitySchemaId, Modify data EntitySchemaUId) holds the schema UId, never a row Id; only setElement sets "
 		 + "or changes that object. "
 		 + "get-guidance name=process-parameters owns the full contract, "
-		 + "including the same rule for a Lookup parameter's DEFAULT. Re-mapping an already-bound target "
-		 + "overwrites it in place — there is no removeMapping/clear op), "
+		 + "including the same rule for a Lookup parameter's DEFAULT. A targetProcessParameter mapping is a BINDING, "
+		 + "read live, not a flow-time assignment: re-mapping overwrites (warned; no removeMapping); per-branch "
+		 + "values need a formulaTask with formula.resultProcessParameter), "
 		 + "setParameter (with 'parameterName' = the target parameter by name/UId and 'parameterUpdate' = any of "
 		 + "caption/description/code/direction/referenceSchema (re-targets an existing Lookup only)/value/typeFromElement "
 		 + "+ typeFromElementParameter (a Collection only), updated "
@@ -362,14 +362,14 @@ public class ModifyBusinessProcessTool(
 		 + "Operations apply in order; any failure aborts the edit (unless its error says WAS saved). A SUCCESSFUL edit may still "
 		 + "report caveats: they arrive as entries with message-type \"Warning\" in execution-log-messages (no "
 		 + "separate 'warnings' field) — outcomes that APPLIED but are not what you would assume. "
-		 + "Read them, and note some are neutral acknowledgements (a column that was already unbound), not failures. "
+		 + "Some are neutral acknowledgements (a column already unbound), not failures. "
 		 + "Use describe-business-process to inspect the current elements/names first. May remove elements — destructive. "
 		 + "Removals are NOT structurally validated (a broken graph can still be saved) and every edit re-lays-out the "
 		 + "whole diagram — read the 'Modifying an existing process' rules in get-guidance name=process-modeling (and get-guidance name=process-access-rights for the accessRights block - it owns the permission entries, the grantee kinds, and the two configurations that build green and change nothing) "
 		 + "first. For a setFlowCondition operation or an 'expression' mapping source read get-guidance "
 			 + "name=process-formulas - it owns the accepted vocabulary, the reference syntax, what each "
 			 + "refusal names, and the length bound. "
-			 + "Requires the ProcessDesignService (CrtProcessBuilder) package; install with install-process-builder. Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed.")]
+			 + "Requires the CrtProcessBuilder package (install-process-builder, after user approval). Unless the edit adds a scriptTask (get-guidance name=process-script-task first), replaces its body or changes a using or the methods, the result carries the compile-not-required note: do NOT run compile-creatio, and do NOT infer a compile need from a raw `VwSysProcess` read. Such an edit warns compile-REQUIRED instead: ask the user, then run compile-creatio with process-name. Either signal covers THIS call only; a compile an earlier save owed stays owed." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult ModifyBusinessProcess(
 		[Description("modify-business-process parameters")] [Required] ModifyBusinessProcessArgs args
 	) {
@@ -377,15 +377,40 @@ public class ModifyBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: an unambiguous synonym of the process identity (processName, code, uid, ...) is read as the
+		// canonical argument it names - the same rule describe-business-process follows, minus the value-shape
+		// reading of name/process, which never drives a write. An ambiguous one is refused before anything runs.
+		ProcessToolArgumentAliases.IdentityResolution identity = ProcessToolArgumentAliases.ResolveWriteTarget(
+			args.ExtensionData, args.ProcessName, args.ProcessUid);
+		if (identity.Error is not null) {
+			return CommandExecutionResult.FromValidationError(identity.Error);
+		}
+		args = args with {
+			ProcessName = identity.ProcessName, ProcessUid = identity.ProcessUid, ExtensionData = identity.Remaining
+		};
+
+		// ENG-103025: a refusal for a missing environment, process or operations keeps its text and exit code and
+		// gains the required arguments and a minimal valid call after it.
+		List<string> missing = [];
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			missing.Add("environment-name");
+		}
+		if (string.IsNullOrWhiteSpace(args.ProcessName) && string.IsNullOrWhiteSpace(args.ProcessUid)) {
+			missing.Add("process-name or process-uid");
+		}
+		if (McpToolArgumentSupport.IsAbsentJsonDocument(args.Operations)) {
+			missing.Add("operations");
+		}
+
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
 		if (targetError is not null) {
-			return targetError;
+			return ToolMiniContract.Decorate(targetError, missing, ToolMiniContract.ForModifyBusinessProcess);
 		}
 
 		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Operations, JsonValueKind.Array,
 				"operations", out string operationsJson, out CommandExecutionResult? operationsRefusal)) {
-			return operationsRefusal;
+			return ToolMiniContract.Decorate(operationsRefusal, missing, ToolMiniContract.ForModifyBusinessProcess);
 		}
 
 		ModifyBusinessProcessOptions options = new() {
@@ -400,7 +425,8 @@ public class ModifyBusinessProcessTool(
 		// server then warns that the process cannot run "until the configuration is compiled", and the gate
 		// drops the note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<ModifyBusinessProcessCommand>(options);
-		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(
+			result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote(), identity.Warnings);
 	}
 }
 

@@ -327,6 +327,31 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route a flow-time assignment to formulaTask + formula.resultProcessParameter (ENG-103081). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
+	public void ProcessWriteTools_ShouldStateTheBindingSemanticsOfAProcessParameterMapping() {
+		// Arrange
+		string create = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+		string modify = typeof(ModifyBusinessProcessTool)
+			.GetMethod(nameof(ModifyBusinessProcessTool.ModifyBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		create.Should().Contain("a BINDING, read live, not a flow-time assignment",
+			because: "the build contract must say a mapping is not an assignment made when a branch runs");
+		create.Should().Contain("last per parameter wins (warned)",
+			because: "a second mapping silently replaced the first");
+		create.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
+			because: "the contract must name the flow-time assignment");
+		modify.Should().Contain("A targetProcessParameter mapping is a BINDING, read live, not a flow-time assignment",
+			because: "addMapping shares the semantics and must state them too");
+		modify.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
+			because: "modify has no removeMapping, so the caller needs the flow-time route");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The always-loaded tool description and the prompt route a Pre-configured page to type preconfiguredPage and say the generic userTask route naming PreconfiguredPageUserTask is refused. That route cannot carry the page, and a package that does not refuse it builds an element that fails at run time, so the prose is what keeps a caller off it.")]
 	public void CreateBusinessProcessTool_ShouldSteerAPreconfiguredPageOffTheGenericUserTaskRoute() {
 		// Arrange
@@ -403,10 +428,31 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.92 (for isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal isTracing raised");
+		toolDescription.Should().Contain("this clio requires 1.6.6.99 (for isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract's parameters[] clause names the File and FileCollection types and refuses a constant on a File (ENG-95984, CU-03). No other test pins the type list, so a later description trim would drop the two types unseen and an agent would read them as unsupported.")]
+	public void CreateBusinessProcessTool_ShouldNameTheFileParameterTypes_InTheParametersClause() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolDescription.Should().Contain("type (a supported scalar, Lookup, Collection, File or FileCollection — other types rejected;",
+			because: "the parameters[] type list is where an agent learns which types a build accepts");
+		toolDescription.Should().Contain("not a formula; refused on a Collection or File)",
+			because: "a File has no constant form, and the contract must say so before the server refuses it");
+		toolDescription.Should().Contain("a Collection defaults to direction Out, a FileCollection to Variable, unless you set one",
+			because: "a FileCollection does not follow a Collection's Out default, and an agent expecting Out gets a Variable parameter with no notice");
 	}
 
 }

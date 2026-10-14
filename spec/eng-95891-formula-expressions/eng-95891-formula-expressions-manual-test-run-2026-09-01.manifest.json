@@ -5,7 +5,7 @@
   "isolation": "isolated",
   "stand": {
     "alias": "krestov-test",
-    "url": "http://d_krestov_n.tscrm.com:1026"
+    "url": "http://<dev-stand>:1026"
   },
   "packageVersion": "1.4.0.18",
   "guidance": {

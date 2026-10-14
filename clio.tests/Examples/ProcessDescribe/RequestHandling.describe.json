@@ -1,0 +1,1064 @@
+{
+ "name": "UsrReqHnd0925170438ReqHandling",
+ "caption": "Request handling UsrReqHnd0925170438",
+ "schemaUId": "7552b0de-92ec-41a0-b21b-e41befe555b5",
+ "version": 0,
+ "isActiveVersion": false,
+ "activeVersionSchemaUId": "4fa8675a-dc2a-4551-b8d6-c2bd78683c38",
+ "activeVersionName": "UsrReqHnd0925170438ReqHandlingCustom1",
+ "versionRootSchemaUId": "7552b0de-92ec-41a0-b21b-e41befe555b5",
+ "activeVersionSource": "process-library-view",
+ "versions": [
+  {
+   "schemaUId": "7552b0de-92ec-41a0-b21b-e41befe555b5",
+   "name": "UsrReqHnd0925170438ReqHandling",
+   "caption": "Request handling UsrReqHnd0925170438",
+   "version": 0,
+   "isActiveVersion": false,
+   "isRoot": true,
+   "packageUId": "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a",
+   "packageName": "Custom",
+   "enabled": true
+  },
+  {
+   "schemaUId": "4fa8675a-dc2a-4551-b8d6-c2bd78683c38",
+   "name": "UsrReqHnd0925170438ReqHandlingCustom1",
+   "caption": "Request handling UsrReqHnd0925170438",
+   "version": 1,
+   "isActiveVersion": true,
+   "isRoot": false,
+   "packageUId": "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a",
+   "packageName": "Custom",
+   "enabled": true
+  },
+  {
+   "schemaUId": "32c38e83-8558-401b-986c-39d2f422a991",
+   "name": "UsrReqHnd0925170438ReqHandlingCustom2",
+   "caption": "Request handling UsrReqHnd0925170438",
+   "version": 2,
+   "isActiveVersion": false,
+   "isRoot": false,
+   "packageUId": "a00051f4-cde3-4f3f-b08e-c5ad1a5c735a",
+   "packageName": "Custom",
+   "enabled": true
+  }
+ ],
+ "elements": [
+  {
+   "name": "RequestFiledSignal",
+   "uid": "b08d9124-469f-4f59-bc7a-c7220fb350aa",
+   "caption": "Request is filed",
+   "type": "ProcessSchemaStartSignalEvent",
+   "buildType": "signalstart",
+   "managerItemUId": "1129e72f-0e8c-445a-b2ea-463517e86395",
+   "position": "60;184",
+   "size": "31;31",
+   "useBackgroundMode": true,
+   "parameters": [
+    {
+     "name": "RecordId",
+     "caption": "",
+     "description": "",
+     "uid": "3fe57c7c-b975-42e9-9f28-dbab45d84db8",
+     "type": "Guid",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "source": "None"
+    }
+   ],
+   "signal": {
+    "entity": "AppRequest",
+    "entitySchemaUId": "cc0342ae-88f8-414b-947b-0991fd426a33",
+    "on": "added"
+   }
+  },
+  {
+   "name": "RequestChangedSignal",
+   "uid": "cd056332-971d-4b9c-aa9f-54d8825aefaa",
+   "caption": "Request is changed",
+   "type": "ProcessSchemaStartSignalEvent",
+   "buildType": "signalstart",
+   "managerItemUId": "1129e72f-0e8c-445a-b2ea-463517e86395",
+   "position": "60;314",
+   "size": "31;31",
+   "useBackgroundMode": true,
+   "parameters": [
+    {
+     "name": "RecordId",
+     "caption": "",
+     "description": "",
+     "uid": "3fe57c7c-b975-42e9-9f28-dbab45d84db8",
+     "type": "Guid",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "source": "None"
+    }
+   ],
+   "signal": {
+    "entity": "AppRequest",
+    "entitySchemaUId": "cc0342ae-88f8-414b-947b-0991fd426a33",
+    "on": "modified"
+   }
+  },
+  {
+   "name": "ReadFiledRequest",
+   "uid": "cceede39-fecc-463d-8430-456700cb5386",
+   "caption": "Read the filed request",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ReadDataUserTask",
+   "managerItemUId": "cb455b6f-78ff-4b1e-b241-c2bbc0b37e9f",
+   "position": "240;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "DataSourceFilters",
+     "caption": "Data source of filters",
+     "description": "",
+     "uid": "d7ab2321-72bf-4e42-811f-250ef19116e8",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "{\"className\":\"Terrasoft.FilterGroup\",\"serializedFilterEditData\":\"{\\\"className\\\":\\\"Terrasoft.FilterGroup\\\",\\\"items\\\":{\\\"28165564-3720-4bfb-b11d-e4ad290399d2\\\":{\\\"className\\\":\\\"Terrasoft.CompareFilter\\\",\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"className\\\":\\\"Terrasoft.ColumnExpression\\\",\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"isAggregative\\\":false,\\\"dataValueType\\\":0,\\\"leftExpressionCaption\\\":\\\"Id\\\",\\\"rightExpression\\\":{\\\"className\\\":\\\"Terrasoft.ParameterExpression\\\",\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"className\\\":\\\"Terrasoft.Parameter\\\",\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Element:{b08d9124-469f-4f59-bc7a-c7220fb350aa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]\\\",\\\"displayValue\\\":\\\"Request is filed.RecordId\\\",\\\"Id\\\":\\\"c7ce4f65-c864-4fcd-bab9-638c88351e97\\\"}}},\\\"key\\\":\\\"28165564-3720-4bfb-b11d-e4ad290399d2\\\"}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"AppRequest\\\",\\\"key\\\":\\\"\\\"}\",\"dataSourceFilters\":\"{\\\"items\\\":{\\\"28165564-3720-4bfb-b11d-e4ad290399d2\\\":{\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"rightExpression\\\":{\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Element:{b08d9124-469f-4f59-bc7a-c7220fb350aa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]\\\",\\\"Id\\\":\\\"c7ce4f65-c864-4fcd-bab9-638c88351e97\\\"}}}}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"AppRequest\\\"}\"}"
+    },
+    {
+     "name": "ResultType",
+     "caption": "Type of result",
+     "description": "",
+     "uid": "aff69abe-9b7a-4824-8f3a-50037e6e7a25",
+     "type": "Integer",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "0"
+    },
+    {
+     "name": "ResultEntity",
+     "caption": "First item of resulting collection",
+     "description": "",
+     "uid": "39dea4a8-64db-4ec4-b62d-f8232120b436",
+     "type": "EntityDataValueType",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "referenceSchema": "AppRequest",
+     "source": "ConstValue"
+    },
+    {
+     "name": "EntityColumnMetaPathes",
+     "caption": "Columns to read",
+     "description": "",
+     "uid": "4668eaf6-16ae-4543-a9fb-93c310a77917",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "9fdba4e0-e65f-206c-299d-882b9f832233;ebf6bb93-8aa6-4a01-900d-c6ea67affe21"
+    }
+   ],
+   "filter": {
+    "object": "AppRequest",
+    "logicalOperation": "and",
+    "conditions": [
+     {
+      "column": "Id",
+      "comparison": "equal",
+      "displayValue": "Request is filed.RecordId",
+      "expression": "[IsOwnerSchema:false].[IsSchema:false].[Element:{b08d9124-469f-4f59-bc7a-c7220fb350aa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]"
+     }
+    ]
+   },
+   "deprecated": false,
+   "writesConnectionsAtRuntime": false,
+   "readData": {
+    "columns": [
+     "UsrSickLeaveDaysLeft",
+     "CreatedBy"
+    ],
+    "mode": "first",
+    "outputs": [
+     "ResultEntity"
+    ],
+    "source": "AppRequest",
+    "sourceSchemaUId": "cc0342ae-88f8-414b-947b-0991fd426a33"
+   }
+  },
+  {
+   "name": "ReadChangedRequest",
+   "uid": "7dfd9b7d-202b-419a-a1c6-0b369cc53b39",
+   "caption": "Read the changed request",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ReadDataUserTask",
+   "managerItemUId": "cb455b6f-78ff-4b1e-b241-c2bbc0b37e9f",
+   "position": "240;302",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "DataSourceFilters",
+     "caption": "Data source of filters",
+     "description": "",
+     "uid": "397ab878-a79e-42ce-9ddb-ac0f60c64fda",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "{\"className\":\"Terrasoft.FilterGroup\",\"serializedFilterEditData\":\"{\\\"className\\\":\\\"Terrasoft.FilterGroup\\\",\\\"items\\\":{\\\"5db5b971-99bc-465f-aa1d-ff3e0dab9a3d\\\":{\\\"className\\\":\\\"Terrasoft.CompareFilter\\\",\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"className\\\":\\\"Terrasoft.ColumnExpression\\\",\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"isAggregative\\\":false,\\\"dataValueType\\\":0,\\\"leftExpressionCaption\\\":\\\"Id\\\",\\\"rightExpression\\\":{\\\"className\\\":\\\"Terrasoft.ParameterExpression\\\",\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"className\\\":\\\"Terrasoft.Parameter\\\",\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Element:{cd056332-971d-4b9c-aa9f-54d8825aefaa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]\\\",\\\"displayValue\\\":\\\"Request is changed.RecordId\\\",\\\"Id\\\":\\\"647a5bcc-3523-4190-b499-0be05f96f420\\\"}}},\\\"key\\\":\\\"5db5b971-99bc-465f-aa1d-ff3e0dab9a3d\\\"}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"AppRequest\\\",\\\"key\\\":\\\"\\\"}\",\"dataSourceFilters\":\"{\\\"items\\\":{\\\"5db5b971-99bc-465f-aa1d-ff3e0dab9a3d\\\":{\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"rightExpression\\\":{\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Element:{cd056332-971d-4b9c-aa9f-54d8825aefaa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]\\\",\\\"Id\\\":\\\"647a5bcc-3523-4190-b499-0be05f96f420\\\"}}}}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"AppRequest\\\"}\"}"
+    },
+    {
+     "name": "ResultType",
+     "caption": "Type of result",
+     "description": "",
+     "uid": "6c600646-6366-4eb7-8a3e-496f2fb4e02d",
+     "type": "Integer",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "0"
+    },
+    {
+     "name": "ResultEntity",
+     "caption": "First item of resulting collection",
+     "description": "",
+     "uid": "193390d5-c1f4-41df-a4f1-886ec942c2d9",
+     "type": "EntityDataValueType",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "referenceSchema": "AppRequest",
+     "source": "ConstValue"
+    },
+    {
+     "name": "EntityColumnMetaPathes",
+     "caption": "Columns to read",
+     "description": "",
+     "uid": "d3321fba-c0e9-4d57-89b7-9a0553951c7a",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "9fdba4e0-e65f-206c-299d-882b9f832233;3015559e-cbc6-406a-88af-07f7930be832"
+    }
+   ],
+   "filter": {
+    "object": "AppRequest",
+    "logicalOperation": "and",
+    "conditions": [
+     {
+      "column": "Id",
+      "comparison": "equal",
+      "displayValue": "Request is changed.RecordId",
+      "expression": "[IsOwnerSchema:false].[IsSchema:false].[Element:{cd056332-971d-4b9c-aa9f-54d8825aefaa}].[Parameter:{3fe57c7c-b975-42e9-9f28-dbab45d84db8}]"
+     }
+    ]
+   },
+   "deprecated": false,
+   "writesConnectionsAtRuntime": false,
+   "readData": {
+    "columns": [
+     "UsrSickLeaveDaysLeft",
+     "ModifiedBy"
+    ],
+    "mode": "first",
+    "outputs": [
+     "ResultEntity"
+    ],
+    "source": "AppRequest",
+    "sourceSchemaUId": "cc0342ae-88f8-414b-947b-0991fd426a33"
+   }
+  },
+  {
+   "name": "ExtractFiledDaysLeft",
+   "uid": "2cfeaf44-6c12-43cc-982d-eeefff30c9c8",
+   "caption": "Extract days left from the filed request",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "420;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "[#[Element:{cceede39-fecc-463d-8430-456700cb5386}].[Parameter:{39dea4a8-64db-4ec4-b62d-f8232120b436}].[EntityColumn:{9fdba4e0-e65f-206c-299d-882b9f832233}]#]",
+    "target": {
+     "resultProcessParameter": "DaysLeftParameter"
+    }
+   }
+  },
+  {
+   "name": "ExtractChangedDaysLeft",
+   "uid": "b2e94399-8c91-4eda-906e-a23859ae8760",
+   "caption": "Extract days left from the changed request",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "420;302",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "[#[Element:{7dfd9b7d-202b-419a-a1c6-0b369cc53b39}].[Parameter:{193390d5-c1f4-41df-a4f1-886ec942c2d9}].[EntityColumn:{9fdba4e0-e65f-206c-299d-882b9f832233}]#]",
+    "target": {
+     "resultProcessParameter": "DaysLeftParameter"
+    }
+   }
+  },
+  {
+   "name": "ExtractFiledEmployee",
+   "uid": "fa69dfd7-a34b-4bf5-847f-c1bbec02dd4b",
+   "caption": "Extract the employee who filed the request",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "600;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "[#[Element:{cceede39-fecc-463d-8430-456700cb5386}].[Parameter:{39dea4a8-64db-4ec4-b62d-f8232120b436}].[EntityColumn:{ebf6bb93-8aa6-4a01-900d-c6ea67affe21}]#]",
+    "target": {
+     "resultProcessParameter": "EmployeeIdParameter"
+    }
+   }
+  },
+  {
+   "name": "ExtractChangedEmployee",
+   "uid": "0720dd2a-cbbf-4c55-bbb3-2c4fd07c6e74",
+   "caption": "Extract the employee who changed the request",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "600;302",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "[#[Element:{7dfd9b7d-202b-419a-a1c6-0b369cc53b39}].[Parameter:{193390d5-c1f4-41df-a4f1-886ec942c2d9}].[EntityColumn:{3015559e-cbc6-406a-88af-07f7930be832}]#]",
+    "target": {
+     "resultProcessParameter": "EmployeeIdParameter"
+    }
+   }
+  },
+  {
+   "name": "ReadEmployee",
+   "uid": "4a0bbde8-64b3-4f14-9fbe-2a5cba9bf111",
+   "caption": "Read the employee contact",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ReadDataUserTask",
+   "managerItemUId": "cb455b6f-78ff-4b1e-b241-c2bbc0b37e9f",
+   "position": "780;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "DataSourceFilters",
+     "caption": "Data source of filters",
+     "description": "",
+     "uid": "0407a327-36fb-4a15-b01e-f3ec38b8f414",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "{\"className\":\"Terrasoft.FilterGroup\",\"serializedFilterEditData\":\"{\\\"className\\\":\\\"Terrasoft.FilterGroup\\\",\\\"items\\\":{\\\"555799e1-67ed-4c2e-8b69-94c2ba755fd4\\\":{\\\"className\\\":\\\"Terrasoft.CompareFilter\\\",\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"className\\\":\\\"Terrasoft.ColumnExpression\\\",\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"isAggregative\\\":false,\\\"dataValueType\\\":0,\\\"leftExpressionCaption\\\":\\\"Id\\\",\\\"rightExpression\\\":{\\\"className\\\":\\\"Terrasoft.ParameterExpression\\\",\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"className\\\":\\\"Terrasoft.Parameter\\\",\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]\\\",\\\"displayValue\\\":\\\"Employee\\\",\\\"Id\\\":\\\"40777371-af59-4773-b922-d8c4fda3281f\\\"}}},\\\"key\\\":\\\"555799e1-67ed-4c2e-8b69-94c2ba755fd4\\\"}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"Contact\\\",\\\"key\\\":\\\"\\\"}\",\"dataSourceFilters\":\"{\\\"items\\\":{\\\"555799e1-67ed-4c2e-8b69-94c2ba755fd4\\\":{\\\"filterType\\\":1,\\\"comparisonType\\\":3,\\\"isEnabled\\\":true,\\\"trimDateTimeParameterToDate\\\":false,\\\"leftExpression\\\":{\\\"expressionType\\\":0,\\\"columnPath\\\":\\\"Id\\\"},\\\"rightExpression\\\":{\\\"expressionType\\\":2,\\\"parameter\\\":{\\\"dataValueType\\\":26,\\\"value\\\":{\\\"value\\\":\\\"[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]\\\",\\\"Id\\\":\\\"40777371-af59-4773-b922-d8c4fda3281f\\\"}}}}},\\\"logicalOperation\\\":0,\\\"isEnabled\\\":true,\\\"filterType\\\":6,\\\"rootSchemaName\\\":\\\"Contact\\\"}\"}"
+    },
+    {
+     "name": "ResultType",
+     "caption": "Type of result",
+     "description": "",
+     "uid": "2be449f6-494b-40e2-8ce8-2973d6e613b1",
+     "type": "Integer",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "0"
+    },
+    {
+     "name": "ResultEntity",
+     "caption": "First item of resulting collection",
+     "description": "",
+     "uid": "36a887cb-0d71-42dd-8528-b6a82b3d30e4",
+     "type": "EntityDataValueType",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "referenceSchema": "Contact",
+     "source": "ConstValue"
+    },
+    {
+     "name": "EntityColumnMetaPathes",
+     "caption": "Columns to read",
+     "description": "",
+     "uid": "0d3549f4-0add-4a00-96c4-d25100873f13",
+     "type": "MetaDataTextDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "a5cca792-47dd-428a-83fb-5c92bdd97ff8"
+    }
+   ],
+   "filter": {
+    "object": "Contact",
+    "logicalOperation": "and",
+    "conditions": [
+     {
+      "column": "Id",
+      "comparison": "equal",
+      "displayValue": "Employee",
+      "expression": "[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]"
+     }
+    ]
+   },
+   "deprecated": false,
+   "writesConnectionsAtRuntime": false,
+   "readData": {
+    "columns": [
+     "Name"
+    ],
+    "mode": "first",
+    "outputs": [
+     "ResultEntity"
+    ],
+    "source": "Contact",
+    "sourceSchemaUId": "16be3651-8fe2-4159-8dd0-a803d4683dd3"
+   }
+  },
+  {
+   "name": "ExtractEmployeeName",
+   "uid": "6f5a4c01-4666-4f1c-90ce-a13fa3aad12c",
+   "caption": "Extract the employee's name",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "960;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "[#[Element:{4a0bbde8-64b3-4f14-9fbe-2a5cba9bf111}].[Parameter:{36a887cb-0d71-42dd-8528-b6a82b3d30e4}].[EntityColumn:{a5cca792-47dd-428a-83fb-5c92bdd97ff8}]#]",
+    "target": {
+     "resultProcessParameter": "EmployeeNameParameter"
+    }
+   }
+  },
+  {
+   "name": "ComposeTaskTitle",
+   "uid": "92953864-2cf9-4459-8f9e-9e46510472c7",
+   "caption": "Compose the days-left task title",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "1140;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "\"Request with days left: \" + [#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{69b74482-438b-4cad-bfba-b9f8309cc89f}]#].ToString() + \" for employee: \" + [#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{6ffbc643-629f-4953-ae06-f4643bbf5942}]#]",
+    "target": {
+     "resultProcessParameter": "TaskTitleParameter"
+    }
+   }
+  },
+  {
+   "name": "ReportDaysLeftToEmployee",
+   "uid": "ca079064-d7e9-443e-bec2-8672e32da356",
+   "caption": "Report days left to the employee",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ActivityUserTask",
+   "managerItemUId": "b5c726f2-af5b-4381-bac6-913074144308",
+   "position": "1320;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "Recommendation",
+     "caption": "Recommendation",
+     "description": "",
+     "uid": "a3e4afd2-b720-4f84-8e2f-534501295bf1",
+     "type": "LocalizableStringDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "Script",
+     "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{75f140d5-9538-4b0a-869a-b64d78d1e04d}]#]",
+     "valueDisplay": "Task title"
+    },
+    {
+     "name": "ActivityCategory",
+     "caption": "Category",
+     "description": "",
+     "uid": "4cb30797-2e72-4198-a351-c8ef063df9f5",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "ActivityCategory",
+     "source": "ConstValue",
+     "value": "F51C4643-58E6-DF11-971B-001D60E938C6",
+     "valueDisplay": "To do",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "OwnerId",
+     "caption": "Owner",
+     "description": "",
+     "uid": "24c8c563-dd48-490a-adc1-2846a861eda3",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "Contact",
+     "source": "Script",
+     "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]#]",
+     "valueDisplay": "Employee",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "ActivityResult",
+     "caption": "Result of activity",
+     "description": "",
+     "uid": "9476a818-c5ee-491f-bd41-e22fb982509d",
+     "type": "Guid",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "source": "None"
+    }
+   ],
+   "deprecated": false,
+   "writesConnectionsAtRuntime": true
+  },
+  {
+   "name": "MarkTaskReported",
+   "uid": "a338e550-875a-4919-9f43-90abf3e6c9d7",
+   "caption": "Mark the days-left task as reported",
+   "type": "ProcessSchemaFormulaTask",
+   "buildType": "formulatask",
+   "managerItemUId": "d334d28f-b11a-477e-9ff0-0a95fa73d53b",
+   "position": "1500;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [],
+   "formula": {
+    "body": "true",
+    "target": {
+     "resultProcessParameter": "ReportedFlagParameter"
+    }
+   }
+  },
+  {
+   "name": "DaysLeftDecision",
+   "uid": "78bb9a40-a6df-4953-a8ae-86000e2ba5d5",
+   "caption": "Days left decision",
+   "type": "ProcessSchemaExclusiveGateway",
+   "buildType": "exclusivegateway",
+   "managerItemUId": "bd9f7570-6c97-4f16-90e5-663a190c6c7c",
+   "position": "1680;172",
+   "size": "55;55",
+   "useBackgroundMode": false
+  },
+  {
+   "name": "PromoteEmployee",
+   "uid": "cd6215db-ab02-472c-83d2-677eb3a61578",
+   "caption": "Promote the employee",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ActivityUserTask",
+   "managerItemUId": "b5c726f2-af5b-4381-bac6-913074144308",
+   "position": "1860;302",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "Recommendation",
+     "caption": "Recommendation",
+     "description": "",
+     "uid": "5c2f23fc-44a2-4706-af4d-2c2c5b08f6c6",
+     "type": "LocalizableStringDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "You are promoted"
+    },
+    {
+     "name": "ActivityCategory",
+     "caption": "Category",
+     "description": "",
+     "uid": "3fe56958-fb32-4099-bd9a-e41c96a76594",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "ActivityCategory",
+     "source": "ConstValue",
+     "value": "F51C4643-58E6-DF11-971B-001D60E938C6",
+     "valueDisplay": "To do",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "OwnerId",
+     "caption": "Owner",
+     "description": "",
+     "uid": "71fd3d28-f705-4db0-8ab7-98a806b0ec2e",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "Contact",
+     "source": "Script",
+     "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]#]",
+     "valueDisplay": "Employee",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "ActivityResult",
+     "caption": "Result of activity",
+     "description": "",
+     "uid": "ccccd3ed-dd0c-4671-84ee-8df638b70f94",
+     "type": "Guid",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "source": "None"
+    }
+   ],
+   "deprecated": false,
+   "writesConnectionsAtRuntime": true
+  },
+  {
+   "name": "AskEmployeeToDoBetter",
+   "uid": "b492d4d7-a409-47c7-864c-9ccdb3d5e5e5",
+   "caption": "Ask the employee to do better",
+   "type": "ProcessSchemaUserTask",
+   "buildType": "usertask",
+   "userTaskName": "ActivityUserTask",
+   "managerItemUId": "b5c726f2-af5b-4381-bac6-913074144308",
+   "position": "1860;172",
+   "size": "69;55",
+   "useBackgroundMode": false,
+   "parameters": [
+    {
+     "name": "Recommendation",
+     "caption": "Recommendation",
+     "description": "",
+     "uid": "2d13f28c-bade-4764-9ae9-4ef781dbcf19",
+     "type": "LocalizableStringDataValueType",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "source": "ConstValue",
+     "value": "Work better"
+    },
+    {
+     "name": "ActivityCategory",
+     "caption": "Category",
+     "description": "",
+     "uid": "b1a1c2ed-5f03-46d0-85dc-0c3b302c7663",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "ActivityCategory",
+     "source": "ConstValue",
+     "value": "F51C4643-58E6-DF11-971B-001D60E938C6",
+     "valueDisplay": "To do",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "OwnerId",
+     "caption": "Owner",
+     "description": "",
+     "uid": "4656b63f-4516-46d0-be54-b6c2a8e31cd0",
+     "type": "Lookup",
+     "direction": "Variable",
+     "isResult": false,
+     "isOutput": false,
+     "isRequired": false,
+     "referenceSchema": "Contact",
+     "source": "Script",
+     "value": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{7f2cffce-20c3-4de8-ae79-9d320ca653fb}]#]",
+     "valueDisplay": "Employee",
+     "tag": "EntityColumnValue"
+    },
+    {
+     "name": "ActivityResult",
+     "caption": "Result of activity",
+     "description": "",
+     "uid": "e2c647b5-8463-4eb1-9d4d-c5f6b6c77ad2",
+     "type": "Guid",
+     "direction": "Variable",
+     "isResult": true,
+     "isOutput": true,
+     "isRequired": false,
+     "source": "None"
+    }
+   ],
+   "deprecated": false,
+   "writesConnectionsAtRuntime": true
+  },
+  {
+   "name": "EndRequestHandled",
+   "uid": "7480da19-a13b-4737-8cc7-824f44f8889b",
+   "caption": "Request handled",
+   "type": "ProcessSchemaTerminateEvent",
+   "buildType": "endevent",
+   "managerItemUId": "1bd93619-0574-454e-bb4e-cf53b9eb9470",
+   "position": "2040;184",
+   "size": "31;31",
+   "useBackgroundMode": false,
+   "parameters": []
+  }
+ ],
+ "flows": [
+  {
+   "source": "RequestFiledSignal",
+   "target": "ReadFiledRequest",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "91;200",
+    "points": [],
+    "end": "240;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_RequestFiledSignal_ReadFiledRequest"
+  },
+  {
+   "source": "ReadFiledRequest",
+   "target": "ExtractFiledDaysLeft",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "309;200",
+    "points": [],
+    "end": "420;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ReadFiledRequest_ExtractFiledDaysLeft"
+  },
+  {
+   "source": "ExtractFiledDaysLeft",
+   "target": "ExtractFiledEmployee",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "489;200",
+    "points": [],
+    "end": "600;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ExtractFiledDaysLeft_ExtractFiledEmployee"
+  },
+  {
+   "source": "ExtractFiledEmployee",
+   "target": "ReadEmployee",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "669;200",
+    "points": [],
+    "end": "780;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ExtractFiledEmployee_ReadEmployee"
+  },
+  {
+   "source": "RequestChangedSignal",
+   "target": "ReadChangedRequest",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "91;330",
+    "points": [],
+    "end": "240;330",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_RequestChangedSignal_ReadChangedRequest"
+  },
+  {
+   "source": "ReadChangedRequest",
+   "target": "ExtractChangedDaysLeft",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "309;330",
+    "points": [],
+    "end": "420;330",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ReadChangedRequest_ExtractChangedDaysLeft"
+  },
+  {
+   "source": "ExtractChangedDaysLeft",
+   "target": "ExtractChangedEmployee",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "489;330",
+    "points": [],
+    "end": "600;330",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ExtractChangedDaysLeft_ExtractChangedEmployee"
+  },
+  {
+   "source": "ExtractChangedEmployee",
+   "target": "ReadEmployee",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "669;330",
+    "points": [
+     "815;330"
+    ],
+    "end": "815;227",
+    "exitSide": "right",
+    "entrySide": "bottom"
+   },
+   "name": "SequenceFlow_ExtractChangedEmployee_ReadEmployee"
+  },
+  {
+   "source": "ReadEmployee",
+   "target": "ExtractEmployeeName",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "849;200",
+    "points": [],
+    "end": "960;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ReadEmployee_ExtractEmployeeName"
+  },
+  {
+   "source": "ExtractEmployeeName",
+   "target": "ComposeTaskTitle",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1029;200",
+    "points": [],
+    "end": "1140;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ExtractEmployeeName_ComposeTaskTitle"
+  },
+  {
+   "source": "ComposeTaskTitle",
+   "target": "ReportDaysLeftToEmployee",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1209;200",
+    "points": [],
+    "end": "1320;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ComposeTaskTitle_ReportDaysLeftToEmployee"
+  },
+  {
+   "source": "ReportDaysLeftToEmployee",
+   "target": "MarkTaskReported",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1389;200",
+    "points": [],
+    "end": "1500;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_ReportDaysLeftToEmployee_MarkTaskReported"
+  },
+  {
+   "source": "MarkTaskReported",
+   "target": "DaysLeftDecision",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1569;200",
+    "points": [],
+    "end": "1680;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_MarkTaskReported_DaysLeftDecision"
+  },
+  {
+   "source": "DaysLeftDecision",
+   "target": "PromoteEmployee",
+   "kind": "conditional",
+   "condition": "[#[IsOwnerSchema:false].[IsSchema:false].[Parameter:{69b74482-438b-4cad-bfba-b9f8309cc89f}]#] > 10",
+   "branchesOnActivityResult": false,
+   "label": "More than 10 days left",
+   "geometry": {
+    "start": "1708;227",
+    "points": [
+     "1708;330"
+    ],
+    "end": "1860;330",
+    "exitSide": "bottom",
+    "entrySide": "left"
+   },
+   "name": "ConditionalFlow_DaysLeftDecision_PromoteEmployee"
+  },
+  {
+   "source": "DaysLeftDecision",
+   "target": "AskEmployeeToDoBetter",
+   "kind": "default",
+   "branchesOnActivityResult": false,
+   "label": "10 or fewer days left",
+   "geometry": {
+    "start": "1735;200",
+    "points": [],
+    "end": "1860;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "DefaultFlow_DaysLeftDecision_AskEmployeeToDoBetter"
+  },
+  {
+   "source": "PromoteEmployee",
+   "target": "EndRequestHandled",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1929;330",
+    "points": [
+     "2056;330"
+    ],
+    "end": "2056;215",
+    "exitSide": "right",
+    "entrySide": "bottom"
+   },
+   "name": "SequenceFlow_PromoteEmployee_EndRequestHandled"
+  },
+  {
+   "source": "AskEmployeeToDoBetter",
+   "target": "EndRequestHandled",
+   "kind": "sequence",
+   "branchesOnActivityResult": false,
+   "geometry": {
+    "start": "1929;200",
+    "points": [],
+    "end": "2040;200",
+    "exitSide": "right",
+    "entrySide": "left"
+   },
+   "name": "SequenceFlow_AskEmployeeToDoBetter_EndRequestHandled"
+  }
+ ],
+ "parameters": [
+  {
+   "name": "DaysLeftParameter",
+   "caption": "Days left",
+   "description": "",
+   "uid": "69b74482-438b-4cad-bfba-b9f8309cc89f",
+   "type": "Integer",
+   "direction": "Variable",
+   "isResult": false,
+   "isOutput": false,
+   "isRequired": false,
+   "source": "None"
+  },
+  {
+   "name": "EmployeeIdParameter",
+   "caption": "Employee",
+   "description": "",
+   "uid": "7f2cffce-20c3-4de8-ae79-9d320ca653fb",
+   "type": "Lookup",
+   "direction": "Variable",
+   "isResult": false,
+   "isOutput": false,
+   "isRequired": false,
+   "referenceSchema": "Contact",
+   "source": "None"
+  },
+  {
+   "name": "EmployeeNameParameter",
+   "caption": "Employee name",
+   "description": "",
+   "uid": "6ffbc643-629f-4953-ae06-f4643bbf5942",
+   "type": "ShortText",
+   "direction": "Variable",
+   "isResult": false,
+   "isOutput": false,
+   "isRequired": false,
+   "source": "None"
+  },
+  {
+   "name": "TaskTitleParameter",
+   "caption": "Task title",
+   "description": "",
+   "uid": "75f140d5-9538-4b0a-869a-b64d78d1e04d",
+   "type": "ShortText",
+   "direction": "Variable",
+   "isResult": false,
+   "isOutput": false,
+   "isRequired": false,
+   "source": "None"
+  },
+  {
+   "name": "ReportedFlagParameter",
+   "caption": "Task reported",
+   "description": "",
+   "uid": "3ba24b8a-36bc-4dc2-89d6-eea785e8b81b",
+   "type": "Boolean",
+   "direction": "Variable",
+   "isResult": false,
+   "isOutput": false,
+   "isRequired": false,
+   "source": "None"
+  }
+ ]
+}

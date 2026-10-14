@@ -14,9 +14,27 @@ namespace Clio.Tests;
 // Module=Package to match AGENTS.md's clio/Package/ -> Package mapping: this fixture exercises
 // ApplicationInstaller/BasePackageInstaller, so the targeted filter for a clio/Package/ change must select it
 // together with InstallerFailureClassificationTests (GH-1299).
+[NonParallelizable]
 [Property("Module", "Package")]
 internal class ApplicationInstallerTests : BaseClioModuleTests
 {
+	private bool _originalFailOnError;
+
+	// Several cases switch the process-wide GlobalContext.FailOnError on. A case that inherits it requires a
+	// success message its log does not contain, fails the installation and therefore does not restart, so the
+	// flag is reset for every case - and the fixture is [NonParallelizable], because a fixture running in
+	// parallel could still flip it mid-case (see InstallerFailureClassificationTests).
+	public override void Setup() {
+		base.Setup();
+		_originalFailOnError = GlobalContext.FailOnError;
+		GlobalContext.FailOnError = false;
+	}
+
+	public override void TearDown() {
+		GlobalContext.FailOnError = _originalFailOnError;
+		base.TearDown();
+	}
+
 	[Test]
 	public void RestartApplicationAfterInstallPackageInNet6() {
 		string packagePath = "T:\\TestClioPackage.gz";
@@ -41,10 +59,11 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		applicationInstaller.Install(packagePath, environmentSettings);
-		application.Received(1).Restart();
+		application.Received(1).Restart(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>());
 	}
 
 
@@ -76,10 +95,11 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		applicationInstaller.Install(packageFolderPath, environmentSettings);
-		application.Received(1).Restart();
+		application.Received(1).Restart(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>());
 	}
 
 	[Test]
@@ -90,7 +110,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		environmentSettings.IsNetCore = true;
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		var application = Substitute.For<IApplication>();
-		application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
+		application.When(r => r.Restart(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())).Do(_ => throw new Exception("Restart application exception"));
 		var packageArchiver = Substitute.For<IPackageArchiver>();
 		packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do(callInfo => {
@@ -111,7 +131,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		Assert.DoesNotThrow(
 			() => applicationInstaller.Install(packageFolderPath, environmentSettings)
@@ -127,7 +148,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		environmentSettings.IsNetCore = true;
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		var application = Substitute.For<IApplication>();
-		application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
+		application.When(r => r.Restart(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())).Do(_ => throw new Exception("Restart application exception"));
 		var packageArchiver = Substitute.For<IPackageArchiver>();
 		packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do(callInfo => {
@@ -139,7 +160,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("SOME LOG WITHOUT SUCCESS MESSAGE");
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("SOME LOG WITHOUT SUCCESS MESSAGE");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -149,7 +170,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		GlobalContext.FailOnError = true;
 		bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
@@ -164,7 +186,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		environmentSettings.IsNetCore = true;
 		var applicationClientFactory = Substitute.For<IApplicationClientFactory>();
 		var application = Substitute.For<IApplication>();
-		application.When(r => r.Restart()).Do(_ => throw new Exception("Restart application exception"));
+		application.When(r => r.Restart(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())).Do(_ => throw new Exception("Restart application exception"));
 		var packageArchiver = Substitute.For<IPackageArchiver>();
 		packageArchiver.When(p => p.Pack(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<bool>(),
 			Arg.Any<bool>())).Do(callInfo => {
@@ -176,7 +198,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("appLication InstallEd successfully");
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("appLication InstallEd successfully");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -186,7 +208,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		GlobalContext.FailOnError = true;
 		bool result = applicationInstaller.Install(packageFolderPath, environmentSettings);
@@ -217,7 +240,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -227,7 +250,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		GlobalContext.FailOnError = true;
 		bool result = applicationInstaller.Install(packagePath, environmentSettings, null, true);
@@ -259,7 +283,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -269,7 +293,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		GlobalContext.FailOnError = true;
 		bool result = applicationInstaller.Install(packagePath, environmentSettings, null, false);
@@ -301,7 +326,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>()).Returns("Application installed successfully");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
 			applicationClientFactory,
@@ -311,7 +336,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		GlobalContext.FailOnError = true;
 		bool result = applicationInstaller.Install(packagePath, environmentSettings, null, null);
@@ -341,7 +367,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
 			.Returns(string.Empty);
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
@@ -352,7 +378,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 
 		// Act
@@ -386,7 +413,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var packageLockManager = Substitute.For<IPackageLockManager>();
 		var clioFileSystem = new FileSystem(FileSystem);
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
 			.Returns((string)null,
 				"Terrasoft.Common.InvalidGZipArchiveException: Unable to open \"Partner.gz\". The file is invalid or corrupted.");
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
@@ -398,7 +425,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 
 		// Act
@@ -433,7 +461,7 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 		var clioFileSystem = new FileSystem(FileSystem);
 		var staleLog = "Terrasoft.Common.InvalidGZipArchiveException: Unable to open \"OldPartner.gz\".";
 		var applicationLogProvider = Substitute.For<IApplicationLogProvider>();
-		applicationLogProvider.GetInstallationLog(Arg.Any<EnvironmentSettings>())
+		applicationLogProvider.GetInstallationLog(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
 			.Returns(staleLog);
 		ApplicationInstaller applicationInstaller = new ApplicationInstaller(applicationLogProvider,
 			environmentSettings,
@@ -444,7 +472,8 @@ internal class ApplicationInstallerTests : BaseClioModuleTests
 			serviceUrlBuilder,
 			clioFileSystem,
 			logger,
-			packageLockManager
+			packageLockManager,
+			Substitute.For<IDesignNodeSessionGuard>()
 		);
 		bool result = true;
 

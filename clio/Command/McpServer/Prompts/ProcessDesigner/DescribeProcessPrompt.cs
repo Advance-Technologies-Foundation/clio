@@ -35,7 +35,9 @@ public static class DescribeProcessPrompt {
 		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
 		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw
-		   metadata.
+		   metadata. A graph whose reply would exceed 18000 bytes comes back as `mode: summary` (elements, flows as
+		   `from -> to`, start signals, parameters, version, checksum) unless you pass `mode: full`; ask
+		   `element: <name>` for one element in full, which is usually what a narration step needs.
 		   Each element also carries its diagram placement as `position` (the shape's TOP-LEFT corner) and
 		   `size`; each flow carries `geometry` - `start`, `points[]`, `end`, `exitSide`, `entrySide` - which
 		   is where the connector runs and the only way to answer a question about the PICTURE. Read `size`
@@ -94,9 +96,10 @@ public static class DescribeProcessPrompt {
 		process is unlabelled.
 		Note: expressions (mapping formulas, filters) are returned RAW, not decoded into semantics — narrate
 		structure, types, flow, and parameter sources; where a condition/filter is not decodable, say so
-		explicitly instead of guessing. Among PARAMETER values, the one decoded into names is a value reading ONE
-		column of another element's record: it also carries `sourceElement` / `sourceElementParameter` /
-		`sourceColumn` — narrate it by those names ("the owner of the contact read by ReadContact"). A changeData
+		explicitly instead of guessing. Among PARAMETER values, the ones decoded into names are a value that IS
+		another element's output and a value reading ONE column of its record: they also carry `sourceElement` /
+		`sourceElementParameter` (+ `sourceColumn` for the column form) — narrate them by those names ("the files
+		read by ReadFiles", "the owner of the contact read by ReadContact"). A changeData
 		value and a connection carry their own decoded sources, as the describe tool describes.
 		""";
 }

@@ -28,7 +28,7 @@ to `Inherited`. Neither is asked for and neither is announced.
 creates the five parameters and the options object and touches nothing else; the properties page sets the
 flag right after calling it, and writes it onto the element when it saves (CrtProcessDesigner 7.8.0
 `ProcessFlowElementPropertiesPage.js:875-889` and `:984`). Re-verified 2026-09-23 in that source, in the same
-client schema on the `d_krestov_n:40001` stand, and in the built page of the Creatio2 checkout (`:879-892`).
+client schema on a .NET Framework stand, and in the built page of the Creatio2 checkout (`:879-892`).
 A same-day retraction read only the method, concluded the designer leaves the flag alone, and reached the
 shipped guidance before a review of clio-knowledge#223 caught it.
 

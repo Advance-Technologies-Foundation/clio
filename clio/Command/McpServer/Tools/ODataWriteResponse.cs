@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using Clio.Common;
 using System.Text.Json;
@@ -36,6 +37,42 @@ public sealed record ODataWriteResponse(
 	/// <summary>Observed write boundary and safe retry context.</summary>
 	[JsonPropertyName("diagnostic"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public DataWriteDiagnostic? Diagnostic { get; init; }
+
+	/// <summary>odata-delete: why the record was not deleted - never empty on a refusal the server answered.</summary>
+	[JsonPropertyName("explanation"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Explanation { get; init; }
+
+	/// <summary>odata-delete: the rows that still reference the refused record.</summary>
+	[JsonPropertyName("referencing"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<Clio.Command.RuntimeVerification.ReferencingRows>? Referencing { get; init; }
+
+	/// <summary>odata-delete with cascade: the owned rows deleted before the record.</summary>
+	[JsonPropertyName("cascade-deleted"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<RecordKey>? CascadeDeleted { get; init; }
+
+	/// <summary>odata-delete with ids: one outcome per id.</summary>
+	[JsonPropertyName("results"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ODataDeleteItemResult>? Results { get; init; }
+
+	/// <summary>odata-delete with dry-run: what would be deleted and what blocks it, per id. Nothing was deleted.</summary>
+	[JsonPropertyName("plan"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<ODataDeletePlanItem>? Plan { get; init; }
+
+	/// <summary>odata-delete with cascade: owned rows whose DELETE got no answer, so they may or may not be gone.</summary>
+	[JsonPropertyName("cascade-unconfirmed"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<RecordKey>? CascadeUnconfirmed { get; init; }
+
+	/// <summary>odata-delete dry-run with cascade: the digest the destructive call must pass back as cascade-plan-hash.</summary>
+	[JsonPropertyName("cascade-plan-hash"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? CascadePlanHash { get; init; }
+
+	/// <summary>odata-delete dry-run: what the check cannot see.</summary>
+	[JsonPropertyName("note"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string? Note { get; init; }
+
+	/// <summary>Notes that did not stop the call, for example that a synonym of data was accepted.</summary>
+	[JsonPropertyName("warnings"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string>? Warnings { get; init; }
 
 	/// <summary>Creates a failure response.</summary>
 	public static ODataWriteResponse Failure(string message) => new(false, message);

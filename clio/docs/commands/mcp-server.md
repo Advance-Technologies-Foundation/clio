@@ -56,7 +56,7 @@ secrets, access tokens, customer data, or generated content. Spooled events are 
 at most 30 days locally; the collected metrics are retained up to 1 year server-side.
 
 Guidance is discovered from active trusted knowledge libraries rather than a list compiled into Clio.
-Call `get-guidance` with an unknown name to receive `availableGuides`, or use MCP `resources/list` to
+Call `get-guidance` with `name=list` to receive a compact `name: purpose` catalog, or use MCP `resources/list` to
 receive canonical resource URIs together with publisher-owned titles and descriptions. Read a
 canonical `docs://knowledge/<library-id>/<item-id>` URI through `resources/read`; publisher-declared
 legacy `docs://mcp/guides/...` aliases remain readable during migration.
@@ -189,7 +189,7 @@ clio mcp-server
 Start the same MCP server using the short alias.
 
 Use your MCP client to call get-tool-contract {}.
-Discover what tools exist with a compact index (name + one-line purpose + safety flags) without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
+Discover what tools exist with a compact index - one line per tool, "name (R)(D) [aka old-name]: purpose" with the purpose cut to 48 characters and the markers explained by a legend - without paying for full schemas, then call get-tool-contract with specific tool-names to load only the contracts you need. Pass {"detail":"index-entries"} for the same index as objects with the resident and destructive flags, or {"detail":"full"} to expand every tool's full contract at once (legacy behavior).
 
 Use your MCP client to call get-tool-contract {"tool-names":["list-apps","get-app-info","get-page","sync-pages"]}.
 Bootstrap an existing-app or page workflow from the authoritative contract before invoking discovery or mutation tools.
@@ -200,7 +200,7 @@ Bootstrap page inspection/editing and discover whether get-component-info is nee
 Use your MCP client to call get-tool-contract {"tool-names":["create-business-process"],"detail":"full"}.
 A named lookup is fitted to one inline reply by default: every contract comes back in full when the reply fits, and otherwise the largest come back in a SHORT form (marked "detail":"short" with "full-contract-bytes") that keeps the purpose and every sentence carrying a safety marker (a confirmation, an ask/tell/warn-the-user rule, a prohibition or an irreversibility warning, in the description or in a field; other rules may need "detail":"full"), the input schema, the error codes, preconditions and flows, and leaves out the rest of the description and the examples. The short create-business-process and modify-business-process contracts also carry a SHAPE block: the descriptor fields and element blocks, or every operation with its fields. Pass "detail":"full" for the complete contracts, or "detail":"short" for all short. A reply that still does not fit carries repeated error codes once: a later contract's error-contract then names the earlier one in "same-as".
 
-Use your MCP client to call get-guidance with an unknown name, inspect `availableGuides`, then call
+Use your MCP client to call get-guidance with name=list, inspect the `catalog`, then call
 get-guidance again with the selected name.
     Discover and read the currently installed publisher-owned guidance catalog.
 ```

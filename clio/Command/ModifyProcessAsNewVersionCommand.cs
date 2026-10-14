@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
+using ErrorOr;
 using Clio.UserEnvironment;
 
 namespace Clio.Command;
@@ -67,7 +68,11 @@ namespace Clio.Command;
 // older server DISCARDS `isTracing` and answers success, so the process is built untraced and nothing says so, and
 // refuses `setTracing` as an unsupported operation, which reads as a clio fault. 1.6.6.92 is the first archive
 // with both.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.92",
+// Raised to 1.6.6.99 by ENG-95984: the File and FileCollection parameter types and the two-level collection binder.
+// An older server refuses `type: File` loudly, but it silently binds only the level an `addMapping` names, leaves a
+// mirrored collection's items unbound and accepts a dotted mirror source, so a newer clio would describe binding rules
+// the server does not apply. 1.6.6.99 is the first archive clio bundles with the types and the binder.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.99",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -145,6 +150,9 @@ public sealed class ModifyProcessAsNewVersionService(
 		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
+		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
+		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		ProcessBlockKeyCheck.Enforce(requestObject["operations"], logger);
 
 		// The SAME pre-check both sibling write paths run, and skipping it here was not a decision anyone made:
 		// this path takes the identical operations vocabulary, so an invented button or data-source name survives
@@ -188,7 +196,7 @@ public sealed class ModifyProcessAsNewVersionService(
 			throw new InvalidOperationException(
 				"ModifyProcessAsNewVersion returned a response clio could not read, so whether a version was "
 				+ "created is UNKNOWN - and a version that DID persist cannot be deleted. Re-read the process "
-				+ "with describe-business-process and check its versions[] before retrying, because a retry "
+				+ "with describe-business-process mode=versions and check its versions[] before retrying, because a retry "
 				+ "would allocate a second version rather than replace the first. The parser detail is on the "
 				+ "inner exception; it names a .NET type and a byte offset, which helps a developer reading a "
 				+ "stack trace and is noise to the caller reading this.",
@@ -334,6 +342,7 @@ public sealed class ModifyProcessAsNewVersionService(
 /// </summary>
 public class ModifyProcessAsNewVersionCommand(
 	IModifyProcessAsNewVersionService modifyProcessAsNewVersionService,
+	IProcessDescriber processDescriber,
 	ILogger logger)
 	: Command<ModifyProcessAsNewVersionOptions> {
 	/// <inheritdoc />
@@ -352,6 +361,9 @@ public class ModifyProcessAsNewVersionCommand(
 					: "One of --name or --uid is required.");
 			}
 
+			// The SOURCE, read before the write, is what the digest compares the new version with (ENG-103023).
+			ErrorOr<DescribeProcessResult> source = ProcessWriteDigest.Read(processDescriber,
+				new ProcessIdentity(hasName ? options.ProcessName : null, hasUid ? options.ProcessUid : null, null));
 			ModifyProcessAsNewVersionResult result = modifyProcessAsNewVersionService.ModifyAsNewVersion(
 				options.Environment,
 				new ModifyProcessAsNewVersionRequest(options.ProcessName, options.ProcessUid, options.PackageName,
@@ -387,11 +399,31 @@ public class ModifyProcessAsNewVersionCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
+			ReportDigest(options, result, source);
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
 			return 1;
 		}
+	}
+
+	// The new version's summary and what it changed against its source, so the caller need not describe it to
+	// confirm the save (ENG-103023). After the write landed, so nothing here may change the exit code.
+	private void ReportDigest(ModifyProcessAsNewVersionOptions options, ModifyProcessAsNewVersionResult result,
+		ErrorOr<DescribeProcessResult> source) {
+		bool hasUid = Guid.TryParse(result.VersionSchemaUId, out _);
+		if (!hasUid && string.IsNullOrWhiteSpace(result.VersionName)) {
+			logger.WriteWarning("The version was saved, but the environment named no version to summarize. "
+				+ "describe-business-process mode=summary confirms the saved state.");
+			return;
+		}
+		ErrorOr<DescribeProcessResult> saved = ProcessWriteDigest.Read(processDescriber,
+			new ProcessIdentity(hasUid ? null : result.VersionName, hasUid ? result.VersionSchemaUId : null, null),
+			includeVersionFacts: true);
+		// The new version has no earlier state of its own: the change list is relative to the version it was cut from.
+		string sourceName = source.IsError ? null : source.Value?.Name;
+		ProcessWriteDigest.Report(logger, saved, source, versionFactsRead: true,
+			changesAgainst: $"the source version '{sourceName ?? options.ProcessName ?? options.ProcessUid}'");
 	}
 }
 

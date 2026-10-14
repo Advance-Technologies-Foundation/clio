@@ -4,6 +4,7 @@ using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -312,8 +313,8 @@ public class ModifyProcessAsNewVersionToolTests {
 			because: "the contract must state the refusal before the server does");
 		description.Should().Contain("send it to modify-business-process",
 			because: "the refusal is only useful with the route that does switch tracing");
-		description.Should().Contain("CrtProcessBuilder 1.6.6.92 or newer",
-			because: "the stated floor must match the [RequiresPackage] literal setTracing raised");
+		description.Should().Contain("CrtProcessBuilder 1.6.6.99 or newer",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types)");
 	}
 
 	private sealed class FakeCommand : ModifyProcessAsNewVersionCommand {
@@ -322,7 +323,8 @@ public class ModifyProcessAsNewVersionToolTests {
 		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
 
 		public FakeCommand(int exitCode = 0)
-			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
 		}
 

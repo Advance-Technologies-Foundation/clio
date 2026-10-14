@@ -539,10 +539,10 @@ public sealed class ViewConfigDiffOperation {
 	public string ParentName { get; init; }
 
 	/// <summary>
-	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is the default
-	/// <c>items</c>, which the applier would have assumed anyway — because this list is meant to be pasted
-	/// and an explicit slot is one less thing a reader must know about the applier to trust what they are
-	/// pasting. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
+	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is <c>items</c> —
+	/// because the applier has NO default slot: an insert or move that names a parent but no
+	/// <c>propertyName</c> is rejected as "not a container" and the page does not load (GH-1752), so
+	/// update-page refuses to save it. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
 	/// "absent when it is the default items", which would have a caller read a present
 	/// <c>propertyName: "items"</c> as a NON-default slot — the one inference the field exists to prevent.)
 	/// </summary>
@@ -673,7 +673,7 @@ public sealed class ElementMapEntry {
 	/// <item><description><c>"page"</c> — the parent is inserted by this map, from the source page.
 	/// </description></item>
 	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized (a
-	/// tab-body grid or its Area card), so it carries no <see cref="WebName"/>.</description></item>
+	/// tab-body grid or its Area card, or a tablet band grid), so it carries no <see cref="WebName"/>.</description></item>
 	/// <item><description><c>"unknown"</c> — NEITHER this map nor the template provides it. This is the one
 	/// value that reaches the caller, projected into
 	/// <see cref="MobilePageConversionGuide.UnresolvedParents"/>, which owns the caller-facing contract.
@@ -1239,9 +1239,12 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
 	/// <summary>
-	/// The responsive layout applied to each MULTI-column mobile grid container: how many grid columns per
-	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
-	/// cell each child occupies. Both sides are ALREADY baked into the operations' values — the container's
+	/// The responsive layout applied to each MULTI-column mobile grid container: the grid columns per
+	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = weighted columns taken from the web
+	/// grid) and which cell each child occupies. A grid whose rows differ in column structure is stacked on tablet,
+	/// and each band of rows with several columns gets its own synthesized <c>&lt;container&gt;_TabletBand&lt;N&gt;</c>
+	/// grid, listed here as a group of its own.
+	/// Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
 	/// it at the conversion gate as what the conversion DID, and if the user wants it different, the change
@@ -1848,7 +1851,7 @@ public sealed class AdaptiveLayoutGroup {
 
 	/// <summary>
 	/// Advisory overview of the grid columns per breakpoint (already in the container's <c>values</c>):
-	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
+	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of column weights (e.g. ["1fr","2fr"]).
 	/// </summary>
 	[JsonPropertyName("columnsByBreakpoint")]
 	public IReadOnlyDictionary<string, IReadOnlyList<string>> ColumnsByBreakpoint { get; init; }

@@ -91,7 +91,7 @@ public sealed class PageUpdateTool(
 	[Description("Update a Freedom UI page schema body. environment-name preferred; uri/login/password fallback only. " +
 		PageBodyAstLinter.DesignerSafetySummary +
 		"In append mode, SCHEMA_CONVERTERS and SCHEMA_VALIDATORS are merged by type key with incoming entries winning; the final merged body is rejected if it contains a custom validator reference without a matching SCHEMA_VALIDATORS declaration. " +
-		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed. " +
+		"Set validate=false only as an explicit escape hatch for a pre-existing page defect; it skips client-side content and run-process validation, while JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the insert/move propertyName-slot check, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed. " +
 		"On a successful non-dry-run save it also best-effort notifies active Creatio designers (Designer Presence); the save still succeeds if that notification is skipped (carried as a warning). " +
 		"CONFLICT DETECTION: if get-page stored a checksum baseline for the same environment and the schema changed outside this session, the save is blocked with `conflict: true` + `conflictDetails` — do NOT retry the same body; re-run get-page, re-apply your change, retry, and set force=true only after the user confirms overwriting. " +
 		"BEFORE editing the body call get-guidance `page-modification` and follow its pre-edit checklist — it routes visibility/required/value-set and lookup-filter work to business rules (not handlers/validators), display-only transforms to converters, run-process buttons (`crt.RunBusinessProcessRequest`, resolve parameter CODEs with get-process-signature first; a `processRunType=ForTheSelectedPage` button also REQUIRES `recordIdProcessParameterName` — the parameter that receives the current record — or update-page rejects it), and localizable strings to `page-schema-resources`. " +
@@ -117,8 +117,9 @@ public sealed class PageUpdateTool(
 				args,
 				cancellationToken);
 		if (earlyFailure != null) {
-			// The label-resource validators are the ONLY consumer of the persisted-key rescue, so its
-			// failure reason is produced on exactly the path that returns here - before the warning merge
+			// In this pre-execution gate the label-resource validators are the ONLY consumer of the
+			// persisted-key rescue, so its failure reason is produced on exactly the path that returns here
+			// - before the warning merge
 			// at the end of this method. Without this the caller sees only the validator's own
 			// "resource ... is neither auto-provided nor registered" and never why the rescue was skipped.
 			AppendPersistedResourceKeyWarning(earlyFailure, options);
@@ -145,8 +146,17 @@ public sealed class PageUpdateTool(
 		// A save REGISTERS keys, so any cached read of this schema is now stale. One update-page call
 		// makes at most one save, so nothing in THIS call reads it again - the drop keeps the rule stated
 		// in one place rather than making the two write tools differ on when a cache entry survives.
-		if (response.Success) {
+		// A dry run registers nothing, and a SUCCESSFUL dry run can carry a failed read - its caption check
+		// only warns (issue #1740) - so dropping the entry here would erase the reason before
+		// AppendPersistedResourceKeyWarning reports it below.
+		if (response.Success && !options.DryRun) {
 			persistedResourceKeyReader.Invalidate(options);
+			// ENG-103023: what the save wrote, so confirming it needs no get-page.
+			if (!options.DryRun) {
+				response.Digest = PageWriteDigest.TryBuild(options.Body,
+					string.Equals(options.Mode, "append", StringComparison.OrdinalIgnoreCase), options.Validate,
+					response.AppendProjection, response.NewChecksum);
+			}
 		}
 		// The command layer marks a content-rule failure but does not word the hint - `validate` is
 		// MCP-only, so the CLI-reachable command must not tell its users to re-run with a flag their
@@ -758,8 +768,13 @@ public sealed class PageUpdateTool(
 				Password = args.Password
 			};
 			PageGetCommand getCommand = _commandResolver.Resolve<PageGetCommand>(getOptions);
-			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success)
+			if (getCommand.TryGetPage(getOptions, out PageGetResponse getResponse) && getResponse.Success) {
 				response.Page = getResponse.Page.ForResponse(args.IncludeOperations);
+				// GH-1752: a read-back that had to skip an operation the platform rejects is not a clean page.
+				if (getResponse.Warnings is { Count: > 0 }) {
+					response.Warnings = (response.Warnings ?? []).Concat(getResponse.Warnings).ToList();
+				}
+			}
 		} catch {
 			// verify is best-effort; failure does not fail the update
 		}
@@ -813,7 +828,7 @@ public sealed record PageUpdateArgs(
 	[property: Description("Optional. The `editable.checksum` from the get-page this edit is based on. It becomes the authoritative conflict baseline; pass it on every save that follows a get-page. Re-sending a conflict response's `actualChecksum` here is NOT a resolution - it is equivalent to force=true and needs the same explicit user confirmation.")]
 	string? Checksum = null,
 	[property: JsonPropertyName("validate")]
-	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
+	[property: Description("Run client-side content and run-process validation before saving. Default: true. Set false only as an explicit escape hatch for a pre-existing page defect; JavaScript syntax, AST loadability, replace-mode marker integrity, web parentName resolution against the target hierarchy, the insert/move propertyName-slot check, the mobile JSON-object structure check, and the page baseline/conflict guard remain mandatory. It stays combinable with force=true - the two flags are orthogonal (one gates content checks, the other the baseline/conflict guard) - and the response then warns that both are relaxed.")]
 	bool? Validate = null,
 	[property: JsonPropertyName("include-operations")]
 	[property: Description("Optional, default true. Applies only with verify=true: false replaces page.ownBodySummary.viewConfigDiffOps in the read-back with viewConfigDiffOpCounts (count per operation type).")]

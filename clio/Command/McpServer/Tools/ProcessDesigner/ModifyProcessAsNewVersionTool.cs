@@ -83,20 +83,18 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.92 or newer — an older package is refused up front, naming the "
-		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
-		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30, to 1.6.6.40, to 1.6.6.77 and to 1.6.6.92 for the same reason "
-		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
-		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
-		 + "server silently discards while "
-		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits setTracing switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
+		 + "environment at CrtProcessBuilder 1.6.6.99 or newer — an older package is refused up front, naming the "
+		 + "version this operation needs; install or update it with install-process-builder after user approval. (The operation itself "
+		 + "first exists in 1.6.1.0; the floor has risen with the operations vocabulary (subProcess.multiInstanceOptions, sourceColumn, the File types, ...), because an older "
+		 + "server silently discards or mis-applies a newer input while answering success, or refuses it as unknown, and "
+		 + "this route runs NO read-back check that could tell you.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits setTracing switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
 		 + "sentence: in either case, ask the user and run compile-creatio with process-name set to the NEW version. "
 		 + "Either signal speaks for THIS call only: a compile an earlier save made owed is still owed. "
-		 + "Use describe-business-process to inspect the family.")]
+		 + "Use describe-business-process to inspect the family." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
@@ -104,6 +102,16 @@ public class ModifyProcessAsNewVersionTool(
 		if (args is null) {
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
+
+		// ENG-103025: the identity synonyms modify-business-process accepts are accepted here too, by the same rule.
+		ProcessToolArgumentAliases.IdentityResolution identity = ProcessToolArgumentAliases.ResolveWriteTarget(
+			args.ExtensionData, args.ProcessName, args.ProcessUid);
+		if (identity.Error is not null) {
+			return CommandExecutionResult.FromValidationError(identity.Error);
+		}
+		args = args with {
+			ProcessName = identity.ProcessName, ProcessUid = identity.ProcessUid, ExtensionData = identity.Remaining
+		};
 
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
@@ -141,10 +149,10 @@ public class ModifyProcessAsNewVersionTool(
 		// compile, and the package (from 1.6.6.30) warns in the same phrase.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
-			return result;
+			return ProcessToolArgumentAliases.WithWarnings(result, identity.Warnings);
 		}
 
-		return result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(result.WithCompileNotRequiredNote(), identity.Warnings);
 	}
 }
 

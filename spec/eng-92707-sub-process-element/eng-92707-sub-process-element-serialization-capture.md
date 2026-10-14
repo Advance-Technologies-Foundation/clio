@@ -154,7 +154,7 @@ each changes what a diff tool may assert.
 
 ## 5a. What the live stand adds (2026-09-14)
 
-Read-only `describe-business-process` calls against shipped callers on `http://d_krestov_n.tscrm.com:40001`
+Read-only `describe-business-process` calls against shipped callers on `http://<dev-stand>:40001`
 (CrtProcessBuilder 1.6.2.10):
 
 * The palette UId `49eafdbb-a89e-4bdf-a29d-7f17b1670a45` is reported live as `managerItemUId`, matching

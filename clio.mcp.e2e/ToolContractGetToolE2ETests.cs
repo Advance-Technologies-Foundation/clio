@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Text;
 using Allure.Net.Commons;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -88,8 +89,8 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 		string known = SysSettingUpdateTool.UpdateSysSettingToolName;
 		string[] names = unknownFirst
-			? ["page-updte", known, "missing-tool-two"]
-			: [known, "page-updte", "missing-tool-two"];
+			? ["update-pgae", known, "missing-tool-two"]
+			: [known, "update-pgae", "missing-tool-two"];
 
 		// Act
 		ToolContractGetResponse response = await CallAsync(context.Session,
@@ -103,7 +104,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			response.Tools!.Select(item => item.Name).Should().Equal([known],
 				because: "unknown names must not discard the registered tool contract"));
 		AllureApi.Step("Assert every miss is identified", () =>
-			response.NotFound!.Select(item => item.Name).Should().Equal(["page-updte", "missing-tool-two"],
+			response.NotFound!.Select(item => item.Name).Should().Equal(["update-pgae", "missing-tool-two"],
 				because: "both unknown names need separate diagnostics"));
 		AllureApi.Step("Assert suggestions survive serialization", () =>
 			response.NotFound![0].Error.Suggestions.Should().Contain(PageUpdateTool.ToolName,
@@ -399,19 +400,69 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			because: "the no-args default is the cheap compact-discovery entry point");
 		indexResponse.Tools.Should().BeNull(
 			because: "the compact index must not pay for the heavy full contracts by default");
-		indexResponse.Index.Should().NotBeNullOrEmpty(
+		indexResponse.Index.Should().BeNull(
+			because: "the per-tool objects come back only for detail=index-entries; by default the index is lines");
+		indexResponse.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "the no-args default must populate the compact index so an agent can see what tools exist");
-		indexResponse.Index!.Select(entry => entry.Name).Should().Contain(GuidanceGetTool.ToolName,
+		indexResponse.ToolIndex!.Select(ToolIndexLineName).Should().Contain(GuidanceGetTool.ToolName,
 			because: "the compact index must cover the canonical tool surface");
-		indexResponse.Index!.Should().OnlyContain(entry => !string.IsNullOrWhiteSpace(entry.Purpose),
-			because: "every index entry must carry a one-line purpose so the agent can choose a tool without the full schema");
+		indexResponse.ToolIndex!.Should().OnlyContain(line => line.Contains(": ", StringComparison.Ordinal),
+			because: "every index line must carry a purpose after the name so the agent can choose a tool without the full schema");
 		fullResponse.Success.Should().BeTrue(
 			because: "detail=full should still return the legacy full contract set");
 		fullResponse.Index.Should().BeNull(
 			because: "detail=full preserves the legacy behavior and must not emit the compact index");
+		fullResponse.ToolIndex.Should().BeNull(
+			because: "detail=full must not emit the line index either");
 		fullResponse.Tools.Should().NotBeNullOrEmpty(
 			because: "detail=full must expand the full contracts of all canonical tools");
 	}
+
+	// ENG-102796: the object index is ~47 KB and Copilot CLI spills a tool result past ~20 KB to a file the agent
+	// reads back in pieces. Measured on the text block the server actually writes, which is what the agent reads.
+	[Test]
+	[AllureTag(ToolContractGetTool.ToolName)]
+	[AllureName("get-tool-contract answers a no-args call with one line per tool that fits one inline reply")]
+	[Description("Verifies over the real MCP transport that a no-args get-tool-contract call returns one tool-index line per tool with a legend, in the same order and over the same tools as the detail=index-entries objects, and that the reply text stays under 19,000 UTF-8 bytes.")]
+	public async Task ToolContractGet_Should_Return_Line_Index_That_Fits_Inline_By_Default() {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult lineResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> { ["args"] = new Dictionary<string, object?>() },
+			context.CancellationTokenSource.Token);
+		ToolContractGetResponse lines = EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(lineResult);
+		int replyTextBytes = Encoding.UTF8.GetByteCount(
+			string.Concat(lineResult.Content.OfType<TextContentBlock>().Select(block => block.Text)));
+		ToolContractGetResponse objects = await CallAsync(
+			context.Session,
+			context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["detail"] = ToolContractCatalog.IndexEntriesDetail });
+
+		// Assert
+		AllureApi.Step("Assert the reply text fits one inline tool result", () =>
+			replyTextBytes.Should().BeInRange(1, 19_000,
+				because: $"past ~20 KB an agent CLI spills the result to a file and reads it back in pieces; the reply text is {replyTextBytes} bytes"));
+		AllureApi.Step("Assert the legend explains the markers", () =>
+			lines.Legend.Should().Contain("(R) = resident, resident=true in detail=index-entries",
+				because: "the markers are meaningless without the legend, and core-rules relies on the resident=true wording"));
+		AllureApi.Step("Assert the lines cover the object index in order", () =>
+			lines.ToolIndex!.Select(ToolIndexLineName).Should().Equal(objects.Index!.Select(entry => entry.Name),
+				because: "both shapes enumerate the same tools in the same ordinal order"));
+		AllureApi.Step("Assert a resident tool carries (R)", () =>
+			lines.ToolIndex!.Single(line => ToolIndexLineName(line) == ApplicationGetListTool.ApplicationGetListToolName)
+				.Should().StartWith(ApplicationGetListTool.ApplicationGetListToolName + " (R): ",
+					because: "list-apps is resident in tools/list and read-only on the real server, so its line carries (R) and "
+						+ "no (D); a server that lost its invoker registry would mark every line (D)"));
+		AllureApi.Step("Assert a long-tail tool carries no (R)", () =>
+			lines.ToolIndex!.Single(line => ToolIndexLineName(line) == SchemaSyncTool.ToolName)
+				.Should().NotContain("(R)",
+					because: "sync-schemas is reachable only through clio-run, and an (R) would tell the agent to call it directly"));
+	}
+
+	private static string ToolIndexLineName(string line) => line[..line.IndexOfAny([' ', ':'])];
 
 	// ENG-92761 (F2): against the REAL running MCP server, the compact index must carry the resident
 	// flag so an agent can tell a native tools/list tool (list-apps) apart from a hidden long-tail tool
@@ -427,7 +478,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		ToolContractGetResponse indexResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?>());
+			new Dictionary<string, object?> { ["detail"] = ToolContractCatalog.IndexEntriesDetail });
 
 		// Assert
 		indexResponse.Success.Should().BeTrue(
@@ -461,7 +512,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 		ToolContractGetResponse indexResponse = await CallAsync(
 			context.Session,
 			context.CancellationTokenSource.Token,
-			new Dictionary<string, object?>());
+			new Dictionary<string, object?> { ["detail"] = ToolContractCatalog.IndexEntriesDetail });
 
 		// Assert
 		AllureApi.Step("Assert the compact index is populated", () =>
@@ -1135,7 +1186,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			context.Session,
 			context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> {
-				["tool-names"] = new[] { "page-updte" }
+				["tool-names"] = new[] { "update-pgae" }
 			});
 
 		// Assert
@@ -1229,7 +1280,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
 		response.Success.Should().BeTrue(
 			because: "the no-args discovery call should report structured success");
-		response.Index.Should().NotBeNullOrEmpty(
+		response.ToolIndex.Should().NotBeNullOrEmpty(
 			because: "the no-args discovery call should return the non-empty compact index of all clio MCP tools");
 	}
 
@@ -1781,7 +1832,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 					because: "include-operations switches between the operation list and the per-type counts"));
 			AllureApi.Step($"Assert {toolName} include-operations is optional", () =>
 				(contract.InputSchema.Required ?? []).Should().NotContain(includeOperations,
-					because: "the argument defaults to true, so omitting it keeps the full operation list"));
+					because: "the argument has a default, so omitting it is always valid"));
 			AllureApi.Step($"Assert {toolName} include-operations names the counts field", () =>
 				field.Description.Should().Contain("viewConfigDiffOpCounts",
 					because: "the caller must be told what replaces the operation list"));

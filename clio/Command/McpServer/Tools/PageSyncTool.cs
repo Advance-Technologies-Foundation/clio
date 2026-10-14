@@ -753,6 +753,9 @@ public sealed class PageSyncTool(
 			}
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
 			if (!updateResponse.Success) {
+				// A rejected save can still carry findings for the same body (update-page keeps them beside the
+				// error), so they travel in the per-page envelope here too.
+				validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
 				return new PageSyncPageResult {
 					SchemaName = page.SchemaName,
 					Success = false,
@@ -778,7 +781,7 @@ public sealed class PageSyncTool(
 			// and rejected for a key this save just created.
 			persistedResourceKeyReader.Invalidate(updateOptions);
 			if (opOptions.Verify && opOptions.GetCommand != null)
-				return VerifySavedPage(page, opOptions, updateResponse, validationResult);
+				return VerifySavedPage(page, opOptions, updateResponse, validationResult, updateOptions.Body);
 			if (refreshBaseline || updateOptions.ConditionalBaselineApplied) {
 				// The save already landed on the server, so a failed refresh surfaces as a per-page warning
 				// rather than turning this page's result into a failure (ENG-95262 AC-02).
@@ -792,7 +795,10 @@ public sealed class PageSyncTool(
 				Success = true,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				ResourcesRegistered = updateResponse.ResourcesRegistered
+				ResourcesRegistered = updateResponse.ResourcesRegistered,
+				// The body as SAVED - after the before-save preprocessing - which is what update-page digests too.
+				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate,
+					checksum: updateResponse.NewChecksum)
 			};
 		} catch (Exception ex) {
 			return new PageSyncPageResult {
@@ -834,7 +840,8 @@ public sealed class PageSyncTool(
 
 	/// <summary>
 	/// Builds the lazy persisted-resource-key provider for one page. The delegate is handed to the
-	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection.
+	/// content-validation chain and invoked ONLY for an unresolved label-resource rejection or an
+	/// unresolved widget-caption binding.
 	/// </summary>
 	/// <param name="environmentName">The batch's target environment; may be blank under credential passthrough.</param>
 	/// <param name="schemaName">The page whose schema is read.</param>
@@ -905,7 +912,8 @@ public sealed class PageSyncTool(
 		PageSyncPageInput page,
 		PageSyncOperationOptions opOptions,
 		PageUpdateResponse updateResponse,
-		PageSyncValidationResult validationResult) {
+		PageSyncValidationResult validationResult,
+		string savedBody) {
 		PageGetOptions getOptions = new() { SchemaName = page.SchemaName };
 		opOptions.GetCommand.TryGetPage(getOptions, out PageGetResponse getResponse);
 		if (!getResponse.Success) {
@@ -924,6 +932,9 @@ public sealed class PageSyncTool(
 		if (metaWarning != null) {
 			validationResult = AppendCommandWarnings(validationResult, [metaWarning]);
 		}
+		// GH-1752: the read-back may have resolved the page only by skipping an operation the platform rejects
+		// (for example one inherited from a parent schema); the save succeeded, but the page does not render.
+		validationResult = AppendCommandWarnings(validationResult, getResponse.Warnings);
 		return new PageSyncPageResult {
 			SchemaName = page.SchemaName,
 			Success = true,
@@ -931,7 +942,9 @@ public sealed class PageSyncTool(
 			Validation = validationResult,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
 			Page = getResponse.Page,
-			VerifiedBodyFile = verifiedBodyFile
+			VerifiedBodyFile = verifiedBodyFile,
+			Digest = PageWriteDigest.TryBuild(savedBody ?? page.Body, appendMode: false, opOptions.Validate,
+				checksum: updateResponse.NewChecksum)
 		};
 	}
 
@@ -1067,9 +1080,9 @@ public sealed class PageSyncTool(
 	/// <param name="resources">The page's <c>resources</c> argument.</param>
 	/// <param name="persistedResourceKeysProvider">
 	/// Supplies the resource keys already persisted on the target schema. Invoked ONLY for an unresolved
-	/// label-resource rejection — the one verdict a persisted key can change — so a clean body never pays
-	/// the round-trip. Pass <see langword="null"/> from a caller that must stay offline; that only makes
-	/// the verdict stricter.
+	/// label-resource rejection or an unresolved widget-caption binding — the verdicts a persisted key can
+	/// change — so a clean body never pays the round-trip. Pass <see langword="null"/> from a caller that must
+	/// stay offline; that only makes the verdict stricter.
 	/// </param>
 	/// <returns>The per-page validation envelope.</returns>
 	private static PageSyncValidationResult ValidateBody(
@@ -1095,8 +1108,11 @@ public sealed class PageSyncTool(
 		(SchemaValidationResult fieldResult, SchemaValidationResult insertSelfConsistencyResult) =
 			RunFieldLabelResourceValidation(
 				contentResult, body, explicitResources, persistedResourceKeysProvider);
+		// The same provider resolves widget captions: a key the schema already stores or inherits is not a
+		// dangling binding just because this call does not repeat it in `resources` (issue #1740).
 		SchemaValidationResult widgetCaptionResult = RunContentValidation(
-			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(body, explicitResources));
+			contentResult, () => SchemaValidationService.ValidateInsertedWidgetCaptionResources(
+				body, explicitResources, persistedResourceKeysProvider));
 		SchemaValidationResult localizableTextResult = RunContentValidation(
 			contentResult, () => SchemaValidationService.ValidateLocalizableTextLiterals(body));
 		SchemaValidationResult handlerResult = RunContentValidation(
@@ -1145,8 +1161,9 @@ public sealed class PageSyncTool(
 			converterFunctionShapeResult,
 			validatorDeclResult);
 		List<string> warnings = CollectWarnings(fieldResult, bindingResult, schemaDepsResult, contextAwaitResult);
-		// Widget-caption resolvability is a body-only PRE-FLIGHT heuristic here (the pre-flight has no schema
-		// context); surface it as a warning. The authoritative hard gate runs at save time via TryUpdatePage.
+		// Widget-caption resolvability is a PRE-FLIGHT heuristic here (body, `resources`, and the schema's stored
+		// and inherited keys when a provider is given); surface it as a warning. The authoritative hard gate runs
+		// at save time via TryUpdatePage.
 		if (!widgetCaptionResult.IsValid) {
 			warnings.AddRange(widgetCaptionResult.Errors);
 		}
@@ -1394,6 +1411,14 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("verified-body-file")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string VerifiedBodyFile { get; init; }
+
+	/// <summary>
+	/// The post-write digest (ENG-103023): the components this page's save wrote and whether content validation
+	/// passed. Present on a saved page only.
+	/// </summary>
+	[JsonPropertyName("digest")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public PageWriteDigest Digest { get; init; }
 
 	/// <summary>
 	/// <c>true</c> when this page's save was blocked because the schema was modified outside the

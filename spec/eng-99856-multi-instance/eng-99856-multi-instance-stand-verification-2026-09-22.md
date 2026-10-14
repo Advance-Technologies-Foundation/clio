@@ -7,7 +7,7 @@ assumptions **A-02, A-03, A-04, A-05** (story 11).
 
 | | |
 |---|---|
-| Environment | `Creatio` — `http://d_krestov_n.tscrm.com:40001` |
+| Environment | `Creatio` — `http://<dev-stand>:40001` |
 | Platform | .NET Framework (`IsNetCore: false`) |
 | Package under test | `CrtProcessBuilder` **1.6.6.0** (verified with `list-packages -e Creatio`) |
 | clio commit | `6d8eb5c90` (branch `feature/ENG-99856-multi-instance`) |
