@@ -1,7 +1,8 @@
 # Story 4: Describe: decode process-parameter sources into re-appliable names
 
 **Feature**: eng-95984-file-parameter-type (follow-up)
-**Jira**: ENG-103164 - Sub-task of ENG-95984 File process parameter type, created 2026-10-14
+**Jira**: ENG-103164 - Sub-task of ENG-103304 File and collection process parameters: follow-ups (created 2026-10-14
+under ENG-95984 File process parameter type and moved there the same day, so that ENG-95984 can close)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) (non-goals)
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D8
 **Status**: deferred (moves to ready-for-dev when its slot opens and its criteria are refined)

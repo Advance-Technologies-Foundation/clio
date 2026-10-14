@@ -4694,10 +4694,11 @@ stories:
   # --- eng-95984-file-parameter-type (ENG-95984 File process parameter type) - added 2026-10-13 ---
   # One story carries the whole ticket (crt-process-builder -> clio -> clio-knowledge, one feature PR each); this BMAD
   # set is the docs-only clio PR that merges before the package PR leaves draft. Stories 2-4 are the three follow-up
-  # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14). They
-  # stay deferred until ENG-96506 Generated report + process parameter modes has merged its package PR. ENG-96506 and
-  # ENG-95985 have no story id in this tracker yet (ENG-96506's arrives with the docs PR titled "ENG-92719 File
-  # processing element"), so the dependencies name their Jira keys.
+  # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14 under
+  # ENG-95984 and moved the same day to the Task ENG-103304 File and collection process parameters: follow-ups, so
+  # that ENG-95984 can close). They stay deferred until ENG-96506 Generated report + process parameter modes has
+  # merged its package PR. ENG-96506 and ENG-95985 have no story id in this tracker yet (ENG-96506's arrives with the
+  # docs PR titled "ENG-92719 File processing element"), so the dependencies name their Jira keys.
   - id: story-eng-95984-file-parameter-type-1
     title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
     feature: "eng-95984-file-parameter-type"
