@@ -213,6 +213,31 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A build whose mappings[] binds one process parameter twice succeeds and says so with a WARNING (ENG-103081): the server keeps only the last binding and answers success, so before this the shared parameter of a multi-start process read empty with nothing having warned.")]
+	public void Execute_ShouldWarn_WhenTheDescriptorBindsAProcessParameterTwice() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = """
+				{"name":"UsrSampleProcess","packageName":"Custom","elements":[],"flows":[],"mappings":[
+					{"targetProcessParameter":"PName","sourceElement":"ReadA","sourceElementParameter":"ResultEntity"},
+					{"targetProcessParameter":"PName","sourceElement":"ReadB","sourceElementParameter":"ResultEntity"}]}
+				"""
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the binding warning is a caveat on a build that succeeded");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
+			text.Contains("binds process parameter 'PName' 2 times") && text.Contains("formula.resultProcessParameter")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass. This is also the only create-side guard against a warning channel that fires SPURIOUSLY, which is the failure mode every read-back guard on this command can introduce - so it running matters more than its own subject suggests. It had no [Test] attribute until the flow-label review found it.")]
 	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
 		// Arrange
@@ -454,6 +479,56 @@ public sealed class CreateBusinessProcessCommandTests {
 			.Should().Equal(["Start -> End"], because: "the summary lists the saved flows");
 		digest["summary"]!["checksum"].Should().NotBeNull(because: "the checksum lets a later read be compared");
 		digest["changes"].Should().BeNull(because: "a create has nothing to compare with");
+	}
+
+	private const string CallerDescriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+		+ "{\"name\":\"Start\",\"type\":\"startEvent\"},{\"name\":\"CallOrder\",\"type\":\"subProcess\","
+		+ "\"subProcess\":{\"processName\":\"UsrOrderProcess\"}}],"
+		+ "\"flows\":[{\"source\":\"Start\",\"target\":\"CallOrder\"}]}";
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103165: a created process that CALLS another one is not read back when no guard needs the read. The read would build the caller's cached schema instance with its callees' current parameters, and the server drops that instance only when the caller is saved again, so a parameter a callee gained afterwards would be missing from every later describe of the caller. The reply says why there is no summary instead of warning.")]
+	public void Execute_ShouldNotReadACallerBack_WhenNoGuardNeedsTheRead() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", DescriptorJson = CallerDescriptor, PackageName = "Custom"
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the build succeeded");
+		_processDescriber.DidNotReceiveWithAnyArgs().Describe(default!, default, default, default);
+		DigestLine().Should().BeNull(because: "a summary needs the read that would pin the caller");
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103165: a created caller IS read back when a guard needs the read - a labelled flow is verified on the same read, as before ENG-103023 - and the digest rides it.")]
+	public void Execute_ShouldReadACallerBack_WhenAGuardNeedsTheRead() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "CallOrder"));
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", PackageName = "Custom",
+			DescriptorJson = CallerDescriptor.Replace("\"target\":\"CallOrder\"}",
+				"\"target\":\"CallOrder\",\"label\":\"Go\"}", StringComparison.Ordinal)
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the build succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
+		DigestLine().Should().NotBeNull(because: "the guard's read-back carries the digest, as for any other process");
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
 	}
 
 	private const string LabelledDescriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["

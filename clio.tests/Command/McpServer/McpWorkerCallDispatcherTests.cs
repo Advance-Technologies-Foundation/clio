@@ -428,6 +428,25 @@ public sealed class McpWorkerCallDispatcherTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A killed page-smoke worker is NOT called safe to retry: its click may have pressed Save before the kill, so the envelope tells the caller to read the watched entities before repeating a click.")]
+	public void BudgetExpiredResult_ShouldNotCallAKilledBrowserCheckSafeToRetry() {
+		// Arrange & Act
+		CallToolResult result = McpWorkerCallDispatcher.BudgetExpiredResult(
+			"page-smoke", TimeSpan.FromSeconds(120), standardErrorTail: null);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("error").GetString().Should().NotContain("affected and the call is safe to retry",
+			because: "a blind retry of a click that already pressed Save writes the record twice")
+			.And.Contain("the button may have been pressed", because: "the caller must learn the write may have happened");
+		structured.GetProperty("retry-guidance").GetString().Should().Contain("read the watched entities before repeating a click",
+			because: "the guidance names what to check first");
+		structured.GetProperty("error-class").GetString().Should().Be("creatio-timeout",
+			because: "the wire token stays the same for every worker-budget expiry");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("A worker's standard-error tail travels on the failure envelope, because without it a worker that died at startup yields only 'the worker closed its transport before answering'.")]
 	public void RelayFailureResult_ShouldCarryTheWorkerStandardErrorTail() {
 		// Arrange & Act

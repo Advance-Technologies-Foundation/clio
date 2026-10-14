@@ -108,7 +108,10 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
-					["processName"] = StockProcessCode
+					["processName"] = StockProcessCode,
+					// The stock process is over the 18,000-byte reply threshold, so without a mode it comes back as a
+					// summary, which carries no buildType (ENG-103023).
+					["mode"] = "full"
 				}
 			},
 			arrange.CancellationTokenSource.Token);

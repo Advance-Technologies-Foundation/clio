@@ -52,6 +52,64 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("An addMapping onto a process parameter the process already binds to a DIFFERENT element succeeds and warns, naming the binding it replaced (ENG-103081). The before-read the digest already takes is what makes the replaced binding visible; modify has no removeMapping, so the overwrite was silent.")]
+	public void Execute_ShouldWarn_WhenAnAddMappingReplacesAStoredBinding() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"addMapping","mapping":{"targetProcessParameter":"PName","sourceElement":"ReadB",
+					"sourceElementParameter":"ResultEntity","sourceColumn":"Name"}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrSampleProcess", SchemaUId = "uid", Elements = [], Flows = [],
+				Parameters = [new DescribedParameter {
+					Name = "PName", Source = "Script", Value = "[#...#]", SourceElement = "ReadA",
+					SourceElementParameter = "ResultEntity", SourceColumn = "Name"
+				}]
+			});
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the binding warning is a caveat on an edit that applied");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
+			text.Contains("replaced the existing binding of process parameter 'PName'")
+			&& text.Contains("was ReadA.ResultEntity.Name")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An addMapping onto a parameter with no stored binding raises no binding warning - the channel stays quiet for the ordinary single mapping, so the warning cannot train a reader to ignore it.")]
+	public void Execute_ShouldNotWarn_WhenAnAddMappingBindsAnUnboundParameter() {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"addMapping","mapping":{"targetProcessParameter":"PName","sourceElement":"ReadB",
+					"sourceElementParameter":"ResultEntity","sourceColumn":"Name"}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an ordinary mapping edit succeeds");
+		_logger.DidNotReceive().WriteWarning(Arg.Is<string>(text => text.Contains("process parameter 'PName'")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Reads the process back by UId when the edit was addressed by uid and the server omitted the schema name, instead of reporting the permissions check as unperformable.")]
 	public void Execute_ShouldVerifyByUid_WhenTheResultCarriesNoSchemaName() {
 		// Arrange
@@ -789,7 +847,7 @@ public sealed class ModifyBusinessProcessCommandTests {
 	}
 
 	[Test]
-	[Description("ENG-103023: a failed read before the edit costs only the change list - the digest says why, the edit still succeeds.")]
+	[Description("ENG-103023: a failed read before the edit costs only the change list - the digest says why, the edit still succeeds. The edit sets a flow label, so a guard needs the read-back (ENG-103165: an unguarded edit is not read back when the read before failed).")]
 	public void Execute_ShouldSayWhyChangesAreUnavailable_WhenTheReadBeforeFails() {
 		// Arrange
 		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
@@ -799,7 +857,8 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 		// Act
 		int result = _command.Execute(new ModifyBusinessProcessOptions {
-			Environment = "sandbox", ProcessName = "UsrSampleProcess", OperationsJson = SampleOperations
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"setFlow","source":"Start","target":"End","label":"Go"}]"""
 		});
 
 		// Assert
@@ -808,6 +867,255 @@ public sealed class ModifyBusinessProcessCommandTests {
 		digest["changesUnavailable"]!.GetValue<string>().Should().Contain("stand unreachable",
 			because: "an unknown change list must not read as an empty one");
 		digest["changes"].Should().BeNull(because: "nothing was compared");
+	}
+
+	[Test]
+	[Description("ENG-103165: an edit of a process that CALLS another one is not read back when no guard needs the read. The read would build the caller's cached schema instance with its callees' current parameters, and the server drops that instance only when the caller is saved again, so a parameter a callee gains afterwards would be missing from every later describe of the caller. The read before the edit is still taken: the save drops what it built.")]
+	public void Execute_ShouldNotReadACallerBack_WhenNoGuardNeedsTheRead() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].BuildType = "subprocess";
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller);
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"addParameter","parameter":{"name":"Note","type":"Text","direction":"In"}}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>());
+		_processDescriber.DidNotReceive().Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true,
+			Arg.Any<bool>());
+		DigestLine().Should().BeNull(because: "a summary needs the read that would pin the caller");
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+	}
+
+	[Test]
+	[Description("ENG-103165: an edit that ADDS a sub-process element makes the process a caller, so it is not read back either when no guard needs the read, even though the read before the edit showed no sub-process element.")]
+	public void Execute_ShouldNotReadBack_WhenTheEditAddsASubProcessElement() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "End"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"addElement","element":{"name":"CallOrder","type":"subProcess",
+					"subProcess":{"processName":"UsrOrderProcess"}}}]
+				"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>());
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: an edit that points an element at a called process through setElement makes the process a caller, so it is not read back when no guard needs the read.")]
+	public void Execute_ShouldNotReadBack_WhenTheEditSetsASubProcessBlock() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "End"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"setElement","elementName":"CallOrder",
+					"elementUpdate":{"subProcess":{"processName":"UsrOrderProcess"}}}]
+				"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>());
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: a caller IS read back when the edit binds a process parameter, because the ENG-103081 check that a binding's source runs on every start judges the saved graph - skipping the read would drop that warning silently.")]
+	public void Execute_ShouldReadACallerBack_WhenTheEditBindsAProcessParameter() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller);
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"addMapping","mapping":{"targetProcessParameter":"Attempts","value":"3"}}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: a caller IS read back when a guard needs the read - the label guard is the only signal that a label landed, and it took this read before ENG-103023 too - so the digest comes with it.")]
+	public void Execute_ShouldReadACallerBack_WhenAGuardNeedsTheRead() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller);
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"setFlow","source":"Start","target":"CallOrder","label":"Go"}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		DigestLine().Should().NotBeNull(because: "the guard's read-back carries the digest, as for any other process");
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: when the read before the edit fails, whether the process calls another one is unknown, so an edit no guard needs a read for is not read back: a lost summary costs less than a caller pinned to its callees' current parameters. The reply says why there is no summary, without claiming the process is a caller.")]
+	public void Execute_ShouldNotReadBack_WhenTheReadBeforeFailsAndNoGuardNeedsTheRead() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(Error.Failure(description: "stand unreachable"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"addParameter","parameter":{"name":"Note","type":"Text","direction":"In"}}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(),
+			Arg.Any<bool>());
+		_processDescriber.DidNotReceive().Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true,
+			Arg.Any<bool>());
+		DigestLine().Should().BeNull(because: "a summary needs the read that may pin a caller");
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.PossibleCallerNotReadBack);
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+	}
+
+	[Test]
+	[Description("ENG-103165: when the read before the edit fails, a guard that needs the read-back still gets it - the guards are the only signal that a configuration landed, and they took this read before ENG-103023 too.")]
+	public void Execute_ShouldReadBack_WhenTheReadBeforeFailsAndAGuardNeedsTheRead() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(Error.Failure(description: "stand unreachable"), DigestProcess("Start", "End"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"setFlow","source":"Start","target":"End","label":"Go"}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.PossibleCallerNotReadBack);
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: an edit that removes the only sub-process element leaves a process that calls nothing, so it is read back and gets its summary like any other process.")]
+	public void Execute_ShouldReadBack_WhenTheEditRemovesTheOnlySubProcessElement() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].BuildType = "subprocess";
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller, DigestProcess("Start"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"removeElement","elementName":"callorder"}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		DigestLine().Should().NotBeNull(because: "the process no longer calls anything, so nothing is pinned");
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: removeElement accepts the element's UId as well as its name, so removing the only sub-process element by UId also leaves a process that is read back.")]
+	public void Execute_ShouldReadBack_WhenTheEditRemovesTheOnlySubProcessElementByUid() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("Start", "CallOrder");
+		caller.Elements[1].Uid = "6b1f0e8e-2a51-4c0e-9d0e-3c4a1f2b7d10";
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller, DigestProcess("Start"));
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"removeElement","elementName":"6B1F0E8E-2A51-4C0E-9D0E-3C4A1F2B7D10"}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true, Arg.Any<bool>());
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
+	[Test]
+	[Description("ENG-103165: removing one of two sub-process elements still leaves a caller, so it is not read back.")]
+	public void Execute_ShouldNotReadBack_WhenTheEditRemovesOneOfTwoSubProcessElements() {
+		// Arrange
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult caller = DigestProcess("CallOrder", "CallInvoice");
+		caller.Elements[0].SubProcess = new DescribedSubProcess { Process = "UsrOrderProcess" };
+		caller.Elements[1].SubProcess = new DescribedSubProcess { Process = "UsrInvoiceProcess" };
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(caller);
+
+		// Act
+		int result = _command.Execute(new ModifyBusinessProcessOptions {
+			Environment = "sandbox", ProcessName = "UsrSampleProcess",
+			OperationsJson = """[{"op":"removeElement","elementName":"CallOrder"}]"""
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the edit succeeded");
+		_processDescriber.DidNotReceive().Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), true,
+			Arg.Any<bool>());
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
 	}
 
 	private static DescribeProcessResult DigestProcess(params string[] elements) => new() {

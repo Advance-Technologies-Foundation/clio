@@ -203,12 +203,43 @@ public sealed class McpWorkerCohort : IMcpWorkerCohort {
 	];
 
 	/// <summary>
-	/// The membership this build actually ships: <see cref="StageSixNames"/>, <see cref="StageSevenNames"/>
-	/// and <see cref="StageEightNames"/>. They are kept as separate lists rather than merged into one so
-	/// that each stage's promise stays independently readable — and independently pinnable by a test.
+	/// The headless-browser check (ENG-103032): <c>page-smoke</c> starts a Chromium for the call, and a
+	/// browser is exactly what must never live in the host process.
+	/// </summary>
+	/// <remarks>
+	/// <para>
+	/// <b>Why it needs a worker.</b> In the host, a client that kills clio mid-call (session closed, Ctrl-C,
+	/// crash) skips the <c>await using</c> that kills the browser, and leaves a headless Chromium logged in
+	/// with the user's session cookies outside any containment; N parallel calls start N browsers with no
+	/// admission slot. In a worker the browser is a descendant of the child, so the worker's job object
+	/// (Windows) or process group (Unix) takes it down with the child, and the parent's admission and
+	/// 120 s budget bound the call.
+	/// </para>
+	/// <para>
+	/// <b>It meets both membership requirements.</b> <see cref="McpToolExecutionLifetime.PerCall"/> +
+	/// <see cref="McpToolBudgetPolicy.ParentKillDefault"/> is the Stage 6 shape, and the tool's own budget
+	/// (100 s) ends inside the worker's. On the read path it is not a schema-designer read: it logs in on
+	/// its own browser session whichever process runs it, reads the page a user would see, and its
+	/// <c>watch</c> diff goes to the database. The one shared file it touches, the browser-session cache,
+	/// is written atomically and keyed by the credentials, so two processes writing it agree
+	/// (<c>BrowserSessionCache</c>, last write wins). A kill mid-click leaves what a user closing the tab
+	/// after pressing the button leaves; the budget-expired reply therefore does not call a killed
+	/// page-smoke safe to retry, and tells the caller to read the watched entities before repeating a
+	/// click (<c>McpWorkerCallDispatcher.BudgetExpiredResult</c>).
+	/// </para>
+	/// </remarks>
+	public static readonly IReadOnlyList<string> BrowserCheckNames = [
+		Tools.PageSmokeTool.ToolName // page-smoke
+	];
+
+	/// <summary>
+	/// The membership this build actually ships: <see cref="StageSixNames"/>, <see cref="StageSevenNames"/>,
+	/// <see cref="StageEightNames"/> and <see cref="BrowserCheckNames"/>. They are kept as separate lists rather
+	/// than merged into one so that each stage's promise stays independently readable — and independently
+	/// pinnable by a test.
 	/// </summary>
 	public static readonly IReadOnlyList<string> ShippedNames =
-		[.. StageSixNames, .. StageSevenNames, .. StageEightNames];
+		[.. StageSixNames, .. StageSevenNames, .. StageEightNames, .. BrowserCheckNames];
 
 	private readonly IReadOnlySet<string> _names;
 

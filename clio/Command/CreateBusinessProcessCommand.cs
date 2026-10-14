@@ -301,6 +301,9 @@ public sealed class CreateBusinessProcessService(
 			?? throw new InvalidOperationException(
 				EnvironmentNotFoundError.Build(environmentName, settingsRepository));
 		JsonObject descriptor = ParseDescriptor(request.DescriptorJson);
+		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
+		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		ProcessBlockKeyCheck.Enforce(descriptor, logger);
 		if (!string.IsNullOrWhiteSpace(request.PackageNameOverride)) {
 			descriptor["packageName"] = request.PackageNameOverride;
 		}
@@ -430,6 +433,7 @@ public class CreateBusinessProcessCommand(
 			foreach (string warning in result.Warnings ?? []) {
 				logger.WriteWarning(warning);
 			}
+			WarnOnParameterBindings(options);
 			// Verification runs AFTER the write landed, so it must never change the outcome the caller sees.
 			// Inside Execute's blanket catch a throw here would report a succeeded operation as failed, and on a
 			// tool that grants and revokes live permissions that invites a retry: a duplicate schema on create, a
@@ -465,6 +469,19 @@ public class CreateBusinessProcessCommand(
 		}
 	}
 
+	// A process-parameter mapping is a binding, not a flow-time assignment, and nothing on the server says when two
+	// of them collide or when one points at a branch some start never runs (ENG-103081). It runs after the write
+	// landed, so like the guards it must never turn this success into a failure.
+	private void WarnOnParameterBindings(CreateBusinessProcessOptions options) {
+		try {
+			foreach (string warning in ProcessParameterBindingWarnings.ForDescriptor(options.DescriptorJson)) {
+				logger.WriteWarning(warning);
+			}
+		} catch (Exception analysis) {
+			logger.WriteWarning($"The process was created, but checking its parameter mappings failed: {analysis.Message}.");
+		}
+	}
+
 	// A server that predates a block DISCARDS it and still answers success:true, so a build can report a
 	// configured element that is in fact empty. Read the saved process back ONCE and check every block the
 	// payload carried: two guards issuing byte-identical describes would double the latency and the retry
@@ -480,7 +497,7 @@ public class CreateBusinessProcessCommand(
 	// ENG-103023 the read-back always runs, because the same read is the post-write summary the caller gets
 	// instead of a describe of its own - the guards below still run only when the descriptor asked for them.
 	// Hands out the read-back for the digest (null when there was nothing to read back) as soon as it is taken,
-	// and returns whether a guard already warned that the read-back failed or could not be taken, so the digest does not warn about it twice.
+	// and returns whether the reply already says why there is no read-back (a guard warned that it failed or could not be taken, or a caller was not read back), so the digest does not say it twice.
 	private bool WarnOnDiscardedConfigurationBlocks(CreateBusinessProcessOptions options,
 		string? schemaName, out ErrorOr<DescribeProcessResult>? readBack) {
 		readBack = null;
@@ -502,6 +519,12 @@ public class CreateBusinessProcessCommand(
 			bool rightsWarned = BlockExpectationReporter.WarnAccessRightsUnverified(logger, intent, noName);
 			bool labelsWarned = BlockExpectationReporter.WarnFlowLabelsUnverified(logger, expectedLabels, noName);
 			return rightsWarned || labelsWarned;
+		}
+		// A read would pin a CALLER to its callees' current parameters (ENG-103165), so a caller is read back only
+		// when a guard needs the read, as before ENG-103023. The reply says why there is no summary.
+		if (!guarded && ProcessWriteDigest.DescriptorCallsAnotherProcess(options.DescriptorJson)) {
+			logger.WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+			return true;
 		}
 
 		// Version facts ARE read, best-effort on a short budget: the guards consume elements[] only, but the digest
