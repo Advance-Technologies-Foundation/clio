@@ -443,6 +443,17 @@ public class BindingsModule {
 				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessBrowserLauncher, Clio.Common.BrowserSession.HeadlessBrowserLauncher>();
+		services.AddTransient<Clio.Common.BrowserSession.ICdpSessionFactory, Clio.Common.BrowserSession.CdpSessionFactory>();
+		services.AddTransient<Clio.Common.BrowserSession.IBrowserCacheLocator, Clio.Common.BrowserSession.BrowserCacheLocator>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellSource, Clio.Common.BrowserSession.ChromeForTestingHeadlessShellSource>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellInstaller, Clio.Common.BrowserSession.HeadlessShellInstaller>();
+		// The browser download honours HTTPS_PROXY / HTTP_PROXY / NO_PROXY even in MCP mode, where the default proxy is
+		// cleared for calls to Creatio (see AmbientProxy). Its time is bounded by the installer's own budget.
+		services.AddHttpClient(Clio.Common.BrowserSession.HeadlessShellInstaller.HttpClientName)
+			.ConfigureHttpClient(client => client.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
+			.ConfigurePrimaryHttpMessageHandler(Clio.Common.BrowserSession.HeadlessShellInstaller.CreateHttpHandler);
+		services.AddTransient<Clio.Common.BrowserSession.IPageSmokeBrowserResolver, Clio.Common.BrowserSession.PageSmokeBrowserResolver>();
 		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
 		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -922,6 +933,7 @@ public class BindingsModule {
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
 		services.AddTransient<TriggerSmokeTool>();
+		services.AddTransient<PageSmokeTool>();
 		services.AddTransient<IEmailTemplateContentService, EmailTemplateContentService>();
 		services.AddTransient<EmailTemplateTool>();
 		services.AddTransient<OpenCfgCommand>();
@@ -1205,6 +1217,7 @@ public class BindingsModule {
 		services.AddTransient<IRunVerificationServices, RunVerificationServices>();
 		services.AddTransient<IRecordDeletionService, RecordDeletionService>();
 		services.AddTransient<ITriggerSmokeRunner, TriggerSmokeRunner>();
+		services.AddTransient<IPageSmokeRunner, PageSmokeRunner>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
@@ -1786,6 +1799,12 @@ public class BindingsModule {
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
 					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)
+					// A CDP session and its transport are per-connection objects CdpSessionFactory builds around an open
+					// WebSocket, and a headless browser handle is built by its launcher around a running process; none is a
+					// service DI can construct (page-smoke, ENG-103032).
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpSession)
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpTransport)
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IHeadlessBrowser)
 					// The MCP credential-passthrough seam is registered explicitly in the
 					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
 					// IHttpContextAccessor, which is not part of the stdio graph, and both are

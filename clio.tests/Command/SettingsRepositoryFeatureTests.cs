@@ -53,6 +53,33 @@ public sealed class SettingsRepositoryFeatureTests {
 	}
 
 	[Test]
+	[Description("ENG-103287: page-smoke's browser answer is persisted under page-smoke-browser, read back by a fresh repository (as a worker reads it), and forgotten when set to null, without touching environments.")]
+	public void PageSmokeBrowser_ShouldRoundTrip_AndClear() {
+		// Arrange
+		SettingsRepository sut = new(_fileSystem);
+		DateTimeOffset decidedAt = new(2026, 10, 14, 9, 0, 0, TimeSpan.Zero);
+
+		// Act
+		sut.SetPageSmokeBrowser(new Clio.Common.BrowserSession.PageSmokeBrowserSettings {
+			Choice = "existing", Path = "/opt/edge", DecidedAt = decidedAt
+		});
+		SettingsRepository reloaded = new(_fileSystem);
+		Clio.Common.BrowserSession.PageSmokeBrowserSettings stored = reloaded.GetPageSmokeBrowser();
+		JObject file = JObject.Parse(_fileSystem.File.ReadAllText(SettingsRepository.AppSettingsFile));
+		reloaded.SetPageSmokeBrowser(null);
+		SettingsRepository cleared = new(_fileSystem);
+
+		// Assert
+		stored.Choice.Should().Be("existing", because: "the answer is remembered across processes");
+		stored.Path.Should().Be("/opt/edge", because: "the chosen browser is remembered with it");
+		stored.DecidedAt.Should().Be(decidedAt, because: "when the user answered is kept");
+		file["page-smoke-browser"]?["choice"]?.Value<string>().Should().Be("existing",
+			because: "the documented settings key holds the answer, so a user can edit or delete it");
+		cleared.GetPageSmokeBrowser().Should().BeNull(because: "forgetting the answer makes page-smoke ask again");
+		cleared.GetAllEnvironments().Should().NotBeEmpty(because: "the answer is stored beside the environments, not over them");
+	}
+
+	[Test]
 	[Description("Refreshes an existing stale generated schema from the bundled template and leaves no temporary artifacts.")]
 	public void Constructor_ShouldRefreshStaleSchema_WithoutLeavingTemporaryFiles() {
 		// Arrange

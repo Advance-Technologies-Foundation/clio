@@ -160,7 +160,7 @@ No name is ever synthesised, so the runtime's case-**sensitive** binding
 > put it in that state is a residual unknown, and the ADR's named mechanism is shown to be insufficient on
 > its own. The reasoning in this section stays valid as reasoning — only its premise is retracted.
 
-MEASURED 2026-09-21 against the live stand `Creatio` (`http://d_krestov_n.tscrm.com:40001`), with
+MEASURED 2026-09-21 against the live stand `Creatio` (`http://<dev-stand>:40001`), with
 `CrtProcessBuilder 1.6.3.31` installed for the purpose and confirmed by `list-packages`, driven by a clio
 built from `origin/master` `01c8b677a`. `describe-business-process` on `ExpireLicenseNotificationProcess`
 returns for the multi-instance element `SubProcess2` the five root parameters and

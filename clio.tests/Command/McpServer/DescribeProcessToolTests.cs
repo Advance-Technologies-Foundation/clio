@@ -380,6 +380,51 @@ public sealed class DescribeProcessToolTests {
 		return File.ReadAllText(Path.Combine(directory!.FullName, platformPath));
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The describe contract says a value that IS another element's output is decoded to sourceElement + sourceElementParameter, not only a value reading one column of a record (ENG-95984, CU-05): a CrtProcessBuilder from 1.6.6.99 names the source of an element-output binding whenever re-sending those names would change nothing else, and an agent told only about the column form would not look for it.")]
+	public void DescribeProcess_ShouldDocumentTheElementOutputSource_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolText.Should().Contain("a value that IS another element's output, or reads ONE column of its record, also carries sourceElement + sourceElementParameter (+ sourceColumn)",
+			because: "the decoded source covers a whole element output as well as one column of a record");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe prompt narrates both decoded parameter sources the tool reports - a whole element output and one column of a record - so an agent does not read an element-output binding (sourceElement without sourceColumn) as a column (ENG-95984, gate-3 review).")]
+	public void DescribeProcessPrompt_ShouldNarrateTheElementOutputSource_WhenRendered() {
+		// Arrange
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Act
+		// (nothing to act on - the prompt text is the contract under test)
+
+		// Assert
+		prompt.Should().Contain("another element's output and a value reading ONE column of its record",
+			because: "the prompt must match the tool contract, which decodes a whole element output as well as one column");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The describe contract's rebuild rule names its FileCollection exception (ENG-95984, gate-1 review): a parameter described as FileCollection carries no tag and has no source element to mirror, so 'feed it back through typeFromElement' cannot be followed for it; it is declared by type, and the rebuild names its item File.")]
+	public void DescribeProcess_ShouldNameTheFileCollectionException_ToTheRebuildRule() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolText.Should().Contain("never by re-typing the shape - except a parameter described as FileCollection (or FileLocator, one file): declare it by type FileCollection (or File); a rebuild names its item File.",
+			because: "the always-loaded rebuild rule must not send an agent down a path a FileCollection cannot take");
+	}
+
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>
 	private static string ReadDescribeToolDescription() =>
 		((System.ComponentModel.DescriptionAttribute)typeof(DescribeProcessTool)

@@ -11,6 +11,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Command.ProcessModel;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -2399,7 +2400,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: addParameter rejects an unsupported (complex) type — Binary — with a clear error, even though the platform resolves that type name.")]
+	[Description("Over the real MCP path: addParameter rejects Binary with a clear error, even though the platform resolves that type name. Refused for good: a file is type File - a process parameter carries a file by reference (File, or FileCollection for several), never its bytes.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process rejects an unsupported parameter type")]
 	public async Task ModifyBusinessProcess_Should_RejectUnsupportedParameterType() {
@@ -2411,7 +2412,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["descriptor"] = BuildDescriptor(processName)
 		});
 
-		// Act — try to add a Binary parameter (a deferred complex type)
+		// Act — try to add a Binary parameter (refused for good: a file is type File)
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -2421,7 +2422,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Assert
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("not supported",
-			because: "only the supported scalar / lookup types may be created");
+			because: "Binary is never a supported process parameter type: a file is carried by reference as File or FileCollection");
 		callResultJson.Should().Contain("Binary",
 			because: "the rejection names the unsupported type");
 	}
@@ -3441,7 +3442,11 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			// Assert
 			string text = SerializeToolText(callResult);
 			text.Should().Contain("1 operation(s) applied", because: "the mapping onto the process parameter is saved");
-			text.Should().NotContain("ReadLeftBare",
+			// On the WARNINGS, not the whole reply: the write digest lists every element of the saved process by name
+			// (ENG-103023), so the untouched element's name is in the reply whether or not it was judged.
+			IReadOnlyList<CommandLogMessageEnvelope> output = McpCommandExecutionParser.Extract(callResult).Output ?? [];
+			output.Should().NotContain(message => message.MessageType == LogDecoratorType.Warning
+					&& message.Value != null && message.Value.Contains("ReadLeftBare"),
 				because: "the request changed no element, so the element left bare earlier is not judged");
 		} finally {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);

@@ -13,4 +13,16 @@ public interface IChromiumLocator {
 	/// <returns>The absolute path to a browser executable.</returns>
 	/// <exception cref="ChromiumNotFoundException">No Chromium-based browser could be located.</exception>
 	string Locate();
+
+	/// <summary>The <c>CHROME_PATH</c> override when it is set and names an existing file; otherwise null.</summary>
+	string ChromePathOverride();
+
+	/// <summary>Every Chromium-based browser found in the standard install locations, in preference order.</summary>
+	System.Collections.Generic.IReadOnlyList<InstalledBrowser> FindInstalled();
 }
+
+/// <summary>A Chromium-based browser installed on the machine.</summary>
+/// <param name="Name">For example <c>Microsoft Edge</c>.</param>
+/// <param name="Version">Its version when it can be read without starting it; otherwise null.</param>
+/// <param name="Path">The executable.</param>
+public sealed record InstalledBrowser(string Name, string Version, string Path);

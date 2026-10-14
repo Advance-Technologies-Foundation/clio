@@ -160,7 +160,7 @@ cannot tell you which branch or how many iterations ran, and a root row with no 
     options object; the designer's properties page sets the flag right after calling it:
     `ProcessFlowElementPropertiesPage._convertElementToMultiInstanceMode` ends with
     `this.set("useBackgroundMode", true)` and the page writes it onto the element (CrtProcessDesigner 7.8.0
-    `:875-889` and `:984`; the same client schema on the `d_krestov_n:40001` stand; the built page in the
+    `:875-889` and `:984`; the same client schema on a .NET Framework stand; the built page in the
     Creatio2 checkout, `:879-892`). Given the owner's "как в дизайнере" ruling this is a decision to take
     again, not a defect — matching the designer costs an order of magnitude in wall clock. Kept from the
     retraction because it is true: the platform excludes a multi-instance sub-process from the element

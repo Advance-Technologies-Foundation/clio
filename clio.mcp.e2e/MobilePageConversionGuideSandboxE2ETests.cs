@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -715,6 +716,108 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 		// arrays at all now. How to apply it is FLOW step 5c in the guidance article, and stating it as a fact
 		// rather than a question is the conversion skill gate rule. There is therefore nothing left to assert
 		// the guide does NOT say: the channel that could have said it is gone.
+	}
+
+	[Test]
+	[Description("ENG-94835 end to end: every adaptive grid the guide reports carries the tablet layout the mobile runtime can render — medium equals large, the phone is one column, every tablet column is an integer <n>fr weight (a minmax() or a space-separated string renders as an equal or a single column), the container's own values carry exactly the reported weights, and every child's tablet column exists with a span of 1.")]
+	[AllureTag(ToolName)]
+	[AllureName("get-mobile-page-conversion-guide returns runtime-renderable tablet grid weights")]
+	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server until one converts with an adaptiveLayout, then checks every group against its container's and children's serialized values. No seeded page with a multi-column grid degrades to Ignore; a conversion failure always fails the test.")]
+	public async Task MobilePageConversionGuideTool_Should_Return_Renderable_Tablet_Grid_Weights() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(5));
+		await RequireConverterToolAsync(context);
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		IReadOnlyList<string> candidates = await ResolveConvertibleSeededPageCandidatesAsync(
+			context.Session, context.CancellationTokenSource.Token, environmentName);
+
+		// Act
+		MobilePageConversionGuide? guide = null;
+		string convertedSchemaName = string.Empty;
+		List<string> failedCandidates = [];
+		foreach (string schemaName in candidates) {
+			CallToolResult callResult = await context.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["environment-name"] = environmentName
+					}
+				},
+				context.CancellationTokenSource.Token);
+			if (callResult.IsError == true) {
+				failedCandidates.Add($"'{schemaName}': transport-level error");
+				continue;
+			}
+			MobilePageConversionGuideResponse response =
+				EntitySchemaStructuredResultParser.Extract<MobilePageConversionGuideResponse>(callResult);
+			if (!response.Success) {
+				failedCandidates.Add($"'{schemaName}': {response.Error}");
+				continue;
+			}
+			if (response.Guide?.AdaptiveLayout is { Count: > 0 }) {
+				guide = response.Guide;
+				convertedSchemaName = schemaName;
+				break;
+			}
+		}
+		FailOnConversionFailures(failedCandidates, candidates.Count, environmentName);
+		if (guide is null) {
+			Assert.Ignore(
+				$"All {candidates.Count} seeded page(s) of '{ApplicationCode}' on environment '{environmentName}' "
+				+ "converted successfully, but none produced an adaptiveLayout: the seed application has no page with "
+				+ "a multi-column crt.GridContainer. The algorithm itself is pinned hermetically on the OOTB "
+				+ "Leads_FormPage by WebToMobileRealPageRegressionTests.");
+		}
+
+		// Assert
+		foreach (AdaptiveLayoutGroup group in guide!.AdaptiveLayout!) {
+			IReadOnlyList<string> tablet = group.ColumnsByBreakpoint["medium"];
+			group.ColumnsByBreakpoint["large"].Should().Equal(tablet,
+				because: $"'{group.ContainerName}' on '{convertedSchemaName}': medium and large are one tablet layout");
+			group.ColumnsByBreakpoint["small"].Should().Equal(["1fr"],
+				because: $"'{group.ContainerName}': the phone always stacks into one column");
+			tablet.Should().OnlyContain(c => Regex.IsMatch(c, "^[1-9][0-9]*fr$"),
+				because: $"'{group.ContainerName}': the runtime turns only an integer <n>fr into a column weight");
+
+			JsonNode? containerColumns = guide.ViewConfigDiff
+				.Where(op => op.Name == group.ContainerName && op.Values?["adaptive"] is not null)
+				.Should().ContainSingle(
+					because: $"'{group.ContainerName}': an adaptive group's container must carry its own adaptive columns")
+				.Which.Values!["adaptive"]!["medium"]!["columns"];
+			containerColumns!.AsArray().Select(c => c!.GetValue<string>()).Should().Equal(tablet,
+				because: $"'{group.ContainerName}': the reported index must be what the container's values carry");
+
+			foreach (AdaptiveLayoutItem item in group.Items) {
+				JsonNode medium = item.LayoutConfigAdaptive["medium"]!;
+				medium["column"]!.GetValue<int>().Should().BeInRange(1, tablet.Count,
+					because: $"'{item.Name}' must sit in a tablet column of '{group.ContainerName}', or the runtime "
+						+ "drops it to the bottom of a round-robin column");
+				medium["colSpan"]!.GetValue<int>().Should().Be(1,
+					because: $"'{item.Name}': the runtime honours no span, so a placement never claims one");
+				guide.ViewConfigDiff.Where(op => op.Name == item.Name && op.Operation == "insert")
+					.Should().NotContain(op => op.ParentName != group.ContainerName,
+						because: $"'{item.Name}' is placed in '{group.ContainerName}', so if it is inserted it must be "
+							+ "inserted there, including a child moved into a synthesized band grid; a template twin is "
+							+ "merged, not inserted");
+			}
+			group.Items
+				.Select(i => (i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>(),
+					i.LayoutConfigAdaptive["medium"]!["row"]!.GetValue<int>()))
+				.Should().OnlyHaveUniqueItems(
+					because: $"'{group.ContainerName}': two children in one tablet cell overlap on the designer canvas");
+			Enumerable.Range(1, tablet.Count)
+				.Should().OnlyContain(column => group.Items.Any(i => i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>() == column),
+					because: $"'{group.ContainerName}': a tablet column with no child is the empty half-width column ENG-94835 removed");
+		}
+		List<string> order = guide.ViewConfigDiff.Select(op => op.Name).ToList();
+		foreach (ViewConfigDiffOperation band in guide.ViewConfigDiff.Where(op => op.Name.Contains("_TabletBand"))) {
+			guide.ViewConfigDiff.Where(op => op.ParentName == band.Name)
+				.Should().OnlyContain(child => order.IndexOf(child.Name) > order.IndexOf(band.Name),
+					because: $"'{band.Name}' must be inserted before the children moved into it");
+		}
 	}
 
 	[Test]
