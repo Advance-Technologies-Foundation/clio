@@ -36,8 +36,9 @@ public sealed class HeadlessBrowserLauncher(
 	IHttpClientFactory httpClientFactory) : IHeadlessBrowserLauncher {
 
 	internal const string ProfilePrefix = "clio-headless-profile-";
-	// ~15 s: a cold Chromium start can take a while to write DevToolsActivePort.
-	private const int PortFilePollAttempts = 60;
+	// ~30 s: a cold Chromium start can take a while to write DevToolsActivePort - measured past 15 s on a loaded
+	// windows-latest agent running the MCP e2e suite. Still well inside page-smoke's 100 s budget.
+	private const int PortFilePollAttempts = 120;
 	private const int PageTargetPollAttempts = 16;
 	private const int PollDelayMs = 250;
 	// A profile this old belongs to no running check (every check ends well within it), so it is a leftover.

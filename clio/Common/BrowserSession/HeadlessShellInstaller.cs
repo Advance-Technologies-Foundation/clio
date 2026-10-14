@@ -79,6 +79,12 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 	/// <summary>The name of the <see cref="IHttpClientFactory"/> client the download uses.</summary>
 	public const string HttpClientName = "clio-headless-shell";
 
+	/// <summary>
+	/// The handler of the <see cref="HttpClientName"/> client: it goes through <see cref="AmbientProxy"/>, so the download
+	/// reaches the internet the way the user's machine does even in MCP mode, where the default proxy is cleared.
+	/// </summary>
+	public static HttpMessageHandler CreateHttpHandler() => new SocketsHttpHandler { Proxy = new AmbientProxy(), UseProxy = true };
+
 	// Download AND extraction end inside the worker's 120 s budget, with room to answer.
 	internal static readonly TimeSpan DownloadBudget = TimeSpan.FromSeconds(90);
 
@@ -150,11 +156,13 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		string extractDirectory = Path.Combine(_browsersRoot, $".extract-{Guid.NewGuid():N}");
 		string host = _source.DisplayName;
 		DownloadProgress progress = new();
+		long keptBefore = 0;
 		try {
 			Uri url = _source.ArchiveUrl(_platformKey);
 			host = HostOf(url);
 			_fileSystem.Directory.CreateDirectory(_browsersRoot);
 			DeleteLeftovers(partialPath);
+			keptBefore = KeptBytes(partialPath);
 			await DownloadAsync(url, host, archive, partialPath, progress, budget.Token).ConfigureAwait(false);
 			VerifyChecksum(partialPath, archive);
 			Extract(partialPath, extractDirectory, budget.Token);
@@ -169,18 +177,13 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 				$"The headless browser was extracted but is not at {InstallDirectory}.");
 		}
 		catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
-			throw Incomplete(progress, archive, $"the call's {DownloadBudget.TotalSeconds:0} s ran out");
-		}
-		catch (HttpRequestException exception) when (progress.Bytes > 0) {
-			throw Incomplete(progress, archive, $"the connection to {host} failed ({exception.Message})");
+			throw Stopped(progress, keptBefore, archive, host, $"the call's {DownloadBudget.TotalSeconds:0} s ran out", null);
 		}
 		catch (HttpRequestException exception) {
-			throw new HeadlessShellInstallException(
-				$"{_source.DisplayName} could not be downloaded from {host}: {exception.Message} The machine may be "
-				+ $"offline or the host blocked. {NetworkHint}", exception);
+			throw Stopped(progress, keptBefore, archive, host, $"the connection to {host} failed ({exception.Message})", exception);
 		}
 		catch (IOException exception) when (progress.Receiving) {
-			throw Incomplete(progress, archive, $"the transfer from {host} broke off ({exception.Message})");
+			throw Stopped(progress, keptBefore, archive, host, $"the transfer from {host} broke off ({exception.Message})", exception);
 		}
 		catch (InvalidDataException exception) {
 			DeletePartial(partialPath);
@@ -205,7 +208,30 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 
 	private sealed class DownloadProgress {
 		public long Bytes { get; set; }
+		public long AddedThisCall { get; set; }
 		public bool Receiving { get; set; }
+	}
+
+	// Progress made on THIS call is resumable work: browser-downloading, call again. A call that added nothing (offline,
+	// host blocked) is a failure even with an older partial kept, or the agent would call again forever.
+	private HeadlessShellInstallException Stopped(DownloadProgress progress, long keptBefore, HeadlessShellRelease.Archive archive,
+		string host, string reason, Exception cause) {
+		if (progress.AddedThisCall > 0) {
+			return Incomplete(progress, archive, reason);
+		}
+		string kept = keptBefore > 0 ? $" {Megabytes(keptBefore)} MB from an earlier call are kept for when it works again." : string.Empty;
+		return new HeadlessShellInstallException(
+			$"{_source.DisplayName} could not be downloaded from {host}: {reason}; nothing arrived on this call. The machine "
+			+ $"may be offline or the host blocked.{kept} {NetworkHint}", cause);
+	}
+
+	private long KeptBytes(string partialPath) {
+		try {
+			return _fileSystem.File.Exists(partialPath) ? _fileSystem.FileInfo.New(partialPath).Length : 0;
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			return 0;
+		}
 	}
 
 	private HeadlessShellDownloadIncompleteException Incomplete(DownloadProgress progress, HeadlessShellRelease.Archive archive,
@@ -256,6 +282,8 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 			return existing;
 		}
 		if (!response.IsSuccessStatusCode) {
+			// Any refusal of a resume (416 included) drops what was kept, so the next call starts clean.
+			target.SetLength(0);
 			throw new HeadlessShellInstallException(
 				$"Downloading {_source.DisplayName} {_source.Version} from {host} failed: HTTP "
 				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. {NetworkHint}");
@@ -279,6 +307,7 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 			}
 			await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
 			progress.Bytes += read;
+			progress.AddedThisCall += read;
 		}
 		progress.Receiving = false;
 		if (progress.Bytes != archive.Size) {
@@ -312,7 +341,8 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		url.IsDefaultPort ? $"{url.Scheme}://{url.Host}" : $"{url.Scheme}://{url.Host}:{url.Port}";
 
 	private static string NetworkHint =>
-		"The download goes through HTTPS_PROXY / HTTP_PROXY (NO_PROXY honoured) when they are set. On a network that "
+		"The download goes through HTTPS_PROXY / HTTP_PROXY when they are set and the system proxy (PAC included) "
+		+ "otherwise, with NO_PROXY honoured. On a network that "
 		+ $"reaches only a mirror of Chrome for Testing, set {HeadlessShellRelease.MirrorEnvVar} to its base URL.";
 
 	private HeadlessShellInstallException Mismatch(string detail) =>

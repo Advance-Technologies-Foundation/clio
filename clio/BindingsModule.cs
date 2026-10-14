@@ -451,10 +451,7 @@ public class BindingsModule {
 		// cleared for calls to Creatio (see AmbientProxy). Its time is bounded by the installer's own budget.
 		services.AddHttpClient(Clio.Common.BrowserSession.HeadlessShellInstaller.HttpClientName)
 			.ConfigureHttpClient(client => client.Timeout = System.Threading.Timeout.InfiniteTimeSpan)
-			.ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler {
-				Proxy = new Clio.Common.BrowserSession.AmbientProxy(),
-				UseProxy = true
-			});
+			.ConfigurePrimaryHttpMessageHandler(Clio.Common.BrowserSession.HeadlessShellInstaller.CreateHttpHandler);
 		services.AddTransient<Clio.Common.BrowserSession.IPageSmokeBrowserResolver, Clio.Common.BrowserSession.PageSmokeBrowserResolver>();
 		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
 		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();

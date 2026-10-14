@@ -5,8 +5,9 @@ using System.Net;
 namespace Clio.Common.BrowserSession;
 
 /// <summary>
-/// The proxy the standard variables name - <c>HTTPS_PROXY</c> / <c>HTTP_PROXY</c> (either spelling), with
-/// <c>NO_PROXY</c> - for the headless-browser download only.
+/// The proxy for the headless-browser download only: the one the standard variables name - <c>HTTPS_PROXY</c> /
+/// <c>HTTP_PROXY</c> (either spelling) - and otherwise the system proxy (Windows / macOS settings, PAC included), with
+/// <c>NO_PROXY</c> honoured either way.
 /// </summary>
 /// <remarks>
 /// In MCP mode <c>Program</c> replaces <c>HttpClient.DefaultProxy</c> with an empty proxy unless
@@ -17,24 +18,32 @@ namespace Clio.Common.BrowserSession;
 public sealed class AmbientProxy : IWebProxy {
 
 	private readonly Func<string, string> _readEnvironment;
+	private readonly IWebProxy _systemProxy;
 
-	/// <summary>Initializes the proxy over the process environment.</summary>
-	public AmbientProxy() : this(Environment.GetEnvironmentVariable) {
+	/// <summary>Initializes the proxy over the process environment and the system proxy settings.</summary>
+	public AmbientProxy() : this(Environment.GetEnvironmentVariable, SystemProxy()) {
 	}
 
-	/// <summary>Initializes the proxy over an explicit environment, for tests.</summary>
-	internal AmbientProxy(Func<string, string> readEnvironment) => _readEnvironment = readEnvironment;
+	/// <summary>Initializes the proxy over an explicit environment and system proxy, for tests.</summary>
+	internal AmbientProxy(Func<string, string> readEnvironment, IWebProxy systemProxy) {
+		_readEnvironment = readEnvironment;
+		_systemProxy = systemProxy;
+	}
+
+	// The proxy the OS is configured with (WinHTTP / PAC on Windows, System Configuration on macOS). Read directly
+	// because HttpClient.DefaultProxy - which would return it - is the thing MCP mode clears.
+#pragma warning disable SYSLIB0014 // GetSystemWebProxy is the only public API that returns the OS proxy settings.
+	private static IWebProxy SystemProxy() => WebRequest.GetSystemWebProxy();
+#pragma warning restore SYSLIB0014
 
 	/// <inheritdoc />
 	public ICredentials Credentials { get; set; }
 
 	/// <inheritdoc />
 	public Uri GetProxy(Uri destination) {
-		string configured = destination.Scheme == Uri.UriSchemeHttps
-			? Read("HTTPS_PROXY") ?? Read("HTTP_PROXY")
-			: Read("HTTP_PROXY");
+		string configured = Configured(destination);
 		if (configured is null) {
-			return null;
+			return SystemProxyFor(destination);
 		}
 		if (!configured.Contains("://", StringComparison.Ordinal)) {
 			configured = "http://" + configured;
@@ -52,15 +61,28 @@ public sealed class AmbientProxy : IWebProxy {
 
 	/// <inheritdoc />
 	public bool IsBypassed(Uri host) {
-		if (GetProxy(host) is null) {
+		string noProxy = Read("NO_PROXY");
+		if (noProxy is not null && noProxy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+				.Any(entry => entry == "*" || Matches(host.Host, entry))) {
 			return true;
 		}
-		string noProxy = Read("NO_PROXY");
-		if (noProxy is null) {
-			return false;
+		return GetProxy(host) is null;
+	}
+
+	private string Configured(Uri destination) =>
+		destination.Scheme == Uri.UriSchemeHttps ? Read("HTTPS_PROXY") ?? Read("HTTP_PROXY") : Read("HTTP_PROXY");
+
+	// The system proxy answers the destination itself when it would go direct.
+	private Uri SystemProxyFor(Uri destination) {
+		if (_systemProxy is null || _systemProxy.IsBypassed(destination)) {
+			return null;
 		}
-		return noProxy.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-			.Any(entry => entry == "*" || Matches(host.Host, entry));
+		Uri proxy = _systemProxy.GetProxy(destination);
+		if (proxy is null || proxy == destination) {
+			return null;
+		}
+		Credentials ??= CredentialCache.DefaultCredentials;
+		return proxy;
 	}
 
 	// NO_PROXY entries match the host itself or any subdomain: "corp.example" and ".corp.example" both cover

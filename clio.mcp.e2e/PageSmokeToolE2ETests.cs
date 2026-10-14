@@ -337,6 +337,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 			}
 			Assert.Ignore("page-smoke needs a Chromium-based browser on the agent, and none was found.");
 		}
+		TestContext.Progress.WriteLine($"page-smoke browser chosen as the user would: {offered}");
 		args["browser"] = "existing";
 		args["browser-path"] = offered;
 	}

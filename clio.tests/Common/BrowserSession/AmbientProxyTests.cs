@@ -16,7 +16,10 @@ namespace Clio.Tests.Common.BrowserSession;
 [Property("Module", "Common")]
 public sealed class AmbientProxyTests {
 
-	private static AmbientProxy Proxy(Dictionary<string, string> environment) => new(name => environment.GetValueOrDefault(name));
+	private static AmbientProxy Proxy(Dictionary<string, string> environment, IWebProxy systemProxy = null) =>
+		new(name => environment.GetValueOrDefault(name), systemProxy);
+
+	private static IWebProxy SystemProxy(string address) => new WebProxy(address);
 
 	[Test]
 	[Description("An https download uses HTTPS_PROXY, with the credentials its URL carries.")]
@@ -73,5 +76,34 @@ public sealed class AmbientProxyTests {
 
 		// Assert
 		bypassed.Should().BeTrue(because: "there is no proxy to use");
+	}
+
+	[Test]
+	[Description("Without proxy variables the system proxy (Windows / macOS settings, PAC included) is used, with the default credentials.")]
+	public void GetProxy_Should_Fall_Back_To_The_System_Proxy() {
+		// Arrange
+		AmbientProxy proxy = Proxy(new(), SystemProxy("http://pac-chosen.corp:8080"));
+
+		// Act
+		Uri used = proxy.GetProxy(new Uri("https://storage.googleapis.com/x.zip"));
+
+		// Assert
+		used.Should().Be(new Uri("http://pac-chosen.corp:8080"), because: "a machine configured through its OS settings reaches the internet that way");
+		proxy.Credentials.Should().BeSameAs(CredentialCache.DefaultCredentials, because: "a system proxy authenticates as the user");
+	}
+
+	[Test]
+	[Description("NO_PROXY bypasses the system proxy too.")]
+	public void IsBypassed_Should_Follow_No_Proxy_Over_The_System_Proxy() {
+		// Arrange
+		AmbientProxy proxy = Proxy(new() { ["NO_PROXY"] = "mirror.corp" }, SystemProxy("http://pac-chosen.corp:8080"));
+
+		// Act
+		bool bypassed = proxy.IsBypassed(new Uri("https://mirror.corp/cft/x.zip"));
+		bool proxied = proxy.IsBypassed(new Uri("https://storage.googleapis.com/x.zip"));
+
+		// Assert
+		bypassed.Should().BeTrue(because: "NO_PROXY applies whichever proxy would be used");
+		proxied.Should().BeFalse(because: "other hosts still go through the system proxy");
 	}
 }

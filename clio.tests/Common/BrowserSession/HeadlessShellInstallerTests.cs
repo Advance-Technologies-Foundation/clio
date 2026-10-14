@@ -148,7 +148,7 @@ public sealed class HeadlessShellInstallerTests {
 	}
 
 	[Test]
-	[Description("A connection reset while the body streams is reported as an incomplete download the next call resumes, not as a raw IOException.")]
+	[Description("A connection reset while the body streams, before any byte arrived, is reported as an install failure, not as a raw IOException.")]
 	public async Task InstallAsync_Should_Report_A_Broken_Stream_As_An_Install_Failure() {
 		// Arrange
 		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(10, "x"),
@@ -159,8 +159,8 @@ public sealed class HeadlessShellInstallerTests {
 
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed"))
-			.Which.Message.Should().Contain("the next call resumes from there",
-				because: "a transfer that broke off mid-body is resumed, not restarted");
+			.Which.Message.Should().Contain("broke off").And.Contain("nothing arrived on this call",
+				because: "a transfer that broke before any byte arrived is a failure the agent reports, not progress");
 	}
 
 	private sealed class BrokenStream : Stream {
@@ -318,7 +318,7 @@ public sealed class HeadlessShellInstallerTests {
 
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the call must answer inside the worker budget"))
-			.Which.Message.Should().Contain("before the call's 90 s ran out", because: "the caller learns why");
+			.Which.Message.Should().Contain("the call's 90 s ran out; nothing arrived on this call", because: "the caller learns why");
 	}
 
 	[Test]
@@ -472,5 +472,45 @@ public sealed class HeadlessShellInstallerTests {
 		}
 		using FileStream stream = new(partial, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 		return stream.Length;
+	}
+
+	[Test]
+	[Description("Offline with a partial download kept from an earlier call: this call added nothing, so it is a failure (browser-download-failed), not progress the agent would loop on; the kept part stays for later.")]
+	public async Task InstallAsync_Should_Fail_When_This_Call_Added_Nothing_To_A_Kept_Download() {
+		// Arrange
+		byte[] archive = Zip((Executable, 0x1ED));
+		string partial = Path.Combine(_root, ".partial-1.2.3-mac-arm64.zip");
+		File.WriteAllBytes(partial, archive[..10]);
+		(HeadlessShellInstaller installer, _) = Create(PinOf(archive), (_, _) => throw new HttpRequestException("No such host is known."));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		HeadlessShellInstallException failure = (await act.Should().ThrowAsync<HeadlessShellInstallException>(
+			because: "the network is unreachable")).Which;
+		failure.Should().NotBeOfType<HeadlessShellDownloadIncompleteException>(
+			because: "nothing arrived on this call, so calling again would not make progress");
+		failure.Message.Should().Contain("nothing arrived on this call", because: "the agent learns why it should stop");
+		new FileInfo(partial).Length.Should().Be(10, because: "the earlier progress is kept for when the network works again");
+	}
+
+	[TestCase(HttpStatusCode.RequestedRangeNotSatisfiable)]
+	[TestCase(HttpStatusCode.Forbidden)]
+	[Description("A refused resume (416, or any other non-success answer to the Range request) drops the kept part, so the next call starts clean.")]
+	public async Task InstallAsync_Should_Drop_The_Kept_Part_When_The_Resume_Is_Refused(HttpStatusCode status) {
+		// Arrange
+		byte[] archive = Zip((Executable, 0x1ED));
+		string partial = Path.Combine(_root, ".partial-1.2.3-mac-arm64.zip");
+		File.WriteAllBytes(partial, archive[..10]);
+		(HeadlessShellInstaller installer, StubHandler handler) = Create(PinOf(archive),
+			(_, _) => Task.FromResult(new HttpResponseMessage(status)));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the server refused the resume");
+		(File.Exists(partial) ? new FileInfo(partial).Length : 0).Should().Be(0, because: "the next call starts from zero");
 	}
 }
