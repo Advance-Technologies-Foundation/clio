@@ -102,6 +102,25 @@ internal static class ProcessWriteDigest {
 				|| string.Equals(element.BuildType, SubProcessBuildType, StringComparison.OrdinalIgnoreCase)));
 	}
 
+	/// <summary>
+	/// Why an edit no configuration guard reads back is not read back either (ENG-103165): the reply line for a
+	/// process that calls another one, or for one whose read before the edit failed, so that whether it does is
+	/// unknown - a lost summary costs less than a pinned caller. <c>null</c> when the edit is read back: it calls
+	/// nothing, or it binds a process parameter, which the ENG-103081 check judges on the saved graph.
+	/// </summary>
+	/// <param name="operationsJson">The operations array.</param>
+	/// <param name="before">The read taken before the edit.</param>
+	/// <returns>The reply line, or <c>null</c> when the edit is read back.</returns>
+	internal static string WhyAnEditIsNotReadBack(string operationsJson, ErrorOr<DescribeProcessResult> before) {
+		if (ProcessParameterBindingWarnings.BindsAProcessParameter(operationsJson)) {
+			return null;
+		}
+		if (EditedProcessCallsAnotherProcess(operationsJson, before.IsError ? null : before.Value)) {
+			return CallerNotReadBack;
+		}
+		return before.IsError ? PossibleCallerNotReadBack : null;
+	}
+
 	/// <summary>Reads a process for the digest, as a best-effort read that never throws.</summary>
 	/// <param name="describer">The describer.</param>
 	/// <param name="identity">The process to read.</param>

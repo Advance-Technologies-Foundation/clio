@@ -594,14 +594,10 @@ public class ModifyBusinessProcessCommand(
 		// the write pins nothing once the edit saves: the save drops the instance it built. When that read failed, whether the process
 		// calls another one is unknown, and it is treated as a caller: a lost summary costs less than a pinned
 		// caller. The reply says why there is no summary.
-		if (!guarded && !ProcessParameterBindingWarnings.BindsAProcessParameter(options.OperationsJson)) {
-			bool caller = ProcessWriteDigest.EditedProcessCallsAnotherProcess(options.OperationsJson,
-				before.IsError ? null : before.Value);
-			if (caller || before.IsError) {
-				logger.WriteInfo(caller ? ProcessWriteDigest.CallerNotReadBack
-					: ProcessWriteDigest.PossibleCallerNotReadBack);
-				return true;
-			}
+		string? notReadBack = guarded ? null : ProcessWriteDigest.WhyAnEditIsNotReadBack(options.OperationsJson, before);
+		if (notReadBack is not null) {
+			logger.WriteInfo(notReadBack);
+			return true;
 		}
 
 		// Version facts ARE read, best-effort on a short budget: the guards consume elements[] only, but the digest
