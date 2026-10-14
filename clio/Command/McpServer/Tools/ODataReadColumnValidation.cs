@@ -76,19 +76,23 @@ internal static class ODataReadColumnValidation {
 			return response;
 		}
 		Explanation? explanation = Validate(client, urlBuilder, args, selectColumns, expandColumns);
-		return explanation is null
-			? response
-			: response with {
-				Error = $"{response.Error} {explanation.Text}",
-				UnknownMembers = explanation.Members,
-				ValidColumnCount = explanation.ValidColumnCount
-			};
+		if (explanation is null) {
+			return response;
+		}
+		// An explanation without unknown names (only the plain-column correction) leaves both structured fields absent.
+		bool hasUnknown = explanation.Members.Count > 0;
+		return response with {
+			Error = $"{response.Error} {explanation.Text}",
+			UnknownMembers = hasUnknown ? explanation.Members : null,
+			ValidColumnCount = hasUnknown ? explanation.ValidColumnCount : null
+		};
 	}
 
 	/// <summary>
 	/// Validates the names of a query the server rejected. Returns <see langword="null"/> when every name
-	/// is known, when there is nothing to check, or when the metadata is unavailable; otherwise the
-	/// explanation that names the unknown members.
+	/// is known and none is a plain column the rejection's lookup hint would misrewrite, when there is nothing to
+	/// check, or when the metadata is unavailable; otherwise the explanation that names the unknown members
+	/// (with no members when only the plain-column correction applies).
 	/// </summary>
 	internal static Explanation? Validate(
 		IApplicationClient client,
@@ -107,18 +111,23 @@ internal static class ODataReadColumnValidation {
 			return null;
 		}
 		List<(Reference Reference, string Name)> unknown = FindUnknown(shape, references);
-		return unknown.Count == 0 ? null : BuildExplanation(shape, unknown, PlainIdColumns(shape, references), entity);
+		List<string> plainIdColumns = PlainIdColumns(shape, references);
+		if (unknown.Count == 0 && plainIdColumns.Count == 0) {
+			return null;
+		}
+		return BuildExplanation(shape, unknown, plainIdColumns, entity);
 	}
 
 	/// <summary>
-	/// Filter and order-by names that end in Id but are ordinary columns of the entity (no navigation of the
+	/// Filter names that end in Id but are ordinary columns of the entity (no navigation of the
 	/// same stem, so <c>ExternalId</c> rather than <c>CreatedById</c>). The rejection's name-only lookup hint
 	/// tells the caller to rewrite each of them as <c>External/Id</c>; the metadata proves that wrong, and the
 	/// explanation says so, because it is appended to that hint rather than replacing it.
 	/// </summary>
 	private static List<string> PlainIdColumns(ODataFieldValidation.EntityShape shape, List<Reference> references) =>
 		references
-			.Where(reference => IsPathOnlyContext(reference)
+			//Filters only: the rejection's lookup hint is built from filter fields, never from order-by.
+			.Where(reference => reference.Argument == "filters"
 				&& !reference.Path.Contains('/', StringComparison.Ordinal)
 				&& reference.Path.Length > 2
 				&& ODataKeyFormatter.IsIdish(reference.Path)
@@ -252,14 +261,17 @@ internal static class ODataReadColumnValidation {
 		string detail = string.Join("; ", items.Select(item => Describe(item.Member, item.WrongForm)));
 		string more = unknown.Count > items.Count ? $" and {unknown.Count - items.Count} more" : string.Empty;
 		int columns = shape.Root.Properties.Count;
-		string text =
-			$"Checked against the OData metadata of {entity}: {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
-			$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
-			"navigation path, for example AccountId -> Account/Id).";
+		string text = $"Checked against the OData metadata of {entity}:";
+		if (unknown.Count > 0) {
+			text += $" {unknown.Count} name(s) cannot be used as sent{more}: {detail}. " +
+				$"{entity} has {columns} columns. Use one of the suggested names (a lookup is filtered and ordered through its " +
+				"navigation path, for example AccountId -> Account/Id).";
+		}
 		if (plainIdColumns.Count > 0) {
 			string names = string.Join(", ", plainIdColumns.Select(name => $"'{McpToolArgumentSupport.DescribeCallerKey(name)}'"));
 			text += $" {names} {(plainIdColumns.Count == 1 ? "is an ordinary column" : "are ordinary columns")} of {entity}, " +
-				"not a lookup: keep the name as sent and ignore the navigation-path rewrite suggested for it above.";
+				"not a lookup: keep the name as sent and ignore the navigation-path rewrite suggested for it above" +
+				(unknown.Count == 0 ? "; the rejection has another cause." : ".");
 		}
 		return new Explanation(text, items.Select(item => item.Member).ToList(), columns);
 	}

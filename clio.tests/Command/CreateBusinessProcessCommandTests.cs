@@ -213,6 +213,31 @@ public sealed class CreateBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A build whose mappings[] binds one process parameter twice succeeds and says so with a WARNING (ENG-103081): the server keeps only the last binding and answers success, so before this the shared parameter of a multi-start process read empty with nothing having warned.")]
+	public void Execute_ShouldWarn_WhenTheDescriptorBindsAProcessParameterTwice() {
+		// Arrange
+		CreateBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			DescriptorJson = """
+				{"name":"UsrSampleProcess","packageName":"Custom","elements":[],"flows":[],"mappings":[
+					{"targetProcessParameter":"PName","sourceElement":"ReadA","sourceElementParameter":"ResultEntity"},
+					{"targetProcessParameter":"PName","sourceElement":"ReadB","sourceElementParameter":"ResultEntity"}]}
+				"""
+		};
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "the binding warning is a caveat on a build that succeeded");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
+			text.Contains("binds process parameter 'PName' 2 times") && text.Contains("formula.resultProcessParameter")));
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes no warning when the server reported none, so an empty channel cannot train a reader to ignore it. Pairs with the test above: without this one, a loop that warned unconditionally would also pass. This is also the only create-side guard against a warning channel that fires SPURIOUSLY, which is the failure mode every read-back guard on this command can introduce - so it running matters more than its own subject suggests. It had no [Test] attribute until the flow-label review found it.")]
 	public void Execute_ShouldNotWriteAnyWarning_WhenTheServerReportsNone() {
 		// Arrange
