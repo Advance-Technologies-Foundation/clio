@@ -266,14 +266,14 @@ internal static class EntitySchemaDesignerSupport
 				title,
 				"title-localizations",
 				effectiveCultureName);
-			ReplaceLocalizableValues(caption, titleNormalization.Localizations!);
+			ReplaceLocalizableValues(caption, titleNormalization.Localizations);
 		} else if (!string.IsNullOrWhiteSpace(title)) {
 			SetLocalizableValue(caption, title.Trim(), effectiveCultureName);
 		}
 		if (descriptionLocalizations != null) {
 			ReplaceLocalizableValues(
 				descriptionValues,
-				NormalizeLocalizationMap(descriptionLocalizations, "description-localizations")!);
+				NormalizeLocalizationMap(descriptionLocalizations, "description-localizations"));
 		} else if (!string.IsNullOrWhiteSpace(description)) {
 			SetLocalizableValue(descriptionValues, description, effectiveCultureName);
 		}
