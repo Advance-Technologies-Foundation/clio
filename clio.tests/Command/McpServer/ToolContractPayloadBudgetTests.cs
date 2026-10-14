@@ -214,6 +214,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "older-than-required environment is refused" clause. Re-measured by lowering the ceiling: modify-business-
 	// process 35070, create-business-process 35061 - 2 and 11 bytes of headroom. The next sentence on either
 	// contract needs a swap or a move into the process guides.
+	//
+	// ENG-95984 (2026-10-14, the File and FileCollection process parameter types) named the two types in each
+	// write contract's type list, "or File" in its constant clause and "a FileCollection to Variable" beside the
+	// Collection direction default, gave describe's rebuild rule its FileCollection exception and widened its
+	// decoded-source clause to a whole element output, and moved the floor literal to 1.6.6.99 (same length). It
+	// paid by SWAP, per owner decision Q20 (trim, no ceiling raise): both write contracts dropped the mirror
+	// refusal's rationale "the mirror would be a bound, tagged, unbindable empty shape", which the package's refusal
+	// states itself, and create dropped the member list "{enabled, executionMode, ignoreErrors}" from its floor
+	// clause, as modify had already done. Re-measured by lowering the ceiling: modify-business-process 35053,
+	// create-business-process 35007, describe-business-process 34195 - 19 and 65 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
