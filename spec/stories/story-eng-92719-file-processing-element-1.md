@@ -192,6 +192,14 @@ is pasted into Jira (plan FE.0b) only after the answer, and a different answer r
   `PBT/ReadDataConfigBinderTests.cs` and `PBT/ReadDataConfigApplierTests.cs` green with their assertions unchanged (only
   the applier suite's `SetElementOperation` constructions gain the applier argument). Every new fixture
   `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`, AAA, `because:`, `[Description]`.
+- [ ] **OA.7a** Carried over from the review of the ENG-95984 package PR
+  (https://creatio.ghe.com/engineering/crt-process-builder/pull/96), deferred there so that its approval stays:
+  (a) `ProcessParameterValueValidator.ValidateConstantValue` returns on an empty string before the File and
+  FileCollection refusals, so `addMapping` with `value: ""` on a file or collection target stores an empty
+  constant. Refuse it, or treat it as "no source", and pin the choice with a test on every constant route.
+  (b) `ProcessMappingService.Commit`'s doc says that a throw from the platform's `SourceValue` setter (its Mappings
+  sync) can leave earlier writes of the same plan applied in memory with no notice, and that nothing persists
+  because the request does not save. `Plan`'s guarantee covers only our own refusals.
 - [ ] **OA.8** Package docs and restamp: NEW `docs/process-file-element-capture.md` (the convention of the existing
   `docs/*-capture.md`), `docs/process-builder-architecture.md` rows, `.codex/workspace-diary.md` entry; restamp
   `packages/CrtProcessBuilder/descriptor.json` LAST to the number claimed before cutting, in the PR description AND in
