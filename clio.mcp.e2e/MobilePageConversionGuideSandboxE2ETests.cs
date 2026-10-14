@@ -798,9 +798,10 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 				medium["colSpan"]!.GetValue<int>().Should().Be(1,
 					because: $"'{item.Name}': the runtime honours no span, so a placement never claims one");
 				guide.ViewConfigDiff.Where(op => op.Name == item.Name && op.Operation == "insert")
-					.Should().OnlyContain(op => op.ParentName == group.ContainerName,
-						because: $"'{item.Name}' is placed in '{group.ContainerName}', so it must be inserted there, "
-							+ "including a child moved into a synthesized band grid");
+					.Should().NotContain(op => op.ParentName != group.ContainerName,
+						because: $"'{item.Name}' is placed in '{group.ContainerName}', so if it is inserted it must be "
+							+ "inserted there, including a child moved into a synthesized band grid; a template twin is "
+							+ "merged, not inserted");
 			}
 			group.Items
 				.Select(i => (i.LayoutConfigAdaptive["medium"]!["column"]!.GetValue<int>(),
