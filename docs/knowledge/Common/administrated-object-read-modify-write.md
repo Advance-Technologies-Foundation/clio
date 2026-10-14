@@ -1,6 +1,7 @@
 ---
 description: object operation rights are read/written via RightManagementService.svc GetAdministratedObject + SaveAdministratedObject - name->UId returns MULTIPLE SysSchema rows for a granted/extended schema and only the administrable one answers (the others fault with a non-JSON error page); the save is a read-modify-write that must change only the planned rows, found by grantee AND position, must null the rights collections it did not change, and must be sent ONCE (a new row has no id, so a transport retry of a committed save adds it twice)
 applies-to:
+  - clio/Command/ObjectRights/SetDefaultRecordRightsCommand.cs
   - clio/Common/ObjectRights/RightManagementServiceClient.cs
   - clio/Common/ServiceUrlBuilder.cs
   - clio/Package/SelectQueryHelper.cs
@@ -27,6 +28,9 @@ native `RightManagementService.svc` (`GetAdministratedObject`, `SaveAdministrate
 3. **The collections the save did NOT change are sent as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees` — as the Freedom "Object permissions" client does
    (`creatio-ui lib.studio-enterprise.administrated-object` strips unchanged collections before the save).
+   The record save of `set-default-record-rights` (ENG-100406) is the mirror image: it sends
+   `entitySchemaOperationsRights: null`, and sends `entitySchemaRecordDefRights` in FULL only when the rules change —
+   that collection is replaced whole on save (see `default-record-rules-save-replaces-the-whole-list`).
 4. **The save is sent exactly once.** A row the plan adds is sent without an `id` (the server assigns it), and
    `Creatio.Client` re-sends a request after ANY exception, a timeout included, up to `maxAttempts`. A save the server
    committed but answered too late would then be sent again, and the server takes an id-less row as a new one, so it could add the row a second time (inferred from both halves, not reproduced on a stand). So the save goes with

@@ -1,0 +1,127 @@
+COMMAND TYPE
+    Object rights
+
+NAME
+    set-default-record-rights - Turn record permissions on/off for one object and grant or revoke one of its default record rules
+
+SYNOPSIS
+    set-default-record-rights --entity-schema-name <EntitySchemaName> [--author <SysAdminUnitId> --grantee <SysAdminUnitId> --operations <read,edit,delete> [--level granted|delegated] [--do-not-apply-for-manager true|false] [--revoke]] [--enable-record-permissions | --disable-record-permissions] [--confirm | --preview] [OPTIONS]
+
+DESCRIPTION
+    Changes the RECORD layer of an object's permissions — the "Use record permissions" page of the
+    Object permissions designer: the switch, and the object's default record rules. A default rule
+    says: records created by members of the AUTHOR role get read / edit / delete rights for the
+    GRANTEE role, each at a level: not set, granted, or granted with the right to delegate. Rules
+    have no order, and the rights of several rules add up. This is not set-record-rights, which
+    changes the rights of ONE record.
+
+    One call changes at most one rule (one author + grantee pair) and/or the switch of ONE object.
+    A call is either:
+      - a rule change: --author, --grantee and --operations together (nothing is granted by
+        default), optionally with --enable-record-permissions; or
+      - a switch-only change: none of them, with --enable-record-permissions or
+        --disable-record-permissions.
+
+    A grant sets each named operation to --level (granted by default) and leaves the other two as
+    they are; the output shows every level before and after. A revoke sets the named operations to
+    "not set"; a rule left with no right is removed. A revoke is allowed while record permissions
+    are OFF: it cleans a stored rule before an enable brings it into effect.
+
+    The switch changes only with its flag:
+      - a grant on an object whose record permissions are OFF is refused without
+        --enable-record-permissions; the refusal names the stored rules that would come into effect;
+      - --disable-record-permissions is a call of its own (only the object and the flag); it keeps
+        every rule as it is. A revoke never changes the switch, so --revoke is refused with either flag;
+      - turning record permissions ON with NO rule means every user sees only the records they
+        create (their managers and holders of "view any data" see them too).
+
+    The command NEVER applies the rules to existing records. An enable or a rule change affects
+    records created from then on; until apply-default-record-rights runs, an existing record keeps
+    the record rights it had (after a first enable it has none: only its owner/author, their
+    managers and holders of "view any data" reach it). The output reports the number of existing
+    records, counted under the calling account, so the user can decide whether and when to apply.
+
+    It is a read-modify-write over the native RightManagementService. The platform replaces the
+    whole rule list on save, so a call that changes a rule sends EVERY rule: each other rule exactly
+    as read. A call that changes only the switch sends the rule list as untouched. The object is
+    read back and compared with the plan — the switch and every rule. The server checks nothing and
+    loses data silently, so a stored list with two rules for one author + grantee pair, or with a
+    level outside not set / granted / delegated, is refused when the call would send the list. It
+    does NOT change operation or column permissions.
+
+    DESTRUCTIVE: in a non-interactive run it refuses to apply unless --confirm is passed; in an
+    interactive run it shows the planned change and asks for confirmation. --preview writes nothing.
+    On MCP the host's approval of the call is the confirmation.
+
+OPTIONS
+    --entity-schema-name
+        The one object (entity schema) whose record permissions are changed. Required.
+
+    --author
+        SysAdminUnit id (role or user) of the rule's author: the rule applies to records created by
+        its members. Given together with --grantee and --operations.
+
+    --grantee
+        SysAdminUnit id (role or user) that gets the rights on those records.
+
+    --operations
+        Comma-separated operations to grant or revoke: read, edit, delete. Required for a rule change.
+
+    --level
+        Level a grant sets: granted (default) or delegated. Not valid with --revoke.
+
+    --do-not-apply-for-manager
+        true/false: set the rule's "Do not apply for manager" flag (managers of the grantee role do
+        not inherit the rule). Omitted: an existing rule keeps its flag, a new rule gets false. To
+        change only the flag, repeat the rule's current operations and level. Not valid with --revoke.
+
+    --revoke
+        Set the named operations to "not set" instead of granting them.
+
+    --enable-record-permissions
+        Turn the object's record permissions ON.
+
+    --disable-record-permissions
+        Turn the object's record permissions OFF: every user with read operation rights reaches every
+        record. The rules and the records' rights are kept and come back into effect when record
+        permissions are turned on again.
+
+    --confirm
+        Confirm the destructive change without a prompt. Not valid with --preview.
+
+    --preview
+        Write nothing: show the planned change, or why the call would be refused.
+
+    -e, --environment
+        Name of the registered environment to change.
+
+EXIT CODES
+    0   The change was applied (or was already in place, or cancelled at the prompt), or a --preview
+        completed. A save that reported an error but whose read-back shows the plan succeeds with a
+        warning.
+    1   An input was invalid (only part of a rule given, a non-GUID id, an unknown operation or
+        level, --level or --do-not-apply-for-manager with --revoke, both switch flags, nothing to
+        change, --preview with --confirm), confirmation was missing in a non-interactive run, the
+        object could not be read, the author or grantee does not exist, the change was refused (see
+        above), the save failed and the read-back does not show the plan, or the save could not be
+        verified.
+
+EXAMPLES
+    Turn record permissions on and let all employees read and edit records created by any employee:
+        clio set-default-record-rights --entity-schema-name UsrOrder --author a29a3ba5-4b0d-de11-9a51-005056c00008 --grantee a29a3ba5-4b0d-de11-9a51-005056c00008 --operations read,edit --enable-record-permissions --confirm -e production
+
+    Turn record permissions on with no rule ("everyone sees only their own records"):
+        clio set-default-record-rights --entity-schema-name UsrOrder --enable-record-permissions --confirm -e production
+
+    Give a role delete with delegation, managers excluded:
+        clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id> --grantee <role-id> --operations delete --level delegated --do-not-apply-for-manager true --confirm -e production
+
+    Remove a stored rule before enabling (allowed while record permissions are off):
+        clio set-default-record-rights --entity-schema-name UsrOrder --author <author-id> --grantee <role-id> --operations read,edit,delete --revoke --confirm -e production
+
+NOTES
+    Then apply the rules to existing records only when the user decides to:
+    apply-default-record-rights. Read the result back with get-object-rights.
+
+    A save that got no answer may land after the read-back: re-read the object with
+    get-object-rights before retrying or reporting a failure. The save is sent exactly once.
