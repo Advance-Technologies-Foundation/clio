@@ -620,7 +620,8 @@ internal sealed class PageSmokeRunner(
 		// in a new world (twice at most, for a chain of navigations). Any other failure keeps the world and is not
 		// retried - for the click that would risk a second press.
 		private async Task<JsonElement> EvaluateInWorldAsync(string script, CancellationToken ct) {
-			for (int attempt = 0; ; attempt++) {
+			int recreations = 0;
+			while (true) {
 				int contextId = _contextId ??= await CreateWorldAsync(ct).ConfigureAwait(false);
 				try {
 					return await SendAsync(cdp, EvaluateMethod, new {
@@ -629,11 +630,10 @@ internal sealed class PageSmokeRunner(
 						returnByValue = true
 					}, ct).ConfigureAwait(false);
 				}
-				catch (CdpCommandException exception) when (IsContextGone(exception)) {
+				catch (CdpCommandException exception) when (IsContextGone(exception)
+					&& recreations < MaxWorldRecreations) {
 					_contextId = null;
-					if (attempt >= MaxWorldRecreations) {
-						throw;
-					}
+					recreations++;
 				}
 			}
 		}
@@ -652,15 +652,20 @@ internal sealed class PageSmokeRunner(
 
 		private static bool IsContextGone(CdpCommandException exception) =>
 			exception.Message.Contains("Cannot find context", StringComparison.OrdinalIgnoreCase);
-	}
 
-	// The page's own exception text: page-authored, so scrubbed, flattened, capped and fenced like every other page text.
-	private static string DescribeScriptError(JsonElement details) {
-		string text = details.TryGetProperty("exception", out JsonElement exception)
-			&& exception.TryGetProperty("description", out JsonElement description)
-				? description.GetString()
-				: details.TryGetProperty("text", out JsonElement plain) ? plain.GetString() : null;
-		return UntrustedText.Fenced(text) ?? "unknown error";
+		// The page's own exception text: page-authored, so scrubbed, flattened, capped and fenced like every other page
+		// text.
+		private static string DescribeScriptError(JsonElement details) {
+			string text = null;
+			if (details.TryGetProperty("exception", out JsonElement exception)
+				&& exception.TryGetProperty("description", out JsonElement description)) {
+				text = description.GetString();
+			}
+			else if (details.TryGetProperty("text", out JsonElement plain)) {
+				text = plain.GetString();
+			}
+			return UntrustedText.Fenced(text) ?? "unknown error";
+		}
 	}
 
 	// Room kept for the warnings Fit itself adds, so adding them cannot push the reply back over the bound.
