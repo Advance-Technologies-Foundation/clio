@@ -169,6 +169,75 @@ public sealed class CdpSessionTests {
 	}
 
 	[Test]
+	[Description("An error answer whose message is not a string fails only that command; the session keeps answering.")]
+	public async Task SendAsync_Should_Survive_An_Error_Frame_With_A_Non_String_Message() {
+		// Arrange
+		FakeTransport transport = new();
+		await using CdpSession session = new(transport);
+		Task<JsonElement> first = session.SendAsync("DOM.focus", null, CancellationToken.None);
+		await WaitForSentAsync(transport, 1);
+
+		// Act
+		transport.Push("""{"id":1,"error":{"code":-32000,"message":42}}""");
+		Func<Task> failed = () => first.WaitAsync(Wait);
+		CdpCommandException exception = (await failed.Should().ThrowAsync<CdpCommandException>(
+			because: "the browser refused the command")).Which;
+		Task<JsonElement> second = session.SendAsync("Page.enable", null, CancellationToken.None);
+		await WaitForSentAsync(transport, 2);
+		transport.Push("""{"id":2,"result":{"ok":true}}""");
+		JsonElement result = await second.WaitAsync(Wait);
+
+		// Assert
+		exception.Message.Should().Contain("42", because: "the raw error object is reported when its message is not text");
+		result.GetProperty("ok").GetBoolean().Should().BeTrue(because: "one malformed error frame must not end the session");
+	}
+
+	[Test]
+	[Description("A reply over the 4 MB read limit fails its own command at once with a reply-too-large error, and the session keeps answering.")]
+	public async Task SendAsync_Should_Fail_The_Command_Whose_Reply_Was_Too_Large() {
+		// Arrange
+		FakeTransport transport = new();
+		await using CdpSession session = new(transport);
+		Task<JsonElement> first = session.SendAsync("Runtime.evaluate", null, CancellationToken.None);
+		await WaitForSentAsync(transport, 1);
+		byte[] prefix = System.Text.Encoding.UTF8.GetBytes("""{"id":1,"result":{"result":{"type":"string","value":"xxxxxxxx""");
+
+		// Act
+		transport.Push(WebSocketCdpTransport.OversizedMessageSentinel(prefix));
+		Func<Task> failed = () => first.WaitAsync(Wait);
+		CdpReplyTooLargeException exception = (await failed.Should().ThrowAsync<CdpReplyTooLargeException>(
+			because: "the discarded reply belongs to this command, which must not wait for its timeout")).Which;
+		Task<JsonElement> second = session.SendAsync("Page.enable", null, CancellationToken.None);
+		await WaitForSentAsync(transport, 2);
+		transport.Push("""{"id":2,"result":{"ok":true}}""");
+		JsonElement result = await second.WaitAsync(Wait);
+
+		// Assert
+		exception.Message.Should().Contain("Runtime.evaluate").And.Contain("exceeded 4 MB",
+			because: "the caller is told which command lost its reply and why");
+		result.GetProperty("ok").GetBoolean().Should().BeTrue(because: "an oversized reply must not end the session");
+	}
+
+	[Test]
+	[Description("An oversized message keeps the id that leads it; one without a leading id (an event) becomes an ignored empty object.")]
+	public void OversizedMessageSentinel_Should_Keep_The_Leading_Id_Only() {
+		// Arrange
+		byte[] reply = System.Text.Encoding.UTF8.GetBytes("""  { "id" : 123456789, "result":{"value":"xxxx""");
+		byte[] evt = System.Text.Encoding.UTF8.GetBytes("""{"method":"Network.dataReceived","params":{"id":5""");
+
+		// Act
+		string replySentinel = WebSocketCdpTransport.OversizedMessageSentinel(reply);
+		string eventSentinel = WebSocketCdpTransport.OversizedMessageSentinel(evt);
+
+		// Assert
+		JsonElement parsed = JsonDocument.Parse(replySentinel).RootElement;
+		parsed.GetProperty("id").GetInt32().Should().Be(123456789, because: "the reply's id is read from the kept prefix");
+		parsed.TryGetProperty(WebSocketCdpTransport.ReplyTooLargeMarker, out _).Should().BeTrue(
+			because: "the session recognises the sentinel by its marker");
+		eventSentinel.Should().Be("{}", because: "an id inside params is not a reply id, and nobody waits for an event");
+	}
+
+	[Test]
 	[Description("A cancelled wait throws OperationCanceledException and disposing the session disposes the transport.")]
 	public async Task Cancel_And_Dispose_Should_Release_The_Transport() {
 		// Arrange

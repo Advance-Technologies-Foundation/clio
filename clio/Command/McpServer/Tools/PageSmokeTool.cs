@@ -38,7 +38,10 @@ public sealed class PageSmokeTool(
 		};
 
 	/// <summary>Runs one page check.</summary>
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = false)]
+	// Destructive although the default call only reads: the annotation is per tool, and `click` can press Delete or
+	// Save on any page, so the index marks it (D) and a host that sees it must confirm it, as for trigger-smoke. See
+	// docs/knowledge/McpServer/a-tool-whose-opt-in-argument-writes-is-annotated-destructive.md.
 	// BrowserSessionCache: the check reads (and may refresh) the environment's cached browser session, the same file
 	// get-browser-session writes.
 	[McpToolExecution(

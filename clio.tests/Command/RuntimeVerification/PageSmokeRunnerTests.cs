@@ -424,6 +424,31 @@ public sealed class PageSmokeRunnerTests {
 	}
 
 	[Test]
+	[Description("When a read after a successful click gets a reply over 4 MB, the check still reports the click and the records it created, and warns that what followed may be incomplete.")]
+	public async Task RunAsync_Should_Keep_A_Pressed_Click_When_A_Later_Reply_Is_Too_Large() {
+		// Arrange
+		Harness harness = Create();
+		harness.Cdp.QueueReady(Ready);
+		harness.Cdp.OnClick = cdp => cdp.EvaluateException = new CdpReplyTooLargeException("Runtime.evaluate", 4 * 1024 * 1024);
+		WatchBaseline baseline = new();
+		harness.Watcher.Capture(Arg.Any<IReadOnlyList<string>>(), Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(baseline);
+		WatchOutcome outcome = new();
+		outcome.Created.Add(new CreatedRecord("UsrOrders", RecordId, "Order 2"));
+		harness.Watcher.Collect(baseline, Arg.Any<int>(), Arg.Any<DateTimeOffset?>()).Returns(outcome);
+
+		// Act
+		PageSmokeResult result = await harness.Runner.RunAsync(Request(click: "Run check", watch: ["UsrOrders"]),
+			CancellationToken.None);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the button was pressed; only a read after it was lost");
+		result.Click.Outcome.Should().Be("clicked", because: "the click script answered");
+		result.Click.Created.Should().ContainSingle(because: "the records the click wrote are still reported");
+		result.Warnings.Should().Contain(warning => warning.Contains("exceeded 4 MB") && warning.Contains("may be incomplete"),
+			because: "the caller is told which part of the report is missing and why");
+	}
+
+	[Test]
 	[Description("A browser that dies while the page loads ends the wait at once with the reason, instead of polling until the timeout.")]
 	public async Task RunAsync_Should_Stop_At_Once_When_The_Browser_Dies() {
 		// Arrange
@@ -504,5 +529,70 @@ public sealed class PageSmokeRunnerTests {
 		result.Warnings.Should().Contain(warning => warning.Contains("cut"), because: "the caller is told what is missing");
 		(result.FieldsOmitted + result.Fields.Count).Should().Be(60, because: "every field cut is counted");
 		(result.ButtonsOmitted + result.Buttons.Count).Should().Be(40, because: "every button cut is counted");
+	}
+
+	[Test]
+	[Description("The diagnostic lists are cut before click.created loses a single record, and the warning names each list that was cut and by how much.")]
+	public void Fit_Should_Cut_The_Diagnostics_Before_The_Created_Records() {
+		// Arrange
+		string longText = new('x', 60);
+		List<CreatedRecord> created = Enumerable.Range(0, 4)
+			.Select(i => new CreatedRecord("UsrOrders", Guid.NewGuid().ToString(), "Order " + i)).ToList();
+		PageSmokeResult result = new() {
+			Success = true,
+			Buttons = Enumerable.Range(0, 40).Select(i => new PageButton("Button" + i + longText, longText)).ToList(),
+			Fields = Enumerable.Range(0, 60).Select(i => new PageField("Field" + i + longText, "input", longText)).ToList(),
+			ConsoleErrors = Enumerable.Range(0, 15)
+				.Select(i => new PageConsoleError("console", new string('e', 900) + i, 1)).ToList(),
+			Click = new PageClickReport {
+				Outcome = "clicked",
+				Created = created,
+				ConsoleErrors = Enumerable.Range(0, 15)
+					.Select(i => new PageConsoleError("console", new string('c', 900) + i, 1)).ToList()
+			}
+		};
+
+		// Act
+		PageSmokeRunner.Fit(result);
+
+		// Assert
+		JsonSerializer.SerializeToUtf8Bytes(result).Length.Should().BeLessThanOrEqualTo(PageSmokeRunner.MaxReplyBytes,
+			because: "the reply must still fit");
+		result.Click.Created.Should().Equal(created,
+			because: "the records the click wrote are never cut while a diagnostic list can still give way");
+		(result.FieldsOmitted + result.Fields.Count).Should().Be(60, because: "every field cut is counted");
+		string warning = result.Warnings.Single(item => item.StartsWith("Lists cut"));
+		warning.Should().Contain($"fields -{result.FieldsOmitted}").And.Contain("buttons -").And.Contain("click.consoleErrors -",
+			because: "the warning names which list lost how many items");
+		result.Warnings.Should().NotContain(item => item.Contains("click.created"),
+			because: "click.created was left whole");
+	}
+
+	[Test]
+	[Description("When the reply is still too big with every diagnostic list empty, click.created loses its titles first, then records, and the warning says so.")]
+	public void Fit_Should_Cut_Created_Only_As_A_Last_Resort() {
+		// Arrange
+		List<CreatedRecord> created = Enumerable.Range(0, 400)
+			.Select(i => new CreatedRecord("UsrOrders", Guid.NewGuid().ToString(), new string('t', 60))).ToList();
+		PageSmokeResult result = new() {
+			Success = true,
+			Buttons = [new PageButton("SaveButton", "Save")],
+			Click = new PageClickReport { Outcome = "clicked", Created = created }
+		};
+
+		// Act
+		PageSmokeRunner.Fit(result);
+
+		// Assert
+		JsonSerializer.SerializeToUtf8Bytes(result).Length.Should().BeLessThanOrEqualTo(PageSmokeRunner.MaxReplyBytes,
+			because: "the reply must still fit");
+		result.Buttons.Should().BeEmpty(because: "the diagnostics go first");
+		result.Click.Created.Should().NotBeEmpty().And.OnlyContain(record => record.Title == null,
+			because: "titles go before any record does");
+		result.Click.Created.Count.Should().BeLessThan(400, because: "400 ids do not fit in the bound");
+		result.Click.Created.Select(record => record.Id).Should().Equal(
+			created.Take(result.Click.Created.Count).Select(record => record.Id), because: "the kept records are the first ones");
+		result.Warnings.Should().Contain(item => item.Contains("click.created") && item.Contains("read the watched entities"),
+			because: "the caller must learn that some written records are not listed");
 	}
 }

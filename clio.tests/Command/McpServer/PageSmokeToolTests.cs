@@ -137,8 +137,8 @@ public sealed class PageSmokeToolTests {
 	}
 
 	[Test]
-	[Description("page-smoke is advertised as a non-destructive write that runs in a worker and shares the browser-session cache, and is not resident.")]
-	public void Tool_Should_Be_A_Long_Tail_Non_Destructive_Write() {
+	[Description("page-smoke is advertised as a destructive write, like trigger-smoke, because its click can delete or change records; it runs in a worker, shares the browser-session cache, and is not resident.")]
+	public void Tool_Should_Be_A_Long_Tail_Destructive_Write() {
 		// Arrange
 		MethodInfo method = typeof(PageSmokeTool).GetMethod(nameof(PageSmokeTool.Run))!;
 
@@ -150,7 +150,7 @@ public sealed class PageSmokeToolTests {
 		// Assert
 		tool.Name.Should().Be("page-smoke", because: "the name is the contract");
 		tool.ReadOnly.Should().BeFalse(because: "the opt-in click can write");
-		tool.Destructive.Should().BeFalse(because: "it never deletes, so it is reached through clio-run");
+		tool.Destructive.Should().BeTrue(because: "click can press Delete or Save, and the annotation is the only signal an auto-approving host sees");
 		execution.SharedFileResource.Should().Be(McpToolSharedFileResource.BrowserSessionCache,
 			because: "it reads the cached browser session get-browser-session writes");
 		description.Should().Contain("is a WRITE", because: "the click must be flagged as a write");

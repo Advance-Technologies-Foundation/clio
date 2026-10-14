@@ -28,10 +28,10 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.NoEnvironment")]
-	[Description("page-smoke is discoverable through the get-tool-contract index and advertised as non-destructive, so it is reached through clio-run.")]
+	[Description("page-smoke is discoverable through the get-tool-contract index and advertised as destructive, because its click can delete or change records.")]
 	[AllureTag(ToolName)]
-	[AllureName("page-smoke is discoverable and non-destructive")]
-	public async Task PageSmoke_Should_Be_Discoverable_And_Not_Destructive() {
+	[AllureName("page-smoke is discoverable and destructive")]
+	public async Task PageSmoke_Should_Be_Discoverable_And_Destructive() {
 		// Arrange
 		await using ArrangeContext arrange = Arrange(TimeSpan.FromMinutes(5));
 
@@ -42,7 +42,7 @@ public sealed class PageSmokeToolE2ETests : McpContractFixtureBase {
 
 		// Assert
 		entry.Should().NotBeNull(because: "a long-tail tool must be in the index to be found at all");
-		entry!.Destructive.Should().BeFalse(because: "it never deletes; its opt-in click is flagged as a write instead");
+		entry!.Destructive.Should().BeTrue(because: "its opt-in click can press Delete, so a host must confirm the call");
 	}
 
 	[Test]

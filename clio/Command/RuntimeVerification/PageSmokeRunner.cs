@@ -442,23 +442,34 @@ internal sealed class PageSmokeRunner(
 				};
 				return;
 			}
-			int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
-				request.ClickWaitSeconds * 1000);
-			report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
-			ReportWhatFollowed(report, events, mark, result);
-			PageReadyState after = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
-				.ConfigureAwait(false);
-			report.Url = after?.Href is null ? null : RelativeUrl(after.Href);
-			PageOverlays overlays = await TryEvaluateAsync<PageOverlays>(cdp, FreedomUiPageScripts.OverlayScript, ct)
-				.ConfigureAwait(false);
-			if (overlays?.Dialogs is { Count: > 0 } dialogs) {
-				report.Dialogs = [.. report.Dialogs ?? [], .. dialogs.Select(Untrusted)];
+			// The button was pressed: a read that fails now must not hide that, so it costs only its own part of the report.
+			bool followedReported = false;
+			try {
+				int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
+					request.ClickWaitSeconds * 1000);
+				report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
+				ReportWhatFollowed(report, events, mark, result);
+				followedReported = true;
+				PageReadyState after = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
+					.ConfigureAwait(false);
+				report.Url = after?.Href is null ? null : RelativeUrl(after.Href);
+				PageOverlays overlays = await TryEvaluateAsync<PageOverlays>(cdp, FreedomUiPageScripts.OverlayScript, ct)
+					.ConfigureAwait(false);
+				if (overlays?.Dialogs is { Count: > 0 } dialogs) {
+					report.Dialogs = [.. report.Dialogs ?? [], .. dialogs.Select(Untrusted)];
+				}
+				report.Toasts = overlays?.Toasts is { Count: > 0 } toasts ? toasts.Select(Untrusted).ToList() : null;
+				PageInventory inventory = await TryEvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript, ct)
+					.ConfigureAwait(false);
+				List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
+				report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
 			}
-			report.Toasts = overlays?.Toasts is { Count: > 0 } toasts ? toasts.Select(Untrusted).ToList() : null;
-			PageInventory inventory = await TryEvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript, ct)
-				.ConfigureAwait(false);
-			List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
-			report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
+			catch (CdpReplyTooLargeException exception) {
+				if (!followedReported) {
+					ReportWhatFollowed(report, events, mark, result);
+				}
+				result.Warnings.Add(exception.Message + " What followed the click may be incomplete.");
+			}
 			if (report.Settled == false) {
 				result.Warnings.Add($"The page was still changing when click-wait ({request.ClickWaitSeconds} s) ended; "
 					+ "what followed may be incomplete.");
@@ -572,51 +583,88 @@ internal sealed class PageSmokeRunner(
 		try {
 			return await EvaluateAsync<T>(cdp, script, ct).ConfigureAwait(false);
 		}
-		catch (Exception exception) when (exception is (InvalidOperationException and not CdpSessionClosedException)
+		catch (Exception exception) when (exception is (InvalidOperationException
+				and not (CdpSessionClosedException or CdpReplyTooLargeException))
 			or CdpCommandException or JsonException) {
 			return null;
 		}
 	}
 
-	// Keeps the reply under MaxReplyBytes by cutting, in order: field values, then the field list, the button list and the
-	// error list by half each round.
+	// Room kept for the warnings Fit itself adds, so adding them cannot push the reply back over the bound.
+	private const int FitWarningReserveBytes = 400;
+
+	// Keeps the reply under MaxReplyBytes. The diagnostics give way first: field values, then fields, buttons, the
+	// load errors and the click's candidates, invalid fields and errors, all halved together each round, down to empty
+	// if they have to be. click.created lists records the click wrote and nothing deletes, so it is the one list the
+	// caller needs whole to report and clean up: it is touched only when the reply is still too big with every
+	// diagnostic list empty, and then titles go (last record first) before any record does.
 	internal static PageSmokeResult Fit(PageSmokeResult result) {
 		if (Size(result) <= MaxReplyBytes) {
 			return result;
 		}
+		const int target = MaxReplyBytes - FitWarningReserveBytes;
 		if (result.Fields is { Count: > 0 }) {
 			result.Fields = result.Fields.Select(field => field with { Value = null }).ToList();
 			result.Warnings.Add("Field values were dropped to keep the reply small.");
 		}
-		int before = Count(result);
-		for (int round = 0; round < 6 && Size(result) > MaxReplyBytes; round++) {
-			int fields = result.Fields?.Count ?? 0;
-			int buttons = result.Buttons?.Count ?? 0;
-			result.Fields = Half(result.Fields);
-			result.Buttons = Half(result.Buttons);
-			result.FieldsOmitted += fields - (result.Fields?.Count ?? 0);
-			result.ButtonsOmitted += buttons - (result.Buttons?.Count ?? 0);
-			result.ConsoleErrors = Half(result.ConsoleErrors.ToList());
-			if (result.Click is not null) {
-				result.Click.Candidates = Half(result.Click.Candidates);
-				result.Click.InvalidFields = Half(result.Click.InvalidFields);
-				result.Click.Created = Half(result.Click.Created);
-				result.Click.ConsoleErrors = result.Click.ConsoleErrors is null ? null : Half(result.Click.ConsoleErrors.ToList());
+		PageClickReport click = result.Click;
+		DiagnosticList[] diagnostics = [
+			new DiagnosticList("fields", () => result.Fields?.Count ?? 0,
+				count => result.Fields = result.Fields.Take(count).ToList()),
+			new DiagnosticList("buttons", () => result.Buttons?.Count ?? 0,
+				count => result.Buttons = result.Buttons.Take(count).ToList()),
+			new DiagnosticList("consoleErrors", () => result.ConsoleErrors?.Count ?? 0,
+				count => result.ConsoleErrors = result.ConsoleErrors.Take(count).ToList()),
+			new DiagnosticList("click.candidates", () => click?.Candidates?.Count ?? 0,
+				count => click.Candidates = click.Candidates.Take(count).ToList()),
+			new DiagnosticList("click.invalidFields", () => click?.InvalidFields?.Count ?? 0,
+				count => click.InvalidFields = click.InvalidFields.Take(count).ToList()),
+			new DiagnosticList("click.consoleErrors", () => click?.ConsoleErrors?.Count ?? 0,
+				count => click.ConsoleErrors = click.ConsoleErrors.Take(count).ToList())
+		];
+		int[] before = diagnostics.Select(list => list.Count()).ToArray();
+		while (Size(result) > target && diagnostics.Any(list => list.Count() > 0)) {
+			foreach (DiagnosticList list in diagnostics.Where(list => list.Count() > 0)) {
+				list.Keep(list.Count() / 2);
 			}
 		}
-		int cut = before - Count(result);
-		if (cut > 0) {
-			result.Warnings.Add($"{cut} list item(s) were cut to keep the reply under {MaxReplyBytes / 1000} KB.");
+		result.FieldsOmitted += before[0] - diagnostics[0].Count();
+		result.ButtonsOmitted += before[1] - diagnostics[1].Count();
+		string[] cut = diagnostics.Select((list, index) => (list.Name, Removed: before[index] - list.Count()))
+			.Where(item => item.Removed > 0).Select(item => $"{item.Name} -{item.Removed}").ToArray();
+		if (cut.Length > 0) {
+			result.Warnings.Add($"Lists cut to keep the reply under {MaxReplyBytes / 1000} KB: {string.Join(", ", cut)}.");
+		}
+		if (click?.Created is { Count: > 0 } && Size(result) > target) {
+			FitCreated(result, click, target);
 		}
 		return result;
 	}
 
-	private static int Count(PageSmokeResult result) =>
-		(result.Fields?.Count ?? 0) + (result.Buttons?.Count ?? 0) + result.ConsoleErrors.Count
-		+ (result.Click?.Candidates?.Count ?? 0) + (result.Click?.InvalidFields?.Count ?? 0)
-		+ (result.Click?.Created?.Count ?? 0) + (result.Click?.ConsoleErrors?.Count ?? 0);
+	// The last resort: titles go first, last record first, so the records stay identified by entity and id; then
+	// records go from the end, one at a time, so as many as fit are kept.
+	private static void FitCreated(PageSmokeResult result, PageClickReport click, int target) {
+		List<CreatedRecord> created = click.Created.ToList();
+		click.Created = created;
+		int untitled = 0;
+		for (int index = created.Count - 1; index >= 0 && Size(result) > target; index--) {
+			if (created[index].Title is not null) {
+				created[index] = created[index] with { Title = null };
+				untitled++;
+			}
+		}
+		int total = created.Count;
+		while (created.Count > 0 && Size(result) > target) {
+			created.RemoveAt(created.Count - 1);
+		}
+		int removed = total - created.Count;
+		result.Warnings.Add(removed > 0
+			? $"click.created was cut by {removed} record(s), and {untitled} title(s) were dropped, to keep the reply " +
+				"small: the click created more records than the reply can list, so read the watched entities to find all of them."
+			: $"click.created lost {untitled} title(s) to keep the reply small; every record is still listed by entity and id.");
+	}
 
-	private static List<T> Half<T>(List<T> items) => items is null || items.Count <= 1 ? items : items.Take(items.Count / 2).ToList();
+	private sealed record DiagnosticList(string Name, Func<int> Count, Action<int> Keep);
 
 	private static int Size(PageSmokeResult result) => JsonSerializer.SerializeToUtf8Bytes(result).Length;
 }

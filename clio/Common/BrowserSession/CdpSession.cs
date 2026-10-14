@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -126,6 +127,10 @@ public sealed class CdpSession : ICdpSession {
 			return;
 		}
 		if (root.TryGetProperty("id", out JsonElement idElement) && idElement.TryGetInt32(out int id)) {
+			if (root.TryGetProperty(WebSocketCdpTransport.ReplyTooLargeMarker, out _)) {
+				FailTooLarge(id);
+				return;
+			}
 			Complete(id, root);
 			return;
 		}
@@ -141,12 +146,20 @@ public sealed class CdpSession : ICdpSession {
 		}
 		if (root.TryGetProperty("error", out JsonElement error)) {
 			string text = error.ValueKind == JsonValueKind.Object && error.TryGetProperty("message", out JsonElement message)
-				? message.GetString() ?? "unknown CDP error"
-				: error.ToString();
+				&& message.ValueKind == JsonValueKind.String
+					? message.GetString() ?? "unknown CDP error"
+					: error.ToString();
 			pending.Completion.TrySetException(new CdpCommandException(pending.Method, text));
 			return;
 		}
 		pending.Completion.TrySetResult(root.TryGetProperty("result", out JsonElement result) ? result : EmptyObject);
+	}
+
+	private void FailTooLarge(int id) {
+		if (_pending.TryGetValue(id, out PendingCommand pending)) {
+			pending.Completion.TrySetException(new CdpReplyTooLargeException(pending.Method,
+				WebSocketCdpTransport.MaxMessageBytes));
+		}
 	}
 
 	private void Raise(CdpEvent cdpEvent) {
@@ -188,6 +201,16 @@ public sealed class WebSocketCdpTransport : ICdpTransport {
 	// A page answer is small; this bounds memory if the browser ever pushes something huge (the rest is discarded).
 	internal const int MaxMessageBytes = 4 * 1024 * 1024;
 
+	// The top-level member of the sentinel an oversized reply is replaced with; CDP never sends it, so the session
+	// fails that reply's command with CdpReplyTooLargeException instead of leaving it to its timeout.
+	internal const string ReplyTooLargeMarker = "clio.replyTooLarge";
+
+	// A CDP reply starts with its id ({"id":12,"result":...}), so the id survives in the kept prefix.
+	private static readonly Regex LeadingId = new(
+		@"\A\s*\{\s*""id""\s*:\s*(?<id>\d{1,9})\s*[,}]",
+		RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
+		TimeSpan.FromSeconds(1));
+
 	private readonly ClientWebSocket _socket;
 
 	/// <summary>Wraps an open socket; the transport owns and disposes it.</summary>
@@ -217,10 +240,21 @@ public sealed class WebSocketCdpTransport : ICdpTransport {
 				overflow = true;
 			}
 			if (result.EndOfMessage) {
-				// An oversized message is replaced with an empty object, which the session ignores.
-				return overflow ? "{}" : Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
+				return overflow
+					? OversizedMessageSentinel(stream.GetBuffer().AsSpan(0, (int)stream.Length))
+					: Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
 			}
 		}
+	}
+
+	// What replaces a message over MaxMessageBytes: a sentinel carrying the reply's id, so its command fails with a
+	// clear error; an empty object (ignored) when no id leads the message, which is an event nobody waits for.
+	internal static string OversizedMessageSentinel(ReadOnlySpan<byte> prefix) {
+		string head = Encoding.UTF8.GetString(prefix[..Math.Min(prefix.Length, 64)]);
+		Match match = LeadingId.Match(head);
+		return match.Success
+			? $"{{\"id\":{match.Groups["id"].Value},\"{ReplyTooLargeMarker}\":true}}"
+			: "{}";
 	}
 
 	/// <inheritdoc />

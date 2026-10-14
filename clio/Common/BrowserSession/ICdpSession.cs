@@ -47,6 +47,21 @@ public sealed class CdpCommandException : Exception {
 	public string Method { get; }
 }
 
+/// <summary>The browser's reply to a command was larger than clio reads, so it was discarded.</summary>
+public sealed class CdpReplyTooLargeException : InvalidOperationException {
+
+	/// <summary>Creates the exception for <paramref name="method"/>.</summary>
+	/// <param name="method">The command whose reply was discarded.</param>
+	/// <param name="maxBytes">The largest reply clio reads.</param>
+	public CdpReplyTooLargeException(string method, int maxBytes)
+		: base($"CDP command '{method}' failed: its reply exceeded {maxBytes / (1024 * 1024)} MB and was discarded.") {
+		Method = method;
+	}
+
+	/// <summary>The command whose reply was discarded.</summary>
+	public string Method { get; }
+}
+
 /// <summary>The DevTools connection is gone (the browser exited or the socket dropped); no later command can succeed.</summary>
 public sealed class CdpSessionClosedException : InvalidOperationException {
 
