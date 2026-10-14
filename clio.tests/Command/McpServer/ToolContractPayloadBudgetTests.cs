@@ -94,7 +94,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// UTF-8 wire size — conservative, which is the safe direction for a ceiling.
 	// Since ENG-102796 this ceiling covers the OBJECT index, which a no-names call returns only for
 	// detail=index-entries (ClioRing asks for it); the default reply is the line index below.
-	private const int MaxCompactIndexSerializedBytes = 188 * 256;
+	// Re-pinned for ENG-100406 after merging master: set-default-record-rights and apply-default-record-rights are
+	// two more long-tail tools. Measured 48483 bytes with them registered (355 over 48128); next 256-byte step is
+	// 48640 (190).
+	private const int MaxCompactIndexSerializedBytes = 190 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -112,7 +115,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// found that "(D) = destructive" read as "a line without (D) is read-only", which install-gate and reg-web-app
 	// (destructive=false, both write) contradict, so the legend now says a line without (D) can still write.
 	// Measured 17675 for the same 228 tools; the reply on the wire stays about 2 KB under the spill line.
-	private const int MaxToolIndexSerializedBytes = 70 * 256;
+	//
+	// Re-pinned for ENG-100406: set-default-record-rights and apply-default-record-rights add two lines. Measured
+	// 18075 bytes (155 over 17920); next 256-byte step is 18176 (71), still under the 19000-byte spill line.
+	private const int MaxToolIndexSerializedBytes = 71 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.
