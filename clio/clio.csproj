@@ -128,7 +128,7 @@
 	<Choose>
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
-				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
+				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[$(PowerShell74Version),7.5.0)"/>
 			</ItemGroup>
 		</When>
 		<Otherwise>

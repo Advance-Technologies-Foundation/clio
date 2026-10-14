@@ -20,6 +20,8 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <CentralPackageTransitivePinningEnabled Condition="$(MSBuildProjectName.StartsWith('cliogate'))">false</CentralPackageTransitivePinningEnabled>
     
     <MsPackageVersion>10.0.13</MsPackageVersion>
+    <!-- net8.0 PowerShell.SDK LTS line: single source for the central pin and the clio.csproj VersionOverride range. -->
+    <PowerShell74Version>7.4.13</PowerShell74Version>
     <SIOVersion>22.2.0</SIOVersion>
     <AvaloniaVersion>12.1.1</AvaloniaVersion>
     <IdentityModelVersion>8.22.0</IdentityModelVersion>
@@ -107,11 +109,11 @@ See docs: https://devblogs.microsoft.com/dotnet/introducing-central-package-mana
     <PackageVersion Include="JsonhCs" Version="7.8.0" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
     <PackageVersion Include="System.IO.Compression" Version="4.3.0" />
-    <!-- net8.0 stays on the 7.4 LTS line (clio.csproj VersionOverride [7.4.13,7.5.0)). With transitive pinning
+    <!-- net8.0 stays on the 7.4 LTS line (clio.csproj VersionOverride [$(PowerShell74Version),7.5.0)). With transitive pinning
          a single 7.6.3 pin falls outside that range and silently drops PowerShell.SDK from the net8.0
          graph of every project that references clio (clio.mcp.e2e), so pin per TFM. -->
     <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.6.3" Condition="'$(TargetFramework)' != 'net8.0'" />
-    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="7.4.13" Condition="'$(TargetFramework)' == 'net8.0'" />
+    <PackageVersion Include="Microsoft.PowerShell.SDK" Version="$(PowerShell74Version)" Condition="'$(TargetFramework)' == 'net8.0'" />
     <PackageVersion Include="Microsoft.Dism" Version="6.1.0" />
     <PackageVersion Include="DocumentFormat.OpenXmlSDK" Version="2.0.0"/>
     <PackageVersion Include="Microsoft.Web.Administration" Version="11.1.0"/>
