@@ -7,16 +7,16 @@
 
 	public class PackageInstaller : BasePackageInstaller, IPackageInstaller
 	{
-		private readonly IApplicationLogProvider applicationLogProvider;
-
 		#region Constructors: Public
 
 		public PackageInstaller(IApplicationLogProvider applicationLogProvider, EnvironmentSettings environmentSettings,
 				IApplicationClientFactory applicationClientFactory, IApplication application,
 				IPackageArchiver packageArchiver, ISqlScriptExecutor scriptExecutor,
-				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager)
+				IServiceUrlBuilder serviceUrlBuilder, IFileSystem fileSystem, ILogger logger, IPackageLockManager packageLockManager,
+				IDesignNodeSessionGuard designNodeSessionGuard)
 			: base(applicationLogProvider, environmentSettings, applicationClientFactory,  application,
-				 packageArchiver,  scriptExecutor, serviceUrlBuilder,  fileSystem,  logger, packageLockManager) {
+				 packageArchiver,  scriptExecutor, serviceUrlBuilder,  fileSystem,  logger, packageLockManager,
+				 designNodeSessionGuard) {
 		}
 
 		#endregion

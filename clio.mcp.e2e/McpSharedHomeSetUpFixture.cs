@@ -1,5 +1,6 @@
-﻿using Clio.Command.McpServer.Tools.MobilePageConverter;
-using Clio.Mcp.E2E.Support.Configuration;
+﻿using Clio.Mcp.E2E.Support.Configuration;
+using System;
+using System.Linq;
 using Clio.Mcp.E2E.Support.Diagnostics;
 using Clio.Mcp.E2E.Support.Mcp;
 using System.Text.Json;
@@ -59,7 +60,24 @@ public sealed class McpSharedHomeSetUpFixture {
 			["sources"] = new JsonObject()
 		};
 		SeedPlaceholderEnvironmentWhenNoneRegistered(root);
-		SuiteFeatureFlags.Enable(root, typeof(MobilePageConversionGuideTool));
+		// The suite's feature surface is CLEARED, not inherited. This settings file is seeded from the
+		// developer's own clio appsettings.json, so leaving the map alone makes the suite's effective test
+		// set a property of which machine ran it: a developer with mobile-page-converter still enabled
+		// could not have detected the converter being re-gated, because their own flag kept it registered.
+		// That was measured, not theorised, while verifying ENG-94638. clio still ships gated tools
+		// (deploy-identity, watch-compilation); their fixtures gate THEMSELVES and skip - see
+		// WatchCompilationE2EGate and McpWorkerModeE2ETests - so an empty map is the deterministic input
+		// they are written against.
+		// FOLD every casing first. clio binds this map with [JsonProperty("features")] under Newtonsoft,
+		// which matches case-insensitively into a dictionary the Settings constructor pre-initialises, so a
+		// "Features" sibling left in the file would still populate it and assigning the canonical key alone
+		// would clear nothing.
+		foreach (string key in root.Select(property => property.Key)
+			.Where(key => string.Equals(key, "features", StringComparison.OrdinalIgnoreCase))
+			.ToArray()) {
+			root.Remove(key);
+		}
+		root["features"] = new JsonObject();
 		File.WriteAllText(
 			_isolatedSettingsPath,
 			root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));

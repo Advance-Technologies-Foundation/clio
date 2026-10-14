@@ -8,7 +8,6 @@ using Clio.Command.EntitySchemaDesigner;
 using Clio.Package;
 using Clio.UserEnvironment;
 using Terrasoft.Core.Entities;
-using static Clio.Package.SelectQueryHelper;
 
 namespace Clio.Command;
 
@@ -204,7 +203,7 @@ public sealed class ApplicationInfoService(
 		string? id,
 		string? code)
 	{
-		SelectQueryResponseDto response = ExecuteSelectQuery<SelectQueryResponseDto>(
+		SelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<SelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildInstalledApplicationsQuery(id, code));
@@ -251,7 +250,7 @@ public sealed class ApplicationInfoService(
 		string appId,
 		string packageUId)
 	{
-		ApplicationEntitySelectQueryResponseDto response = ExecuteSelectQuery<ApplicationEntitySelectQueryResponseDto>(
+		ApplicationEntitySelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationEntitySelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildApplicationEntitiesQuery(appId, packageUId));
@@ -263,7 +262,7 @@ public sealed class ApplicationInfoService(
 		IServiceUrlBuilder serviceUrlBuilder,
 		string packageName)
 	{
-		ApplicationPageSelectQueryResponseDto response = ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
+		ApplicationPageSelectQueryResponseDto response = SelectQueryHelper.ExecuteSelectQuery<ApplicationPageSelectQueryResponseDto>(
 			client,
 			serviceUrlBuilder,
 			BuildApplicationPagesQuery(packageName));
@@ -288,17 +287,31 @@ public sealed class ApplicationInfoService(
 		ApplicationEntityRecordDto entityRow)
 	{
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RuntimeEntitySchemaRequest);
-		string responseJson = client.ExecutePostRequest(
-			url,
-			JsonSerializer.Serialize(new { uId = entityRow.UId }));
-		RuntimeSchemaResponseDto response = Deserialize<RuntimeSchemaResponseDto>(
-			responseJson,
-			$"Runtime entity schema request '{entityRow.UId}'",
-			url);
-		if (!response.Success || response.Schema is null)
+		string requestBody = JsonSerializer.Serialize(new { uId = entityRow.UId });
+		// ENG-102683: a read that lands while Creatio reloads its route table after an OData rebuild is answered
+		// success:false ("Collection was modified"); it is a read, so it is re-sent on the shared transient budget.
+		(RuntimeSchemaResponseDto response, string responseJson) =
+			SelectQueryHelper.SendWithTransientRetry<(RuntimeSchemaResponseDto Response, string Body)>(
+				() =>
+				{
+					string body = client.ExecutePostRequest(url, requestBody);
+					return (Deserialize<RuntimeSchemaResponseDto>(
+						body,
+						$"Runtime entity schema request '{entityRow.UId}'",
+						url), body);
+				},
+				answer => !answer.Response.Success
+					&& SelectQueryHelper.IsTransientServerFailure(answer.Response.ErrorInfo?.Message, answer.Body));
+		if (!response.Success)
 		{
 			throw new InvalidOperationException(
-				response.ErrorInfo?.Message ?? $"Runtime entity schema '{entityRow.UId}' was not returned.");
+				$"Runtime entity schema '{entityRow.UId}' was not returned: "
+				+ SelectQueryHelper.DescribeServerFailure(response.ErrorInfo?.Message, responseJson));
+		}
+
+		if (response.Schema is null)
+		{
+			throw new InvalidOperationException($"Runtime entity schema '{entityRow.UId}' was not returned.");
 		}
 
 		string entityName = !string.IsNullOrWhiteSpace(response.Schema.Name)
@@ -582,23 +595,6 @@ public sealed class ApplicationInfoService(
 		}
 	}
 
-	private static T ExecuteSelectQuery<T>(
-		IApplicationClient client,
-		IServiceUrlBuilder serviceUrlBuilder,
-		object query)
-		where T : SelectQueryResponseBaseDto
-	{
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select);
-		string responseJson = client.ExecutePostRequest(url, JsonSerializer.Serialize(query));
-		T response = Deserialize<T>(responseJson, "SelectQuery", url);
-		if (!response.Success)
-		{
-			throw new InvalidOperationException(response.ErrorInfo?.Message ?? "Select query failed.");
-		}
-
-		return response;
-	}
-
 	// ENG-93365: routed through the shared guard so an HTML error/login page or a truncated body surfaces
 	// as a typed error naming the endpoint, never as a raw System.Text.Json parser message.
 	private static T Deserialize<T>(string responseJson, string operationName, string url) =>
@@ -606,56 +602,56 @@ public sealed class ApplicationInfoService(
 
 	private static object BuildInstalledApplicationsQuery(string? appId, string? appCode)
 	{
-		List<SelectQueryFilterDefinition> filters = [];
+		List<SelectQueryHelper.SelectQueryFilterDefinition> filters = [];
 		if (!string.IsNullOrWhiteSpace(appId))
 		{
-			filters.Add(new SelectQueryFilterDefinition("Id", appId.Trim(), GuidDataValueType));
+			filters.Add(new SelectQueryHelper.SelectQueryFilterDefinition("Id", appId.Trim(), SelectQueryHelper.GuidDataValueType));
 		}
 
 		if (!string.IsNullOrWhiteSpace(appCode))
 		{
-			filters.Add(new SelectQueryFilterDefinition("Code", appCode.Trim(), TextDataValueType));
+			filters.Add(new SelectQueryHelper.SelectQueryFilterDefinition("Code", appCode.Trim(), SelectQueryHelper.TextDataValueType));
 		}
 
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"SysInstalledApp",
 			[
-				new SelectQueryColumnDefinition("Id", "Id"),
-				new SelectQueryColumnDefinition("Code", "Code"),
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("Version", "Version")
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Code", "Code"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Version", "Version")
 			],
 			filters);
 	}
 
 	private static object BuildApplicationEntitiesQuery(string appId, string packageUId)
 	{
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"ApplicationEntity",
 			[
-				new SelectQueryColumnDefinition("UId", "UId"),
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("Caption", "Caption")
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Caption", "Caption")
 			],
 			[
-				new SelectQueryFilterDefinition("Application", appId, GuidDataValueType),
-				new SelectQueryFilterDefinition("Package", packageUId, GuidDataValueType)
+				new SelectQueryHelper.SelectQueryFilterDefinition("Application", appId, SelectQueryHelper.GuidDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("Package", packageUId, SelectQueryHelper.GuidDataValueType)
 			]);
 	}
 
 	private static object BuildApplicationPagesQuery(string packageName)
 	{
-		return BuildSelectQuery(
+		return SelectQueryHelper.BuildSelectQuery(
 			"SysSchema",
 			[
-				new SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryColumnDefinition("UId", "UId"),
-				new SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
-				new SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("SysPackage.Name", "PackageName"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("[SysSchema:Id:Parent].Name", "ParentSchemaName")
 			],
 			[
-				new SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", TextDataValueType),
-				new SelectQueryFilterDefinition("SysPackage.Name", packageName, TextDataValueType)
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "ClientUnitSchemaManager", SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("SysPackage.Name", packageName, SelectQueryHelper.TextDataValueType)
 			]);
 	}
 
@@ -684,29 +680,20 @@ public sealed class ApplicationInfoService(
 		};
 	}
 
-	private abstract class SelectQueryResponseBaseDto
-	{
-		[JsonPropertyName("success")]
-		public bool Success { get; set; }
-
-		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
-	}
-
-	private sealed class SelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class SelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 
 		[JsonPropertyName("rows")]
 		public List<InstalledApplicationDto> Rows { get; set; } = [];
 	}
 
-	private sealed class ApplicationEntitySelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class ApplicationEntitySelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 		[JsonPropertyName("rows")]
 		public List<ApplicationEntityRecordDto> Rows { get; set; } = [];
 	}
 
-	private sealed class ApplicationPageSelectQueryResponseDto : SelectQueryResponseBaseDto
+	private sealed class ApplicationPageSelectQueryResponseDto : SelectQueryHelper.SelectQueryResponseBaseDto
 	{
 		[JsonPropertyName("rows")]
 		public List<ApplicationPageRecordDto> Rows { get; set; } = [];
@@ -718,7 +705,7 @@ public sealed class ApplicationInfoService(
 		public bool Success { get; set; }
 
 		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
+		public SelectQueryHelper.ErrorInfoDto? ErrorInfo { get; set; }
 
 		[JsonPropertyName("packages")]
 		public List<ApplicationPackageDto> Packages { get; set; } = [];
@@ -730,7 +717,7 @@ public sealed class ApplicationInfoService(
 		public bool Success { get; set; }
 
 		[JsonPropertyName("errorInfo")]
-		public ErrorInfoDto? ErrorInfo { get; set; }
+		public SelectQueryHelper.ErrorInfoDto? ErrorInfo { get; set; }
 
 		[JsonPropertyName("schema")]
 		public RuntimeSchemaDto? Schema { get; set; }
@@ -743,12 +730,6 @@ public sealed class ApplicationInfoService(
 
 		[JsonPropertyName("schema")]
 		public DesignSchemaDto? Schema { get; set; }
-	}
-
-	private sealed class ErrorInfoDto
-	{
-		[JsonPropertyName("message")]
-		public string? Message { get; set; }
 	}
 
 	private sealed class InstalledApplicationDto
@@ -918,6 +899,11 @@ public sealed record InstalledAppSummary(string Id, string Code, string Name, st
 /// <param name="ApplicationName">Installed application display name.</param>
 /// <param name="ApplicationCode">Installed application code.</param>
 /// <param name="ApplicationVersion">Installed application version.</param>
+/// <param name="SchemaNamePrefix">Schema name prefix of the environment, when known.</param>
+/// <param name="Warnings">Non-fatal findings of the operation that produced the result, for example a failed
+/// navigation cache reset after <c>create-app</c>; <see langword="null"/> when there are none.</param>
+/// <param name="NextStep">What the caller does next when an open browser tab does not show the change, set by
+/// <c>create-app</c>; <see langword="null"/> for read results.</param>
 public sealed record ApplicationInfoResult(
 	string PackageUId,
 	string PackageName,
@@ -927,7 +913,9 @@ public sealed record ApplicationInfoResult(
 	string? ApplicationName = null,
 	string? ApplicationCode = null,
 	string? ApplicationVersion = null,
-	string? SchemaNamePrefix = null);
+	string? SchemaNamePrefix = null,
+	IReadOnlyList<string>? Warnings = null,
+	string? NextStep = null);
 
 /// <summary>
 /// Structured entity information returned as part of application info results.

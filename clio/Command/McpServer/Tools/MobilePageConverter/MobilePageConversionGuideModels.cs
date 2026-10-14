@@ -437,10 +437,11 @@ public static class ReasonCodes {
 
 	// ── Why a request was KEPT but needs review ──────
 	/// <summary>
-	/// The request is in neither the conversion map nor the mobile request registry, so the binding was kept
-	/// VERBATIM
-	/// for manual verification — the component works, the action may or may not. Params: NONE — the record's
-	/// own <c>request</c> field names it.
+	/// The request is NOT IN THE CONVERSION MAP, so the binding was kept VERBATIM for manual verification —
+	/// the component works, the action may or may not. The mobile request registry is deliberately NOT part of
+	/// this test: anything the map does not name is flagged, whether or not the registry publishes it, so a
+	/// flag means "clio has no mapping for this", never "clio established it does not exist". Params: NONE —
+	/// the record's own <c>request</c> field names it.
 	/// </summary>
 	public const string FlagRequestUnmapped = "flag-request-unmapped";
 
@@ -538,10 +539,10 @@ public sealed class ViewConfigDiffOperation {
 	public string ParentName { get; init; }
 
 	/// <summary>
-	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is the default
-	/// <c>items</c>, which the applier would have assumed anyway — because this list is meant to be pasted
-	/// and an explicit slot is one less thing a reader must know about the applier to trust what they are
-	/// pasting. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
+	/// The parent's child collection. ALWAYS present on an <c>insert</c> — including when it is <c>items</c> —
+	/// because the applier has NO default slot: an insert or move that names a parent but no
+	/// <c>propertyName</c> is rejected as "not a container" and the page does not load (GH-1752), so
+	/// update-page refuses to save it. Absent on a <c>merge</c>, which resolves by <c>name</c> alone. (This summary previously said
 	/// "absent when it is the default items", which would have a caller read a present
 	/// <c>propertyName: "items"</c> as a NON-default slot — the one inference the field exists to prevent.)
 	/// </summary>
@@ -806,7 +807,7 @@ public sealed class MobileComponentContract {
 	/// generation — and only then, because the web-derived one publishes Angular element attributes
 	/// (<c>classes</c>, <c>shape</c>, <c>tabIndex</c>) under that same key and they are not mobile properties.
 	/// <para>
-	/// Built by <c>WebToMobileAnalysisService.BuildAllowedPropertyNames</c>, which is also what the property
+	/// Built by <c>MobileRegistryDeclarations.BuildAllowedPropertyNames</c>, which is also what the property
 	/// prune enforces — so wherever <see cref="MobilePageConversionGuide.PrunedProperties"/> is non-null this
 	/// is exactly the set it can be reconciled against. (The prune is gated on the STAND as well, so the
 	/// reverse does not hold: this set can carry the inherited surface on a conversion that pruned nothing.)

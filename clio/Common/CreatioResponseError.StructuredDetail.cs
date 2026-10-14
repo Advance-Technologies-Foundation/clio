@@ -336,20 +336,26 @@ internal static partial class CreatioResponseError {
 	/// SQL Server 547 for an INSERT or UPDATE: <c>The INSERT statement conflicted with the FOREIGN KEY
 	/// constraint "FK...". The conflict occurred in database "db", table "dbo.Account", column 'Id'.</c> The
 	/// table named is the REFERENCED one. The database name is matched by a bounded class (128 characters is
-	/// the SQL Server maximum) and never copied, and the schema prefix is cut.
+	/// the SQL Server maximum) and never copied, and the schema prefix is cut. Both statement kinds were matched
+	/// live on a local MSSQL stand: odata-create (INSERT) and odata-update (PATCH) of a Contact with a missing
+	/// AccountId. The self-referencing <c>FOREIGN KEY SAME TABLE constraint</c> variant is taken from the SQL
+	/// Server 547 message template, not measured on a stand.
 	/// </summary>
 	[GeneratedRegex(
-		@"The (?:INSERT|UPDATE) statement conflicted with the FOREIGN KEY constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '[A-Za-z_][A-Za-z0-9_]{0,127}'",
+		@"The (?:INSERT|UPDATE) statement conflicted with the FOREIGN KEY(?: SAME TABLE)? constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '[A-Za-z_][A-Za-z0-9_]{0,127}'",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex SqlServerInsertForeignKeyPattern();
 
 	/// <summary>
 	/// SQL Server 547 for a DELETE (or a key UPDATE) of a row other rows still reference: <c>The DELETE
 	/// statement conflicted with the REFERENCE constraint "FK...". The conflict occurred in database "db",
-	/// table "dbo.Contact", column 'AccountId'.</c> Here the table and column are the REFERENCING ones.
+	/// table "dbo.Contact", column 'AccountId'.</c> Here the table and column are the REFERENCING ones. The
+	/// DELETE wording was measured on a local MSSQL stand (odata-delete of an Account a Contact references);
+	/// the key-UPDATE wording and the self-referencing <c>SAME TABLE REFERENCE constraint</c> variant are
+	/// taken from the SQL Server 547 message template, not measured on a stand.
 	/// </summary>
 	[GeneratedRegex(
-		@"The (?:DELETE|UPDATE) statement conflicted with the REFERENCE constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})'",
+		@"The (?:DELETE|UPDATE) statement conflicted with the (?:SAME TABLE )?REFERENCE constraint ""(?<constraint>[A-Za-z_][A-Za-z0-9_]{0,127})""\. The conflict occurred in database ""[^""\r\n]{1,128}"", table ""(?:[A-Za-z_][A-Za-z0-9_]{0,127}\.)?(?<table>[A-Za-z_][A-Za-z0-9_]{0,127})"", column '(?<column>[A-Za-z_][A-Za-z0-9_]{0,127})'",
 		RegexOptions.CultureInvariant, RegexTimeoutMilliseconds)]
 	private static partial Regex SqlServerDeleteForeignKeyPattern();
 

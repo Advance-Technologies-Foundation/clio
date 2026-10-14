@@ -187,25 +187,82 @@ internal class FindAppCommandTests : BaseCommandTests<FindAppOptions> {
 	}
 
 	[Test]
-	[Description("FindApplications returns applications without sections and logs a warning when the sections batch query fails.")]
-	public void FindApplications_ReturnsAppsWithEmptySectionsAndLogsWarning_WhenSectionsBatchFails() {
+	[Description("FindApplications sends the sections batch as one IN filter carrying every application ID, because the virtual ApplicationSection schema reads only the first ApplicationId filter of a group (ENG-102120).")]
+	public void FindApplications_SendsAllAppIdsInOneInFilter_WhenMultipleApplicationsExist() {
+		// Arrange
+		string[] appIds = [
+			"11111111-1111-1111-1111-111111111111",
+			"22222222-2222-2222-2222-222222222222",
+			"33333333-3333-3333-3333-333333333333"
+		];
+		ArrangeApps(appIds.Select((id, index) => new AppRow(id, $"App{index}", $"App {index}", null, "1.0.0")));
+		string? sectionsBody = null;
+		_applicationClient
+			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
+			.Returns(call => {
+				sectionsBody = call.ArgAt<string>(1);
+				return BuildSuccessJson([]);
+			});
+		FindAppOptions options = new();
+
+		// Act
+		_command.FindApplications(options);
+
+		// Assert
+		sectionsBody.Should().NotBeNull(because: "the sections batch query must be sent");
+		using JsonDocument document = JsonDocument.Parse(sectionsBody!);
+		JsonElement[] filters = document.RootElement.GetProperty("filters").GetProperty("items")
+			.EnumerateObject().Select(item => item.Value).ToArray();
+		filters.Should().ContainSingle(
+			because: "an OR group of several ApplicationId filters returns the sections of the first application only");
+		filters[0].GetProperty("filterType").GetInt32().Should().Be(4,
+			because: "filterType 4 is the DataService IN filter");
+		filters[0].GetProperty("leftExpression").GetProperty("columnPath").GetString().Should().Be("ApplicationId",
+			because: "sections are matched to applications by ApplicationId");
+		filters[0].GetProperty("rightExpressions").EnumerateArray()
+			.Select(expression => expression.GetProperty("parameter").GetProperty("value").GetString())
+			.Should().BeEquivalentTo(appIds,
+				because: "every candidate application must be carried by the single IN filter");
+	}
+
+	[Test]
+	[Description("FindApplications throws when the sections batch query fails instead of returning applications with empty sections (ENG-102120).")]
+	public void FindApplications_Throws_WhenSectionsBatchFails() {
 		// Arrange
 		const string appId = "11111111-1111-1111-1111-111111111111";
 		ArrangeApps([new AppRow(appId, "CrtCaseManagementApp", "Case Management", null, "1.0.0")]);
 		_applicationClient
 			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
-			.Returns(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = "DB timeout" } }));
+			.Returns(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = "Column not found" } }));
 		FindAppOptions options = new();
 
 		// Act
-		IReadOnlyList<AppSearchResult> results = _command.FindApplications(options);
+		Action act = () => _command.FindApplications(options);
 
 		// Assert
-		results.Should().ContainSingle(
-			because: "the application must still be returned even when sections fail");
-		results[0].Sections.Should().BeEmpty(
-			because: "sections are unavailable when the batch query fails");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(msg => msg.Contains("Failed to load sections")));
+		act.Should().Throw<InvalidOperationException>(
+				because: "empty sections after a failed query would look exactly like an application without sections")
+			.WithMessage("Failed to load application sections:*Column not found*",
+				because: "the caller must see which step failed and why the sections could not be loaded");
+	}
+
+	[Test]
+	[Description("Execute returns 1 and logs the error when the sections batch query fails (ENG-102120).")]
+	public void Execute_ReturnsOneAndLogsError_WhenSectionsBatchFails() {
+		// Arrange
+		ArrangeApps([new AppRow("11111111-1111-1111-1111-111111111111", "AppOne", "App One", null, "1.0.0")]);
+		_applicationClient
+			.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
+			.Returns(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = "Column not found" } }));
+		FindAppOptions options = new();
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(1, because: "a failed section query must fail the command");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("Column not found")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.StartsWith("App:")));
 	}
 
 	[Test]

@@ -33,6 +33,15 @@ When no rows remain, deletes the binding schema data record via DeletePackageSch
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.
 
+In file system development mode the platform applies the binding change to the database only, so
+the package folder on disk (`Pkg/<package>/Data/<binding>`) does not get the change and a commit
+of that folder does not carry it. The command still exits 0 and prints a warning naming the
+folder. Run `clio pkg-to-file-system -e <ENVIRONMENT_NAME>` to write it to disk. That command
+rewrites every package folder on disk from the database (except client modules and C# source code)
+and removes on-disk items the database does not have, so commit on-disk work that is not in the
+database yet first, and run it before the next `pkg-to-db`, which makes the database match the
+disk.
+
 ## Example
 
 ```bash

@@ -40,6 +40,10 @@ internal sealed class CommandHelpRenderer {
 	private const string SecRequirements = "REQUIREMENTS";
 	private const string SecNotes = "NOTES";
 	private const string SecSeeAlso = "SEE ALSO";
+	// The line an alias shim (today only set-app-icon.txt) carries in SEE ALSO. A shim is recognized by a line
+	// ending in this text, not by a phrase anywhere in the file, so manual help that mentions an alias or a
+	// legacy heading in prose stays manual help.
+	private const string AliasShimMarker = "- Legacy heading in Commands.md";
 	private readonly IFileSystem _fileSystem;
 	private readonly CommandHelpCatalog _catalog;
 	private readonly Func<bool> _supportsAnsi;
@@ -461,9 +465,8 @@ internal sealed class CommandHelpRenderer {
 			currentSection.Value.Lines.Add(line.Trim('\ufeff'));
 			sections[^1] = currentSection.Value;
 		}
-		bool isAliasShim = content.Contains("alias for", StringComparison.OrdinalIgnoreCase)
-			|| content.Contains("legacy heading", StringComparison.OrdinalIgnoreCase)
-			|| content.Contains("exists so the legacy heading", StringComparison.OrdinalIgnoreCase);
+		bool isAliasShim = sections.Any(section => section.Lines.Any(line =>
+			line.EndsWith(AliasShimMarker, StringComparison.OrdinalIgnoreCase)));
 		return new HelpDocument(
 			sections
 				.Select(section => new HelpSection(section.Heading, section.NormalizedHeading, TrimEmptyLines(section.Lines)))
@@ -715,6 +718,7 @@ internal sealed class CommandHelpRenderer {
 		GetProperties(optionsType)
 			.Select(property => (Property: property, Attribute: property.GetCustomAttribute<OptionAttribute>(true)))
 			.Where(item => item.Attribute != null)
+			.Where(item => !item.Attribute.Hidden)
 			.Where(item => IsEnvironmentOption(item.Property) == environmentOptionsOnly)
 			.OrderBy(item => item.Property.DeclaringType == typeof(EnvironmentOptions) ? 1 : 0)
 			.ThenBy(item => item.Property.MetadataToken)

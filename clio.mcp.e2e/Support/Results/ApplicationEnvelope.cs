@@ -28,7 +28,9 @@ internal sealed record ApplicationContextResponseEnvelope(
 	[property: JsonPropertyName("entities")] IReadOnlyList<ApplicationEntityEnvelope>? Entities,
 	[property: JsonPropertyName("pages")] IReadOnlyList<ApplicationPageEnvelope>? Pages,
 	[property: JsonPropertyName("dataforge")] ApplicationDataForgeEnvelope? DataForge,
-	[property: JsonPropertyName("error")] string? Error);
+	[property: JsonPropertyName("error")] string? Error,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 internal sealed record ApplicationSectionContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,
@@ -44,7 +46,9 @@ internal sealed record ApplicationSectionContextResponseEnvelope(
 	[property: JsonPropertyName("error")] string? Error,
 	[property: JsonPropertyName("error-class")] string? ErrorClass = null,
 	[property: JsonPropertyName("section-created")] string? SectionCreated = null,
-	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null);
+	[property: JsonPropertyName("retry-guidance")] string? RetryGuidance = null,
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,
@@ -60,7 +64,8 @@ internal sealed record ApplicationSectionUpdateContextResponseEnvelope(
 	[property: JsonPropertyName("caption-culture")] string? CaptionCulture = null,
 	[property: JsonPropertyName("caption-culture-value")] string? CaptionCultureValue = null,
 	[property: JsonPropertyName("preserved-cultures")] IReadOnlyList<string>? PreservedCultures = null,
-	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null);
+	[property: JsonPropertyName("warnings")] IReadOnlyList<string>? Warnings = null,
+	[property: JsonPropertyName("next-step")] string? NextStep = null);
 
 internal sealed record ApplicationSectionDeleteContextResponseEnvelope(
 	[property: JsonPropertyName("success")] bool Success,

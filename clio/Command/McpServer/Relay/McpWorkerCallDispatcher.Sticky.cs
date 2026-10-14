@@ -147,7 +147,7 @@ public sealed partial class McpWorkerCallDispatcher {
 	/// break it the moment somebody raised <c>CLIO_MCP_RESPONSE_DEADLINE_SECONDS</c> past it — the
 	/// invariant asserted by a comment rather than enforced by the code. Both values are resolved at type
 	/// load from the same environment, so the parent and the child cannot disagree about which deadline is
-	/// in force. On the shipped default this is 150 s + 60 s = 210 s.
+	/// in force. On the shipped default this is 45 s + 60 s = 105 s.
 	/// </para>
 	/// </remarks>
 	internal static readonly TimeSpan DefaultStickyCallBudget =
@@ -474,6 +474,9 @@ public sealed partial class McpWorkerCallDispatcher {
 			return result;
 		}
 		catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) {
+			if (TryKeepAbandonedStarter(toolName, key, entry, ownershipTransferred)) {
+				throw;
+			}
 			await ReleaseStartedWorkerAsync(key, entry, ownershipTransferred).ConfigureAwait(false);
 			await ReleaseUnregisteredAsync(entry, lease, standardError, reservation).ConfigureAwait(false);
 			throw;
@@ -505,6 +508,59 @@ public sealed partial class McpWorkerCallDispatcher {
 				await entry.ReleaseAsync().ConfigureAwait(false);
 			}
 		}
+	}
+
+	/// <summary>
+	/// Decides what a starter whose CALLER gave up leaves behind: the worker and the operation it is
+	/// running, or nothing. When it keeps the worker it also marks it abandoned and logs the decision.
+	/// </summary>
+	/// <param name="toolName">The canonical tool name, for the log line.</param>
+	/// <param name="key">The key the worker is registered under.</param>
+	/// <param name="entry">The worker, or <see langword="null"/> when the session never opened.</param>
+	/// <param name="ownershipTransferred">Whether the registry took the entry.</param>
+	/// <returns>
+	/// <see langword="true"/> when the worker was KEPT: the caller's cancellation is rethrown and nothing is
+	/// released. <see langword="false"/> when the caller must release it.
+	/// </returns>
+	/// <remarks>
+	/// <para>
+	/// <b>The same two cases as a poll whose caller gave up (<see cref="StickyWorkerPoll"/>), decided by the
+	/// same fact.</b> An MCP client's own request timeout cancels the call it is waiting for — Claude Code
+	/// reports it as "Request timed out" and sends <c>notifications/cancelled</c> — and that is not a reason to
+	/// end the operation the call started (ENG-102333). Once the request has been WRITTEN the worker has it,
+	/// and every starter family hands its long work to the detached heartbeat, which runs it to the end
+	/// whatever the call does and then sends the private completion signal (ADR rule 5). Killing the worker
+	/// here therefore ends that work part-way: a compile or a restart whose request Creatio already has keeps
+	/// running on the server while the worker that held its record is gone, so <c>compile-status</c> answered
+	/// <c>not-found</c> for the reporter's four compiles that ran to completion; an install or a section
+	/// creation is cut in the middle of its own steps. Kept, the worker finishes, the completion signal
+	/// releases the target's reservation when the work really ends, a status poll — for the families that
+	/// have one — still reaches the record, and the linger and the lifetime bound reap it as they reap any
+	/// finished operation.
+	/// </para>
+	/// <para>
+	/// <b>A session that is no longer writable is released, as before.</b> A send the token interrupted may
+	/// have left half a JSON-RPC frame on the child's stdin (ADR §3.2a), so that session is retired and never
+	/// reused — and a worker that never received its call is running nothing worth keeping. A worker whose
+	/// process has ended has nothing to keep either. A cancellation before the entry was registered (spawn,
+	/// handshake) never sent the call at all.
+	/// </para>
+	/// <para>
+	/// The kept session carries an abandoned call, so the next call over it proves the worker alive with a
+	/// bounded probe first, exactly as a poll does after its own clean cancellation.
+	/// </para>
+	/// </remarks>
+	private bool TryKeepAbandonedStarter(string toolName, StickyWorkerKey key, StickyWorkerEntry entry,
+		bool ownershipTransferred) {
+		if (entry is null || !ownershipTransferred || entry.HasStoppedBeingReachable) {
+			return false;
+		}
+		entry.MarkCallAbandoned();
+		_logger.WriteInfo(string.Format(CultureInfo.InvariantCulture,
+			"The caller of '{0}' stopped waiting after the request reached its sticky worker; the worker is kept "
+			+ "so the operation of family '{1}' runs to its end.",
+			toolName, key.Family));
+		return true;
 	}
 
 	/// <summary>
@@ -895,8 +951,7 @@ public sealed partial class McpWorkerCallDispatcher {
 			: $"'{environmentName}'";
 		string text = string.Format(CultureInfo.InvariantCulture,
 			"'{0}' was not started: an operation of the '{1}' family is already running for {2} in this "
-			+ "clio MCP host. Poll that operation's status tool for its result, or wait for it to finish "
-			+ "before starting another.", toolName, family, target);
+			+ "clio MCP host. {3}", toolName, family, target, LongOperationNextStep(toolName));
 		JsonObject payload = new() {
 			["success"] = false,
 			["tool"] = toolName,
@@ -914,6 +969,41 @@ public sealed partial class McpWorkerCallDispatcher {
 			StructuredContent = JsonSerializer.SerializeToElement(payload)
 		};
 	}
+
+	/// <summary>
+	/// Says what the caller of a refused starter can do while the operation already running finishes.
+	/// </summary>
+	/// <param name="toolName">The refused tool.</param>
+	/// <returns>One sentence naming the status route that actually exists for that tool.</returns>
+	/// <remarks>
+	/// <b>Per tool, not per family, and that is the point.</b> One family can hold tools with different
+	/// status routes: <c>restart-status</c> reports a <c>restart-by-environment-name</c> but cannot report a
+	/// <c>restart-by-credentials</c> (it is keyed by a registered environment name), and the installs and
+	/// <c>create-app-section</c> have no status tool at all. Since ENG-102333 a starter whose client timed out
+	/// keeps its worker, so its retry meets this refusal routinely; one list of status tools for every family
+	/// sent the credentials restart to a <c>not-found</c> it could not leave.
+	/// </remarks>
+	internal static string LongOperationNextStep(string toolName) => toolName switch {
+		Tools.CompileCreatioTool.CompileCreatioToolName =>
+			$"Poll {Tools.CompileStatusTool.CompileStatusToolName} with the same environment-name for its result; "
+			+ "do not start another compile meanwhile.",
+		Tools.RestartTool.RestartByEnvironmentNameToolName =>
+			$"Poll {Tools.RestartStatusTool.RestartStatusToolName} with the same environment-name for its result, or "
+			+ "wait for it to finish before starting another.",
+		Tools.RestartTool.RestartByCredentialsToolName =>
+			$"{Tools.RestartStatusTool.RestartStatusToolName} cannot report a restart started with credentials: check "
+			+ $"that the instance answers with {Tools.GetCreatioInfoTool.ToolName} (through clio-run, with the same uri, "
+			+ "login and password) instead of restarting again.",
+		Tools.ApplicationSectionCreateTool.ApplicationSectionCreateToolName =>
+			$"It has no status tool: {Tools.ApplicationSectionGetListTool.ApplicationSectionGetListToolName} shows the section once "
+			+ "it exists; wait for that before starting another.",
+		Tools.InstallProcessBuilderTool.InstallProcessBuilderToolName
+			or Tools.InstallDashboardsMigratorTool.InstallDashboardsMigratorToolName =>
+			$"It has no status tool: wait for it to finish ({Tools.GetPkgListTool.GetPkgListToolName} shows the "
+			+ "installed version) before starting another.",
+		_ => "Poll that operation's status tool for its result if it has one, or wait for it to finish before "
+			+ "starting another."
+	};
 
 	/// <summary>
 	/// Holds the per-key start gate for one starter and frees it exactly once.

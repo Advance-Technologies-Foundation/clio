@@ -24,6 +24,12 @@ account"). Two consequences, both verified against the platform source:
 
 clio only surfaces the field; it performs no read of its own.
 
+One reference family is resolved differently (ENG-102113, CrtProcessBuilder 1.6.6.67): a Lookup on the schema
+registry of entities - `SysSchema`, `VwSysEntitySchemaInWorkspace`, `VwSysEntitySchemaInPackage` - holds a SCHEMA UId,
+and when the entity schema manager knows it, its label is the manager item's caption, not an entity read. That is
+not an oracle: schema names are design metadata the same `CanManageProcessDesign` caller already reads through
+describe and the schema list. Anything the manager does not know takes the raw record check above - see `platform/a-schema-registry-lookup-holds-a-schema-uid.md`.
+
 **Why it is this way** - the existence guard and the name read must be two different engines. Existence
 on the rights-aware read would report a record the writer cannot see as absent and REFUSE a valid id;
 the name on a raw `Select` would hand any caller holding `CanManageProcessDesign` the display name of any

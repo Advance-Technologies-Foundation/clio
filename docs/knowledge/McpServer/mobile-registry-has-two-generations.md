@@ -1,6 +1,8 @@
 ---
 description: MobileComponentRegistry.json exists in two generations and only the runtime-derived one is a valid statement of mobile support, so the converter's property prune is gated on the CONTENT of the payload it loaded (the inherited baseInputs surface) and not on the stand's platform version - which is what lets a regenerated versioned file switch pruning on for that version with no clio release
 applies-to:
+  - clio/Command/McpServer/Tools/MobilePageConverter/MobileRegistryGeneration.cs
+  - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobileAnalysisService.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPrune.cs
   - clio/Command/McpServer/Tools/MobilePageConverter/MobilePageConversionGuideTool.cs
   - clio.tests/Command/McpServer/Tools/MobilePageConverter/WebToMobilePropertyPruneTests.cs
@@ -12,17 +14,11 @@ date: 2026-09-22
 **What is true** — `MobileComponentRegistry.json` exists in two generations, and only one of them is a valid
 statement of what the Creatio Mobile runtime supports.
 
-| Path | components | generation |
-|---|--:|---|
-| `/api/mcp/latest/` | ~65 | introspected from the Flutter runtime |
-| `/api/mcp/10.0.0/` | 46 | derived from the Angular web components |
-| `/api/mcp/8.3.4/` | 45 | same |
-| `/api/mcp/8.3.3/` | 42 | same |
-| `/api/mcp/8.3.0/` | **3** | same |
-| `/api/mcp/8.3.5/`, `/api/mcp/9.0.0/` | — | 404 → the client falls back to `latest` |
-
-Measured 2026-09-17/18. **The versioned files are being regenerated from the mobile runtime**, so those
-counts are a snapshot of a migration in progress, not a stable fact — re-measure before relying on a row.
+Measured 2026-09-17/18, the versioned paths (`10.0.0`, `8.3.4`, `8.3.3`, `8.3.0`) still served the
+web-derived generation, with 46, 45, 42 and **3** components. Re-measured 2026-10-08, every published path
+(`latest`, `10.0.0`, `8.3.0`-`8.3.4`) is runtime-derived with 64 components; a version with no file (`8.2.1`,
+`8.3.5`, `9.0.0`) returns 404 and the client falls back to `latest`. The gate below stays because a path can
+still serve the old generation, and re-measure before relying on these counts.
 
 What tells the generations apart is the inherited surface, which is disjoint apart from `name`/`type`:
 

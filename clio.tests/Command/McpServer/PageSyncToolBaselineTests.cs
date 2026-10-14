@@ -99,7 +99,7 @@ public sealed class PageSyncToolBaselineTests
 			commandResolver, fileSystem,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(),
+			new PageBaselineGuard(fileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			fileGate: fileGate);
 	}
 

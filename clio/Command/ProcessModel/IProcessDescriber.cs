@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -47,6 +48,18 @@ public interface IProcessDescriber {
 	/// <returns>The structured description, or an error (not found / unreachable / server failure).</returns>
 	ErrorOr<DescribeProcessResult> Describe(ProcessIdentity identity, string culture,
 		bool includeVersionFacts = true, bool bestEffort = false);
+
+	/// <summary>
+	/// Reads ONLY the version standing of a process - no graph - as a best-effort read within
+	/// <see cref="ProcessVersionLibReader.BestEffortReadBudget"/> (ENG-103023). For a write path that needs which
+	/// version runs, not what any version does: set-active-process-version reads it before the activation.
+	/// </summary>
+	/// <param name="identity">The process identity (code or uid; a caption is resolved first).</param>
+	/// <returns>
+	/// A result carrying the identity and the version facts only (no elements, flows or parameters), or an error
+	/// when the facts could not be established.
+	/// </returns>
+	ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity);
 }
 
 /// <inheritdoc cref="IProcessDescriber" />
@@ -136,10 +149,18 @@ public sealed class ServerProcessDescriber(
 		// Version facts are overlaid only here, after every refusal path: a described graph without them is
 		// still a correct answer, but a version warning attached to an error would be noise.
 		ApplyVersionFacts(result, includeVersionFacts
-			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId)
+			? ReadVersionFacts(resolved.Value.Row, result.SchemaUId, bestEffort)
 			: VersionFactsNotRequested);
 		return result;
 	}
+
+	// A best-effort read (a write's success path) re-reads by UId on the short budget instead of reusing the row:
+	// the row reuse below only saves a round trip, the budget is what bounds a stalled process library.
+	private ProcessVersionFacts ReadVersionFacts(VwProcessLib resolvedRow, string describedSchemaUId,
+		bool bestEffort) =>
+		bestEffort
+			? versionLibReader.Read(describedSchemaUId, ProcessVersionLibReader.BestEffortReadBudget)
+			: ReadVersionFacts(resolvedRow, describedSchemaUId);
 
 	/// <summary>
 	/// Reads the version facts, reusing the row the caption arm already fetched when it is the same schema.
@@ -157,6 +178,32 @@ public sealed class ServerProcessDescriber(
 		&& resolvedRow.UId == describedUId
 			? versionLibReader.Read(resolvedRow)
 			: versionLibReader.Read(describedSchemaUId);
+
+	/// <inheritdoc />
+	public ErrorOr<DescribeProcessResult> ReadVersionFacts(ProcessIdentity identity) {
+		ProcessVersionFacts facts;
+		if (!string.IsNullOrWhiteSpace(identity.UId)) {
+			facts = versionLibReader.Read(identity.UId.Trim(), ProcessVersionLibReader.BestEffortReadBudget);
+		} else if (!string.IsNullOrWhiteSpace(identity.Code)) {
+			facts = versionLibReader.ReadByName(identity.Code, ProcessVersionLibReader.BestEffortReadBudget);
+		} else {
+			ErrorOr<ResolvedIdentity> resolved = BuildIdentityPayload(identity);
+			if (resolved.IsError) {
+				return resolved.Errors;
+			}
+			if (resolved.Value.Row is null) {
+				return Error.Failure(DescribeErrorCode, "the process identity could not be resolved");
+			}
+			facts = versionLibReader.Read(resolved.Value.Row.UId.ToString(),
+				ProcessVersionLibReader.BestEffortReadBudget);
+		}
+		if (facts.Version is null && facts.ActiveVersionSchemaUId is null) {
+			return Error.Failure(DescribeErrorCode, facts.Warning ?? "the version facts were not established");
+		}
+		DescribeProcessResult result = new() { Name = identity.Code, SchemaUId = identity.UId };
+		ApplyVersionFacts(result, facts);
+		return result;
+	}
 
 	/// <summary>
 	/// Overlays the process library's version facts onto a described graph.
@@ -194,7 +241,17 @@ public sealed class ServerProcessDescriber(
 			IsRoot = member.IsRoot,
 			PackageUId = member.PackageUId,
 			PackageName = member.PackageName,
-			Enabled = member.Enabled
+			Enabled = member.Enabled,
+			ModifiedOn = FormatModifiedOn(member.ModifiedOn)
+		};
+
+	// UTC with a Z when the reader knows the zone; a value of unspecified kind is written without one rather than
+	// being stamped with a zone nobody established.
+	private static string FormatModifiedOn(DateTime? modifiedOn) =>
+		modifiedOn switch {
+			null => null,
+			{ Kind: DateTimeKind.Unspecified } value => value.ToString("yyyy-MM-dd'T'HH:mm:ss", CultureInfo.InvariantCulture),
+			{ } value => value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture)
 		};
 
 	/// <summary>The describe request payload, plus the process-library row the caption arm resolved.</summary>
@@ -414,12 +471,41 @@ public class DescribeProcessResult {
 	public int? LegacyMethodCount { get; set; }
 
 	/// <summary>
+	/// Process tracing, reported by the server ONLY while it is on: an absent block means runs of the process are
+	/// not traced - or, rarely, that the server could not read the switch and logged it, or that the environment's
+	/// CrtProcessBuilder predates 1.6.6.92 and never reports it (describe keeps a presence-only package requirement).
+	/// The switch is a platform user property on the version family's root, so a version reports the root's state.
+	/// </summary>
+	[JsonPropertyName("tracing")]
+	public DescribedProcessTracing Tracing { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server returns at the graph root so the description round-trips
 	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare reaches the
 	/// command output verbatim instead of being discarded without a trace.
 	/// </summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// The tracing state of a described process: present only while every run stores its parameter values in the
+/// process log (<c>SysPrcElementTraceLog</c>).
+/// </summary>
+public sealed class DescribedProcessTracing {
+
+	/// <summary>Always <c>true</c>: the server omits the whole block while tracing is off.</summary>
+	[JsonPropertyName("enabled")]
+	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// The last day runs are traced (<c>yyyy-MM-dd</c>), after which the platform switches tracing off by itself.
+	/// <c>null</c> in two OPPOSITE cases: the environment's <c>ProcessParameterTracingDisableTimeoutDays</c> is 0, so
+	/// it never switches off; or the switch-on date could not be read, so the date is unknown and the platform's next
+	/// nightly run may switch it off. The setting tells them apart: 0 is the first case, above 0 the second.
+	/// </summary>
+	[JsonPropertyName("turnOffDate")]
+	public string TurnOffDate { get; set; }
 }
 
 /// <summary>One member of the described process's version family.</summary>
@@ -481,6 +567,13 @@ public sealed class DescribedProcessVersion {
 	/// </summary>
 	[JsonPropertyName("enabled")]
 	public bool Enabled { get; set; }
+
+	/// <summary>
+	/// When this version was last saved, in UTC (<c>Z</c>) when the zone is known, or absent when the library
+	/// reported none (ENG-103023).
+	/// </summary>
+	[JsonPropertyName("modifiedOn")]
+	public string ModifiedOn { get; set; }
 }
 
 /// <summary>A process node read back from the schema.</summary>
@@ -568,6 +661,16 @@ public sealed class DescribedElement {
 	/// </summary>
 	[JsonPropertyName("filter")]
 	public DescribedFilter Filter { get; set; }
+
+	/// <summary>
+	/// Whether <see cref="Filter"/> says everything the stored filter says, as the server judged the decode:
+	/// <c>true</c> when nothing was left out or approximated, <c>false</c> when the stored filter holds what the
+	/// high-level shape cannot carry (an Exists or Between leaf, a disabled condition, a multi-value lookup, an
+	/// aggregation, ...). Null when there is no filter, and always null from a <c>CrtProcessBuilder</c> older than
+	/// 1.6.6.39, which does not judge it (ENG-99970).
+	/// </summary>
+	[JsonPropertyName("filterDecodedCompletely")]
+	public bool? FilterDecodedCompletely { get; set; }
 
 	/// <summary>
 	/// For a Send email element (<c>EmailTemplateUserTask</c>): its configuration decoded back into the descriptor
@@ -1680,7 +1783,8 @@ public sealed class DescribedFilterCondition {
 	public DescribedFilterElementRef ElementParameter { get; set; }
 
 	/// <summary>
-	/// Raw meta-path expression token. The read-back surfaces EVERY parameter reference here (both process- and
+	/// The BARE meta-path token of a parameter reference, never <c>[#...#]</c>-wrapped; a setFilter accepts it
+	/// back only in exactly this spelling. The read-back surfaces EVERY parameter reference here (both process- and
 	/// element-parameter references), which is why <see cref="ProcessParameter"/> / <see cref="ElementParameter"/>
 	/// stay null on a real describe.
 	/// </summary>
@@ -1951,6 +2055,16 @@ public sealed class DescribedParameter {
 	/// <summary>The source value/expression (for a formula source this is the <c>[#...#]</c> expression).</summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
+
+	/// <summary>
+	/// Set in place of <see cref="Value"/> when describe-business-process leaves the stored value out, saying where
+	/// its content is reported instead - today only the raw platform filter of <c>DataSourceFilters</c>, and only
+	/// when <see cref="DescribedElement.FilterDecodedCompletely"/> is <c>true</c> (ENG-99970).
+	/// <para>Null otherwise, and always null on the model the describer returns: the value is left out only when
+	/// the graph is written for the caller, so clio's own read-backs still see it.</para>
+	/// </summary>
+	[JsonPropertyName("valueOmitted")]
+	public string ValueOmitted { get; set; }
 
 	/// <summary>
 	/// What the designer SHOWS for <see cref="Value"/> — for a Lookup constant the referenced record's name (for

@@ -49,6 +49,7 @@ public sealed class PageUpdateToolTests {
 	private IToolCommandResolver _commandResolver;
 	private IPlatformVersionResolverFactory _resolverFactory;
 	private PageUpdateTool _tool;
+	private PageUpdateCommand _command;
 	private IApplicationClient _applicationClient;
 
 	[SetUp]
@@ -79,6 +80,7 @@ public sealed class PageUpdateToolTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		_command = command;
 		_commandResolver = Substitute.For<IToolCommandResolver>();
 		_commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(command);
 		_webComponentCatalog = Substitute.For<IComponentInfoCatalog>();
@@ -90,7 +92,7 @@ public sealed class PageUpdateToolTests {
 			command, logger, _commandResolver,
 			Substitute.For<IMobileComponentInfoCatalog>(),
 			_webComponentCatalog,
-			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(),
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
 			_resolverFactory, settingsRepository);
 	}
 
@@ -222,6 +224,29 @@ public sealed class PageUpdateToolTests {
 		response.Page.Should().BeNull(because: "the page block is filled only by the verify read-back");
 	}
 
+	[Test]
+	[Description("ENG-103023: a successful real save carries a digest of the components it wrote and the validation verdict, so confirming the write needs no get-page; a dry run carries none.")]
+	public async Task UpdatePage_ShouldReturnAWriteDigest_OnASuccessfulSave() {
+		// Arrange
+		string body = ValidBody.Replace(
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/",
+			"/**SCHEMA_VIEW_CONFIG_DIFF*/[{\"operation\":\"insert\",\"name\":\"Field1\",\"parentName\":\"Main\",\"propertyName\":\"items\",\"values\":{\"type\":\"crt.Input\"}}]/**SCHEMA_VIEW_CONFIG_DIFF*/");
+		PageUpdateArgs args = new(SchemaName, body) { EnvironmentName = "sandbox" };
+		PageUpdateArgs dryRun = new(SchemaName, body, DryRun: true) { EnvironmentName = "sandbox" };
+
+		// Act
+		PageUpdateResponse response = await _tool.UpdatePage(args);
+		PageUpdateResponse dryResponse = await _tool.UpdatePage(dryRun);
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the fixture save succeeds: {response.Error}");
+		response.Digest.Should().NotBeNull(because: "every successful save reports what it wrote");
+		response.Digest.Validation.Should().Be("passed", because: "the content validation chain ran and accepted the body");
+		response.Digest.Components.Should().Equal(["insert Field1 (crt.Input) in Main"],
+			because: "the digest names each component the body wrote");
+		dryResponse.Digest.Should().BeNull(because: "a dry run wrote nothing to confirm");
+	}
+
 	private const string PinnedVerifiedPageWireJson = """{"schemaName":"Test_FormPage","schemaUId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","packageName":"TestPkg","currentLeafPackageName":"TestPkg","packageUId":"test-pkg-uid","parentSchemaName":"BasePage","ownBodySummary":{"viewConfigDiffOperations":2,"viewModelConfigDiffOperations":0,"modelConfigDiffOperations":0,"handlerEntries":0,"bodyLength":714,"viewConfigDiffOps":[{"operation":"insert","name":"Field1","type":"crt.Input","parentName":"Main"},{"operation":"merge","name":"Main"}],"handlerRequests":[]},"designPackageUId":"test-pkg-uid","designPackageName":"Test_FormPage","willCreateReplacingInDesignPackage":false,"rootSchemaUId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","schema-type":"unknown"}""";
 
 	private static PageUpdateArgs CreateArgs(string environmentName) =>
@@ -254,6 +279,37 @@ public sealed class PageUpdateToolTests {
 			Arg.Is<EnvironmentOptions>(options => string.IsNullOrWhiteSpace(options.Environment)));
 		ReceivedChartValidationVersion().Should().Be("9.9.9",
 			because: "the version probe must resolve against the header tenant's settings, not a silent active-environment fallback");
+	}
+
+	[Test]
+	[Description("ENG-101924: update-page validates a mobile body against the mobile registry of the version resolved from the target environment, not latest.")]
+	public async Task UpdatePage_ShouldScopeMobileCatalogToResolvedVersion_WhenEnvironmentResolvesVersion() {
+		// Arrange
+		EnvironmentSettings registeredSettings = new() { Uri = "https://registered.example.com" };
+		_commandResolver.Resolve<EnvironmentSettings>(
+				Arg.Is<EnvironmentOptions>(options => options.Environment == "sandbox"))
+			.Returns(registeredSettings);
+		IOwnedPlatformVersionResolver resolver = Substitute.For<IOwnedPlatformVersionResolver>();
+		resolver.ResolveAsync(Arg.Any<CancellationToken>())
+			.Returns(new PlatformVersionResolution("8.3.4.1234", VersionResolutionSource.Environment));
+		_resolverFactory.Create(registeredSettings).Returns(resolver);
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		mobileCatalog.LoadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+			.Returns(MobileFieldBindingDeclaredInputsTests.LiveCatalog());
+		PageUpdateTool tool = new(
+			_command, Substitute.For<ILogger>(), _commandResolver, mobileCatalog, _webComponentCatalog,
+			Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()),
+			_resolverFactory, Substitute.For<ISettingsRepository>());
+		string mobileBody = MobileFieldBindingDeclaredInputsTests.Body(
+			"""{"operation":"insert","name":"Field","values":{"type":"crt.Input","control":"$UsrName"}}""");
+		PageUpdateArgs args = new(SchemaName, mobileBody, null, true) { EnvironmentName = "sandbox" };
+
+		// Act
+		await tool.UpdatePage(args);
+
+		// Assert
+		await mobileCatalog.Received().LoadAsync("8.3.4", Arg.Any<CancellationToken>());
+		await mobileCatalog.DidNotReceive().LoadAsync(ComponentRegistryClient.LatestVersion, Arg.Any<CancellationToken>());
 	}
 
 	[Test]
@@ -337,7 +393,7 @@ public sealed class PageUpdateToolTests {
 	}
 
 	[Test]
-	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> templateBaseContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
+	[Description("update-page threads options.Mode all the way into the get-page ExcludeOwnBody option: replace (and its null default) => ExcludeOwnBody true (base excludes the own body); append => false (base includes it). This pins the PageUpdateTool -> PageMergedConfigContext.Mode -> resolver wiring the resolver's own unit tests don't exercise.")]
 	public async Task UpdatePage_ThreadsMode_IntoGetPageExcludeOwnBody() {
 		// A mobile body whose viewModelConfigDiff needs an external base, so the oracle resolves it (invokes get-page).
 		const string mobileBody =

@@ -368,7 +368,47 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		CreatePackage = 110,
 
 		/// <summary>Creates a package inside an installed application (ApplicationPackagesService CreatePackageInApp).</summary>
-		CreatePackageInApp = 111
+		CreatePackageInApp = 111,
+
+		/// <summary>
+		///     Reads the configuration data (ConfigurationDataService GetData). Called with <c>forceGet = true</c>
+		///     it clears the calling session's cached module structure and workplace/section caches.
+		/// </summary>
+		GetConfigurationData = 112,
+
+		/// <summary>Read one administrated object's per-role operation/record/column rights by schema UId.</summary>
+		GetAdministratedObject = 113,
+		/// <summary>Persist an administrated object's per-role operation/record/column rights (read-modify-write).</summary>
+		SaveAdministratedObject = 114,
+
+		/// <summary>
+		///     Reads whether the site runs in file design mode (file system mode): the platform flag that decides
+		///     whether the site reads package content from <c>Terrasoft.Configuration/Pkg</c>.
+		/// </summary>
+		GetIsFileDesignMode = 115,
+
+		/// <summary>
+		///     Starts the process version the request names, never substituting the family's active version - the
+		///     route the process designer's Run uses. <see cref="RunProcess"/> runs the active version whatever
+		///     version it is given.
+		/// </summary>
+		RunSpecifiedProcessVersion = 116,
+
+		/// <summary>
+		///     Read the authenticated user's profile. Being a session-state service on both runtimes, it is also a
+		///     request that starts the server session and therefore receives the web farm <c>StickySession</c> cookie.
+		/// </summary>
+		GetCurrentUserInfo = 117,
+
+		/// <summary>Anonymous probe that answers 200 only on the design node of a web farm.</summary>
+		DesignReady = 118,
+
+		/// <summary>
+		///     Cancels running process instances. The body is <c>{"processDataIds":"id1;id2"}</c> - ONE string of
+		///     semicolon-separated ids, not a JSON array (an array is accepted with 200 and cancels nothing). The
+		///     cancellation is asynchronous: the SysProcessLog status moves to Canceled shortly after the call.
+		/// </summary>
+		CancelProcessExecution = 119
 
 	}
 
@@ -473,6 +513,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.CompileProcess, "/rest/ProcessDesignService/CompileProcess"},
 		{KnownRoute.CreatePackage, "ServiceModel/PackageService.svc/CreatePackage"},
 		{KnownRoute.CreatePackageInApp, "ServiceModel/ApplicationPackagesService.svc/CreatePackageInApp"},
+		{KnownRoute.GetConfigurationData, "/rest/ConfigurationDataService/GetData"},
 		{KnownRoute.LastCompilationResult, "api/ConfigurationStatus/GetLastCompilationResult"},
 		{KnownRoute.GetAvailableThemes, "ServiceModel/ThemeService.svc/GetAvailableThemes"},
 		{KnownRoute.ClearThemesCache, "ServiceModel/ThemeService.svc/ClearThemesCache"},
@@ -493,6 +534,13 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetSchemaDataDesignItem, "ServiceModel/SchemaDataDesignerService.svc/GetSchema"},
 		{KnownRoute.CreateNewClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/CreateNewSchema"},
 		{KnownRoute.GetClientUnitDesignerParentSchemas, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetParentSchemas"},
+		{KnownRoute.GetAdministratedObject, "ServiceModel/RightManagementService.svc/GetAdministratedObject"},
+		{KnownRoute.SaveAdministratedObject, "ServiceModel/RightManagementService.svc/SaveAdministratedObject"},
+		{KnownRoute.GetIsFileDesignMode, "ServiceModel/WorkspaceExplorerService.svc/GetIsFileDesignMode"},
+		{KnownRoute.RunSpecifiedProcessVersion, "ServiceModel/ProcessEngineService.svc/RunSpecifiedProcessVersion"},
+		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
+		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
+		{KnownRoute.CancelProcessExecution, "ServiceModel/ProcessEngineService.svc/CancelExecution"},
 	};
 
 	private EnvironmentSettings _environmentSettings;

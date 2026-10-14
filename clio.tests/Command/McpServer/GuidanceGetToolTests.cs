@@ -1,11 +1,14 @@
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Knowledge;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.McpServer.Tools;
+using Clio.Common.Telemetry;
+using Clio.UserEnvironment;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
@@ -22,6 +25,7 @@ public sealed class GuidanceGetToolTests {
 	private IKnowledgeGuidanceSource _source;
 	private IKnowledgeBundleActivator _activator;
 	private IKnowledgeFeedbackPolicyService _feedbackPolicyService;
+	private ServedContentMeter _meter;
 	private GuidanceGetTool _tool;
 
 	[SetUp]
@@ -38,10 +42,12 @@ public sealed class GuidanceGetToolTests {
 			"sha256:policy",
 			new KnowledgeFeedbackApprovalView("sha256:policy"),
 			"approved"));
+		_meter = new ServedContentMeter();
 		ServiceCollection services = new();
 		services.AddSingleton(_source);
 		services.AddSingleton(_activator);
 		services.AddSingleton(_feedbackPolicyService);
+		services.AddSingleton<IServedContentMeter>(_meter);
 		services.AddTransient<GuidanceGetTool>();
 		_container = services.BuildServiceProvider();
 		_tool = _container.GetRequiredService<GuidanceGetTool>();
@@ -244,8 +250,189 @@ public sealed class GuidanceGetToolTests {
 		response.Success.Should().BeFalse(because: "an absent identifier cannot produce an article");
 		response.ErrorCode.Should().Be("guidance-not-found",
 			because: "not-found must remain distinct from bundle unavailability");
-		response.AvailableGuides.Should().Equal(["synthetic-guide"],
-			because: "discovery must return the stable source-owned catalog");
+		response.AvailableGuides.Should().BeNull(
+			because: "the full name dump was replaced by suggestions plus the catalog pointer");
+		response.Error.Should().Contain("name=list",
+			because: "the caller is pointed at the compact catalog");
+	}
+
+	private static string[] FixtureNames() {
+		using JsonDocument doc = JsonDocument.Parse(System.IO.File.ReadAllBytes(System.IO.Path.Combine(
+			NUnit.Framework.TestContext.CurrentContext.TestDirectory,
+			"Command", "McpServer", "Fixtures", "curated-knowledge-names.json")));
+		return doc.RootElement.GetProperty("availableNames").EnumerateArray().Select(n => n.GetString()!).ToArray();
+	}
+
+	private void ArrangeCatalog(string description) {
+		KnowledgeGuidanceDescriptor[] catalog = FixtureNames()
+			.Select(n => new KnowledgeGuidanceDescriptor(n, n, description, "docs://x/" + n, "text/markdown"))
+			.ToArray();
+		_source.GetCatalog().Returns(catalog);
+		_source.GetNames().Returns(FixtureNames());
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+	}
+
+	[TestCase("list")]
+	[TestCase("INDEX")]
+	[TestCase("Catalog")]
+	[TestCase("help")]
+	[TestCase(null)]
+	[Description("name=list/index/catalog/help (any case) or no name returns a successful compact catalog.")]
+	public async Task GetGuidance_ShouldReturnCatalog_WhenCatalogKeywordOrNoName(string name) {
+		// Arrange
+		_source.GetNames().Returns(["alpha", "creatio.alpha", "beta"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("reference-fragment", "R", "not a guide", "docs://r", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Alpha purpose. More detail.", "docs://a", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("creatio.alpha", "Alpha", "Alpha purpose. More detail.", "docs://a2", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("beta", "Beta title", "", "docs://b", "text/markdown")
+		]);
+
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs(name));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a catalog request is not an error");
+		response.Catalog.Should().Be("alpha: Alpha purpose.\nbeta: Beta title",
+			because: "entries are deduplicated, sorted, and carry a one-line purpose");
+		response.Article.Should().BeNull(because: "the catalog is not an article");
+	}
+
+	[TestCase("help")]
+	[TestCase("list")]
+	[TestCase("index")]
+	[TestCase("catalog")]
+	[Description("A published guide whose name is a catalog keyword is served as the article; the keyword falls back to the catalog only when no guide carries it.")]
+	public async Task GetGuidance_ShouldServeTheGuide_WhenAGuideIsPublishedUnderACatalogKeyword(string name) {
+		// Arrange
+		_source.GetNames().Returns([name, "alpha"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Alpha purpose.", "docs://a", "text/markdown")
+		]);
+		_source.FindByName(name).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle(name, "docs://mcp/guides/" + name, "Keyword-named guide.\n"),
+			1));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs(name));
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the published guide resolves");
+		response.Article.Should().NotBeNull(because: "a guide named like a catalog keyword must stay reachable");
+		response.Article!.Name.Should().Be(name);
+		response.Catalog.Should().BeNull(because: "the guide wins over the catalog keyword");
+	}
+
+	[Test]
+	[Description("The catalog purpose is the first real sentence: an abbreviation such as 'e.g.' does not end it.")]
+	public async Task GetGuidance_ShouldKeepTheWholeFirstSentence_WhenThePurposeContainsAnAbbreviation() {
+		// Arrange
+		_source.GetNames().Returns(["alpha"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", "Guides pages, e.g. forms and lists. More detail.",
+				"docs://a", "text/markdown")
+		]);
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		response.Catalog.Should().Be("alpha: Guides pages, e.g. forms and lists.",
+			because: "the tool index's sentence rule skips 'e.g.' instead of cutting the purpose there");
+	}
+
+	[Test]
+	[Description("A purpose longer than the per-line limit is cut at a word boundary and never leaves a lone surrogate.")]
+	public async Task GetGuidance_ShouldCutAtAWordBoundaryWithoutSplittingASurrogatePair_WhenThePurposeIsLong() {
+		// Arrange
+		string longWord = new string('a', 108) + "\U0001F600" + "tail";
+		_source.GetNames().Returns(["alpha", "beta"]);
+		_source.GetCatalog().Returns([
+			new KnowledgeGuidanceDescriptor("alpha", "Alpha", longWord, "docs://a", "text/markdown"),
+			new KnowledgeGuidanceDescriptor("beta", "Beta", string.Join(' ', Enumerable.Repeat("word", 40)),
+				"docs://b", "text/markdown")
+		]);
+		_source.FindByName(Arg.Any<string>()).Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		string[] lines = response.Catalog.Split('\n');
+		lines[0].Should().Be("alpha: " + new string('a', 108) + "…",
+			because: "the cut lands inside the surrogate pair, so the whole pair is dropped");
+		lines[0].Any(char.IsSurrogate).Should().BeFalse(because: "a lone surrogate is invalid UTF-16 in the reply");
+		lines[1].Should().EndWith("word…", because: "a multi-word purpose is cut after a whole word, not inside one");
+	}
+
+	[Test]
+	[Description("The serialized catalog reply stays under 15,000 bytes for the pinned guide names even with long purposes.")]
+	public async Task GetGuidance_ShouldStayWithinByteBudget_WhenCatalogIsRequestedForPinnedNames() {
+		// Arrange
+		ArrangeCatalog(new string('x', 400));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		int bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response));
+		bytes.Should().BeLessThan(GuidanceGetTool.CatalogBudgetBytes,
+			because: "the catalog must fit one inline reply (it replaced a ~8 KB bare-name dump plus a 46 KB fallback)");
+		string[] listed = response.Catalog.Split('\n').Select(line => line.Split(':')[0]).ToArray();
+		listed.Should().OnlyContain(name => FixtureNames().Contains(name),
+			because: "every catalog name must be one get-guidance resolves exactly, never a stripped form");
+		listed.Should().Contain("creatio.esq.filters",
+			because: "a creatio. name without an unprefixed twin is kept as published");
+		listed.Should().NotContain("creatio.business-rules",
+			because: "a creatio. name whose unprefixed twin is published is a duplicate");
+	}
+
+	[Test]
+	[Description("A catalog request with no active guide fails with a typed reason instead of pointing back at name=list.")]
+	public async Task GetGuidance_ShouldNotPointBackAtCatalog_WhenNoGuideIsActive() {
+		// Arrange
+		_source.GetNames().Returns(System.Array.Empty<string>());
+		_source.GetCatalog().Returns(System.Array.Empty<KnowledgeGuidanceDescriptor>());
+		_source.FindByName("list").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Unavailable, null, null));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("list"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "there is no catalog to return");
+		response.ErrorCode.Should().Be(KnowledgeGuidanceUnavailableException.ErrorCode,
+			because: "the caller must learn that no guidance is active");
+		response.Error.Should().NotContain("name=list",
+			because: "repeating the same call can never succeed");
+	}
+
+	[Test]
+	[Description("An unknown name returns an error with the closest names and a pointer to the catalog, not a name dump.")]
+	public async Task GetGuidance_ShouldSuggestClosestNames_WhenNameIsUnknown() {
+		// Arrange
+		ArrangeCatalog("p");
+		_source.FindByName("business-rule").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("business-rule"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an unknown guide is still an error");
+		response.ErrorCode.Should().Be("guidance-not-found");
+		response.Error.Should().Contain("business-rules").And.Contain("name=list");
+		response.Error.Split(',').Length.Should().BeLessThanOrEqualTo(GuidanceGetTool.MaxSuggestions,
+			because: "at most a handful of suggestions are offered");
+		response.AvailableGuides.Should().BeNull();
 	}
 
 	[Test]
@@ -291,23 +478,149 @@ public sealed class GuidanceGetToolTests {
 			because: "the compatibility alias must map to one canonical source lookup");
 	}
 
-
-
-
 	[Test]
 	[Category("Unit")]
-	[Description("Attribute lock-in: the converter tool carries [FeatureToggle(\"mobile-page-converter\")] so a refactor cannot silently un-gate the incomplete feature.")]
-	public void MobilePageConverter_McpTool_CarriesFeatureToggle() {
+	[Description("GA lock-in (ENG-94638): the converter tool carries NO [FeatureToggle], so get-mobile-page-conversion-guide reaches every caller and a re-gate cannot land unnoticed.")]
+	public void MobilePageConverter_McpTool_CarriesNoFeatureToggle() {
 		// Arrange & Act
 		FeatureToggleAttribute toolToggle = typeof(MobilePageConversionGuideTool)
 			.GetCustomAttribute<FeatureToggleAttribute>(inherit: false);
 
 		// Assert
-		toolToggle.Should().NotBeNull(because: "get-mobile-page-conversion-guide must stay gated");
-		toolToggle!.FeatureName.Should().Be("mobile-page-converter",
-			because: "the tool and the published guidance article must name the same feature");
-		// The guidance half of the gate moved out of Clio: the article declares
-		// requiredFeatures: ["mobile-page-converter"] in the knowledge catalog, and
-		// KnowledgeGuidanceSource enforces it (see KnowledgeGuidanceSourceTests).
+		toolToggle.Should().BeNull(
+			because: "the converter went GA in ENG-94638 - a [FeatureToggle] here would hide the tool from everyone who has not opted in");
+		// The guidance half of the gate lives in clio-knowledge: freedom-page-web-to-mobile-conversion and
+		// freedom-page-mobile-reason-codes dropped their requiredFeatures in the same release.
+		// KnowledgeGuidanceSource enforces requiredFeatures generically, so nothing is left to assert here.
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("GA lock-in (ENG-94638): a stale \"mobile-page-converter\": false left in appsettings.json by a Beta tester does not hide the tool, because no type is gated on that key any more.")]
+	public void MobilePageConverter_McpTool_StaysEnabled_WhenStaleFeatureKeyIsFalse() {
+		// Arrange
+		ISettingsRepository settingsRepository = Substitute.For<ISettingsRepository>();
+		settingsRepository.IsFeatureEnabled(Arg.Any<string>()).Returns(false);
+		FeatureToggleService featureToggleService = new(settingsRepository);
+
+		// Act
+		bool enabled = featureToggleService.IsEnabled(typeof(MobilePageConversionGuideTool));
+
+		// Assert
+		enabled.Should().BeTrue(
+			because: "an ungated type is enabled whatever a leftover feature key says on disk - the Beta testers who turned the flag off are exactly the people most likely to try GA first");
+		settingsRepository.DidNotReceive().IsFeatureEnabled("mobile-page-converter");
+	}
+
+	[Test]
+	[Description("Meters a served first-party article as one read at the size the agent receives, with the clio library version that served it (ENG-100157).")]
+	public async Task GetGuidance_ShouldMeterTheServedArticle_WhenTheArticleIsActive() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"creatio-curated",
+			CuratedKnowledgeSourceDefaults.LibraryId,
+			"1.16.2",
+			"routing",
+			"topic.routing",
+			42,
+			"sha256:verified",
+			null);
+		_source.FindByName("routing").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("routing", "docs://mcp/guides/routing", "Routing guidance - `rule` \"quoted\".\n"),
+			42,
+			provenance));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("routing"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "a served article is content this session served");
+		served.GuidanceReads.Should().Be(1,
+			because: "one article was served");
+		served.GuidanceRereads.Should().Be(0,
+			because: "it was the first read of that article");
+		served.GuidanceBytes.Should().Be(McpResultBytes(response),
+			because: "the count is the size of the result text the agent reads, serialized with the MCP result options");
+		served.GuidanceLibraryVersion.Should().Be("1.16.2",
+			because: "the clio library generation that served the article is what tells a before from an after");
+	}
+
+	[Test]
+	[Description("Counts a partner or customer article but never records its library version, which its owner chose and may carry their name (ENG-100157).")]
+	public async Task GetGuidance_ShouldNotRecordTheLibraryVersion_WhenTheLibraryIsNotClios() {
+		// Arrange
+		KnowledgeArticleProvenance provenance = new(
+			"partner",
+			"com.example.partner",
+			"2.0.0-acme-bank",
+			"guide.item",
+			"topic.shared",
+			42,
+			"sha256:verified",
+			null);
+		_source.FindByName("partner-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("partner-guide", "docs://partner/guides/guide", "Partner guidance.\n"),
+			42,
+			provenance));
+
+		// Act
+		await _tool.GetGuidance(new GuidanceGetArgs("partner-guide"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "a partner article is still content this session served");
+		served.GuidanceReads.Should().Be(1,
+			because: "the read itself is clio's own count");
+		served.GuidanceLibraryVersion.Should().BeNull(
+			because: "a third-party library version is customer-authored data and must never reach telemetry");
+	}
+
+	[Test]
+	[Description("Counts a second read of the same article as a re-read, the trace a context compaction leaves (ENG-100157).")]
+	public async Task GetGuidance_ShouldCountAReread_WhenTheSameArticleIsServedTwice() {
+		// Arrange
+		_source.FindByName("synthetic-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.Active,
+			new KnowledgeArticle("synthetic-guide", "docs://synthetic/guides/guide", "Synthetic delivery fixture.\n"),
+			1));
+
+		// Act
+		await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+		await _tool.GetGuidance(new GuidanceGetArgs("synthetic-guide"));
+
+		// Assert
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "two articles were served");
+		served.GuidanceReads.Should().Be(2,
+			because: "both responses served the article");
+		served.GuidanceRereads.Should().Be(1,
+			because: "the second response served an article the session already had");
+	}
+
+	[Test]
+	[Description("Meters the bytes of a refusal without counting it as a read, since it served no article (ENG-100157).")]
+	public async Task GetGuidance_ShouldMeterBytesWithoutARead_WhenTheGuideIsUnknown() {
+		// Arrange
+		_source.FindByName("missing-guide").Returns(new KnowledgeArticleLookup(
+			KnowledgeArticleLookupStatus.NotFound, null, 7));
+
+		// Act
+		GuidanceGetResponse response = await _tool.GetGuidance(new GuidanceGetArgs("missing-guide"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unknown guide is refused");
+		_meter.TryGetSnapshot(out ServedContentSnapshot served).Should().BeTrue(
+			because: "the refusal and its closest-name suggestions still reached the agent's context");
+		served.GuidanceReads.Should().Be(0,
+			because: "a refusal served no article");
+		served.GuidanceBytes.Should().Be(McpResultBytes(response),
+			because: "the refusal's text is part of what the session cost");
+	}
+
+	private static long McpResultBytes(GuidanceGetResponse response) =>
+		Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(response, Clio.BindingsModule.CreateMcpSerializerOptions()));
 }

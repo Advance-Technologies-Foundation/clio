@@ -127,6 +127,8 @@ public sealed class RestartToolE2ETests : McpContractFixtureBase
 		// Assert
 		status.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
 		status.Status.Should().Be("not-found");
+		status.Note.Should().Contain(GetCreatioInfoTool.ToolName,
+			because: "ENG-102333: a session with no record must send the agent to check that the environment answers, not to restart it again");
 	}
 
 	private static async Task<RestartStatusResponse> ActStatusAsync(

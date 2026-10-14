@@ -1569,9 +1569,13 @@
         "autoLoad": {
           "type": "boolean"
         },
+        "blankSlateDescription": {
+          "type": "string",
+          "description": "Custom blank-slate description. Absent -> default localized text, empty string -> hidden. Ignored on non-scrollable lists."
+        },
         "blankSlateText": {
           "type": "string",
-          "description": "Custom text shown when the list has no data."
+          "description": "Custom blank-slate title. Absent -> default localized text, empty string -> hidden. On non-scrollable lists it is the single \"no data\" line."
         },
         "controller": {
           "type": "string"
@@ -1813,6 +1817,21 @@
       "references": {
         "docs": [
           "mobile-docs/number_input.component.md"
+        ]
+      }
+    },
+    {
+      "componentType": "crt.PhoneCallLog",
+      "description": "Config for the `crt.PhoneCallLog` component — the body of the mobile call log.",
+      "inputs": {
+        "recordId": {
+          "type": "string",
+          "description": "The saved `Call` to show read-only. Absent on the native edit flow, which hands the component a `PhoneCallLogContext` instead."
+        }
+      },
+      "references": {
+        "docs": [
+          "mobile-docs/phone_call_log.component.md"
         ]
       }
     },

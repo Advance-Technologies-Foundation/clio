@@ -46,7 +46,10 @@ public class ModifyProcessAsNewVersionTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	// Destructive=false is the substantive claim here, not a formality: this operation never opens, saves or
 	// activates the source. Everything it writes goes to a clone, and what the environment executes is unchanged
-	// when it returns — so a caller gated on destructive consent must not be stopped by it.
+	// when it returns — so a caller gated on destructive consent must not be stopped by it. The one live effect is
+	// a setTracing beside real edits (ENG-102111): it switches tracing for the whole family at once, the running
+	// version included, so the description tells the caller to put that to the user first - it changes what each
+	// run records, not which version runs.
 	[McpServerTool(Name = ModifyProcessAsNewVersionToolName, ReadOnly = false, Destructive = false,
 		 Idempotent = false, OpenWorld = false),
 	 Description("Edit an existing Creatio business process and save the result as a NEW VERSION of it, leaving "
@@ -80,20 +83,20 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. Note that a version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.40 or newer — an older package is refused up front, naming the "
-		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
-		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30 and to 1.6.6.40 for the same reason "
+		 + "environment at CrtProcessBuilder 1.6.6.92 or newer — an older package is refused up front, naming the "
+		 + "version this operation needs; install or update it with install-process-builder after user approval. (The operation itself "
+		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30, to 1.6.6.40, to 1.6.6.77 and to 1.6.6.92 for the same reason "
 		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
-		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, each of which an older "
+		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
 		 + "server silently discards while "
-		 + "answering success, and this route runs NO read-back check that could tell you.) After a successful save the version normally stays INTERPRETED and "
+		 + "answering success, and this route runs NO read-back check that could tell you; then setTracing, which it refuses as unknown.) A batch made ONLY of setTracing is refused and creates nothing - it would be an undeletable version made to flip a switch: send it to modify-business-process (get-guidance name=process-tracing). Beside real edits setTracing switches tracing for the WHOLE family at once, the running version included: tell the user first. After a successful save the version normally stays INTERPRETED and "
 		 + "runs as-is once activated, so compile-creatio is not needed — UNLESS the response warns that the "
 		 + "version cannot execute until the configuration is compiled, which happens when the source process "
 		 + "was itself not interpretable, or when the process carries a script task or process methods (a version "
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
 		 + "sentence: in either case, ask the user and run compile-creatio with process-name set to the NEW version. "
 		 + "Either signal speaks for THIS call only: a compile an earlier save made owed is still owed. "
-		 + "Use describe-business-process to inspect the family.")]
+		 + "Use describe-business-process to inspect the family." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
@@ -102,10 +105,30 @@ public class ModifyProcessAsNewVersionTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: the identity synonyms modify-business-process accepts are accepted here too, by the same rule.
+		ProcessToolArgumentAliases.IdentityResolution identity = ProcessToolArgumentAliases.ResolveWriteTarget(
+			args.ExtensionData, args.ProcessName, args.ProcessUid);
+		if (identity.Error is not null) {
+			return CommandExecutionResult.FromValidationError(identity.Error);
+		}
+		args = args with {
+			ProcessName = identity.ProcessName, ProcessUid = identity.ProcessUid, ExtensionData = identity.Remaining
+		};
+
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
 		if (targetError is not null) {
 			return targetError;
+		}
+
+		// Absent, null and an empty string all mean "no operations" here - the snapshot form - so only a
+		// value that is actually present goes through the object-or-string reader (ENG-100153).
+		string operationsJson = string.Empty;
+		JsonElement operations = args.Operations ?? default;
+		if (!McpToolArgumentSupport.IsAbsentJsonDocument(operations)
+			&& !McpToolArgumentSupport.TryReadJsonDocumentArgument(operations, JsonValueKind.Array,
+				"operations", out operationsJson, out CommandExecutionResult? operationsRefusal)) {
+			return operationsRefusal;
 		}
 
 		ModifyProcessAsNewVersionOptions options = new() {
@@ -113,7 +136,7 @@ public class ModifyProcessAsNewVersionTool(
 			ProcessName = args.ProcessName ?? string.Empty,
 			ProcessUid = args.ProcessUid ?? string.Empty,
 			PackageName = args.PackageName ?? string.Empty,
-			OperationsJson = args.Operations ?? string.Empty
+			OperationsJson = operationsJson
 		};
 		// Same post-op note as the in-place edit: a saved version is interpreted and runs as-is once activated,
 		// so "saved" must not be read as "must be compiled" (ENG-95706).
@@ -128,10 +151,10 @@ public class ModifyProcessAsNewVersionTool(
 		// compile, and the package (from 1.6.6.30) warns in the same phrase.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
-			return result;
+			return ProcessToolArgumentAliases.WithWarnings(result, identity.Warnings);
 		}
 
-		return result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(result.WithCompileNotRequiredNote(), identity.Warnings);
 	}
 }
 
@@ -151,19 +174,39 @@ public sealed record ModifyProcessAsNewVersionArgs(
 
 	[property: JsonPropertyName("process-uid")]
 	[property: Description("Schema UId of the SOURCE process; provide exactly one of process-name or process-uid.")]
-	string? ProcessUid = null,
+	string? ProcessUid = null) {
 
-	[property: JsonPropertyName("operations")]
-	[property: Description(
-		"Inline JSON operations array, identical in shape to modify-business-process. Omit or pass [] to snapshot "
-		+ "the source unchanged as a new version.")]
-	string? Operations = null,
-
-	[property: JsonPropertyName("package-name")]
-	[property: Description(
+	/// <summary>
+	/// Package the new version is saved into; <see langword="null"/> when the caller named none.
+	/// </summary>
+	/// <remarks>
+	/// An init property for a C# reason, not a wire one: <see cref="Operations"/> left the constructor (ENG-100153),
+	/// and a positional <c>PackageName</c> would have slid into the fourth slot the operations string used to hold.
+	/// A call written for the old shape - <c>new(env, name, uid, operationsJson)</c> - would then still compile and
+	/// save the version into a package named after a JSON array. Out of the constructor, that call fails to compile.
+	/// </remarks>
+	[JsonPropertyName("package-name")]
+	[Description(
 		"Package the new version is saved into. Omit to let the platform choose; a version does not inherit the "
 		+ "root's package.")]
-	string? PackageName = null) {
+	public string? PackageName { get; init; }
+
+	/// <summary>
+	/// The operations array, or a string holding its JSON; absent, null or empty snapshots the source unchanged.
+	/// </summary>
+	/// <remarks>
+	/// <see cref="JsonElement"/>, not <see cref="string"/>: the array itself is the natural call, and a string
+	/// holding the same JSON keeps working - <c>McpToolArgumentSupport.TryReadJsonDocumentArgument</c> says why
+	/// (ENG-100153). An init property rather than a positional parameter ON PURPOSE: the SDK emits an optional
+	/// positional <c>JsonElement? = null</c> as <c>{"default":null}</c> and drops its description, and for this
+	/// non-resident tool that description is the only one an agent reads. An init property keeps the description
+	/// and stays out of <c>required</c>.
+	/// </remarks>
+	[JsonPropertyName("operations")]
+	[Description(
+		"Inline JSON operations array, identical in shape to modify-business-process (a string holding the same "
+		+ "JSON is also accepted). Omit or pass [] to snapshot the source unchanged as a new version.")]
+	public JsonElement? Operations { get; init; }
 
 	/// <summary>
 	/// Overflow bag for top-level keys the SDK could not bind to a declared argument (ENG-98566).

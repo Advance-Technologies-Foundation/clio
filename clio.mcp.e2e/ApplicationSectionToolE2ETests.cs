@@ -543,6 +543,10 @@ public sealed class ApplicationSectionToolE2ETests {
 			because: "a successful create-app-section must include the created section metadata in the readback");
 		response.Section!.EntitySchemaName.Should().Be(platformEntitySchemaName,
 			because: "the readback must preserve the platform entity schema name provided in the create request");
+		response.NextStep.Should().Contain("ConfigurationDataService/GetData",
+			because: "a successful create must tell the caller how to refresh an open browser tab that misses the new section");
+		(response.Warnings ?? []).Should().NotContain(warning => warning.StartsWith("navigation cache reset failed: "),
+			because: "the GetData(true) reset must succeed against a real Creatio, not only against the unit-test mock");
 		RecordCreatedSection(response.Section.Code, environmentName);
 	}
 

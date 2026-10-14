@@ -89,6 +89,8 @@ public sealed class McpFixturePolicyTests {
 			because: "DbHubLifecycleWarningE2ETests is the other documented LocalOnly member; asserting it explicitly stops a silent category drop from being masked by the open-ended scan");
 		localOnlyFixtures.Should().Contain(typeof(DataBindingDbColorSchemaE2ETests),
 			because: "DataBindingDbColorSchemaE2ETests publishes a schema through create-entity-schema, which starts the global OData rebuild; if it lost the category it would run in the automatic lane again and make every concurrent test on the shared stand fail with \"Creatio is currently rebuilding the OData library\"");
+		localOnlyFixtures.Should().Contain(typeof(DeleteSchemaToolE2ETests),
+			because: "DeleteSchemaToolE2ETests publishes a schema through create-entity-schema before deleting it, which starts the global OData rebuild; if it lost the category it would run in the automatic lane and break concurrent tests on the shared stand");
 		misconfigured.Should().BeEmpty(
 			because: "a destructive LocalOnly fixture must stay [Explicit] and keep McpE2E.Sandbox + McpE2E.Manual (additive-only per the tiering spec) so it never runs automatically in CI nor drops its tier classification");
 	}

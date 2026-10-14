@@ -26,7 +26,9 @@ public sealed class PackageTargetResolverTests {
 	private const int LockedInstallType = 1;
 
 	private static readonly Guid PackageUId = Guid.Parse("1d07fd0e-2ca4-4d20-93b4-eb5a795ea03f");
-	private static readonly Guid CurrentPackageRowId = Guid.Parse("2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
+	// The row Id differs from the UId, as it does for most packages on a real environment (Custom: Id
+	// 84076ac3-..., UId a00051f4-...); a fake where the two coincide cannot tell which one a filter used.
+	private static readonly Guid PackageRowId = Guid.Parse("2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b");
 
 	[Test, Category("Unit")]
 	[Description("Resolves a package the caller named, matching the name as the environment reports it rather than as it was typed.")]
@@ -97,6 +99,23 @@ public sealed class PackageTargetResolverTests {
 	}
 
 	[Test, Category("Unit")]
+	[Description("Reads CurrentPackageId as the package UId, as the platform does, so a setting holding the package's row Id resolves nothing.")]
+	public void Resolve_Should_Match_CurrentPackageId_Against_The_Package_UId_Not_Its_Row_Id() {
+		// Arrange
+		IPackageTargetResolver sut = CreateResolver(new ResolverEnvironment {
+			CurrentPackageIdValue = PackageRowId.ToString()
+		});
+
+		// Act
+		PackageTargetResolution resolution = sut.Resolve(null);
+
+		// Assert
+		resolution.Success.Should().BeFalse(
+			because: "the platform stores and reads CurrentPackageId as a package UId, so a value equal to some row's Id names no package");
+		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered with no matching package");
+	}
+
+	[Test, Category("Unit")]
 	[Description("Refuses definitively when no package is named and CurrentPackageId is unset, instead of picking a well-known package.")]
 	public void Resolve_Should_Refuse_When_No_Name_Is_Passed_And_CurrentPackageId_Is_Unset() {
 		// Arrange
@@ -111,6 +130,8 @@ public sealed class PackageTargetResolverTests {
 			because: "the environment answered: it has no current package, so the caller must ask the user for one");
 		resolution.Error.Should().Contain("CurrentPackageId",
 			because: "the message must name the setting the user or their IDE sets");
+		resolution.Error.Should().EndWith(PackageTargetResolver.AskForPackage,
+			because: "with no target the caller must ask the user, not pick one from list-packages");
 	}
 
 	[Test, Category("Unit")]
@@ -127,6 +148,8 @@ public sealed class PackageTargetResolverTests {
 		// Assert
 		resolution.Success.Should().BeFalse(because: "a dangling current-package setting names no usable target");
 		resolution.ResolutionFailed.Should().BeTrue(because: "the environment answered with no matching package");
+		resolution.Error.Should().EndWith(PackageTargetResolver.AskForPackage,
+			because: "with no target the caller must ask the user, not pick one from list-packages");
 	}
 
 	[Test, Category("Unit")]
@@ -249,7 +272,8 @@ public sealed class PackageTargetResolverTests {
 
 	private sealed class ResolverEnvironment {
 
-		public string CurrentPackageIdValue { get; set; } = CurrentPackageRowId.ToString();
+		// The platform writes a package UId into CurrentPackageId (Terrasoft.Core WorkspaceUtilities.ForceGetCurrentPackageUId).
+		public string CurrentPackageIdValue { get; set; } = PackageUId.ToString();
 
 		public int InstallType { get; set; }
 
@@ -259,9 +283,16 @@ public sealed class PackageTargetResolverTests {
 
 		public string Answer(string body) {
 			using JsonDocument document = JsonDocument.Parse(body);
-			bool filteredByOtherId = TryReadIdFilter(document.RootElement, out string id)
-				&& !string.Equals(id, CurrentPackageRowId.ToString(), StringComparison.OrdinalIgnoreCase);
-			return filteredByOtherId ? """{"success":true,"rows":[]}""" : PackageRow();
+			if (!TryReadGuidFilter(document.RootElement, out string columnPath, out string value)) {
+				return PackageRow();
+			}
+			string rowValue = columnPath switch {
+				"Id" => PackageRowId.ToString(),
+				"UId" => PackageUIdValue,
+				_ => null
+			};
+			bool matches = string.Equals(value, rowValue, StringComparison.OrdinalIgnoreCase);
+			return matches ? PackageRow() : """{"success":true,"rows":[]}""";
 		}
 
 		private string PackageRow() {
@@ -271,19 +302,20 @@ public sealed class PackageTargetResolverTests {
 				""";
 		}
 
-		private static bool TryReadIdFilter(JsonElement root, out string id) {
-			id = null;
+		private static bool TryReadGuidFilter(JsonElement root, out string columnPath, out string value) {
+			columnPath = null;
+			value = null;
 			if (!root.TryGetProperty("filters", out JsonElement filters)
 				|| !filters.TryGetProperty("items", out JsonElement items)) {
 				return false;
 			}
 			foreach (JsonProperty filter in items.EnumerateObject()) {
 				if (!filter.Value.TryGetProperty("leftExpression", out JsonElement left)
-					|| !left.TryGetProperty("columnPath", out JsonElement columnPath)
-					|| columnPath.GetString() != "Id") {
+					|| !left.TryGetProperty("columnPath", out JsonElement column)) {
 					continue;
 				}
-				id = filter.Value.GetProperty("rightExpression").GetProperty("parameter")
+				columnPath = column.GetString();
+				value = filter.Value.GetProperty("rightExpression").GetProperty("parameter")
 					.GetProperty("value").GetString();
 				return true;
 			}

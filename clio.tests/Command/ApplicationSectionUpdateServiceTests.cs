@@ -22,6 +22,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 	private IOwnedApplicationClient _applicationClient = null!;
 	private IServiceUrlBuilder _serviceUrlBuilder = null!;
 	private IApplicationInfoService _applicationInfoService = null!;
+	private INavigationCacheResetter _navigationCacheResetter = null!;
 	private ICaptionCultureResolver _captionCultureResolver = null!;
 	private IApplicationSectionLocalizationClient _sectionLocalizationClient = null!;
 	private EnvironmentSettings _environmentSettings = null!;
@@ -34,6 +35,7 @@ public sealed class ApplicationSectionUpdateServiceTests {
 		_applicationClient = Substitute.For<IOwnedApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_applicationInfoService = Substitute.For<IApplicationInfoService>();
+		_navigationCacheResetter = NavigationCacheResetterSubstitute.Succeeding();
 		_environmentSettings = new EnvironmentSettings {
 			Uri = "https://example.invalid",
 			Login = "Supervisor",
@@ -59,7 +61,8 @@ public sealed class ApplicationSectionUpdateServiceTests {
 			_captionCultureResolver,
 			_sectionLocalizationClient,
 			new SectionLocalizationPlanner(_sectionLocalizationClient),
-			Substitute.For<ICreatioCultureCatalogFactory>());
+			Substitute.For<ICreatioCultureCatalogFactory>(),
+			_navigationCacheResetter);
 	}
 
 	[Test]
@@ -249,6 +252,61 @@ public sealed class ApplicationSectionUpdateServiceTests {
 			because: "icon-only updates should not rewrite caption");
 		updateBody.Should().NotContain("\"Description\"",
 			because: "icon-only updates should not rewrite description");
+	}
+
+	[Test]
+	[Description("ENG-101680: after the section is updated the navigation cache is reset through the same client that sent the update, and a successful reset adds no warning.")]
+	public void UpdateSection_Should_Reset_Navigation_Cache_In_Updating_Session() {
+		// Arrange
+		ArrangeCaptionUpdate();
+
+		// Act
+		ApplicationSectionUpdateResult result = _sut.UpdateSection(
+			"sandbox", new ApplicationSectionUpdateRequest("UsrOrdersApp", "UsrOrders", Caption: "Orders"));
+
+		// Assert
+		_navigationCacheResetter.Received(1).TryReset(_applicationClient, _environmentSettings);
+		result.Warnings.Should().BeEmpty(
+			because: "a successful navigation cache reset is not a finding worth reporting");
+		result.NextStep.Should().Be(NavigationCacheResetterSubstitute.BrowserSessionNote,
+			because: "the caller must learn how to refresh an open browser tab that missed the websocket message");
+	}
+
+	[Test]
+	[Description("ENG-101680: a failed navigation cache reset becomes a result warning and does not fail the section update.")]
+	public void UpdateSection_Should_Return_Warning_When_Navigation_Cache_Reset_Fails() {
+		// Arrange
+		ArrangeCaptionUpdate();
+		_navigationCacheResetter.TryReset(Arg.Any<IApplicationClient>(), Arg.Any<EnvironmentSettings>())
+			.Returns("navigation cache reset failed: boom");
+
+		// Act
+		ApplicationSectionUpdateResult result = _sut.UpdateSection(
+			"sandbox", new ApplicationSectionUpdateRequest("UsrOrdersApp", "UsrOrders", Caption: "Orders"));
+
+		// Assert
+		result.Section.Caption.Should().Be("Orders",
+			because: "the updated section must still be returned when only the cache reset failed");
+		result.Warnings.Should().ContainSingle(
+				because: "the failed reset must reach the caller instead of being swallowed")
+			.Which.Should().Be("navigation cache reset failed: boom",
+				because: "the warning must carry the resetter's message unchanged");
+	}
+
+	private void ArrangeCaptionUpdate() {
+		_applicationInfoService.GetApplicationInfo("sandbox", null, "UsrOrdersApp").Returns(
+			new ApplicationInfoResult("pkg-uid", "UsrOrdersApp", [], [], "app-id", "Orders App", "UsrOrdersApp", "8.3.0"));
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"ApplicationSection\"", StringComparison.Ordinal) &&
+				body.Contains("\"Code\"", StringComparison.Ordinal)))
+			.Returns(
+				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Old","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-old","IconBackground":"#111111","ClientTypeId":null}]}""",
+				"""{"success":true,"rows":[{"Id":"section-id","ApplicationId":"app-id","Caption":"Orders","Code":"UsrOrders","Description":null,"EntitySchemaName":"UsrOrder","PackageId":"pkg-uid","SectionSchemaUId":"section-schema-uid","LogoId":"icon-old","IconBackground":"#111111","ClientTypeId":null}]}""");
+		_applicationClient.ExecutePostRequest(
+			Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"columnValues\"", StringComparison.Ordinal)))
+			.Returns("""{"success":true}""");
 	}
 
 	[Test]

@@ -5,6 +5,8 @@
 		<TargetFrameworks>net8.0</TargetFrameworks>
 		<TargetFrameworks Condition="$([MSBuild]::VersionGreaterThanOrEquals('$(NETCoreSdkVersion)', '10.0'))">net10.0;net8.0</TargetFrameworks>
 		<PackAsTool>true</PackAsTool>
+		<!-- One use: McpResultJsonEncoder overrides JavaScriptEncoder, whose abstract members take char*. -->
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<PackageId>clio</PackageId>
 		<Company>creatio</Company>
 		<Authors>creatio rnd team</Authors>
@@ -126,7 +128,7 @@
 	<Choose>
 		<When Condition="'$(TargetFramework)' == 'net8.0'">
 			<ItemGroup>
-				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[7.4.13,7.5.0)"/>
+				<PackageReference Include="Microsoft.PowerShell.SDK" VersionOverride="[$(PowerShell74Version),7.5.0)"/>
 			</ItemGroup>
 		</When>
 		<Otherwise>
@@ -157,11 +159,10 @@
 		<PackageReference Include="DocumentFormat.OpenXmlSDK" />
 		<PackageReference Include="Microsoft.Web.Administration" />
 		<PackageReference Include="Microsoft.Dism" />
-		<!-- NU1903: Microsoft.PowerShell.SDK (via Microsoft.Windows.Compatibility) pulls in a
-		     vulnerable transitive System.Security.Cryptography.Xml on BOTH target frameworks
-		     (10.0.9 on net8.0, 10.0.6 on net10.0; GHSA-23rf-6693-g89p family). This direct
-		     reference lifts it to the patched centrally-managed $(MsPackageVersion) and must stay
-		     unconditional — a TFM-scoped lift leaves the other TFM vulnerable and fails CI restore. -->
+		<!-- NU1903 / GHSA-23rf-6693-g89p family: keep this DIRECT reference. Transitive pinning (Directory.Packages.props)
+		     only lifts packages that are already in the graph, and in this project NuGet pruning against the
+		     ASP.NET Core shared framework removes Xml from the graph. Without this reference the patched
+		     System.Security.Cryptography.Xml.dll is no longer copied to the net8.0 output (verified by build). -->
 		<PackageReference Include="System.Security.Cryptography.Xml" />
 		<PackageReference Include="CommandLineSDK" />
 		<PackageReference Include="KubernetesClient" />

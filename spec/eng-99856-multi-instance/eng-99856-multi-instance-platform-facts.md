@@ -51,7 +51,7 @@ a sub-process element and passes **every** parameter through `ToDescribeParamete
 > NOT new work — it already ships. What ships with it is the sentence above.
 
 **It does not.** MEASURED 2026-09-21 against the live stand `Creatio`
-(`http://d_krestov_n.tscrm.com:40001`) carrying `CrtProcessBuilder 1.6.3.31` (installed for this
+(`http://<dev-stand>:40001`) carrying `CrtProcessBuilder 1.6.3.31` (installed for this
 measurement and verified by `list-packages`), driven by a clio built from `origin/master` `01c8b677a`:
 `describe-business-process` on `ExpireLicenseNotificationProcess` returns, for the multi-instance element
 `SubProcess2`, exactly the five root parameters — three `Integer/Out` counters, `InputRecordCollection`

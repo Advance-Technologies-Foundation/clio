@@ -6,7 +6,7 @@ applies-to:
   - clio/Common/CreatioResponseError.StructuredDetail.cs
   - clio/Command/McpServer/Tools/ODataFileContract.cs
 ticket: GH-1407, GH-1550
-date: 2026-09-28
+date: 2026-09-30
 ---
 
 **What is true** — issue #1407 was reported against a build whose `odata-read` still surfaced
@@ -26,7 +26,9 @@ built locally from these parts, and nothing else leaves `CreatioResponseError`:
   the operator of a mistyped comparison, and the null `property` argument that a binary column in
   `select` produces. Each capture accepts only bounded ASCII identifiers; a message that matches no
   pattern contributes nothing, so free-form wording, markup or an appended instruction yields no text
-  at all;
+  at all. The foreign-key wordings are NOT read facts: the write tools use a separate extractor
+  (`odata-write-fk-hint-is-a-separate-extractor-appended-after-redact.md`), and an FK body gives
+  odata-read no hint;
 - the DETAIL the caller reads is a restatement of the request: the filter fields, `select`, `expand`
   and `order-by` names that arrived in `ODataReadArgs`. What makes echoing them safe is only that they
   are the caller's own text going back to the caller — `ValidateArguments` now holds all four to

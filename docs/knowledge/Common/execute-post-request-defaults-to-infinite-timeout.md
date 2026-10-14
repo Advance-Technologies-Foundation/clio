@@ -4,6 +4,7 @@ applies-to:
   - clio/Common/IApplicationClient.cs
   - clio/Common/CreatioRequestOptions.cs
   - clio/Common/CreatioServiceClient.cs
+  - clio/Common/RequestDeadline.cs
 date: 2026-08-19
 ---
 
@@ -15,6 +16,13 @@ bound only because `CreatioServiceClient.PostAndDeserialize` requires a
 `CreatioRequestOptions`, whose defaults (`TimeOut = 100_000`, `MaxAttempts = 3`,
 `RetryDelay = 1`) mirror `RemoteCommandOptions`. A caller constructing a bare
 `new CreatioRequestOptions()` is relying on that record's default, not on the client's.
+
+`CreatioRequestOptions.Deadline` (a `RequestDeadline`) bounds a whole call that makes several
+requests: `ForNextRequest()` cuts the next request's timeout to what is left and throws
+`TimeoutException` once it is spent. Only `CreatioServiceClient.PostAndDeserialize` applies it by
+itself; a client that also calls `SelectQueryHelper` or `IApplicationClient` directly must call
+`ForNextRequest()` before each of those requests (as `RightManagementServiceClient` does), or that
+request ignores the deadline.
 
 **Why it is this way** — the infinite default predates the retry/timeout options and is preserved
 for compatibility with existing call sites (`CreatioClientAdapter` even carries a Sonar

@@ -16,8 +16,10 @@ applies-to:
   - clio/Command/McpServer/Tools/ODataReadTool.cs
   - clio/Common/CreatioResponseError.StructuredDetail.cs
   - clio/Command/McpServer/Tools/ODataFileContract.cs
-ticket: GH-1333, GH-1378, GH-1550
-date: 2026-09-03
+  - clio/Command/McpServer/Tools/ODataCreateTool.cs
+  - clio/Command/McpServer/Tools/ODataKeyedWrite.cs
+ticket: GH-1333, GH-1378, GH-1550, GH-1699
+date: 2026-09-30
 ---
 
 **What is true** — no diagnostic clio surfaces by default may contain text the server authored. A
@@ -66,8 +68,10 @@ a host ARE a leak and the full `Scrub`/`Fenced` rules apply. The debug path stay
 
 **The JSON shape is the fallback path, not an edge case, and `CredentialPairRegex` cannot reach it.**
 Issue #1505 measured the leak in serialized JSON (`{"password":"s3cr3t","server":"db.internal"}`), and
-`SelectQueryHelper` uses `response.ErrorInfo?.Message ?? responseJson`, so the whole raw JSON body
-becomes the exception message whenever `errorInfo.message` is absent. `CredentialPairRegex` needs
+`SelectQueryHelper.DescribeServerFailure` falls back to `responseJson` when `errorInfo.message` is blank, so the raw JSON body
+becomes the exception message whenever `errorInfo.message` is absent or blank (ENG-102683). Since the PR #1782 review that
+fallback goes through `UntrustedText.Fenced` (scrubbed, flattened, capped, fenced), because the same message reaches MCP
+envelopes; the transient classifier reads the unredacted body, so the fence cannot hide a retry marker. `CredentialPairRegex` needs
 `\b(key)\b\s*[=:]` and the key's own closing quote sits between the key and the colon, so it never
 matches that shape — and it is deliberately NOT loosened to tolerate the quote: it rewrites its match
 as `key=[redacted]`, which would cost the document its quotes and leave the JSON unparseable. The
@@ -164,3 +168,10 @@ contributes nothing. Two measured facts the code alone does not make obvious: Cr
 `"code":""` on every OData error seen so far, so the code half is dormant on current builds; and the
 identifier set is the whole reason four unrelated mistakes stopped reading identically. Widening a
 capture group to "anything between the quotes" reopens the leak.
+
+The write paths (`ODataCreateTool`, `ODataKeyedWrite` for odata-update and odata-delete) apply the same
+rule through a SEPARATE extractor, `CreatioResponseError.DescribeStructuredODataWriteError` (GH-1699):
+foreign-key identifiers only (constraint, table, column), appended after `SensitiveErrorTextRedactor.Redact`,
+never changing `record-created` or `side-effect`. Its MSSQL database-name and PG key-value groups are
+match-only - capturing either copies tenant data. Details and wording provenance:
+[../McpServer/odata-write-fk-hint-is-a-separate-extractor-appended-after-redact.md](../McpServer/odata-write-fk-hint-is-a-separate-extractor-appended-after-redact.md).

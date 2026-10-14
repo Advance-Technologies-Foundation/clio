@@ -55,7 +55,7 @@ Nothing is built on the bundling machine, so the procedure below — build, test
 `Files/Bin` — does NOT apply to it. Its whole procedure is one script:
 
 ```powershell
-pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '\\tscrm.com\dfs-ts\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip'
+pwsh ./rebundle-dashboards-migrator.ps1 -BuildZip '<SDLC build share>\ComposableApps\CrtDashboardsMigratorApp\<X.Y.Z>\CrtDashboardsMigratorApp_<X.Y.Z>.zip'
 ```
 
 It unpacks the build, reads the app version from `Files/app-descriptor.json` and refuses a build whose app
@@ -637,8 +637,12 @@ when it does not answer.
   when the build fails is UNVERIFIED: the experiment did not run because a deliberately-broken archive was
   rejected earlier, at `AppInstallInfoResolver.ValidateInstallInfos`, before compilation.
 - **clio's own log check is inert.** `BasePackageInstaller` consults the installation log only under
-  `GlobalContext.FailOnError` (`--fail-on-error`), and then matches "application installed successfully" —
-  a phrase package installs do not emit. So the check is either off or wrong.
+  `GlobalContext.FailOnError`, and then matches "application installed successfully" — a phrase package
+  installs do not emit. Only `assert` and `hosts` can set that flag (`--fail-on-error`), and neither installs
+  anything on its own; the MCP verbs accept the flag but ignore it (ENG-102487). The one way it still turns on
+  is `run-scenario`: an `assert`/`hosts` step with `fail-on-error: true` makes every `push-pkg` /
+  `install-application` step of that scenario strict (steps are activated before the first one runs), and then
+  a successful package install is reported as failed. Outside scenarios the check is off.
 - **The outcome check is per-package, and it is LIVENESS only.** `install-process-builder` asks the package's
   own ungated `Ping` whether it is serving, and fails unless it answers. That decides "did the target build it"
   on a FIRST install — with no assembly there is no type, no route, nothing to answer. It does NOT decide an

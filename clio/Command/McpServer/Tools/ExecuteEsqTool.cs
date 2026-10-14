@@ -47,7 +47,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 		"Creatio data, or to validate a widget/page filter before saving it. ESQ is a proprietary format that is " +
 		"easy to mis-guess: call get-guidance for 'esq' and 'esq-filters' before composing a query. " +
 		"A requested column whose columnPath does not resolve fails the call (success:false) instead of being " +
-		"silently dropped from the rows. DataService responses larger than the fixed MCP-safe budget fail with " +
+		"silently dropped from the rows. A query whose columns, filters or rowCount have the wrong shape (for example " +
+		"columns as an array) or that carries non-SelectQuery parts (where, orderBy, ...) is refused, never run without " +
+		"them; where the mapping is safe the equivalent query is returned in suggested-query. A member clio does not know " +
+		"runs, with a warning. Read-only: write SQL " +
+		"(UPDATE, DELETE, ...) is refused. DataService responses larger than the fixed MCP-safe budget fail with " +
 		"error-class=result-too-large; select explicit columns, lower rowCount, or page the query.")]
 	public ExecuteEsqResponse Execute(
 		[Description("Parameters: query, environment-name (required); timeout (optional).")]
@@ -67,6 +71,11 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 	internal static ExecuteEsqResponse Run(
 		IToolCommandResolver commandResolver, ExecuteEsqArgs args, long maxResponseBytes, bool suggestFileTwin) {
 		try {
+			// ENG-103025: SQL text, or the schema/columns/filters spread over the top level, is answered with the
+			// exact shape and - where the mapping is trivially safe - the equivalent query, never executed.
+			if (ExecuteEsqQueryHints.TryBuild(args.Query, args.ExtensionData) is { } hint) {
+				return FromHint(hint);
+			}
 			if (!TryNormalizeQuery(args.Query, out JsonElement query, out string queryError)) {
 				return ExecuteEsqResponse.Failure(queryError + QueryShapeExample);
 			}
@@ -75,6 +84,12 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 				|| string.IsNullOrWhiteSpace(rootSchema.GetString())) {
 				return ExecuteEsqResponse.Failure(
 					"query must be a SelectQuery object with a non-empty 'rootSchemaName'." + QueryShapeExample);
+			}
+			// QA ENG-103025: a SelectQuery whose columns are an array (or any part Creatio would silently ignore) ran and
+			// returned Id-only rows. Refuse it, with the equivalent query where that is safe, instead of losing parts.
+			if (ExecuteEsqQueryHints.CheckSelectQueryShape(query, args.ExtensionData,
+					out IReadOnlyList<string> shapeWarnings) is { } shapeHint) {
+				return FromHint(shapeHint);
 			}
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
 				return ExecuteEsqResponse.Failure("environment-name is required.");
@@ -93,12 +108,12 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			bool responseIsTooLarge = responseJson.Length > maxResponseBytes
 				|| Encoding.UTF8.GetByteCount(responseJson) > maxResponseBytes;
 			if (responseIsTooLarge) {
-				return ExecuteEsqResponse.ResultTooLarge(maxResponseBytes, suggestFileTwin);
+				return WithWarnings(ExecuteEsqResponse.ResultTooLarge(maxResponseBytes, suggestFileTwin), shapeWarnings);
 			}
 
 			IReadOnlyList<string> requestedColumns = ExtractRequestedColumnAliases(query);
 			string rootSchemaName = rootSchema.GetString() ?? string.Empty;
-			return ParseSelectQueryResponse(responseJson, requestedColumns, rootSchemaName);
+			return WithWarnings(ParseSelectQueryResponse(responseJson, requestedColumns, rootSchemaName), shapeWarnings);
 		} catch (Exception ex) when (ex is OperationCanceledException or TimeoutException) {
 			// A timeout/cancellation is not a malformed-query problem, so it must not carry the
 			// "you probably guessed the ESQ format wrong" recovery hint.
@@ -108,6 +123,13 @@ public sealed class ExecuteEsqTool(IToolCommandResolver commandResolver) {
 			return ExecuteEsqResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	// A canonical query answers byte-for-byte as before: the field is set only when there is something to say.
+	private static ExecuteEsqResponse WithWarnings(ExecuteEsqResponse response, IReadOnlyList<string> warnings) =>
+		warnings.Count == 0 ? response : response with { Warnings = warnings };
+
+	private static ExecuteEsqResponse FromHint(ExecuteEsqQueryHints.Hint hint) =>
+		ExecuteEsqResponse.Failure(hint.Message + QueryShapeExample) with { SuggestedQuery = hint.SuggestedQuery };
 
 	private static bool TryNormalizeQuery(JsonElement query, out JsonElement normalized, out string error) {
 		error = string.Empty;
@@ -335,6 +357,14 @@ public record ExecuteEsqArgs {
 	[JsonPropertyName("timeout")]
 	[Description("Request timeout in milliseconds. Range: 1000-120000. Default: 30000.")]
 	public int? Timeout { get; init; }
+
+	/// <summary>
+	/// Top-level keys that bind to no declared argument - most often <c>sql</c>, <c>schema-name</c> or
+	/// <c>columns</c>. Read only to answer a call that has no usable <c>query</c> (ENG-103025); a call that does
+	/// carry one still ignores them, exactly as before.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>
@@ -373,7 +403,17 @@ public sealed record ExecuteEsqResponse(
 	[property: JsonPropertyName("output-file")]
 	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	[property: Description("Absolute path of the file the rows were written to. Present only on an execute-esq-to-file success.")]
-	string? OutputFile = null) {
+	string? OutputFile = null,
+
+	[property: JsonPropertyName("suggested-query")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Failure only: the SelectQuery equivalent of the SQL text or top-level columns the call carried, ready to resend as 'query'. It was NOT executed.")]
+	JsonElement? SuggestedQuery = null,
+
+	[property: JsonPropertyName("warnings")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	[property: Description("Notes about the query as sent, e.g. a member clio does not know as a SelectQuery member (sent as is; Creatio may have ignored it). Omitted when there is nothing to say.")]
+	IReadOnlyList<string>? Warnings = null) {
 
 	/// <summary>
 	/// Recovery hint attached to every failure so a caller that guessed the ESQ format is pointed at the guidance.

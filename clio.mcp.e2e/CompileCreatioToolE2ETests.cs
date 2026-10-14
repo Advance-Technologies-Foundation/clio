@@ -94,7 +94,7 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 	[AllureTag(CompileStatusTool.CompileStatusToolName)]
 	[AllureDescription("Starts the real clio MCP server and queries compile-status for an environment that never ran compile-creatio, verifying a not-found (not an error) result.")]
 	[AllureName("Compile Status reports not-found for an untracked environment")]
-	[Description("compile-status reports not-found, not an error, for an environment with no tracked compile-creatio operation.")]
+	[Description("compile-status reports not-found, not an error, for an environment with no tracked compile-creatio operation; for a name that does not resolve it says so, and sends the agent to fix the name rather than to another read of it.")]
 	public async Task CompileStatus_Should_ReturnNotFound_ForNeverCompiledEnvironment()
 	{
 		// Arrange
@@ -106,7 +106,13 @@ public sealed class CompileCreatioToolE2ETests : McpContractFixtureBase
 
 		// Assert
 		status.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
-		status.Status.Should().Be("not-found");
+		status.Status.Should().Be("not-found", because: "the environment never ran compile-creatio in this session");
+		status.Note.Should().Contain("does not mean no compile ran",
+			because: "ENG-102333: a session with no record must never read as 'nothing ran'");
+		status.Note.Should().NotContain("reads the environment's latest FINISHED compile",
+			because: "last-compilation-log resolves the same name and would fail the same way, so it is not offered as the fallback");
+		status.CompilationHistoryError.Should().Be(CompileStatusTool.HistoryUnresolvedError,
+			because: "an unregistered environment is the caller's mistake, and the answer must say so rather than send the agent to ask again");
 	}
 
 	[Test]

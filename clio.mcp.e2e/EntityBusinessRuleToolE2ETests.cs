@@ -767,6 +767,7 @@ public sealed class EntityBusinessRuleToolE2ETests : McpContractFixtureBase {
 			ToolContractGetTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
+					["detail"] = ToolContractShortForm.FullDetail,
 					["tool-names"] = new[] {
 						ReadEntityBusinessRuleTool.ToolName,
 						UpdateEntityBusinessRuleTool.ToolName,

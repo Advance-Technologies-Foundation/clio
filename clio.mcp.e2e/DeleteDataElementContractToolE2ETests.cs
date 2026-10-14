@@ -130,6 +130,26 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 				+ "configured element as unfiltered");
 	}
 
+	[TestCase(CreateToolName, "COUNT what the filter matches")]
+	[TestCase(ModifyToolName, "COUNT what the new filter will match")]
+	[Description("The DEFAULT get-tool-contract read of create- and modify-business-process - their short form since ENG-100154, because each full contract is several times the inline budget - still states the deleteData count-and-confirm duty, which sits deep inside the element reference rather than in the lead the short form keeps.")]
+	[AllureName("the default short contract keeps the deleteData confirmation duty")]
+	public async Task DefaultContract_Should_KeepTheDeleteDataConfirmationDuty(string toolName, string countClause) {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		// Act
+		string description = await AdvertisedDescriptionAsync(context, toolName, detail: null);
+
+		// Assert
+		description.Should().Contain("detail=full has all.]",
+			because: "the default read of this contract is its short form, or this test exercises nothing");
+		description.Should().Contain(countClause,
+			because: "the count is the part of the duty that turns an approval into an informed one");
+		description.Should().Contain("get an explicit yes",
+			because: "a short form that dropped the duty would hand a caller the delete without the confirmation");
+	}
+
 	/// <summary>
 	/// The tool's ADVERTISED description, fetched the way an agent would. The process-designer tools live on the
 	/// lazy surface rather than the resident manifest, so <c>tools/list</c> does not carry them and
@@ -137,7 +157,12 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 	/// <see cref="ProcessDesignerContractRequiredArgsE2ETests"/> uses. Reachability is asserted first so a
 	/// missing tool fails as "not discoverable" rather than as an empty description.
 	/// </summary>
-	private static async Task<string> AdvertisedDescriptionAsync(ArrangeContext context, string toolName) {
+	/// <remarks>
+	/// <paramref name="detail"/> defaults to <c>full</c>: these tests keep the DESCRIPTION text from drifting,
+	/// and since ENG-100154 a default named lookup of these large contracts returns their short form.
+	/// </remarks>
+	private static async Task<string> AdvertisedDescriptionAsync(ArrangeContext context, string toolName,
+		string? detail = ToolContractShortForm.FullDetail) {
 		IReadOnlyCollection<string> reachable =
 			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
 		reachable.Should().Contain(toolName,
@@ -148,7 +173,8 @@ public sealed class DeleteDataElementContractToolE2ETests : McpContractFixtureBa
 			ToolContractGetTool.ToolName,
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
-					["tool-names"] = new[] { toolName }
+					["tool-names"] = new[] { toolName },
+					["detail"] = detail
 				}
 			},
 			context.CancellationTokenSource.Token);

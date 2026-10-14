@@ -177,6 +177,17 @@ public sealed class PageGetResponse {
 	public JsonObject BaseModelConfig { get; init; }
 
 	/// <summary>
+	/// Advisories about a page that was read but could not be resolved exactly as stored — today only a
+	/// <c>viewConfigDiff</c> insert/move with a <c>parentName</c> and no <c>propertyName</c>, which the Creatio
+	/// differ rejects and which get-page therefore skips so the page can still be read and repaired (GH-1752).
+	/// <c>null</c> when there is nothing to report.
+	/// </summary>
+	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("warnings")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public IReadOnlyList<string> Warnings { get; init; }
+
+	/// <summary>
 	/// Gets or sets the error message for failed requests.
 	/// </summary>
 	[JsonProperty("error")]
@@ -1076,6 +1087,15 @@ public sealed class PageUpdateResponse {
 	[JsonPropertyName("savedSchemaUId")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public string SavedSchemaUId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the post-write digest (ENG-103023): the components this save wrote and whether validation
+	/// passed. Set by the MCP tool on a successful real save only; absent otherwise.
+	/// </summary>
+	[JsonProperty("digest", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("digest")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public PageWriteDigest Digest { get; set; }
 }
 
 /// <summary>

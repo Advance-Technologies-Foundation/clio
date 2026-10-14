@@ -55,7 +55,7 @@ public sealed record PersistedResourceKeyRead(IReadOnlySet<string> Keys, string 
 	/// <returns>The redacted, caller-facing warning sentence.</returns>
 	public static string BuildWarning(string detail) =>
 		SensitiveErrorTextRedactor.Redact(
-			"Persisted resource keys could not be read; the stricter label-resource verdict stands. "
+			"Persisted resource keys could not be read; the stricter resource-key verdict stands. "
 			+ (string.IsNullOrWhiteSpace(detail)
 				? "The target schema context could not be resolved."
 				: detail));

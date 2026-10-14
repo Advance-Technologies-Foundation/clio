@@ -45,9 +45,10 @@ hosts [options]
 ## Options
 
 ```bash
---fail-on-error         Return non-zero exit code on errors
+--fail-on-error         Accepted for compatibility; has no effect on hosts, which
+                        already exits with 1 when listing fails
 
---fail-on-warning       Return non-zero exit code on warnings
+--fail-on-warning       Accepted for compatibility; has no effect on hosts
 ```
 
 ## Example
@@ -56,11 +57,8 @@ hosts [options]
 clio hosts
 lists all registered Creatio environments with their status
 
-clio hosts
+clio list-hosts
 same as above, using alias
-
-clio hosts --fail-on-error
-list hosts, returning error code on failure
 
 Example output (Windows with IIS):
 Scanning 3 environment(s) in parallel...
@@ -212,6 +210,11 @@ list-hosts
 - No environment selection needed (auto-discovers all)
 - On Windows, sites are "Running" only when both site AND app pool started
 - Set CLIO_DEBUG_IIS=true for detailed IIS detection diagnostics
+- in run-scenario the flag still matters: every step's options are read before the
+first step runs, so the last step that sets `fail-on-error` decides the strict
+install-log check for every package install in the scenario, including earlier
+ones. The legacy YAML key `--fail-on-error` can only turn the flag on; use the key
+`fail-on-error` to turn it off
 
 ## Reporting Bugs
 

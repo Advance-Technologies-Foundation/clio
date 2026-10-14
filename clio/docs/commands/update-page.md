@@ -55,6 +55,17 @@ diff sections and can discard comments inside those sections.
 > and reports the path in `files.bodyFile`. MCP callers pass that path straight through as
 > `body-file`, or send the file contents as `body`.
 
+A successful (non-dry-run) MCP `update-page` save also returns `digest`: `validation`
+(`passed`, or `skipped` with `validate: false`), `basis` (`fragment` for append, `body` for
+replace), and `components` - one line per `viewConfigDiff` operation of the body that was
+written, such as `insert UsrPhone (crt.PhoneInput) in MainContainer`, at most 25 with the rest
+counted in `componentsOmitted`, `otherSections` (operation counts of `viewModelConfigDiff`,
+`modelConfigDiff` and `handlers` when present) and `checksum` - the post-save `SysSchema`
+checksum, the next save's conflict baseline (returned when the save ran with a baseline: a
+`get-page` baseline, a pinned `checksum`, or `force`). It confirms the write without a `get-page`
+(ENG-103023). An append whose fragment carried component operations that the merge could not
+write back returns no `digest`.
+
 The MCP `update-page` tool also accepts `include-operations: false`. It applies only with
 `verify: true`: the read-back page then carries `ownBodySummary.viewConfigDiffOpCounts`
 (operations per type) instead of the `viewConfigDiffOps` list.
@@ -117,6 +128,18 @@ name instead of trying to edit a non-existent local `insert`.
   declarations, callback parameters, AMD dependency arguments and known JavaScript/Creatio globals
   remain valid. Missing direct callees produce `undefined-section-call`. These AST checks run only on
   MCP `update-page` / `sync-pages` / `validate-page`; the CLI `update-page` verb does not run them.
+- **Data-source bindings (web and mobile).** MCP `update-page` / `sync-pages` / `validate-page` only. The first
+  segment of an attribute's `modelConfig.path`, a `dataSourceName`, and the `primaryDataSourceName` must name a data
+  source that the body or the page's inherited `modelConfig` declares, after the body is applied the way the page
+  bundle is built (a non-empty model config diff is applied over the base; otherwise the full `modelConfig` is merged
+  into it; `remove` operations and merges below a missing data source declare nothing). Templates never declare
+  `PDS`: a generated page holds it in its own body, so a replace write that drops it is rejected (ENG-102161). Keep
+  the web `SCHEMA_MODEL_CONFIG` section (or the `dataSources` / `primaryDataSourceName` operations of
+  `SCHEMA_MODEL_CONFIG_DIFF`, or the mobile `modelConfigDiff`) from `get-page` `raw.body`. A non-empty
+  `SCHEMA_MODEL_CONFIG_DIFF` makes `SCHEMA_MODEL_CONFIG` ignored. `mode: "append"`, whose base includes the page's own
+  body, works only on a page in diff form: a generated web form page is full-config and append refuses it. When the inherited `modelConfig` cannot be read the check passes and the
+  response warns that it did not run; `validate-page` has no environment, so it never rejects and warns about
+  bindings the body does not declare itself.
 - **Mobile page rules.** These run only on the MCP `update-page` / `sync-pages` / `validate-page` tools.
   The CLI `update-page` verb does **not** run them — it validates a mobile body only for disallowed
   sections — so a body rejected through MCP still saves from the command line.
@@ -210,10 +233,20 @@ name instead of trying to edit a non-existent local `insert`.
 - **Inserted widget/metric titles must resolve.** A `title`/`caption`/`tooltip`/`placeholder` on a
   freshly inserted (`operation:"insert"`) widget/container bound as 
   `#ResourceString(<Key>)#` is **rejected** when `<Key>` will not resolve — i.e. it is not passed in
-  `--resources`, is not a DS-bound attribute, and is not a `Usr`-prefixed key clio auto-derives. This
-  guards the metric/chart-widget-title case (a title such as
+  `--resources`, is not already stored in the target schema's `localizableStrings` (on the first save
+  into a package: in the schema it replaces, whose strings the save copies) or declared by a level of
+  the designer hierarchy clio resolved for the page (not with `--target-schema-uid`), is not a DS-bound
+  attribute, and is not a `Usr`-prefixed key clio auto-derives. A layout-only re-save therefore does not
+  have to repeat keys an earlier save registered. This guards the metric/chart-widget-title case (a title such as
   `#ResourceString(IndicatorWidget_<slug>_title)#` is registered only when you pass it in `--resources`;
   otherwise it renders raw as `$Resources.Strings.IndicatorWidget_<slug>_title`).
+- **A placement that names a parent must name its slot** (web and mobile, also with `validate: false`).
+  An `insert` or `move` with a `parentName` but no `propertyName` is **rejected** before saving. The
+  Creatio differ places the element into the parent's `propertyName` slot (usually `"items"`); without
+  it the platform refuses the page (`Item "<parent>" is not a container for other items`) and `get-page`
+  cannot resolve it. Without a `parentName` the element goes to the root list and needs no slot. A page
+  saved this way by an older clio still reads back: `get-page` resolves it without that operation and
+  names it in `warnings`, so the body can be fixed and saved again.
 
 A malformed `VendorPrefix.Name` causes a Creatio runtime error:
 `"Error when register X. Type property should have format VendorPrefix.TypeName"`.
@@ -246,11 +279,17 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
-Successful saves may also return `warnings`. Every entry is informational only — the
-schema save already succeeded, so never retry on a warning. Today they cover the live
+Successful saves may also return `warnings`. When `success` is true every entry is
+informational only — the schema save already succeeded, so never retry on a warning. A
+rejected save (`success: false`) can carry `warnings` too; nothing was written. On a
+`--dry-run`, a config merge the runtime throws on is listed as a warning that says it
+"breaks the page", and the real save of the same body is rejected (see "Config merges into
+a missing path"). Today they cover the live
 Designer Presence push, a component whose `insert` the submitted body replaced with a
 `merge`/`move`/`remove`, an operation the differ will drop because another operation
-for the same component name cancels it (see "Write modes"), and — on `append` — an
+for the same component name cancels it (see "Write modes"), a `viewModelConfigDiff` /
+`modelConfigDiff` `merge` whose `path` does not resolve (see "Config merges into a missing
+path"), and — on `append` — an
 existing operation the merge could not preserve because your fragment superseded an
 identity the page carried more than once. That last one names the component and tells you
 to re-read with `get-page`, because it is the one case where appending removes something
@@ -268,9 +307,8 @@ baseline that may be stale or anchored to a different directory and would then r
 conflict that never happened. After a successful save with an armed baseline the on-disk
 baseline is refreshed automatically, so consecutive updates in the same session do not
 false-conflict. A small race window between the check and the save remains (last write
-wins). A save redirected with `--target-package-uid` / `--target-schema-uid` is the
-exception on both counts: nothing is armed from `.clio-pages` and nothing is written back
-to it (see below).
+wins). A save with `--target-package-uid` / `--target-schema-uid` uses the `.clio-pages`
+baseline only when the target resolves to the page that baseline describes (see below).
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
 value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
@@ -296,21 +334,26 @@ Two scope limits worth knowing before you rely on the pin:
   fallback, but `PageSyncPageInput` has no `checksum` member, so every `sync-pages` write
   compares against the `.clio-pages` baseline and has `--force` as its only escape. The
   remedy on this page is `update-page`-only.
-- **A redirected save skips only the on-disk baseline.** When `update-page` is called with
-  `--target-package-uid` or `--target-schema-uid`, the write goes to a schema other than the
-  automatically resolved editable one, while both baseline sources describe that resolved
-  schema: `get-page` has no target arguments, so the `.clio-pages` baseline — and any
-  `checksum` copied out of a `get-page` response — is about the schema clio would have
-  written without the redirect. The guard therefore reads no baseline and arms no disk-derived
-  identity. An explicit `checksum` is retained and compared with the resolved target after
-  hierarchy resolution; a mismatch is refused as a conflict, which protects a target-package-uid
-  save that names an existing package and fails safe when the pin came from another schema. The
-  response carries a warning that the disk baseline was skipped. With no explicit pin the save is
-  unchecked, so there is no "re-run get-page and retry" loop and no reason to reach for `--force`.
-  Because nothing from disk is armed, the post-save
-  refresh leaves `meta.json` alone as well: writing the redirected schema's UId and checksum
-  into a baseline keyed by schema name corrupted the non-redirected schema's baseline and
-  produced a false `schema-uid-mismatch` on the next ordinary save.
+- **A selector is not by itself a redirect.** `get-page` has no target arguments, so the
+  `.clio-pages` baseline, and any `checksum` copied out of a `get-page` response, describes the
+  schema clio resolves automatically. When `update-page` is called with `--target-package-uid` or
+  `--target-schema-uid`, nothing is armed from disk before the target is resolved. The baseline is
+  carried instead and applied once the target turns out to be the page it describes: the same
+  editable schema (matched by schema UId), or, for a baseline that recorded no editable schema
+  yet, the same design package `get-page` resolved (`--target-package-uid` only, matched by
+  package UId). GUIDs are compared by value, so letter case and braces do not matter. Such a save
+  is checked like a save without the selector, including `schema-created-externally`, and
+  refreshes `meta.json` afterwards. A target that resolves elsewhere is a real redirect: the
+  baseline is not used, and `meta.json` is left alone, because writing the redirected schema's
+  UId and checksum into a baseline keyed by schema name corrupted the baseline of the
+  automatically resolved schema and produced a false `schema-uid-mismatch` on the next ordinary
+  save. An explicit `checksum` is kept and compared with the resolved target in every case; a
+  mismatch is refused as a conflict. The response carries a warning that says the baseline
+  applies only if the target resolves to the page it describes. When nothing on disk can be
+  matched to the target, the warning says the check did not run and why: no baseline was found
+  for this page, environment and anchor (then the same save without the selector is unchecked
+  too), or the baseline recorded no editable schema and the selector cannot be matched to its
+  design package. Neither case is a reason to reach for `--force`.
 
 A `checksum-mismatch` response returns the server's current value as
 `conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
@@ -376,6 +419,38 @@ apply after all. A `--dry-run` reports it too, against the body that would actua
 in append mode it sees pairs formed between your fragment and the server's body, not only pairs
 inside your fragment.
 
+### Config merges into a missing path
+
+A `viewModelConfigDiff` or `modelConfigDiff` `merge` is addressed by `path`. The platform differ walks
+that path through the config built from the parent schemas and the merges that come before it in the
+same body. If a segment does not exist, the differ skips the merge. It does not create the
+missing key. The body is saved with the operation in it, but the operation has no effect.
+Typical shapes:
+
+- a new data source written as `path: ["dataSources", "NewDS"]`. The key does not exist yet;
+- `path: ["dependencies"]` on a page whose chain has no `dependencies` yet;
+- a nested key that the parent schema's data source or attribute does not have, for example
+  `path: ["dataSources", "AttachmentListDS", "config", "sortingConfig"]`;
+- a nested merge placed before the merge that creates its target. Merges run in array order.
+
+`update-page` resolves the page's real parent schemas and applies the body's config diffs to that
+config the way the platform does. For every merge that would be skipped, the response gets an advisory
+`warnings` entry naming the section and the path, and the save still succeeds. To
+add a new key, merge into its existing parent and put the key inside `values`: `path: ["dataSources"]`
+with `values: { "NewDS": { ... } }`, or `path: []` with the whole branch. `attributes` and `dataSources`
+always exist at runtime, even on a blank page whose `get-page` bundle shows neither, so merging into
+them is safe. A merge whose path ends on an array, or whose `values` is an array, a string, a number
+or a boolean, is reported the same way, with its own reason.
+
+A merge the runtime throws on makes the page fail to build, so it rejects the save: `success` is
+false, nothing is written, `error` names each such merge on its own line, and the other warnings
+for the body are still returned. A `--dry-run` lists the same merges as warnings that say the merge
+"breaks the page". The cases are a path that ends on a single value, such as `isCollection`; a path
+whose first segment matches an element `_id` but whose rest does not exist under it; and a merge
+with no `values` or `values: null` on a target that exists. If the parent schemas cannot be read for
+this check, the response says the check did not run, and the save is not blocked. If an operation
+that is not a merge makes the differ throw, the merges are still checked and one warning says so.
+
 ### What a `--dry-run` tells you about an append
 
 In append mode a dry run resolves the current server body and computes the merge, then returns
@@ -424,9 +499,11 @@ Three consequences worth knowing:
   check — do not plan a workflow around it running without a server. Resolving the schema context
   happens before either mode is chosen and still queries `SysSchema`, the design package and the
   parent schemas. What a replace dry run skips is the **designer `GetSchema` fetch of the current
-  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. The trade-off
-  is that its caption check can only resolve against the resources you pass, so it is weaker than
-  the save's — the one place a replace dry run can still differ from its save.
+  body**, which is what `TryUpdatePage_WhenDryRun_SkipsDesignerServiceCalls` asserts. Its caption
+  check first resolves against the body and the resources you pass; only when a binding is still
+  unresolved does it read the keys the schema already stores (one `GetSchema`) together with the keys
+  of its designer hierarchy, the same set the save accepts. A body whose captions all resolve from the
+  body or `--resources` still costs no designer read.
 
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.

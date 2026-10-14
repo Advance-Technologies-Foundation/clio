@@ -40,10 +40,13 @@ public class CreateBusinessProcessTool(
 		 OpenWorld = false),
 	 // The FIRST sentence is what the get-tool-contract compact index shows as this tool's one-line
 	 // purpose, and that index is the only discovery surface a non-resident tool has. It must therefore
-	 // say what the tool DOES; the accessRights warning below is no less binding for standing second,
+	 // say what the tool DOES; the accessRights warning below is no less binding for standing third,
 	 // because an agent reads the full contract before calling. See
 	 // docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
+	 // The packageName sentence stands second, in the opening a shortened contract keeps; placed inside the
+	 // long descriptor sentence it was cut from a default get-tool-contract read.
 	 Description("Build a business process on a Creatio environment from a declarative JSON descriptor. "
+		 + "Take packageName from get-target-package. "
 		 + "BEFORE CALLING with an accessRights block: that block changes who can read, edit or delete LIVE records. Show the user the target object, the element record filter that decides WHICH records are affected, and every grantee with its operations and level - calling out level:delegate as onward re-sharing, level:restrict as the platform Deny level, which is DESTRUCTIVE rather than inert: it DOWNGRADES an existing Allow row for that grantee to Deny, and on a fresh insert denies the two operations you did not name, so it deserves the same confirmation as a remove, a remove entry as a revoke, and a supplied add/remove as a REPLACEMENT that drops every entry it does not restate - and get an explicit yes. An ABSENT filter is the WIDE state, not a safe one: the element then applies the change to EVERY record of its object, with record permissions disabled, and nothing warns you. The element has no output parameters, so nothing at run time will report what it did. "
 		 + "The descriptor is an object with: name (schema code), caption, packageName, elements[] "
 		 + "({name (the element handle/local code), type:startEvent|signalStart|endEvent|userTask|sendEmail|approval|exclusiveGateway|parallelGateway|formulaTask|"
@@ -210,7 +213,7 @@ public class CreateBusinessProcessTool(
 		 + "so read a record with a data element to use its columns); an unknown parameter/element/column is REJECTED "
 		 + "naming what was missing (column names are matched case-sensitively), so do not guess: on a CREATE the exact "
 		 + "names come from THIS descriptor's own parameters[]/elements[] you declare here (there is no process to describe yet — describe-business-process is the MODIFY path); a whole raw platform image token, OR a bare [#…#] formula, written by hand passes through unchanged (the escape hatch), while {{…}} is NOT clio macro syntax (that is the content designer's editable template fields) and is left alone; a "
-		 + "server-built body reopens in the designer's Content designer as an editable block — verified on a stand; a CrtProcessBuilder that predates this feature does NOT resolve the macros and stores the text verbatim, so clio warns after the build when the read-back shows the body did not land — update the package (install-process-builder) if you see that warning), "
+		 + "server-built body reopens in the designer's Content designer as an editable block — verified on a stand; a CrtProcessBuilder that predates this feature does NOT resolve the macros and stores the text verbatim, so clio warns after the build when the read-back shows the body did not land — run install-process-builder after user approval if you see that warning), "
 		 + "bodyFormat?:html, to?/cc?/bcc? (recipient arrays; each entry sets EXACTLY ONE of {value (a constant "
 		 + "address) | processParameter (the recipient mirrors that parameter's type — a Contact-lookup parameter is "
 		 + "resolved to the contact's email at send time) | expression (a raw formula macro; add "
@@ -232,7 +235,9 @@ public class CreateBusinessProcessTool(
 		 + "element kinds — the retired CallUserTask by name, whose runtime ignores the assignment: model a call "
 		 + "as performTask + the Call ActivityCategory), "
 		 + "preconfiguredPage? (preconfiguredPage elements only — shows a Freedom UI page to a user and "
-		 + "resumes when the user presses a completing button: {page:<Freedom UI page schema name> (REQUIRED "
+		 + "resumes when the user presses a completing button. Built ONLY as type preconfiguredPage - a generic "
+		 + "userTask naming PreconfiguredPageUserTask cannot carry the block and is REFUSED. The block: "
+		 + "{page:<Freedom UI page schema name> (REQUIRED "
 		 + "— the server NEVER creates a page, and both an unknown page and a Classic UI page are refused), "
 		 + "buttons:[{name (the buttons view-element name on the page), caption?, event?:clicked, validate?}] "
 		 + "(REQUIRED on a build — at least one, and NOT defaulted for you: an element with no completing "
@@ -261,9 +266,10 @@ public class CreateBusinessProcessTool(
 		 + "condition through a UId meta-path, and on create those UIds do not exist yet, because the parameters "
 		 + "and elements are made by this same call. The server expands the name once everything exists. A name "
 		 + "that resolves to nothing is refused up front, naming the flow and listing what does exist. "
-		 + "[#SysSettings.Code<Type>#], [#Lookup.Schema.Record#] and an already-written meta-path are passed "
-		 + "through untouched. On the MODIFY path there is no expansion and none is needed: the UIds exist by "
-		 + "then and describe-business-process reports them. "
+		 + "[#SysSettings.Code<Type>#] and [#Lookup.Schema.Record#] are passed through untouched; a meta-path "
+		 + "written by hand must be spelled exactly as the platform does (every segment dot-separated, prefix "
+		 + "optional), or it is refused. "
+		 + "The MODIFY path expands names in a condition too. "
 		 + "FLOW ORDER IS BRANCH PRECEDENCE — "
 		 + "sibling conditions are evaluated in the order you list them and the FIRST true one is taken, and "
 		 + "nothing else encodes that. Out of a gateway that CHOOSES (exclusiveGateway) every outgoing flow must "
@@ -293,37 +299,37 @@ public class CreateBusinessProcessTool(
 		 + "the designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag — the mirror would be a bound, tagged, unbindable empty shape — so mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type Collection is an opaque list with no shape), "
 		 + "and mappings[] (bind a target to a source; an entry's keys are FLAT, not nested under a 'target' "
 		 + "object — the target is either 'elementName' + "
-		 + "'elementParameter' (an element input) or 'targetProcessParameter' (a process parameter, e.g. expose an "
-		 + "element output as a process output); source is exactly one of {sourceElement, sourceElementParameter} "
+		 + "'elementParameter' (an element input) or 'targetProcessParameter' (a process parameter: a BINDING, read "
+		 + "live, not a flow-time assignment - last per parameter wins (warned); per-branch values need a "
+		 + "formulaTask with formula.resultProcessParameter); "
+		 + "source is exactly one of {sourceElement, sourceElementParameter} "
 		 + "(another element's output, + sourceColumn for one column of its record), processParameter, value, or "
 		 + "expression. An 'expression' is a FORMULA, "
 		 + "validated by the PLATFORM at the pre-save gate — so a bad one aborts the whole build with 'Process "
-		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.40 (for "
-		 + "sourceColumn, scriptTask, usings[], methods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
+		 + "validation failed' and nothing is created. On CrtProcessBuilder this clio requires 1.6.6.92 (for "
+		 + "isTracing, the meta-path checks, sourceColumn, scriptTask, usings[], methods and subProcess.multiInstanceOptions {enabled, executionMode, ignoreErrors}), which is "
 		 + "NOT where that collapse happened: 1.4.0.41 is where the PACKAGE stopped validating formulas a second "
 		 + "time and the platform's gate became the only one, and .44 is simply the first archive carrying that "
 		 + "AND the ENG-96325 lookup-constant contract. Below .41 a refused formula still fails, "
-		 + "with the package's own wording. From 1.6.6.40 a condition can also name a read record's COLUMN "
-		 + "([#Read.ResultEntity.Column#]). "
+		 + "with the package's own wording. "
 		 + "(Shared with modify-business-process. A conditional branch IS built here, through flows[].kind and "
-		 + "flows[].condition above; a branch on an activity RESULT is built here too, from 1.6.2.23, with flows[].results.) "
+		 + "flows[].condition above; a branch on an activity RESULT is built here too, with flows[].results.) "
 		 + "The formula itself: ONE line, "
 		 + "its result must fit the target's "
 		 + "DECLARED type (an Integer target refuses a fractional result), every [#…#] parameter reference must "
 		 + "resolve in THIS process, every macro family must be one a converter resolves where you used it, names "
 		 + "resolve through a flat case-sensitive registry (Math.Round yes, "
 		 + "System.Math.Round no), and a parameter is referenced by its UId meta-path - EXCEPT in a "
-		 + "flows[].condition on THIS call, where you write the NAME and the server expands it, because on "
+		 + "condition or a Formula body, where you write the NAME and the server expands it, because on "
 		 + "create the UIds do not exist yet (see flows[].condition above). Everywhere else - a mapping, a "
-		 + "filter, a condition on the modify path - it is the meta-path. A refusal "
+		 + "filter - it is the meta-path. A refusal "
 		 + "always names the parameter. The character index comes with a PARSE fault only, so do not wait for "
 		 + "one on a type mismatch ('Cannot convert type X to Y') or an unknown identifier ('Parameter X not "
 		 + "found') - the two commonest faults, and both already name what to fix. When the expression IS "
 		 + "quoted, it is quoted as the platform's own converter left it - a parameter reference by "
 		 + "the parameter NAME, a fractional literal with an 'm' appended - not as you wrote it. An "
 		 + "unresolvable [#…#] parameter reference is not in this family at all: it names the reference "
-		 + "and the remedy instead ('which is not in this process. Add the parameter first, or correct the "
-		 + "reference.') - the sentence 1.4.0.42 introduced, and the reason this floor is what it is. See "
+		 + "and the remedy instead. See "
 		 + "modify-business-process for the full mapping vocabulary, including the Lookup 'value' bare-Guid "
 		 + "rule, its version floor, and its refusals (get-guidance name=process-parameters owns the contract). "
 		 + "To run the process when a record "
@@ -333,14 +339,16 @@ public class CreateBusinessProcessTool(
 		 + "on:modified trigger to fire ONLY when one of those column values changes (column names on the "
 		 + "trigger entity; valid only for on:modified; omit for any-change). To fire that trigger only for "
 		 + "matching records, add a filter block to the signalStart element (its right side must be a "
-		 + "constant/macro/datePart — NOT a process/element parameter, since the signal is evaluated before "
-		 + "the process instance exists); get-guidance name=process-data-source-filters owns the condition "
+		 + "constant/macro/datePart — NOT a process/element parameter, the "
+		 + "process instance does not exist yet); get-guidance name=process-data-source-filters owns the condition "
 		 + "grammar. The server serializes the platform filter; never hand-write filter JSON. Read get-guidance "
 		 + "name=process-modeling FIRST — the full descriptor contract. The formula and subProcess blocks are "
 		 + "owned by get-guidance name=process-element-catalog; accessRights by name=process-access-rights; an "
-		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas. Use "
-		 + "list-user-tasks to discover valid userTaskName values. Requires the ProcessDesignService "
-		 + "(CrtProcessBuilder) package; install with install-process-builder. A process with no scriptTask or methods is "
+		 + "`expression` mapping source or a conditional-flow condition by name=process-formulas; top-level "
+		 + "isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing. Use "
+		 + "list-user-tasks to discover valid userTaskName values (not for PreconfiguredPageUserTask or "
+		 + "OpenEditPageUserTask: build those as preconfiguredPage / openEditPage). Requires "
+		 + "CrtProcessBuilder (install-process-builder, after user approval). A process with no scriptTask or methods is "
 		 + "INTERPRETED and runs as-is, and the result carries the compile-not-required note: do NOT run compile-creatio, "
 		 + "and do NOT infer a compile need from a raw `VwSysProcess` read. A scriptTask is C# the platform compiles - "
 		 + "scriptTask:{body} holds method STATEMENTS ending in return true; reading and writing parameters ONLY "
@@ -349,9 +357,9 @@ public class CreateBusinessProcessTool(
 		 + "members as one string (Get/Set work there too). It is the last resort after no-code elements, formulas and a compiled "
 		 + "user task (read get-guidance name=process-script-task first); its result carries a compile-REQUIRED "
 		 + "warning instead of the note, and then, after asking the user, compile-creatio with process-name is owed. Either signal "
-		 + "speaks for THIS call only: a compile an earlier save made owed is still owed. A SUCCESSFUL build can still report caveats as message-type \"Warning\" entries in "
-		 + "execution-log-messages (there is no separate warnings field) — a Pre-configured page whose "
-		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters.")]
+		 + "speaks for THIS call only: a compile an earlier save made owed is still owed. Caveats of a SUCCESSFUL build arrive as message-type \"Warning\" entries in "
+		 + "execution-log-messages — a Pre-configured page whose "
+		 + "referenced page could not be loaded is built and SAVED carrying none of that page's parameters." + McpToolDescriptions.ProcessWriteDigest)]
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -366,6 +374,14 @@ public class CreateBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
 
+		// ENG-103025: a descriptor sent under a synonym (process, definition, ...) or spread over the top level
+		// (name, caption, elements, flows, ...) runs and says so; an ambiguous combination is refused unbuilt.
+		ProcessToolArgumentAliases.CreateResolution aliases = ProcessToolArgumentAliases.ResolveCreate(args);
+		if (aliases.Error is not null) {
+			return CommandExecutionResult.FromValidationError(aliases.Error);
+		}
+		args = aliases.Args;
+
 		// The only unknown-key defence this tool has; the helper's docs say why. ENG-98566.
 		string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
 			args.ExtensionData, ValidArgsHint);
@@ -373,17 +389,29 @@ public class CreateBusinessProcessTool(
 			return CommandExecutionResult.FromValidationError(argumentError);
 		}
 
+		// ENG-103025: an empty call, or one missing the environment or the descriptor, keeps its refusal and exit
+		// code and gains the required arguments and a minimal valid call after it.
+		List<string> missing = [];
 		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-			return CommandExecutionResult.FromError("environment-name is required and cannot be empty.");
+			missing.Add("environment-name");
+		}
+		if (McpToolArgumentSupport.IsAbsentJsonDocument(args.Descriptor)) {
+			missing.Add("descriptor");
+		}
+		if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
+			return ToolMiniContract.Decorate(
+				CommandExecutionResult.FromError("environment-name is required and cannot be empty."),
+				missing, ToolMiniContract.ForCreateBusinessProcess);
 		}
 
-		if (string.IsNullOrWhiteSpace(args.Descriptor)) {
-			return CommandExecutionResult.FromError("descriptor is required and cannot be empty.");
+		if (!McpToolArgumentSupport.TryReadJsonDocumentArgument(args.Descriptor, JsonValueKind.Object,
+				"descriptor", out string descriptorJson, out CommandExecutionResult? descriptorRefusal)) {
+			return ToolMiniContract.Decorate(descriptorRefusal, missing, ToolMiniContract.ForCreateBusinessProcess);
 		}
 
 		CreateBusinessProcessOptions options = new() {
 			Environment = args.EnvironmentName,
-			DescriptorJson = args.Descriptor,
+			DescriptorJson = descriptorJson,
 			PackageName = args.PackageName ?? string.Empty
 		};
 		// A process with no script task is interpreted and runs as-is, and the deterministic post-op note says
@@ -391,7 +419,8 @@ public class CreateBusinessProcessTool(
 		// then warns that the process cannot run "until the configuration is compiled", and the gate drops the
 		// note rather than contradict it (ENG-92711). The gate appends, so a command-set note stays.
 		CommandExecutionResult result = InternalExecute<CreateBusinessProcessCommand>(options);
-		return result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(
+			result.ExitCode != 0 ? result : result.WithCompileNotRequiredNote(), aliases.Warnings);
 	}
 }
 
@@ -404,12 +433,14 @@ public sealed record CreateBusinessProcessArgs(
 	[property: Required]
 	string EnvironmentName,
 
+	// JsonElement, not string: the descriptor is passed as the JSON object itself, and a string holding the
+	// same JSON keeps working. McpToolArgumentSupport.TryReadJsonDocumentArgument says why (ENG-100153).
 	[property: JsonPropertyName("descriptor")]
-	[property: Description("The process descriptor (name, caption, packageName, elements[], flows[], "
-		+ "parameters[], mappings[], usings[], methods) SERIALIZED AS A JSON STRING - not a nested object. Passing a real object "
-		+ "fails with \"Cannot get the value of a token type 'StartObject' as a string\".")]
+	[property: Description("The process descriptor as a JSON object (name, caption, packageName, elements[], "
+		+ "flows[], parameters[], mappings[], usings[], methods, isTracing). A string holding the same JSON is also "
+		+ "accepted.")]
 	[property: Required]
-	string Descriptor,
+	JsonElement Descriptor,
 
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Optional package name that overrides the descriptor's packageName.")]

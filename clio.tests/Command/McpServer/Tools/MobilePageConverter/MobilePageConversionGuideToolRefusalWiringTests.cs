@@ -69,6 +69,31 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 	private const string CandidatePageUId = "55555555-5555-5555-5555-555555555555";
 
 	[Test]
+	[Description("The failure envelope is REDACTED at this boundary. The tool does not derive from BaseTool, so it gets none of its uniform redaction, and a success:false RESULT never reaches McpToolErrorFilter's redacted catch - Fail() is the only place this can happen. PageSchemaMetadataHelper deliberately leaves the \"(URL: <uri>)\" prefix in the clear relying on the MCP edge to redact it, and since ENG-94638 that envelope is reachable by every caller rather than by opt-in Beta testers.")]
+	public async Task GetGuide_ShouldRedactTheFailureEnvelope_WhenTheReadErrorCarriesAUri() {
+		// Arrange — the shape PageSchemaMetadataHelper really produces, with userinfo and an internal host.
+		const string sensitive =
+			"SelectQuery could not be completed against the environment "
+			+ "(URL: https://admin:P%40ssw0rd@crm-prod.internal.corp:8443/0/DataService/json/SyncReply/SelectQuery)";
+		var tool = new StubbedTool(unreadable: SourcePage, readFailureError: sensitive);
+
+		// Act
+		MobilePageConversionGuideResponse response = await tool.GetMobilePageConversionGuide(Args());
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "an unreadable source page cannot produce a guide");
+		response.Error.Should().NotBeNullOrWhiteSpace(
+			because: "a failed conversion must still carry an actionable diagnostic");
+		response.Error.Should().Contain("[redacted-uri]",
+			because: "the redactor replaces the URI rather than dropping the sentence, so the caller still learns WHICH step failed");
+		foreach (string secret in new[] { "crm-prod.internal.corp", "8443", "admin", "P%40ssw0rd", "https://" }) {
+			response.Error.Should().NotContain(secret,
+				because: $"'{secret}' would be copied verbatim into the hosting agent's transcript, and for a cloud-hosted model shipped to a third party");
+		}
+	}
+
+	[Test]
 	[Description("An unreadable MOBILE template refuses the whole tool. Asserted through the tool method rather than through RejectUnobtainableMobileTemplate, because the defect this guards is a missing `return` at the call site, which a direct call on the helper cannot see.")]
 	public async Task GetGuide_ShouldRefuse_WhenTheMobileTemplateCannotBeRead() {
 		// Arrange — the source page and its web template read fine; the mobile template does not.
@@ -268,19 +293,23 @@ public sealed class MobilePageConversionGuideToolRefusalWiringTests {
 
 		private readonly bool _templateWithoutViewConfig;
 
+		private readonly string _readFailureError;
+
 		internal StubbedTool(string unreadable, bool templateWithoutViewConfig = false,
-			string failingCatalog = null, RulesFlavor rules = RulesFlavor.Minimal)
+			string failingCatalog = null, RulesFlavor rules = RulesFlavor.Minimal,
+			string readFailureError = "simulated read failure")
 			: base(Substitute.For<IToolCommandResolver>(), Substitute.For<ILogger>(),
 				MobileCatalog(failingCatalog), WebCatalog(failingCatalog),
 				MobileRequestCatalogStub(failingCatalog, rules), RulesCatalog(rules),
 				Substitute.For<IPlatformVersionResolverFactory>(), Substitute.For<ISettingsRepository>()) {
 			_unreadable = unreadable;
 			_templateWithoutViewConfig = templateWithoutViewConfig;
+			_readFailureError = readFailureError;
 		}
 
 		internal override PageGetResponse ReadPageUnderTenantLock(PageGetOptions options) {
 			if (string.Equals(options.SchemaName, _unreadable, StringComparison.OrdinalIgnoreCase)) {
-				return new PageGetResponse { Success = false, Error = "simulated read failure" };
+				return new PageGetResponse { Success = false, Error = _readFailureError };
 			}
 			if (string.Equals(options.SchemaName, SourcePage, StringComparison.OrdinalIgnoreCase)) {
 				return SourcePageResponse();

@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.IO.Compression;
 using System.Linq;
-using System.Text;
 using Clio.Common;
 using Clio.Project.NuGet;
 using FluentAssertions;
@@ -197,10 +195,10 @@ public class BundledProcessBuilderPackageTests {
 	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
 	/// <para>
 	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
-	/// on the producing commit before packing anything — 2886 passed, 0 failed, 0 skipped, measured on this cut
+	/// on the producing commit before packing anything — 3088 passed, 0 failed, 0 skipped, measured on this cut
 	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
 	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
-	/// verified the archive inventory it produced (227 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
+	/// verified the archive inventory it produced (229 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
 	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
 	/// every archive entry
 	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
@@ -287,7 +285,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"AFF6D1C81BECCC492DF9AF3D3AB66245D913AE96EE97C05BF9A7FDEBC9CB238F";
+		"4EA5835DE82187363F57D0509DFE0BC993810FD8AE3922ACAC3C71E40BE43046";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -315,7 +313,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.54";
+	private const string ExpectedArchiveVersion = "1.6.6.96";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -327,7 +325,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "3c4ad7fe5e33de077438e1c2255f5f8cff4ed672";
+	private const string ExpectedProducingCommit = "6dd029861393030f0a439fbf46c59d07385b324e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -353,7 +351,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1790774501000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791802667000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -513,10 +511,7 @@ public class BundledProcessBuilderPackageTests {
 
 	#region Properties: Private
 
-	private static string BundledArchivePath => Path.Combine(
-		AppContext.BaseDirectory,
-		BundledPackages.ProcessBuilderPackageName,
-		BundledPackages.ProcessBuilderArchiveFileName);
+	private static string BundledArchivePath => BundledProcessBuilderSource.ArchivePath;
 
 	#endregion
 
@@ -539,22 +534,10 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	/// <summary>
-	/// Decompresses the archive and returns it as text. The stream is clio's own package format and
-	/// carries binary members, so only file CONTENT that happens to be UTF-8 (the JSON descriptors, the C#
-	/// sources, the csproj) is searchable here.
+	/// The archive as text; <see cref="BundledProcessBuilderSource.ReadAsText"/> says what that can and cannot
+	/// answer. Use <see cref="ReadBundledArchiveEntryNames"/> for anything about a path.
 	/// </summary>
-	/// <remarks>
-	/// Entry PATHS are NOT searchable and never were: the container stores them UTF-16LE. Use
-	/// <see cref="ReadBundledArchiveEntryNames"/> for anything about a path, and treat a hit found here as
-	/// evidence about a file's contents only.
-	/// </remarks>
-	private static string ReadBundledArchiveAsText() {
-		using FileStream compressed = File.OpenRead(BundledArchivePath);
-		using GZipStream decompressor = new(compressed, CompressionMode.Decompress);
-		using MemoryStream buffer = new();
-		decompressor.CopyTo(buffer);
-		return Encoding.UTF8.GetString(buffer.ToArray());
-	}
+	private static string ReadBundledArchiveAsText() => BundledProcessBuilderSource.ReadAsText();
 
 	// True when <paramref name="typeName"/>'s OWN declaration carries the `label` DataMember. The
 	// archive ships SOURCE and every contract type sits in its own `#region Class: <Name>` block, so the
@@ -573,21 +556,8 @@ public class BundledProcessBuilderPackageTests {
 	// Generalised from the label probe: the same window, asked about any wire name. The diagram members
 	// arrived needing that question about three more types, and a second copy of the region arithmetic is a
 	// second place for the unterminated-region hole to be reintroduced.
-	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) {
-		int start = archive.IndexOf($"#region Class: {typeName}\r", StringComparison.Ordinal);
-		if (start < 0) {
-			start = archive.IndexOf($"#region Class: {typeName}\n", StringComparison.Ordinal);
-		}
-
-		if (start < 0) {
-			return false;
-		}
-
-		int end = archive.IndexOf("#endregion", start, StringComparison.Ordinal);
-		// Up to the name's closing quote, so a member declared with EmitDefaultValue = false counts too.
-		return end >= 0
-			&& archive[start..end].Contains($"[DataMember(Name = \"{dataMemberName}\"", StringComparison.Ordinal);
-	}
+	private static bool DeclaresMemberOn(string archive, string typeName, string dataMemberName) =>
+		BundledProcessBuilderSource.DataMemberNames(archive, typeName).Contains(dataMemberName, StringComparer.Ordinal);
 
 	/// <summary>
 	/// Reads the shipped version the way production does — through the real
@@ -1661,6 +1631,27 @@ public class BundledProcessBuilderPackageTests {
 		return description.Description;
 	}
 
+	[Test]
+	[Description("clio advertises process tracing in three contracts and TYPES its describe block, all hand-mirrored across two repositories (ENG-102111): an archive whose names drifted would drop isTracing on a build and answer success, refuse setTracing as unknown, or report every process as untraced. Each member is asserted on its NAMED type.")]
+	public void BundledArchive_ShouldDeclareTheTracingWireNamesClioAdvertises() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "BuildProcessRequest", "isTracing").Should().BeTrue(
+			because: "create-business-process advertises the isTracing descriptor field");
+		DeclaresMemberOn(archive, "ProcessOperationDescriptor", "enabled").Should().BeTrue(
+			because: "modify-business-process advertises setTracing's 'enabled' argument");
+		archive.Should().Contain("SetTracing = \"setTracing\"",
+			because: "the operation token clio advertises must be the one the package dispatches");
+		DeclaresMemberOn(archive, "DescribeProcessResponse", "tracing").Should().BeTrue(
+			because: "DescribeProcessResult reads the tracing block off this member");
+		foreach (string member in new[] { "enabled", "turnOffDate" }) {
+			DeclaresMemberOn(archive, "DescribeProcessTracing", member).Should().BeTrue(
+				because: $"DescribedProcessTracing reads '{member}'");
+		}
+	}
+
 	#endregion
 
 	#region Nested types: Fixtures for the requirement collector
@@ -1688,5 +1679,4 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	#endregion
-
 }

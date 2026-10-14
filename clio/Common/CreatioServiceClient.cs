@@ -15,6 +15,9 @@ public abstract class CreatioServiceClient
 		PropertyNameCaseInsensitive = true
 	};
 
+	// Redacted first, then capped: a token cut by the cap would no longer be recognised by the redactor.
+	private const int MaxBodyPreviewLength = 200;
+
 	private readonly IApplicationClient _applicationClient;
 	private readonly IServiceUrlBuilder _urlBuilder;
 
@@ -36,12 +39,15 @@ public abstract class CreatioServiceClient
 	/// <param name="requestOptions">The request timeout and retry settings.</param>
 	/// <returns>The deserialized response.</returns>
 	/// <exception cref="InvalidOperationException">The service returned an empty or non-JSON response.</exception>
+	/// <exception cref="TimeoutException">The options' <see cref="CreatioRequestOptions.Deadline"/> is spent: nothing
+	/// was sent.</exception>
 	protected TResponse PostAndDeserialize<TResponse>(ServiceUrlBuilder.KnownRoute route, object request,
 		CreatioRequestOptions requestOptions) {
 		string url = _urlBuilder.Build(route);
 		string requestData = JsonSerializer.Serialize(request);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
 		string response = _applicationClient.ExecutePostRequest(url, requestData,
-			requestOptions.TimeOut, requestOptions.MaxAttempts, requestOptions.RetryDelay);
+			sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		if (string.IsNullOrWhiteSpace(response)) {
 			throw new InvalidOperationException($"Empty response from {url}.");
 		}
@@ -49,7 +55,12 @@ public abstract class CreatioServiceClient
 			return JsonSerializer.Deserialize<TResponse>(response, ResponseJsonOptions);
 		}
 		catch (JsonException) {
-			throw new InvalidOperationException($"Unexpected response from {url}: {TextUtilities.SanitizeForDisplay(response)}");
+			// An HTML page (a login redirect, an ASP.NET error page) is never previewed: it can carry session cookies,
+			// request tokens and stack traces, and this text reaches the log and an agent transcript.
+			throw new InvalidOperationException(TextUtilities.LooksLikeMarkup(response)
+				? $"Unexpected response from {url}: an HTML page instead of JSON (a login redirect or a server error page)."
+				: $"Unexpected response from {url}: "
+					+ TextUtilities.SanitizeForDisplay(SensitiveErrorTextRedactor.Redact(response), MaxBodyPreviewLength));
 		}
 	}
 }

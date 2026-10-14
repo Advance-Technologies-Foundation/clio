@@ -34,7 +34,7 @@ public sealed class RestartStatusToolTests {
 	}
 
 	[Test]
-	[Description("Reports not-found (not an error) when no restart operation has ever run for the environment.")]
+	[Description("Reports not-found (not an error) when no restart operation has ever run for the environment, and the note does not read as 'nothing ran': it sends the agent to check that the environment answers instead of restarting again (ENG-102333).")]
 	public void GetStatus_Should_ReturnNotFound_WhenNoOperationTrackedForEnvironment() {
 		// Arrange
 		RestartOperationRegistry registry = new();
@@ -47,6 +47,10 @@ public sealed class RestartStatusToolTests {
 		response.Success.Should().BeTrue(because: "an empty history is a legitimate state, not a tool error");
 		response.Status.Should().Be("not-found", because: "no operation was ever tracked for this environment");
 		response.EnvironmentName.Should().Be("sandbox", because: "the response must echo the queried environment name");
+		response.Note.Should().Contain("does not mean no restart ran",
+			because: "an agent whose client stopped waiting for a restart can poll a session that holds no record of it");
+		response.Note.Should().Contain(GetCreatioInfoTool.ToolName,
+			because: "asking the environment whether it answers is the check that does not reload the runtime again");
 	}
 
 	[Test]
@@ -99,6 +103,23 @@ public sealed class RestartStatusToolTests {
 		// Assert
 		response.Status.Should().Be("timedout", because: "the readiness wait ended without the instance answering its health-check");
 		response.ExitCode.Should().Be(1, because: "a timed-out readiness wait finished with a non-zero exit code");
+	}
+
+	[Test]
+	[Description("ENG-102333: surfaces requestfailed for a restart whose request itself failed, so an agent that already got an in-progress answer learns that no restart happened.")]
+	public void GetStatus_Should_ReturnRequestFailed_WhenTheRestartRequestFailed() {
+		// Arrange
+		RestartOperationRegistry registry = new();
+		RestartOperationRecord begun = registry.Begin("tenant-a", "sandbox");
+		registry.FinishRequestFailed(begun.OperationId, 1);
+		RestartStatusTool tool = new(registry, CreateResolver("tenant-a"));
+
+		// Act
+		RestartStatusResponse response = tool.GetStatus(new RestartStatusArgs("sandbox", null));
+
+		// Assert
+		response.Status.Should().Be("requestfailed", because: "the restart request failed, so no restart is known to have happened");
+		response.ExitCode.Should().Be(1, because: "the failed request's exit code is kept on the record");
 	}
 
 	[Test]

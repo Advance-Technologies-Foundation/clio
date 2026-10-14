@@ -105,6 +105,11 @@ The payload is CLASSIFIED, never wrapped blindly. Refused shapes:
 - **empty `{}`** — keeps today's missing-parameter error unless the tool declares capability (below).
 - an argument the tool binds as an object but which arrives as a **JSON string**: refused with a
   shape-naming error. It is never parsed — accepting stringified JSON would widen the contract for good.
+  This is about an argument DECLARED as an object. The process-designer JSON documents (`descriptor`,
+  `operations`) run the other way: they were declared as strings, so the string form IS their contract,
+  and ENG-100153 widened them to the value as well — bound as `JsonElement` and read by
+  `McpToolArgumentSupport.TryReadJsonDocumentArgument`. That keeps an existing form; it does not add a
+  stringified one.
 
 Two EXPLICIT, fail-closed declarations opt a tool out of a refusal. Both live in
 `Tools/McpFlatArgumentContract.cs`, both go on the tool METHOD, and neither is ever inferred from the

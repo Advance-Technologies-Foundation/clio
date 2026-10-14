@@ -45,6 +45,19 @@ DESCRIPTION
     DataService/json/SyncReply/InsertQuery (a direct insert into the section
     tables) and therefore accepts no template arguments.
 
+    After the application is created, clio clears the menu cache (module
+    structure, workplaces, sections) of its own Creatio session, so the new
+    section appears in the menu that session reads without clearing Redis.
+    A failed clear is printed as a warning and does not fail the command.
+
+    Other sessions keep the old menu. An open browser tab clears its own
+    cache only when it receives the ConfigurationStructureChanged websocket
+    message, so a tab that was not connected at that moment keeps the old
+    menu across reloads. On success clio prints the call that fixes such a
+    tab: run it in the developer console of that tab, then reload the tab.
+    Never clear Redis for this: it logs out every user. Other API sessions
+    keep the old menu until their session ends.
+
 SYNOPSIS
     clio create-app [options]
 

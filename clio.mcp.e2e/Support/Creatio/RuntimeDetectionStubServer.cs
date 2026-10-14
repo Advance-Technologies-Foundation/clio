@@ -303,6 +303,18 @@ http.createServer((request, response) => {
       sendJson(response, 200, JSON.parse(config.PackageSynchronizationResponse));
       return;
     }
+    // page-smoke (ENG-103032): the Shell answers the given page only to a browser carrying the session cookie the
+    // login above sets, and redirects anyone else to the login form - so a pass proves the cookies were injected.
+    if (config.ShellPageHtml && request.method === "GET" && (url.startsWith("/0/Shell") || url.startsWith("/Shell"))) {
+      if ((request.headers.cookie || "").includes(".ASPXAUTH=stub-auth")) {
+        response.writeHead(200, { "Content-Type": "text/html" });
+        response.end(config.ShellPageHtml);
+      } else {
+        response.writeHead(302, { "Location": "/0/Login/NuiLogin.aspx" });
+        response.end();
+      }
+      return;
+    }
     if (request.method === "POST" && url === "/ServiceModel/AuthService.svc/Login") {
       sendJson(
         response,
@@ -828,7 +840,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? DesignerPackageName = null,
 	string? DesignerSchemaName = null,
 	string? PackageSynchronizationResponse = null,
-	bool NonJsonSysSettingsWriteEnabled = false);
+	bool NonJsonSysSettingsWriteEnabled = false,
+	string? ShellPageHtml = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

@@ -32,8 +32,8 @@ namespace Clio.Mcp.E2E;
 /// <c>LoadMobileTemplateProbe</c> template read through the real <c>clio mcp-server</c> process, so a
 /// regression in that MCP surface (a crash in the template probe, or a diff that regresses to a single
 /// root merge the mobile diff engine would array-replace) is caught here. Every test degrades to
-/// <see cref="Assert.Ignore(string)"/> with an explicit reason when the feature flag, a reachable
-/// environment, or a seeded page is missing — but a conversion failure on a seeded page always fails
+/// <see cref="Assert.Ignore(string)"/> with an explicit reason when a reachable environment or a
+/// seeded page is missing — but a conversion failure on a seeded page always fails
 /// the test: only missing preconditions may Ignore, never a runtime error.
 /// </summary>
 [TestFixture]
@@ -2475,18 +2475,23 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	};
 
 	/// <summary>
-	/// Gates on the converter tool being advertised. The suite-owned clio home built by
-	/// <see cref="McpSharedHomeSetUpFixture"/> forces <c>mobile-page-converter</c> on, so an absent tool is
-	/// a REGRESSION (the feature gate or the tool registration broke) and never "this machine has the flag
+	/// Gates on the converter tool being advertised. Since ENG-94638 the tool is ungated, so an absent tool
+	/// is a REGRESSION (a re-gate, or the tool registration broke) and never "this machine has the flag
 	/// off" — that ambient dependency is what made the suite's effective test set a property of which build
-	/// agent picked up the build.
+	/// agent picked up the build, and GA removed it outright rather than papering over it.
 	/// </summary>
 	private static async Task RequireConverterToolAsync(ArrangeContext context) {
-		IReadOnlyCollection<string> toolNames =
-			await context.Session.ListReachableToolNamesAsync(context.CancellationTokenSource.Token);
-		toolNames.Should().Contain(ToolName,
-			because: "the suite-owned clio home enables 'mobile-page-converter', so the tool must be advertised "
-				+ "regardless of the settings on the machine running the suite");
+		IReadOnlyList<ToolContractIndexEntry> index =
+			await context.Session.GetToolContractIndexAsync(context.CancellationTokenSource.Token);
+		ToolContractIndexEntry entry = index.SingleOrDefault(item =>
+			string.Equals(item.Name, ToolName, StringComparison.OrdinalIgnoreCase));
+		entry.Should().NotBeNull(
+			because: "the converter must appear in the discovery index on a server with no feature configuration");
+		entry!.Destructive.Should().BeFalse(
+			because: "asserting the NAME would prove nothing - it comes from the static, unfiltered "
+				+ "CanonicalToolNames and survives a re-gate. The destructive hint is resolved from the "
+				+ "FEATURE-FILTERED invoker registry and fails CLOSED, so a re-gated tool keeps its index "
+				+ "entry and flips to destructive=true. This line is what makes the precondition real");
 	}
 
 

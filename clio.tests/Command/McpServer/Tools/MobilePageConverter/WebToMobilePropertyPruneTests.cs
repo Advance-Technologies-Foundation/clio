@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using FluentAssertions;
 using NUnit.Framework;
@@ -669,7 +670,7 @@ public sealed class WebToMobilePropertyPruneTests {
 	/// It takes no version, because the gate has none: the record carries the loaded payload's inherited
 	/// surface and nothing else. A test that wants the prune refused supplies a different SURFACE.
 	/// </remarks>
-	private static WebToMobileAnalysisService.MobileRegistryGeneration Generation(
+	private static MobileRegistryGeneration Generation(
 		IReadOnlyDictionary<string, JsonElement> baseInputs = null,
 		bool omitBaseInputs = false) =>
 		new(omitBaseInputs ? null : baseInputs ?? LiveMobileCatalog().GlobalReferences?.BaseInputs);
@@ -687,6 +688,35 @@ public sealed class WebToMobilePropertyPruneTests {
 		],
 	};
 
+	[Test]
+	[Description("Once the registry publishes the crt.TimelineTile inputs, a converted tile keeps them and loses the Designer-only keys the mobile runtime does not read. The Mobile Designer neither reads nor needs them (ENG-101924).")]
+	public void Analyze_WhenRegistryDeclaresTimelineTileInputs_ShouldPruneDesignerOnlyTileKeys() {
+		// Arrange
+		ComponentRegistryEntry tile = new() {
+			ComponentType = "crt.TimelineTile",
+			Inputs = new[] { "data", "linkedColumn", "sortedByColumn", "ownerColumn", "columnsFlexConfig" }
+				.ToDictionary(name => name, _ => JsonSerializer.SerializeToElement(new { type = "string" })),
+		};
+		PageBundleInfo bundle = Bundle("""
+			[ { "name": "Main", "type": "crt.FlexContainer", "items": [
+				{ "name": "Timeline", "type": "crt.Timeline", "masterSchemaId": "$Id", "items": [
+					{ "name": "TimelineTile_Call", "type": "crt.TimelineTile", "linkedColumn": "Opportunity",
+					  "sortedByColumn": "StartDate", "ownerColumn": "CreatedBy", "data": { "schemaName": "Call" },
+					  "filters": "$TimelineTile_Call_Items", "icon": "call-icon", "iconPosition": "only-icon",
+					  "classes": ["view-element"] } ] } ] } ]
+			""");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(bundle, generation: Generation(), registryOverrides: [tile]);
+
+		// Assert
+		JsonObject values = Values(guide, "TimelineTile_Call");
+		values.Select(pair => pair.Key).Should().Contain(["data", "linkedColumn", "sortedByColumn", "ownerColumn"],
+			because: "TimelineTileConfig.fromJson reads these, and a tile without them renders nothing");
+		values.Select(pair => pair.Key).Should().NotContain(["filters", "icon", "iconPosition", "classes"],
+			because: "the mobile runtime does not read these keys, so the prune removes them once the tile contract is declared");
+	}
+
 	/// <summary>
 	/// Runs the analysis. <paramref name="autoTwinNames"/> is what makes an element MERGE instead of insert:
 	/// the walk emits an auto-twin when the web template declares a baseline node of that name AND the mobile
@@ -696,12 +726,16 @@ public sealed class WebToMobilePropertyPruneTests {
 	/// </summary>
 	private static MobilePageConversionGuide Analyze(
 		PageBundleInfo bundle,
-		WebToMobileAnalysisService.MobileRegistryGeneration generation,
+		MobileRegistryGeneration generation,
 		IReadOnlyCollection<string> extraMobileTypes = null,
 		WebToMobilePageConversionRules rules = null,
-		IReadOnlyDictionary<string, string> autoTwinNames = null) {
+		IReadOnlyDictionary<string, string> autoTwinNames = null,
+		IReadOnlyCollection<ComponentRegistryEntry> registryOverrides = null) {
 		ComponentCatalogState mobile = LiveMobileCatalog();
 		var mobileByType = mobile.Entries.ToDictionary(e => e.ComponentType, e => e, StringComparer.OrdinalIgnoreCase);
+		foreach (ComponentRegistryEntry entry in registryOverrides ?? []) {
+			mobileByType[entry.ComponentType] = entry;
+		}
 		var mobileTypes = new HashSet<string>(mobileByType.Keys, StringComparer.OrdinalIgnoreCase);
 		foreach (string extra in extraMobileTypes ?? []) {
 			// A type the conversion is allowed to TARGET but the registry does not describe — the unknown-type

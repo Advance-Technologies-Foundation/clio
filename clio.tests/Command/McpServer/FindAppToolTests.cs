@@ -263,6 +263,43 @@ public sealed class FindAppToolTests {
 			because: "the redactor replaces the URI with a stable placeholder rather than dropping the whole message");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Returns success:false with the platform message when the real command's sections batch query fails, instead of a success envelope with empty sections (ENG-102120).")]
+	public void FindApp_Should_Return_Error_Envelope_When_Sections_Query_Fails() {
+		// Arrange
+		const string selectUrl = "http://localhost/select";
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(selectUrl);
+		applicationClient
+			.ExecutePostRequest(selectUrl, Arg.Is<string>(body => body.Contains("SysInstalledApp")))
+			.Returns(JsonSerializer.Serialize(new {
+				success = true,
+				rows = new[] {
+					new { Id = "11111111-1111-1111-1111-111111111111", Code = "AppOne", Name = "App One", Version = "1.0.0" }
+				}
+			}));
+		applicationClient
+			.ExecutePostRequest(selectUrl, Arg.Is<string>(body => body.Contains("ApplicationSection")))
+			.Returns(JsonSerializer.Serialize(new { success = false, errorInfo = new { message = "Column not found" } }));
+		FindAppCommand resolvedCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>());
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<FindAppCommand>(Arg.Any<FindAppOptions>()).Returns(resolvedCommand);
+		FindAppTool tool = new(resolvedCommand, ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		FindAppResponse response = tool.FindApp(new FindAppArgs("dev"));
+
+		// Assert
+		response.Success.Should().BeFalse(
+			because: "a failed section query must fail the tool call, not look like applications without sections");
+		response.Applications.Should().BeNull(
+			because: "an error envelope must not carry a partial application list");
+		response.Error.Should().Contain("Column not found",
+			because: "the caller must see the platform message that explains the failure");
+	}
+
 	private static (FindAppTool Tool, IToolCommandResolver Resolver) CreateTool(IReadOnlyList<AppSearchResult> results) {
 		FindAppCommand resolvedCommand = Substitute.For<FindAppCommand>(
 			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>());

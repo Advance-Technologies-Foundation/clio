@@ -286,12 +286,13 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 			because: "successful get-page calls should not include an error payload");
 	}
 
-	[Test]
-	[Description("With include-operations=false, get-page replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts in the MCP response, while meta.json on disk keeps the full operation list.")]
+	[TestCase(false)]
+	[TestCase(null)]
+	[Description("With include-operations=false - and, since ENG-103023, when the argument is omitted - get-page replaces page.ownBodySummary.viewConfigDiffOps with viewConfigDiffOpCounts in the MCP response, while meta.json on disk keeps the full operation list.")]
 	[AllureTag(ToolName)]
-	[AllureName("get-page returns operation counts instead of the operation list when include-operations is false")]
-	[AllureDescription("Reads the first page of the seeded application AutoTestClioMcp with include-operations=false and verifies the response summary carries viewConfigDiffOpCounts and no viewConfigDiffOps, and meta.json still carries viewConfigDiffOps.")]
-	public async Task PageGetTool_ShouldReturnOperationCounts_WhenIncludeOperationsIsFalse() {
+	[AllureName("get-page returns operation counts instead of the operation list by default and when include-operations is false")]
+	[AllureDescription("Reads the first page of the seeded application AutoTestClioMcp with include-operations=false and with the argument omitted, and verifies the response summary carries viewConfigDiffOpCounts and no viewConfigDiffOps, and meta.json still carries viewConfigDiffOps.")]
+	public async Task PageGetTool_ShouldReturnOperationCounts_WhenIncludeOperationsIsFalseOrOmitted(bool? includeOperations) {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
 		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
@@ -302,18 +303,20 @@ public sealed class PageGetToolE2ETests : McpContractFixtureBase {
 			arrangeContext.EnvironmentName,
 			ApplicationCode);
 
+		Dictionary<string, object?> args = new() {
+			["schema-name"] = candidate.Page.SchemaName,
+			["environment-name"] = arrangeContext.EnvironmentName
+		};
+		if (includeOperations is not null) {
+			args["include-operations"] = includeOperations;
+		}
+
 		// Act
 		CallToolResult callResult = await AllureApi.Step(
-			"Act by reading the page with include-operations=false",
+			$"Act by reading the page with include-operations={includeOperations?.ToString() ?? "omitted"}",
 			async () => await arrangeContext.Session.CallToolAsync(
 				ToolName,
-				new Dictionary<string, object?> {
-					["args"] = new Dictionary<string, object?> {
-						["schema-name"] = candidate.Page.SchemaName,
-						["environment-name"] = arrangeContext.EnvironmentName,
-						["include-operations"] = false
-					}
-				},
+				new Dictionary<string, object?> { ["args"] = args },
 				arrangeContext.CancellationTokenSource.Token));
 		PageGetResponse response = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(callResult);
 		// The typed summary defaults viewConfigDiffOps to an empty list, so absence is read from the wire JSON.

@@ -82,8 +82,7 @@ internal static class DataServiceResponse {
 			+ "the DataService, which enforces object permissions, so a protected system object is refused "
 			+ "regardless of the authenticated user's administrative rights. Bindings for ordinary schemas are "
 			+ "unaffected. For record-level access rights use the set-record-rights tool (it goes through the "
-			+ "native RightsService instead). Object-operation rights (SysEntitySchemaOperationRight) have no "
-			+ "administration-capable path in clio yet — deploy them through Creatio's own Object permissions "
-			+ "administration or a package installation script.";
+			+ "native RightsService instead). For object operation rights (SysEntitySchemaOperationRight) use the "
+			+ "set-object-rights tool, which goes through the native Object permissions service instead.";
 	}
 }

@@ -136,9 +136,13 @@ public class ApplyEnvironmentManifestCommand : Command<ApplyEnvironmentManifestO
 				Value = setting.Value
 			};
 			sysSettingOption.CopyFromEnvironmentSettings(options);
+			//An entry without a value only writes to a setting that already exists: creating a setting just
+			//to hold an empty or "undefined" value would leave an unusable definition on the environment.
 			ApplyEntryOrRecordFailure(failures, $"system setting '{setting.Code}'",
 				"the environment did not update it",
-				() => _sysSettingCommand.UpdateSysSetting(sysSettingOption));
+				() => setting.HasValue()
+					? _sysSettingCommand.CreateIfMissingAndUpdateSysSetting(sysSettingOption)
+					: _sysSettingCommand.UpdateSysSetting(sysSettingOption));
 		}
 	}
 

@@ -37,6 +37,24 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-103085: a filter nested inside setElement's readData STOPS the edit before anything is posted, and the refusal points to the setFilter operation.")]
+	public void ModifyProcess_ShouldNotPost_WhenABlockCarriesAKeyTheServerWouldDrop() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ModifyBusinessProcessService service = CreateService(client);
+		const string operations = "[{\"op\":\"setElement\",\"elementName\":\"Read1\",\"elementUpdate\":"
+			+ "{\"readData\":{\"source\":\"Contact\",\"filter\":{}}}}]";
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*'elementUpdate.readData.filter'*setFilter*",
+			because: "the refusal names the misplaced key and the operation that sets a filter");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Posts the process identity + operations array wrapped under 'request' to the ModifyProcess route and returns the applied-operation count on success.")]
 	public void ModifyProcess_ShouldPostWrappedRequestToModifyRoute_AndReturnResult_OnSuccess() {
 		// Arrange
@@ -149,6 +167,57 @@ public sealed class ModifyBusinessProcessServiceTests {
 			.WithMessage("*index 2*",
 				because: "the caller has to learn WHICH operation refused, which is the whole reason the server "
 					+ "reports an index separately from the completion count");
+	}
+
+	[Test]
+	[Description("A failure that still names the schema came AFTER the save - the tracing switch failed behind a saved edit (ENG-102111). The edit exists, so the layout report is relayed as the elements it touched, never as the re-send offer, which would invite repeating a batch that is already saved; and the edit's warnings travel with the error.")]
+	public void ModifyProcess_ShouldReportTheSavedEditsLayoutAndWarnings_WhenTheFailureCameAfterTheSave() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"schemaName\":\"UsrProc\","
+			+ "\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\",\"appliedOperations\":1,\"failedOperationIndex\":1,"
+			+ "\"errorMessage\":\"The edit WAS saved, but switching process tracing failed.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"],"
+			+ "\"layoutChange\":{\"reason\":\"redraw\",\"elements\":[\"Calc\"]}}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the tracing switch failed")
+			.Which.Message;
+		message.Should().Contain("Affected elements: Calc.",
+			because: "the saved edit's layout report still names what moved");
+		message.Should().NotContain("ASK THE USER",
+			because: "the edit is saved, so offering to re-send the same operations would apply them twice");
+		message.Should().Contain("Script task 'Calc' needs a compile.",
+			because: "the warnings describe an edit that exists");
+	}
+
+	[Test]
+	[Description("A layout refusal comes BEFORE the save, so it names no schema: it is still relayed as the question it is - the elements plus the re-send offer - and the warnings of an edit that was never saved are not. Pins the other side of the schemaUId condition, which a flipped test would turn into a silently dropped question (ENG-102111).")]
+	public void ModifyProcess_ShouldRelayTheLayoutQuestion_AndNoWarnings_WhenNothingWasSaved() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"{\"ModifyProcessResult\":{\"success\":false,\"appliedOperations\":1,"
+			+ "\"errorMessage\":\"This edit re-draws the diagram.\","
+			+ "\"warnings\":[\"Script task 'Calc' needs a compile.\"],"
+			+ "\"layoutChange\":{\"reason\":\"redraw\",\"elements\":[\"Calc\"]}}}");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the edit was refused")
+			.Which.Message;
+		message.Should().Contain("ASK THE USER",
+			because: "nothing was saved, so the refusal is a question the caller has to relay");
+		message.Should().NotContain("needs a compile",
+			because: "warnings of an edit that was never saved would describe a state that does not exist");
 	}
 
 	[Test]

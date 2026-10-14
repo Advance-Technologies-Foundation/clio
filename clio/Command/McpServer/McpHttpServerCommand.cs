@@ -21,7 +21,7 @@ using AspNetWebApplicationBuilder = Microsoft.AspNetCore.Builder.WebApplicationB
 namespace Clio.Command.McpServer;
 
 [Verb("mcp-http", HelpText = "Starts MCP server in HTTP transport mode")]
-public class McpHttpServerCommandOptions : BaseCommandOptions
+public class McpHttpServerCommandOptions : McpHostCommandOptions
 {
 	[Option("port", Default = 8005, Required = false, HelpText = "Port to listen on")]
 	public int Port { get; set; }
@@ -223,6 +223,8 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 		if (authConfiguration.Enabled) {
 			McpHttpAuthentication.ConfigureServices(builder.Services, authConfiguration);
 		}
+
+		WarnIgnoredFailOnOptions(options, ConsoleLogger.Instance);
 
 		// ENG-93386 Story 7 (FR-12/D-6): --platform-api-key is retired as the default front door
 		// but retained as a dev/offline fallback for when OAuth is not configured. Once OAuth IS
@@ -671,6 +673,21 @@ public class McpHttpServerCommand : Command<McpHttpServerCommandOptions>
 	/// <param name="host">The <c>--host</c> value.</param>
 	/// <returns><see langword="true"/> when the bind is not loopback.</returns>
 	internal static bool IsPublicBind(string host) => !TargetUrlValidator.IsLoopbackIpOrLocalhost(host);
+
+	/// <summary>
+	/// Logs the startup warning for fail-on flags passed to <c>mcp-http</c>, which accepts them only for
+	/// compatibility and ignores them (see <see cref="McpHostCommandOptions"/>).
+	/// </summary>
+	/// <param name="options">The parsed <c>mcp-http</c> options.</param>
+	/// <param name="logger">The logger the warning is written to.</param>
+	/// <returns>The logged warning, or <see langword="null"/> when no fail-on flag was passed.</returns>
+	internal static string WarnIgnoredFailOnOptions(McpHttpServerCommandOptions options, ILogger logger) {
+		string warning = McpHostCommandOptions.DescribeIgnoredFailOnOptions(options);
+		if (warning is not null) {
+			logger.WriteWarning(warning);
+		}
+		return warning;
+	}
 
 	/// <summary>
 	/// ENG-93386 Story 7 (FR-12/D-6): <see langword="true"/> when both standard OAuth authorization

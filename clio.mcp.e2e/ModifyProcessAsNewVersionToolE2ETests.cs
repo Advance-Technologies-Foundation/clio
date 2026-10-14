@@ -19,7 +19,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for <c>modify-business-process-as-new-version</c>. NOT in CI — run manually. The
 /// advertised-tool test is hermetic; the functional tests build a uniquely named process and then save
-/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.6.6.40 or newer and a
+/// versions of it, gated on a reachable environment carrying CrtProcessBuilder 1.6.6.92 or newer and a
 /// writable <c>Custom</c> package.
 /// </summary>
 /// <remarks>
@@ -55,6 +55,52 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		toolNames.Should().Contain(ToolName,
 			because: $"the {ToolName} MCP tool must be discoverable on the lazy surface (get-tool-contract "
 				+ "compact index) even though it is not resident in tools/list");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, operations sent as a JSON ARRAY bind AND pass the tool's operations reader, while an object in the same place reaches that reader and is refused by it (ENG-100153). The environment is well-formed but unregistered, so the target guard passes and the call stops only after the reader.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process-as-new-version reads an operations array over the real server")]
+	public async Task ModifyProcessAsNewVersion_Should_ReadAnOperationsArray_AndRefuseAnObject() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		string unregisteredEnvironment = $"clio-e2e-unregistered-{Guid.NewGuid():N}";
+		using JsonDocument operations = JsonDocument.Parse(
+			"[{\"op\":\"removeElement\",\"elementName\":\"NotifyAccountOwner\"}]");
+		using JsonDocument notAnArray = JsonDocument.Parse("{\"op\":\"removeElement\"}");
+
+		// Act
+		string arrayResultJson = JsonSerializer.Serialize(await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = operations.RootElement.Clone()
+			}));
+		CallToolResult objectResult = await CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = unregisteredEnvironment,
+				["process-name"] = "UsrAccount_Onboard",
+				["operations"] = notAnArray.RootElement.Clone()
+			});
+		string objectResultJson = JsonSerializer.Serialize(objectResult);
+
+		// Assert
+		arrayResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an operations array must bind rather than be refused as a non-string before the tool runs");
+		arrayResultJson.Should().NotContain("operations must be a JSON array",
+			because: "the array passed the tool's reader - the call stops later, on the unregistered environment");
+		arrayResultJson.Should().Contain(unregisteredEnvironment,
+			because: "the array call must get as far as resolving the environment, the step AFTER the reader - a "
+				+ "reader that refused the array as missing would answer before naming it");
+		arrayResultJson.Should().Contain("not found",
+			because: "the unregistered environment is what stops the array call, which proves the reader let it through");
+		objectResultJson.Should().Contain("operations must be a JSON array, or a string holding one",
+			because: "the same call with an object reaches the reader and is refused by it, which proves the array "
+				+ "above was read, not merely bound");
+		string.Join(" ", objectResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "operations of the wrong kind are a caller error, exit code 1 over the real server too - not -1, "
+					+ "which means clio itself broke");
 	}
 
 	[Test]
@@ -94,6 +140,19 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 				+ "an agent that assumes otherwise stops one step early");
 		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "a saved version stays interpreted and needs no compile (ENG-95706)");
+		JsonObject digest = DescribedProcessGraph.ReadWriteDigest(callResult);
+		digest["summary"]!["name"]!.GetValue<string>().Should().Be($"{processName}Custom1",
+			because: "the digest summarizes the NEW version, not its source (ENG-103023)");
+		digest["summary"]!["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+			because: "the digest states that the version just saved is not the one that runs (review #9)");
+		digest["changesAgainst"]!.GetValue<string>().Should().Contain(processName,
+			because: "the change list is relative to the source version, and says so");
+		digest["changes"]!["parametersAdded"]!.ToJsonString().Should().Contain("RecordId",
+			because: "the operation added RecordId to the clone, so the change list against the source names it");
+		digest["changes"]!["elementsChanged"].Should().BeNull(
+			because: "task1 maps a process parameter, so its stored value carries that parameter's UId as a "
+				+ "[#...[Parameter:{uid}]#] macro; the clone keeps the source's identities, so an edit that touched no "
+				+ "element must not report it as changed (review #8)");
 
 		// Reading the family back is the only proof the version really exists and really carries the edit: a
 		// server that answered success while saving nothing would satisfy every assertion above.
@@ -104,6 +163,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = $"{processName}Custom1"
 			});
 		JsonSerializer.Serialize(describeResult).Should().Contain("RecordId",
@@ -194,6 +254,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
+				["mode"] = "full",
 				["process-name"] = $"{processName}Custom1"
 			});
 		JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);
@@ -240,6 +301,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		  "name": "{{processName}}",
 		  "caption": "Clio BP Version E2E",
 		  "packageName": "Custom",
+		  "parameters": [ { "name": "MyText", "type": "Text", "direction": "In" } ],
 		  "elements": [
 		    { "name": "StartEvent1", "type": "startEvent" },
 		    { "name": "task1", "type": "performTask" },
@@ -248,6 +310,9 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		  "flows": [
 		    { "source": "StartEvent1", "target": "task1" },
 		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "mappings": [
+		    { "elementName": "task1", "elementParameter": "Recommendation", "processParameter": "MyText" }
 		  ]
 		}
 		""";
@@ -289,7 +354,7 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 		string? environmentName = settings.Sandbox.EnvironmentName;
 		if (requireReachableEnvironment) {
 			if (string.IsNullOrWhiteSpace(environmentName)) {
-				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.6.6.40 or "
+				Assert.Ignore("Configure McpE2E:Sandbox:EnvironmentName (carrying CrtProcessBuilder 1.6.6.92 or "
 					+ "newer) to run modify-business-process-as-new-version MCP E2E.");
 			}
 			if (!await ClioCliCommandRunner.IsEnvironmentReachableAsync(settings, environmentName!)) {

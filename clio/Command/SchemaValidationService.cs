@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Clio.Command.McpServer.Tools.MobileComponentRegistry;
 using Clio.Common;
 using McpServer.Resources;
 
@@ -383,6 +384,15 @@ public static class SchemaValidationService
 	/// <returns>A tuple of blocking errors and non-blocking warnings.</returns>
 	public static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
 		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		IReadOnlyDictionary<string, string>? explicitResources = null) =>
+		ValidateMobilePage(body, allowedMobileTypes, webOnlyTypes,
+			DeclaredPropertyIndex.Disabled, explicitResources);
+
+	/// <inheritdoc cref="ValidateMobilePage(string, IReadOnlySet{string}, IReadOnlySet{string}, IReadOnlyDictionary{string, string})"/>
+	/// <param name="declaredInputs">The mobile registry's per-type inputs; narrows the binding check.</param>
+	internal static (List<string> Errors, List<string> Warnings) ValidateMobilePage(
+		string body, IReadOnlySet<string> allowedMobileTypes, IReadOnlySet<string> webOnlyTypes,
+		DeclaredPropertyIndex declaredInputs,
 		IReadOnlyDictionary<string, string>? explicitResources = null) {
 		var errors = new List<string>();
 		var warnings = new List<string>();
@@ -416,7 +426,7 @@ public static class SchemaValidationService
 		SchemaValidationResult indicatorProvidingResult = ValidateMobileIndicatorWidgetProviding(body);
 		if (!indicatorProvidingResult.IsValid) errors.AddRange(indicatorProvidingResult.Errors);
 
-		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body);
+		SchemaValidationResult bindingResult = ValidateMobileFieldBindings(body, declaredInputs);
 		if (!bindingResult.IsValid) errors.AddRange(bindingResult.Errors);
 
 		SchemaValidationResult dsAttrTypeResult = ValidateMobileDataSourceAttributeTypes(body);
@@ -1475,7 +1485,16 @@ public static class SchemaValidationService
 	/// <returns>
 	/// A <see cref="SchemaValidationResult"/> that is invalid when an undeclared attribute binding is found.
 	/// </returns>
-	public static SchemaValidationResult ValidateMobileFieldBindings(string body) {
+	public static SchemaValidationResult ValidateMobileFieldBindings(string body) =>
+		ValidateMobileFieldBindings(body, DeclaredPropertyIndex.Disabled);
+
+	/// <summary>
+	/// Same check, limited to the top-level properties <paramref name="declaredInputs"/> declares for the element's
+	/// type, plus <c>control</c> on every element. It is only as complete as the registry: another property a
+	/// preprocessor reads but the registry omits is not checked (ENG-101924).
+	/// </summary>
+	internal static SchemaValidationResult ValidateMobileFieldBindings(
+		string body, DeclaredPropertyIndex declaredInputs) {
 		var result = new SchemaValidationResult { IsValid = true };
 		if (string.IsNullOrWhiteSpace(body)) {
 			return result;
@@ -1495,7 +1514,7 @@ public static class SchemaValidationService
 			if (declaredAttributes.Count == 0) {
 				return result; // nothing to cross-check against
 			}
-			HashSet<string> referencedAttributes = CollectMobileViewBindings(root);
+			HashSet<string> referencedAttributes = CollectMobileViewBindings(root, declaredInputs);
 			foreach (string attr in referencedAttributes.Where(a => !declaredAttributes.Contains(a))) {
 				result.Errors.Add(
 					$"viewConfigDiff binds to '${attr}' but no matching attribute is declared in viewModelConfigDiff/viewModelConfig.");
@@ -1984,7 +2003,8 @@ public static class SchemaValidationService
 			string.Equals(last, AttributesPropertyName, StringComparison.OrdinalIgnoreCase);
 	}
 
-	private static HashSet<string> CollectMobileViewBindings(JsonElement root) {
+	private static HashSet<string> CollectMobileViewBindings(
+		JsonElement root, DeclaredPropertyIndex declaredInputs) {
 		var bindings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 		if (!root.TryGetProperty(ViewConfigDiffPropertyName, out JsonElement vcd) ||
 			vcd.ValueKind != JsonValueKind.Array) {
@@ -1997,22 +2017,40 @@ public static class SchemaValidationService
 			JsonElement values = entry.TryGetProperty(ValuesPropertyName, out JsonElement v)
 				? v
 				: entry;
-			if (values.ValueKind != JsonValueKind.Object) {
-				continue;
+			if (values.ValueKind == JsonValueKind.Object) {
+				CollectDeclaredPropertyBindings(values, declaredInputs, bindings);
 			}
-			ExtractDollarBindings(values, bindings);
 		}
 		return bindings;
 	}
 
-	private static void ExtractDollarBindings(JsonElement obj, HashSet<string> bindings) {
-		foreach (JsonElement value in obj.EnumerateObject().Select(p => p.Value)) {
-			if (value.ValueKind == JsonValueKind.String) {
-				if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
-					bindings.Add(attrName);
-				}
-			} else if (value.ValueKind == JsonValueKind.Object) {
-				ExtractDollarBindings(value, bindings);
+	private static void CollectDeclaredPropertyBindings(
+		JsonElement values, DeclaredPropertyIndex declaredInputs, HashSet<string> bindings) {
+		// A merge carries no type, so every property is checked.
+		string componentType = values.TryGetProperty(TypePropertyName, out JsonElement typeElement) &&
+			typeElement.ValueKind == JsonValueKind.String
+				? typeElement.GetString()
+				: null;
+		IEnumerable<JsonProperty> checkedProperties = values.EnumerateObject()
+			.Where(property => componentType is null || IsAlwaysCheckedProperty(property.Name)
+				|| declaredInputs.DeclaresProperty(componentType, property.Name));
+		foreach (JsonProperty property in checkedProperties) {
+			ExtractDollarBindings(property.Value, bindings);
+		}
+	}
+
+	// The runtime copies `control` to `bindTo` on any named element, declared or not.
+	private static bool IsAlwaysCheckedProperty(string propertyName) =>
+		string.Equals(propertyName, "control", StringComparison.OrdinalIgnoreCase);
+
+	private static void ExtractDollarBindings(JsonElement value, HashSet<string> bindings) {
+		if (value.ValueKind == JsonValueKind.String) {
+			if (TryNormalizeDollarBinding(value.GetString(), out string? attrName) && attrName != null) {
+				bindings.Add(attrName);
+			}
+		} else if (value.ValueKind == JsonValueKind.Object) {
+			foreach (JsonProperty property in value.EnumerateObject()) {
+				ExtractDollarBindings(property.Value, bindings);
 			}
 		}
 	}
@@ -2858,19 +2896,36 @@ public static class SchemaValidationService
 	/// Validates that captions on inserted widgets reference resolvable localizable resource keys.
 	/// </summary>
 	/// <remarks>
-	/// Pre-flight check based only on the body and <paramref name="explicitResources"/>.
+	/// Pre-flight check based on the body and <paramref name="explicitResources"/> and, only when a binding
+	/// does not resolve against those, on the keys <paramref name="persistedResourceKeysProvider"/> supplies.
 	/// Use <see cref="ValidateInsertedWidgetCaptionsRegistered"/> for the authoritative save-time validation.
 	/// </remarks>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <param name="explicitResources">Explicit resources passed to the save, or <c>null</c>.</param>
+	/// <param name="persistedResourceKeysProvider">
+	/// Supplies the resource keys the target schema already resolves at runtime: its stored
+	/// <c>localizableStrings</c> and the ones it inherits from its designer hierarchy. Invoked ONLY when the
+	/// body-only check left a binding unresolved, so a clean body never pays the round trip. Pass <c>null</c>
+	/// from a caller that has no target schema or must stay offline; a <c>null</c> provider, or one that yields
+	/// nothing, leaves the body-only verdict standing.
+	/// </param>
 	/// <returns>A <see cref="SchemaValidationResult"/> invalid when an inserted widget caption uses an unresolvable localizable key.</returns>
 	public static SchemaValidationResult ValidateInsertedWidgetCaptionResources(
 		string jsBody,
-		IReadOnlyDictionary<string, string>? explicitResources = null) {
+		IReadOnlyDictionary<string, string>? explicitResources = null,
+		Func<IReadOnlySet<string>>? persistedResourceKeysProvider = null) {
 		if (string.IsNullOrEmpty(jsBody)) {
 			return new SchemaValidationResult { IsValid = true };
 		}
-		return ScanInsertedWidgetCaptions(jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		IReadOnlyList<UnresolvedCaptionBinding> bindings = FindUnresolvedInsertedWidgetCaptions(
+			jsBody, BodyOnlyCaptionResolver(jsBody, explicitResources));
+		// A key the schema already stores, or inherits, resolves at runtime whether or not this call repeats it
+		// in `resources`. Without this a layout-only re-save warned once for every key an earlier call had
+		// registered (issue #1740) - the blind spot #1320 removed from the label-resource validators.
+		if (bindings.Count > 0 && persistedResourceKeysProvider?.Invoke() is { Count: > 0 } persistedKeys) {
+			bindings = bindings.Where(binding => !persistedKeys.Contains(binding.Key)).ToList();
+		}
+		return ToPerOccurrenceCaptionResult(bindings);
 	}
 
 	/// <summary>
@@ -2928,13 +2983,14 @@ public static class SchemaValidationService
 	// placeholder) whose localizable key does not satisfy <paramref name="resolves"/>. Merges are skipped
 	// (a merge may target a caption a parent schema already provides). Fail-open on empty/missing marker/
 	// unparseable body, matching the sibling content validators.
-	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) {
-		var result = new SchemaValidationResult { IsValid = true };
-		foreach (UnresolvedCaptionBinding binding in FindUnresolvedInsertedWidgetCaptions(jsBody, resolves)) {
+	private static SchemaValidationResult ScanInsertedWidgetCaptions(string jsBody, Func<string, bool> resolves) =>
+		ToPerOccurrenceCaptionResult(FindUnresolvedInsertedWidgetCaptions(jsBody, resolves));
+
+	// One error per unresolved binding, invalid when there is any - the shape the save paths report.
+	private static SchemaValidationResult ToPerOccurrenceCaptionResult(IReadOnlyList<UnresolvedCaptionBinding> bindings) {
+		var result = new SchemaValidationResult { IsValid = bindings.Count == 0 };
+		foreach (UnresolvedCaptionBinding binding in bindings) {
 			result.Errors.Add(BuildUnresolvedCaptionError(binding.Node, binding.Property, binding.Key));
-		}
-		if (result.Errors.Count > 0) {
-			result.IsValid = false;
 		}
 		return result;
 	}

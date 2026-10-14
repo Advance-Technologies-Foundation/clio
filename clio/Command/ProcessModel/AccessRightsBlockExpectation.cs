@@ -323,7 +323,7 @@ public static class AccessRightsBlockExpectation {
 			+ "of rejecting it and still answers success. The element is therefore UNCONFIGURED and will grant and "
 			+ "revoke NOTHING when it runs, silently — it has no output parameters to report that. If you asked for "
 			+ "a REVOKE, treat those permissions as still in place and do not report the change as applied. Install "
-			+ "a package that supports the element (clio install-process-builder) and re-apply the block, or "
+			+ "a package that supports the element (" + Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and re-apply the block, or "
 			+ "configure the element in the designer. If re-applying reproduces this same warning, the archive "
 			+ "bundled with THIS clio does not carry the element either — and note that its VERSION cannot tell "
 			+ "you that: the bundled package satisfies this command's [RequiresPackage] floor while still "

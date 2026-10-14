@@ -4,6 +4,7 @@ using System.Reflection;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Command.ProcessModel;
 using Clio.Common;
 using FluentAssertions;
 using ModelContextProtocol.Server;
@@ -38,7 +39,9 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations, "UsrAntonTest"));
+			"docker_fix2", "UsrSampleProcess", null) {
+			PackageName = "UsrAntonTest", Operations = JsonArgument.Text(SampleOperations)
+		});
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -94,7 +97,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(0,
@@ -118,7 +121,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.Note.Should().Be(CommandExecutionResult.CompileNotRequiredNote,
@@ -141,7 +144,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", null, SampleOperations));
+			"docker_fix2", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().NotBe(0,
@@ -162,7 +165,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"   ", "UsrSampleProcess", null, SampleOperations));
+			"   ", "UsrSampleProcess", null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -182,7 +185,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(
-			new ModifyProcessAsNewVersionArgs("docker_fix2", null, null, SampleOperations));
+			new ModifyProcessAsNewVersionArgs("docker_fix2", null, null) { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -205,7 +208,7 @@ public class ModifyProcessAsNewVersionToolTests {
 
 		// Act
 		CommandExecutionResult result = tool.ModifyProcessAsNewVersion(new ModifyProcessAsNewVersionArgs(
-			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", SampleOperations));
+			"docker_fix2", "UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55") { Operations = JsonArgument.Text(SampleOperations) });
 
 		// Assert
 		result.ExitCode.Should().Be(-1,
@@ -294,13 +297,34 @@ public class ModifyProcessAsNewVersionToolTests {
 				+ "make the tool silently unreachable rather than fail anywhere");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The version tool's contract says a batch made ONLY of setTracing is refused and where to send it instead (ENG-102111, owner decision): CrtProcessBuilder 1.6.6.92 refuses it because a version made only to flip a switch can never be deleted, and an agent that learns this from the refusal has already spent the call.")]
+	public void ModifyProcessAsNewVersion_Description_ShouldSendATracingOnlyBatchToTheInPlaceTool() {
+		// Arrange
+		MethodInfo method = typeof(ModifyProcessAsNewVersionTool)
+			.GetMethod(nameof(ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersion))!;
+
+		// Act
+		string description = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("A batch made ONLY of setTracing is refused and creates nothing",
+			because: "the contract must state the refusal before the server does");
+		description.Should().Contain("send it to modify-business-process",
+			because: "the refusal is only useful with the route that does switch tracing");
+		description.Should().Contain("CrtProcessBuilder 1.6.6.92 or newer",
+			because: "the stated floor must match the [RequiresPackage] literal setTracing raised");
+	}
+
 	private sealed class FakeCommand : ModifyProcessAsNewVersionCommand {
 		private readonly int _exitCode;
 
 		public ModifyProcessAsNewVersionOptions? CapturedOptions { get; private set; }
 
 		public FakeCommand(int exitCode = 0)
-			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<ILogger>()) {
+			: base(Substitute.For<IModifyProcessAsNewVersionService>(), Substitute.For<IProcessDescriber>(),
+				Substitute.For<ILogger>()) {
 			_exitCode = exitCode;
 		}
 

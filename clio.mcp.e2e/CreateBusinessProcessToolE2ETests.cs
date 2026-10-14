@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -12,6 +13,7 @@ using Clio.Command.ProcessModel;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -102,6 +104,16 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "a successful build reports the created schema name (run against an environment with the ProcessDesignService package and a writable Custom package)");
 		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
 			because: "a clio-built process is interpreted and needs no compile; the success result carries the compile-not-required note over the real MCP path so an agent does not force compile-creatio (ENG-95706)");
+		JsonObject digest = DescribedProcessGraph.ReadWriteDigest(callResult);
+		JsonObject summary = digest["summary"]!.AsObject();
+		summary["name"]!.GetValue<string>().Should().Be(processName,
+			because: "a successful build carries the post-write digest of the saved process, so no describe is needed to confirm it (ENG-103023)");
+		summary["checksum"]!.GetValue<string>().Should().MatchRegex("^[0-9a-f]{12}$",
+			because: "the digest carries the content checksum a later describe can be compared with");
+		summary["elements"]!.ToJsonString().Should().Contain("task1",
+			because: "the summary lists the elements the build saved");
+		summary["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
+			because: "the digest states the version standing of what was written, and a new process is its own active version (review #9)");
 
 		// Readback: describe the built process and confirm the structure is really there — a server that
 		// returned success but built nothing would be caught here, unlike the success-echo assertion above.
@@ -110,6 +122,105 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			because: "the read-back graph must contain the user-task element that was actually built");
 		describeJson.Should().Contain("buildType",
 			because: "describe returns the structured element graph (buildType tokens), confirming a real build rather than an echo");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, create-business-process builds a process from a descriptor sent as a JSON OBJECT rather than a string (ENG-100153), and describe reads it back. Before that change the binder refused the object before the tool ran, so an agent had to serialize and escape the descriptor through a shell.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process builds a process from an object descriptor")]
+	public async Task CreateBusinessProcess_Should_BuildProcess_FromAnObjectDescriptor() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpE2e{Guid.NewGuid():N}";
+		using JsonDocument descriptor = JsonDocument.Parse(BuildDescriptor(processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = descriptor.RootElement.Clone()
+		});
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "a successful build from an object descriptor returns a normal MCP tool result, as the string form does");
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "an object descriptor must bind; the refusal this replaces came from the binder, before the tool body");
+		callResultJson.Should().Contain(processName,
+			because: "a successful build from an object descriptor reports the created schema name, exactly as the string form does");
+		callResultJson.Should().Contain(CommandExecutionResult.CompileNotRequiredNote,
+			because: "the object form takes the same success path as the string form, compile-not-required note included (ENG-95706)");
+		string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		describeJson.Should().Contain("task1",
+			because: "the read-back graph must contain the element the object descriptor declared - an echo is not a build");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, an OBJECT descriptor gets past the binder into the tool body: the call is answered by the tool's own environment check rather than by an invalid-parameter-type refusal (ENG-100153). This is the binder layer the unit tests reach only through an in-process SDK adapter.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process binds an object descriptor over the real server")]
+	public async Task CreateBusinessProcess_Should_BindAnObjectDescriptor_BeforeTheToolRuns() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+		using JsonDocument descriptor = JsonDocument.Parse(BuildDescriptor("UsrAccount_Onboard"));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = "   ",
+			["descriptor"] = descriptor.RootElement.Clone()
+		});
+
+		// Assert
+		string callResultJson = JsonSerializer.Serialize(callResult);
+		callResultJson.Should().NotContain("invalid-parameter-type",
+			because: "the object descriptor must bind rather than be refused as a non-string before the tool runs");
+		callResultJson.Should().Contain("environment-name is required and cannot be empty",
+			because: "the tool's own first guard answering proves the call reached the tool body with the object bound");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a descriptor that is neither an object nor a string holding one is refused by the tool with a message naming both accepted forms (ENG-100153).")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a descriptor of the wrong JSON kind")]
+	public async Task CreateBusinessProcess_Should_RefuseADescriptorOfTheWrongKind() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = "sandbox",
+			["descriptor"] = new[] { 1, 2, 3 }
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("descriptor must be a JSON object, or a string holding one",
+			because: "an array is not a descriptor, and the refusal must name both forms the tool accepts");
+		ToolText(callResult)
+			.Should().Contain("\"exit-code\":1",
+				because: "a descriptor of the wrong kind is a caller error, exit code 1 over the real server too - not -1, "
+					+ "which means clio itself broke");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, with no Creatio needed, a call with no descriptor at all reaches the tool body and is refused there as a caller error, exit code 1 - not -1, which tells the caller that clio broke (ENG-100153). The unit tests reach the binder only in-process; this call also crosses the long-tail dispatch. The environment is unregistered, so a refusal that stopped firing could not reach a real Creatio.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a missing descriptor with exit code 1")]
+	public async Task CreateBusinessProcess_Should_RefuseAMissingDescriptor_AsACallerError() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = $"clio-e2e-unregistered-{Guid.NewGuid():N}"
+		});
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain("descriptor is required and cannot be empty",
+			because: "an absent descriptor must reach the tool body and get its own refusal, not a binder error");
+		ToolText(callResult)
+			.Should().Contain("\"exit-code\":1",
+				because: "a missing descriptor is a caller error fixed by sending one, exit code 1 over the real server "
+					+ "too - not -1, which tells the caller that clio broke and a retry will not help");
 	}
 
 	[Test]
@@ -243,6 +354,197 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				+ "this rationale claimed the text is quoted AS WRITTEN, which the same measurement disproves: a "
 				+ "parameter reference is shown by the parameter NAME, not by the metapath the caller sent");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, a generic userTask naming PreconfiguredPageUserTask is refused BY THE SERVER and the process is not created (ENG-102112). That route can never carry the preconfiguredPage block, and before CrtProcessBuilder 1.6.6.88 it built green with no page, which failed at run time with an ItemNotFoundException. Needs CrtProcessBuilder 1.6.6.88 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a generic userTask Pre-configured page")]
+	public async Task CreateBusinessProcess_Should_RefuseAGenericUserTaskPreconfiguredPage() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpGenericPrePageE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildGenericPreconfiguredPageDescriptor(processName)
+		});
+		// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
+		string text = ToolText(callResult);
+		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.88");
+
+		try {
+			// Assert
+			string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+			describeJson.Should().Contain("was not found",
+				because: "the refusal must leave nothing behind - a saved process with an unconfigured page element is "
+					+ "exactly the defect, so the message alone would not prove the fix");
+			text.Should().Contain("PrePage1",
+				because: "the refusal names the element the caller has to change");
+			text.Should().Contain("type 'preconfiguredPage'",
+				because: "the refusal names the only route that carries the page, its buttons and data sources");
+			text.Should().Contain("get-process-page-facts",
+				because: "the buttons and data sources are facts of the page, and the refusal says where to read them");
+		} finally {
+			// Only a regression leaves the page-less process behind; remove it then, and skip the slow remote
+			// delete when the refusal held.
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, processName);
+			}
+		}
+	}
+
+	[TestCase("AutoGeneratedPageUserTask", "Auto-generated page")]
+	[TestCase("UserQuestionUserTask", "User dialog")]
+	[Description("Over the real MCP path, a generic userTask naming AutoGeneratedPageUserTask or UserQuestionUserTask is refused BY THE SERVER and the process is not created (ENG-102537). Nothing in CrtProcessBuilder can configure either task, and before 1.6.6.90 such an element built green and then waited forever at run time (measured: an empty page with only Close, and a dialog that cannot be saved). Needs CrtProcessBuilder 1.6.6.90 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a user task it cannot configure")]
+	public async Task CreateBusinessProcess_Should_RefuseAUserTaskItCannotConfigure(string userTaskName,
+		string taskCaption) {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpUnconfigurableTaskE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSingleElementDescriptor(processName,
+				"{\"name\":\"Ask1\",\"type\":\"userTask\",\"userTaskName\":\"" + userTaskName + "\"}")
+		});
+		string text = ToolText(callResult);
+		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.90");
+
+		try {
+			// Assert
+			string describeJson = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+			describeJson.Should().Contain("was not found",
+				because: "the refusal must leave nothing behind - a saved process with a step nobody can complete is "
+					+ "exactly the defect");
+			text.Should().Contain("Ask1", because: "the refusal names the element the caller has to change");
+			text.Should().Contain(taskCaption, because: "the refusal names the task that cannot be built");
+			text.Should().Contain("'openEditPage'",
+				because: "the refusal names the element type that lets a user fill in a record instead");
+		} finally {
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, processName);
+			}
+		}
+	}
+
+	[Test]
+	[Description("Over the real MCP path, an element built WITHOUT its configuration block is not refused - building a skeleton and configuring it in a later call is supported - but the build answers with a warning naming the element and the setElement field that configures it (ENG-102537). Before CrtProcessBuilder 1.6.6.90 a Read data element with no source built with no warning and failed on its first run. Needs CrtProcessBuilder 1.6.6.90 on the stand.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process warns about an element left without its block")]
+	public async Task CreateBusinessProcess_Should_WarnAboutAnElementLeftWithoutItsBlock() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpBareReadDataE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildSingleElementDescriptor(processName,
+				"{\"name\":\"Read1\",\"type\":\"readData\"}")
+		});
+		string text = ToolText(callResult);
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.90");
+
+		try {
+			// Assert
+			text.Should().Contain("created (UId:",
+				because: "an unconfigured element is a warning, not a refusal - the skeleton is saved");
+			text.Should().Contain("Read data 'Read1' has NO source object",
+				because: "the caller must learn at build time that the element fails on its first run");
+			text.Should().Contain("setElement.readData",
+				because: "the warning names the operation that finishes the element in a later call");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
+	[Description("Over the real MCP path, the ENG-103085 repro - a Read data whose filter is nested inside its readData block - is refused before anything is built and pointed to the element-level filter; the same element with the filter beside the block builds, and describe-business-process shows the filter decoded with its DataSourceFilters parameter. Before the fix the nested filter was dropped by the server's serializer, the process saved green and every run read the first record.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a filter nested inside readData and builds the element-level one")]
+	public async Task CreateBusinessProcess_Should_RefuseAFilterNestedInReadData_AndBuildTheElementLevelOne() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string refusedName = $"UsrClioBpNestedFilterE2e{Guid.NewGuid():N}";
+		string builtName = $"UsrClioBpElementFilterE2e{Guid.NewGuid():N}";
+		const string filter = "{\"object\":\"Contact\",\"conditions\":[{\"column\":\"Id\",\"comparison\":\"equal\","
+			+ "\"elementParameter\":{\"elementName\":\"ContactAddedSignal\",\"parameter\":\"RecordId\"}}]}";
+
+		try {
+			// Act
+			string refused = ToolText(await CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildSignalReadDescriptor(refusedName,
+					"\"readData\":{\"source\":\"Contact\",\"mode\":\"first\",\"filter\":" + filter + "}")
+			}));
+			string refusedDescribe = JsonSerializer.Serialize(await DescribeAsync(context, refusedName));
+			string built = ToolText(await CallToolAsync(context, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildSignalReadDescriptor(builtName,
+					"\"readData\":{\"source\":\"Contact\",\"mode\":\"first\"},\"filter\":" + filter)
+			}));
+			DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, builtName));
+
+			// Assert
+			refused.Should().Contain("'readData.filter' is not a key of the 'readData' block",
+				because: "the nested filter is refused instead of being dropped by the server");
+			refused.Should().Contain("ELEMENT-level 'filter'", because: "the refusal points to where the filter belongs");
+			refusedDescribe.Should().Contain("was not found", because: "a refused descriptor builds nothing");
+			built.Should().Contain("created (UId:", because: "the element-level filter is the documented shape and builds");
+			DescribedElement read = graph.Elements.Single(element => element.Name == "ReadFiledContact");
+			read.Filter.Should().NotBeNull(because: "the element-level filter landed on the Read data element");
+			read.Filter!.Conditions.Should().Contain(condition => condition.Column == "Id",
+				because: "the decoded filter carries the Id condition bound to the signal's record");
+			read.Parameters.Should().Contain(parameter => parameter.Name == "DataSourceFilters",
+				because: "the filter is persisted in the element's DataSourceFilters parameter");
+		} finally {
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, refusedName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, refusedName);
+			}
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, builtName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, builtName);
+			}
+		}
+	}
+
+	private static string BuildSignalReadDescriptor(string processName, string readElementBody) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Read Filter Placement E2E\",\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"ContactAddedSignal\",\"type\":\"signalStart\","
+		+ "\"signal\":{\"entity\":\"Contact\",\"on\":\"added\"}},"
+		+ "{\"name\":\"ReadFiledContact\",\"type\":\"readData\"," + readElementBody + "},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"ContactAddedSignal\",\"target\":\"ReadFiledContact\"},"
+		+ "{\"source\":\"ReadFiledContact\",\"target\":\"EndEvent1\"}]}";
+
+	/// <summary>The tool's text content, unescaped - the serialized result escapes the quotes messages use.</summary>
+	private static string ToolText(CallToolResult callResult) =>
+		string.Join(" ", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+
+	private static string BuildSingleElementDescriptor(string processName, string elementJson) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Unconfigured Element E2E\","
+		+ "\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"}," + elementJson + ","
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"" + ElementName(elementJson) + "\"},"
+		+ "{\"source\":\"" + ElementName(elementJson) + "\",\"target\":\"EndEvent1\"}]}";
+
+	private static string ElementName(string elementJson) =>
+		JsonDocument.Parse(elementJson).RootElement.GetProperty("name").GetString()!;
+
+	private static string BuildGenericPreconfiguredPageDescriptor(string processName) =>
+		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Generic Pre-configured Page E2E\","
+		+ "\"packageName\":\"Custom\","
+		+ "\"elements\":[{\"name\":\"StartEvent1\",\"type\":\"startEvent\"},"
+		+ "{\"name\":\"PrePage1\",\"type\":\"userTask\",\"userTaskName\":\"PreconfiguredPageUserTask\"},"
+		+ "{\"name\":\"EndEvent1\",\"type\":\"endEvent\"}],"
+		+ "\"flows\":[{\"source\":\"StartEvent1\",\"target\":\"PrePage1\"},"
+		+ "{\"source\":\"PrePage1\",\"target\":\"EndEvent1\"}]}";
 
 	private static string BuildFormulaMappingDescriptor(string processName, string expression) =>
 		"{\"name\":\"" + processName + "\",\"caption\":\"Clio BP Create Formula E2E\",\"packageName\":\"Custom\","
@@ -430,6 +732,37 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a Read data element with a plain record filter is described with its filter DECODED, the server's filterDecodedCompletely true, and the raw platform FilterGroup of its DataSourceFilters parameter left out and marked rather than repeated (ENG-99970: the raw value was 16-27% of a measured describe result). Needs CrtProcessBuilder 1.6.6.39 on the stand; an older package does not judge the decode and the raw value stays.")]
+	[AllureTag(ToolName)]
+	[AllureName("describe-business-process leaves out a completely decoded Read data filter's raw value")]
+	public async Task CreateBusinessProcess_Should_DescribeAReadDataFilter_WithoutItsRawValue() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpReadFilterE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildFilteredReadDataDescriptor(processName)
+		});
+		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+
+		// Assert
+		JsonSerializer.Serialize(callResult).Should().Contain(processName,
+			because: "a Read data element with a record filter must build (run against an environment with a writable Custom package)");
+		DescribedElement read = graph.Elements.Single(element => element.Name == "ReadContact1");
+		read.Filter.Should().NotBeNull(because: "the Read data element's filter is decoded");
+		read.Filter!.Conditions.Should().Contain(condition => condition.Value == "ClioReadFilterProbe",
+			because: "the decoded filter carries the condition value");
+		read.FilterDecodedCompletely.Should().BeTrue(
+			because: "a plain contains condition is carried back without loss, and the server says so");
+		DescribedParameter raw = read.Parameters.Single(parameter => parameter.Name == "DataSourceFilters");
+		raw.Value.Should().BeNull(because: "the raw FilterGroup duplicates a completely decoded filter and is left out");
+		raw.ValueOmitted.Should().Be("decoded into the element's filter",
+			because: "the parameter says where its left-out value is, so it does not read as empty");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process builds a signalStart filter using a relative-date macro (Today), an integer date-part (Year(CreatedOn) = 2026) and a Time-of-day date-part (HourMinute(CreatedOn) = 14:30), and describe-business-process reads the macro and both date-parts back (round-trip of the extended filter vocabulary).")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process builds a macro + date-part filter and describe reads them back")]
@@ -502,6 +835,29 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// A signal-start process whose EntityFilters carry a distinctive constant value, so the describe read-back can
 	// prove the filter round-tripped (build serialize -> describe decode) rather than just that a signalStart exists.
 	// Contact.Name is a base column present on every stand.
+	// A Read data element whose record filter carries a distinctive constant, so the describe read-back can show
+	// the value arrived through the DECODED filter while the raw DataSourceFilters value was left out.
+	private static string BuildFilteredReadDataDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Read Filter E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "ReadContact1", "type": "readData", "caption": "Read the probe contact",
+		      "readData": { "source": "Contact", "mode": "first" },
+		      "filter": { "object": "Contact", "logicalOperation": "and",
+		        "conditions": [ { "column": "Name", "comparison": "contains", "value": "ClioReadFilterProbe" } ] } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "ReadContact1" },
+		    { "source": "ReadContact1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
 	private static string BuildFilteredDescriptor(string processName) =>
 		$$"""
 		{
@@ -1625,6 +1981,72 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		}
 		""";
 
+	[Test]
+	[Description("ENG-103023 over the real MCP path: describe-business-process with NO mode on a process whose full reply would pass the 18,000-byte spill line answers with mode=summary, carries fullChars and the way to more, and stays far below the line; an explicit mode=full still returns the whole graph.")]
+	[AllureTag(DescribeProcessTool.ToolName)]
+	[AllureName("describe-business-process answers a large process with the summary by default")]
+	public async Task DescribeProcess_Should_AnswerALargeProcessWithTheSummary_WhenNoModeIsGiven() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpLargeE2e{Guid.NewGuid():N}";
+		CallToolResult built = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildChainDescriptor(processName, taskCount: 30)
+		});
+		JsonSerializer.Serialize(built).Should().Contain("\\u0022exit-code\\u0022:0",
+			because: "the arrange step must really build the large process");
+
+		// Act
+		CallToolResult defaultResult = await context.Session.CallToolAsync(DescribeProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName
+				}
+			},
+			context.CancellationTokenSource.Token);
+		CallToolResult fullResult = await DescribeAsync(context, processName);
+
+		// Assert
+		long fullBytes = System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(fullResult));
+		long defaultBytes = System.Text.Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(defaultResult));
+		fullBytes.Should().BeGreaterThan(18_000,
+			because: "anti-vacuity: the full reply of this process must be past the line for the default to matter");
+		JsonObject summary = DescribedProcessGraph.Read(defaultResult);
+		summary["mode"]!.GetValue<string>().Should().Be("summary",
+			because: "without a mode, a process whose full reply would spill is answered with the summary");
+		summary["fullChars"]!.GetValue<int>().Should().BeGreaterThan(0,
+			because: "the summary says what mode=full would cost");
+		summary["more"]!.GetValue<string>().Should().Contain("mode=full",
+			because: "the summary names the way to the whole graph");
+		defaultBytes.Should().BeLessThan(8_192,
+			because: "the summary reply exists to stay far below the ~20 KB spill line");
+		DescribedProcessGraph.Read(fullResult)["elements"]!.AsArray().Count.Should().BeGreaterThan(30,
+			because: "an explicit mode=full still returns every element");
+	}
+
+	// A start, taskCount chained performTask elements and an end: large enough that the full describe reply passes
+	// the 18,000-byte line, because each performTask reports its whole parameter set.
+	private static string BuildChainDescriptor(string processName, int taskCount) {
+		IEnumerable<string> tasks = Enumerable.Range(1, taskCount)
+			.Select(index => $$"""{ "name": "Task{{index}}", "type": "performTask", "caption": "Task {{index}}" }""");
+		IEnumerable<string> flows = Enumerable.Range(0, taskCount + 1)
+			.Select(index => $$"""{ "source": "{{(index == 0 ? "StartEvent1" : $"Task{index}")}}", "target": "{{(index == taskCount ? "EndEvent1" : $"Task{index + 1}")}}" }""");
+		return $$"""
+			{
+			  "name": "{{processName}}",
+			  "caption": "Clio BP Large E2E",
+			  "packageName": "Custom",
+			  "elements": [
+			    { "name": "StartEvent1", "type": "startEvent" },
+			    {{string.Join(",\n    ", tasks)}},
+			    { "name": "EndEvent1", "type": "endEvent" }
+			  ],
+			  "flows": [ {{string.Join(", ", flows)}} ]
+			}
+			""";
+	}
+
 	// Reads the built process back as a structured graph via describe-business-process (for build readback).
 	private static async Task<CallToolResult> DescribeAsync(ArrangeContext context, string processCode) =>
 		await context.Session.CallToolAsync(
@@ -1632,6 +2054,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
 					["process-name"] = processCode
 				}
 			},

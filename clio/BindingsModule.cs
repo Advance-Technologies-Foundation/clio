@@ -24,6 +24,7 @@ using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
+using Clio.Command.RuntimeVerification;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Branding;
 using Clio.Command.Theming;
@@ -183,6 +184,12 @@ public class BindingsModule {
 				Command.McpServer.Tools.McpToolInvokerRegistry>();
 			services.AddSingleton<Command.McpServer.IMcpToolCompatibilityCatalog,
 				Command.McpServer.McpToolCompatibilityCatalog>();
+			// ENG-100157: the counting meter replaces the inert default RegisterInto installs, and ONLY here.
+			// A stdio process is one agent session and this is its one host container, so a container
+			// singleton is the session's count. mcp-http never enters this block and keeps the inert meter:
+			// it serves many sessions from one process, where one count would stamp a session's cost on
+			// another session's events. Same ORDERING DEPENDENCY as the two singletons above.
+			services.AddSingleton<IServedContentMeter, ServedContentMeter>();
 			// The execution-metadata reader and the execution router are deliberately NOT registered here.
 			// "One routing authority per host" must hold on BOTH transports, and this block runs for the
 			// stdio host only — mcp-http builds its graph from RegisterInto + RegisterMcpServer and never
@@ -411,6 +418,9 @@ public class BindingsModule {
 
 		services.AddTransient<Clio.Command.RecordRights.GetRecordRightsCommand>();
 		services.AddTransient<Clio.Command.RecordRights.SetRecordRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.SetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.GetObjectRightsCommand>();
+		services.AddTransient<Clio.Command.ObjectRights.IConnectedObjectsResolver, Clio.Command.ObjectRights.ConnectedObjectsResolver>();
 		services.AddTransient<Clio.Command.Administration.ManageUserCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageRoleCommand>();
 		services.AddTransient<Clio.Command.Administration.ManageAccessCommand>();
@@ -432,6 +442,8 @@ public class BindingsModule {
 				sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
+		services.AddTransient<Clio.Common.BrowserSession.IHeadlessBrowserLauncher, Clio.Common.BrowserSession.HeadlessBrowserLauncher>();
+		services.AddTransient<Clio.Common.BrowserSession.ICdpSessionFactory, Clio.Common.BrowserSession.CdpSessionFactory>();
 		services.AddSingleton<IOAuthTokenStore, OAuthTokenStore>();
 		services.AddSingleton<IOAuthAuthorizationCodeService, OAuthAuthorizationCodeService>();
 		IDeserializer deserializer = new DeserializerBuilder()
@@ -580,6 +592,7 @@ public class BindingsModule {
 		services.AddTransient<IClassicEnumVocabularySourceParser, ClassicEnumVocabularySourceParser>();
 		services.AddTransient<IClassicEnumVocabularyResolver, ClassicEnumVocabularyResolver>();
 		services.AddTransient<IPageSchemaBodyParser, PageSchemaBodyParser>();
+		services.AddTransient<IPageDataSourceReferenceValidator, PageDataSourceReferenceValidator>();
 		// The diff appliers retain per-chain alias state, so PageBundleBuilder needs a FRESH instance per diff
 		// chain (not one shared instance): inject the factory and call it per chain. Registered as Func<> here
 		// (and skipped in RegisterAssemblyInterfaceTypes) because the applier ctor takes a primitive bool arg DI
@@ -587,6 +600,7 @@ public class BindingsModule {
 		services.AddTransient<Func<IJsonDiffApplier>>(_ => () => new JsonDiffApplier());
 		services.AddTransient<Func<IJsonPathDiffApplier>>(_ => () => new JsonPathDiffApplier());
 		services.AddTransient<IPageBundleBuilder, PageBundleBuilder>();
+		services.AddTransient<IPageUnresolvedMergeDetector, PageUnresolvedMergeDetector>();
 		services.AddSingleton<TimeProvider>(TimeProvider.System);
 		services.AddSingleton<IComponentRegistryCacheStore, ComponentRegistryCacheStore>();
 		services.AddSingleton<IComponentRegistryDocsCacheStore, ComponentRegistryDocsCacheStore>();
@@ -680,13 +694,18 @@ public class BindingsModule {
 		services.AddTransient<ToolContractGetTool>();
 		services.AddTransient<ValidateProcessGraphTool>();
 		services.AddTransient<DescribeProcessTool>();
+		// Inert by default: only the stdio MCP host (Register with registerMcpHost) counts what a session
+		// served, because only there is one process one agent session. Registered for every container so
+		// the telemetry service and the guidance and contract tools always resolve a meter.
+		services.AddSingleton<IServedContentMeter, NullServedContentMeter>();
 		// Singleton: the service is effectively stateless (its only shared mutable state is a static
 		// lock), so a single instance is safe and keeps the lifetime consistent with the singleton
 		// flusher that depends on it (no captured-dependency lifetime mismatch).
 		services.AddSingleton<ITelemetryService>(sp => new TelemetryService(
 			sp.GetRequiredService<IFileSystem>(),
 			timeProvider: sp.GetRequiredService<TimeProvider>(),
-			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>()));
+			logger: sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<TelemetryService>>(),
+			servedContentMeter: sp.GetRequiredService<IServedContentMeter>()));
 		services.AddSingleton<ITelemetryFlushOptionsProvider, TelemetryFlushOptionsProvider>();
 		services.AddSingleton<ITelemetryFlushService>(sp => new TelemetryFlushService(
 			sp.GetRequiredService<IFileSystem>(),
@@ -823,6 +842,7 @@ public class BindingsModule {
 		services.AddTransient<AddCustomLoggingTool>();
 		services.AddTransient<RemovePackageDependencyTool>();
 		services.AddTransient<CreatePackageTool>();
+		services.AddTransient<PlaceSectionInWorkplaceTool>();
 		services.AddTransient<CreateUiProjectTool>();
 		services.AddTransient<DataForgeTool>();
 		services.AddTransient<GetTargetPackageTool>();
@@ -902,6 +922,8 @@ public class BindingsModule {
 		services.AddTransient<ODataCreateTool>();
 		services.AddTransient<ODataUpdateTool>();
 		services.AddTransient<ODataDeleteTool>();
+		services.AddTransient<TriggerSmokeTool>();
+		services.AddTransient<PageSmokeTool>();
 		services.AddTransient<IEmailTemplateContentService, EmailTemplateContentService>();
 		services.AddTransient<EmailTemplateTool>();
 		services.AddTransient<OpenCfgCommand>();
@@ -959,6 +981,8 @@ public class BindingsModule {
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();
 		services.AddTransient<IPackageTargetResolver, PackageTargetResolver>();
+		services.AddTransient<IWorkplaceRepository, WorkplaceRepository>();
+		services.AddTransient<IWorkplacePlacementService, WorkplacePlacementService>();
 		services.AddTransient<IPackageDataBindingWriter, PackageDataBindingWriter>();
 		services.AddTransient<IPackageDataBinder, EnvironmentPackageDataBinder>();
 		services.AddTransient<GetTargetPackageCommand>();
@@ -1028,8 +1052,15 @@ public class BindingsModule {
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReader, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsWriter, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IGranteeLookup, Clio.Common.ObjectRights.RightManagementServiceClient>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsPlanner, Clio.Common.ObjectRights.ObjectRightsPlanner>();
+		services.AddTransient<Clio.Common.ObjectRights.IObjectRightsReadBackVerifier, Clio.Common.ObjectRights.ObjectRightsReadBackVerifier>();
 		services.AddTransient<ICreatioLicenseClient, CreatioLicenseClient>();
 		services.AddTransient<IFsmModeStatusService, FsmModeStatusService>();
+		services.AddTransient<IEnvironmentPackageFolderResolver, EnvironmentPackageFolderResolver>();
+		services.AddTransient<IDeletedItemFileCleaner, DeletedItemFileCleaner>();
 		services.AddTransient<SetFsmConfigCommand>();
 		services.AddTransient<TurnFsmCommand>();
 		services.AddTransient<TurnFarmModeCommand>();
@@ -1168,6 +1199,15 @@ public class BindingsModule {
 		services.AddTransient<GenerateProcessModelCommand>();
 		services.AddTransient<DescribeProcessCommand>();
 		services.AddTransient<GetProcessSignatureCommand>();
+		services.AddTransient<IProcessRunLogReader, ProcessRunLogReader>();
+		services.AddTransient<IProcessRunMonitor, ProcessRunMonitor>();
+		services.AddTransient<ICreatedRecordWatcher, CreatedRecordWatcher>();
+		services.AddTransient<ICreatedRecordCleaner, CreatedRecordCleaner>();
+		services.AddTransient<IRunRecordProvenance, RunRecordProvenance>();
+		services.AddTransient<IRunVerificationServices, RunVerificationServices>();
+		services.AddTransient<IRecordDeletionService, RecordDeletionService>();
+		services.AddTransient<ITriggerSmokeRunner, TriggerSmokeRunner>();
+		services.AddTransient<IPageSmokeRunner, PageSmokeRunner>();
 		services.AddTransient<RunProcessCommand>();
 		services.AddTransient<ListPrintablesCommand>();
 		services.AddTransient<AddItemCommand>();
@@ -1297,6 +1337,7 @@ public class BindingsModule {
 		services.AddTransient<IPostgres, Postgres>();
 		services.AddSingleton<CommandHelpCatalog>();
 		services.AddTransient<CommandHelpRenderer>();
+		services.AddSingleton<IOptionSuggestionService, OptionSuggestionService>();
 		// HelpArtifactExporter is constructed directly in Program.ExportHelpArtifacts with a
 		// deterministic export-baseline IFeatureToggleService (see ExportFeatureToggleService) so
 		// committed docs never depend on local feature flags. It is therefore not DI-resolved.
@@ -1612,14 +1653,24 @@ public class BindingsModule {
 	}
 
 	/// <summary>
-	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization.
+	/// Creates <see cref="JsonSerializerOptions"/> for MCP tool/prompt argument deserialization and for the
+	/// text a tool's return value is serialized into.
 	/// Enables out-of-order metadata properties so that the
 	/// <c>"type"</c> polymorphic discriminator does not have to be the first JSON property —
 	/// LLMs do not guarantee JSON property ordering.
 	/// </summary>
+	/// <remarks>
+	/// <see cref="Clio.Command.McpServer.McpResultJsonEncoder"/> (ENG-99970): the default encoder escapes for
+	/// embedding in HTML, writing a quote inside a string as <c>\u0022</c> and an apostrophe, backtick, dash or
+	/// any non-ASCII character as a six-character sequence. A tool result is read by an agent over JSON-RPC and
+	/// never embedded in a page, so that escaping only costs: guidance articles came back ~10% larger, and
+	/// describe-business-process's graph, carried as a string, paid six characters for every quote. The encoder
+	/// is relaxed except for invisible Format characters (bidi, zero-width), which stay escaped.
+	/// </remarks>
 	internal static JsonSerializerOptions CreateMcpSerializerOptions() {
 		JsonSerializerOptions options = new(McpJsonUtilities.DefaultOptions);
 		options.AllowOutOfOrderMetadataProperties = true;
+		options.Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance;
 		return options;
 	}
 
@@ -1738,6 +1789,12 @@ public class BindingsModule {
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
 					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)
+					// A CDP session and its transport are per-connection objects CdpSessionFactory builds around an open
+					// WebSocket, and a headless browser handle is built by its launcher around a running process; none is a
+					// service DI can construct (page-smoke, ENG-103032).
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpSession)
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpTransport)
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IHeadlessBrowser)
 					// The MCP credential-passthrough seam is registered explicitly in the
 					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
 					// IHttpContextAccessor, which is not part of the stdio graph, and both are

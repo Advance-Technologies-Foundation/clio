@@ -72,6 +72,27 @@ internal static class SelectQueryHelper
 		"timed out"
 	];
 
+	/// <summary>
+	/// The one transient marker trusted when the platform left <c>errorInfo.message</c> blank.
+	/// </summary>
+	/// <remarks>
+	/// PR #1782 review. With a blank message the only text left is the whole raw body, stack trace included, and a
+	/// permanent failure's stack trace can name <c>CommandTimeout</c> or a deadlock handler without either having
+	/// happened. The blank-message shape measured in ENG-102683 is the route-table reload, so only its marker is
+	/// matched there.
+	/// </remarks>
+	private const string RouteTableReloadMarker = "Collection was modified";
+
+	/// <summary>
+	/// Test-only replacement for the pause between transient re-sends, scoped to the current execution flow.
+	/// </summary>
+	/// <remarks>
+	/// The callers reach <see cref="SendWithTransientRetry{TAnswer}"/> through static call chains, so a parameter
+	/// cannot be threaded down from a test, and test fixtures run in parallel, so a plain static setter would leak
+	/// into other fixtures. An <see cref="AsyncLocal{T}"/> is confined to the test that set it.
+	/// </remarks>
+	private static readonly AsyncLocal<Action<TimeSpan>?> RetryWaitOverride = new();
+
 	internal static T ExecuteSelectQuery<T>(
 		IApplicationClient client,
 		IServiceUrlBuilder serviceUrlBuilder,
@@ -86,67 +107,144 @@ internal static class SelectQueryHelper
 		int allowedAttempts = requestTimeout == Timeout.Infinite
 			? TransientFailureAttempts
 			: BoundedCallAttempts;
+		// Issue #1119: a server-side "Collection was modified; enumeration operation may not execute."
+		// arrived as an HTTP 200 with success:false and took out a whole 45-minute e2e run, because the
+		// read that resolves the target package had no retry at all.
+		(T response, string responseJson) = SendWithTransientRetry<(T Response, string Body)>(
+			() =>
+			{
+				string body = client.ExecutePostRequest(
+					url,
+					requestBody,
+					requestTimeout, maxAttempts, retryDelay);
+				// ENG-93365: an HTML error/login page or a truncated body must surface as a typed error naming the
+				// endpoint and the actual body, never as a raw System.Text.Json parser message.
+				return (ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, body, JsonOptions), body);
+			},
+			answer => !answer.Response.Success
+				&& IsTransientServerFailure(answer.Response.ErrorInfo?.Message, answer.Body),
+			allowedAttempts);
+		if (!response.Success)
+		{
+			throw new InvalidOperationException(
+				$"SelectQuery failed: {DescribeServerFailure(response.ErrorInfo?.Message, responseJson)}");
+		}
+		return response;
+	}
+
+	/// <summary>
+	/// Sends an idempotent read and re-sends it while the server answers with a transient failure, up to the
+	/// shared transient budget (<see cref="TransientFailureAttempts"/> sends, <see cref="TransientFailureRetryDelay"/>
+	/// apart).
+	/// </summary>
+	/// <remarks>
+	/// Only for reads: a re-send must carry no side effect. The server reports these failures in an HTTP 200 body
+	/// (<c>success: false</c>), so the transport-level retry never sees them. The caller decides what a failed final
+	/// answer means; this method never throws on its own.
+	/// </remarks>
+	/// <typeparam name="TAnswer">The parsed answer of one send.</typeparam>
+	/// <param name="send">Sends the read once and parses the answer.</param>
+	/// <param name="isTransientFailure">Whether an answer is a server-reported failure a re-send can clear (see
+	/// <see cref="IsTransientServerFailure"/>); <see langword="false"/> for a successful answer.</param>
+	/// <param name="allowedAttempts">Maximum number of sends.</param>
+	/// <returns>The first successful answer, the first non-transient failure, or the last answer once the budget is
+	/// spent.</returns>
+	internal static TAnswer SendWithTransientRetry<TAnswer>(
+		Func<TAnswer> send,
+		Func<TAnswer, bool> isTransientFailure,
+		int allowedAttempts = TransientFailureAttempts)
+	{
+		ArgumentNullException.ThrowIfNull(send);
+		ArgumentNullException.ThrowIfNull(isTransientFailure);
 		int attempt = 1;
 		while (true)
 		{
-			string responseJson = client.ExecutePostRequest(
-				url,
-				requestBody,
-				requestTimeout, maxAttempts, retryDelay);
-			// ENG-93365: an HTML error/login page or a truncated body must surface as a typed error naming the
-			// endpoint and the actual body, never as a raw System.Text.Json parser message.
-			T response = ServiceResponseJsonGuard.Deserialize<T>("SelectQuery", url, responseJson, JsonOptions);
-			if (response.Success)
+			TAnswer answer = send();
+			if (attempt >= allowedAttempts || !isTransientFailure(answer))
 			{
-				return response;
+				return answer;
 			}
-			string detail = response.ErrorInfo?.Message ?? responseJson;
-			// Issue #1119: a server-side "Collection was modified; enumeration operation may not execute."
-			// arrived as an HTTP 200 with success:false and took out a whole 45-minute e2e run, because the
-			// read that resolves the target package had no retry at all.
-			if (attempt >= allowedAttempts || !IsTransientFailure(detail))
-			{
-				throw new InvalidOperationException($"SelectQuery failed: {detail}");
-			}
-			Thread.Sleep(TransientFailureRetryDelay);
+			(RetryWaitOverride.Value ?? Thread.Sleep)(TransientFailureRetryDelay);
 			attempt++;
 		}
 	}
 
 	/// <summary>
-	/// Whether a server-reported SelectQuery failure is one a re-send can clear.
+	/// Replaces the pause between transient re-sends for the current execution flow until the returned scope is
+	/// disposed. For tests only, so the retry paths run without real sleeps.
 	/// </summary>
-	/// <param name="detail">The failure text the server reported, or the raw response body.</param>
-	/// <returns>True when the text names a known transient condition.</returns>
-	private static bool IsTransientFailure(string detail)
+	/// <param name="wait">Called instead of <see cref="Thread.Sleep(TimeSpan)"/>.</param>
+	/// <returns>A scope that restores the previous behaviour when disposed.</returns>
+	internal static IDisposable OverrideRetryWait(Action<TimeSpan> wait)
 	{
-		return !string.IsNullOrEmpty(detail)
-			&& TransientFailureMarkers.Any(marker =>
-				detail.Contains(marker, StringComparison.OrdinalIgnoreCase));
+		ArgumentNullException.ThrowIfNull(wait);
+		Action<TimeSpan>? previous = RetryWaitOverride.Value;
+		RetryWaitOverride.Value = wait;
+		return new RetryWaitScope(previous);
 	}
 
+	private sealed class RetryWaitScope(Action<TimeSpan>? previous) : IDisposable
+	{
+		public void Dispose() => RetryWaitOverride.Value = previous;
+	}
+
+	/// <summary>
+	/// Whether a server-reported failure is one a re-send can clear.
+	/// </summary>
+	/// <remarks>
+	/// Classified on the UNREDACTED server text: <see cref="DescribeServerFailure"/> neutralizes the raw body for
+	/// the message, and a scrubbed or clamped body could lose the marker. With a non-blank <c>errorInfo.message</c>
+	/// every marker in <see cref="TransientFailureMarkers"/> applies to that message; with a blank one only
+	/// <see cref="RouteTableReloadMarker"/> is looked for in the raw body.
+	/// </remarks>
+	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
+	/// <param name="responseJson">The raw response body.</param>
+	/// <returns>True when the failure names a known transient condition.</returns>
+	internal static bool IsTransientServerFailure(string? errorMessage, string responseJson) =>
+		string.IsNullOrWhiteSpace(errorMessage)
+			? !string.IsNullOrEmpty(responseJson)
+				&& responseJson.Contains(RouteTableReloadMarker, StringComparison.OrdinalIgnoreCase)
+			: TransientFailureMarkers.Any(marker =>
+				errorMessage.Contains(marker, StringComparison.OrdinalIgnoreCase));
+
+	/// <summary>
+	/// The text that describes a server-reported failure for an exception message: the platform's
+	/// <c>errorInfo.message</c>, or the neutralized raw response body when that message is absent or blank.
+	/// </summary>
+	/// <remarks>
+	/// ENG-102683: during a route-table reload the platform answers <c>success: false</c> with an empty
+	/// <c>errorInfo.message</c> and puts "Collection was modified" elsewhere in the body; treating a blank message as
+	/// the detail hid the cause from the final error.
+	/// <para>PR #1782 review: the raw body is server-authored and unbounded (a whole stack trace), and the message
+	/// reaches MCP envelopes, so the fallback goes through <see cref="UntrustedText.Fenced"/> - scrubbed, flattened,
+	/// capped and fenced - per <c>docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md</c>.
+	/// The non-blank platform message keeps its existing treatment.</para>
+	/// </remarks>
+	/// <param name="errorMessage">The server's <c>errorInfo.message</c>, if any.</param>
+	/// <param name="responseJson">The raw response body.</param>
+	/// <returns>The failure text.</returns>
+	internal static string DescribeServerFailure(string? errorMessage, string responseJson) =>
+		string.IsNullOrWhiteSpace(errorMessage)
+			? UntrustedText.Fenced(responseJson) ?? "the server returned no failure details"
+			: errorMessage;
+
+	/// <summary>
+	/// Builds a SelectQuery whose filters are combined with AND.
+	/// </summary>
+	/// <param name="rootSchemaName">Schema to query.</param>
+	/// <param name="columns">Columns to return.</param>
+	/// <param name="filters">Comparison filters, all of which a row must match.</param>
+	/// <param name="rowCount">Maximum number of rows to return.</param>
+	/// <param name="isDistinct">Return each distinct combination of the selected columns once, so the row cap counts
+	/// distinct values rather than every row that carries them.</param>
+	/// <returns>The query, ready for JSON serialization.</returns>
 	internal static object BuildSelectQuery(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
 		IReadOnlyList<SelectQueryFilterDefinition> filters,
-		int rowCount = 10000)
+		int rowCount = 10000,
+		bool isDistinct = false)
 	{
-		Dictionary<string, object> columnItems = columns
-			.ToDictionary(
-				column => column.Alias,
-				column => (object)new
-				{
-					expression = new
-					{
-						expressionType = 0,
-						columnPath = column.Path
-					},
-					orderDirection = 0,
-					orderPosition = -1,
-					isVisible = true
-				},
-				StringComparer.Ordinal);
-
 		Dictionary<string, object> filterItems = filters
 			.Select((filter, index) => new { filter, index })
 			.ToDictionary(
@@ -174,35 +272,16 @@ internal static class SelectQueryHelper
 				},
 				StringComparer.Ordinal);
 
-		return new
-		{
-			rootSchemaName,
-			operationType = 0,
-			allColumns = false,
-			isDistinct = false,
-			ignoreDisplayValues = false,
-			rowCount,
-			rowsOffset = -1,
-			isPageable = false,
-			columns = new
-			{
-				items = columnItems
-			},
-			filters = new
-			{
-				filterType = 6,
-				isEnabled = true,
-				trimDateTimeParameterToDate = false,
-				logicalOperation = 0,
-				items = filterItems
-			}
-		};
+		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount, isDistinct);
 	}
 
 	/// <summary>
 	/// Builds a SelectQuery where all <paramref name="filterValues"/> for <paramref name="filterColumn"/>
-	/// are combined with an OR logical operator, producing an IN-style batch filter in a single request.
+	/// are combined with an OR logical operator, one comparison filter per value, in a single request.
 	/// </summary>
+	/// <remarks>
+	/// Do not use it for the virtual <c>ApplicationSection</c> schema; use <see cref="BuildSelectQueryWithInFilter"/>.
+	/// </remarks>
 	internal static object BuildSelectQueryWithOrFilter(
 		string rootSchemaName,
 		IReadOnlyList<SelectQueryColumnDefinition> columns,
@@ -211,22 +290,6 @@ internal static class SelectQueryHelper
 		int dataValueType,
 		int rowCount = 10000)
 	{
-		Dictionary<string, object> columnItems = columns
-			.ToDictionary(
-				column => column.Alias,
-				column => (object)new
-				{
-					expression = new
-					{
-						expressionType = 0,
-						columnPath = column.Path
-					},
-					orderDirection = 0,
-					orderPosition = -1,
-					isVisible = true
-				},
-				StringComparer.Ordinal);
-
 		Dictionary<string, object> filterItems = filterValues
 			.Select((value, index) => new { value, index })
 			.ToDictionary(
@@ -254,26 +317,110 @@ internal static class SelectQueryHelper
 				},
 				StringComparer.Ordinal);
 
+		return BuildQueryEnvelope(rootSchemaName, columns, 1, filterItems, rowCount);
+	}
+
+	/// <summary>
+	/// Builds a SelectQuery with a single IN filter: <paramref name="filterColumn"/> equals any of
+	/// <paramref name="filterValues"/>, all carried as right expressions of one filter.
+	/// </summary>
+	/// <remarks>
+	/// Use it instead of <see cref="BuildSelectQueryWithOrFilter"/> for the virtual <c>ApplicationSection</c>
+	/// schema: its query executor reads the values of the FIRST filter on a column and ignores the group's
+	/// logical operation, so an OR group returns the rows of the first value only.
+	/// </remarks>
+	/// <param name="rootSchemaName">Schema to query.</param>
+	/// <param name="columns">Columns to return.</param>
+	/// <param name="filterColumn">Column the values are compared with.</param>
+	/// <param name="filterValues">Values to match; a row matches when it equals any of them.</param>
+	/// <param name="dataValueType">DataService data value type of the values.</param>
+	/// <param name="rowCount">Maximum number of rows to return.</param>
+	/// <returns>The query, ready for JSON serialization.</returns>
+	internal static object BuildSelectQueryWithInFilter(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		string filterColumn,
+		IReadOnlyList<string> filterValues,
+		int dataValueType,
+		int rowCount = 10000)
+	{
+		Dictionary<string, object> filterItems = new(StringComparer.Ordinal)
+		{
+			["filter0"] = new
+			{
+				filterType = 4,
+				comparisonType = 3,
+				isEnabled = true,
+				trimDateTimeParameterToDate = false,
+				leftExpression = new
+				{
+					expressionType = 0,
+					columnPath = filterColumn
+				},
+				rightExpressions = filterValues
+					.Select(value => BuildParameterExpression(dataValueType, value))
+					.ToList()
+			}
+		};
+
+		return BuildQueryEnvelope(rootSchemaName, columns, 0, filterItems, rowCount);
+	}
+
+	/// <summary>
+	/// Builds the column items of a SelectQuery: one visible column expression per definition, keyed by alias, with
+	/// the definition's order (unordered by default).
+	/// </summary>
+	private static Dictionary<string, object> BuildColumnItems(IReadOnlyList<SelectQueryColumnDefinition> columns)
+	{
+		return columns
+			.ToDictionary(
+				column => column.Alias,
+				column => (object)new
+				{
+					expression = new
+					{
+						expressionType = 0,
+						columnPath = column.Path
+					},
+					orderDirection = column.OrderDirection,
+					orderPosition = column.OrderPosition,
+					isVisible = true
+				},
+				StringComparer.Ordinal);
+	}
+
+	/// <summary>
+	/// Builds the DataService SelectQuery wire envelope shared by every builder in this class: the root
+	/// schema, the columns and one filter group (<c>filterType: 6</c>) with the given logical operation.
+	/// </summary>
+	private static object BuildQueryEnvelope(
+		string rootSchemaName,
+		IReadOnlyList<SelectQueryColumnDefinition> columns,
+		int logicalOperation,
+		Dictionary<string, object> filterItems,
+		int rowCount,
+		bool isDistinct = false)
+	{
 		return new
 		{
 			rootSchemaName,
 			operationType = 0,
 			allColumns = false,
-			isDistinct = false,
+			isDistinct,
 			ignoreDisplayValues = false,
 			rowCount,
 			rowsOffset = -1,
 			isPageable = false,
 			columns = new
 			{
-				items = columnItems
+				items = BuildColumnItems(columns)
 			},
 			filters = new
 			{
 				filterType = 6,
 				isEnabled = true,
 				trimDateTimeParameterToDate = false,
-				logicalOperation = 1,
+				logicalOperation,
 				items = filterItems
 			}
 		};
@@ -329,7 +476,11 @@ internal static class SelectQueryHelper
 			}
 		};
 
-	internal sealed record SelectQueryColumnDefinition(string Path, string Alias);
+	/// <summary>A selected column. <paramref name="OrderDirection"/>: 0 = none, 1 = ascending, 2 = descending;
+	/// <paramref name="OrderPosition"/>: -1 = not ordered. Ordering matters whenever a row cap could cut off the
+	/// row the caller wants, because <c>rowCount</c> is applied to an otherwise unordered result.</summary>
+	internal sealed record SelectQueryColumnDefinition(string Path, string Alias, int OrderDirection = 0,
+		int OrderPosition = -1);
 
 	internal sealed record SelectQueryFilterDefinition(
 		string ColumnPath,

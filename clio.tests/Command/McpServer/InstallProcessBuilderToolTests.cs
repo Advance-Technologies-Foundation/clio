@@ -50,6 +50,32 @@ public sealed class InstallProcessBuilderToolTests {
 	/// </summary>
 	internal const string DurationFigurePattern = @"(?i)\d+\s*(" + DurationUnits + @")\b";
 
+	/// <summary>
+	/// The consent rule both agent-facing surfaces must carry (ENG-102116): ask the user before EVERY call.
+	/// </summary>
+	internal const string AskBeforeEveryCallPattern = @"(?i)ask the user before every call";
+
+	/// <summary>
+	/// The cost the consent rule rests on: a configuration build and a restart that reach every user.
+	/// </summary>
+	internal const string ConfigurationBuildAndRestartPattern =
+		@"(?i)builds the environment's configuration and restarts the site for every connected user";
+
+	/// <summary>
+	/// The wording that turned a refusal into permission: "the signal to call this (tool)".
+	/// </summary>
+	internal const string RefusalAsPermissionPattern = @"(?i)signal to call this";
+
+	/// <summary>
+	/// The curated-contract precondition that makes the user's approval part of every call.
+	/// </summary>
+	internal const string ApprovalPreconditionMarker = "approved this install";
+
+	/// <summary>
+	/// Match timeout for the whitespace normalization in the approval test.
+	/// </summary>
+	private static readonly TimeSpan ApprovalRegexTimeout = TimeSpan.FromSeconds(1);
+
 	[Test]
 	[Category("Unit")]
 	[Description("Advertises a stable install-process-builder MCP tool name so clients, guidance and the curated contract share one identifier.")]
@@ -131,12 +157,11 @@ public sealed class InstallProcessBuilderToolTests {
 				+ "but compile-creatio and restart-by-environment-name are both true and this tool causes "
 				+ "the effects of both. install-gate's false is not the precedent: it ships a prebuilt "
 				+ "assembly and never makes the target rebuild");
-		attribute.Idempotent.Should().BeTrue(
-			because: "a SEQUENTIAL re-run converges on the same end state - it either installs again, costing "
-				+ "one configuration build and changing nothing else, or hits the same refusal it hit before, "
-				+ "which changes nothing at all. Both refusals are stable under repetition, which is what the "
-				+ "hint promises. It says nothing about CONCURRENT re-entry, refused outright by the "
-				+ "configuration-build reservation");
+		attribute.Idempotent.Should().BeFalse(
+			because: "MCP reads idempotentHint as 'a repeated call has no additional effect', and every run that "
+				+ "installs is another configuration build and site restart for every connected user - the "
+				+ "effect each run needs the user's approval for (ENG-102116). A host that auto-retries idempotent "
+				+ "tools must not repeat it; compile-creatio, with the same effect, is false too");
 		description.Description.Should().Contain(BundledPackages.ProcessBuilderPackageName,
 			because: "the description should name the package the tool installs");
 		description.Description.Should().Contain("create-business-process",
@@ -162,6 +187,34 @@ public sealed class InstallProcessBuilderToolTests {
 			because: "an agent must be told to act on the refusal rather than compare versions itself, AND that "
 				+ "the recorded version list-packages reports is not the same question: it moves when the "
 				+ "archive is accepted, whether or not the target compiled it");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102116: the description makes the user's approval a precondition of EVERY call and states why (a configuration build plus a restart for every user), and no longer calls a refusal the signal to run the tool.")]
+	public void InstallProcessBuilder_Description_Should_Require_User_Approval_Before_Every_Call() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute description =
+			(System.ComponentModel.DescriptionAttribute)typeof(InstallProcessBuilderTool)
+				.GetMethod(nameof(InstallProcessBuilderTool.InstallProcessBuilder))!
+				.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+				.Single();
+
+		// Act
+		string text = System.Text.RegularExpressions.Regex.Replace(description.Description, @"\s+", " ",
+			System.Text.RegularExpressions.RegexOptions.None, ApprovalRegexTimeout);
+
+		// Assert
+		text.Should().MatchRegex(AskBeforeEveryCallPattern,
+			because: "clio-run collapses the inner tool's Destructive annotation, so a host that auto-allows "
+				+ "clio-run runs this install unprompted - the description is the only place that can make the "
+				+ "agent ask");
+		text.Should().MatchRegex(ConfigurationBuildAndRestartPattern,
+			because: "the user can only weigh the request if the cost is named: every user of a shared stand "
+				+ "loses the site while the configuration builds and the platform restarts");
+		text.Should().NotMatchRegex(RefusalAsPermissionPattern,
+			because: "a refusal says the install is NEEDED; calling it the signal to run the tool is exactly the "
+				+ "reading that let an agent install without asking");
 	}
 
 	[Test]
@@ -232,6 +285,16 @@ public sealed class InstallProcessBuilderToolTests {
 			notice.Should().MatchRegex(@"(?i)do not call\s+install-process-builder\s+again",
 				because: "the notice used to tell the caller to re-run the installer to confirm, which would "
 					+ "start a second install, build and restart on an instance already being rebuilt");
+			notice.Should().Contain("no fixed sleep",
+				because: "ENG-103025: callers slept 60-90 s and called the installer a second time; the notice must say "
+					+ "that the retry of the process-designer tool is the poll");
+			notice.Should().Contain($"at most {InstallProcessBuilderTool.InstallConfirmationRetryLimit} times")
+				.And.Contain("NOT confirmed",
+					because: "an unbounded 'a few times over the next minutes' let an agent keep looping; the notice "
+						+ "gives a retry limit and says what to report once it is reached");
+			notice.Should().Contain("CLIO_MCP_RESPONSE_DEADLINE_SECONDS",
+				because: "the wait this call already did is bounded by the response deadline, and the notice names "
+					+ "the setting that raises it for a client that allows a longer call");
 		} finally {
 			executeGate.Set(); // release the detached work so it finalizes and frees the reservation
 			ConsoleLogger.Instance.ClearMessages();

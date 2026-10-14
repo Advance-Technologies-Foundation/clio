@@ -109,6 +109,40 @@ public sealed class FormulaElementToolE2ETests {
 	}
 
 	[Test]
+	[Description("A run that fails inside an element comes back from the platform with only 'check the process log'; run-process then names the exception the run logged. A formula dividing by zero needs no compile, so the stand is not reloaded.")]
+	[AllureTag(RunProcessTool.ToolName)]
+	[AllureName("run-process names the exception a failed run logged")]
+	public async Task RunProcess_OfAFormulaThatThrows_Should_NameTheLoggedException() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync("Formula", MinimumPackageVersion);
+		string processName = $"UsrClioBpFormulaThrowsE2e{Guid.NewGuid():N}";
+		string created = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context, ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildDivideByZeroDescriptor(processName)
+			}));
+		created.Should().Contain("created (UId:", because: "the arrange step must have built the process: {0}", created);
+
+		// Act
+		string ran = JsonSerializer.Serialize(await ProcessDesignerE2EArrange.CallToolAsync(context,
+			RunProcessTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["result-parameters"] = new[] { "Quotient" }
+			}));
+
+		// Assert
+		ran.Should().Contain("The process log of this run reports",
+			because: "the platform's own answer only says to check the log, and the log holds the exception: {0}", ran);
+		// Measured on a stand: the formula engine wraps the DivideByZeroException in its own exception, whose
+		// first line is what the log row leads with.
+		ran.Should().Contain("Unable to compute expression",
+			because: "the logged exception names what went wrong in the element: {0}", ran);
+	}
+
+	[Test]
 	[Description("A formula element with no target is refused by the server rather than saved as an element that computes a value and writes it nowhere.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process refuses a formula element with no target")]
@@ -177,6 +211,30 @@ public sealed class FormulaElementToolE2ETests {
 		    { "source": "StartEvent1", "target": "Formula1" },
 		    { "source": "Formula1", "target": "Task1" },
 		    { "source": "Task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	private static string BuildDivideByZeroDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Formula Throws E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "Dividend", "type": "Integer", "direction": "In", "value": "7" },
+		    { "name": "Divisor", "type": "Integer", "direction": "In", "value": "0" },
+		    { "name": "Quotient", "type": "Integer", "direction": "Out" }
+		  ],
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "Formula1", "type": "formulaTask", "caption": "Divide",
+		      "formula": { "body": "[#Dividend#] / [#Divisor#]", "resultProcessParameter": "Quotient" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "Formula1" },
+		    { "source": "Formula1", "target": "EndEvent1" }
 		  ]
 		}
 		""";

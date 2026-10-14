@@ -10,7 +10,7 @@ SYNOPSIS
 DESCRIPTION
     Finds installed applications AND their sections behind a single call. Issues exactly two
     DataService queries: one SysInstalledApp query for all applications, then one batch
-    ApplicationSection query with an OR-grouped ApplicationId filter that covers all candidate
+    ApplicationSection query with one IN filter on ApplicationId that covers all candidate
     applications at once. Results are filtered by the optional --search-pattern and/or --code;
     sections are grouped in memory by ApplicationId. When both --code and --search-pattern are
     supplied, both conditions must hold (AND semantics).
@@ -43,7 +43,8 @@ EXAMPLES
 
 NOTES
     - exactly two DataService queries are issued regardless of the number of installed apps
-    - if the sections query fails, applications are returned without sections and a warning is logged
+    - if the sections query fails, the command fails with the error (exit code 1; MCP returns
+      success:false) instead of returning applications with empty sections
     - when --code and --search-pattern are both supplied, both conditions must hold
     - an empty search returns all applications (each with its sections)
     - the MCP find-app tool returns the same data as a structured { success, applications } envelope;

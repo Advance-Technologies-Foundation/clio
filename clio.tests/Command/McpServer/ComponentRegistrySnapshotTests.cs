@@ -225,7 +225,7 @@ public sealed class ComponentRegistrySnapshotTests {
 		// snapshot; a regression back to it would make every prune assertion in
 		// WebToMobilePropertyPruneTests vacuous while staying green here.
 		state.Entries.Count.Should().BeGreaterThan(60,
-			because: "the runtime-derived mobile catalog ships ~65 components — a regression to the old 35-entry curated snapshot must fail this guard");
+			because: "the runtime-derived mobile catalog ships well over 60 components — a regression to the old 35-entry curated snapshot must fail this guard");
 	}
 
 	[Test]

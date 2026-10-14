@@ -5,7 +5,10 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.ProcessModel;
+using Clio.Command.RuntimeVerification;
 using Clio.Command.StartProcess;
 using Clio.Common;
 using ErrorOr;
@@ -25,6 +28,84 @@ public sealed class RunProcessOptions : EnvironmentOptions {
 	public IReadOnlyList<string> ResultParameters { get; set; }
 
 	public int TimeoutSeconds { get; set; }
+
+	// ENG-103024: a run the platform answers `running` (parked on a user task, a timer, a signal wait or a background
+	// element) is polled until it ends or WaitTimeoutSeconds pass. False keeps the launch-only answer.
+	public bool Wait { get; set; } = true;
+
+	public int WaitTimeoutSeconds { get; set; } = RunProcessCommand.DefaultWaitTimeoutSeconds;
+
+	// Entities diffed before and after the run; what appeared in them is reported in `created`.
+	public IReadOnlyList<string> Watch { get; set; }
+
+	// Deletes what `created` lists after reporting it, cancelling a still-running run first.
+	public bool Cleanup { get; set; }
+
+	// When the MCP response deadline falls, set by the tool: past it the tool answers still-running or not-started, so the read of
+	// a failed run's log gets only what is left. Null on a path with no such deadline.
+	internal DateTimeOffset? ResponseDeadline { get; set; }
+
+	// Set by the MCP tool: decides, with the tool's deadline answer, whether the launch request is sent at all. Null
+	// on a path with no response deadline, which always sends.
+	internal RunProcessLaunchGate LaunchGate { get; set; }
+
+	// Set by the command when it sends the launch: the version read running alongside it, so the tool's
+	// still-running answer can name the version too. Null until then.
+	internal Task<ProcessVersionFacts> VersionFacts { get; set; }
+
+	// Set by the MCP tool: the request's own token. The work runs detached from the request, so a caller that cancelled
+	// the call (notifications/cancelled, or the server shutting down) is never told what happens next; no cancel or
+	// delete may start after that.
+	internal CancellationToken CallerCancellation { get; set; }
+
+	// Whether the caller has stopped waiting for this answer.
+	internal bool IsCallerGone => CallerCancellation.IsCancellationRequested;
+}
+
+/// <summary>
+/// Decides, once, between sending a run-process launch request and answering that nothing was launched.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The MCP tool answers at its response deadline while the launch carries on detached in the server process. Before
+/// ENG-102333 the answer was "launched and still running" whatever the launch had reached, so it was held back to
+/// 150 s - long enough that a client giving up at 60 s restarted the MCP server instead. Resolving the model
+/// and logging in come first and can take most of a minute on a busy or reloading environment, so "the request was
+/// sent" is the one fact the answer can rest on, and this gate makes it exact: whichever side claims the gate first
+/// wins, so a request is never sent after the answer said it was not.
+/// </para>
+/// <para>
+/// A sent request still does not prove a launch: a request the environment had only queued can be dropped with its
+/// connection when the MCP server restarts. The answer says so. A caller that cancels its call withdraws the gate
+/// too, so a launch nobody is waiting for never starts afterwards.
+/// </para>
+/// </remarks>
+internal sealed class RunProcessLaunchGate {
+
+	private const int Open = 0;
+	private const int Sent = 1;
+	private const int Withdrawn = 2;
+
+	private int _state = Open;
+	private long _sentUtcTicks;
+
+	/// <summary>Gets when the launch request was sent, or <see langword="null"/> when it was not.</summary>
+	internal DateTime? SentUtc => Volatile.Read(ref _state) == Sent
+		? new DateTime(Interlocked.Read(ref _sentUtcTicks), DateTimeKind.Utc)
+		: null;
+
+	/// <summary>Claims the gate for sending the launch request.</summary>
+	/// <param name="nowUtc">The time the request is sent.</param>
+	/// <returns><see langword="true"/> to send it; <see langword="false"/> when the answer already said nothing was launched.</returns>
+	internal bool TryMarkSent(DateTime nowUtc) {
+		// Written before the exchange, which is a full fence, so a reader that sees Sent sees the time too.
+		Interlocked.Exchange(ref _sentUtcTicks, nowUtc.Ticks);
+		return Interlocked.CompareExchange(ref _state, Sent, Open) == Open;
+	}
+
+	/// <summary>Claims the gate for an answer that says nothing was launched.</summary>
+	/// <returns><see langword="true"/> when the request had not been sent, and now never will be.</returns>
+	internal bool TryWithdraw() => Interlocked.CompareExchange(ref _state, Withdrawn, Open) == Open;
 }
 
 public sealed class RunProcessResponse {
@@ -40,9 +121,41 @@ public sealed class RunProcessResponse {
 	[System.Text.Json.Serialization.JsonPropertyName("processId")]
 	public string ProcessId { get; set; }
 
+	// The code the call named and the launch request carried - the version a synchronous run executes (a queued one
+	// is re-resolved by the platform; see the warnings). Null when the call was rejected before a request was sent.
+	[JsonProperty("versionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("versionName")]
+	public string VersionName { get; set; }
+
+	// Whether the process library reports that version as the family's active one. Null when it could not be
+	// established - never read as "active".
+	[JsonProperty("isActiveVersion")]
+	[System.Text.Json.Serialization.JsonPropertyName("isActiveVersion")]
+	public bool? IsActiveVersion { get; set; }
+
+	// The code of the version the platform's own triggers start, when it could be established.
+	[JsonProperty("activeVersionName")]
+	[System.Text.Json.Serialization.JsonPropertyName("activeVersionName")]
+	public string ActiveVersionName { get; set; }
+
 	[JsonProperty("resultParameterValues")]
 	[System.Text.Json.Serialization.JsonPropertyName("resultParameterValues")]
 	public Dictionary<string, object> ResultParameterValues { get; set; }
+
+	// The elements a run that is still running is parked on, after the wait.
+	[JsonProperty("waitingOn")]
+	[System.Text.Json.Serialization.JsonPropertyName("waitingOn")]
+	public List<WaitingElement> WaitingOn { get; set; }
+
+	// Records that appeared in the watched entities during the run. Null when nothing was watched.
+	[JsonProperty("created")]
+	[System.Text.Json.Serialization.JsonPropertyName("created")]
+	public List<CreatedRecord> Created { get; set; }
+
+	// What cleanup deleted and what it could not. Null when cleanup was not asked for or nothing ran.
+	[JsonProperty("cleanup")]
+	[System.Text.Json.Serialization.JsonPropertyName("cleanup")]
+	public CleanupReport Cleanup { get; set; }
 
 	[JsonProperty("warnings")]
 	[System.Text.Json.Serialization.JsonPropertyName("warnings")]
@@ -58,8 +171,36 @@ public class RunProcessCommand(
 	IProcessModelGenerator generator,
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
-	ILogger logger)
+	IProcessRunLogReader processRunLogReader,
+	IProcessVersionLibReader versionLibReader,
+	ILogger logger,
+	IRunVerificationServices verification)
 	: Command<RunProcessOptions> {
+
+	private readonly IProcessRunMonitor runMonitor = verification.Monitor;
+	private readonly ICreatedRecordWatcher recordWatcher = verification.Watcher;
+	private readonly ICreatedRecordCleaner recordCleaner = verification.Cleaner;
+	private readonly IRunRecordProvenance recordProvenance = verification.Provenance;
+
+	internal const int DefaultWaitTimeoutSeconds = 20;
+	internal const int MaxWaitTimeoutSeconds = 300;
+	internal const int MaxWatchedEntities = 5;
+
+	// Each verification request is bounded by this, and by what is left of the response deadline.
+	private const int VerificationRequestMs = 10_000;
+	private const int PollIntervalMs = 1_000;
+	private const int MaxConsecutiveFailedReads = 3;
+	private const int CancelWaitMs = 10_000;
+	private const int MinimumDestructiveRequestMs = 1_000;
+	private const int CaptureBudgetMs = 12_000;
+
+	// Reserved out of the response deadline for what follows the wait, so the answer carries it.
+	private const int WaitReserveMs = 3_000;
+	private const int CollectReserveMs = 6_000;
+	private const int CleanupReserveMs = 15_000;
+
+	// Test seam: how the wait sleeps between polls.
+	internal Action<int> Sleep { get; set; } = Thread.Sleep;
 
 	// Code 2 is `Done` in Terrasoft.Core.Process.ProcessStatus but `Completed` in the SysProcessStatus
 	// lookup a polled SysProcessLog points at, so a caller comparing the two matches on the lookup name.
@@ -73,12 +214,52 @@ public class RunProcessCommand(
 	};
 
 	private const string QueuedBackgroundStatus = "queued-background";
-	private const string NotStartedStatus = "not-started";
+	internal const string NotStartedStatus = "not-started";
+	// Answered by the tool at its response deadline: the launch was sent, and there is no verdict.
+	internal const string StillRunningStatus = "still-running";
 
 	private const int InactiveStatus = 0;
+	private const int RunningStatus = 1;
 	private const int ErrorStatus = 3;
+	private const int CancelledStatus = 4;
 
 	private const string ManualStartRefusedCode = "ProcessCannotBeManuallyStartedException";
+
+	// ProcessModel.GetScriptTaskMethod looks the element's <name>Execute up in the methods wrapper of the LOADED
+	// assembly, so a script task saved since the last compile is missing there and the run throws this when it
+	// reaches the element - after the elements before it ran. An exception the script itself throws is swallowed
+	// by the element and arrives with NO errorCode, so this code does not come from user C#; another platform
+	// lookup can still raise it, hence "most often".
+	private const string MissingCompiledMethodCode = "KeyNotFoundException";
+
+	// The platform puts the exception's type name in errorCode (ResponseUtils.CreateErrorInfo, measured as the short
+	// name); a full name is accepted too, so the hint does not depend on which of the two a platform version sends.
+	private static bool IsMissingCompiledMethod(string errorCode) =>
+		string.Equals(errorCode, MissingCompiledMethodCode, StringComparison.Ordinal)
+		|| (errorCode?.EndsWith("." + MissingCompiledMethodCode, StringComparison.Ordinal) ?? false);
+
+	// The read of a failed run's log gets what is left of the MCP response deadline, less this margin for building
+	// and sending the answer, and is skipped when less than the minimum would be left.
+	private const int LogReadMarginMs = 3_000;
+	private const int MinimumLogReadMs = 1_000;
+
+	internal static string BuildMissingCompiledMethodHint(string processCode) =>
+		$" This is most often a script task saved since '{processCode}' was last compiled, so the compiled code "
+		+ "does not have it "
+		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
+		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
+		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
+		+ $"process-name set to '{processCode}'.";
+
+	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
+	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.
+	internal static string BuildNotActiveVersionNote(string processCode, string activeVersionName,
+		bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but it is NOT the active version of its process: the platform's own "
+		+ "triggers, schedules and sub-process calls start "
+		+ (string.IsNullOrWhiteSpace(activeVersionName) ? "the active version" : DescribeSchemaName(activeVersionName))
+		+ ". Such a run verifies a version without activating it; activating it is a separate step "
+		+ "(set-active-business-process-version), taken only when the user asks for it.";
 
 	internal static string BuildQueuedBackgroundNote(string processCode) =>
 		$"'{processCode}' starts in background mode, so the platform queued it and returned no process id, "
@@ -88,7 +269,8 @@ public class RunProcessCommand(
 		+ "which is the only way to get a verdict for it.";
 
 	internal static string BuildRefusalMessage(string processCode, string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message) ? "the platform returned no details" : message;
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no details";
 		if (string.Equals(errorCode, ManualStartRefusedCode, StringComparison.Ordinal)) {
 			return $"'{processCode}' cannot be launched: {detail}. Nothing was started. A process whose only "
 				+ "start events are automatic runs when its own trigger fires (a record signal, a timer, a "
@@ -96,13 +278,18 @@ public class RunProcessCommand(
 				+ "the trigger instead, or add a manual start event to the process.";
 		}
 		return $"'{processCode}' was not started: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ DescribeErrorCode(errorCode);
 	}
 
 	// True only for an accepted launch with no failure verdict.
 	public virtual bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 		if (string.IsNullOrWhiteSpace(options.ProcessName)) {
 			response = Failure("process-name is required");
+			return false;
+		}
+		string verificationError = ValidateVerificationOptions(options);
+		if (verificationError is not null) {
+			response = Failure(verificationError);
 			return false;
 		}
 
@@ -134,10 +321,353 @@ public class RunProcessCommand(
 			return false;
 		}
 
-		return TryLaunch(options, model, values, out response);
+		WatchBaseline baseline = null;
+		if (options.Watch is { Count: > 0 }) {
+			// Bounded so the baseline cannot spend the response time the launch itself needs.
+			baseline = recordWatcher.Capture(options.Watch, RequestBudget(options.ResponseDeadline),
+				DateTimeOffset.UtcNow.AddMilliseconds(CaptureBudgetMs));
+		}
+
+		Launch(options, model, values, out response);
+		Verify(options, response, baseline);
+		return response.Error is null;
 	}
 
-	private bool TryLaunch(RunProcessOptions options, ProcessModel.ProcessModel model,
+	// Rejected before anything is read or launched.
+	internal static string ValidateVerificationOptions(RunProcessOptions options) {
+		if (options.WaitTimeoutSeconds is < 0 or > MaxWaitTimeoutSeconds) {
+			return $"wait-timeout must be between 0 and {MaxWaitTimeoutSeconds} seconds.";
+		}
+		IReadOnlyList<string> watch = options.Watch ?? [];
+		if (watch.Count > MaxWatchedEntities) {
+			return $"watch takes at most {MaxWatchedEntities} entities.";
+		}
+		string invalid = watch.FirstOrDefault(name => !CreatedRecordWatcher.IsValidEntityName(name));
+		if (watch.Count > 0 && (invalid is not null || watch.Any(string.IsNullOrWhiteSpace))) {
+			return $"watch must list entity schema names (letters, digits, underscore); '{invalid}' is not one.";
+		}
+		if (options.Cleanup && watch.Count == 0) {
+			return "cleanup deletes only what the run created in the watched entities, so it needs watch: list the "
+				+ "entities the process creates records in (for example [\"Activity\"]).";
+		}
+		return null;
+	}
+
+	// ENG-103024: waits for a parked run, reports what it created in the watched entities, and cleans up.
+	private void Verify(RunProcessOptions options, RunProcessResponse response, WatchBaseline baseline) {
+		bool launched = response.Status is not null && response.Status != NotStartedStatus;
+		if (!launched) {
+			return;
+		}
+		Guid.TryParse(response.ProcessId, out Guid processId);
+		if (options.Wait && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
+			WaitForRun(options, response, processId);
+		}
+		if (baseline is null) {
+			return;
+		}
+		if (response.Status == QueuedBackgroundStatus) {
+			// A queued run has not executed yet, so a diff now would read as "the run created nothing", and a cleanup
+			// could never catch what it creates later.
+			(response.Warnings ??= []).Add("`created` is not reported and nothing was cleaned up: the platform queued "
+				+ "the run, so it had not executed yet when clio could look. Read the watched entities later, or launch "
+				+ "with result-parameters, which makes the run synchronous.");
+			return;
+		}
+		if (options.IsCallerGone) {
+			// Nobody reads this answer any more; nothing is cancelled or deleted on the caller's behalf.
+			return;
+		}
+		// Bounded like every later step, so the records are read before the tool answers rather than after.
+		WatchOutcome outcome = recordWatcher.Collect(baseline, RequestBudget(options.ResponseDeadline),
+			options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs));
+		response.Created = outcome.Created;
+		(response.Warnings ??= []).AddRange(outcome.Warnings);
+		if (options.Cleanup) {
+			CleanUp(options, response, processId, baseline);
+		}
+	}
+
+	private void WaitForRun(RunProcessOptions options, RunProcessResponse response, Guid processId) {
+		int reserveMs = WaitReserveMs
+			+ (options.Watch is { Count: > 0 } ? CollectReserveMs : 0)
+			+ (options.Cleanup ? CleanupReserveMs : 0);
+		DateTimeOffset started = DateTimeOffset.UtcNow;
+		DateTimeOffset until = started.AddSeconds(options.WaitTimeoutSeconds);
+		bool cutByDeadline = false;
+		if (options.ResponseDeadline is { } deadline && deadline.AddMilliseconds(-reserveMs) < until) {
+			until = deadline.AddMilliseconds(-reserveMs);
+			cutByDeadline = true;
+		}
+		ProcessRunState state = PollUntilEnd(options, processId, until, out string readError);
+		if (options.IsCallerGone) {
+			// The caller cancelled the call: nobody reads this answer, and nothing more is done for it.
+			return;
+		}
+		if (state is null && readError is not null) {
+			(response.Warnings ??= []).Add("The run is still running and its state could not be read while waiting: "
+				+ readError + $". Read SysProcessLog row {processId} for the outcome.");
+			return;
+		}
+		if (readError is not null) {
+			(response.Warnings ??= []).Add("The last read of the run's state failed (" + readError + "); the state "
+				+ "reported is the one read before it.");
+		}
+		int waitedSeconds = (int)Math.Round((DateTimeOffset.UtcNow - started).TotalSeconds);
+		ApplyRunState(response, state, waitedSeconds, cutByDeadline ? options.WaitTimeoutSeconds : null);
+	}
+
+	// Reads the run until it ends, `until` passes, the caller goes or reads keep failing. The last state read in full is
+	// kept: a read that fails later (a slow stand, one timed-out request) does not discard it, and the wait goes on.
+	private ProcessRunState PollUntilEnd(RunProcessOptions options, Guid processId, DateTimeOffset until,
+		out string readError) {
+		ProcessRunState state = null;
+		readError = null;
+		int failedReads = 0;
+		// Read, then sleep only while time is left, so the state reported is the last one read.
+		while (!options.IsCallerGone) {
+			// Bounded by the wait's own end plus its reserve, so a slow read cannot eat the time reserved after it.
+			int readMs = (int)Math.Clamp((until - DateTimeOffset.UtcNow).TotalMilliseconds + WaitReserveMs,
+				1_000, VerificationRequestMs);
+			try {
+				state = runMonitor.Read(processId, readMs);
+				readError = null;
+				failedReads = 0;
+			}
+			catch (Exception exception) when (exception is not OutOfMemoryException) {
+				readError = UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name;
+				failedReads++;
+			}
+			int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
+			// A read that keeps failing (no rights on SysProcessLog, a login lost) will not recover by waiting longer.
+			if ((readError is null && state is { IsTerminal: true }) || leftMs <= 0 || failedReads >= MaxConsecutiveFailedReads) {
+				break;
+			}
+			Sleep(Math.Min(PollIntervalMs, leftMs));
+		}
+		return state;
+	}
+
+	// Called only for a run the launch answered `running`, so its result-parameter values are the ones it had then.
+	// waitedSeconds is how long the wait really lasted; requestedSeconds is set when the response deadline cut the
+	// requested wait short, so the answer never claims a wait that did not happen.
+	internal static void ApplyRunState(RunProcessResponse response, ProcessRunState state, int waitedSeconds,
+		int? requestedSeconds) {
+		if (state is null || !state.Found || state.StatusValue is null) {
+			(response.Warnings ??= []).Add($"The run answered `running`, but its SysProcessLog row "
+				+ $"{response.ProcessId} could not be read while waiting, so no later status is known. Read that row "
+				+ "later instead of re-running the process.");
+			return;
+		}
+		if (!string.IsNullOrEmpty(state.Note)) {
+			(response.Warnings ??= []).Add(state.Note);
+		}
+		response.Status = ResolveStatusName(state.StatusValue.Value);
+		DropStaleResultValues(response, state.IsTerminal);
+		if (state.StatusValue == ErrorStatus) {
+			response.Error = DescribeFailure(null, state.ErrorSummary, response.VersionName);
+			return;
+		}
+		if (state.StatusValue == CancelledStatus) {
+			// Cancelled by someone else while clio waited (cleanup's own cancel comes later and is reported there): the
+			// run did not finish, so it is not a success.
+			response.Error = "The run was cancelled while clio waited for it - by a user or by another process - so it "
+				+ "did not finish. What it did before the cancel stays in place.";
+			return;
+		}
+		if (state.IsTerminal) {
+			return;
+		}
+		response.WaitingOn = state.WaitingOn.Count > 0 ? [.. state.WaitingOn] : null;
+		string elements = state.WaitingOn.Count == 0
+			? "no element is logged as running yet"
+			: "it is parked on " + string.Join(", ", state.WaitingOn.Select(DescribeWaitingElement));
+		string waited = requestedSeconds is { } requested
+			? $"{waitedSeconds} s (the response deadline cut the requested {requested} s wait short)"
+			: $"{waitedSeconds} s";
+		(response.Warnings ??= []).Add($"The run is still running after clio waited {waited}: {elements}. "
+			+ "This is NOT a failure. A user task (for example a Perform task that created an activity) waits for a "
+			+ "person to complete it and never ends on its own, so judge the run by `created` and `waitingOn` rather "
+			+ "than by waiting longer. A timer or background element ends by itself: read SysProcessLog row "
+			+ $"{response.ProcessId} later instead of re-running the process.");
+	}
+
+	// The launch answered `running`, so its result-parameter values are the ones the run had while parked. Paired with a
+	// final status they would read as the run's results, so they are dropped; with a still-running one they are kept and
+	// said to be the launch's.
+	private const string ParkedValuesNote = "resultParameterValues are the values the run had at the launch, while it was ";
+
+	private static void DropStaleResultValues(RunProcessResponse response, bool ended) {
+		if (response.ResultParameterValues is not { Count: > 0 }) {
+			return;
+		}
+		if (ended) {
+			response.ResultParameterValues = null;
+			(response.Warnings ??= []).Add("resultParameterValues are not reported: the platform returned them at the "
+				+ "launch, while the run was still running, so they are not what it ended with. Judge the run by its "
+				+ "effects and `created` instead of re-running it.");
+			return;
+		}
+		(response.Warnings ??= []).Add(ParkedValuesNote + "parked; it is still running, so they are not its results.");
+	}
+
+	private static string DescribeWaitingElement(WaitingElement element) {
+		string caption = UntrustedText.Fenced(element.Caption) ?? "an unnamed element";
+		return element.Type is null ? caption : $"{caption} ({element.Type})";
+	}
+
+	internal const string TimeWindowNote = "`created` is a before/after diff of the watched entities, so it also lists "
+		+ "records another session - another user's, or the same login's - created in the same window. cleanup deletes "
+		+ "only records tied to this run: one whose ProcessElementId names an element of the run (or of its "
+		+ "sub-processes), or one whose lookup points at such a record. Everything else, the run's own records with no "
+		+ "such tie included (for example one an Add data element wrote), is listed in cleanup.skipped and left in "
+		+ "place; check each before deleting it with odata-delete.";
+
+	private void CleanUp(RunProcessOptions options, RunProcessResponse response, Guid processId, WatchBaseline baseline) {
+		List<CreatedRecord> created = response.Created ?? [];
+		string me = baseline.CurrentUserContactId;
+		List<CreatedRecord> mine = me is null
+			? []
+			: created.Where(record => string.Equals(record.CreatedById, me, StringComparison.OrdinalIgnoreCase)).ToList();
+		// Past the response deadline the tool has already answered still-running, and a caller that cancelled the call
+		// is not reading at all: a cancel or a delete made now would happen without the caller ever being told.
+		// Nothing is done instead.
+		DateTimeOffset? stopAt = options.ResponseDeadline?.AddMilliseconds(-WaitReserveMs);
+		if (options.IsCallerGone) {
+			return;
+		}
+		(response.Warnings ??= []).Add(TimeWindowNote);
+		if (stopAt is not null && DateTimeOffset.UtcNow >= stopAt) {
+			// Nothing was checked against the run, so nothing is offered for deletion as the run's.
+			response.Cleanup = new CleanupReport { Skipped = [.. created] };
+			if (created.Count > 0) {
+				response.Warnings.Add("cleanup did nothing: too little of the response time was left to tie the records "
+					+ "to the run, cancel it and delete safely. cleanup.skipped lists every record in `created`.");
+			}
+			return;
+		}
+		// Read while the run is still parked: its element data rows, which tie a record to it, go when it stops.
+		HashSet<string> tied = TieToRun(mine, processId, stopAt, response);
+		List<CreatedRecord> ours = mine.Where(record => tied.Contains(record.Id)).ToList();
+		// A record a parked run still uses ("being used in a process" - the activity of a Perform task) cannot be
+		// deleted, so a running run is cancelled first - but only when there is something of the run's to delete.
+		if (ours.Count > 0 && processId != Guid.Empty && response.Status == StatusNames[RunningStatus]) {
+			CancelRun(options, response, processId, stopAt);
+		}
+		// Keyed case-insensitively: a watch name the caller typed in another case is the same schema.
+		Dictionary<string, IReadOnlyCollection<string>> references = baseline.Entities
+			.Where(watch => watch.Error is null)
+			.ToDictionary(watch => watch.Entity, watch => watch.References, StringComparer.OrdinalIgnoreCase);
+		response.Cleanup = recordCleaner.Delete(ours, references, RequestBudget(options.ResponseDeadline), stopAt,
+				options.CallerCancellation)
+			?? new CleanupReport();
+		response.Cleanup.Skipped = created.Except(ours).ToList();
+		if (response.Cleanup.Skipped.Count > 0) {
+			response.Warnings.Add(me is null
+				? "cleanup deleted nothing: the calling user's contact could not be read, so no record could be shown "
+					+ "to be the caller's own. cleanup.skipped lists them."
+				: $"cleanup left {response.Cleanup.Skipped.Count} record(s) it cannot tie to this run; cleanup.skipped "
+					+ "lists them.");
+		}
+		if (response.Cleanup.Failed.Count > 0) {
+			response.Warnings.Add($"cleanup left {response.Cleanup.Failed.Count} record(s) in place; "
+				+ "cleanup.failed names each with the reason.");
+		}
+	}
+
+	// The ids of the caller's records the run provably holds, or that point at such a record.
+	private HashSet<string> TieToRun(List<CreatedRecord> mine, Guid processId, DateTimeOffset? stopAt,
+		RunProcessResponse response) {
+		if (mine.Count == 0 || processId == Guid.Empty) {
+			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		}
+		try {
+			RecordProvenance provenance = recordProvenance.Resolve(mine, [], [processId.ToString("D")],
+				Math.Max(1, BudgetUntil(stopAt)), stopAt);
+			response.Warnings.AddRange(provenance.Warnings);
+			return provenance.Tied;
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			response.Warnings.Add("cleanup could not tie the records to the run, so it deleted none: "
+				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
+			return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		}
+	}
+
+	// Every request is bounded by stopAt, and none starts with less than a second left, or after the caller cancelled
+	// the call: a cancel that lands after the tool answered would stop the caller's run without the caller ever being
+	// told.
+	private void CancelRun(RunProcessOptions options, RunProcessResponse response, Guid processId, DateTimeOffset? stopAt) {
+		try {
+			int cancelMs = BudgetUntil(stopAt);
+			if (cancelMs < MinimumDestructiveRequestMs) {
+				(response.Warnings ??= []).Add("The still-running run was not cancelled before cleanup: too little of "
+					+ "the response time was left.");
+				return;
+			}
+			if (options.IsCallerGone) {
+				return;
+			}
+			string error = runMonitor.Cancel(processId, cancelMs);
+			if (!string.IsNullOrEmpty(error)) {
+				(response.Warnings ??= []).Add($"The still-running run was not cancelled before cleanup: {error}.");
+				return;
+			}
+			DateTimeOffset until = DateTimeOffset.UtcNow.AddMilliseconds(CancelWaitMs);
+			if (stopAt is not null && stopAt < until) {
+				until = stopAt.Value;
+			}
+			while (DateTimeOffset.UtcNow < until && !options.IsCallerGone) {
+				// The cancel was accepted; one slow read of its effect is retried, not reported as a failed cancel.
+				ProcessRunState state = TryRead(processId,
+					(int)Math.Max(1, Math.Min(VerificationRequestMs, (until - DateTimeOffset.UtcNow).TotalMilliseconds)));
+				if (state is { IsTerminal: true }) {
+					response.Status = ResolveStatusName(state.StatusValue ?? ErrorStatus);
+					response.WaitingOn = null;
+					(response.Warnings ??= []).RemoveAll(warning => warning.StartsWith(ParkedValuesNote, StringComparison.Ordinal));
+					DropStaleResultValues(response, ended: true);
+					(response.Warnings ??= []).Add("cleanup cancelled the still-running run before deleting what it created.");
+					return;
+				}
+				int leftMs = (int)(until - DateTimeOffset.UtcNow).TotalMilliseconds;
+				if (leftMs <= 0) {
+					break;
+				}
+				Sleep(Math.Min(PollIntervalMs, leftMs));
+			}
+			(response.Warnings ??= []).Add("cleanup asked the platform to cancel the still-running run, but it had not "
+				+ "stopped in the time left; records it still uses may refuse deletion.");
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			(response.Warnings ??= []).Add("The still-running run could not be cancelled before cleanup: "
+				+ (UntrustedText.Fenced(exception.Message) ?? exception.GetType().Name) + ".");
+		}
+	}
+
+	private ProcessRunState TryRead(Guid processId, int timeoutMs) {
+		try {
+			return runMonitor.Read(processId, timeoutMs);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			return null;
+		}
+	}
+
+	// The time left before stopAt, at most VerificationRequestMs; may be zero or negative.
+	private static int BudgetUntil(DateTimeOffset? stopAt) => stopAt is null
+		? VerificationRequestMs
+		: (int)Math.Min(VerificationRequestMs, (stopAt.Value - DateTimeOffset.UtcNow).TotalMilliseconds);
+
+	// Each verification request may spend VerificationRequestMs, but never past the response deadline.
+	private static int RequestBudget(DateTimeOffset? responseDeadline) {
+		if (responseDeadline is null) {
+			return VerificationRequestMs;
+		}
+		double left = (responseDeadline.Value - DateTimeOffset.UtcNow).TotalMilliseconds;
+		return (int)Math.Clamp(left, 1_000, VerificationRequestMs);
+	}
+
+	private void Launch(RunProcessOptions options, ProcessModel.ProcessModel model,
 		ProcessStartArgs.ParameterValues[] values, out RunProcessResponse response) {
 		ProcessStartArgs args = new() {
 			SchemaName = model.Code,
@@ -145,15 +675,32 @@ public class RunProcessCommand(
 			Result = options.ResultParameters?.ToArray()
 		};
 
-		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunProcess);
+		// RunSpecifiedProcessVersion, not RunProcess: RunProcess resolves the code to the family's ACTIVE version, so
+		// a run "of" a new version silently executed the previous one (ENG-101880). For the active version's own
+		// code the two run the same schema. See docs/knowledge/platform/runprocess-runs-the-active-version.md
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.RunSpecifiedProcessVersion);
+		if (options.LaunchGate is not null && !options.LaunchGate.TryMarkSent(DateTime.UtcNow)) {
+			// The MCP answer already told the caller nothing was launched; sending now would make that false.
+			response = new RunProcessResponse {
+				Status = NotStartedStatus,
+				Error = $"'{model.Code}' was not launched: the MCP call was answered or cancelled before the launch request was sent."
+			};
+			return;
+		}
+		// Read alongside the launch, never ahead of it: before the gate it would spend the response deadline that
+		// decides whether anything is launched at all. The tool reads the same task for a still-running answer.
+		Task<ProcessVersionFacts> versionFacts = StartVersionRead(model.Id);
+		options.VersionFacts = versionFacts;
 		// maxAttempts stays 1: idempotency belongs to the specific process, not to this transport, so a
 		// retry can duplicate work.
 		string rawResponse = applicationClient.ExecutePostRequest(url, StjSerializer.Serialize(args),
 			ResolveRequestTimeout(options.TimeoutSeconds), maxAttempts: 1);
 
 		if (string.IsNullOrWhiteSpace(rawResponse)) {
-			response = Failure("RunProcess returned an empty response");
-			return false;
+			// The request was sent, so the answer still names the version it carried.
+			response = Failure("The launch returned an empty response");
+			response.VersionName = model.Code;
+			return;
 		}
 
 		ProcessStartResponse platformResponse;
@@ -161,14 +708,157 @@ public class RunProcessCommand(
 			platformResponse = StjSerializer.Deserialize<ProcessStartResponse>(rawResponse);
 		}
 		catch (StjJsonException e) {
-			response = Failure($"RunProcess returned a response clio could not read: {e.Message}");
-			return false;
+			response = Failure($"The launch returned a response clio could not read: {e.Message}");
+			response.VersionName = model.Code;
+			return;
 		}
 
 		response = BuildResponse(platformResponse, model.Code);
-		// Feeds Execute's exit code, so it tracks the outcome rather than "a request was sent" — a refusal
-		// and a failed run would otherwise both exit 0.
-		return response.Error is null;
+		// The failure-cause log read first: it is worth more than the version facts, and both are paid for out of
+		// the same remaining response deadline. The version read has been in flight since the POST.
+		AddLoggedError(platformResponse, response, options.ResponseDeadline);
+		AddVersion(response, model.Code, AwaitVersionFacts(versionFacts, options.ResponseDeadline));
+	}
+
+	// The version read is a courtesy on top of the launch: a failure of any kind - the reader's own guard does not
+	// cover an authentication or ATF expression exception - leaves the facts unestablished, never the launch undone.
+	private Task<ProcessVersionFacts> StartVersionRead(Guid schemaUId) =>
+		Task.Run(() => {
+			try {
+				return versionLibReader.Read(schemaUId.ToString("D"));
+			}
+			catch (Exception exception) when (exception is not OutOfMemoryException) {
+				return new ProcessVersionFacts { Warning = $"the version read failed ({exception.GetType().Name})" };
+			}
+		});
+
+	// Waits for the version read within what is left of the response deadline, as the log read does; null when the
+	// read has not answered by then.
+	internal static ProcessVersionFacts AwaitVersionFacts(Task<ProcessVersionFacts> read, DateTimeOffset? deadline) {
+		// A read that has already answered costs nothing to use, however little of the deadline is left.
+		if (read.IsCompletedSuccessfully) {
+			return read.Result;
+		}
+		int? waitMs = ResolveLogReadTimeout(deadline, DateTimeOffset.UtcNow);
+		return waitMs is not null && read.Wait(Math.Min(waitMs.Value, VersionReadWaitMs)) ? read.Result : null;
+	}
+
+	// The reader's own budget is 10 s; waiting past it gains nothing.
+	private const int VersionReadWaitMs = 11_000;
+
+	// Names the version the call launched, and whether the process library reports it as the active one. A refusal
+	// gets the facts but no note, since nothing ran. An unestablished flag is said too: the base name runs the family
+	// root, so "which version ran" is not something a caller can assume.
+	internal static void AddVersion(RunProcessResponse response, string processCode, ProcessVersionFacts facts) {
+		response.VersionName = processCode;
+		// "Active" counts only when the library names the family's one active member: two members flagged active
+		// leave ActiveVersionName null, and the runtime then picks between them by a key the view does not expose.
+		bool? standing = facts?.IsActiveVersion == true && string.IsNullOrWhiteSpace(facts.ActiveVersionName)
+			? null
+			: facts?.IsActiveVersion;
+		response.IsActiveVersion = standing;
+		response.ActiveVersionName = facts?.ActiveVersionName;
+		if (response.Status == NotStartedStatus) {
+			return;
+		}
+		// A still-running answer has no verdict, so its notes say the version was launched, not that it ran.
+		bool verdictPending = response.Status == StillRunningStatus;
+		string note = (standing, response.Status == QueuedBackgroundStatus) switch {
+			(true, _) => null,
+			(false, true) => BuildQueuedNotActiveVersionNote(processCode),
+			(false, false) => BuildNotActiveVersionNote(processCode, response.ActiveVersionName, verdictPending),
+			(null, true) => BuildQueuedUnknownVersionNote(processCode) + DescribeReadWarning(facts),
+			(null, false) => BuildUnknownVersionNote(processCode, verdictPending) + DescribeReadWarning(facts)
+		};
+		if (note is not null) {
+			(response.Warnings ??= []).Add(note);
+		}
+	}
+
+	// A schema name is stored text the server returns, so one that is not a plain code is fenced before it reaches an
+	// agent - the same rule CompileBusinessProcessCommand applies to the names it echoes.
+	private static string DescribeSchemaName(string name) =>
+		SchemaCode.IsMatch(name) ? $"'{name}'" : UntrustedText.Fenced(name);
+
+	private static readonly System.Text.RegularExpressions.Regex SchemaCode = new(@"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z",
+		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
+
+	// Why the standing is unknown, as the reader put it; fenced, since it can quote server text.
+	private static string DescribeReadWarning(ProcessVersionFacts facts) {
+		string fenced = UntrustedText.Fenced(facts?.Warning);
+		return fenced is null ? string.Empty : $" The version read reported: {fenced}.";
+	}
+
+	private static string RanOrLaunched(bool verdictPending) => verdictPending ? "was launched" : "ran as asked";
+
+	internal static string BuildUnknownVersionNote(string processCode, bool verdictPending = false) =>
+		$"'{processCode}' {RanOrLaunched(verdictPending)}, but whether it is the active version of its process could not be "
+		+ "established, so this answer cannot say whether the platform's own triggers run the same version; "
+		+ "describe-business-process reports isActiveVersion and activeVersionName.";
+
+	internal static string BuildQueuedUnknownVersionNote(string processCode) =>
+		$"The platform queued this run, and whether '{processCode}' is the active version of its process could not "
+		+ "be established: its background queue starts the ACTIVE version, so if this one is not active, the launch "
+		+ "ran another version. Check with describe-business-process; to run this version for certain, launch it "
+		+ "with result-parameters, which makes the run synchronous.";
+
+	// The platform's background queue re-resolves a queued run to the ACTIVE version (StartProcessCommandConsumer
+	// reads GetActiveVersionItemByUId), so a queued run is not evidence that this version ran. Traced in source, not
+	// measured: no stand has answered queued-background to this route yet.
+	internal static string BuildQueuedNotActiveVersionNote(string processCode) =>
+		$"'{processCode}' is NOT the active version of its process, and the platform queued this run: its background "
+		+ "queue starts the ACTIVE version, so this launch may not have run the version you named. To run this "
+		+ "version, launch it again with result-parameters, which makes the run synchronous.";
+
+	// A run that failed inside an element - a script that threw, a formula that could not be computed - comes back
+	// with only "check the process log" and no errorCode: the platform swallows the element's exception before
+	// RunProcess builds its answer. It logged it, though, on the run's SysProcessLog row before returning, so the
+	// failure names it. Best effort: when the log cannot be read the generic message stays, and a warning says
+	// where to look. The read runs inside the MCP response deadline, so it gets only what is left of it: past the
+	// deadline the tool answers still-running, and the failure - with what the log said - would be lost.
+	private void AddLoggedError(ProcessStartResponse platformResponse, RunProcessResponse response,
+		DateTimeOffset? responseDeadline) {
+		if (response.Error is null || platformResponse is null || platformResponse.ProcessId == Guid.Empty) {
+			return;
+		}
+		(string errorCode, _) = ReadErrorInfo(platformResponse.ErrorInfo);
+		if (!string.IsNullOrWhiteSpace(errorCode)) {
+			return;
+		}
+		int? readTimeoutMs = ResolveLogReadTimeout(responseDeadline, DateTimeOffset.UtcNow);
+		if (readTimeoutMs is null) {
+			(response.Warnings ??= []).Add("The error this run logged was not read, because too little of the "
+				+ $"response time was left; it is in the process log of run {platformResponse.ProcessId}.");
+			return;
+		}
+		string logged;
+		try {
+			logged = processRunLogReader.ReadErrorSummary(platformResponse.ProcessId, readTimeoutMs.Value);
+		}
+		catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Reading the log is a courtesy on top of a failure already reported; no failure of it may replace
+			// that report. Its text goes to the console line only, rendered for a terminal (the MCP tool clears the
+			// captured log), never into the response.
+			logger.WriteWarning($"Could not read the process log of run {platformResponse.ProcessId}: "
+				+ (UntrustedText.ForConsole(exception.GetReadableMessageException()) ?? "no detail reported"));
+			(response.Warnings ??= []).Add(
+				$"The error this run logged could not be read; it is in the process log of run {platformResponse.ProcessId}.");
+			return;
+		}
+		string fenced = UntrustedText.Fenced(logged);
+		if (fenced is not null) {
+			response.Error += $" The process log of this run reports: {fenced}";
+		}
+	}
+
+	// What the log read may spend: everything when no response deadline applies, otherwise what is left of it less
+	// the margin, or null when that is under the minimum.
+	internal static int? ResolveLogReadTimeout(DateTimeOffset? responseDeadline, DateTimeOffset now) {
+		if (responseDeadline is null) {
+			return int.MaxValue;
+		}
+		double left = (responseDeadline.Value - now).TotalMilliseconds - LogReadMarginMs;
+		return left < MinimumLogReadMs ? null : (int)Math.Min(left, int.MaxValue);
 	}
 
 	// A refusal, a background queueing and an inactive descriptor arrive with the SAME empty id and
@@ -176,12 +866,23 @@ public class RunProcessCommand(
 	// docs/knowledge/platform/runprocess-success-flag-is-not-the-run-verdict.md
 	internal static RunProcessResponse BuildResponse(ProcessStartResponse platformResponse, string processCode) {
 		if (platformResponse is null) {
-			return new RunProcessResponse { Error = "RunProcess returned an empty response" };
+			return new RunProcessResponse { Error = "The launch returned an empty response" };
 		}
 
 		(string errorCode, string errorMessage) = ReadErrorInfo(platformResponse.ErrorInfo);
 		bool noHandle = platformResponse.ProcessId == Guid.Empty
 			&& platformResponse.ProcessStatus == InactiveStatus;
+
+		// With UseOldStartupExceptionHandling on, the platform rethrows a run's exception and returns no id, which
+		// reads as a refusal - but the missing compiled method is thrown when the flow REACHES the script task, so
+		// the elements before it ran. Reported as a failed run, so a caller does not re-run them as not-started.
+		if (noHandle && !platformResponse.Success
+				&& IsMissingCompiledMethod(errorCode)) {
+			return new RunProcessResponse {
+				Status = StatusNames[ErrorStatus],
+				Error = DescribeFailure(errorCode, errorMessage, processCode)
+			};
+		}
 
 		if (noHandle && !platformResponse.Success) {
 			return new RunProcessResponse {
@@ -205,7 +906,7 @@ public class RunProcessCommand(
 		// A failed run can arrive with success=true: the platform only clears that flag while
 		// Feature-SetErrorInfoIfProcessHasFailedExecution is on. Both signals are read.
 		if (!platformResponse.Success || platformResponse.ProcessStatus == ErrorStatus) {
-			response.Error = DescribeFailure(errorCode, errorMessage);
+			response.Error = DescribeFailure(errorCode, errorMessage, processCode);
 		}
 		return response;
 	}
@@ -224,13 +925,27 @@ public class RunProcessCommand(
 			? member.GetString()
 			: null;
 
-	private static string DescribeFailure(string errorCode, string message) {
-		string detail = string.IsNullOrWhiteSpace(message)
-			? "the platform returned no error details"
-			: message;
+	private static string DescribeFailure(string errorCode, string message, string processCode) {
+		// Fenced: the platform's wording reaches an agent through the MCP result, and it can quote stored text.
+		string detail = UntrustedText.Fenced(message) ?? "the platform returned no error details";
 		return $"The process run failed: {detail}."
-			+ (string.IsNullOrWhiteSpace(errorCode) ? string.Empty : $" [{errorCode}]");
+			+ DescribeErrorCode(errorCode)
+			+ (IsMissingCompiledMethod(errorCode)
+				? BuildMissingCompiledMethodHint(processCode)
+				: string.Empty);
 	}
+
+	// The platform fills errorCode with the exception's type name (ResponseUtils.CreateErrorInfo), so an identifier
+	// is shown as it is; anything else is the server's text like the message, and is fenced.
+	private static string DescribeErrorCode(string errorCode) {
+		if (string.IsNullOrWhiteSpace(errorCode)) {
+			return string.Empty;
+		}
+		return ErrorCodeShape.IsMatch(errorCode) ? $" [{errorCode}]" : $" [{UntrustedText.Fenced(errorCode)}]";
+	}
+
+	private static readonly System.Text.RegularExpressions.Regex ErrorCodeShape = new(@"\A[A-Za-z_][A-Za-z0-9_.]{0,127}\z",
+		System.Text.RegularExpressions.RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(100));
 
 	private static string ResolveStatusName(int status) =>
 		StatusNames.TryGetValue(status, out string name) ? name : $"unknown-status-{status}";

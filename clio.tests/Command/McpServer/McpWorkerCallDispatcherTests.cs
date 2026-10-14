@@ -238,7 +238,7 @@ public sealed class McpWorkerCallDispatcherTests {
 		request.WorkingDirectory.Should().Be(Environment.CurrentDirectory,
 			because: "this is the single place the host's directory is stated, and an end-to-end test spawns a real child from this very object to prove the child actually starts there");
 		request.Arguments.Should().Equal(["mcp-server", "--worker"],
-			because: "a worker child is clio's own MCP server in worker mode, and the flag is what the recursion guard reads");
+			because: "a worker child is clio's own MCP server in worker mode, and the flag is what the recursion guard reads; no fail-on flag is forwarded, because the MCP verbs ignore them (ENG-102487)");
 		request.Budget.Should().Be(TimeSpan.FromSeconds(7),
 			because: "the caller's budget is what the parent measures from spawn and kills on");
 		request.EnvironmentVariables.Should().BeSameAs(childEnvironment,
@@ -424,6 +424,25 @@ public sealed class McpWorkerCallDispatcherTests {
 			because: "the marker is what distinguishes a TERMINATED worker from the abandoned in-process read, which is the whole behavioural difference this feature delivers");
 		structured.GetProperty("budget-seconds").GetInt32().Should().Be(12,
 			because: "an agent cannot decide whether to narrow the query or raise the budget without knowing which budget expired");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A killed page-smoke worker is NOT called safe to retry: its click may have pressed Save before the kill, so the envelope tells the caller to read the watched entities before repeating a click.")]
+	public void BudgetExpiredResult_ShouldNotCallAKilledBrowserCheckSafeToRetry() {
+		// Arrange & Act
+		CallToolResult result = McpWorkerCallDispatcher.BudgetExpiredResult(
+			"page-smoke", TimeSpan.FromSeconds(120), standardErrorTail: null);
+
+		// Assert
+		JsonElement structured = StructuredOf(result);
+		structured.GetProperty("error").GetString().Should().NotContain("affected and the call is safe to retry",
+			because: "a blind retry of a click that already pressed Save writes the record twice")
+			.And.Contain("the button may have been pressed", because: "the caller must learn the write may have happened");
+		structured.GetProperty("retry-guidance").GetString().Should().Contain("read the watched entities before repeating a click",
+			because: "the guidance names what to check first");
+		structured.GetProperty("error-class").GetString().Should().Be("creatio-timeout",
+			because: "the wire token stays the same for every worker-budget expiry");
 	}
 
 	[Test]

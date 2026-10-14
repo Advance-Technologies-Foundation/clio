@@ -26,8 +26,16 @@ public class CreateEntitySchemaOptions : RemoteCommandOptions
 		set { if (!string.IsNullOrEmpty(value)) Package = value; }
 	}
 
-	[Option("name", Required = true, HelpText = "Schema name")]
+	/// <summary>Schema name. Required unless the hidden <c>--schema-name</c> alias supplies it.</summary>
+	[Option("name", Required = false, HelpText = "Schema name. Required.")]
 	public string SchemaName { get; set; }
+
+	/// <summary>
+	/// Hidden alias of <c>--name</c>, the spelling the other entity-schema commands use. Kept separate from
+	/// <see cref="SchemaName"/> so the command can report a missing name and a conflict between the two.
+	/// </summary>
+	[Option("schema-name", Required = false, Hidden = true, HelpText = "Alias for --name")]
+	public string? SchemaNameAlias { get; set; }
 
 	[Option("title", Required = true, HelpText = "Schema title")]
 	public string Title { get; set; }
@@ -95,15 +103,33 @@ public class CreateEntitySchemaCommand : Command<CreateEntitySchemaOptions>
 		if (string.IsNullOrWhiteSpace(options.Package)) {
 			throw new InvalidOperationException("Package is required.");
 		}
-		if (string.IsNullOrWhiteSpace(options.SchemaName)) {
-			throw new InvalidOperationException("Schema name is required.");
-		}
+		ResolveSchemaName(options);
 		if (string.IsNullOrWhiteSpace(options.Title)) {
 			throw new InvalidOperationException("Schema title is required.");
 		}
 		if (options.ExtendParent && !string.IsNullOrWhiteSpace(options.ParentSchemaName)
 			&& !string.Equals(options.SchemaName, options.ParentSchemaName, StringComparison.OrdinalIgnoreCase)) {
 			throw new InvalidOperationException(CreateEntitySchemaOptions.ReplacementNameMismatchMessage);
+		}
+	}
+
+	// --name is not parser-required because --schema-name may supply it instead; the presence and agreement of the
+	// two spellings are enforced here, before any remote call.
+	private static void ResolveSchemaName(CreateEntitySchemaOptions options)
+	{
+		bool hasName = !string.IsNullOrWhiteSpace(options.SchemaName);
+		bool hasAlias = !string.IsNullOrWhiteSpace(options.SchemaNameAlias);
+		if (!hasName && !hasAlias) {
+			throw new InvalidOperationException("Schema name is required. Supply --name (or its alias --schema-name).");
+		}
+		if (hasName && hasAlias
+			&& !string.Equals(options.SchemaName, options.SchemaNameAlias, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Schema name is set by both --name ('{UpdateEntitySchemaCommand.SanitizeForMessage(options.SchemaName)}') "
+				+ $"and its alias --schema-name ('{UpdateEntitySchemaCommand.SanitizeForMessage(options.SchemaNameAlias)}'). Supply only one.");
+		}
+		if (!hasName) {
+			options.SchemaName = options.SchemaNameAlias;
 		}
 	}
 

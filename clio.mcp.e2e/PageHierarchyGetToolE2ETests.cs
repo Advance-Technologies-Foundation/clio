@@ -36,9 +36,10 @@ public sealed class PageHierarchyGetToolE2ETests : McpContractFixtureBase {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
 
-		// Act — compact index (no tool-names) then the full contract for get-page-hierarchy.
+		// Act — compact index as objects (no tool-names) then the full contract for get-page-hierarchy.
 		ToolContractGetResponse index = await CallToolContractAsync(
-			context.Session, context.CancellationTokenSource.Token, new Dictionary<string, object?>());
+			context.Session, context.CancellationTokenSource.Token,
+			new Dictionary<string, object?> { ["detail"] = ToolContractCatalog.IndexEntriesDetail });
 		ToolContractGetResponse contract = await CallToolContractAsync(
 			context.Session, context.CancellationTokenSource.Token,
 			new Dictionary<string, object?> { ["tool-names"] = new[] { ToolName } });

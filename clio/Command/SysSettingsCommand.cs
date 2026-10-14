@@ -26,7 +26,10 @@ namespace Clio.Command
 
 		[Value(2, MetaName = "Type", Required = false, HelpText =
 			"Sys-setting type (default: Text). Use Binary for a setting whose value is blob data, such as the logo.", Default = "Text")]
-		public string Type { get; set; }
+		//The parser's Default applies only to parsed command lines; an options object built in code
+		//(apply-manifest) kept null, and a null type on a setting the environment does not have yet
+		//failed the write with a NullReferenceException (issue #292).
+		public string Type { get; set; } = "Text";
 
 		[Option("get", Required = false, HelpText = "Use GET to retrieve sys-setting")]
 		public bool IsGet { get; set; }
@@ -196,6 +199,23 @@ namespace Clio.Command
 
 		private void CreateSysSettingIfNotExists(SysSettingsOptions opts) {
 			_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type);
+		}
+
+		/// <summary>
+		/// Creates the sys-setting named by <paramref name="opts"/> when the environment does not have it yet,
+		/// then writes its value - the same two steps <c>set-syssetting</c> runs. A setting created here is
+		/// reported with a warning, because the caller named no type and the setting got
+		/// <see cref="SysSettingsOptions.Type"/>, Text by default.
+		/// </summary>
+		/// <param name="opts">The setting code, value and value-type-name.</param>
+		/// <returns>The result of <see cref="UpdateSysSetting"/>.</returns>
+		public bool CreateIfMissingAndUpdateSysSetting(SysSettingsOptions opts) {
+			if (_sysSettingsManager.CreateSysSettingIfNotExists(opts.Code, opts.Code, opts.Type)) {
+				_logger.WriteWarning(
+					$"Sys-setting '{opts.Code}' did not exist on the environment, so it was created with type " +
+					$"{opts.Type}. Check the code if the setting was expected to exist already.");
+			}
+			return UpdateSysSetting(opts);
 		}
 
 		/// <summary>

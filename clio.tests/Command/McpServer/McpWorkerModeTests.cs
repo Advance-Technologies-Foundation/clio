@@ -169,7 +169,10 @@ public sealed class McpWorkerModeTests {
 	[Description("TC-U-302: the frozen generation round-trips every feature the assembly gates, including the CLI-only ring flag, and keeps the case-insensitive key comparison the settings repository uses.")]
 	public void FrozenFeatures_ShouldRoundTripEveryGatedFeatureCaseInsensitively() {
 		// Arrange — the whole map, not a hand-picked subset: a worker also dispatches CLI verbs, so a
-		// CLI-only flag is in scope even though it gates no MCP tool.
+		// CLI-only flag is in scope even though it gates no MCP tool. mobile-page-converter is kept on
+		// purpose after it stopped gating anything (ENG-94638): a Beta tester's leftover key is exactly
+		// what a real parent map carries, and the worker must round-trip an ORPHAN key unchanged rather
+		// than dropping it and making the parent and worker disagree about the settings they share.
 		Dictionary<string, bool> parentFeatures = new(StringComparer.OrdinalIgnoreCase) {
 			["deploy-identity"] = true,
 			[ProcessDesignerFeature] = false,
@@ -440,11 +443,11 @@ public sealed class McpWorkerModeTests {
 	// TC-U-303 — the deliberate deadline asymmetry
 	// ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-	[TestCase(null, 150)]
-	[TestCase("", 150)]
-	[TestCase("not-a-number", 150)]
-	[TestCase("0", 150)]
-	[TestCase("601", 150)]
+	[TestCase(null, 45)]
+	[TestCase("", 45)]
+	[TestCase("not-a-number", 45)]
+	[TestCase("0", 45)]
+	[TestCase("601", 45)]
 	[TestCase("25", 25)]
 	[TestCase("600", 600)]
 	[Category("Unit")]
@@ -458,8 +461,27 @@ public sealed class McpWorkerModeTests {
 
 		// Assert
 		resolved.Should().Be(expected,
-			because: "an out-of-range or unparseable override must fall back to the 150 s default rather than "
+			because: "an out-of-range or unparseable override must fall back to the 45 s default rather than "
 				+ "silently producing an unbounded or zero budget");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-102333: the built-in response deadline leaves the in-progress answer time to reach a client whose per-call ceiling is 60 s. Claude Code desktop 2.1.293 gives up at 60 s and then restarts the MCP server, which loses the operation's record, so a default raised to within a few seconds of 60 brings the defect back.")]
+	public void ResolveResponseDeadline_ShouldStayWellBelowSixtySeconds_WhenNoOverrideIsSet() {
+		// Arrange
+		TimeSpan clientCeiling = TimeSpan.FromSeconds(60);
+		TimeSpan measuredDelivery = TimeSpan.FromSeconds(3);
+
+		// Act
+		TimeSpan resolved = McpProgressHeartbeat.ResolveResponseDeadline(null);
+
+		// Assert
+		resolved.Should().Be(TimeSpan.FromSeconds(45),
+			because: "the shipped default is a decision recorded in the ADR, not any value that happens to fit");
+		(resolved + measuredDelivery).Should().BeLessThan(clientCeiling,
+			because: "the answer reached the client 1-3 s after the deadline in every measured run, and a client "
+				+ "that gives up first restarts the server and takes the operation's record with it");
 	}
 
 	[Test]

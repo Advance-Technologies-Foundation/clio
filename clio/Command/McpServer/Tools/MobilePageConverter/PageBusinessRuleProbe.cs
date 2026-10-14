@@ -77,7 +77,12 @@ public static class PageBusinessRuleProbe {
 		} catch (Exception ex) {
 			return new PageBusinessRuleProbeResult {
 				ProbeOk = false,
-				Note = $"Could not read page-level business rules ({ex.Message}). Review and recreate them manually."
+				// RedactUntrustedOrNull, not Redact: AddonSchemaDesignerClient rethrows the SERVER's own
+				// errorInfo.message, so the CONTENT is third-party text, and this note rides a success:true
+				// guide the caller is told to act on. Fencing is what keeps it data rather than instructions.
+				Note = "Could not read page-level business rules "
+					+ $"({SensitiveErrorTextRedactor.RedactUntrustedOrNull(ex.Message)}). "
+					+ "Review and recreate them manually."
 			};
 		}
 	}

@@ -96,4 +96,86 @@ public class CreatioLicenseClientTests {
 		act.Should().Throw<InvalidOperationException>(because: "a non-JSON body signals the request never reached LicenseService")
 			.WithMessage("*LicenseService*");
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("An HTML body (a login redirect or a server error page) is named, never previewed: it can carry session cookies, request tokens and stack traces, and the message reaches the log and an agent transcript.")]
+	public void GetLicenseOperationStatuses_ShouldNotPreviewTheBody_WhenResponseIsAnHtmlPage() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("  <html><body>Request Error. __RequestVerificationToken=abc123</body></html>");
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "an HTML page is not a service answer")
+			.Which.Message;
+		message.Should().Contain("an HTML page instead of JSON", because: "the caller is told what came back");
+		message.Should().NotContain("RequestVerificationToken", because: "the page body is never shown");
+		message.Should().NotContain("<html>", because: "no markup reaches the message");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A body that is neither JSON nor HTML is previewed only after it is redacted, then capped: a credential in it never reaches the message.")]
+	public void GetLicenseOperationStatuses_ShouldRedactThePreview_WhenResponseIsNotJson() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("Service unavailable; password=hunter2secret; retry later");
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Service unavailable", because: "the readable part of the body is previewed");
+		message.Should().NotContain("hunter2secret", because: "a credential in the body is redacted before the preview");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The preview is redacted BEFORE it is capped: a JSON credential whose value the 200-character cap would slice — which the redactor cannot match once its closing quote is cut off — never reaches the message.")]
+	public void GetLicenseOperationStatuses_ShouldRedactBeforeCapping_WhenACredentialCrossesThePreviewLimit() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		// Not JSON as a whole, so the body is previewed; the credential's value starts ten characters before the cap.
+		string body = "Unavailable " + new string('x', 165) + "{\"password\":\"zq9Kx7secretvalue\"} retry later";
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Unavailable", because: "the readable part of the body is previewed");
+		message.Should().NotContain("zq9K",
+			because: "capping first would cut the value's closing quote off, and the redactor leaves such a value as it is");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The preview of a body that is not JSON is capped at 200 characters: text past the cap never reaches the message, the log or an agent transcript.")]
+	public void GetLicenseOperationStatuses_ShouldCapThePreview_WhenTheBodyIsLong() {
+		// Arrange
+		(CreatioLicenseClient client, IApplicationClient applicationClient) = CreateClient();
+		string body = "Unavailable " + new string('x', 250) + " PASTTHECAPMARKER " + new string('y', 700);
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+
+		// Act
+		Action act = () => client.GetLicenseOperationStatuses(new[] { "CanCustomizeBranding" }, new CreatioRequestOptions());
+
+		// Assert
+		string message = act.Should().Throw<InvalidOperationException>(because: "the body is not JSON").Which.Message;
+		message.Should().Contain("Unavailable", because: "the start of the body is previewed");
+		message.Should().NotContain("PASTTHECAPMARKER", because: "the preview stops at 200 characters");
+	}
 }
