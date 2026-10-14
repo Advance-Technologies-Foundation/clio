@@ -8,7 +8,7 @@ ticket: ENG-95984
 date: 2026-10-14
 ---
 
-**What is true** — from CrtProcessBuilder 1.6.6.98, describe reports `type: FileCollection` for a
+**What is true** — from CrtProcessBuilder 1.6.6.99, describe reports `type: FileCollection` for a
 process-level `CompositeObjectList` with no tag and exactly one item of type FileLocator, whatever the
 item is called, and keeps the real item in `itemProperties`. A designer-made collection qualifies
 (measured 2026-10-14: a "Collection of records" with one File column `Attachment` describes as

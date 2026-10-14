@@ -492,7 +492,7 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes the two file types a CrtProcessBuilder from 1.6.6.98 reports - FileLocator for a single file and FileCollection for a collection whose only item is a file - verbatim into the DescribedParameter DTO, keeps the collection's File item, and omits the absent tag on re-serialization (ENG-95984, CU-01).")]
+	[Description("Deserializes the two file types a CrtProcessBuilder from 1.6.6.99 reports - FileLocator for a single file and FileCollection for a collection whose only item is a file - verbatim into the DescribedParameter DTO, keeps the collection's File item, and omits the absent tag on re-serialization (ENG-95984, CU-01).")]
 	public void Describe_ShouldReadFileLocatorAndFileCollectionTypes_WhenServerReportsThem() {
 		// Arrange — a single-file parameter and a file collection declared by type (no tag: it mirrors no element)
 		IApplicationClient client = ClientReturning(

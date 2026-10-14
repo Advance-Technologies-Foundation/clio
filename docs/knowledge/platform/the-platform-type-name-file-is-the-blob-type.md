@@ -11,7 +11,7 @@ date: 2026-10-14
 **What is true** — `DataValueTypeManager.GetInstanceByName("File")` returns `FileDataValueType`
 (`BA40CFC5`, "File (BLOB)"), the type of the `Data` column of a file entity. The process designer's
 "File" parameter is a different type: `FileLocatorDataValueType` (`A33C9252`), a reference to stored
-content. CrtProcessBuilder from 1.6.6.98 maps `type: File` to the FileLocator name itself, so "File"
+content. CrtProcessBuilder from 1.6.6.99 maps `type: File` to the FileLocator name itself, so "File"
 never reaches the manager as written; `FileCollection` becomes a `CompositeObjectList` with one
 FileLocator item named `File`. `Binary` stays refused: it is a Stream type the flow engine cannot hold,
 and on the writer path the value is dropped without an error.

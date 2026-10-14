@@ -382,7 +382,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract says a value that IS another element's output is decoded to sourceElement + sourceElementParameter, not only a value reading one column of a record (ENG-95984, CU-05): a CrtProcessBuilder from 1.6.6.98 names the source of an element-output binding whenever re-sending those names would change nothing else, and an agent told only about the column form would not look for it.")]
+	[Description("The describe contract says a value that IS another element's output is decoded to sourceElement + sourceElementParameter, not only a value reading one column of a record (ENG-95984, CU-05): a CrtProcessBuilder from 1.6.6.99 names the source of an element-output binding whenever re-sending those names would change nothing else, and an agent told only about the column form would not look for it.")]
 	public void DescribeProcess_ShouldDocumentTheElementOutputSource_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();

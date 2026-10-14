@@ -16,7 +16,7 @@ collection with no outer source but a bound nested item is read as ONE row (`Try
 collection outside any row context read `null` while the source held two files (2026-10-02); a
 multi-instance sub-process mapped on its per-item value only ran the callee once on CrtProcessBuilder
 1.6.6.54 and three times on the ENG-95984 cut, which binds the outer level too (2026-10-14, on 1.6.6.97;
-1.6.6.98 ships the same binder).
+1.6.6.99 ships the same binder).
 
 **Why it is this way** — the reader trusts the binding the schema stores; it has no notion of "this
 item was meant to follow that collection". The process designer always binds both levels (11 of 11

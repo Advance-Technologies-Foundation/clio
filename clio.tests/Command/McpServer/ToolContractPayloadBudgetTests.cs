@@ -214,7 +214,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-95984 (2026-10-14, the File and FileCollection process parameter types) named the two types in each
 	// write contract's type list, "or File" in its constant clause and "a FileCollection to Variable" beside the
 	// Collection direction default, gave describe's rebuild rule its FileCollection exception and widened its
-	// decoded-source clause to a whole element output, and moved the floor literal to 1.6.6.98 (same length). It
+	// decoded-source clause to a whole element output, and moved the floor literal to 1.6.6.99 (same length). It
 	// paid by SWAP, per owner decision Q20 (trim, no ceiling raise): both write contracts dropped the mirror
 	// refusal's rationale "the mirror would be a bound, tagged, unbindable empty shape", which the package's refusal
 	// states itself, and create dropped the member list "{enabled, executionMode, ignoreErrors}" from its floor
