@@ -258,13 +258,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        include:
-          - os: ubuntu-latest
-            pipe-tests: "|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests"
-            pipe-test-names: "Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page"
-          - os: macos-latest
-            pipe-tests: "|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests"
-            pipe-test-names: "Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page"
     steps:
       - uses: actions/checkout@v5
         with:
@@ -280,9 +273,6 @@ jobs:
         shell: bash
         # The leg takes about 3 minutes; a bound turns a hang into a failure that keeps its log.
         timeout-minutes: 15
-        env:
-          PIPE_TESTS: ${{ matrix.pipe-tests }}
-          PIPE_TEST_NAMES: ${{ matrix.pipe-test-names }}
         run: |
           set -euo pipefail
           # TestCategory, not the Category alias: the NUnit adapter can classify a mixed Category +
@@ -290,14 +280,14 @@ jobs:
           # docs/knowledge/Tests/nunit-adapter-drops-large-non-category-shard-filters.md).
           dotnet test ./clio.tests/clio.tests.csproj \
             --framework net10.0 \
-            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests${PIPE_TESTS})&TestCategory=Integration" \
+            --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests)&TestCategory=Integration" \
             -p:RunAnalyzers=false \
             --logger "console;verbosity=normal" \
             --blame-hang-timeout 5m \
             | tee unix-file-mode-tests.log
           # The pipe tests must have RUN: HeadlessPageIntegrationTests ignores itself when no Chromium is found, and the
           # confinement cases alone would still clear the floor below.
-          for name in ${PIPE_TEST_NAMES}; do
+          for name in Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page; do
             if ! grep -Eq "Passed ${name}" unix-file-mode-tests.log; then
               echo "::error::${name} did not pass on this leg (skipped, or no Chromium found)." >&2
               exit 1
