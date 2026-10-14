@@ -76,6 +76,10 @@ Re-checked on 2026-10-13 (clio master `19e6f9c53`, package main 1.6.6.96, knowle
   (`clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs`), create-business-process is 35,068 B (**4 B
   left**), modify-business-process 35,062 B (**10 B left**), describe-business-process 34,019 B (1,053 B left),
   measured by lowering the ceiling on a scratch copy. The test comment forbids re-pinning the ceiling without review.
+  **Moved on 2026-10-14:** on clio master `79fab4786`, ENG-103081 Warn when a process-parameter mapping is bound twice
+  or to a branch some start skips paid for its own sentences by a swap and re-measured create at 35,061 B (11 B left)
+  and modify at 35,070 B (2 B left) (the comment in `ToolContractPayloadBudgetTests.cs:206-212`), so the type lists
+  need a trim of at least 19 B on create and at least 26 B on modify.
 - **B2 The 19,000 B wire guard.** Since ENG-102797 O4c: make the short modify-business-process /
   create-business-process contract complete enough that agents stop asking for detail:full, the seven
   process-designer contracts requested together are held to `MaxInlineWireReplyBytes = 19_000` on the wire: 18,986 B
@@ -182,8 +186,9 @@ stays type-checked, and a failing segment is named in the error. An older server
 ### D5 - The two-level collection binder
 
 **Decision (option 2; owner choices agreed 2026-10-07).** Inside `ApplyMapping`, after the existing guards, for
-**structured sources only** (`sourceElement` + `sourceElementParameter`, or `processParameter`): rules P1, P2, P2-MI,
-P3, R-M1 and R-M2 below. P2 and R-M2 apply to **file-consuming targets only**: the Process-parameter variant's `Files`
+**structured sources only** (`sourceElement` + `sourceElementParameter`, or `processParameter`; without
+`sourceColumn`: a record column is not a parameter-to-parameter binding): rules P1, P2, P2-MI, P3, R-M1 and R-M2
+below. P2 and R-M2 apply to **file-consuming targets only**: the Process-parameter variant's `Files`
 (schema `6c620dd2-026e-560c-489f-030c5be5f2c3`, recognised by the element's task schema UId, mirrored as
 `ProcessDesignConstants.FileProcessing`) and a process-level collection that matches the FileCollection predicate;
 later ENG-95985 Send email attachments adds its slots. P3 **resets** every stale parent with a notice. An
@@ -194,7 +199,7 @@ Every target is resolved and type-checked before the first value is written.
 
 | Rule | Trigger | Writes | Refusal or notice |
 |---|---|---|---|
-| P1 | target is an item of a collection AND source is an item of a collection | the item, and the target's parents to the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | refuse (F-M1) when a paired parent is bound to anything else; refuse (F-M5) when the SOURCE is nested one collection deeper than the target (outside its row it reads empty); the same source is a no-op; type-agnostic, so it applies to `InputRecordCollection.<F>` too; no notice |
+| P1 | target is an item of a collection AND source is an item of a collection | the item, and the target's parents to the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | refuse (F-M1) when a paired parent is bound to anything else; refuse (F-M5) when the SOURCE is nested deeper than the target (outside its row it reads empty); the same source is a no-op; type-agnostic, so it applies to `InputRecordCollection.<F>` too; no notice |
 | P2 | outer collection mapping onto a file-consuming target that has a FileLocator item | each target FileLocator item not already bound into the new source to the paired source item: exact name (case-insensitive, type-checked), else the single-FileLocator pair (`Files.File` to `ObjectFiles.ObjectFile`); an item that cannot be paired and is bound outside the new source is reset to None; non-file items are never paired | a notice (F-M4) for every item bound, rebound, reset or left unpaired (a rebind and a reset name the old binding; an unpairable item gets "at run time it will be empty"); an item already bound into the new source is neither written nor reported |
 | P2-MI | a mapping that binds a multi-instance `InputRecordCollection` (as the named target, or as a parent P1 binds) while one of its FileLocator items stays unbound | nothing extra | notice (F-M4): the callee parameter will be empty on every iteration unless mapped |
 | P3 | plain (non-item) source onto a FileLocator item of a single-instance owner (any element but a multi-instance sub-process, or the process itself: a process-level `Docs.File` counts) | the item; EVERY bound collection above it reset to None | one notice (F-M4) per reset level (owner decision: reset, agreed 2026-10-07) |
@@ -433,7 +438,7 @@ not the full sentence, so wording can be tuned in review.
 | F-M2 | refuse | R-M1: flat FileLocator <- a collection item | D5 |
 | F-M3 | refuse | R-M2: a collection without a file item into a file-consuming collection (the source "has no File item") | D5 |
 | F-M4 | notice | P2 item bound, rebound, reset (bound outside the new source and unpairable) or left unpaired; P2-MI empty callee file item, also when P1 binds the multi-instance input; P3 reset of EVERY bound collection above a file item, one notice per level | D5 |
-| F-M5 | refuse | P1: the source is nested one collection deeper than the target (outside its row it reads empty); a deeper TARGET is not refused | D5 |
+| F-M5 | refuse | P1: the source is nested deeper than the target (outside its row it reads empty); a deeper TARGET is not refused | D5 |
 
 ### F-T and F-M texts as the package PR writes them (draft https://creatio.ghe.com/engineering/crt-process-builder/pull/96, 2026-10-14)
 
@@ -442,7 +447,9 @@ Quoted from `PB/Parameters/ProcessParameterService.cs`, `PB/Parameters/ProcessPa
 `<...>` marks a value the code fills in; `[Element '<E>': ]` is present only when the target is an element's
 parameter. `<binding>` names a stored binding: `'<Element>.<path>'`, `'<path>'` for a process parameter, or
 `the formula '<text>'`. `<items>` is `Its items are '<A>', '<B>'.` (at most 20, then a count), or `'<name>' has no
-items.` In F-M texts, a target path is written without its element, a source with it.
+items.` In F-M texts, a target path is written without its element, a source with it; the exception is the opening
+`Mapping for target '<target>'` of F-M2, F-M3 and F-M5, where `<target>` includes the element name (`PF1.Files`; a
+process parameter has none).
 - **F-T1** `Parameter type '<type>' is not supported: a process parameter carries a file by reference, not its bytes. Use type File (one file) or FileCollection (several files).` Any other unsupported name gets the generic text, which now lists `..., Guid, File, FileCollection, Collection (shape it via 'typeFromElement'), and Lookup (set a 'referenceSchema').`
 - **F-T2** `Process parameter '<name>' is a File and cannot have a 'referenceSchema': a file is carried by reference to its stored content (FileLocator), not as a lookup to an object. Drop 'referenceSchema', or drop 'type' to declare a Lookup.` / `Process parameter '<name>' is a FileCollection and cannot have a 'referenceSchema': its shape is fixed (one File item), and a file is carried by reference to its stored content, not as a lookup to an object.`
 - **F-T3** on `addParameter` / `setParameter`: `Process parameter '<name>' is a File and cannot carry a constant default 'value': a File has no constant form; map it from an element's file output or another File parameter.` On `addMapping value` (every constant route): `Value '<value>' is not valid for parameter '<name>' of type <type>: a file has no constant form. Map it from an element's file output or another File parameter ('sourceElement' + 'sourceElementParameter', or 'processParameter').` / `... of type <type>: a collection has no constant form. Map an element's collection output or another collection into it ('sourceElement' + 'sourceElementParameter', or 'processParameter').`
@@ -469,15 +476,16 @@ file-consuming targets.
 ## Implementation outline
 
 One story ([story 1](../stories/story-eng-95984-file-parameter-type-1.md)) carries the work packages: PB-1..PB-10 in
-crt-process-builder, as ten commits, each mapped to its decision in the PR description: (1) D1 aliases and the
-Binary / BLOB refusal; (2) D2 `FileCollection` write alias and describe predicate, with D3's defaults; (3) D4
+crt-process-builder, planned as ten commits (the analysis's pr-split §5.2; the draft is one commit, `b6dcd2c1`, and
+the split before leaving draft is the owner's call), each mapped to its decision in the PR description: (1) D1
+aliases and the Binary / BLOB refusal; (2) D2 `FileCollection` write alias and describe predicate, with D3's defaults; (3) D4
 `ResolveProcessParameterPath`, both callers switched, behaviour-neutral; (4) D5 binder rules and the whole
 `BindCollection` API; (5) D6 dotted-mirror refusal; (6) D7 constants, `referenceSchema`, delete guard, `setParameter`
 shape; (7) D8 nested-only listing and the element-source decode; (8) D9 parity, the mirror binds its items; (9)
 `docs/file-parameter-capture.md`; (10) the restamp, last. Then CL-1..CL-7 in clio (rebundle and floor, descriptions, `ManagerMap` arm, capability map, unit tests and DTO doc
 comments, the e2e fixture, knowledge records and status flips) and KB-1..KB-3 in clio-knowledge. One feature PR per
 repository, titled `ENG-95984 File process parameter type`, merged by a human in the order package (tag verified on the
-remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges before the package PR opens.
+remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges before the package PR leaves draft.
 
 ## Owner decisions
 
@@ -487,7 +495,7 @@ remote), clio, knowledge. This BMAD set is the docs-only clio PR that merges bef
 | Q2 / O-8 / D23 Jira links | agreed 2026-10-07 |
 | Q6 PR split (one feature PR per repository, plus this docs-only PR) | agreed 2026-10-07 |
 | Q7 / O-5 / D9 Where H-1 is fixed | answered by M3 (2026-10-02): no defect, parity commit only |
-| Q8 / O-10 This docs-only BMAD set merged before the package PR | agreed 2026-10-07 |
+| Q8 / O-10 This docs-only BMAD set merged before the package PR leaves draft | agreed 2026-10-07 |
 | Q9 Follow-up Sub-tasks created on day 0 | agreed 2026-10-07; created 2026-10-14 (ENG-103162, ENG-103163, ENG-103164) |
 | Q10 / O-1 / D2 FileCollection as a type alias | agreed 2026-10-07 |
 | Q11 / O-2 / D3 FileCollection defaults to Variable | agreed 2026-10-07 |

@@ -132,11 +132,17 @@ dotnet test automation/Clio.Knowledge.Bundle.Tests/Clio.Knowledge.Bundle.Tests.c
 - **clio**: the full unit suite; specifically `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`,
   `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`,
   `GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether`, the three call-shape drift
-  tests in `ToolContractShortFormTests`, `WorkspaceTemplateGuidanceDriftTests`, `ProcessDesignerEmittedSchemaTests`.
+  tests in `ToolContractShortFormTests`, `WorkspaceTemplateGuidanceDriftTests`, `ProcessDesignerEmittedSchemaTests`,
+  and `ProcessParameterBindingWarningsTests` (`clio.tests/Command/ProcessModel/`). Since ENG-103081 Warn when a
+  process-parameter mapping is bound twice or to a branch some start skips (on clio master since 2026-10-14),
+  `clio/Command/ProcessModel/ProcessParameterBindingWarnings.cs` reads `targetProcessParameter` from every create
+  mapping and `addMapping`, so a dotted name such as `Docs.File` is new input to it; it looks a parameter up by its
+  whole name (`:233-235`), so a dotted target matches no stored parameter (source).
 - **e2e** (same stand, one fixture at a time after the new one, each result recorded in the PR):
   `SubProcessMultiInstanceToolE2ETests` (its caller maps both levels explicitly, so P1 is a no-op there),
   `ModifyBusinessProcess_Should_RejectUnsupportedParameterType`, `RecordColumnSourceToolE2ETests`,
-  `DescribeProcessToolE2ETests`, `SubProcessElementToolE2ETests`.
+  `DescribeProcessToolE2ETests`, `SubProcessElementToolE2ETests`, `ProcessParameterBindingToolE2ETests` (ENG-103081;
+  it triggers process runs, so it needs the user's go-ahead like every stand write).
 - **knowledge**: `ProcessGuideResponseSizeTests`, `GuidanceInlineReplyBudgetTests`, `ProcessDigestTests`,
   `ProcessBuilderInstallConsentGuidanceTests`, `ClioToolSyncGuidanceTests`, `ProcessSplitCoreRuleTests`,
   `InternalTaskReferenceTests`, `GuidanceMigrationTests`, `ProcessGuideCrossReferenceTests`.
@@ -282,7 +288,7 @@ collection mode, "SP1" a multi-instance sub-process. Every case asserts both lev
 | TC-U-63 | CU-03 | `clio.tests/Command/McpServer/CreateBusinessProcessToolTests.cs` | read the `create-business-process` `[Description]` | the `parameters[]` type clause names `File` and `FileCollection`; the constant clause says refused on a Collection or File | AC-10 |
 | TC-U-64 | CU-04 | `clio.tests/Command/McpServer/ModifyBusinessProcessToolTests.cs` | read the `modify-business-process` description | the `addParameter` type list names `File` and `FileCollection`; the constant clause as TC-U-63 | AC-10 |
 | TC-U-65 | CU-05 | `clio.tests/Command/McpServer/DescribeProcessToolTests.cs` | read the describe description | the decoded-source clause covers "a value that IS another element's output" | AC-7, AC-10 |
-| TC-U-66 | CU-06 | `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` | re-measure create, modify, describe after the swap | the trimmed text under the 35,072 B ceiling (unchanged: Q20 = A, 2026-10-14); the comment's figures rewritten; the seven contracts within 19,000 B on the wire and still short; the call-shape drift tests green | AC-10 |
+| TC-U-66 | CU-06 | `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` | re-measure create, modify, describe after the swap | the trimmed text under the 35,072 B ceiling (unchanged: Q20 = A, 2026-10-14); on clio master `79fab4786` create has 11 B and modify 2 B left (ENG-103081's re-measure), so the trims free at least 19 B and 26 B; the comment's figures rewritten; the seven contracts within 19,000 B on the wire and still short; the call-shape drift tests green | AC-10 |
 | TC-U-67 | CU-07 | `clio.tests/Common/BundledProcessBuilderPackageTests.cs` | the rebundle to the final cut | the four pins; `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral` with the moved literal; `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse` (the phrase present in create, modify and `docs/McpCapabilityMap.md`, no floor literal in the 60 characters before it); the version-literal guards; operation counts unchanged | AC-10 |
 | TC-U-68 | CU-08 | `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs` | TestCases for create, modify and modify-as-new-version | moved to the final cut; each `[Description]` gains this ticket's reason | AC-10 |
 | TC-U-69 | CU-09 | `clio.tests/Command/ProcessModel/ManagerMapResolveDataIdTests.cs` | `fileProcessing`, `processFile` and their lowercase forms | `EventType.UserTask`, not `Unknown` | AC-10 |
@@ -355,11 +361,11 @@ comes from `SysProcessElementLog`, read with one `execute-esq` call at a time (a
 | TC-M-02 | MI-0 | an item-only `InputRecordCollection.Name <- RD1.ResultCompositeObjectList.Name` over 3 contacts | 1 iteration: the baseline for TC-M-13 | Runtime |
 | TC-M-03 | M6 | a flat File mapped from a collection item outside a row context | read null while the source held two files: R-M1 stays a refusal (TC-U-40, TC-I-10) | Runtime |
 
-### V0 before code; V1-V8 after the cut, before the package PR leaves draft (TC-M-1n = Vn)
+### V0-V8 before the package PR leaves draft: V0 owed now (the code already exists), V1-V8 after the cut (TC-M-1n = Vn)
 
 | ID | Orig | What | Method | Pass | Reaches | AC |
 |---|---|---|---|---|---|---|
-| TC-M-10 | V0 | before code: the shipped captures still describe what today's designer writes (read-only, no write) | in the classic designer, a NEW unsaved process: plain Add > Other > File; Add > Other > Collection of records, then the nested Add > Other > File; read direction, Tag, item name, item direction in memory; close unsaved | Variable and no Tag on a plain Add; the item as the user adds it. If not, adjust TC-U-11 / TC-U-13 expectations before code | Design time | AC-8 |
+| TC-M-10 | V0 | owed before the package PR leaves draft (the code already exists): the shipped captures still describe what today's designer writes (read-only, no write) | in the classic designer, a NEW unsaved process: plain Add > Other > File; Add > Other > Collection of records, then the nested Add > Other > File; read direction, Tag, item name, item direction in memory; close unsaved | Variable and no Tag on a plain Add; the item as the user adds it. If not, adjust TC-U-11 / TC-U-13 expectations, and the code, before the package PR leaves draft | Design time | AC-8 |
 | TC-M-11 | V1 | instrument check | build the clio PR; `install-process-builder` from the refreshed BUILD OUTPUT after the user's approval; `list-packages` shows the cut; `addParameter type: File` on a disposable process succeeds; `get-tool-contract` for create mentions `File` | all three; otherwise run nothing else | Stored | AC-10 |
 | TC-M-12 | V2 | e2e | the new fixture, then the must-stay-green fixtures, sequentially | Passed with **Ignored = 0** | Stored | AC-1..AC-7, AC-10 |
 | TC-M-13 | V3 | P1 at run time | the TC-M-02 process rebuilt on the cut; count callee instances | 3 iterations against 1 on the baseline; otherwise hold the clio and knowledge PRs | Runtime | AC-5 |

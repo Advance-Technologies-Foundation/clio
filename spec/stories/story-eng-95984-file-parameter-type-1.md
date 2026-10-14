@@ -5,12 +5,12 @@
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) - AC-1..AC-10
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D1-D9, D23, D25, D26
 **Test plan**: [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md)
-**Status**: ready-for-dev
+**Status**: in-progress (implementation started 2026-10-13; flipped in this BMAD PR on 2026-10-14)
 **Size**: L (about 7.5-15.5 h of AI-agent time and 4.5-10 h of the owner's time; about 3-5 working days of calendar)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one feature PR each, titled
 `ENG-95984 File process parameter type`, branch `feature/ENG-95984-file-process-parameter-type`)
 **Depends on**: this BMAD set (the docs-only clio PR on branch `feature/ENG-95984-file-parameter-type-spec`) merged
-**before the package PR opens**. Q20 = A (2026-10-14): trim, reviewer-approved; it concerned the clio PR's
+**before the package PR leaves draft**. Q20 = A (2026-10-14): trim, reviewer-approved; it concerned the clio PR's
 description edit (CL-2) only and gates nothing now.
 **Blocks**: ENG-96506 Generated report + process parameter modes (functionally) and ENG-95985 Send email attachments
 (link L5, together with ENG-96505: it reuses `BindCollection` and adds its slots to the file-consuming targets).
@@ -58,8 +58,9 @@ in short.
 - [ ] **AC-4** - `processParameter` / `targetProcessParameter` accept `Docs.File`; a process-level item's meta path
   has no element segment.
 - [ ] **AC-5** - P1 binds both levels (including a multi-instance `InputRecordCollection`); P2 pairs the file item on
-  file-consuming targets; R-M1 and R-M2 refuse; P2-MI and P3 give notices; an `expression` triggers none of them (only
-  the meta-path check, since 1.6.6.79).
+  file-consuming targets, and a file item it cannot pair gets a notice (cleared if bound elsewhere), not a refusal;
+  R-M1 and R-M2 refuse; P2-MI and P3 give notices; an `expression` triggers none of them (only the meta-path check,
+  since 1.6.6.79).
 - [ ] **AC-6** - a FileCollection maps from `ObjectFiles` / `ObjectFiles.File` and `ReportFiles` / `ReportFiles.File`
   whatever the action (verified on hand-built elements for both `ResultActionType` values); a file-output mirror stays
   refused pointing to `FileCollection`; a dotted mirror source is refused.
@@ -82,9 +83,10 @@ in short.
 `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PBT/` =
 `tests/UnitTests/CrtProcessBuilder.Tests/`. CL-0 (this BMAD set) is the docs-only clio PR and is not repeated here.
 
-**CrtProcessBuilder** (base `main`; ten commits, each mapped to its decision in the PR description: D1; D2 with D3;
-D4; D5 with `BindCollection`; D6; D7; D8; D9; `docs/file-parameter-capture.md`; the restamp last - the ADR's
-implementation outline)
+**CrtProcessBuilder** (base `main`; planned as ten commits (the analysis's pr-split section 5.2), each mapped to its
+decision in the PR description: D1; D2 with D3; D4; D5 with `BindCollection`; D6; D7; D8; D9;
+`docs/file-parameter-capture.md`; the restamp last - the ADR's implementation outline. The draft is one commit,
+`b6dcd2c1`, and the split before leaving draft is the owner's call)
 
 - [ ] **PB-1** (D1) `PB/Parameters/ProcessParameterService.cs` `NormalizeParameterTypeName`: file aliases to the
   canonical FileLocator name; dedicated Binary / Blob refusal (F-T1); generic list adds `File, FileCollection`; doc
@@ -182,16 +184,17 @@ implementation outline)
 - [ ] **KB-3** `guidance/mcp/guides/processes/sub-process.md` and `sub-process-when.md`: the multi-instance passages
   rewritten under the "from clio <version>" gate, "send both" kept, read-backs with `mode=full` under the 8.1.0.141
   gate; pinned.
-  libraryVersion above master and every branch claim at merge (1.15.143 or higher today).
+  libraryVersion above master and every branch claim at merge (1.15.144 or higher on 2026-10-14: master is 1.15.143,
+  released 2026-10-13).
 
 ---
 
 ## Stand verification
 
 Day-0 measurements are done (2026-10-02, CrtProcessBuilder 1.6.6.54): M3 refuted H-1, MI-0 gave 1 iteration, M6 read
-a flat File from a collection item as null, T-68 reproduced. Before code: V0 (the shipped captures still describe
-today's designer; read-only, it fixes the expected defaults). After the cut, before the package PR leaves draft: V1
-(instrument check: the stand is on the cut and the
+a flat File from a collection item as null, T-68 reproduced. Owed before the package PR leaves draft (the code
+already exists): V0 (the shipped captures still describe today's designer; read-only, it fixes the expected
+defaults). After the cut, before the package PR leaves draft: V1 (instrument check: the stand is on the cut and the
 session's MCP clio is the PR's clio), V2 (e2e, Passed with Ignored = 0), V3 (3 iterations against MI-0's 1), V4
 (serialization against the three captures under the AC-8 rule, after SC-0), V5 (the designer opens the V4 process; a
 no-op save changes nothing), V6 (`info-knowledge` shows the new libraryVersion); V7 optional, V8 only if M1 passed.
@@ -200,11 +203,11 @@ plan's manual cases.
 
 ## Status convention
 
-The tracker lives in clio, so a status flip needs a clio commit: `in-progress` in the first commit of the clio
-feature draft; `review` when that PR leaves draft (deliberately not when it opens as a draft, because the chain is
-stacked); `done` only after the knowledge PR merges, carried in the next clio PR of the chain (ENG-96505 Element
-readiness and object attachments mode) and never pushed after an approval. The follow-up stories 2-4 do not gate
-`done`.
+The tracker lives in clio, so a status flip needs a clio commit: `in-progress` was flipped in this BMAD PR on
+2026-10-14, because implementation started on 2026-10-13 (AGENTS.md: `in-progress` on start); `review` when the clio
+feature PR leaves draft (deliberately not when it opens as a draft, because the chain is stacked); `done` only after
+the knowledge PR merges, carried in the next clio PR of the chain (ENG-96505 Element readiness and object attachments
+mode) and never pushed after an approval. The follow-up stories 2-4 do not gate `done`.
 
 ## Definition of Done
 
@@ -214,8 +217,9 @@ readiness and object attachments mode) and never pushed after an approval. The f
 - [ ] FileCollection creates exactly one item `File` (FileLocator, Variable, no Tag, `ContainerUId = schema.UId`);
       describe reports `FileCollection` for the predicate; the round trip holds.
 - [ ] Dotted process-parameter paths on both sides; meta path without an element segment.
-- [ ] P1, P2, P2-MI, P3, R-M1, R-M2 in `ApplyMapping`, structured sources only; `expression` as given (only the
-      package's meta-path check applies); `BindCollection` on `IProcessMappingService`.
+- [ ] P1, P2, P2-MI, P3, R-M1, R-M2 in `ApplyMapping`, structured sources only (without `sourceColumn`: a record
+      column is not a parameter-to-parameter binding); `expression` as given (only the package's meta-path check
+      applies); `BindCollection` on `IProcessMappingService`.
 - [ ] D6 and D7 refusals; item-aware delete guard; the D9 mirror item binding.
 - [ ] D8 describe listing and single-token element-source decode.
 - [ ] T-68 root-caused; a nested-item mapping in ONE create request binds as it does through `addMapping` (no bare
@@ -272,7 +276,7 @@ readiness and object attachments mode) and never pushed after an approval. The f
       `ProcessSplitCoreRuleTests` and `InternalTaskReferenceTests` green; libraryVersion bumped; release published.
 
 **Process**
-- [ ] This BMAD set merged before the package PR opens.
+- [ ] This BMAD set merged before the package PR leaves draft.
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.
 - [ ] W0 measurements recorded with dates and basis; V0, SC-0 and V1-V6 executed and recorded (V7, V8 when run).
 - [ ] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated, skipped

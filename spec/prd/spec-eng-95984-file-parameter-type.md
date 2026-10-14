@@ -18,7 +18,7 @@ Q20 (where the description bytes come from) was agreed on 2026-10-14 as A: trim 
 **Size estimate**: one story for the ticket, delivered as one feature PR per repository (CrtProcessBuilder, then clio,
 then clio-knowledge). The /bmad-spec form is used because the ticket is one story (AGENTS.md: fewer than 5 stories);
 an ADR is added because the change alters the shared mapping funnel and the MCP contract (owner decision O-10,
-2026-10-07: this docs-only set merges before the package PR opens).
+2026-10-07: this docs-only set merges before the package PR leaves draft).
 
 Baselines: CrtProcessBuilder `main` at 1.6.6.96, clio `master` `19e6f9c53` (bundles CrtProcessBuilder 1.6.6.96, the
 three process-designer floors at 1.6.6.92), clio-knowledge `master` at libraryVersion 1.15.142; re-checked on
@@ -113,11 +113,11 @@ copy of that text, with editorial differences only, so either can be pasted.
 
 | # | Acceptance criterion |
 |---|---|
-| AC-1 | `parameters[]` (create) and `addParameter` (modify) accept `File` (one file; platform type FileLocator `A33C9252`; aliases `file`, `filelocator`, `file locator`) and `FileCollection` (aliases `filecollection`, `file collection`, `collection of files`), which creates a `CompositeObjectList` with exactly one item `File` (FileLocator, Variable, no Tag). Both are ADDED to the allow-list; the platform name `"File"` never reaches `DataValueTypeManager`. `Binary` / `Blob` stay refused with a message that names `File` and `FileCollection` and keeps the words "not supported" and "Binary" |
+| AC-1 | `parameters[]` (create) and `addParameter` (modify) accept `File` (one file; platform type FileLocator `A33C9252`; aliases `file`, `filelocator`, `file locator`) and `FileCollection` (aliases `filecollection`, `file collection`, `collection of files`), which creates a `CompositeObjectList` with exactly one item `File` (FileLocator, Variable, no Tag). Both are ADDED to the allow-list; the platform name `"File"` never reaches `DataValueTypeManager`. `Binary` / `Blob` stay refused with a message (names the type given, says "not supported", and points to `File` and `FileCollection`; for `Binary` the existing pin's words "not supported" and "Binary" stay) |
 | AC-2 | Defaults and refusals: `File` defaults to Variable; `FileCollection` defaults to Variable (agreed 2026-10-07), so a caller can fill it and the process can return it; an explicit `direction` wins. A file has no constant form: `value` on File, and `addMapping value` onto any FileLocator or `CompositeObjectList` target, are refused. `referenceSchema` is refused on both types. `setParameter type: FileCollection` on a collection of another shape is refused. `removeParameter` is refused while any ITEM of the collection is referenced |
 | AC-3 | `describe-business-process` reports File as `FileLocator`, and a process-level collection with no Tag and exactly one FileLocator item as `FileCollection` (plus `itemProperties`). Feeding that output back rebuilds the same shape |
 | AC-4 | `processParameter` and `targetProcessParameter` accept a dotted item path (`Docs.File`); the stored meta path of a process-level item has no element segment |
-| AC-5 | Mapping an item of a collection into an item of a collection binds both levels (P1), including a multi-instance sub-process's `InputRecordCollection`. A collection mapped onto a file-consuming collection (the Process-parameter variant's `Files`, a FileCollection) pairs its file item (P2). Outer-only and wrong-shape mappings onto file-consuming targets, and a collection item into a single File, are refused (R-M1, R-M2). An `expression` source triggers none of these rules: it is written as given, apart from the package's meta-path check (since 1.6.6.79, ENG-102114), which refuses a malformed or foreign token and lower-cases its GUIDs |
+| AC-5 | Mapping an item of a collection into an item of a collection binds both levels (P1), including a multi-instance sub-process's `InputRecordCollection`. A collection mapped onto a file-consuming collection (the Process-parameter variant's `Files`, a FileCollection) pairs its file item (P2); a file item P2 cannot pair is reported with a notice (and cleared if it was bound elsewhere), not refused. A collection with no File item onto a file-consuming target (R-M2) and a collection item into a single File (R-M1) are refused. An `expression` source triggers none of these rules: it is written as given, apart from the package's meta-path check (since 1.6.6.79, ENG-102114), which refuses a malformed or foreign token and lower-cases its GUIDs |
 | AC-6 | A FileCollection can be mapped from `ObjectFiles` / `ObjectFiles.File` (Object attachments) or `ReportFiles` / `ReportFiles.File` (Generated report) whatever the action; after "Save to object attachments" the copies' Ids are in `CreatedObjectFileIds`. Mirroring a file output through `typeFromElement` stays refused with a message that points to `FileCollection`; a dotted mirror source (`ObjectFiles.File`) is refused instead of silently creating an unbound parameter. In this ticket the mappings are verified at design time on hand-built elements, for both `ResultActionType` values (the builder does not read the action). The same mappings from builder-CONFIGURED elements are verified in the sub-task that makes each variant configurable: `ObjectFiles` in ENG-96505 Element readiness and object attachments mode, `ReportFiles` in ENG-96506 Generated report + process parameter modes |
 | AC-7 | Describe reports a value that is exactly one element-output token as `sourceElement` + `sourceElementParameter` (dotted for a collection item) when replaying those names changes no other level, so a described binding replays as a structured mapping; an element input bound only on a nested item is listed |
 | AC-8 | Server serialization matches the shipped captures `FileParameterProcess.FileParameter` (File), `MarkProcessesToCancel.FilesCollection` (Out FileCollection) or `FileParameterProcess.FileCollection` (Variable FileCollection), under one finite comparison rule (test plan, "The AC-8 comparison rule"): parameter and item UIds are ignored (N5); schema UIds in `A3`, `A4`, `GS5` and `IL2` are role-replaced (PT-a); the builder's process-level `IL2` is normalised (N9); the three "no value" `L8` forms are equal (N15); only the authoring culture's resource rows are compared (N14); and the item name, bindings and DisplayValue rows of `FileParameterProcess.FileCollection` are excluded (PT-b). Any other difference fails |
@@ -127,7 +127,8 @@ copy of that text, with editorial differences only, so either can be pasted.
 ## The binder rules
 
 The rules run inside `ApplyMapping` for **structured sources only** (`sourceElement` + `sourceElementParameter`, or
-`processParameter`). File-consuming targets in this cut: (a) the `Files` input of ProcessFileProcessingUserTask
+`processParameter`; without `sourceColumn`: a record column is not a parameter-to-parameter binding). File-consuming
+targets in this cut: (a) the `Files` input of ProcessFileProcessingUserTask
 (schema `6c620dd2-026e-560c-489f-030c5be5f2c3`, recognised by the element's task schema UId, mirrored as
 `ProcessDesignConstants.FileProcessing`), (b) a process-level collection that matches the FileCollection predicate.
 ENG-95985 Send email attachments later adds its attachment slots to this set. Every target is resolved and
@@ -144,7 +145,7 @@ of `ProcessMappingService`.
 
 | Rule | Trigger | Writes | Refusal or notice |
 |---|---|---|---|
-| P1 | target is an item of a collection AND source is an item of a collection | the item, and the target's parents to the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | refuse (F-M1) when a paired parent is bound to anything else; refuse (F-M5) when the SOURCE is nested one collection deeper than the target (outside its row it reads empty); the same source is a no-op; type-agnostic, so it applies to `InputRecordCollection.<F>` too; no notice |
+| P1 | target is an item of a collection AND source is an item of a collection | the item, and the target's parents to the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File` from `OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | refuse (F-M1) when a paired parent is bound to anything else; refuse (F-M5) when the SOURCE is nested deeper than the target (outside its row it reads empty); the same source is a no-op; type-agnostic, so it applies to `InputRecordCollection.<F>` too; no notice |
 | P2 | outer collection mapping onto a file-consuming target that has a FileLocator item | each target FileLocator item not already bound into the new source to the paired source item: exact name (case-insensitive, type-checked), else the single-FileLocator pair (`Files.File` to `ObjectFiles.ObjectFile`); an item that cannot be paired and is bound outside the new source is reset to None; non-file items are never paired | a notice (F-M4) for every item bound, rebound, reset or left unpaired (a rebind and a reset name the old binding; an unpairable item gets "at run time it will be empty"); an item already bound into the new source is neither written nor reported |
 | P2-MI | a mapping that binds a multi-instance `InputRecordCollection` (as the named target, or as a parent P1 binds) while one of its FileLocator items stays unbound | nothing extra | notice (F-M4): the callee parameter will be empty on every iteration unless mapped |
 | P3 | plain (non-item) source onto a FileLocator item of a single-instance owner (any element but a multi-instance sub-process, or the process itself: a process-level `Docs.File` counts) | the item; EVERY bound collection above it reset to None | one notice (F-M4) per reset level (owner decision: reset, agreed 2026-10-07) |
@@ -169,13 +170,16 @@ of `ProcessMappingService`.
   the same number.
   The three `[RequiresPackage]` floors are 1.6.6.92 today and move to this ticket's FINAL cut. The bundle moves only
   by the manual `rebundle-process-builder.ps1 -Version <claimed>`; the version only goes up.
-- **C5 Description budget.** On clio master `19e6f9c53` (measured 2026-10-13) create-business-process has 4 B and
-  modify-business-process 10 B left under the 35,072 B per-contract ceiling; the type lists cost +30 B and +28 B. The
-  seven process-designer contracts requested together sit at 18,986 B of the 19,000 B wire guard; this ticket adds no
-  descriptor member, so the call shapes and the wire guard are unaffected (hypothesis, source). The bytes come from a
-  reviewer-approved trim of existing text; the ceiling is not raised (Q20, agreed 2026-10-14: A).
-- **C6 Delivery order.** This docs-only set merges before the package PR opens; then package, clio, knowledge, each
-  merged by a human only. The knowledge generation that births `process-files` is published before the clio PR of
+- **C5 Description budget.** On clio master `19e6f9c53` (measured 2026-10-13) create-business-process had 4 B and
+  modify-business-process 10 B left under the 35,072 B per-contract ceiling; the type lists cost +30 B and +28 B. On
+  clio master `79fab4786` (2026-10-14), ENG-103081 Warn when a process-parameter mapping is bound twice or to a branch
+  some start skips re-measured them at 35,061 B (11 B left) and 35,070 B (2 B left), so the trim must free at least
+  19 B on create and at least 26 B on modify. The seven process-designer contracts requested together sat at 18,986 B
+  of the 19,000 B wire guard (measured 2026-10-13); this ticket adds no descriptor member, so the call shapes and the
+  wire guard are unaffected (hypothesis, source). The bytes come from a reviewer-approved trim of existing text; the
+  ceiling is not raised (Q20, agreed 2026-10-14: A).
+- **C6 Delivery order.** This docs-only set merges before the package PR leaves draft; then package, clio, knowledge,
+  each merged by a human only. The knowledge generation that births `process-files` is published before the clio PR of
   ENG-96505 Element readiness and object attachments mode merges.
 - **C7 Stand discipline.** Every stand write and every `install-process-builder` needs the user's explicit go-ahead
   (an install restarts the site for every connected user); schema writes and runs go one at a time.
