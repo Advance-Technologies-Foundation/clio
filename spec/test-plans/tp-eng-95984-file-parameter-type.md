@@ -385,14 +385,16 @@ the source trace says: hold the clio and knowledge PRs and record the measured o
 
 ### Results, 2026-10-14
 
-The .NET Framework stand; ENG-95984 comment 550775. The package PR's cut is CrtProcessBuilder 1.6.6.98; 1.6.6.97 was
-installed once, failed TC-M-14 and is burned.
+The .NET Framework stand; ENG-95984 comment 550775. The package PR's cut is the number in the shared claim list
+(ENG-92719 comment 550565). 1.6.6.97 was installed once, failed TC-M-14 and is burned; 1.6.6.98 was installed,
+measured below and superseded the same day by the package PR's gate-3 fixes (ADR D26 record).
 
 | ID | Orig | Version | Result |
 |---|---|---|---|
 | TC-M-10 | V0 | 1.6.6.96 / 1.6.6.97 | PASS (read-only): a plain Add writes Variable and an empty Tag; the designer stamps the item as created in the schema |
 | TC-M-11 | V1 | 1.6.6.97, again on 1.6.6.98 | PASS |
 | TC-M-12 | V2 | the clio PR's build, 1.6.6.98 | PASS: `FileParameterToolE2ETests` 13/13 on net10.0 and net8.0; the must-stay-green fixtures 20/20 on net10.0; Ignored = 0 |
+| TC-M-12 | V2 re-run | the cut that superseded 1.6.6.98 (1.6.6.99, 2026-10-14) | PASS for this ticket: `FileParameterToolE2ETests` 13/13, `ProcessParameterBindingToolE2ETests` 4/4, `SubProcessElementToolE2ETests` 10/12 on net10.0 and net8.0 (the two failures are the `DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption_*` cases, a clio master regression since ENG-103023 clio: spill-free reads and post-write summaries, bisected to clio `3715cd23c`, not this ticket's); the must-stay-green fixtures 20/20 on net10.0; package tests 3435 |
 | TC-M-13 | V3 | 1.6.6.97 | PASS: 3 callee runs (1 on 1.6.6.54, TC-M-02) |
 | TC-M-14 | V4 | 1.6.6.97 | FAIL: the `File` item of a process-level FileCollection had no `A3` / `A4` (`CreatedInSchemaUId` / `ModifiedInSchemaUId`), which the designer writes on every such item (ADR D2) |
 | TC-M-14 | V4 re-check | 1.6.6.98 | PASS: the items carry `A3` / `A4` equal to the process UId |

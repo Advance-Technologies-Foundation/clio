@@ -4727,8 +4727,8 @@ stories:
       2026-10-14 as A: trim existing text per tool, reviewer-approved, no ceiling raise; it concerns the clio
       description edit only: on clio master 19e6f9c53 (2026-10-13) create had 4 B and modify 10 B left, and on
       79fab4786 (2026-10-14, after ENG-103081) 11 B and 2 B, so the trims free at least 19 B and 26 B. The three
-      floors move to the final package cut (1.6.6.97 or higher at the 2026-10-13 claims), claimed in the PR
-      description and in the shared cut claim on ENG-92719.
+      floors move to the final package cut, the number in the shared claim list (ENG-92719 comment 550565),
+      claimed in the PR description and in that claim list.
 
   - id: story-eng-95984-file-parameter-type-2
     title: "Declared item shape for Collection process parameters"

@@ -57,7 +57,7 @@ Platform and corpus (source unless marked):
   accepted.
 
 Stand measurements of 2026-10-02 (CrtProcessBuilder 1.6.6.54; the stand ran 1.6.6.96 from 2026-10-13 and this
-ticket's cut 1.6.6.98 since 2026-10-14):
+ticket's cut, the number in the shared claim list (ENG-92719 comment 550565), since 2026-10-14):
 - **M3** refuted H-1 (the ENG-96230 Collection process parameter type mirror bound root-only would read null rows):
   3 iterations, all values set; the outer Script mapping copies the whole collection value, items included.
   (2026-10-14: the process trace suggested a callee parameter named `Name` receives the sub-process element's name,
@@ -102,7 +102,8 @@ Re-checked on 2026-10-13 (clio master `19e6f9c53`, package main 1.6.6.96, knowle
   (since ENG-102111 create-business-process / modify-business-process: allow switching on process tracing
   (IsTracing)); 1.6.6.87, 1.6.6.89 and 1.6.6.94 are burned and no branch or tag holds a number above 1.6.6.96. The CI
   "Deliver to clio" stage came and went (2026-10-08/09); every bundle now moves by hand inside a feature clio PR.
-  This ticket's cut is 1.6.6.98 since 2026-10-14; 1.6.6.97 is burned (D26).
+  This ticket's cut is the number in the shared claim list (ENG-92719 comment 550565); 1.6.6.97 is burned and
+  1.6.6.98 superseded (D26 record).
 
 ---
 
@@ -289,7 +290,10 @@ refused).
 of a File, an item reference left dangling by a delete).
 
 **Consequences.** Type compatibility needs no change: FileLocator and collections fall through to an exact type match
-(`PB/Mappings/ParameterTypeCompatibility.cs`; item shapes are not compared there, which is why R-M2 exists).
+(`PB/Mappings/ParameterTypeCompatibility.cs`; item shapes are not compared there, which is why R-M2 exists). The
+element dependency guards (`ProcessElementDependencyScanner`: the retarget guard and the callee-resync dangling notice)
+read process-parameter items too and name them by dotted path (`process parameter 'Docs.File'`), so a retarget cannot
+strand a reference held by an item.
 
 ### D8 - Describe of file parameters, nested-only bindings and single-token element sources
 
@@ -328,7 +332,10 @@ the clone pairs, as one parity commit in this ticket's package PR (the shipped s
 items bind their items), and the code comment that predicted null rows is narrowed. As built in the package PR, the
 add path AND the re-mirror path (`setParameter` + `typeFromElement`) bind the items; a re-mirror writes the
 collection's own value again only when it is exactly the plain reference to the output, keeps a caller's formula there
-byte for byte and binds only the items (`BindCollectionItems`), and puts the previous items back on a refusal.
+byte for byte and binds only the items (`BindCollectionItems`), and puts the previous items back on a refusal. A
+refreshed item takes the UId of the current item it matches (same name, same data value type, same lookup object), so
+a reference to an unchanged column stays valid; a re-mirror that would drop an item that is still referenced (a
+same-name item whose type changed included) is refused before any write.
 
 **Rejected.** A separate Sub-task fixed first (taken only had M3 confirmed H-1). Doing nothing (the builder keeps a
 shape the designer never writes).
@@ -391,6 +398,10 @@ literal in the 60 characters before it (`EnforcedFloorSentences_ShouldEqualTheRe
 `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`). MCP prompts need no update: they list no parameter
 types.
 
+Raising the floor can lengthen the version literal (a new digit, e.g. at 1.6.6.100), which costs one byte in each of
+the create, modify and modify-as-new-version descriptions. `ToolContractPayloadBudgetTests` catches it at the cut that
+does it; that PR pays it under Q20=A (a reviewer-approved trim, no ceiling raise).
+
 **Rejected.** `process-file` (reads as the element only); one guide per ticket (two routing rows, two registrations, a
 split topic); the banner (process-modeling, which indexes bannered guides, has 8 bytes left under the 19,000-byte
 inline rule); registering in `GoLiveFloor` (fails the migration test); a `name=` pointer in this ticket's descriptions
@@ -404,9 +415,10 @@ agreed, the trim is work inside the clio PR.
 ### D26 - `[RequiresPackage]` floors and version numbers
 
 **Decision.** Numbers are rules, not projections. The cut takes the first free number ABOVE the highest number claimed
-anywhere at cut time (main, any branch or tag of either repository, a clio bundle): 1.6.6.97 or higher on 2026-10-13
-(B4), and 1.6.6.98 since 2026-10-14, when the package PR burned 1.6.6.97 after one stand install (the shared claim
-updated in place); re-checked with `git ls-remote --tags` in both repositories. The number is claimed BEFORE cutting,
+anywhere at cut time (main, any branch or tag of either repository, a clio bundle), re-checked with
+`git ls-remote --tags` in both repositories. The number lives in one place, the shared claim list (ENG-92719 comment
+550565), with the tag and `descriptor.json`; this set names no current or future cut (owner decision, 2026-10-14),
+so a re-cut touches no document. The number is claimed BEFORE cutting,
 in the PR description AND in the one shared cut claim, a comment on ENG-92719 File processing element; the shared
 claim guards against the double stamp measured in git history, when two package PRs in review at the same time stamped
 the same number. Cut with
@@ -423,13 +435,20 @@ cut: a foreign archive under our first number would satisfy it while lacking the
 **Consequences.** Files that move with the raise: the three literals and their comment blocks,
 `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`, the enforced-floor sentence in three
 descriptions, `docs/McpCapabilityMap.md` floor rows, the new e2e fixture's `MinimumPackageVersion`; the floor-history
-parenthetical of `ModifyProcessAsNewVersionTool.cs` is rewritten once without its enumeration. A cut at 1.6.6.100 or
-above grows the floor literal by one character in each of three descriptions. No new WCF operation, so
+parenthetical of `ModifyProcessAsNewVersionTool.cs` is rewritten once without its enumeration. A longer floor literal
+costs description bytes; D25 states the check. No new WCF operation, so
 `ExpectedOperationContractCount` and `ExpectedAuthorizationGateCallSites` do not move. Every reinstall of the stand is
 an `install-process-builder` call that needs the user's explicit approval each time and restarts the site for every
 connected user. If ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17
 graph validator into the write path (ENG-88414) lands first, this package PR teaches its key allow-list the new
 aliases; if this PR lands first, that branch adds them on rebase.
+
+**Record, 2026-10-14.** 1.6.6.97 was installed on the stand once and burned (V4 found the missing item stamps, D2).
+1.6.6.98 was installed on the stand and superseded the same day: the package PR's gate-3 review found two gaps (M1:
+the element dependency guards read process parameters at the top level only, so a retarget could strand a reference
+held by an item such as `Docs.File`; M2: a re-mirror gave every item a new UId, so a reference to an unchanged column
+dangled); their fix (`11b8088c`, `21d0b016`, `dcfdc83f`) was cut as the next claimed number. The behaviour that now
+holds is stated in D5 (re-mirror) and D7 (dependency guards).
 
 ---
 

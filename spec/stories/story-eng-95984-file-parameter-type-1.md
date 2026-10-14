@@ -132,12 +132,13 @@ commit, `b6dcd2c1`, and has four since 2026-10-14, head `d6ca4d79`; the split be
 
 - [ ] **CL-1** Rebundle and floor: `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head>
   -Version <claimed>`, where `<claimed>` is the number claimed before cutting in the PR description AND in the one
-  shared cut claim on ENG-92719 File processing element (the first free number above every claim; 1.6.6.98 or higher
-  since 2026-10-14, 1.6.6.97 being burned); `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in
+  shared cut claim on ENG-92719 File processing element (comment 550565; the next free number in the claim list at
+  cut time); `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in
   `clio.tests/Common/BundledProcessBuilderPackageTests.cs`; floor literals in `clio/Command/CreateBusinessProcessCommand.cs`,
   `ModifyBusinessProcessCommand.cs`, `ModifyProcessAsNewVersionCommand.cs` with their comment blocks;
   `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`; the enforced-floor sentence in three
-  descriptions. Install from the refreshed BUILD OUTPUT, each install after the user's explicit approval.
+  descriptions. Install from the refreshed BUILD OUTPUT, each install after the user's explicit approval. A longer
+  floor literal (a new digit) costs a byte in three descriptions: the budget test catches it, this PR trims (ADR D25).
 - [ ] **CL-2** Descriptions (Q20 = A (2026-10-14): trim, reviewer-approved): type lists in
   `clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs` and `ModifyBusinessProcessTool.cs`
   (+30 / +28 B) paid by trimming existing text, each trim approved by the reviewer and measured by lowering the ceiling
@@ -205,7 +206,7 @@ plan's manual cases.
 and again on 1.6.6.98; V3 PASS on 1.6.6.97 (3 callee runs); V4 FAIL on 1.6.6.97 (the item stamps, ADR D2), PASS on
 1.6.6.98; V5 PASS on 1.6.6.98 (only the 6 generic differences of any designer save); V7 PASS on 1.6.6.98; V2 PASS on the clio PR's build
 (MCP e2e 13/13 on net10.0 and net8.0, Ignored = 0); V6 and V8 not run. T-68: no exception on 1.6.6.97 (2 processes). The 12 manual cases of ENG-95984 comment 550561 passed as
-direct tool calls and designer steps.
+direct tool calls and designer steps. V2 ran again on the cut that superseded 1.6.6.98: Dev Agent Record.
 
 ## Status convention
 
@@ -298,20 +299,31 @@ mode) and never pushed after an approval. The follow-up stories 2-4 do not gate 
 ## Dev Agent Record
 
 - Implementation started: 2026-10-13 (package, PK-PT).
-- Package cut claimed (number, date, where claimed): 1.6.6.98, 2026-10-14, in ENG-92719 comment 550565 (updated in
-  place: ".97 burned, .98 claimed"); stamped in `d6ca4d79` and installed on the stand. 1.6.6.97 (`260bb8ce`) was
-  installed once and burned. The tag is not recorded in the 2026-10-14 results.
+- Package cut claimed (where, date): the number lives in ENG-92719 comment 550565 (updated in place at each re-cut),
+  the tag and `descriptor.json`; first claimed 2026-10-14. Cut history: 1.6.6.97 (`260bb8ce`) was installed once and
+  burned. 1.6.6.98 (stamped in `d6ca4d79`) was installed on the stand and superseded the same day: the package PR's
+  gate-3 review found two gaps (M1: the element dependency guards read process parameters at the top level only, so a
+  retarget could strand a reference held by an item such as `Docs.File`; M2: a re-mirror gave every item a new UId,
+  so a reference to an unchanged column dangled); their fix (`11b8088c`, `21d0b016`, `dcfdc83f`) was cut as the next
+  claimed number (ADR D26 record).
 - Bytes trimmed per Q20 = A (2026-10-14: trim, reviewer-approved), which text per tool and the reviewer's approval:
 - Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3424 passed at `b6dcd2c1`
   (`dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`, 187 of them new),
-  3426 at `b92547cc`; clio (with the MCP e2e) and knowledge opened as drafts on 2026-10-14.
+  3426 at `b92547cc`, 3435 with the gate-3 fixes; clio (with the MCP e2e) and knowledge opened as drafts on
+  2026-10-14.
 - Stand records (V0-V8): 2026-10-14, the .NET Framework stand (ENG-95984 comment 550775). V0 PASS (1.6.6.96 /
   1.6.6.97); V1 PASS (1.6.6.97, again on 1.6.6.98); V3 PASS (1.6.6.97, 3 callee runs against 1 on 1.6.6.54); V4 FAIL
   on 1.6.6.97 (item `A3` / `A4` missing), PASS on 1.6.6.98; V5 on 1.6.6.97: 4 item differences and 6 generic ones, on
   1.6.6.98 PASS with only the 6 generic ones; V7 PASS (1.6.6.98); V2 PASS (the clio PR's build); V6, V8 not run.
+  On the cut that superseded 1.6.6.98 (1.6.6.99, 2026-10-14): `FileParameterToolE2ETests` 13/13,
+  `ProcessParameterBindingToolE2ETests` 4/4, `SubProcessElementToolE2ETests` 10/12 on net10.0 and net8.0 (the two
+  failures are the `DescribeBusinessProcess_Should_ShowANewCalleeParametersCaption_*` cases, a clio master regression
+  since ENG-103023 clio: spill-free reads and post-write summaries, bisected to clio `3715cd23c`, not this
+  ticket's), and the must-stay-green fixtures 20/20 on net10.0; package tests 3435.
 - Notes: PK-PT is a draft PR, https://creatio.ghe.com/engineering/crt-process-builder/pull/96, opened 2026-10-14
-  (first commit b6dcd2c1; review gate 1 run, three lenses, all findings applied; head `d6ca4d79` after `260bb8ce`,
-  the burned 1.6.6.97 restamp, `b92547cc`, the item-stamp fix V4 found, and `d6ca4d79`, the 1.6.6.98 restamp). T-68 is
+  (first commit b6dcd2c1; review gate 1 run, three lenses, all findings applied; then `260bb8ce`, the burned 1.6.6.97
+  restamp, `b92547cc`, the item-stamp fix V4 found, `d6ca4d79`, the superseded 1.6.6.98 restamp, and the gate-3 fixes
+  `11b8088c`, `21d0b016`, `dcfdc83f`, cut as the next claimed number). T-68 is
   root-caused and fixed in code (the nested items of a user task synced in the same request had no owning schema; the
   for-mapping walk adopts them; the regression test drives the platform's real sync); on the stand manual TC-04 on
   ENG-95984 passed on 2026-10-14, and E2E-06 passed with V2. Open, not decided: whether a

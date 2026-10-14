@@ -84,7 +84,11 @@ that carry files by reference, never by bytes; a mapping onto or from them binds
   `sourceElement` + `sourceElementParameter`, only when replaying those names changes no other level (parity with the
   write side: no P1 parent write, no P3 reset, no P2 item write); one element index per describe.
 - The `typeFromElement` mirror binds the items too, on add and on re-mirror; a re-mirror keeps a caller's formula on
-  the outer level and binds only the items.
+  the outer level and binds only the items. A refreshed item takes the UId of the current item it matches (same name,
+  same data value type, same lookup object), so a reference to an unchanged column stays valid; a re-mirror that would
+  drop an item that is still referenced (a same-name item whose type changed included) is refused before any write.
+- The element dependency guards read process-parameter items too and name them by dotted path
+  (`process parameter 'Docs.File'`), so a retarget cannot strand a reference held by an item.
 - clio: rebundle, floor move, the type lists in the create and modify descriptions, the describe clause, the
   `ManagerMap` arm for the future `fileprocessing` token, capability-map rows, unit tests and a new MCP e2e fixture.
 - clio-knowledge: the new `process-files` guide, the `parameters` type list, and the two multi-instance passages
@@ -164,9 +168,10 @@ of `ProcessMappingService`.
   scalar (`setConnections`, approvals) must stay green unchanged.
 - **C4 Versions.** CrtProcessBuilder `main` and clio's bundle are at 1.6.6.96; the cut is the first free number above
   the highest number claimed anywhere at cut time (1.6.6.87, 1.6.6.89 and 1.6.6.94 are burned; re-check with
-  `git ls-remote --tags` in both repositories). On 2026-10-13 that was 1.6.6.97 or higher. On 2026-10-14 the package
-  PR installed 1.6.6.97 on the stand once, burned it, and cut **1.6.6.98**, stamped and installed; the shared claim
-  (ENG-92719 comment 550565) was updated in place. So 1.6.6.98 is this ticket's cut unless a later re-cut moves it.
+  `git ls-remote --tags` in both repositories). The number lives in one place, the shared claim list (ENG-92719
+  comment 550565), with the tag and `descriptor.json`; this spec does not repeat it, so a re-cut touches no document.
+  On 2026-10-14 the package PR installed 1.6.6.97 on the stand once and burned it; 1.6.6.98 was installed and
+  superseded the same day by the fixes of the package PR's gate-3 review (ADR D26 record).
   The number is claimed BEFORE cutting, in the PR description AND in the one shared cut claim, a comment on ENG-92719
   File processing element; the shared claim guards against the double stamp measured in git history, when two package
   PRs in review at the same time stamped the same number. The three `[RequiresPackage]` floors are 1.6.6.92 today and
