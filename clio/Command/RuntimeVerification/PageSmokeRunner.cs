@@ -442,34 +442,7 @@ internal sealed class PageSmokeRunner(
 				};
 				return;
 			}
-			// The button was pressed: a read that fails now must not hide that, so it costs only its own part of the report.
-			bool followedReported = false;
-			try {
-				int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
-					request.ClickWaitSeconds * 1000);
-				report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
-				ReportWhatFollowed(report, events, mark, result);
-				followedReported = true;
-				PageReadyState after = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
-					.ConfigureAwait(false);
-				report.Url = after?.Href is null ? null : RelativeUrl(after.Href);
-				PageOverlays overlays = await TryEvaluateAsync<PageOverlays>(cdp, FreedomUiPageScripts.OverlayScript, ct)
-					.ConfigureAwait(false);
-				if (overlays?.Dialogs is { Count: > 0 } dialogs) {
-					report.Dialogs = [.. report.Dialogs ?? [], .. dialogs.Select(Untrusted)];
-				}
-				report.Toasts = overlays?.Toasts is { Count: > 0 } toasts ? toasts.Select(Untrusted).ToList() : null;
-				PageInventory inventory = await TryEvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript, ct)
-					.ConfigureAwait(false);
-				List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
-				report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
-			}
-			catch (CdpReplyTooLargeException exception) {
-				if (!followedReported) {
-					ReportWhatFollowed(report, events, mark, result);
-				}
-				result.Warnings.Add(exception.Message + " What followed the click may be incomplete.");
-			}
+			await ReadWhatFollowedAsync(cdp, events, request, report, result, mark, budgetEnd, ct).ConfigureAwait(false);
 			if (report.Settled == false) {
 				result.Warnings.Add($"The page was still changing when click-wait ({request.ClickWaitSeconds} s) ended; "
 					+ "what followed may be incomplete.");
@@ -482,6 +455,39 @@ internal sealed class PageSmokeRunner(
 				report.Created = created.Created;
 				result.Warnings.AddRange(created.Warnings);
 			}
+		}
+	}
+
+	// What a pressed button led to: the settle wait, then the page address, overlays and invalid fields. The button was
+	// pressed, so a read that fails now must not hide that: an oversized reply costs only its own part of the report.
+	private async Task ReadWhatFollowedAsync(ICdpSession cdp, PageEventCollector events, PageSmokeRequest request,
+		PageClickReport report, PageSmokeResult result, int mark, DateTimeOffset budgetEnd, CancellationToken ct) {
+		bool followedReported = false;
+		try {
+			int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
+				request.ClickWaitSeconds * 1000);
+			report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
+			ReportWhatFollowed(report, events, mark, result);
+			followedReported = true;
+			PageReadyState after = await TryEvaluateAsync<PageReadyState>(cdp, FreedomUiPageScripts.ReadyScript, ct)
+				.ConfigureAwait(false);
+			report.Url = after?.Href is null ? null : RelativeUrl(after.Href);
+			PageOverlays overlays = await TryEvaluateAsync<PageOverlays>(cdp, FreedomUiPageScripts.OverlayScript, ct)
+				.ConfigureAwait(false);
+			if (overlays?.Dialogs is { Count: > 0 } dialogs) {
+				report.Dialogs = [.. report.Dialogs ?? [], .. dialogs.Select(Untrusted)];
+			}
+			report.Toasts = overlays?.Toasts is { Count: > 0 } toasts ? toasts.Select(Untrusted).ToList() : null;
+			PageInventory inventory = await TryEvaluateAsync<PageInventory>(cdp, FreedomUiPageScripts.InventoryScript, ct)
+				.ConfigureAwait(false);
+			List<PageField> invalid = inventory?.Fields?.Where(field => field.Error is not null).ToList();
+			report.InvalidFields = invalid is { Count: > 0 } ? invalid : null;
+		}
+		catch (CdpReplyTooLargeException exception) {
+			if (!followedReported) {
+				ReportWhatFollowed(report, events, mark, result);
+			}
+			result.Warnings.Add(exception.Message + " What followed the click may be incomplete.");
 		}
 	}
 
