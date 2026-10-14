@@ -24,7 +24,7 @@ public static class HeadlessShellRelease {
 	public const string MirrorEnvVar = "CLIO_CHROME_FOR_TESTING_MIRROR";
 
 	/// <summary>Where Chrome for Testing publishes its archives: {base}/{version}/{platform}/chrome-headless-shell-{platform}.zip.</summary>
-	public const string DefaultBaseUrl = "https://storage.googleapis.com/chrome-for-testing-public";
+	public const string DefaultBaseUrl = "https://storage.googleapis.com/chrome-for-testing-public"; // NOSONAR - the official Chrome for Testing endpoint; overridden by CLIO_CHROME_FOR_TESTING_MIRROR
 
 	/// <summary>The size of the largest archive, rounded, for the question put to the user.</summary>
 	public const int ApproximateDownloadMegabytes = 125;
@@ -66,11 +66,14 @@ public static class HeadlessShellRelease {
 	}
 
 	/// <summary>The platform key of the running process; null when none is published.</summary>
-	public static string CurrentPlatformKey() {
-		OSPlatform platform = RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? OSPlatform.OSX
-			: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OSPlatform.Windows
-			: OSPlatform.Linux;
-		return PlatformKey(platform, RuntimeInformation.ProcessArchitecture);
+	public static string CurrentPlatformKey() => PlatformKey(CurrentOsPlatform(), RuntimeInformation.ProcessArchitecture);
+
+	/// <summary>The running OS as the browser lookups name it: macOS, Windows, or Linux for every other Unix.</summary>
+	public static OSPlatform CurrentOsPlatform() {
+		if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX)) {
+			return OSPlatform.OSX;
+		}
+		return RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OSPlatform.Windows : OSPlatform.Linux;
 	}
 
 	/// <summary>The archive URL for a platform under a base URL (the default or a mirror).</summary>

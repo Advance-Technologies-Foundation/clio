@@ -44,10 +44,7 @@ public sealed class BrowserCacheLocator : IBrowserCacheLocator {
 	/// <summary>Initializes the locator for this machine.</summary>
 	/// <param name="fileSystem">File system the caches are read from.</param>
 	public BrowserCacheLocator(Ms.IFileSystem fileSystem)
-		: this(fileSystem, Environment.GetEnvironmentVariable,
-			RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? OSPlatform.OSX
-			: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OSPlatform.Windows
-			: OSPlatform.Linux) {
+		: this(fileSystem, Environment.GetEnvironmentVariable, HeadlessShellRelease.CurrentOsPlatform()) {
 	}
 
 	/// <summary>Initializes the locator over an explicit environment and OS layout, for tests.</summary>
@@ -144,21 +141,16 @@ public sealed class BrowserCacheLocator : IBrowserCacheLocator {
 
 	// The executable sits a few folders down (an app bundle on macOS); the search stays shallow.
 	private string FindExecutable(string directory, string[] names, int depth) {
-		foreach (string file in SafeFiles(directory)) {
-			if (names.Contains(Path.GetFileName(file), StringComparer.Ordinal)) {
-				return file;
-			}
+		string found = SafeFiles(directory).FirstOrDefault(file => names.Contains(Path.GetFileName(file), StringComparer.Ordinal));
+		if (found is not null) {
+			return found;
 		}
 		if (depth >= MaxSearchDepth) {
 			return null;
 		}
-		foreach (string child in SafeDirectories(directory)) {
-			string found = FindExecutable(child, names, depth + 1);
-			if (found is not null) {
-				return found;
-			}
-		}
-		return null;
+		return SafeDirectories(directory)
+			.Select(child => FindExecutable(child, names, depth + 1))
+			.FirstOrDefault(executable => executable is not null);
 	}
 
 	private string[] SafeDirectories(string directory) {

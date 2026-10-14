@@ -24,7 +24,7 @@ public sealed class ChromiumLocator : IChromiumLocator {
 	/// <summary>Initializes the locator over the file-system abstraction used to probe candidate paths.</summary>
 	/// <param name="fileSystem">File-system abstraction (existence checks only).</param>
 	public ChromiumLocator(IFileSystem fileSystem)
-		: this(fileSystem, Environment.GetEnvironmentVariable, CurrentPlatform()) {
+		: this(fileSystem, Environment.GetEnvironmentVariable, HeadlessShellRelease.CurrentOsPlatform()) {
 	}
 
 	/// <summary>
@@ -70,12 +70,13 @@ public sealed class ChromiumLocator : IChromiumLocator {
 			.ToList();
 
 	private static string NameOf(string path) {
-		string file = path.Replace('\\', '/');
-		return file.Contains("Edge", StringComparison.OrdinalIgnoreCase) || file.Contains("msedge", StringComparison.OrdinalIgnoreCase)
-			? "Microsoft Edge"
-			: file.Contains("Brave", StringComparison.OrdinalIgnoreCase) ? "Brave"
-			: file.Contains("chromium", StringComparison.OrdinalIgnoreCase) ? "Chromium"
-			: "Google Chrome";
+		if (path.Contains("edge", StringComparison.OrdinalIgnoreCase)) {
+			return "Microsoft Edge";
+		}
+		if (path.Contains("brave", StringComparison.OrdinalIgnoreCase)) {
+			return "Brave";
+		}
+		return path.Contains("chromium", StringComparison.OrdinalIgnoreCase) ? "Chromium" : "Google Chrome";
 	}
 
 	// The version a user recognises: the app bundle's on macOS, the executable's product version on Windows. On Linux
@@ -136,10 +137,6 @@ public sealed class ChromiumLocator : IChromiumLocator {
 		];
 	}
 
-	private static OSPlatform CurrentPlatform() =>
-		RuntimeInformation.IsOSPlatform(OSPlatform.OSX) ? OSPlatform.OSX
-		: RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? OSPlatform.Windows
-		: OSPlatform.Linux;
 
 	// %NAME% is replaced from the environment this locator reads, as Environment.ExpandEnvironmentVariables does
 	// from the process; a variable that is not set is left as written, so its candidate path does not exist.

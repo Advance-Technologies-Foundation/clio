@@ -224,7 +224,7 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 				_fileSystem.Directory.CreateDirectory(destination);
 				continue;
 			}
-			_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+			_fileSystem.Directory.CreateDirectory(Path.GetDirectoryName(destination));
 			using (Stream source = entry.Open())
 			using (Stream target = _fileSystem.File.Create(destination)) {
 				source.CopyTo(target);

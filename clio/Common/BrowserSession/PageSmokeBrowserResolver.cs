@@ -210,13 +210,11 @@ public sealed class PageSmokeBrowserResolver(
 
 	// Headless shells other tools already downloaded come first (the recommended choice), then installed browsers.
 	private IReadOnlyList<InstalledBrowser> FindExisting() {
-		List<InstalledBrowser> existing = [.. cacheLocator.FindCached()];
-		foreach (InstalledBrowser installed in chromiumLocator.FindInstalled()) {
-			if (!existing.Any(browser => SamePath(browser.Path, installed.Path))) {
-				existing.Add(installed);
-			}
-		}
-		return existing;
+		IReadOnlyList<InstalledBrowser> cached = cacheLocator.FindCached();
+		return [
+			.. cached,
+			.. chromiumLocator.FindInstalled().Where(installed => !cached.Any(browser => SamePath(browser.Path, installed.Path)))
+		];
 	}
 
 	private static string Describe(InstalledBrowser browser) =>
