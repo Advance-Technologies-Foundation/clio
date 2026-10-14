@@ -366,6 +366,9 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Category("McpE2E.Sandbox")]
+	// LocalOnly classifies the whole fixture; keep this probe explicit, manual, and CI-guarded.
+	[Category("McpE2E.Manual")]
+	[Explicit("Publishes schema changes on an exclusively owned disposable instance.")]
 	[Test]
 	[Description("Creates a BaseItemInFolder child whose inherited Folder references ContactFolder, reads it back, redirects it through update-entity-schema to a sandbox child of ContactFolder, refuses Contact as a target, and refuses a Folder column without override.")]
 	[AllureTag(CreateToolName)]
@@ -376,6 +379,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 	[AllureDescription("Creates a sandbox child of BaseItemInFolder with Folder overridden to ContactFolder and verifies through get-entity-schema-properties and get-entity-schema-column-properties that no own column exists and the inherited Folder references ContactFolder; modify-entity-schema-column accepts the same reference again. Creates a sandbox child of ContactFolder, redirects the inherited Folder to it through update-entity-schema and verifies the read-back. Verifies that Contact is refused as a target and that a Folder column without override is refused.")]
 	public async Task CreateEntitySchema_Should_Override_Inherited_Folder_And_Refuse_Unrelated_Target() {
 		// Arrange
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions("Requires an exclusive disposable instance.");
 		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSandboxPackageAsync();
 		const string folderColumnName = "Folder";
 		CancellationToken cancellationToken = arrangeContext.CancellationTokenSource.Token;
