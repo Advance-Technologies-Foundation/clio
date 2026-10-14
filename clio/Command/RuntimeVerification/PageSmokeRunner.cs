@@ -174,7 +174,6 @@ internal sealed class PageSmokeRunner(
 	IBrowserSessionService browserSessionService,
 	IFileSystem fileSystem,
 	IHeadlessBrowserLauncher browserLauncher,
-	ICdpSessionFactory cdpSessionFactory,
 	ICreatedRecordWatcher recordWatcher,
 	TimeProvider timeProvider)
 	: IPageSmokeRunner {
@@ -227,8 +226,8 @@ internal sealed class PageSmokeRunner(
 		try {
 			IReadOnlyList<BrowserCookie> cookies = await ReadSessionCookiesAsync(budget.Token).ConfigureAwait(false);
 			await using IHeadlessBrowser browser = await browserLauncher.LaunchAsync(request.BrowserPath, budget.Token).ConfigureAwait(false);
-			await using ICdpSession cdp = await cdpSessionFactory.ConnectAsync(browser.PageWebSocketUrl, budget.Token)
-				.ConfigureAwait(false);
+			// Closed before the browser, whose disposal then kills it and deletes its profile.
+			await using ICdpSession cdp = browser.Page;
 			cdp.EventReceived += events.OnEvent;
 			events.NativeDialogOpened += () => DismissNativeDialog(cdp, timeProvider);
 			string frameId = await OpenPageAsync(cdp, cookies, url, budget.Token).ConfigureAwait(false);
@@ -262,7 +261,7 @@ internal sealed class PageSmokeRunner(
 		}
 		catch (Exception exception) when (exception is InvalidOperationException or CdpCommandException
 			or CreatioAuthenticationException or SafeEnvironmentConfirmationRequiredException
-			or System.Net.WebSockets.WebSocketException or System.Net.Http.HttpRequestException
+			or System.Net.Http.HttpRequestException
 			or System.IO.IOException or JsonException) {
 			ReadLoadErrors(result, events, int.MaxValue);
 			result.Success = false;

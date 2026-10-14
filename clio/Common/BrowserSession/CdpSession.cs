@@ -2,7 +2,6 @@ using System;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Linq;
-using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -14,8 +13,13 @@ namespace Clio.Common.BrowserSession;
 /// <inheritdoc cref="ICdpSession" />
 /// <remarks>
 /// One receive loop reads every message: an answer completes the pending command with the same id, an event is raised
-/// through <see cref="EventReceived"/>. Sends are serialized, because a WebSocket allows one send at a time. When the
+/// through <see cref="EventReceived"/>. Sends are serialized, because the channel carries one message at a time. When the
 /// channel closes or fails, every pending command fails at once instead of waiting for its own timeout.
+/// <para>
+/// Over the browser's DevTools pipe the session starts at the browser target; once <see cref="RouteToSession"/> names the
+/// flat session of an attached page, every command carries that session id, only that page's events are raised, and the
+/// page being detached (closed, or crashed beyond recovery) closes the session.
+/// </para>
 /// </remarks>
 public sealed class CdpSession : ICdpSession {
 
@@ -28,6 +32,7 @@ public sealed class CdpSession : ICdpSession {
 	private readonly object _disposeGate = new();
 	private Task _disposal;
 	private volatile string _closedReason;
+	private volatile string _sessionId;
 
 	private sealed record PendingCommand(string Method, TaskCompletionSource<JsonElement> Completion);
 
@@ -50,7 +55,10 @@ public sealed class CdpSession : ICdpSession {
 			new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously));
 		_pending[id] = pending;
 		try {
-			string message = JsonSerializer.Serialize(new { id, method, @params = parameters ?? new { } });
+			string sessionId = _sessionId;
+			string message = sessionId is null
+				? JsonSerializer.Serialize(new { id, method, @params = parameters ?? new { } })
+				: JsonSerializer.Serialize(new { id, method, @params = parameters ?? new { }, sessionId });
 			await _sendLock.WaitAsync(ct).ConfigureAwait(false);
 			try {
 				// The session may have closed while this sender waited for the lock.
@@ -58,7 +66,7 @@ public sealed class CdpSession : ICdpSession {
 				await _transport.SendAsync(message, ct).ConfigureAwait(false);
 			}
 			catch (Exception exception) when (IsTransportFailure(exception)) {
-				// The socket dropped between ThrowIfClosed and the send: the same "the session is gone" every caller
+				// The channel dropped between ThrowIfClosed and the send: the same "the session is gone" every caller
 				// already handles, not a raw socket error that slips past their filters.
 				throw new CdpSessionClosedException(
 					$"CDP command '{method}' could not be sent: the DevTools connection failed ({exception.Message}).",
@@ -93,7 +101,7 @@ public sealed class CdpSession : ICdpSession {
 		try {
 			await _transport.DisposeAsync().ConfigureAwait(false);
 		}
-		catch (Exception exception) when (exception is WebSocketException or IOException or ObjectDisposedException
+		catch (Exception exception) when (exception is IOException or ObjectDisposedException
 			or InvalidOperationException) {
 			// Closing a dead connection is not worth reporting.
 		}
@@ -139,7 +147,7 @@ public sealed class CdpSession : ICdpSession {
 	}
 
 	private static bool IsTransportFailure(Exception exception) =>
-		exception is WebSocketException or IOException or ObjectDisposedException
+		exception is IOException or ObjectDisposedException
 			or (InvalidOperationException and not CdpSessionClosedException);
 
 	// A message that is not JSON, or has neither an id nor a method, is ignored: the browser never sends one, and one
@@ -157,7 +165,9 @@ public sealed class CdpSession : ICdpSession {
 			return;
 		}
 		if (root.TryGetProperty("id", out JsonElement idElement) && idElement.TryGetInt32(out int id)) {
-			if (root.TryGetProperty(WebSocketCdpTransport.ReplyTooLargeMarker, out _)) {
+			// A reply is matched by its id alone: ids are unique across the whole connection, and the oversized-reply
+			// sentinel carries no session id.
+			if (root.TryGetProperty(PipeCdpTransport.ReplyTooLargeMarker, out _)) {
 				FailTooLarge(id);
 				return;
 			}
@@ -166,9 +176,34 @@ public sealed class CdpSession : ICdpSession {
 		}
 		if (root.TryGetProperty("method", out JsonElement methodElement) && methodElement.ValueKind == JsonValueKind.String) {
 			JsonElement parameters = root.TryGetProperty("params", out JsonElement value) ? value : EmptyObject;
-			Raise(new CdpEvent(methodElement.GetString(), parameters));
+			string method = methodElement.GetString();
+			string eventSession = SessionIdOf(root);
+			if (string.Equals(eventSession, _sessionId, StringComparison.Ordinal)) {
+				Raise(new CdpEvent(method, parameters));
+			}
+			else if (eventSession is null && method == DetachedFromTarget && _sessionId is not null
+				&& string.Equals(SessionIdOf(parameters), _sessionId, StringComparison.Ordinal)) {
+				// The browser target reports that the page this session drives is gone: no later command can reach it.
+				_closedReason ??= "the browser detached the page";
+				FailPending();
+			}
 		}
 	}
+
+	/// <summary>Routes every later command to an attached page's flat session, and raises only that page's events.</summary>
+	/// <param name="sessionId">The <c>sessionId</c> that <c>Target.attachToTarget</c> with <c>flatten</c> returned.</param>
+	internal void RouteToSession(string sessionId) {
+		ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
+		_sessionId = sessionId;
+	}
+
+	private const string DetachedFromTarget = "Target.detachedFromTarget";
+
+	private static string SessionIdOf(JsonElement element) =>
+		element.ValueKind == JsonValueKind.Object && element.TryGetProperty("sessionId", out JsonElement session)
+			&& session.ValueKind == JsonValueKind.String
+				? session.GetString()
+				: null;
 
 	private void Complete(int id, JsonElement root) {
 		if (!_pending.TryGetValue(id, out PendingCommand pending)) {
@@ -188,7 +223,7 @@ public sealed class CdpSession : ICdpSession {
 	private void FailTooLarge(int id) {
 		if (_pending.TryGetValue(id, out PendingCommand pending)) {
 			pending.Completion.TrySetException(new CdpReplyTooLargeException(pending.Method,
-				WebSocketCdpTransport.MaxMessageBytes));
+				PipeCdpTransport.MaxMessageBytes));
 		}
 	}
 
@@ -223,108 +258,4 @@ public sealed class CdpSession : ICdpSession {
 		new($"CDP command '{method}' could not complete: {_closedReason ?? "the session closed"}.");
 
 	private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
-}
-
-/// <summary>A <see cref="ICdpTransport"/> over a <see cref="ClientWebSocket"/>.</summary>
-public sealed class WebSocketCdpTransport : ICdpTransport {
-
-	// A page answer is small; this bounds memory if the browser ever pushes something huge (the rest is discarded).
-	internal const int MaxMessageBytes = 4 * 1024 * 1024;
-
-	// The top-level member of the sentinel an oversized reply is replaced with; CDP never sends it, so the session
-	// fails that reply's command with CdpReplyTooLargeException instead of leaving it to its timeout.
-	internal const string ReplyTooLargeMarker = "clio.replyTooLarge";
-
-	// A CDP reply starts with its id ({"id":12,"result":...}), so the id survives in the kept prefix.
-	private static readonly Regex LeadingId = new(
-		@"\A\s*\{\s*""id""\s*:\s*(?<id>\d{1,9})\s*[,}]",
-		RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture,
-		TimeSpan.FromSeconds(1));
-
-	private readonly ClientWebSocket _socket;
-
-	/// <summary>Wraps an open socket; the transport owns and disposes it.</summary>
-	/// <param name="socket">A connected WebSocket.</param>
-	public WebSocketCdpTransport(ClientWebSocket socket) {
-		_socket = socket ?? throw new ArgumentNullException(nameof(socket));
-	}
-
-	/// <inheritdoc />
-	public Task SendAsync(string message, CancellationToken ct) =>
-		_socket.SendAsync(Encoding.UTF8.GetBytes(message), WebSocketMessageType.Text, endOfMessage: true, ct);
-
-	/// <inheritdoc />
-	public async Task<string> ReceiveAsync(CancellationToken ct) {
-		byte[] buffer = new byte[16 * 1024];
-		using MemoryStream stream = new();
-		bool overflow = false;
-		while (true) {
-			WebSocketReceiveResult result = await _socket.ReceiveAsync(buffer, ct).ConfigureAwait(false);
-			if (result.MessageType == WebSocketMessageType.Close) {
-				return null;
-			}
-			if (stream.Length + result.Count <= MaxMessageBytes) {
-				await stream.WriteAsync(buffer.AsMemory(0, result.Count), ct).ConfigureAwait(false);
-			}
-			else {
-				overflow = true;
-			}
-			if (result.EndOfMessage) {
-				return overflow
-					? OversizedMessageSentinel(stream.GetBuffer().AsSpan(0, (int)stream.Length))
-					: Encoding.UTF8.GetString(stream.GetBuffer(), 0, (int)stream.Length);
-			}
-		}
-	}
-
-	// What replaces a message over MaxMessageBytes: a sentinel carrying the reply's id, so its command fails with a
-	// clear error; an empty object (ignored) when no id leads the message, which is an event nobody waits for.
-	internal static string OversizedMessageSentinel(ReadOnlySpan<byte> prefix) {
-		string head = Encoding.UTF8.GetString(prefix[..Math.Min(prefix.Length, 64)]);
-		Match match = LeadingId.Match(head);
-		return match.Success
-			? $"{{\"id\":{match.Groups["id"].Value},\"{ReplyTooLargeMarker}\":true}}"
-			: "{}";
-	}
-
-	/// <inheritdoc />
-	public async ValueTask DisposeAsync() {
-		try {
-			if (_socket.State == WebSocketState.Open) {
-				using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(2));
-				await _socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "done", timeout.Token)
-					.ConfigureAwait(false);
-			}
-		}
-		catch (Exception exception) when (exception is WebSocketException or OperationCanceledException
-			or ObjectDisposedException) {
-			// The browser may already be gone.
-		}
-		finally {
-			_socket.Dispose();
-		}
-	}
-}
-
-/// <inheritdoc cref="ICdpSessionFactory" />
-public sealed class CdpSessionFactory : ICdpSessionFactory {
-
-	/// <inheritdoc />
-	public async Task<ICdpSession> ConnectAsync(Uri webSocketUrl, CancellationToken ct) {
-		ArgumentNullException.ThrowIfNull(webSocketUrl);
-		if (!webSocketUrl.IsLoopback) {
-			// The DevTools endpoint is unauthenticated, so clio only ever talks to the browser it started itself.
-			throw new InvalidOperationException("A DevTools session is opened only on a loopback address.");
-		}
-		// ClientWebSocket is a framework I/O transport (like HttpClient), constructed per connection.
-		ClientWebSocket socket = new();
-		try {
-			await socket.ConnectAsync(webSocketUrl, ct).ConfigureAwait(false);
-		}
-		catch {
-			socket.Dispose();
-			throw;
-		}
-		return new CdpSession(new WebSocketCdpTransport(socket));
-	}
 }

@@ -443,7 +443,7 @@ public class BindingsModule {
 		services.AddTransient<Clio.Common.BrowserSession.IChromiumLocator, Clio.Common.BrowserSession.ChromiumLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IAuthenticatedBrowserLauncher, Clio.Common.BrowserSession.AuthenticatedBrowserLauncher>();
 		services.AddTransient<Clio.Common.BrowserSession.IHeadlessBrowserLauncher, Clio.Common.BrowserSession.HeadlessBrowserLauncher>();
-		services.AddTransient<Clio.Common.BrowserSession.ICdpSessionFactory, Clio.Common.BrowserSession.CdpSessionFactory>();
+		services.AddTransient<Clio.Common.BrowserSession.IPipeBrowserSpawner, Clio.Common.BrowserSession.PipeBrowserSpawner>();
 		services.AddTransient<Clio.Common.BrowserSession.IBrowserCacheLocator, Clio.Common.BrowserSession.BrowserCacheLocator>();
 		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellSource, Clio.Common.BrowserSession.ChromeForTestingHeadlessShellSource>();
 		services.AddTransient<Clio.Common.BrowserSession.IHeadlessShellInstaller, Clio.Common.BrowserSession.HeadlessShellInstaller>();
@@ -1798,12 +1798,15 @@ public class BindingsModule {
 					// attempt budget, and inter-attempt delays); it is constructed by the e2e
 					// readiness wait, not resolved from DI.
 					|| implementedInterface == typeof(ICliogateHttpReadinessProbe)
-					// A CDP session and its transport are per-connection objects CdpSessionFactory builds around an open
-					// WebSocket, and a headless browser handle is built by its launcher around a running process; none is a
-					// service DI can construct (page-smoke, ENG-103032).
+					// A CDP session and its transport are per-connection objects the headless launcher builds around the
+					// DevTools pipe of the browser it started, and the browser handle around that process; none is a service
+					// DI can construct (page-smoke, ENG-103032, ENG-103330).
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpSession)
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpTransport)
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.IHeadlessBrowser)
+					// The native lifetime of a browser the pipe spawner started (an unreaped child, an open process
+					// handle) exists only around that process (ENG-103330).
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IPipeProcessLifetime)
 					// The MCP credential-passthrough seam is registered explicitly in the
 					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
 					// IHttpContextAccessor, which is not part of the stdio graph, and both are
