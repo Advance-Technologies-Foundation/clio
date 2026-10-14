@@ -204,7 +204,7 @@ KB-MH.
 | O6 | Ask for a second disposable .NET Framework stand for draft iteration | yes; it speeds up the track but is not a premise |
 | O7 | Lower PRs with a stacked draft above them merge with "Create a merge commit" | yes |
 | O8 | A merge window per ticket, agreed with the owners of the in-flight work that shares files with this split: ENG-99970 CAADT runs for BPMS Tools cost 6-15x other teams - find and close the gap; ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17 graph validator into the write path (ENG-88414) (ENG-88414 is AI-driven application development); ENG-92113 Deliver clioprocessbuiilder package - CI for adding package into clio release. On 2026-10-13 only ENG-95244 is still in flight: ENG-99970 has fully merged, and ENG-92113's delivery stage came and went (status below), so its merge window is moot | yes |
-| O-10 (ENG-95984 File process parameter type plan) | ENG-95984 File process parameter type's BMAD set (spec, ADR, story, test plan, sprint-status row) goes in a docs-only clio PR, CL-PT-DOC, which merges before PK-PT opens (pr-split E9). The alternative is an owner-approved exception to the AGENTS.md pipeline | yes |
+| O-10 (ENG-95984 File process parameter type plan) | ENG-95984 File process parameter type's BMAD set (spec, ADR, story, test plan, sprint-status row) goes in a docs-only clio PR, CL-PT-DOC, which merges before PK-PT leaves draft (pr-split E9). The alternative is an owner-approved exception to the AGENTS.md pipeline | yes |
 
 **What changes:** the review and merge protocol in pr-split section 14. A human merges every PR.
 
@@ -463,6 +463,13 @@ the sizes the failing assertions print:
 | modify-business-process | 35,062 B | **10 B** |
 | describe-business-process | 34,019 B | 1,053 B |
 
+**Moved on 2026-10-14.** On clio master `79fab4786`, ENG-103081 Warn when a process-parameter mapping is bound twice or
+to a branch some start skips (clio #1807) paid for its own sentences by a swap and re-measured the two write contracts
+(`CLIO/clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs:206-212`): create-business-process 35,061 B
+(**11 B** left), modify-business-process 35,070 B (**2 B** left). PT's trims therefore free at least 19 B on create
+and at least 26 B on modify. The create candidate in option A is still in the text there
+(`CLIO/clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs:309-310`).
+
 - The per-contract ceiling is unchanged: 137 x 256 = 35,072 B
   (`CLIO/clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs:205`).
 - The room that ENG-102114 Process builder: raw meta-path tokens (filter expression, modify flow conditions) get no
@@ -487,7 +494,8 @@ the sizes the failing assertions print:
   `:549`, create members `:574`; the args by `CallShapeArgs_Should_NameRealArgumentsAndEveryRequiredOne` `:595`).
 
 What PT and OA need:
-- **PT:** the type lists, +30 B on create and +28 B on modify. They do not fit into 4 / 10 B. PT adds no descriptor
+- **PT:** the type lists, +30 B on create and +28 B on modify. They do not fit into 4 / 10 B (2026-10-13), nor into
+  11 / 2 B (`79fab4786`, 2026-10-14). PT adds no descriptor
   member (the types are values), so the call shapes and the 19,000 B wire guard are unaffected (hypothesis, source).
 - **OA:** about +128 B on create and +74 B on modify (estimated), which do not fit either. PK-OA also adds a
   `fileProcessing` member to `ProcessElementDescriptor`, so `CreateElementBlockShape` must gain the block in the same

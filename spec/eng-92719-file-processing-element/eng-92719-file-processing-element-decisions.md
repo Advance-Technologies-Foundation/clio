@@ -395,7 +395,8 @@ dotted source and target, a meta path with no element segment, the failing segme
 
 **Decision: option 2, inside `ApplyMapping`, with two scoping rules.**
 - **Structured sources only.** The rules below run only when the source is `sourceElement` (+
-  `sourceElementParameter`) or `processParameter`. An `expression` source goes to the named target as given: it
+  `sourceElementParameter`) or `processParameter` (without `sourceColumn`: a record column is not a
+  parameter-to-parameter binding). An `expression` source goes to the named target as given: it
   never auto-binds or resets a parent, never pairs items, and is never refused by these rules (the platform
   validates the formula as before). The package does check it in one way: since 1.6.6.79 (ENG-102114) every
   meta-path token must be the path the platform writes for an item of THIS process, so a misspelled token, a token
@@ -412,7 +413,7 @@ dotted source and target, a meta path with no element segment, the failing segme
 
 | Rule | Trigger | Writes | Refusal or notice |
 |---|---|---|---|
-| **P1** parent auto-bind (type-agnostic, designer parity) | structured source; the target is an item of a collection AND the source is an item of a collection | item <- source item, and the target's parents <- the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File <- OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | **refuse** (F-M1) when a paired parent is bound to anything else ("'Files' is bound to 'X'; map 'Files' to 'Y' first: its items follow."; for a parent that does not take files the remedy is "then map '<item>' again"); **refuse** (F-M5) when the SOURCE is nested one collection deeper than the target, because outside its row it reads empty; the same source is a no-op; no notice. Runs after the existing multi-instance guards, and each parent it binds passes the sub-process direction guard; applies to `InputRecordCollection.<F>` too |
+| **P1** parent auto-bind (type-agnostic, designer parity) | structured source; the target is an item of a collection AND the source is an item of a collection | item <- source item, and the target's parents <- the source's parents, paired innermost first, as many levels as the SOURCE chain has: a deeper TARGET is fine, only the matching inner levels are bound (`Messages.Files.File <- OF1.ObjectFiles.File` binds `Messages.Files` and leaves `Messages`); a parent already bound to its source parent, or the same collection, is left as it is | **refuse** (F-M1) when a paired parent is bound to anything else ("'Files' is bound to 'X'; map 'Files' to 'Y' first: its items follow."; for a parent that does not take files the remedy is "then map '<item>' again"); **refuse** (F-M5) when the SOURCE is nested deeper than the target, because outside its row it reads empty; the same source is a no-op; no notice. Runs after the existing multi-instance guards, and each parent it binds passes the sub-process direction guard; applies to `InputRecordCollection.<F>` too |
 | **P2** item pairing (file-consuming targets) | structured outer mapping, both sides collections, the target has a FileLocator item | each target FileLocator item not already bound into the new source <- the paired source item: (1) exact name, case-insensitive, type check passing; (2) else, when both sides have exactly one FileLocator item, pair those (`Files.File <- PF1.ObjectFiles.ObjectFile`); an item that cannot be paired and is bound outside the new source is **reset to None** | a notice (F-M4) for every item bound, rebound, reset or left unpaired; never overwrites an item already bound into the new source (and says nothing about it); a rebind and a reset name the old binding; an unpairable FileLocator item gets "at run time it will be empty". Non-file items are never auto-paired |
 | **P2-MI** (notice only) | a structured mapping that binds a multi-instance `InputRecordCollection`, as the named target or as a parent P1 binds, while one of its FileLocator items stays unbound | nothing beyond the planned writes | notice (F-M4): "callee parameter '<F>' will be empty on every iteration unless you map 'InputRecordCollection.<F>'" |
 | **P3** plain source on an item | structured source; the target is a FileLocator item; the source is not a collection item; single-instance owner (any element but a multi-instance sub-process, or the process itself: a process-level `Docs.File` counts) | item <- source; EVERY collection above it that is bound is **reset to None** | one notice (F-M4) per reset level ("'Files' was bound to 'X'; it was cleared because 'Files.File' now takes a single file.") |
@@ -1591,7 +1592,10 @@ on clio-knowledge master `0b56d4a`, 2026-10-13; the tool-contract sizes measured
   in the refusal message ("after user approval", clio #1805), and ENG-103023 clio: spill-free reads and post-write
   summaries (describe-business-process modes, write tools return the result, get-page lean by default) (the
   `ProcessWriteDigest` sentence and describe's `mode` / `element`, clio #1801). The ceiling may not be re-pinned
-  without review (test comment).
+  without review (test comment). **Moved on 2026-10-14:** on clio master `79fab4786`, ENG-103081 Warn when a
+  process-parameter mapping is bound twice or to a branch some start skips (clio #1807) paid for its own sentences by
+  a swap and re-measured create at **35,061 (11 B left)** and modify at **35,070 (2 B left)**
+  (`CLIO/clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs:206-212`).
 - Short form (ENG-100154, merged 2026-10-07): a default `get-tool-contract` lookup aims at 18,432 B
   (`ToolContractShortForm.InlineReplyBudgetBytes`, `CLIO/clio/Command/McpServer/Tools/ToolContractShortForm.cs:203`),
   which is now only Fit's own target. Since ENG-102797 O4c: make the short modify-business-process /
@@ -1637,7 +1641,8 @@ palette caption), or one guide per ticket.
   requires every `GoLiveFloor` id to be in the banner set split out of process-modeling, so a banner-less
   `process-files` there fails (an error in this plan's earlier text, not drift; hypothesis from test source). Each
   PR bumps libraryVersion above master at merge time and above every number another branch claims (master 1.15.142
-  on 2026-10-13; branch claims reach 1.15.142 and no 1.16.x exists, so 1.15.143 or higher, re-checked at cut time).
+  on 2026-10-13, when branch claims reached 1.15.142 and no 1.16.x existed; master 1.15.143 on 2026-10-14, released
+  2026-10-13, so 1.15.144 or higher, re-checked at cut time).
 - Content per PR:
   - PT: File and FileCollection; the read-back and the item-name caveat (D2); direction (D3); P1, P2, P3, R-M1,
     R-M2, file-consuming targets, "an expression goes through as given; only its meta-path tokens are checked" (D5);
@@ -1690,8 +1695,9 @@ palette caption), or one guide per ticket.
   at merge (no placeholder can merge). A CrtProcessBuilder version appears only as inline evidence ("measured on
   CrtProcessBuilder X on <date>"), never as the boundary (KB `AGENTS.md:22`).
 - Tool descriptions:
-  - **Where the bytes come from: Q20 agreed 2026-10-14: A, trim** (asked 2026-10-13). Create has 4 B and modify 10 B
-    left, so neither PT's nor OA's additions fit: a byte swap is needed again. X1's condition (the description ceiling
+  - **Where the bytes come from: Q20 agreed 2026-10-14: A, trim** (asked 2026-10-13). Create had 4 B and modify 10 B
+    left on 2026-10-13, and 11 B and 2 B on `79fab4786` (2026-10-14), so neither PT's nor OA's additions fit: a byte
+    swap is needed again, freeing at least 19 B on create and 26 B on modify for PT. X1's condition (the description ceiling
     blocks the type-list edit) is met by measurement on 2026-10-13. Its action, a separate early description-budget
     PR, stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which (Q20 = A: trim). The PR
     count stays 14 unless that early PR is opened (pr-split X1). Options were:
@@ -2221,7 +2227,7 @@ New server-side texts; none costs tool-description bytes.
 | F-M2 | refuse | R-M1: flat FileLocator <- a collection item | D5 |
 | F-M3 | refuse | R-M2: a collection without a file item into a file-consuming collection (the source "has no File item") | D5 |
 | F-M4 | notice | P2 item bound, rebound, reset (bound outside the new source and unpairable) or left unpaired; P2-MI empty callee file item, also when P1 binds the multi-instance input; P3 reset of EVERY bound collection above a file item, one notice per level | D5 |
-| F-M5 | refuse | P1: the source is nested one collection deeper than the target (outside its row it reads empty); a deeper TARGET is not refused | D5 |
+| F-M5 | refuse | P1: the source is nested deeper than the target (outside its row it reads empty); a deeper TARGET is not refused | D5 |
 | F-E1 | refuse | the generic `userTask` route, per cut | D13 |
 | F-E2 | refuse | raw `addMapping` onto a binder-owned configuration parameter, per cut | D13 |
 | F-E3 | refuse | no group or two groups on create; another variant's group on update (dependents named); a `source` check mismatch or an entity-like `source`; a contradicting `userTaskName` | D10, D12 |
@@ -2247,7 +2253,9 @@ Quoted from `PB/Parameters/ProcessParameterService.cs`, `PB/Parameters/ProcessPa
 `<...>` marks a value the code fills in; `[Element '<E>': ]` is present only when the target is an element's
 parameter. `<binding>` names a stored binding: `'<Element>.<path>'`, `'<path>'` for a process parameter, or
 `the formula '<text>'`. `<items>` is `Its items are '<A>', '<B>'.` (at most 20, then a count), or `'<name>' has no
-items.` In F-M texts, a target path is written without its element, a source with it.
+items.` In F-M texts, a target path is written without its element, a source with it; the exception is the opening
+`Mapping for target '<target>'` of F-M2, F-M3 and F-M5, where `<target>` includes the element name (`PF1.Files`; a
+process parameter has none).
 - **F-T1** `Parameter type '<type>' is not supported: a process parameter carries a file by reference, not its bytes. Use type File (one file) or FileCollection (several files).` Any other unsupported name gets the generic text, which now lists `..., Guid, File, FileCollection, Collection (shape it via 'typeFromElement'), and Lookup (set a 'referenceSchema').`
 - **F-T2** `Process parameter '<name>' is a File and cannot have a 'referenceSchema': a file is carried by reference to its stored content (FileLocator), not as a lookup to an object. Drop 'referenceSchema', or drop 'type' to declare a Lookup.` / `Process parameter '<name>' is a FileCollection and cannot have a 'referenceSchema': its shape is fixed (one File item), and a file is carried by reference to its stored content, not as a lookup to an object.`
 - **F-T3** on `addParameter` / `setParameter`: `Process parameter '<name>' is a File and cannot carry a constant default 'value': a File has no constant form; map it from an element's file output or another File parameter.` On `addMapping value` (every constant route): `Value '<value>' is not valid for parameter '<name>' of type <type>: a file has no constant form. Map it from an element's file output or another File parameter ('sourceElement' + 'sourceElementParameter', or 'processParameter').` / `... of type <type>: a collection has no constant form. Map an element's collection output or another collection into it ('sourceElement' + 'sourceElementParameter', or 'processParameter').`
@@ -2405,3 +2413,18 @@ committed code and its tests):
 - Appendix A: F-M5 added; the F-T and F-M texts quoted as written.
 - New open item, not decided: a single-instance sub-process's FileCollection-shaped `In` parameter is not a
   file-consuming target (D5); measurement M27 (open-questions B.5).
+
+### Round 7: gate-3 review fixes, 2026-10-14
+
+The comprehensive gate-3 review of the two docs PRs found the following; this round changed this document
+accordingly (source, read in PK-PT `b6dcd2c1` and on clio master `79fab4786`):
+- D5: "structured sources only" excludes a mapping with `sourceColumn`, because a record column is not a
+  parameter-to-parameter binding (`IsStructuredSource`, `PB/Mappings/ProcessMappingService.cs:671-672` in PK-PT).
+- D5 and Appendix A: F-M5 refuses any source chain deeper than the target's, not only one level deeper.
+- Appendix A: the opening `Mapping for target '<target>'` of F-M2, F-M3 and F-M5 names the element.
+- D25: the description budget re-read on clio master `79fab4786` (ENG-103081: create 11 B, modify 2 B left); the next
+  free knowledge number is 1.15.144 or higher (master 1.15.143).
+- Outside this document: AC-5 of the ENG-95984 File process parameter type plan (section 1.4) was reworded to match
+  D5 as built. An outer mapping onto a file-consuming collection is paired (P2), and a file item P2 cannot pair gets a
+  notice, not a refusal; the shape refusals are R-M2 (a source with no File item) and R-M1 (an item into a single
+  File).

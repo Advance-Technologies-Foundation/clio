@@ -46,6 +46,9 @@ of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). The stand now runs
 | clio-knowledge | `master` `0b56d4a` (libraryVersion 1.15.142) |
 | Creatio core | 10.1.37, the stand's core |
 
+clio master moved to `79fab4786` on 2026-10-14 (ENG-103081, ENG-103085, ENG-103117); budget figures re-read there.
+clio-knowledge master is at 1.15.143 since 2026-10-13, so the next free libraryVersion is 1.15.144 or higher.
+
 **Basis labels** used in every document:
 - *source*: read in code or metadata. For runtime behaviour this is a hypothesis.
 - *measured*: observed on the stand, or counted over the corpus, with its date.
@@ -64,7 +67,7 @@ constraints.
 | **MH** | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on measurement M3, and M3 refuted the defect on 2026-10-02 |
 
 Other issues the documents cite, by key (titles as in Jira on 2026-10-08; the rows added on 2026-10-13 carry the
-titles of that day):
+titles of that day, and those added on 2026-10-14 the titles of their merged clio PRs):
 
 | Key | Title | Why it is cited |
 |---|---|---|
@@ -82,6 +85,9 @@ titles of that day):
 | ENG-102797 | O4c: make the short modify-business-process / create-business-process contract complete enough that agents stop asking for detail:full | clio #1795; call shapes in the short create / modify contracts are bound to the archive, and the seven process-designer contracts are held to 19,000 B on the wire (14 B left): OA's `fileProcessing` block must fit there (a wire trim, Q20 = A) |
 | ENG-103023 | clio: spill-free reads and post-write summaries (describe-business-process modes, write tools return the result, get-page lean by default) | clio #1801; describe returns a summary above 18,000 B, so every graph check passes `mode=full` or `element=<name>`; the post-write digest sentence helped fill the description budget (Q20) |
 | ENG-103030 | guidance: split the eight process articles the digest routes to that still exceed the 19 KB inline line | knowledge #280 (1.15.139); the 19,000-byte inline rule now covers nine process article pairs, none of which the plan edits; a new `process-files` should target about 21,000 characters rather than 22,000 (inference) |
+| ENG-103081 | Warn when a process-parameter mapping is bound twice or to a branch some start skips | clio #1807, on master `79fab4786` (2026-10-14); its description swap leaves create 11 B and modify 2 B under the 35,072 B ceiling; its `ProcessParameterBindingWarnings` reads `targetProcessParameter`, so PT's dotted names are new input to it (PT test plan, CU must-stay-green) |
+| ENG-103085 | Refuse element and block keys the process builder would drop silently | clio #1808, on master `79fab4786`; clio refuses element and block keys it does not know (`ProcessBlockKeyCheck`), so CL-OA adds the `fileProcessing` block to that allow-list in the rebundle's commit (plan OA.10, pr-split §5.3); PT adds no key |
+| ENG-103117 | Explain odata-read rejections whose names are all valid but include a plain Id column | clio #1810, on master `79fab4786`; touches none of these documents' surfaces, cited only as part of the master move |
 
 PR ids: `PK-` = crt-process-builder, `CL-` = clio, `KB-` = clio-knowledge (for example PK-OA). D1-D29, M1-M26 and
 Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md) and
@@ -130,7 +136,7 @@ committed in the docs-only clio PR (CL-DOC), as `spec/eng-92707-sub-process-elem
 
 | Issue | Attach | The parts that concern this issue |
 |---|---|---|
-| ENG-95984 File process parameter type | this README; [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md); [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md); [decisions](eng-92719-file-processing-element-decisions.md); [traps](eng-92719-file-processing-element-traps.md); [platform-reference](eng-92719-file-processing-element-platform-reference.md); [serialization-capture](eng-92719-file-processing-element-serialization-capture.md); [pr-split](eng-92719-file-processing-element-pr-split.md); [open-questions](eng-92719-file-processing-element-open-questions.md) | decisions D1-D9 (its acceptance-criteria text is AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; decisions D-1 points there); traps §A-§B (T-1..T-16); platform-reference §6; serialization-capture §8; pr-split §5.1-§5.2 and §5.7-§5.8 (CL-PT-DOC, and the BMAD artifacts that must exist before PK-PT opens, edge E9); open-questions Q1, Q2, Q6, Q7, Q10-Q12, Q19, Q20 and M3, M3b, M6 |
+| ENG-95984 File process parameter type | this README; [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md); [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md); [decisions](eng-92719-file-processing-element-decisions.md); [traps](eng-92719-file-processing-element-traps.md); [platform-reference](eng-92719-file-processing-element-platform-reference.md); [serialization-capture](eng-92719-file-processing-element-serialization-capture.md); [pr-split](eng-92719-file-processing-element-pr-split.md); [open-questions](eng-92719-file-processing-element-open-questions.md) | decisions D1-D9 (its acceptance-criteria text is AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; decisions D-1 points there); traps §A-§B (T-1..T-16); platform-reference §6; serialization-capture §8; pr-split §5.1-§5.2 and §5.7-§5.8 (CL-PT-DOC, and the BMAD artifacts that must exist before PK-PT leaves draft, edge E9); open-questions Q1, Q2, Q6, Q7, Q10-Q12, Q19, Q20 and M3, M3b, M6 |
 | ENG-92719 File processing element | this README and all ten documents of this folder | use-cases is the use-case inventory that the AC names; decisions D-2; plan §1-§4 and §8; pr-split in full |
 | ENG-96505 Element readiness and object attachments mode | this README; [plan](eng-92719-file-processing-element-plan.md); [test-plan](eng-92719-file-processing-element-test-plan.md); [decisions](eng-92719-file-processing-element-decisions.md); [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | plan §5.1, §6, §11; test-plan §5.1-§5.8, ST-01, ST-02, DT-01, DT-02; decisions D10-D16, D19, D20 and D-3; serialization-capture §4.2; traps §C-§E and §G-§I (on the Story); open-questions Q3, Q13-Q17, Q20 and M10, M11, M14, M17-Q7, M26 (M26 gates the OA.12 guide sentence and the CL-OA knowledge record, not code) |
 | ENG-96506 Generated report + process parameter modes | this README; [plan](eng-92719-file-processing-element-plan.md); [test-plan](eng-92719-file-processing-element-test-plan.md); [decisions](eng-92719-file-processing-element-decisions.md); [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | plan §5.2, §11; test-plan §5.9-§5.11, ST-03..ST-07, DT-03; decisions D17, D18 and D-4; serialization-capture §4.3-§4.4; use-cases §2.3; traps §F; open-questions Q4, Q18 and M1, M2, M13, M15 |
@@ -274,10 +280,12 @@ PK-OA still merges after CL-PT (pr-split edges E4 and E6):
   raises a hard `validate-process-graph` Error.
 - `main` must never hold two cuts that no clio has bundled yet (E4).
 
-CL-PT needs a description-budget swap again. On clio master `19e6f9c53` (measured 2026-10-13) create is at 35,068
+CL-PT needs a description-budget swap again. On clio master `19e6f9c53` (measured 2026-10-13) create was at 35,068
 bytes (4 left) and modify at 35,062 (10 left) against the 35,072-byte ceiling; ENG-99970, ENG-102112, ENG-102537,
-ENG-102111, ENG-102116 and ENG-103023 filled the room that ENG-102114 had freed. PT's type lists (+30 / +28 B) do not
-fit, so X1's condition (the description ceiling blocks the type-list edit) is met by measurement on 2026-10-13; its
+ENG-102111, ENG-102116 and ENG-103023 filled the room that ENG-102114 had freed. On clio master `79fab4786`
+(2026-10-14) ENG-103081 paid for its own sentences by a swap and re-measured create at 35,061 bytes (11 left) and
+modify at 35,070 (2 left), so PT's trims free at least 19 bytes on create and 26 on modify. PT's type lists (+30 /
++28 B) do not fit, so X1's condition (the description ceiling blocks the type-list edit) is met by measurement on 2026-10-13; its
 action, a separate early description-budget PR, stays optional (see the contingency list below). OA pays twice: its
 own description text, and the `fileProcessing` entry in the short create contract's call shape, which ENG-102797
 binds to the archive and holds to 19,000 bytes on the wire for the seven process-designer contracts together (14
@@ -309,24 +317,24 @@ is one PR in each repository, plus its docs-only clio PR CL-PT-DOC.
 | Repository | Verdict | PRs (exact titles) | Why |
 |---|---|---|---|
 | crt-process-builder (https://creatio.ghe.com/engineering/crt-process-builder) | **4 PRs** | `ENG-95984 File process parameter type`; `ENG-96505 Element readiness and object attachments mode`; `ENG-96506 Generated report + process parameter modes`; `<SF-KEY> SysFile attachment storage in the Process file element` | `main` is a release candidate at every moment, so every merged PR must leave a releasable state. A layer split fails that: it would ship a `main` that saves green and fails at run time. Pushes dismiss approvals (ruleset 82837), so only one of our package PRs is in review at a time. Splitting by size does not shorten review (48.7 h median for 1,500-4,500 added lines, 50.5 h above that). One PR for everything would be about 12-16k lines |
-| clio (https://github.com/Advance-Technologies-Foundation/clio) | **6 PRs** | one rebundle PR per package PR, under the same titles, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC: PT's BMAD set, merged before PK-PT opens) and `ENG-92719 File processing element` (CL-DOC: FE's BMAD set, merged before PK-OA opens) | six or more guard tests bind the archive, the pins, the floor literals, the enforced-floor sentences, the capability map, the e2e floor, the short contracts' call shapes and the tracing wire names to one tree. So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR |
+| clio (https://github.com/Advance-Technologies-Foundation/clio) | **6 PRs** | one rebundle PR per package PR, under the same titles, plus two docs-only PRs: `ENG-95984 File process parameter type` (CL-PT-DOC: PT's BMAD set, merged before PK-PT leaves draft) and `ENG-92719 File processing element` (CL-DOC: FE's BMAD set, merged before PK-OA opens) | six or more guard tests bind the archive, the pins, the floor literals, the enforced-floor sentences, the capability map, the e2e floor, the short contracts' call shapes and the tracing wire names to one tree. So a rebundle cannot leave its feature PR, and two cuts cannot share one clio PR |
 | clio-knowledge (https://github.com/Advance-Technologies-Foundation/clio-knowledge) | **4 PRs** | the same titles as the package PRs | a guidance generation reaches every installed clio once it is published. So it must name a version that a merged clio bundles. The one knowledge-first merge in this epic needed a corrective PR (https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/198, fixed by https://github.com/Advance-Technologies-Foundation/clio-knowledge/pull/201) |
 
 The hard edges that set the order are in [pr-split](eng-92719-file-processing-element-pr-split.md) §7:
 - PK-OA merges only after CL-PT (edges E4 and E6);
 - CL-OA merges only after KB-PT is **published** (E5);
-- PK-PT opens only after CL-PT-DOC merged (E9);
+- PK-PT leaves draft only after CL-PT-DOC merged (E9; PK-PT has been open as a draft since 2026-10-14);
 - CL-DOC merges after CL-PT-DOC when both carry their analysis folders, so the FE folder's links into
   ../eng-95984-file-parameter-type/ resolve on master (E10);
 - the floor is the FINAL cut of each clio PR, and version numbers are claimed at cut time, never projected (§9).
 
-The BMAD artifacts each issue needs before its package PR opens are tabled in
+The BMAD artifacts each issue needs before its package PR opens (PT's: before it leaves draft) are tabled in
 [pr-split](eng-92719-file-processing-element-pr-split.md) §5.8.
 
 Contingency splits fire only on a named trigger (§11):
 - X1, an early clio PR for description bytes. X1's condition (the description ceiling blocks the type-list edit) is
-  met by measurement on 2026-10-13 (create has 4 bytes and modify 10 left). Its action, a separate early
-  description-budget PR, stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which
+  met by measurement on 2026-10-13 (create had 4 bytes and modify 10 left; 11 and 2 on `79fab4786`, 2026-10-14). Its
+  action, a separate early description-budget PR, stays optional: by default the swap rides in CL-PT's CL-2; the reviewer settles which
   (Q20 = A: trim). The PR count stays 14 unless that early PR is opened;
 - X2, cherry-pick RP's Report half if the Process-parameter half fails its stand proof;
 - X3, swap the RP and SF slots.
