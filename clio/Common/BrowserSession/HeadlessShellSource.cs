@@ -55,10 +55,19 @@ public sealed class ChromeForTestingHeadlessShellSource : IHeadlessShellSource {
 			: null;
 
 	/// <inheritdoc />
+	/// <exception cref="HeadlessShellInstallException">The mirror variable is not an absolute http(s) URL.</exception>
 	public Uri ArchiveUrl(string platformKey) {
 		string mirror = _readEnvironment(HeadlessShellRelease.MirrorEnvVar);
-		return HeadlessShellRelease.ArchiveUrl(string.IsNullOrWhiteSpace(mirror) ? HeadlessShellRelease.DefaultBaseUrl : mirror.Trim(),
-			platformKey);
+		if (string.IsNullOrWhiteSpace(mirror)) {
+			return HeadlessShellRelease.ArchiveUrl(HeadlessShellRelease.DefaultBaseUrl, platformKey);
+		}
+		if (!Uri.TryCreate(mirror.Trim(), UriKind.Absolute, out Uri mirrorUrl)
+			|| (mirrorUrl.Scheme != Uri.UriSchemeHttps && mirrorUrl.Scheme != Uri.UriSchemeHttp)) {
+			throw new HeadlessShellInstallException(
+				$"{HeadlessShellRelease.MirrorEnvVar} must be an absolute http(s) URL, the base the archives sit under "
+				+ $"({HeadlessShellRelease.DefaultBaseUrl} is the default); fix or unset it, then call page-smoke again.");
+		}
+		return HeadlessShellRelease.ArchiveUrl(mirrorUrl.AbsoluteUri, platformKey);
 	}
 
 	/// <inheritdoc />

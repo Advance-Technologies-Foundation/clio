@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.InteropServices;
@@ -147,7 +148,7 @@ public sealed class HeadlessShellInstallerTests {
 	}
 
 	[Test]
-	[Description("A connection reset while the body streams is reported as an install failure the resolver can answer, not as a raw IOException.")]
+	[Description("A connection reset while the body streams is reported as an incomplete download the next call resumes, not as a raw IOException.")]
 	public async Task InstallAsync_Should_Report_A_Broken_Stream_As_An_Install_Failure() {
 		// Arrange
 		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(10, "x"),
@@ -158,7 +159,8 @@ public sealed class HeadlessShellInstallerTests {
 
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed"))
-			.Which.Message.Should().Contain("Nothing was installed", because: "the caller learns the state");
+			.Which.Message.Should().Contain("the next call resumes from there",
+				because: "a transfer that broke off mid-body is resumed, not restarted");
 	}
 
 	private sealed class BrokenStream : Stream {
@@ -252,7 +254,7 @@ public sealed class HeadlessShellInstallerTests {
 
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed"))
-			.Which.Message.Should().Contain("Nothing was installed", because: "the caller learns the state and that a retry is safe");
+			.Which.Message.Should().Contain("nothing was installed", because: "the caller learns the state and that a retry is safe");
 		installer.FindInstalled().Should().BeNull(because: "nothing was installed");
 	}
 
@@ -316,7 +318,7 @@ public sealed class HeadlessShellInstallerTests {
 
 		// Assert
 		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the call must answer inside the worker budget"))
-			.Which.Message.Should().Contain("did not finish within 90 s", because: "the caller learns why");
+			.Which.Message.Should().Contain("before the call's 90 s ran out", because: "the caller learns why");
 	}
 
 	[Test]
@@ -363,5 +365,112 @@ public sealed class HeadlessShellInstallerTests {
 		// Assert
 		key.Should().Be(expected, because: "the platform names the archive");
 		HeadlessShellRelease.Archives.Should().ContainKey(key, because: "every supported platform has a pinned size and SHA-256");
+	}
+	// Serves the first `served` bytes of a body, then waits until the call is cancelled - a link too slow for one call.
+	private sealed class StallingStream(byte[] body, int served, TaskCompletionSource stalled) : Stream {
+		private int _position;
+		public override bool CanRead => true;
+		public override bool CanSeek => false;
+		public override bool CanWrite => false;
+		public override long Length => throw new NotSupportedException();
+		public override long Position { get => _position; set => throw new NotSupportedException(); }
+		public override void Flush() { }
+		public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+		public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) {
+			if (_position < served) {
+				int count = Math.Min(buffer.Length, served - _position);
+				body.AsMemory(_position, count).CopyTo(buffer);
+				_position += count;
+				return count;
+			}
+			stalled.TrySetResult();
+			await Task.Delay(Timeout.Infinite, cancellationToken);
+			return 0;
+		}
+		public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+		public override void SetLength(long value) => throw new NotSupportedException();
+		public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+	}
+
+	[Test]
+	[Description("On a link too slow for one call, the part that arrived is kept when the 90 s budget ends (on the injected clock), the reply says how much, and the next call resumes it with an HTTP Range request instead of starting over.")]
+	public async Task InstallAsync_Should_Keep_What_Arrived_And_Resume_It_With_Range() {
+		// Arrange
+		byte[] archive = Zip((Executable, 0x1ED), ("chrome-headless-shell-mac-arm64/ABOUT", 0x1A4));
+		int half = archive.Length / 2;
+		ManualTimeProvider time = new();
+		TaskCompletionSource stalled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		string secondRange = null;
+		int calls = 0;
+		(HeadlessShellInstaller installer, _) = Create(PinOf(archive), (request, _) => {
+			if (++calls == 1) {
+				return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) {
+					Content = new StreamContent(new StallingStream(archive, half, stalled))
+				});
+			}
+			secondRange = request.Headers.Range?.ToString();
+			long from = request.Headers.Range!.Ranges.Single().From!.Value;
+			ByteArrayContent rest = new(archive[(int)from..]);
+			rest.Headers.ContentRange = new System.Net.Http.Headers.ContentRangeHeaderValue(from, archive.Length - 1, archive.Length);
+			return Task.FromResult(new HttpResponseMessage(HttpStatusCode.PartialContent) { Content = rest });
+		}, time);
+		Task<string> first = installer.InstallAsync(CancellationToken.None);
+		await stalled.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+		// Act
+		time.Advance(HeadlessShellInstaller.DownloadBudget);
+		Func<Task> firstCall = () => first.WaitAsync(TimeSpan.FromSeconds(30));
+		HeadlessShellDownloadIncompleteException incomplete =
+			(await firstCall.Should().ThrowAsync<HeadlessShellDownloadIncompleteException>(because: "the link is too slow for one call")).Which;
+		long keptAfterFirstCall = PartialLength();
+		string executable = await installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		incomplete.DownloadedBytes.Should().Be(half, because: "the reply says how much arrived");
+		incomplete.TotalBytes.Should().Be(archive.Length, because: "and how much there is in all");
+		keptAfterFirstCall.Should().Be(half, because: "what arrived survives the timeout");
+		secondRange.Should().Be($"bytes={half}-", because: "the next call asks only for the rest");
+		File.Exists(executable).Should().BeTrue(because: "the resumed archive verifies and installs");
+		Directory.GetFileSystemEntries(_root).Should().ContainSingle(because: "the partial file is removed once installed");
+	}
+
+	[Test]
+	[Description("A server that ignores Range and sends the whole archive (200) restarts the kept partial file from zero, and the install still verifies.")]
+	public async Task InstallAsync_Should_Start_Over_When_The_Server_Ignores_Range() {
+		// Arrange
+		byte[] archive = Zip((Executable, 0x1ED));
+		(HeadlessShellInstaller installer, StubHandler handler) = Create(PinOf(archive), Serve(archive));
+		File.WriteAllBytes(Path.Combine(_root, ".partial-1.2.3-mac-arm64.zip"), archive[..10]);
+
+		// Act
+		string executable = await installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		File.Exists(executable).Should().BeTrue(because: "the full body replaced the partial one");
+	}
+
+	[TestCase("mirror.corp/cft")]
+	[TestCase("ftp://mirror.corp/cft")]
+	[Description("A malformed CLIO_CHROME_FOR_TESTING_MIRROR is refused with an install failure that names the variable, not a raw UriFormatException.")]
+	public void ArchiveUrl_Should_Refuse_A_Malformed_Mirror(string mirror) {
+		// Arrange
+		ChromeForTestingHeadlessShellSource source = new(name => name == HeadlessShellRelease.MirrorEnvVar ? mirror : null);
+
+		// Act
+		Action act = () => source.ArchiveUrl("win64");
+
+		// Assert
+		act.Should().Throw<HeadlessShellInstallException>(because: "page-smoke answers browser-download-failed")
+			.WithMessage("*" + HeadlessShellRelease.MirrorEnvVar + " must be an absolute http(s) URL*",
+				because: "the caller learns which variable to fix");
+	}
+
+	private long PartialLength() {
+		string partial = Path.Combine(_root, ".partial-1.2.3-mac-arm64.zip");
+		if (!File.Exists(partial)) {
+			return -1;
+		}
+		using FileStream stream = new(partial, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+		return stream.Length;
 	}
 }

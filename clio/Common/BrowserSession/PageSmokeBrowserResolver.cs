@@ -29,10 +29,21 @@ public interface IPageSmokeBrowserResolver {
 /// <summary>The outcome of <see cref="IPageSmokeBrowserResolver.ResolveAsync"/>.</summary>
 /// <param name="BrowserPath">The browser to run; null when the check cannot run on this call.</param>
 /// <param name="Code">Why there is no browser: <c>browser-consent-required</c>, <c>browser-declined</c>,
-/// <c>browser-ready</c> (downloaded on this call), <c>browser-not-found</c> or <c>browser-download-failed</c>.</param>
+/// <c>browser-ready</c> (downloaded on this call), <c>browser-downloading</c> (part of it kept; call again),
+/// <c>browser-not-found</c> or <c>browser-download-failed</c>.</param>
 /// <param name="Message">What happened and what the caller does next.</param>
 /// <param name="Consent">The question to put to the user, with its choices; set with <c>browser-consent-required</c> and <c>browser-not-found</c>.</param>
-public sealed record PageSmokeBrowserResolution(string BrowserPath, string Code, string Message, PageSmokeBrowserConsent Consent);
+/// <param name="Note">With a browser: why this one was used when it was not the user's answer (CHROME_PATH).</param>
+/// <param name="Download">With <c>browser-downloading</c>: how much of the download is kept.</param>
+public sealed record PageSmokeBrowserResolution(string BrowserPath, string Code, string Message, PageSmokeBrowserConsent Consent,
+	string Note = null, PageSmokeBrowserDownload Download = null);
+
+/// <summary>How far a resumable browser download got.</summary>
+/// <param name="DownloadedBytes">Bytes kept so far.</param>
+/// <param name="TotalBytes">The archive's size.</param>
+public sealed record PageSmokeBrowserDownload(
+	[property: JsonPropertyName("downloadedBytes")] long DownloadedBytes,
+	[property: JsonPropertyName("totalBytes")] long TotalBytes);
 
 /// <summary>The question page-smoke needs the user to answer before it uses or downloads a browser.</summary>
 public sealed class PageSmokeBrowserConsent {
@@ -81,6 +92,7 @@ public sealed class PageSmokeBrowserResolver(
 	internal const string ReadyCode = "browser-ready";
 	internal const string NotFoundCode = "browser-not-found";
 	internal const string DownloadFailedCode = "browser-download-failed";
+	internal const string DownloadingCode = "browser-downloading";
 
 	internal const string Why = "page-smoke opens the page in a headless Chromium-based browser on the machine clio runs on, "
 		+ "to report its buttons, fields and console errors (and what a click did).";
@@ -105,15 +117,21 @@ public sealed class PageSmokeBrowserResolver(
 				+ "continue without a UI check. Only if the user now asks for it, put browserConsent's question to them "
 				+ "again by calling page-smoke with browser=existing or browser=download.", null);
 		}
-		string overridden = chromiumLocator.ChromePathOverride();
-		if (overridden is not null) {
-			return Ready(overridden);
-		}
+		// An answer the user gives on THIS call is theirs and is honoured even when CHROME_PATH is set; CHROME_PATH
+		// replaces only the question and a remembered answer, and the reply says so.
 		if (choice == PageSmokeBrowserSettings.Download) {
 			return await ChooseDownloadAsync(ct).ConfigureAwait(false);
 		}
 		if (choice is not null) {
 			return ChooseExisting(browserPath);
+		}
+		string overridden = chromiumLocator.ChromePathOverride();
+		if (overridden is not null) {
+			return new PageSmokeBrowserResolution(overridden, null, null, null,
+				stored?.Choice is null
+					? "Used the browser CHROME_PATH names, without asking: CHROME_PATH is set where clio runs."
+					: $"Used the browser CHROME_PATH names instead of the user's remembered answer ({stored.Choice}): "
+						+ "CHROME_PATH is set where clio runs, and it overrides a remembered answer (not one given on the call).");
 		}
 		switch (stored?.Choice) {
 			case PageSmokeBrowserSettings.Download:
@@ -167,6 +185,10 @@ public sealed class PageSmokeBrowserResolver(
 				$"Downloaded {source.DisplayName} {source.Version} to {executable}. The page was not checked on this call, "
 				+ "so the download stays inside the call's time; call page-smoke again with the same arguments, without "
 				+ "browser, to run the check.", null);
+		}
+		catch (HeadlessShellDownloadIncompleteException exception) {
+			return new PageSmokeBrowserResolution(null, DownloadingCode, exception.Message, null,
+				Download: new PageSmokeBrowserDownload(exception.DownloadedBytes, exception.TotalBytes));
 		}
 		catch (HeadlessShellInstallException exception) {
 			return new PageSmokeBrowserResolution(null, DownloadFailedCode,

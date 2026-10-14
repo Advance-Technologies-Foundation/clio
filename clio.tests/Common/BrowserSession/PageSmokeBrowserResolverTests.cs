@@ -256,4 +256,50 @@ public sealed class PageSmokeBrowserResolverTests {
 		_settings.DidNotReceiveWithAnyArgs().SetPageSmokeBrowser(default);
 		await _installer.DidNotReceiveWithAnyArgs().InstallAsync(default);
 	}
+	[Test]
+	[Description("An answer the user gives on the call is honoured and remembered even when CHROME_PATH is set.")]
+	public async Task ResolveAsync_Should_Honour_An_Explicit_Answer_Over_Chrome_Path() {
+		// Arrange
+		_locator.ChromePathOverride().Returns("/opt/custom/chrome");
+
+		// Act
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync("existing", InstalledEdge, CancellationToken.None);
+
+		// Assert
+		resolution.BrowserPath.Should().Be(InstalledEdge, because: "the user's answer is not silently replaced");
+		_settings.Received(1).SetPageSmokeBrowser(Arg.Is<PageSmokeBrowserSettings>(stored => stored.Path == InstalledEdge));
+	}
+
+	[Test]
+	[Description("When CHROME_PATH replaces a remembered answer, the resolution says so, and the reply carries it as a warning.")]
+	public async Task ResolveAsync_Should_Say_When_Chrome_Path_Replaced_A_Remembered_Answer() {
+		// Arrange
+		_locator.ChromePathOverride().Returns("/opt/custom/chrome");
+		Stored(PageSmokeBrowserSettings.Existing, InstalledEdge);
+
+		// Act
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync(null, null, CancellationToken.None);
+
+		// Assert
+		resolution.BrowserPath.Should().Be("/opt/custom/chrome", because: "the operator's override applies");
+		resolution.Note.Should().Contain("CHROME_PATH").And.Contain("remembered answer (existing)",
+			because: "the agent and the user learn why their answer was not used");
+	}
+
+	[Test]
+	[Description("A download that stopped part-way is answered browser-downloading with the progress, not as a failure.")]
+	public async Task ResolveAsync_Should_Report_A_Partial_Download_As_Progress() {
+		// Arrange
+		Stored(PageSmokeBrowserSettings.Download);
+		_installer.InstallAsync(Arg.Any<CancellationToken>()).Returns<string>(_ =>
+			throw new HeadlessShellDownloadIncompleteException("Downloaded 40 of 98 MB", 40L << 20, 98L << 20));
+
+		// Act
+		PageSmokeBrowserResolution resolution = await _sut.ResolveAsync(null, null, CancellationToken.None);
+
+		// Assert
+		resolution.Code.Should().Be(PageSmokeBrowserResolver.DownloadingCode, because: "calling again resumes it");
+		resolution.Download.Should().Be(new PageSmokeBrowserDownload(40L << 20, 98L << 20),
+			because: "the agent can tell the user how far it got");
+	}
 }

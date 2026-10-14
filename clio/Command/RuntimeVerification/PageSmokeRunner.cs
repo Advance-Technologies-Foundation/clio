@@ -31,6 +31,7 @@ public interface IPageSmokeRunner {
 /// <param name="ClickWaitSeconds">How long to wait for the page to settle after the click.</param>
 /// <param name="Watch">Entities diffed around the click to report the records it created.</param>
 /// <param name="BrowserPath">The browser to run, as the user chose it (<see cref="IPageSmokeBrowserResolver"/>).</param>
+/// <param name="BrowserNote">Why this browser was used when it was not the user's answer; reported as a warning.</param>
 public sealed record PageSmokeRequest(
 	string Page,
 	string RecordId,
@@ -38,7 +39,8 @@ public sealed record PageSmokeRequest(
 	string Click,
 	int ClickWaitSeconds,
 	IReadOnlyList<string> Watch,
-	string BrowserPath);
+	string BrowserPath,
+	string BrowserNote = null);
 
 /// <summary>What happened after the click.</summary>
 public sealed class PageClickReport {
@@ -213,6 +215,9 @@ internal sealed class PageSmokeRunner(
 	/// <inheritdoc />
 	public async Task<PageSmokeResult> RunAsync(PageSmokeRequest request, CancellationToken ct) {
 		PageSmokeResult result = new() { Mode = request.RecordId is null ? "add" : "edit" };
+		if (request.BrowserNote is not null) {
+			result.Warnings.Add(request.BrowserNote);
+		}
 		string url = BuildCardUrl(environment, request.Page, request.RecordId);
 		result.Url = RelativeUrl(url);
 		using CancellationTokenSource budgetTimer = new(TimeSpan.FromMilliseconds(TotalBudgetMs), timeProvider);

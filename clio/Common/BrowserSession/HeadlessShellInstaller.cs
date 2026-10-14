@@ -1,7 +1,9 @@
 using System;
 using System.IO;
 using System.IO.Compression;
+using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Threading;
@@ -35,7 +37,7 @@ public interface IHeadlessShellInstaller {
 }
 
 /// <summary>chrome-headless-shell could not be installed; the message says why and what to do.</summary>
-public sealed class HeadlessShellInstallException : InvalidOperationException {
+public class HeadlessShellInstallException : InvalidOperationException {
 
 	/// <summary>Creates the exception.</summary>
 	/// <param name="message">What failed and the remedy.</param>
@@ -47,6 +49,28 @@ public sealed class HeadlessShellInstallException : InvalidOperationException {
 	/// <param name="innerException">The underlying failure.</param>
 	public HeadlessShellInstallException(string message, Exception innerException) : base(message, innerException) {
 	}
+}
+
+/// <summary>
+/// The download stopped part-way (the call's time ran out or the connection broke); what arrived is kept and the next
+/// install resumes from it.
+/// </summary>
+public sealed class HeadlessShellDownloadIncompleteException : HeadlessShellInstallException {
+
+	/// <summary>Creates the exception.</summary>
+	/// <param name="message">What arrived and what to do next.</param>
+	/// <param name="downloadedBytes">Bytes kept so far.</param>
+	/// <param name="totalBytes">The archive's size.</param>
+	public HeadlessShellDownloadIncompleteException(string message, long downloadedBytes, long totalBytes) : base(message) {
+		DownloadedBytes = downloadedBytes;
+		TotalBytes = totalBytes;
+	}
+
+	/// <summary>Bytes kept so far.</summary>
+	public long DownloadedBytes { get; }
+
+	/// <summary>The archive's size.</summary>
+	public long TotalBytes { get; }
 }
 
 /// <inheritdoc cref="IHeadlessShellInstaller" />
@@ -122,81 +146,153 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		}
 		using CancellationTokenSource budgetTimer = new(DownloadBudget, _timeProvider);
 		using CancellationTokenSource budget = CancellationTokenSource.CreateLinkedTokenSource(ct, budgetTimer.Token);
-		Uri url = _source.ArchiveUrl(_platformKey);
-		string host = HostOf(url);
-		string token = Guid.NewGuid().ToString("N");
-		string archivePath = Path.Combine(_browsersRoot, $".download-{token}.zip");
-		string extractDirectory = Path.Combine(_browsersRoot, $".extract-{token}");
+		string partialPath = PartialPath;
+		string extractDirectory = Path.Combine(_browsersRoot, $".extract-{Guid.NewGuid():N}");
+		string host = _source.DisplayName;
+		DownloadProgress progress = new();
 		try {
+			Uri url = _source.ArchiveUrl(_platformKey);
+			host = HostOf(url);
 			_fileSystem.Directory.CreateDirectory(_browsersRoot);
-			DeleteLeftovers();
-			await DownloadAsync(url, host, archive, archivePath, budget.Token).ConfigureAwait(false);
-			Extract(archivePath, extractDirectory, budget.Token);
+			DeleteLeftovers(partialPath);
+			await DownloadAsync(url, host, archive, partialPath, progress, budget.Token).ConfigureAwait(false);
+			VerifyChecksum(partialPath, archive);
+			Extract(partialPath, extractDirectory, budget.Token);
 			string relativeExecutable = _source.ExecutableRelativePath(_platformKey);
 			if (!_fileSystem.File.Exists(Path.Combine(extractDirectory, relativeExecutable))) {
+				DeletePartial(partialPath);
 				throw new HeadlessShellInstallException($"The downloaded archive has no {relativeExecutable}.");
 			}
 			Publish(extractDirectory);
+			DeletePartial(partialPath);
 			return FindInstalled() ?? throw new HeadlessShellInstallException(
 				$"The headless browser was extracted but is not at {InstallDirectory}.");
 		}
 		catch (OperationCanceledException) when (!ct.IsCancellationRequested) {
-			throw new HeadlessShellInstallException(
-				$"Downloading {_source.DisplayName} {_source.Version} from {host} did not finish within "
-				+ $"{DownloadBudget.TotalSeconds:0} s. Call page-smoke again to retry, or ask the user to choose an "
-				+ $"existing browser. {MirrorHint}");
+			throw Incomplete(progress, archive, $"the call's {DownloadBudget.TotalSeconds:0} s ran out");
+		}
+		catch (HttpRequestException exception) when (progress.Bytes > 0) {
+			throw Incomplete(progress, archive, $"the connection to {host} failed ({exception.Message})");
 		}
 		catch (HttpRequestException exception) {
 			throw new HeadlessShellInstallException(
 				$"{_source.DisplayName} could not be downloaded from {host}: {exception.Message} The machine may be "
-				+ $"offline or the host blocked. {MirrorHint}", exception);
+				+ $"offline or the host blocked. {NetworkHint}", exception);
 		}
-		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidDataException) {
+		catch (IOException exception) when (progress.Receiving) {
+			throw Incomplete(progress, archive, $"the transfer from {host} broke off ({exception.Message})");
+		}
+		catch (InvalidDataException exception) {
+			DeletePartial(partialPath);
+			throw new HeadlessShellInstallException(
+				$"{_source.DisplayName} {_source.Version} could not be unpacked: {exception.Message} The download was "
+				+ "deleted; nothing was installed; call page-smoke again to retry.", exception);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
 			throw new HeadlessShellInstallException(
 				$"{_source.DisplayName} {_source.Version} could not be installed into {_browsersRoot}: {exception.Message} "
 				+ "Nothing was installed; call page-smoke again to retry.", exception);
 		}
 		finally {
-			DeleteQuietly(archivePath, extractDirectory);
+			DeleteQuietly(extractDirectory);
 		}
 	}
 
-	// Streams the archive to disk, hashing as it goes, and stops the moment it is larger than the pinned size: a wrong
-	// or hostile mirror can neither fill the disk nor be installed.
-	private async Task DownloadAsync(Uri url, string host, HeadlessShellRelease.Archive archive, string archivePath,
-		CancellationToken ct) {
+	// The download is kept under ONE name per version and platform, so a call that runs out of time leaves what it got
+	// and the next call resumes it with an HTTP Range request: on a slow link every call makes progress instead of
+	// restarting a 100+ MB transfer from zero.
+	private string PartialPath => Path.Combine(_browsersRoot, $".partial-{_source.Version}-{_platformKey}.zip");
+
+	private sealed class DownloadProgress {
+		public long Bytes { get; set; }
+		public bool Receiving { get; set; }
+	}
+
+	private HeadlessShellDownloadIncompleteException Incomplete(DownloadProgress progress, HeadlessShellRelease.Archive archive,
+		string reason) =>
+		new($"Downloaded {Megabytes(progress.Bytes)} of {Megabytes(archive.Size)} MB of {_source.DisplayName} "
+			+ $"{_source.Version} before {reason}. What arrived is kept and the next call resumes from there: call page-smoke "
+			+ "again with the same arguments, without browser, to continue.", progress.Bytes, archive.Size);
+
+	private static long Megabytes(long bytes) => bytes / (1024 * 1024);
+
+	// Appends to the kept partial file, resuming at its length when the server honours Range (206) and starting over
+	// when it does not (200). The size is checked as bytes arrive, so a wrong or hostile mirror cannot fill the disk.
+	private async Task DownloadAsync(Uri url, string host, HeadlessShellRelease.Archive archive, string partialPath,
+		DownloadProgress progress, CancellationToken ct) {
+		await using Stream target = _fileSystem.File.Open(partialPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+		long existing = target.Length;
+		if (existing > archive.Size) {
+			target.SetLength(0);
+			existing = 0;
+		}
+		progress.Bytes = existing;
+		if (existing == archive.Size) {
+			return;
+		}
 		HttpClient client = _httpClientFactory.CreateClient(HttpClientName);
-		using HttpResponseMessage response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct)
+		using HttpRequestMessage request = new(HttpMethod.Get, url);
+		if (existing > 0) {
+			request.Headers.Range = new RangeHeaderValue(existing, null);
+		}
+		using HttpResponseMessage response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct)
 			.ConfigureAwait(false);
-		if (!response.IsSuccessStatusCode) {
-			throw new HeadlessShellInstallException(
-				$"Downloading {_source.DisplayName} {_source.Version} from {host} failed: HTTP "
-				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. {MirrorHint}");
-		}
-		if (response.Content.Headers.ContentLength is long announced && announced != archive.Size) {
-			throw Mismatch($"its size is {announced} bytes, expected {archive.Size}");
-		}
-		using IncrementalHash sha256 = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-		long written = 0;
-		await using (Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-		await using (Stream target = _fileSystem.File.Create(archivePath)) {
-			byte[] buffer = new byte[CopyBufferBytes];
-			int read;
-			while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0) {
-				written += read;
-				if (written > archive.Size) {
-					throw Mismatch($"it is larger than the expected {archive.Size} bytes");
-				}
-				sha256.AppendData(buffer, 0, read);
-				await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+		if (response.StatusCode == HttpStatusCode.PartialContent && existing > 0) {
+			ContentRangeHeaderValue range = response.Content.Headers.ContentRange;
+			if (range?.From != existing || range.Length != archive.Size) {
+				target.SetLength(0);
+				throw Mismatch($"the server resumed it as {range}, expected bytes {existing}-/{archive.Size}");
 			}
 		}
-		if (written != archive.Size) {
-			throw Mismatch($"its size is {written} bytes, expected {archive.Size}");
+		else if (response.IsSuccessStatusCode) {
+			target.SetLength(0);
+			existing = 0;
+			progress.Bytes = 0;
+			if (response.Content.Headers.ContentLength is long announced && announced != archive.Size) {
+				throw Mismatch($"its size is {announced} bytes, expected {archive.Size}");
+			}
 		}
-		string actual = Convert.ToHexString(sha256.GetHashAndReset()).ToLowerInvariant();
+		else {
+			throw new HeadlessShellInstallException(
+				$"Downloading {_source.DisplayName} {_source.Version} from {host} failed: HTTP "
+				+ $"{(int)response.StatusCode} {response.ReasonPhrase}. {NetworkHint}");
+		}
+		target.Seek(existing, SeekOrigin.Begin);
+		await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+		byte[] buffer = new byte[CopyBufferBytes];
+		progress.Receiving = true;
+		int read;
+		while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0) {
+			if (progress.Bytes + read > archive.Size) {
+				target.SetLength(0);
+				throw Mismatch($"it is larger than the expected {archive.Size} bytes");
+			}
+			await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+			progress.Bytes += read;
+		}
+		progress.Receiving = false;
+		if (progress.Bytes != archive.Size) {
+			throw new HttpRequestException($"the server ended the body at {progress.Bytes} of {archive.Size} bytes");
+		}
+	}
+
+	private void VerifyChecksum(string partialPath, HeadlessShellRelease.Archive archive) {
+		string actual;
+		using (Stream stream = _fileSystem.File.OpenRead(partialPath)) {
+			actual = Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
+		}
 		if (!string.Equals(actual, archive.Sha256, StringComparison.Ordinal)) {
+			DeletePartial(partialPath);
 			throw Mismatch($"its SHA-256 is {actual}, expected {archive.Sha256}");
+		}
+	}
+
+	private void DeletePartial(string partialPath) {
+		try {
+			_fileSystem.File.Delete(partialPath);
+		}
+		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
+			// The next call overwrites or verifies it.
 		}
 	}
 
@@ -205,12 +301,13 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 	internal static string HostOf(Uri url) =>
 		url.IsDefaultPort ? $"{url.Scheme}://{url.Host}" : $"{url.Scheme}://{url.Host}:{url.Port}";
 
-	private static string MirrorHint =>
-		$"On a network that reaches only a mirror of Chrome for Testing, set {HeadlessShellRelease.MirrorEnvVar} to its base URL.";
+	private static string NetworkHint =>
+		"The download goes through HTTPS_PROXY / HTTP_PROXY (NO_PROXY honoured) when they are set. On a network that "
+		+ $"reaches only a mirror of Chrome for Testing, set {HeadlessShellRelease.MirrorEnvVar} to its base URL.";
 
 	private HeadlessShellInstallException Mismatch(string detail) =>
 		new($"The downloaded {_source.DisplayName} {_source.Version} archive did not verify: {detail}. It was "
-			+ "deleted and nothing was installed.");
+			+ "deleted and nothing was installed; calling page-smoke again downloads it from the start.");
 
 	// Every entry must land inside the extraction directory (no '..', no absolute path); the executable bits recorded in
 	// the archive are restored on Unix, or the browser could not start.
@@ -259,28 +356,32 @@ public sealed class HeadlessShellInstaller : IHeadlessShellInstaller {
 		}
 	}
 
-	private void DeleteLeftovers() {
+	// Extraction folders a killed worker left, and partial downloads of another version or platform.
+	private void DeleteLeftovers(string partialPath) {
 		DateTime cutoff = _timeProvider.GetUtcNow().UtcDateTime - LeftoverAge;
 		foreach (string leftover in _fileSystem.Directory.GetFileSystemEntries(_browsersRoot, ".*-*")) {
 			string name = Path.GetFileName(leftover);
-			bool ours = name.StartsWith(".download-", StringComparison.Ordinal) || name.StartsWith(".extract-", StringComparison.Ordinal);
-			if (ours && _fileSystem.Directory.GetLastWriteTimeUtc(leftover) < cutoff) {
-				DeleteQuietly(leftover, leftover);
+			bool staleExtract = name.StartsWith(".extract-", StringComparison.Ordinal)
+				&& _fileSystem.Directory.GetLastWriteTimeUtc(leftover) < cutoff;
+			bool otherPartial = name.StartsWith(".partial-", StringComparison.Ordinal)
+				&& !string.Equals(leftover, partialPath, StringComparison.Ordinal);
+			if (staleExtract || otherPartial) {
+				DeleteQuietly(leftover);
 			}
 		}
 	}
 
-	private void DeleteQuietly(string archivePath, string extractDirectory) {
+	private void DeleteQuietly(string path) {
 		try {
-			if (_fileSystem.File.Exists(archivePath)) {
-				_fileSystem.File.Delete(archivePath);
+			if (_fileSystem.File.Exists(path)) {
+				_fileSystem.File.Delete(path);
 			}
-			if (_fileSystem.Directory.Exists(extractDirectory)) {
-				_fileSystem.Directory.Delete(extractDirectory, recursive: true);
+			if (_fileSystem.Directory.Exists(path)) {
+				_fileSystem.Directory.Delete(path, recursive: true);
 			}
 		}
 		catch (Exception exception) when (exception is IOException or UnauthorizedAccessException) {
-			// A leftover under ~/.clio/browsers is harmless; the next install uses new names.
+			// A leftover under ~/.clio/browsers is harmless; the next install sweeps it.
 		}
 	}
 }

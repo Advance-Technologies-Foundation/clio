@@ -5227,7 +5227,7 @@ internal static class ToolContractCatalog {
 				Field("consoleErrors", ArrayType, "Errors logged while the page loaded: {kind: exception|console|log, text, count, url (path of a failed request)}."),
 				Field("click", ObjectType, "With click: outcome (clicked, not-found, ambiguous, disabled, unknown), name, caption, candidates, url, navigations (first and last 3; navigationsOmitted counts the rest), consoleErrors, dialogs, toasts, invalidFields, created, settled."),
 				Field("warnings", ArrayType, "Caveats, including what was cut to keep the reply small."),
-				Field("code", StringType, "No check ran for want of a browser: browser-consent-required, browser-not-found (ask the user), browser-declined (the user said no), browser-ready (downloaded; call again) - these come with message and WITHOUT success, being questions rather than failures - and browser-download-failed (success=false, error)."),
+				Field("code", StringType, "No check ran for want of a browser: browser-consent-required, browser-not-found (ask the user), browser-declined (the user said no), browser-ready (downloaded; call again), browser-downloading (part of the download is kept in browserDownload {downloadedBytes, totalBytes}; call again without browser to resume) - these come with message and WITHOUT success, being questions rather than failures - and browser-download-failed (success=false, error)."),
 				Field("message", StringType, "With code and no success: what happened and what to do next."),
 				Field("browserConsent", ObjectType, "With browser-consent-required or browser-not-found: {why, question, choices [{browser, browser-path, description}]}; the first choice is the recommended one.")),
 			CommonErrorContract,
