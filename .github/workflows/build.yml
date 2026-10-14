@@ -271,6 +271,8 @@ jobs:
 
       - name: Run Unix file-mode confidentiality tests
         shell: bash
+        # The leg takes about 3 minutes; a bound turns a hang into a failure that keeps its log.
+        timeout-minutes: 15
         run: |
           set -euo pipefail
           # TestCategory, not the Category alias: the NUnit adapter can classify a mixed Category +
