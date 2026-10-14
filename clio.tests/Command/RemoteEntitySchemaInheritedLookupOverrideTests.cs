@@ -347,6 +347,141 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 	}
 
 	[Test]
+	[Description("Refuses the override when the runtime service answers the target read unsuccessfully, before SaveSchema.")]
+	public void Create_ShouldRefuseOverride_WhenTargetReadIsUnsuccessful() {
+		// Arrange
+		_designer.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse { Success = false });
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "an unreadable target cannot be validated")
+			.WithMessage("*could not be read*");
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Refuses the override when the target read throws InvalidOperationException, before SaveSchema.")]
+	public void Create_ShouldRefuseOverride_WhenTargetReadThrows() {
+		// Arrange
+		_designer.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>())
+			.Returns<RuntimeEntitySchemaResponse>(_ => throw new InvalidOperationException("empty response"));
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "an unreadable target cannot be validated")
+			.WithMessage("*could not be read*")
+			.WithInnerException<InvalidOperationException>();
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Propagates an InvalidOperationException subclass thrown while reading an ancestor of the target, before SaveSchema.")]
+	public void Create_ShouldPropagate_WhenAncestorReadThrowsInvalidOperationExceptionSubclass() {
+		// Arrange
+		_designer.GetRuntimeEntitySchema(BaseEntityUId, Arg.Any<RemoteCommandOptions>())
+			.Returns<RuntimeEntitySchemaResponse>(_ => throw new TransportFailureException());
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"Contact\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<TransportFailureException>(because: "a transport failure is not an end of the hierarchy");
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Accepts a target two parent hops below the current reference.")]
+	public void Create_ShouldRedirectInheritedFolder_WhenTargetInheritsCurrentReferenceThroughTwoHops() {
+		// Arrange
+		Guid subFolderUId = Guid.NewGuid();
+		AddReferenceSchema(subFolderUId, "UsrContactSubFolder", parentUId: ContactFolderUId);
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrContactSubFolder\"}");
+
+		// Act
+		_creator.Create(options);
+
+		// Assert
+		SavedFolder().ReferenceSchema.UId.Should().Be(subFolderUId,
+			because: "UsrContactSubFolder inherits BaseFolder through ContactFolder");
+	}
+
+	[Test]
+	[Description("Ends the walk over a parent cycle and refuses the target, before SaveSchema.")]
+	public void Create_ShouldRefuseOverride_WhenTargetHierarchyHasCycle() {
+		// Arrange
+		Guid firstUId = Guid.NewGuid();
+		Guid secondUId = Guid.NewGuid();
+		AddReferenceSchema(firstUId, "UsrLoopFolder", parentUId: secondUId);
+		SetRuntimeParent(secondUId, firstUId);
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrLoopFolder\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a cycle never reaches the current reference")
+			.WithMessage("*'UsrLoopFolder' does not inherit from 'BaseFolder'*");
+		_designer.Received(2).GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Ends the walk after MaxHierarchyDepth parent hops and refuses the target, before SaveSchema.")]
+	public void Create_ShouldRefuseOverride_WhenTargetHierarchyIsDeeperThanLimit() {
+		// Arrange
+		Guid[] chain = Enumerable.Range(0, InheritedLookupOverride.MaxHierarchyDepth + 8)
+			.Select(_ => Guid.NewGuid())
+			.ToArray();
+		AddReferenceSchema(chain[0], "UsrDeepFolder", parentUId: chain[1]);
+		for (int index = 1; index < chain.Length - 1; index++) {
+			SetRuntimeParent(chain[index], chain[index + 1]);
+		}
+		SetRuntimeParent(chain[^1], BaseFolderUId);
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrDeepFolder\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "the walk is bounded")
+			.WithMessage("*'UsrDeepFolder' does not inherit from 'BaseFolder'*");
+		_designer.Received(InheritedLookupOverride.MaxHierarchyDepth + 1)
+			.GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	private void AddReferenceSchema(Guid schemaUId, string name, Guid parentUId) {
+		_designer.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(), Arg.Any<RemoteCommandOptions>())
+			.Returns(new AvailableEntitySchemasResponse { Items = [
+				.. NonVirtualReferenceSchemas(),
+				new ManagerItemDto { UId = schemaUId, Name = name, Caption = name }
+			] });
+		SetRuntimeParent(schemaUId, parentUId);
+	}
+
+	private void SetRuntimeParent(Guid schemaUId, Guid parentUId) {
+		_designer.GetRuntimeEntitySchema(schemaUId, Arg.Any<RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto { UId = schemaUId, Name = schemaUId.ToString(), ParentUId = parentUId }
+			});
+	}
+
+	private sealed class TransportFailureException() : InvalidOperationException("transport failure");
+
+	[Test]
 	[Description("Reports a create whose reloaded inherited reference differs from the request as a failure.")]
 	public void Create_ShouldThrow_WhenReloadedInheritedReferenceDiffers() {
 		// Arrange

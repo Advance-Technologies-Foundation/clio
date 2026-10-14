@@ -185,23 +185,29 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 	}
 
 	// The root entity schema reports a parent the runtime service cannot resolve; the service answers that
-	// with an unsuccessful response, which ends the hierarchy. Transport and markup failures are not an
-	// answer and propagate.
+	// with an unsuccessful response, which ends the hierarchy above the target. The same answer for the target
+	// itself means its hierarchy could not be read. Transport and markup failures (InvalidOperationException
+	// subclasses) are not an answer and propagate.
 	private Guid ReadParentUId(Guid schemaUId, bool isTarget, RemoteCommandOptions options) {
 		try {
 			RuntimeEntitySchemaResponse response = designerClient.GetRuntimeEntitySchema(schemaUId, options);
 			if (response?.Success == true && response.Schema != null) {
 				return response.Schema.ParentUId;
 			}
-		} catch (InvalidOperationException exception) when (exception.GetType() == typeof(InvalidOperationException)
-			&& !isTarget) {
-			return Guid.Empty;
+		} catch (InvalidOperationException exception) when (exception.GetType() == typeof(InvalidOperationException)) {
+			if (!isTarget) {
+				return Guid.Empty;
+			}
+			throw new EntitySchemaDesignerException(BuildUnreadableHierarchyMessage(schemaUId), exception);
 		}
 		if (!isTarget) {
 			return Guid.Empty;
 		}
-		throw new EntitySchemaDesignerException(
-			$"The parent hierarchy of schema '{schemaUId}' could not be read, so the override target could not be "
-			+ "validated.");
+		throw new EntitySchemaDesignerException(BuildUnreadableHierarchyMessage(schemaUId));
+	}
+
+	private static string BuildUnreadableHierarchyMessage(Guid schemaUId) {
+		return $"The parent hierarchy of schema '{schemaUId}' could not be read, so the override target could not be "
+			+ "validated.";
 	}
 }
