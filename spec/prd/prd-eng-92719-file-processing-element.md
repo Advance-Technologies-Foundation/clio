@@ -2,7 +2,7 @@
 
 **Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit), delivered through
 ENG-96505 Element readiness and object attachments mode (OA; a Task that relates to ENG-92719, converted from a
-Sub-task on 2026-10-14), its Sub-task ENG-96506 Generated report + process parameter modes (RP), and a new Sub-task "SysFile attachment storage in the Process file element" (SF; not created in
+Sub-task on 2026-10-14), ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes (RP), and a new Sub-task "SysFile attachment storage in the Process file element" (SF; not created in
 Jira as of 2026-10-14, its key is assigned on creation)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md)
 **Stories**: [1](../stories/story-eng-92719-file-processing-element-1.md) (OA) ·
@@ -204,7 +204,7 @@ plan calls the whole rule the TC-41 rule.
 | OA-3 | The element's output file collection can be mapped by more than one downstream element | - |
 | OA-4 | Element identity resolves to the user-task schema per source variant; the variant is the group the request sends, so adding a variant later does not change the layout contract | Q13, agreed 2026-10-14: the group present is the variant |
 | OA-5 | Building ObjectFileProcessingUserTask as a generic `userTask` is refused with a message that points to `fileProcessing` | - |
-| OA-6 | The source object is chosen by name in `attachments.object`, and its attachment storage is derived per object as the designer derives it. SysFile storage is not part of this Sub-task: such sources and targets are refused with a message, designer-built SysFile elements are described without loss, and SF delivers the support | Q17 for the details, agreed 2026-10-14: the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override |
+| OA-6 | The source object is chosen by name in `attachments.object`, and its attachment storage is derived per object as the designer derives it. SysFile storage is not part of this issue: such sources and targets are refused with a message, designer-built SysFile elements are described without loss, and SF delivers the support | Q17 for the details, agreed 2026-10-14: the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override |
 | OA-7 | The record whose attachments are read is set in `attachments.recordId` through the value sources: a record id, a process parameter, an element output or one column of it, or `[#SysVariable.CurrentUserContact#]`. The number of files (default 50, at most 5000) and one sort column can be set | Q16 and Q14, agreed 2026-10-14: the record scope inside the group; `numberOfRecords` defaults to 50 |
 | OA-8 | Files can be saved to a target record's Attachments detail (`saveTo`), with the record set through the same value sources; a constant record id must be an existing record of the target object | - (the row's text encodes no owner answer; the action inference that stories and tests attach to `saveTo` is Q15's, agreed 2026-10-14) |
 | OA-9 | A saving element with no record scope and no filter condition is refused; a "use in process" element without one gets a notice | Q16, agreed 2026-10-14: refuse |

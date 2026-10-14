@@ -1,8 +1,8 @@
 # ENG-92719 File processing element: test plan
 
 **Summary.** This plan says how the Process file element is tested in all three repositories, and what only a
-running process on the stand can prove. In scope: ENG-92719 File processing element (Story), its sub-tasks
-ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes,
+running process on the stand can prove. In scope: ENG-92719 File processing element (Story), ENG-96505 Element
+readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes,
 and the proposed Sub-task "SysFile attachment storage in the Process file element". Package unit tests must not name
 the three user-task classes, because the dev-n8 build compiles without `Terrasoft.Configuration.dll`. They also cannot
 run the platform's parameter sync or its runtime reader. So the package suite builds every element by hand: the real schema

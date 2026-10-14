@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Issues | ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and its sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
+| Issues | ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Status | Proposed, 2026-10-01. This is the full evidence behind decision D21 in [decisions](eng-92719-file-processing-element-decisions.md) |
 | Baselines | Anchors point to CrtProcessBuilder `main` `a6bfcbf6` (package 1.6.6.96, 2026-10-12), clio `master` `19e6f9c53` and clio-knowledge `master` `0b56d4a` (guidance libraryVersion 1.15.142), re-pinned 2026-10-13. The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`). Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 |

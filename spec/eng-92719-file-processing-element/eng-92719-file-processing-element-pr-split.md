@@ -308,7 +308,7 @@ is a deliberate reading of the AGENTS.md sprint tracker rule for stacked drafts.
 | ENG-95984 File process parameter type | `spec-eng-95984-file-parameter-type.md` | `adr-eng-95984-file-parameter-type.md` | `story-eng-95984-file-parameter-type-1.md` | `tp-eng-95984-file-parameter-type.md` | one row | CL-PT-DOC | PK-PT leaves draft (E9) |
 | MH: not created (M3 refuted H-1) | - | - | - | - | - | - | - |
 | PT follow-ups (Declared item shape; mirror allow-list; describe decode) | PT's | PT's | one each | own rows | one row each | CL-PT-DOC | their package PRs open |
-| ENG-92719 File processing element (Story) | `prd-eng-92719-file-processing-element.md` | `adr-eng-92719-file-processing-element.md` (D10-D29, O5) | delivered through its Sub-tasks | `tp-eng-92719-file-processing-element.md` (with a TC-nn to TC-U-/TC-I- column) | no row of its own (done when stories 1-3 are) | CL-DOC | PK-OA opens (E7) |
+| ENG-92719 File processing element (Story) | `prd-eng-92719-file-processing-element.md` | `adr-eng-92719-file-processing-element.md` (D10-D29, O5) | delivered through ENG-96505 (a related Task) and its Sub-tasks | `tp-eng-92719-file-processing-element.md` (with a TC-nn to TC-U-/TC-I- column) | no row of its own (done when stories 1-3 are) | CL-DOC | PK-OA opens (E7) |
 | ENG-96505 Element readiness and object attachments mode | FE's | FE's | `story-eng-92719-file-processing-element-1.md` | FE's | one row | CL-DOC | PK-OA opens (E7) |
 | ENG-96506 Generated report + process parameter modes | FE's | FE's | `story-eng-92719-file-processing-element-2.md` | FE's | one row | CL-DOC | PK-RP opens |
 | SF | FE's | FE's | `story-eng-92719-file-processing-element-3.md` | FE's | one row | CL-DOC (SF is created on day 0) | PK-SF opens |

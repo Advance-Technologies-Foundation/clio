@@ -1,7 +1,7 @@
 # Traps: ENG-95984 File process parameter type and ENG-92719 File processing element
 
 **Summary.** This is the catalogue of hazards that the implementation of ENG-95984 File process parameter type and
-ENG-92719 File processing element (ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and sub-task ENG-96506
+ENG-92719 File processing element (ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506
 Generated report + process parameter modes) has to neutralise, and that the new `process-files` guide has to teach.
 There are 68 entries. 59 of them are **silent** (T-8 among them, which M3 refuted on 2026-10-02, and T-54, silent since CrtProcessBuilder 1.6.6.69): nothing throws, nothing is logged and the save answers success at the
 moment the mistake is made, and the damage shows up later (at run time, in the designer, or on the next round trip),

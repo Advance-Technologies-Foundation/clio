@@ -8,7 +8,7 @@ O4-O8 (Q8), among them **O5: the variant registry is OA's design**, and D10 (Q13
 (Q14, naming bundle), D14 (Q15, action inference), D16 (Q16, record scope and empty-filter policy, answered knowing
 the precedent of ENG-102537 Process elements built without their configuration block save green and fail or hang at
 run time), D15's storage details (Q17) and D17 (Q18, FastReport). The acceptance rows the PRD marks with those
-questions (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1, RP-4) stand as written. Test-plan item O-TP1 (where TC-91 runs) is open too, recommended B: in RP's clio PR.
+questions (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1, RP-4) stand as written. Test-plan item O-TP1 (where TC-91 runs) is still open, recommended B: in RP's clio PR.
 **Date**: 2026-10-14
 **Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); ENG-96505 Element
 readiness and object attachments mode (OA; a Task that relates to ENG-92719, converted from a Sub-task on 2026-10-14);

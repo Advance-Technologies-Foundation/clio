@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Issues | ENG-92719 File processing element (Story), ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
+| Issues | ENG-92719 File processing element (Story), ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Acceptance criteria served | "Server serialization matches a designer-built capture" in all four issues (plan AC-FE5, AC-OA7, AC-RP6; ENG-95984 File process parameter type plan AC-8) |
 | Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves). Anchors point to CrtProcessBuilder `main` `a6bfcbf6` = 1.6.6.96 and clio `master` `19e6f9c53`, re-pinned 2026-10-13; the stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand ran 1.6.6.96 on 2026-10-13 (measured with `list-packages`, read-only) |

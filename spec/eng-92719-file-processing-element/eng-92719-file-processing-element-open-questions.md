@@ -2,7 +2,7 @@
 
 This document lists what is still open before and during the implementation of ENG-95984 File process parameter
 type (Task) and ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object
-attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and its sub-task ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
+attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 20 owner questions (Q1-Q20). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
 Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, Q19 (`process-files`) on 2026-10-08, and Q13-Q18 as recommended on 2026-10-14. Q10-Q19 fix the contract. Q20, added on 2026-10-13, asks where the clio description bytes come from; the owner agreed it on 2026-10-14 (A: trim existing text). **Part B** holds 28 stand measurements with exact recipes and read-only evidence

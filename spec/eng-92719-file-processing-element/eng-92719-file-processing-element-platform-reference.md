@@ -1,8 +1,8 @@
 # Platform reference: ENG-92719 File processing element and ENG-95984 File process parameter type
 
 **Summary.** This document describes what the Creatio platform already does, end to end, for the "Process file"
-element and for file-typed process parameters. It is the background for ENG-92719 File processing element (sub-tasks
-ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes) and
+element and for file-typed process parameters. It is the background for ENG-92719 File processing element (ENG-96505
+Element readiness and object attachments mode, a related Task since 2026-10-14, formerly a Sub-task, and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes) and
 for ENG-95984 File process parameter type, all in epic ENG-92704 Create BP via AI Toolkit. "Process file" is not one
 element: it is **three user-task schemas that share one caption**, and the designer's "What is the source of the
 file?" choice selects the schema; it is not a parameter. A file always travels through a process as a **reference**

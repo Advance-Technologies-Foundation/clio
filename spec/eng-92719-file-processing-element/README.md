@@ -1,7 +1,7 @@
 # ENG-92719 File processing element and ENG-95984 File process parameter type: analysis index
 
-[ENG-92719](https://creatio.atlassian.net/browse/ENG-92719) File processing element (Story) with its sub-tasks
-[ENG-96505](https://creatio.atlassian.net/browse/ENG-96505) Element readiness and object attachments mode and
+[ENG-92719](https://creatio.atlassian.net/browse/ENG-92719) File processing element (Story) with
+[ENG-96505](https://creatio.atlassian.net/browse/ENG-96505) Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task
 [ENG-96506](https://creatio.atlassian.net/browse/ENG-96506) Generated report + process parameter modes, and
 [ENG-95984](https://creatio.atlassian.net/browse/ENG-95984) File process parameter type (Task); epic
 [ENG-92704](https://creatio.atlassian.net/browse/ENG-92704) Create BP via AI Toolkit.
@@ -114,7 +114,7 @@ Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
 | 10 | [test-plan](eng-92719-file-processing-element-test-plan.md) | **How the element is tested.** The harness per repository, and the C# mocking recipes adapted from `C:/Projects/UnitTests`. TC-01..TC-92 traced to the AC, stand scenarios ST-01..ST-08, and designer checks DT-01..DT-04. The methods for M1-M26 and the read-only evidence queries. |
 | 11 | [pr-split](eng-92719-file-processing-element-pr-split.md) | **How the work becomes PRs.** The verdict per repository and its measured basis, and the PRs with exact titles, branches and merge order. Hard edges E1-E10. What must land together and what must not. Version and floor rules, contingencies X1-X8, Jira link corrections, and the review / merge / stand protocol. |
-| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q20 for the owner, each with a recommendation, and 28 stand measurements with recipes and status (M27 added 2026-10-14). What was measured on 2026-10-01 and 2026-10-02. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
+| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q20 for the owner, each with options and a recommendation, all agreed (Q13-Q18 on 2026-10-14), and 28 stand measurements with recipes and status (M27 added 2026-10-14). What was measured on 2026-10-01 and 2026-10-02. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
 
 ### Where each part of the request is answered
 

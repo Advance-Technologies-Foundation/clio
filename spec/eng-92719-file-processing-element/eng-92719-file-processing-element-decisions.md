@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Issues | ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object attachments mode (a Task that relates to it, converted from a Sub-task on 2026-10-14) and its sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
+| Issues | ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object attachments mode (a Task that relates to it, converted from a Sub-task on 2026-10-14) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Status | Proposed, 2026-10-01. No decision waits for the owner: D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, D10, D11, D14, D15's storage details, D16 and D17 (section 1, Q13-Q18) on 2026-10-14, and D9 was answered by M3 on 2026-10-02. Q20 (where the description bytes for PT and OA come from, D25), opened 2026-10-13, was agreed on 2026-10-14 as A: trim existing text per tool, reviewer-approved |
 | Baselines | Anchors point to CrtProcessBuilder `main` `a6bfcbf6` (package 1.6.6.96, 2026-10-12), clio `master` `19e6f9c53` and clio-knowledge `master` `0b56d4a` (guidance libraryVersion 1.15.142), re-pinned and re-checked for meaning on 2026-10-13 (Appendix B, round 5). The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand runs 1.6.6.96 since (list-packages, read-only, 2026-10-13). Creatio core 10.1.37 (the stand's core) |
@@ -115,7 +115,7 @@ named decision and nothing else unless stated.
 | 7 | D11 | Naming bundle of the block | `attachments`, `report`, `files`, `saveTo`, `action: useInProcess / saveToAttachments`, `report.printable`, `fileNameSuffix`, `recordId` inside the groups **Agreed 2026-10-14.** | Any renaming before code; afterwards renames cost a deprecation |
 | 8 | D14 | `ResultActionType` when `action` is omitted on create | Inferred: `saveTo` present -> save, absent -> use in process; always written **Agreed 2026-10-14.** | Designer default (use in process: a caller who forgot `action` gets a silent no-save); mandatory `action` |
 | 9 | D15 | Storage behaviour | Feature flag not read for behaviour (notice only); no `linkColumn: "none"`; no SysFile override; SysFile in Sub-task SF **Agreed 2026-10-14** (SysFile in SF on 2026-10-07). | Read the flag and reproduce the OFF list (string-coupled, copies `ModuleStructure`); keep SysFile in ENG-96505 Element readiness and object attachments mode with five pre-code measurements on its path |
-| 10 | D16 | Record scope shape and the empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving or Word elements with no selecting filter **Agreed 2026-10-14.** | `filter.recordId` (two meanings of `recordId`, dropped by clio's filter DTO); notice only |
+| 10 | D16 | Record scope shape and the empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving or Word elements with no selecting filter, notice for Object + use in process **Agreed 2026-10-14.** | `filter.recordId` (two meanings of `recordId`, dropped by clio's filter DTO); notice only |
 | 11 | D17 | FastReport printables | Refused in this work (no stand evidence that the process path works) **Agreed 2026-10-14.** | Accept with a notice |
 | 12 | D22 | Downstream consumer patterns | Send email -> ENG-95985 Send email attachments; Creatio.ai call out of scope **Agreed 2026-10-07.** | Keep both in ENG-92719 File processing element (needs dynamic attachment slots the builder cannot create) |
 | 13 | D23 | Jira links | L1-L5: ENG-95984 File process parameter type relates to ENG-96505 Element readiness and object attachments mode and blocks ENG-96506 Generated report + process parameter modes; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments **Agreed 2026-10-07.** | Keep link 560203 "PT blocks OA" if the team uses "blocks" for sequencing (it then claims a functional dependency that does not exist) |
@@ -2120,7 +2120,7 @@ verification in ENG-96505 Element readiness and object attachments mode, which c
 > *Object attachments mode*
 > - The source object is chosen by name in `attachments.object`; its attachment storage is derived per object as the
 >   designer derives it.
-> - Attachment storage in SysFile is not part of this sub-task. Such sources and targets are refused with a message,
+> - Attachment storage in SysFile is not part of this issue. Such sources and targets are refused with a message,
 >   designer-built SysFile elements are described without loss, and the Sub-task "SysFile attachment storage in the
 >   Process file element" delivers the support.
 > - The record whose attachments are read is set in `attachments.recordId` through the value sources: a record id, a
@@ -2153,11 +2153,11 @@ verification in ENG-96505 Element readiness and object attachments mode, which c
 
 | AC as written (excerpt) | Change | Reason |
 |---|---|---|
-| "read back correctly, including a source variant not configurable in this sub-task, without loss" | Report and Process elements stay generic until ENG-96506 Generated report + process parameter modes; SysFile elements described, changes refused | each cut claims only the variant it configures (D13) |
+| "read back correctly, including a source variant not configurable in this issue, without loss" | Report and Process elements stay generic until ENG-96506 Generated report + process parameter modes; SysFile elements described, changes refused | each cut claims only the variant it configures (D13) |
 | "The source object and the record whose attachments are read are set through the established value sources" | the object is chosen by name; the record is a value source inside the group | the object is a schema choice, not a value; one value-source vocabulary per element (D11, D16) |
 | "Server serialization matches a designer-built ObjectFileProcessingUserTask capture" | names the capture and the comparison rule with its four named exceptions (N2, N9, N10, N13); SysFile capture moves to the SysFile Sub-task | D20 (a bare "UIds ignored" rule fails the first parity run on keys the plans already accept), D15 |
 | "Guidance states that Process file is rarely an endpoint" | replaced by "most shipped uses end in a record's attachments; when a following element needs the files, map the element's output collection" (plan C-2); TC-88 pins the corrected sentence | measured on the corpus, 2026-10-01, and re-counted for this edit: 16 processes (30 elements) hold the element. The 4 product processes (CrtInvoice PrintInvoiceReport, CrtLeadOppMgmtApp PrintQuotationReport, CrtOrderContractMgmtApp PrintContractsReport, CrtEmailMarketingApp GenerateDNSRecordsSpecification) hold 5 elements, all of them Generated report with `ResultActionType` 0, saving to the record's attachments. None maps an output of the element. The Object attachments and Process parameter variants occur only in test packages ([use-cases](eng-92719-file-processing-element-use-cases.md); plan N4). In shipped product content the element IS the endpoint, so the original sentence would have TC-88 pin a measured-false claim |
-| (missing) | generic-route refusal; empty-filter refusal; SysFile refused in this sub-task | D13, D16, D15 |
+| (missing) | generic-route refusal; empty-filter refusal; SysFile refused in this issue | D13, D16, D15 |
 
 ### D-4. ENG-96506 Generated report + process parameter modes
 
