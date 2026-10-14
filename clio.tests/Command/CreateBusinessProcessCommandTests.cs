@@ -481,6 +481,56 @@ public sealed class CreateBusinessProcessCommandTests {
 		digest["changes"].Should().BeNull(because: "a create has nothing to compare with");
 	}
 
+	private const string CallerDescriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
+		+ "{\"name\":\"Start\",\"type\":\"startEvent\"},{\"name\":\"CallOrder\",\"type\":\"subProcess\","
+		+ "\"subProcess\":{\"processName\":\"UsrOrderProcess\"}}],"
+		+ "\"flows\":[{\"source\":\"Start\",\"target\":\"CallOrder\"}]}";
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103165: a created process that CALLS another one is not read back when no guard needs the read. The read would build the caller's cached schema instance with its callees' current parameters, and the server drops that instance only when the caller is saved again, so a parameter a callee gained afterwards would be missing from every later describe of the caller. The reply says why there is no summary instead of warning.")]
+	public void Execute_ShouldNotReadACallerBack_WhenNoGuardNeedsTheRead() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", DescriptorJson = CallerDescriptor, PackageName = "Custom"
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the build succeeded");
+		_processDescriber.DidNotReceiveWithAnyArgs().Describe(default!, default, default, default);
+		DigestLine().Should().BeNull(because: "a summary needs the read that would pin the caller");
+		_logger.Received(1).WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default!);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("ENG-103165: a created caller IS read back when a guard needs the read - a labelled flow is verified on the same read, as before ENG-103023 - and the digest rides it.")]
+	public void Execute_ShouldReadACallerBack_WhenAGuardNeedsTheRead() {
+		// Arrange
+		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
+			.Returns(BuildResult());
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>())
+			.Returns(DigestProcess("Start", "CallOrder"));
+
+		// Act
+		int result = _command.Execute(new CreateBusinessProcessOptions {
+			Environment = "sandbox", PackageName = "Custom",
+			DescriptorJson = CallerDescriptor.Replace("\"target\":\"CallOrder\"}",
+				"\"target\":\"CallOrder\",\"label\":\"Go\"}", StringComparison.Ordinal)
+		});
+
+		// Assert
+		result.Should().Be(0, because: "the build succeeded");
+		_processDescriber.Received(1).Describe(Arg.Any<ProcessIdentity>(), ProcessWriteDigest.DigestCulture, true, true);
+		DigestLine().Should().NotBeNull(because: "the guard's read-back carries the digest, as for any other process");
+		_logger.DidNotReceive().WriteInfo(ProcessWriteDigest.CallerNotReadBack);
+	}
+
 	private const string LabelledDescriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":["
 		+ "{\"name\":\"Decide\",\"type\":\"userTask\"},{\"name\":\"Yes\",\"type\":\"endEvent\"}],"
 		+ "\"flows\":[{\"source\":\"Decide\",\"target\":\"Yes\",\"label\":\"Approved\"}]}";
