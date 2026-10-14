@@ -331,6 +331,22 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 	}
 
 	[Test]
+	[Description("Refuses a create that overrides the same inherited column twice before SaveSchema.")]
+	public void Create_ShouldRefuseOverride_WhenSameInheritedColumnIsOverriddenTwice() {
+		// Arrange
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride,
+			"{\"name\":\"folder\",\"override\":true,\"reference-schema-name\":\"ContactFolder\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "only one target per inherited column can be persisted")
+			.WithMessage("*Inherited column 'Folder' is overridden more than once*");
+		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Reports a create whose reloaded inherited reference differs from the request as a failure.")]
 	public void Create_ShouldThrow_WhenReloadedInheritedReferenceDiffers() {
 		// Arrange

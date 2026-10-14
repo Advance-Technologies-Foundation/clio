@@ -167,6 +167,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		NormalizeAdministrationMetadata(schema);
 
+		EnsureSingleOverridePerColumn(parsedColumns);
 		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup || c.IsOverride)
 			? GetReferenceSchemas(package.Descriptor.UId, options)
 			: new Dictionary<string, ManagerItemDto>(StringComparer.OrdinalIgnoreCase);
@@ -196,6 +197,18 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
 		}
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
+	}
+
+	private static void EnsureSingleOverridePerColumn(IEnumerable<ParsedColumn> parsedColumns) {
+		string? repeatedColumnName = parsedColumns
+			.Where(column => column.IsOverride)
+			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
+			.FirstOrDefault(group => group.Count() > 1)?.Key;
+		if (repeatedColumnName != null) {
+			throw new InvalidOperationException(
+				$"Inherited column '{repeatedColumnName}' is overridden more than once in one request; send one " +
+				"override per inherited column.");
+		}
 	}
 
 	private void ApplyInheritedLookupOverride(

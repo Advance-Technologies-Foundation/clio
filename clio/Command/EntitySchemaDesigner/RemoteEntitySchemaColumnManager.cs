@@ -129,6 +129,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(rootOperation.Package);
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, DependencyDiagnosis.Report);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		EnsureSingleInheritedRedirectPerColumn(schema, operations);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		// Captured BEFORE the mutation loop: the names this package's layer already had. The loop mutates the
 		// design schema in memory and nothing is saved until below, so after the first operation the layer no
@@ -1704,6 +1705,26 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (hasDifferentTarget) {
 			throw new EntitySchemaDesignerException(
 				"All batch column mutations must target the same package, schema, and environment.");
+		}
+	}
+
+	private static void EnsureSingleInheritedRedirectPerColumn(
+		EntityDesignSchemaDto schema,
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		string? repeatedColumnName = operations
+			.Where(operation => string.Equals(operation.Action?.Trim(), "modify", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
+				&& !string.IsNullOrWhiteSpace(operation.ColumnName))
+			.Select(operation => operation.ColumnName.Trim())
+			.Where(columnName => InheritedLookupOverride.IsInheritedColumn(schema, columnName)
+				&& !(schema.Columns ?? []).Any(column =>
+					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase)))
+			.GroupBy(columnName => columnName, StringComparer.OrdinalIgnoreCase)
+			.FirstOrDefault(group => group.Count() > 1)?.Key;
+		if (repeatedColumnName != null) {
+			throw new EntitySchemaDesignerException(
+				$"Inherited column '{repeatedColumnName}' is redirected more than once in one request; send one " +
+				"reference-schema-name per inherited column.");
 		}
 	}
 

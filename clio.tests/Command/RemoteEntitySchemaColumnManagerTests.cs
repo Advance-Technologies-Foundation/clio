@@ -1522,6 +1522,34 @@ internal class RemoteEntitySchemaColumnManagerTests
 	}
 
 	[Test]
+	[Description("Refuses a batch that redirects the same inherited lookup twice, before saving.")]
+	public void ModifyColumns_ShouldRejectBatch_WhenSameInheritedLookupIsRedirectedTwice() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		ModifyEntitySchemaColumnOptions[] operations = [
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicleInFolder", Action = "modify", ColumnName = "Folder",
+				ReferenceSchemaName = "ContactFolder"
+			},
+			new() {
+				Package = "UsrPkg", SchemaName = "UsrVehicleInFolder", Action = "modify", ColumnName = "folder",
+				ReferenceSchemaName = "ContactFolder"
+			}
+		];
+
+		// Act
+		Action act = () => _manager.ModifyColumns(operations);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "only one target per inherited column can be persisted")
+			.WithMessage("*Inherited column 'Folder' is redirected more than once*");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
 	[Description("Keeps rejecting a required flag on the same inherited lookup that accepts a reference override.")]
 	public void ModifyColumn_ShouldRejectRequired_OnInheritedLookup() {
 		// Arrange
