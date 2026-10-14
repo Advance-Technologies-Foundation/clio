@@ -513,4 +513,59 @@ public sealed class HeadlessShellInstallerTests {
 		await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the server refused the resume");
 		(File.Exists(partial) ? new FileInfo(partial).Length : 0).Should().Be(0, because: "the next call starts from zero");
 	}
+
+	[Test]
+	[Description("A proxy that asks for a login (407) is answered with a hint to put credentials into HTTPS_PROXY, since clio never sends the Windows login to a system or auto-detected proxy.")]
+	public async Task InstallAsync_Should_Explain_A_Proxy_That_Asks_For_A_Login() {
+		// Arrange
+		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(1, "x"),
+			(_, _) => throw new HttpRequestException("The proxy tunnel request to proxy failed with status code '407'.", null,
+				HttpStatusCode.ProxyAuthenticationRequired));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the proxy refused the download"))
+			.Which.Message.Should().Contain("HTTP 407").And.Contain("set HTTPS_PROXY to the proxy with its credentials",
+				because: "the user learns how to authenticate without clio handing out the Windows login");
+	}
+
+	[TestCase(true, TestName = "net10 shape: StatusCode set")]
+	[TestCase(false, TestName = "net8 shape: no StatusCode, only the message")]
+	[Description("A proxy-tunnel 407 whose .NET message names the proxy URI with its user:password never puts the password into the answer, gets the login hint, and is not called offline.")]
+	public async Task InstallAsync_Should_Not_Echo_A_Proxy_Password_On_407(bool withStatusCode) {
+		// Arrange - the message .NET writes for a refused tunnel, with the URI it was handed.
+		const string message = "The proxy tunnel request to proxy 'http://agent:s3cr3t@proxy.corp:3128/' failed with status code '407'.";
+		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(1, "x"), (_, _) =>
+			throw (withStatusCode
+				? new HttpRequestException(message, null, HttpStatusCode.ProxyAuthenticationRequired)
+				: new HttpRequestException(message)));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		string answer = (await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the proxy refused the tunnel"))
+			.Which.Message;
+		answer.Should().NotContain("s3cr3t").And.NotContain("agent:", because: "a proxy password never reaches the MCP reply");
+		answer.Should().Contain("set HTTPS_PROXY to the proxy with its credentials", because: "the user learns how to log in");
+		answer.Should().NotContain("may be offline", because: "a 407 is not an offline machine");
+	}
+
+	[Test]
+	[Description("A port that merely contains 407 (:4070) is not taken for a proxy login.")]
+	public async Task InstallAsync_Should_Not_Take_A_Port_4070_For_A_Proxy_Login() {
+		// Arrange
+		(HeadlessShellInstaller installer, _) = Create(new HeadlessShellRelease.Archive(1, "x"), (_, _) =>
+			throw new HttpRequestException("Connection refused (mirror.corp:4070)"));
+
+		// Act
+		Func<Task> act = () => installer.InstallAsync(CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<HeadlessShellInstallException>(because: "the host refused the connection"))
+			.Which.Message.Should().NotContain("HTTP 407").And.Contain("may be offline",
+				because: "only the real 407 phrase means a proxy login");
+	}
 }
