@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.IO;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
@@ -29,6 +30,7 @@ internal static class UnixPipeSpawn {
 	// Darwin's posix_spawn extension: every descriptor not named by a file action is closed in the child.
 	private const short PosixSpawnCloexecDefault = 0x4000;
 	private const int ReapPollMs = 50;
+	private const string AddDup2Function = "posix_spawn_file_actions_adddup2";
 
 	[SupportedOSPlatform("linux")]
 	[SupportedOSPlatform("macos")]
@@ -38,8 +40,9 @@ internal static class UnixPipeSpawn {
 		AnonymousPipeServerStream toBrowser = new(PipeDirection.Out, HandleInheritability.None);
 		AnonymousPipeServerStream fromBrowser = new(PipeDirection.In, HandleInheritability.None);
 		try {
-			int browserRead = (int)toBrowser.ClientSafePipeHandle.DangerousGetHandle();
-			int browserWrite = (int)fromBrowser.ClientSafePipeHandle.DangerousGetHandle();
+			// On Unix the client handle's text is its file descriptor number.
+			int browserRead = int.Parse(toBrowser.GetClientHandleAsString(), CultureInfo.InvariantCulture);
+			int browserWrite = int.Parse(fromBrowser.GetClientHandleAsString(), CultureInfo.InvariantCulture);
 			int pid = Spawn(executablePath, arguments, browserRead, browserWrite);
 			toBrowser.DisposeLocalCopyOfClientHandle();
 			fromBrowser.DisposeLocalCopyOfClientHandle();
@@ -94,13 +97,13 @@ internal static class UnixPipeSpawn {
 	// which a dup2 onto the same number would not.
 	private static void AddFileActions(IntPtr actions, IntPtr devNull, int browserRead, int browserWrite) {
 		(int scratchRead, int scratchWrite) = ScratchDescriptors(browserRead, browserWrite);
-		Check(Interop.FileActionsAddDup2(actions, browserRead, scratchRead), "posix_spawn_file_actions_adddup2");
-		Check(Interop.FileActionsAddDup2(actions, browserWrite, scratchWrite), "posix_spawn_file_actions_adddup2");
+		Check(Interop.FileActionsAddDup2(actions, browserRead, scratchRead), AddDup2Function);
+		Check(Interop.FileActionsAddDup2(actions, browserWrite, scratchWrite), AddDup2Function);
 		Check(Interop.FileActionsAddOpen(actions, 0, devNull, ORdOnly, 0), "posix_spawn_file_actions_addopen");
 		Check(Interop.FileActionsAddOpen(actions, 1, devNull, OWrOnly, 0), "posix_spawn_file_actions_addopen");
 		Check(Interop.FileActionsAddOpen(actions, 2, devNull, OWrOnly, 0), "posix_spawn_file_actions_addopen");
-		Check(Interop.FileActionsAddDup2(actions, scratchRead, BrowserReadFd), "posix_spawn_file_actions_adddup2");
-		Check(Interop.FileActionsAddDup2(actions, scratchWrite, BrowserWriteFd), "posix_spawn_file_actions_adddup2");
+		Check(Interop.FileActionsAddDup2(actions, scratchRead, BrowserReadFd), AddDup2Function);
+		Check(Interop.FileActionsAddDup2(actions, scratchWrite, BrowserWriteFd), AddDup2Function);
 		Check(Interop.FileActionsAddClose(actions, scratchRead), "posix_spawn_file_actions_addclose");
 		Check(Interop.FileActionsAddClose(actions, scratchWrite), "posix_spawn_file_actions_addclose");
 		if (OperatingSystem.IsLinux()) {
@@ -247,7 +250,7 @@ internal static class UnixPipeSpawn {
 		[DllImport("libc", EntryPoint = "posix_spawn_file_actions_destroy")]
 		internal static extern int FileActionsDestroy(IntPtr fileActions);
 
-		[DllImport("libc", EntryPoint = "posix_spawn_file_actions_adddup2")]
+		[DllImport("libc", EntryPoint = AddDup2Function)]
 		internal static extern int FileActionsAddDup2(IntPtr fileActions, int fd, int newFd);
 
 		[DllImport("libc", EntryPoint = "posix_spawn_file_actions_addclose")]

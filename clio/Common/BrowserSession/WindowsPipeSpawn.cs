@@ -40,18 +40,18 @@ internal static class WindowsPipeSpawn {
 		AnonymousPipeServerStream toBrowser = new(PipeDirection.Out, HandleInheritability.None);
 		AnonymousPipeServerStream fromBrowser = new(PipeDirection.In, HandleInheritability.None);
 		try {
-			SafePipeHandle browserRead = toBrowser.ClientSafePipeHandle;
-			SafePipeHandle browserWrite = fromBrowser.ClientSafePipeHandle;
+			// The client handle's text is its handle value, which is also what the browser sees it as once inherited.
+			string browserRead = toBrowser.GetClientHandleAsString();
+			string browserWrite = fromBrowser.GetClientHandleAsString();
 			List<string> withHandles = [.. arguments];
 			withHandles.Insert(PipeBrowserSpawner.IndexBeforeTrailingUrl(withHandles),
-				IoPipesSwitch + HandleText(browserRead.DangerousGetHandle()) + "," + HandleText(browserWrite.DangerousGetHandle()));
+				IoPipesSwitch + browserRead + "," + browserWrite);
 			int pid;
 			SafeProcessHandle process;
 			try {
-				MakeInheritable(browserRead);
-				MakeInheritable(browserWrite);
-				(pid, process) = CreateProcess(executablePath, withHandles,
-					[browserRead.DangerousGetHandle(), browserWrite.DangerousGetHandle()]);
+				MakeInheritable(toBrowser.ClientSafePipeHandle);
+				MakeInheritable(fromBrowser.ClientSafePipeHandle);
+				(pid, process) = CreateProcess(executablePath, withHandles, [HandleValue(browserRead), HandleValue(browserWrite)]);
 			}
 			finally {
 				toBrowser.DisposeLocalCopyOfClientHandle();
@@ -83,9 +83,16 @@ internal static class WindowsPipeSpawn {
 		public void Terminate() => TerminateProcess(process, 1);
 
 		public void Release() => process.Dispose();
+
+		[DllImport("kernel32.dll", SetLastError = true)]
+		private static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
+
+		[DllImport("kernel32.dll", SetLastError = true)]
+		[return: MarshalAs(UnmanagedType.Bool)]
+		private static extern bool TerminateProcess(SafeProcessHandle handle, uint exitCode);
 	}
 
-	internal static string HandleText(IntPtr handle) => handle.ToInt64().ToString(CultureInfo.InvariantCulture);
+	private static IntPtr HandleValue(string text) => new(long.Parse(text, CultureInfo.InvariantCulture));
 
 	private static (int Pid, SafeProcessHandle Process) CreateProcess(string executablePath, IReadOnlyList<string> arguments,
 		IntPtr[] inherited) {
@@ -155,32 +162,31 @@ internal static class WindowsPipeSpawn {
 		builder.Append('"');
 		int index = 0;
 		while (index < argument.Length) {
-			char character = argument[index++];
+			char character = argument[index];
 			if (character == '\\') {
-				int backslashes = 1;
-				while (index < argument.Length && argument[index] == '\\') {
-					index++;
-					backslashes++;
-				}
-				if (index == argument.Length) {
-					builder.Append('\\', backslashes * 2);
-				}
-				else if (argument[index] == '"') {
-					builder.Append('\\', backslashes * 2 + 1).Append('"');
-					index++;
-				}
-				else {
-					builder.Append('\\', backslashes);
-				}
+				index = AppendBackslashes(builder, argument, index);
 				continue;
 			}
 			if (character == '"') {
-				builder.Append('\\').Append('"');
-				continue;
+				builder.Append('\\');
 			}
 			builder.Append(character);
+			index++;
 		}
 		builder.Append('"');
+	}
+
+	// A run of backslashes is doubled when a quote follows it (the argument's own, escaped too, or the closing one), and
+	// kept as is otherwise. Returns the index after the run.
+	private static int AppendBackslashes(StringBuilder builder, string argument, int start) {
+		int end = start;
+		while (end < argument.Length && argument[end] == '\\') {
+			end++;
+		}
+		int count = end - start;
+		bool quoteFollows = end == argument.Length || argument[end] == '"';
+		builder.Append('\\', quoteFollows ? count * 2 : count);
+		return end;
 	}
 
 	private static Win32Exception Failure(string function) {
@@ -246,13 +252,6 @@ internal static class WindowsPipeSpawn {
 	[DllImport("kernel32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
 	private static extern bool CloseHandle(IntPtr handle);
-
-	[DllImport("kernel32.dll", SetLastError = true)]
-	private static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
-
-	[DllImport("kernel32.dll", SetLastError = true)]
-	[return: MarshalAs(UnmanagedType.Bool)]
-	private static extern bool TerminateProcess(SafeProcessHandle handle, uint exitCode);
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	[return: MarshalAs(UnmanagedType.Bool)]
