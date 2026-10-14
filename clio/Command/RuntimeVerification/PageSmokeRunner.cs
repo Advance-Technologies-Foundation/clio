@@ -226,7 +226,7 @@ internal sealed class PageSmokeRunner(
 		try {
 			IReadOnlyList<BrowserCookie> cookies = await ReadSessionCookiesAsync(budget.Token).ConfigureAwait(false);
 			await using IHeadlessBrowser browser = await browserLauncher.LaunchAsync(request.BrowserPath, budget.Token).ConfigureAwait(false);
-			// Closed before the browser: Chromium shuts itself down when its DevTools pipe closes.
+			// Closed before the browser, whose disposal then kills it and deletes its profile.
 			await using ICdpSession cdp = browser.Page;
 			cdp.EventReceived += events.OnEvent;
 			events.NativeDialogOpened += () => DismissNativeDialog(cdp, timeProvider);
@@ -261,7 +261,7 @@ internal sealed class PageSmokeRunner(
 		}
 		catch (Exception exception) when (exception is InvalidOperationException or CdpCommandException
 			or CreatioAuthenticationException or SafeEnvironmentConfirmationRequiredException
-			or System.Net.WebSockets.WebSocketException or System.Net.Http.HttpRequestException
+			or System.Net.Http.HttpRequestException
 			or System.IO.IOException or JsonException) {
 			ReadLoadErrors(result, events, int.MaxValue);
 			result.Success = false;

@@ -30,33 +30,59 @@ internal static class WindowsPipeSpawn {
 	private const int StartfUseStdHandles = 0x00000100;
 	private static readonly IntPtr ProcThreadAttributeHandleList = new(0x00020002);
 	private const uint WaitObject0 = 0;
+	private const int HandleFlagInherit = 0x00000001;
 
 	[SupportedOSPlatform("windows")]
 	internal static PipeBrowserProcess Start(string executablePath, IReadOnlyList<string> arguments) {
-		// The browser's ends are inheritable (PROC_THREAD_ATTRIBUTE_HANDLE_LIST requires it), but only for the moment
-		// between here and CreateProcess: the local copies are closed right after it, and the handle list keeps every
-		// other inheritable handle of clio's out of the browser.
-		AnonymousPipeServerStream toBrowser = new(PipeDirection.Out, HandleInheritability.Inheritable);
-		AnonymousPipeServerStream fromBrowser = new(PipeDirection.In, HandleInheritability.Inheritable);
+		// Created non-inheritable: the browser's two ends are marked inheritable only for the CreateProcess call below and
+		// closed in clio right after it, so a process clio starts on another thread meanwhile is very unlikely to receive
+		// them, and the handle list keeps every other inheritable handle of clio's out of the browser.
+		AnonymousPipeServerStream toBrowser = new(PipeDirection.Out, HandleInheritability.None);
+		AnonymousPipeServerStream fromBrowser = new(PipeDirection.In, HandleInheritability.None);
 		try {
-			IntPtr browserRead = toBrowser.ClientSafePipeHandle.DangerousGetHandle();
-			IntPtr browserWrite = fromBrowser.ClientSafePipeHandle.DangerousGetHandle();
+			SafePipeHandle browserRead = toBrowser.ClientSafePipeHandle;
+			SafePipeHandle browserWrite = fromBrowser.ClientSafePipeHandle;
 			List<string> withHandles = [.. arguments];
 			withHandles.Insert(PipeBrowserSpawner.IndexBeforeTrailingUrl(withHandles),
-				IoPipesSwitch + HandleText(browserRead) + "," + HandleText(browserWrite));
-			(int pid, SafeProcessHandle process) = CreateProcess(executablePath, withHandles, [browserRead, browserWrite]);
-			toBrowser.DisposeLocalCopyOfClientHandle();
-			fromBrowser.DisposeLocalCopyOfClientHandle();
-			// The process handle is held until disposal: while it is open, Windows never gives the id to another process.
+				IoPipesSwitch + HandleText(browserRead.DangerousGetHandle()) + "," + HandleText(browserWrite.DangerousGetHandle()));
+			int pid;
+			SafeProcessHandle process;
+			try {
+				MakeInheritable(browserRead);
+				MakeInheritable(browserWrite);
+				(pid, process) = CreateProcess(executablePath, withHandles,
+					[browserRead.DangerousGetHandle(), browserWrite.DangerousGetHandle()]);
+			}
+			finally {
+				toBrowser.DisposeLocalCopyOfClientHandle();
+				fromBrowser.DisposeLocalCopyOfClientHandle();
+			}
+			// The process handle is held until release: while it is open, Windows never gives the id to another process.
 			return new PipeBrowserProcess(pid, ProcessStartTime.Read(pid), fromBrowser, toBrowser,
-				milliseconds => WaitForSingleObject(process, (uint)Math.Max(0, milliseconds)) == WaitObject0,
-				process.Dispose);
+				new HandleLifetime(process));
 		}
 		catch {
 			toBrowser.Dispose();
 			fromBrowser.Dispose();
 			throw;
 		}
+	}
+
+	private static void MakeInheritable(SafePipeHandle handle) {
+		if (!SetHandleInformation(handle, HandleFlagInherit, HandleFlagInherit)) {
+			throw Failure("SetHandleInformation");
+		}
+	}
+
+	/// <summary>The browser through the process handle CreateProcess returned.</summary>
+	private sealed class HandleLifetime(SafeProcessHandle process) : IPipeProcessLifetime {
+
+		public bool WaitForExit(int milliseconds) =>
+			WaitForSingleObject(process, (uint)Math.Max(0, milliseconds)) == WaitObject0;
+
+		public void Terminate() => TerminateProcess(process, 1);
+
+		public void Release() => process.Dispose();
 	}
 
 	internal static string HandleText(IntPtr handle) => handle.ToInt64().ToString(CultureInfo.InvariantCulture);
@@ -223,4 +249,12 @@ internal static class WindowsPipeSpawn {
 
 	[DllImport("kernel32.dll", SetLastError = true)]
 	private static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool TerminateProcess(SafeProcessHandle handle, uint exitCode);
+
+	[DllImport("kernel32.dll", SetLastError = true)]
+	[return: MarshalAs(UnmanagedType.Bool)]
+	private static extern bool SetHandleInformation(SafePipeHandle handle, int mask, int flags);
 }

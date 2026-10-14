@@ -280,9 +280,19 @@ jobs:
             --framework net10.0 \
             --filter "(FullyQualifiedName~OutputPathConfinementTests|FullyQualifiedName~ConfinedFileAccessTests|FullyQualifiedName~BoundedGetDeadlineTests|FullyQualifiedName~PipeBrowserSpawnerTests|FullyQualifiedName~HeadlessPageIntegrationTests)&TestCategory=Integration" \
             -p:RunAnalyzers=false \
+            --logger "console;verbosity=normal" \
             | tee unix-file-mode-tests.log
+          # The pipe tests must have RUN: HeadlessPageIntegrationTests ignores itself when no Chromium is found, and the
+          # confinement cases alone would still clear the floor below.
+          for name in Start_Should_Hand_The_Child_Its_Pipe_On_Descriptors_3_And_4 HeadlessPage_Should_Read_Click_And_Collect_On_A_Freedom_Ui_Shaped_Page; do
+            if ! grep -Eq "Passed ${name}" unix-file-mode-tests.log; then
+              echo "::error::${name} did not pass on this leg (skipped, or no Chromium found)." >&2
+              exit 1
+            fi
+          done
           # Executed-count floor: a mis-selected filter that ran nothing (or a stray subset) must not pass
-          # silently. Both legs currently execute 32 cases; the floor leaves room for platform skips.
+          # silently. Both legs execute 32 confinement cases plus the two pipe tests; the floor leaves room for platform
+          # skips.
           passed=$(grep -Eo 'Passed:[[:space:]]+[0-9]+' unix-file-mode-tests.log | tail -1 | grep -Eo '[0-9]+' || echo 0)
           echo "Executed (passed) confinement cases: ${passed}"
           if [ "${passed}" -lt 20 ]; then

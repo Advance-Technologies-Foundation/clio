@@ -92,7 +92,7 @@ public sealed class HeadlessBrowserLauncher(
 			return spawner.Start(browserPath, BuildArguments(userDataDir, RunsAsRootOnLinux()));
 		}
 		catch (Exception exception) when (exception is Win32Exception or PlatformNotSupportedException
-			or IOException or UnauthorizedAccessException) {
+			or IOException or UnauthorizedAccessException or DllNotFoundException or EntryPointNotFoundException) {
 			throw new InvalidOperationException(
 				$"Error: failed to launch the browser at '{browserPath}' with a private DevTools pipe ({exception.Message}). "
 				+ "page-smoke never falls back to an open debugging port.", exception);
@@ -143,11 +143,14 @@ public sealed class HeadlessBrowserLauncher(
 				: exception.Message.TrimEnd('.')
 		};
 		string message = $"Error: the browser at '{browserPath}' could not be driven: {why}.";
-		if (OperatingSystem.IsWindows()) {
-			message += " " + WindowsVersionHint;
-		}
-		else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
-			message += " " + LinuxLibrariesHint;
+		// The platform hints explain a browser that never answers at all, not one that answered and then refused.
+		if (exception is OperationCanceledException or CdpSessionClosedException) {
+			if (OperatingSystem.IsWindows()) {
+				message += " " + WindowsVersionHint;
+			}
+			else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) {
+				message += " " + LinuxLibrariesHint;
+			}
 		}
 		return message;
 	}
@@ -247,14 +250,17 @@ public sealed class HeadlessBrowserLauncher(
 				return;
 			}
 			try {
-				// Closing the pipe first: Chromium shuts itself down when its DevTools pipe closes.
+				// Closes the pipe, which is Chromium's own signal to shut down; the kill below is what guarantees it.
 				await session.DisposeAsync().ConfigureAwait(false);
 			}
 			catch (Exception exception) when (exception is not OutOfMemoryException) {
 				// Disposal never throws; the kill below still runs.
 			}
 			Kill();
-			// On Unix this also reaps the browser, which is clio's own child; on Windows it releases the process handle.
+			// The tree kill above needs a readable start time; the browser itself is clio's own (an unreaped child, an open
+			// process handle), so it is ended directly as well, whatever that read gave.
+			process.Terminate();
+			// On Unix this also reaps the browser; on Windows it releases the process handle.
 			process.WaitForExit(ExitWaitMs);
 			process.Dispose();
 			// The browser releases its profile files a moment after it exits.

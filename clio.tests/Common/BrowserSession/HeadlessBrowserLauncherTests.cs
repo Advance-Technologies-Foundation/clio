@@ -96,7 +96,7 @@ public sealed class HeadlessBrowserLauncherTests {
 	}
 
 	[Test]
-	[Description("Over the pipe the launcher finds the page target, attaches to it as a flat session, and every later page command carries that session id; disposing the browser closes the pipe, waits for the process and releases it.")]
+	[Description("Over the pipe the launcher finds the page target, attaches to it as a flat session, and every later page command carries that session id; disposing the browser closes the pipe, ends the process, waits for it and releases it.")]
 	public async Task LaunchAsync_Should_Attach_To_The_Page_Over_The_Pipe() {
 		// Arrange
 		using FakePipeBrowser fake = new();
@@ -131,6 +131,8 @@ public sealed class HeadlessBrowserLauncherTests {
 			because: "a flat session is addressed by a sessionId on each message over the one pipe");
 		commands[0].TryGetProperty("sessionId", out _).Should().BeFalse(because: "the target listing is a browser command");
 		commands[3].GetProperty("sessionId").GetString().Should().Be("S1", because: "page commands go to the attached page");
+		fake.Process.Terminated.Should().BeTrue(
+			because: "the browser is clio's own process and is ended directly, even when its start time could not be read");
 		fake.Process.WaitedForExit.Should().BeTrue(because: "disposal waits for (and on Unix reaps) the browser");
 		fake.Process.Released.Should().BeTrue(because: "the native process handle is released");
 	}
@@ -155,6 +157,52 @@ public sealed class HeadlessBrowserLauncherTests {
 		fileSystem.Received().DeleteDirectory(
 			Arg.Is<string>(path => path.Contains(HeadlessBrowserLauncher.ProfilePrefix)), true);
 		fake.Process.Released.Should().BeTrue(because: "a failed launch still releases the process");
+	}
+
+	[Test]
+	[Description("A browser that answers but refuses the attach fails the launch with the browser's own error, without the platform hints meant for a browser that never answers.")]
+	public async Task LaunchAsync_Should_Report_A_Refused_Attach_Without_The_Platform_Hints() {
+		// Arrange
+		using FakePipeBrowser fake = new();
+		Task browserSide = fake.ServeAsync(command => {
+			int id = command.GetProperty("id").GetInt32();
+			return command.GetProperty("method").GetString() == "Target.getTargets"
+				? $$$"""{"id":{{{id}}},"result":{"targetInfos":[{"targetId":"P1","type":"page"}]}}"""
+				: $$$"""{"id":{{{id}}},"error":{"code":-32000,"message":"No target with given id found"}}""";
+		});
+		HeadlessBrowserLauncher launcher = new(fake.Spawner, FileSystemWithNoLeftovers(),
+			Substitute.For<IFileSecurityHardening>());
+
+		// Act
+		Func<Task> act = () => launcher.LaunchAsync("/opt/chrome", CancellationToken.None).WaitAsync(Guard);
+
+		// Assert
+		string message = (await act.Should().ThrowAsync<InvalidOperationException>(because: "the page could not be attached"))
+			.Which.Message;
+		await browserSide.WaitAsync(Guard);
+		message.Should().Contain("No target with given id found", because: "the browser's own reason is reported");
+		message.Should().NotContain(HeadlessBrowserLauncher.WindowsVersionHint,
+			because: "a browser that answered over its pipe is new enough to have taken it");
+		message.Should().NotContain(HeadlessBrowserLauncher.LinuxLibrariesHint,
+			because: "a browser that answered over its pipe started, so no library is missing");
+	}
+
+	[Test]
+	[Description("A libc without the posix_spawn entry points clio binds is a clear launch failure, not an unhandled interop exception.")]
+	public async Task LaunchAsync_Should_Report_A_Missing_Native_Entry_Point_As_A_Launch_Failure() {
+		// Arrange
+		IPipeBrowserSpawner spawner = Substitute.For<IPipeBrowserSpawner>();
+		spawner.Start(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>())
+			.Throws(new EntryPointNotFoundException("posix_spawn_file_actions_adddup2"));
+		HeadlessBrowserLauncher launcher = new(spawner, FileSystemWithNoLeftovers(), Substitute.For<IFileSecurityHardening>());
+
+		// Act
+		Func<Task> act = () => launcher.LaunchAsync("/opt/chrome", CancellationToken.None);
+
+		// Assert
+		(await act.Should().ThrowAsync<InvalidOperationException>(because: "page-smoke reports launch failures it can explain"))
+			.Which.Message.Should().Contain("never falls back to an open debugging port",
+				because: "a platform without the pipe spawn still gets no port");
 	}
 
 	[Test]
@@ -249,7 +297,7 @@ public sealed class HeadlessBrowserLauncherTests {
 			Process = new FakeProcess();
 			Spawner = Substitute.For<IPipeBrowserSpawner>();
 			Spawner.Start(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>()).Returns(_ => new PipeBrowserProcess(
-				-1, null, _fromBrowser, _toBrowser, Process.WaitForExit, Process.Release));
+				-1, null, _fromBrowser, _toBrowser, Process));
 		}
 
 		internal IPipeBrowserSpawner Spawner { get; }
@@ -290,17 +338,21 @@ public sealed class HeadlessBrowserLauncherTests {
 		}
 	}
 
-	private sealed class FakeProcess {
+	private sealed class FakeProcess : IPipeProcessLifetime {
 
 		internal bool WaitedForExit { get; private set; }
 
+		internal bool Terminated { get; private set; }
+
 		internal bool Released { get; private set; }
 
-		internal bool WaitForExit(int milliseconds) {
+		public bool WaitForExit(int milliseconds) {
 			WaitedForExit = true;
 			return true;
 		}
 
-		internal void Release() => Released = true;
+		public void Terminate() => Terminated = true;
+
+		public void Release() => Released = true;
 	}
 }

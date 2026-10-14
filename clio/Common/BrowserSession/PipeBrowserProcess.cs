@@ -28,55 +28,67 @@ public interface IPipeBrowserSpawner {
 	PipeBrowserProcess Start(string executablePath, IReadOnlyList<string> arguments);
 }
 
+/// <summary>The native side of a browser clio started itself: waiting for it, ending it, and letting it go.</summary>
+/// <remarks>
+/// clio is the browser's parent and keeps it identifiable until <see cref="Release"/>: on Unix the exited child is not
+/// reaped before then, and on Windows the process handle stays open, so in neither case can its id name another process.
+/// </remarks>
+public interface IPipeProcessLifetime {
+
+	/// <summary>Waits for the process to exit.</summary>
+	/// <param name="milliseconds">The longest wait.</param>
+	/// <returns>True once the process has exited.</returns>
+	bool WaitForExit(int milliseconds);
+
+	/// <summary>Ends the process at once (SIGKILL, TerminateProcess) if it is still running.</summary>
+	void Terminate();
+
+	/// <summary>Frees what is held for the process: reaps it on Unix (now, or whenever it exits), closes its handle on Windows.</summary>
+	void Release();
+}
+
 /// <summary>A browser started by <see cref="IPipeBrowserSpawner"/>, and the two ends of its DevTools pipe.</summary>
 /// <remarks>
 /// Disposal closes nothing the caller still reads: the streams belong to whoever wraps them in a transport. It releases
-/// the native process handle (Windows) or reaps the exited child (Unix), after <see cref="WaitForExit"/>.
+/// the process through its <see cref="IPipeProcessLifetime"/>.
 /// </remarks>
-public sealed class PipeBrowserProcess : IDisposable {
+/// <param name="processId">The browser's process id.</param>
+/// <param name="startedAtUtc">The browser's start time, or null when it could not be read.</param>
+/// <param name="fromBrowser">The read end of the pipe the browser writes its replies and events to.</param>
+/// <param name="toBrowser">The write end of the pipe the browser reads commands from.</param>
+/// <param name="lifetime">Waits for, ends and releases the process.</param>
+public sealed class PipeBrowserProcess(int processId, DateTimeOffset? startedAtUtc, Stream fromBrowser, Stream toBrowser,
+	IPipeProcessLifetime lifetime) : IDisposable {
 
-	private readonly Func<int, bool> _waitForExit;
-	private readonly Action _release;
+	private readonly IPipeProcessLifetime _lifetime = lifetime ?? throw new ArgumentNullException(nameof(lifetime));
 	private int _disposed;
 
-	/// <summary>Wraps a started browser.</summary>
-	/// <param name="processId">The browser's process id.</param>
-	/// <param name="startedAtUtc">The browser's start time, or null when it could not be read.</param>
-	/// <param name="fromBrowser">The read end of the pipe the browser writes its replies and events to.</param>
-	/// <param name="toBrowser">The write end of the pipe the browser reads commands from.</param>
-	/// <param name="waitForExit">Waits up to the given milliseconds for the process to exit; true once it has.</param>
-	/// <param name="release">Frees the native resources held for the process.</param>
-	public PipeBrowserProcess(int processId, DateTimeOffset? startedAtUtc, Stream fromBrowser, Stream toBrowser,
-		Func<int, bool> waitForExit, Action release) {
-		ProcessId = processId;
-		StartedAtUtc = startedAtUtc;
-		FromBrowser = fromBrowser ?? throw new ArgumentNullException(nameof(fromBrowser));
-		ToBrowser = toBrowser ?? throw new ArgumentNullException(nameof(toBrowser));
-		_waitForExit = waitForExit ?? (_ => true);
-		_release = release ?? (() => { });
-	}
-
 	/// <summary>The browser's process id.</summary>
-	public int ProcessId { get; }
+	public int ProcessId { get; } = processId;
 
 	/// <summary>The browser's start time, which with <see cref="ProcessId"/> identifies it; null when unreadable.</summary>
-	public DateTimeOffset? StartedAtUtc { get; }
+	public DateTimeOffset? StartedAtUtc { get; } = startedAtUtc;
 
 	/// <summary>The stream the browser's replies and events arrive on.</summary>
-	public Stream FromBrowser { get; }
+	public Stream FromBrowser { get; } = fromBrowser ?? throw new ArgumentNullException(nameof(fromBrowser));
 
 	/// <summary>The stream commands are written to.</summary>
-	public Stream ToBrowser { get; }
+	public Stream ToBrowser { get; } = toBrowser ?? throw new ArgumentNullException(nameof(toBrowser));
 
-	/// <summary>Waits for the browser to exit.</summary>
-	/// <param name="milliseconds">The longest wait.</param>
-	/// <returns>True once the process has exited.</returns>
-	public bool WaitForExit(int milliseconds) => Volatile.Read(ref _disposed) == 1 || _waitForExit(milliseconds);
+	/// <inheritdoc cref="IPipeProcessLifetime.WaitForExit" />
+	public bool WaitForExit(int milliseconds) => Volatile.Read(ref _disposed) == 1 || _lifetime.WaitForExit(milliseconds);
+
+	/// <inheritdoc cref="IPipeProcessLifetime.Terminate" />
+	public void Terminate() {
+		if (Volatile.Read(ref _disposed) == 0) {
+			_lifetime.Terminate();
+		}
+	}
 
 	/// <inheritdoc />
 	public void Dispose() {
 		if (Interlocked.Exchange(ref _disposed, 1) == 0) {
-			_release();
+			_lifetime.Release();
 		}
 	}
 }

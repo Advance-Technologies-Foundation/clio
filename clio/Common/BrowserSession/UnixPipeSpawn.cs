@@ -25,7 +25,7 @@ internal static class UnixPipeSpawn {
 	private const int OWrOnly = 1;
 	private const int WNoHang = 1;
 	private const int EIntr = 4;
-	private const int EChild = 10;
+	private const int SigKill = 9;
 	// Darwin's posix_spawn extension: every descriptor not named by a file action is closed in the child.
 	private const short PosixSpawnCloexecDefault = 0x4000;
 	private const int ReapPollMs = 50;
@@ -43,10 +43,7 @@ internal static class UnixPipeSpawn {
 			int pid = Spawn(executablePath, arguments, browserRead, browserWrite);
 			toBrowser.DisposeLocalCopyOfClientHandle();
 			fromBrowser.DisposeLocalCopyOfClientHandle();
-			int reaped = 0;
-			return new PipeBrowserProcess(pid, ProcessStartTime.Read(pid), fromBrowser, toBrowser,
-				milliseconds => Reap(pid, milliseconds, ref reaped),
-				() => Reap(pid, 0, ref reaped));
+			return new PipeBrowserProcess(pid, ProcessStartTime.Read(pid), fromBrowser, toBrowser, new ChildLifetime(pid));
 		}
 		catch {
 			toBrowser.Dispose();
@@ -145,31 +142,61 @@ internal static class UnixPipeSpawn {
 		}
 	}
 
-	// The browser is clio's own child, so its id cannot be reused until it is reaped here; .NET reaps only the children
-	// System.Diagnostics.Process started. Reaping once is enough: a later call finds nothing to wait for.
-	private static bool Reap(int pid, int milliseconds, ref int reaped) {
-		long deadline = Environment.TickCount64 + milliseconds;
-		while (Volatile.Read(ref reaped) == 0) {
-			int result = Interop.WaitPid(pid, out _, WNoHang);
-			if (result == pid) {
-				Volatile.Write(ref reaped, 1);
-				break;
+	/// <summary>
+	/// The browser as clio's own child. Its id cannot be reused until it is reaped here, which is what makes killing it by
+	/// id safe; .NET reaps only the children System.Diagnostics.Process started, so a child left unreaped is a zombie.
+	/// </summary>
+	private sealed class ChildLifetime(int pid) : IPipeProcessLifetime {
+
+		private int _reaped;
+
+		public bool WaitForExit(int milliseconds) {
+			long deadline = Environment.TickCount64 + milliseconds;
+			while (!TryReap()) {
+				if (Environment.TickCount64 >= deadline) {
+					return false;
+				}
+				Thread.Sleep(ReapPollMs);
 			}
-			if (result == -1) {
-				int error = Marshal.GetLastPInvokeError();
-				if (error == EIntr) {
+			return true;
+		}
+
+		public void Terminate() {
+			if (Volatile.Read(ref _reaped) == 0) {
+				Interop.Kill(pid, SigKill);
+			}
+		}
+
+		public void Release() {
+			if (TryReap()) {
+				return;
+			}
+			// Still running (it ignored the closed pipe and the kill has not landed yet): reap it whenever it does exit,
+			// rather than leave a zombie for the life of a long-running MCP server.
+			Thread reaper = new(() => {
+				int result;
+				do {
+					result = Interop.WaitPid(pid, out _, 0);
+				} while (result == -1 && Marshal.GetLastPInvokeError() == EIntr);
+				Volatile.Write(ref _reaped, 1);
+			}) { IsBackground = true, Name = "clio-browser-reaper" };
+			reaper.Start();
+		}
+
+		private bool TryReap() {
+			while (Volatile.Read(ref _reaped) == 0) {
+				int result = Interop.WaitPid(pid, out _, WNoHang);
+				if (result == 0) {
+					return false;
+				}
+				if (result == -1 && Marshal.GetLastPInvokeError() == EIntr) {
 					continue;
 				}
-				// ECHILD: somebody else reaped it (a runtime that reaps every child); anything else will not improve.
-				Volatile.Write(ref reaped, 1);
-				return error == EChild;
+				// Reaped now, or (ECHILD) by a runtime that reaps every child; either way there is nothing left to wait for.
+				Volatile.Write(ref _reaped, 1);
 			}
-			if (Environment.TickCount64 >= deadline) {
-				return false;
-			}
-			Thread.Sleep(ReapPollMs);
+			return true;
 		}
-		return true;
 	}
 
 	private static void Check(int result, string function) {
@@ -240,6 +267,9 @@ internal static class UnixPipeSpawn {
 
 		[DllImport("libc", EntryPoint = "posix_spawnattr_setflags")]
 		internal static extern int AttrSetFlags(IntPtr attributes, short flags);
+
+		[DllImport("libc", EntryPoint = "kill", SetLastError = true)]
+		internal static extern int Kill(int pid, int signal);
 
 		[DllImport("libc", EntryPoint = "waitpid", SetLastError = true)]
 		internal static extern int WaitPid(int pid, out int status, int options);

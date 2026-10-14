@@ -1804,6 +1804,9 @@ public class BindingsModule {
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpSession)
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.ICdpTransport)
 					|| implementedInterface == typeof(Clio.Common.BrowserSession.IHeadlessBrowser)
+					// The native lifetime of a browser the pipe spawner started (an unreaped child, an open process
+					// handle) exists only around that process (ENG-103330).
+					|| implementedInterface == typeof(Clio.Common.BrowserSession.IPipeProcessLifetime)
 					// The MCP credential-passthrough seam is registered explicitly in the
 					// mcp-http host only (McpHttpServerCommand.Run): the accessor depends on
 					// IHttpContextAccessor, which is not part of the stdio graph, and both are
