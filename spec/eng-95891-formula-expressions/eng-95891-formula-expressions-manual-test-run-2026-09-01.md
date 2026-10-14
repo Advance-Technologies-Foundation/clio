@@ -10,7 +10,7 @@ and none was executed. That is mode `browser`, and it has not run.
 |---|---|
 | Mode | `agent` |
 | Isolation | `isolated` (no API key; the executor still loaded the global CLAUDE.md, user skills, plugins, hooks) |
-| Stand | `krestov-test` — http://d_krestov_n.tscrm.com:1026, core 10.0.731.0 |
+| Stand | `krestov-test` — http://<dev-stand>:1026, core 10.0.731.0 |
 | Package | CrtProcessBuilder **1.4.0.18** (stand == branch; install skipped by design) |
 | clio | `feature/ENG-95891-formula-expressions` @ `77a8ff1ba`, built locally |
 | Guidance | **local**, 1.13.54, git transport, revision `950a998…`, sequence 1013054 |
