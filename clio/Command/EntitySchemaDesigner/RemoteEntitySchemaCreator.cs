@@ -223,19 +223,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (parsedColumn.TitleLocalizations == null && string.IsNullOrWhiteSpace(parsedColumn.Title)) {
 			return;
 		}
-		TitleLocalizationNormalizationResult titleNormalization =
-			EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
-				parsedColumn.TitleLocalizations,
-				parsedColumn.Title,
-				TitleLocalizationsArgumentName,
-				cultureName);
-		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
-		if (titleNormalization.Localizations != null) {
-			EntitySchemaDesignerSupport.ReplaceLocalizableValues(caption, titleNormalization.Localizations);
-		} else {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, titleNormalization.EffectiveTitle, cultureName);
-		}
-		column.Caption = caption;
+		EntitySchemaDesignerSupport.ApplyColumnCaptionAndDescription(column, parsedColumn.Title,
+			parsedColumn.TitleLocalizations, null, null, cultureName);
 	}
 
 	private static void NormalizeAdministrationMetadata(EntityDesignSchemaDto schema) {

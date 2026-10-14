@@ -865,32 +865,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// </summary>
 	private static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column,
 		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
-		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
-		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
-		if (options.TitleLocalizations != null) {
-			TitleLocalizationNormalizationResult titleNormalization =
-				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
-					options.TitleLocalizations,
-					options.Title,
-					"title-localizations",
-					effectiveCultureName);
-			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
-				caption,
-				titleNormalization.Localizations!);
-		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim(), effectiveCultureName);
-		}
-		if (options.DescriptionLocalizations != null) {
-			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
-				description,
-				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
-					options.DescriptionLocalizations,
-					"description-localizations")!);
-		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description, effectiveCultureName);
-		}
-		column.Caption = caption;
-		column.Description = description;
+		EntitySchemaDesignerSupport.ApplyColumnCaptionAndDescription(column, options.Title, options.TitleLocalizations,
+			options.Description, options.DescriptionLocalizations, effectiveCultureName);
 	}
 
 	/// <summary>

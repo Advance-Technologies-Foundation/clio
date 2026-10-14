@@ -251,6 +251,36 @@ internal static class EntitySchemaDesignerSupport
 		return new TitleLocalizationNormalizationResult(normalizedValues, effectiveTitle ?? normalizedFallbackValue);
 	}
 
+	/// <summary>
+	/// Writes a column caption and description in the effective culture: a localization map replaces the matching
+	/// cultures, otherwise a scalar value is set in the effective culture. An absent value leaves the field as is.
+	/// </summary>
+	internal static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column, string? title,
+		IReadOnlyDictionary<string, string>? titleLocalizations, string? description,
+		IReadOnlyDictionary<string, string>? descriptionLocalizations, string effectiveCultureName) {
+		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
+		List<LocalizableStringDto> descriptionValues = column.Description?.ToList() ?? [];
+		if (titleLocalizations != null) {
+			TitleLocalizationNormalizationResult titleNormalization = NormalizeTitleLocalizations(
+				titleLocalizations,
+				title,
+				"title-localizations",
+				effectiveCultureName);
+			ReplaceLocalizableValues(caption, titleNormalization.Localizations!);
+		} else if (!string.IsNullOrWhiteSpace(title)) {
+			SetLocalizableValue(caption, title.Trim(), effectiveCultureName);
+		}
+		if (descriptionLocalizations != null) {
+			ReplaceLocalizableValues(
+				descriptionValues,
+				NormalizeLocalizationMap(descriptionLocalizations, "description-localizations")!);
+		} else if (!string.IsNullOrWhiteSpace(description)) {
+			SetLocalizableValue(descriptionValues, description, effectiveCultureName);
+		}
+		column.Caption = caption;
+		column.Description = descriptionValues;
+	}
+
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(
 		IReadOnlyDictionary<string, string>? values,
 		string? fallbackValue,
