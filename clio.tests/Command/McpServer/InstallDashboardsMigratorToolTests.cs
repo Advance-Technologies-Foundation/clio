@@ -70,14 +70,24 @@ public sealed class InstallDashboardsMigratorToolTests {
 			because: "the curated contract, the CLI verb and the docs share this identifier");
 		attribute.Destructive.Should().BeTrue(
 			because: "the tool runs a configuration build on a live instance and restarts it");
-		attribute.Idempotent.Should().BeTrue(
-			because: "a sequential re-run installs again or hits the same refusal; both converge");
+		attribute.Idempotent.Should().BeFalse(
+			because: "every run that installs is another configuration build and site restart for every user, so a "
+				+ "host must not repeat it unasked as an idempotent call would allow (ENG-102116)");
 		typeof(InstallDashboardsMigratorTool).GetCustomAttributes(typeof(FeatureToggleAttribute), true)
 			.Should().BeEmpty(because: "a gated primitive is filtered out of MCP registration");
 		description.Should().Contain(BundledPackages.DashboardsMigratorPackageName,
 			because: "the description names the package the tool installs");
 		description.Should().Contain("Ping",
 			because: "the description discloses HOW the outcome is checked");
+		string normalized = System.Text.RegularExpressions.Regex.Replace(description, @"\s+", " ",
+			System.Text.RegularExpressions.RegexOptions.None, System.TimeSpan.FromSeconds(1));
+		normalized.Should().MatchRegex(InstallProcessBuilderToolTests.AskBeforeEveryCallPattern,
+			because: "the install restarts the site for every user and clio-run collapses the Destructive flag, so the "
+				+ "description is the consent channel - the same rule core-rules states for both bundled installs");
+		normalized.Should().MatchRegex(InstallProcessBuilderToolTests.ConfigurationBuildAndRestartPattern,
+			because: "the user can only weigh the request if the cost is named");
+		normalized.Should().NotContain("otherwise safe",
+			because: "a re-run is another build and restart, not a free retry");
 		description.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationRangePattern,
 			because: "elapsed time is a property of the target; a figure here is read as a promise");
 		description.Should().NotMatchRegex(InstallProcessBuilderToolTests.DurationFigurePattern,

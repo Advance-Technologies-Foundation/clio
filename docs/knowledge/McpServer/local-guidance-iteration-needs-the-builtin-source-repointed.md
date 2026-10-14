@@ -38,8 +38,8 @@ Two further facts that cost time on their own:
   loopback. The branch has to be pushed. A loopback HTTP git server would pass validation, but the
   clone is a partial clone (`--filter=blob:none`), so a dumb static file server cannot serve it.
 - **A running MCP server does not see a fresh install.** It resolves the active bundle at startup, so
-  `get-guidance` in an already-connected session answers `guidance-unavailable` with an empty
-  `availableGuides` no matter what `info-knowledge` reports. Verify against a server you start yourself
+  `get-guidance` in an already-connected session answers `guidance-unavailable` (and `name=list`
+  returns no catalog) no matter what `info-knowledge` reports. Verify against a server you start yourself
   (`clio mcp-server` over stdio), not against the session's.
 
 **Why it is this way** — the built-in entry exists so a stock install serves curated guidance with a

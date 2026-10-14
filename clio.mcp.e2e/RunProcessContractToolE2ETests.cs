@@ -84,7 +84,8 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 		string processName,
 		string environmentName,
 		Dictionary<string, object?>? parameters,
-		IReadOnlyList<string>? resultParameters = null) {
+		IReadOnlyList<string>? resultParameters = null,
+		IReadOnlyDictionary<string, object?>? extraArgs = null) {
 		Dictionary<string, object?> args = new() {
 			["process-name"] = processName,
 			["environment-name"] = environmentName
@@ -94,6 +95,9 @@ public sealed class RunProcessContractToolE2ETests : McpContractFixtureBase {
 		}
 		if (resultParameters is not null) {
 			args["result-parameters"] = resultParameters;
+		}
+		foreach ((string key, object? value) in extraArgs ?? new Dictionary<string, object?>()) {
+			args[key] = value;
 		}
 
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

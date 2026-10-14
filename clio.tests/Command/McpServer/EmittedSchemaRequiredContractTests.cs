@@ -163,9 +163,9 @@ public sealed class EmittedSchemaRequiredContractTests {
 	/// reason. The list is exhaustive and deliberately tiny: every other disagreement is a defect.
 	/// </summary>
 	private static readonly Dictionary<string, string> CuratedStricterThanEmittedByDesign = new() {
-		["get-guidance"] = "'name' is genuinely mandatory, but the record parameter is nullable so that a " +
-			"legacy-alias payload (topic/guide/article via [JsonExtensionData]) reaches the tool and comes " +
-			"back as a typed {success:false, availableGuides:[…]} answer instead of an SDK binding error. " +
+		["get-guidance"] = "'name' is the documented routing key, but the record parameter is nullable so that a " +
+			"legacy-alias payload (topic/guide/article via [JsonExtensionData]) reaches the tool and is resolved " +
+			"as the name, and an omitted name comes back as the guide catalog instead of an SDK binding error. " +
 			"The curated contract states the requirement the caller has to satisfy; the emitted schema " +
 			"states what the binder accepts."
 	};

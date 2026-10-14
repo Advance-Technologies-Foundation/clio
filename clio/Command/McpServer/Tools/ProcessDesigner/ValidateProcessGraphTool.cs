@@ -111,12 +111,23 @@ public sealed class ValidateProcessGraphTool {
 	// than the opening of a longer explanation that the cap then cuts mid-word. See
 	// docs/knowledge/McpServer/first-sentence-of-a-description-becomes-the-compact-index-purpose.md
 	[Description("Checks a planned Creatio business-process graph against the BPMN connection rules before you build it. "
-		+ "Nodes are given by data-id (e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain; and results[], the activity-result CAPTIONS deciding a conditional branch when its predicate is a selection rather than text - pass it and R13 stops asking for a condition that branch neither needs nor can use) and are checked against rules R1-R20 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder) (named by environment-name). Returns structured findings (error/warning + ruleId). nodes is REQUIRED - a call supplying none is REFUSED, not validated as an empty graph, and this tool never reads a process from the environment (use describe-business-process for that). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask (incl. its readData/changeData/addData/deleteData/performTask aliases)/sendEmail/approval/openEditPage/preconfiguredPage/changeAccessRights/subProcess elements plus exclusiveGateway, parallelGateway, formulaTask and scriptTask, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts and intermediate events - so the fork narrows rather than closes. The Sub-process element IS buildable now (the callActivity data-id here, the subProcess token there); what is not is the EVENT and the EXPANDED sub-process, which share the platform class but call no other process. An element that runs the called process ONCE PER ITEM of a collection IS buildable too (subProcess.multiInstanceOptions), and this validator neither checks nor needs it: the mode is element configuration, not graph shape, so it changes no node type and no edge. Note also that this tool cannot check R16 - whether the called process begins with a Simple start event - because a planned graph carries no reference to it; the build path refuses that one, and execute-esq over VwProcessLib answers it up front through HasStartEvent. The activity-result dialect IS buildable now (flows[].results / setFlowResults), and a formula on such a connector is REFUSED by the build, so do not plan one; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
+		+ "Nodes are given by data-id (e.g. startEvent/readDataUserTask/exclusiveGateway/endEvent; edges by flow-kind sequence|conditional|default - an omitted flow-kind is a plain sequence flow, an UNKNOWN one is refused rather than treated as plain; and results[], the activity-result CAPTIONS deciding a conditional branch when its predicate is a selection rather than text - pass it and R13 stops asking for a condition that branch neither needs nor can use) and are checked against rules R1-R20 (R18: a conditional flow may have at most ONE outgoing sibling that carries no condition - the platform drops one of them and runs the other beside the branch the condition chose). The graph is validated in-memory, but the tool requires the 'CrtProcessBuilder' package to be installed on the target environment (install it with install-process-builder after user approval) (named by environment-name). Returns structured findings (error/warning + ruleId). nodes is REQUIRED - a call supplying none is REFUSED, not validated as an empty graph, and this tool never reads a process from the environment (use describe-business-process for that). Call this BEFORE driving the designer. IMPORTANT: a passing graph is NOT necessarily buildable — the rules cover the full BPMN catalog (gateways, conditional/default flows, timers, sub-processes), while create-business-process / modify-business-process build only startEvent/signalStart/endEvent/userTask (incl. its readData/changeData/addData/deleteData/performTask aliases)/sendEmail/approval/openEditPage/preconfiguredPage/changeAccessRights/subProcess elements plus exclusiveGateway, parallelGateway, formulaTask and scriptTask, and all three flow kinds declaratively (flows[].kind with flows[].condition). Still NOT buildable: inclusiveGateway, eventBasedGateway, timer/message starts and intermediate events - so the fork narrows rather than closes. The Sub-process element IS buildable now (the callActivity data-id here, the subProcess token there); what is not is the EVENT and the EXPANDED sub-process, which share the platform class but call no other process. An element that runs the called process ONCE PER ITEM of a collection IS buildable too (subProcess.multiInstanceOptions), and this validator neither checks nor needs it: the mode is element configuration, not graph shape, so it changes no node type and no edge. Note also that this tool cannot check R16 - whether the called process begins with a Simple start event - because a planned graph carries no reference to it; the build path refuses that one, and execute-esq over VwProcessLib answers it up front through HasStartEvent. The activity-result dialect IS buildable now (flows[].results / setFlowResults), and a formula on such a connector is REFUSED by the build, so do not plan one; check the buildable slice in get-guidance name=process-modeling before promising a build; get-guidance name=process-formulas for an `expression` mapping source or a conditional-flow condition.")]
 	public ValidateProcessGraphResponse Validate([Required] ValidateProcessGraphArgs args) {
+		List<string> warnings = [];
 		try {
 			if (args is null) {
-				return new ValidateProcessGraphResponse { Success = false, Error = NullArgsError };
+				return new ValidateProcessGraphResponse { Warnings = warnings, Success = false, Error = NullArgsError };
 			}
+
+			// ENG-103025: a graph sent as graph/descriptor/process, or as the elements/flows of a descriptor, is the
+			// same graph under another name: it runs and the response says which canonical form to use. An
+			// ambiguous combination is refused, and so is anything the resolver cannot read as a graph.
+			ProcessToolArgumentAliases.GraphResolution aliases = ProcessToolArgumentAliases.ResolveGraph(args);
+			warnings.AddRange(aliases.Warnings);
+			if (aliases.Error is not null) {
+				return new ValidateProcessGraphResponse { Warnings = warnings, Success = false, Error = aliases.Error };
+			}
+			args = aliases.Args;
 
 			// The only unknown-key defence this tool has; without it this method answers about a graph it was
 			// NOT given. The helper's docs carry the two reasons the filter never covers it. Checked BEFORE the
@@ -124,14 +135,14 @@ public sealed class ValidateProcessGraphTool {
 			string argumentError = McpToolArgumentSupport.BuildUnknownArgumentError(
 				args.ExtensionData, ValidArgsHint);
 			if (!string.IsNullOrWhiteSpace(argumentError)) {
-				return new ValidateProcessGraphResponse { Success = false, Error = argumentError };
+				return new ValidateProcessGraphResponse { Warnings = warnings, Success = false, Error = argumentError };
 			}
 
 			// An empty node set is a MISSING ARGUMENT, not a graph that fails R3. Running the rules over it
 			// returned "Process has no start event." - a real rule id and a plausible message about a process
 			// the tool never read, which is worse than silence because it reads as authoritative.
 			if (args.Nodes is null || args.Nodes.Count == 0) {
-				return new ValidateProcessGraphResponse { Success = false, Error = NoGraphSuppliedError };
+				return new ValidateProcessGraphResponse { Warnings = warnings, Success = false, Error = NoGraphSuppliedError };
 			}
 
 			// ENG-98566 review findings 1 and 2. The top-level guard above says nothing about what is INSIDE
@@ -141,7 +152,7 @@ public sealed class ValidateProcessGraphTool {
 			// about a graph the caller never described. That is this ticket's own defect one level down.
 			string entryError = BuildEntryError(args.Nodes, args.Edges);
 			if (!string.IsNullOrWhiteSpace(entryError)) {
-				return new ValidateProcessGraphResponse { Success = false, Error = entryError };
+				return new ValidateProcessGraphResponse { Warnings = warnings, Success = false, Error = entryError };
 			}
 
 			// Every other environment-requiring member of the family answers a blank environment-name with
@@ -152,7 +163,7 @@ public sealed class ValidateProcessGraphTool {
 			// the targeting - and until the catch below learned about EnvironmentResolutionException that
 			// throw arrived wrapped in a sentence about the caller's graph JSON.
 			if (string.IsNullOrWhiteSpace(args.EnvironmentName)) {
-				return new ValidateProcessGraphResponse {
+				return new ValidateProcessGraphResponse { Warnings = warnings,
 					Success = false, Error = ProcessTargetArguments.MissingEnvironmentError
 				};
 			}
@@ -172,7 +183,7 @@ public sealed class ValidateProcessGraphTool {
 
 			ProcessGraphValidationResult result = _validator.Validate(new ProcessGraph(nodes, edges));
 
-			return new ValidateProcessGraphResponse {
+			return new ValidateProcessGraphResponse { Warnings = warnings,
 				Success = true,
 				HasErrors = result.HasErrors,
 				Findings = result.Findings.Select(f => new ValidateProcessGraphFinding {
@@ -186,7 +197,7 @@ public sealed class ValidateProcessGraphTool {
 			};
 		}
 		catch (PackageRequirementException ex) {
-			return new ValidateProcessGraphResponse {
+			return new ValidateProcessGraphResponse { Warnings = warnings,
 				Success = false,
 				Error = ex.Message
 			};
@@ -197,18 +208,18 @@ public sealed class ValidateProcessGraphTool {
 			// below and came back as "validate-process-graph failed: Environment 'x' was not found.. Expected
 			// args: {nodes:[...]}" - an environment error wearing a graph-JSON example. That is the same
 			// blames-the-caller's-graph failure this ticket exists to remove, on its commonest path.
-			return new ValidateProcessGraphResponse {
+			return new ValidateProcessGraphResponse { Warnings = warnings,
 				Success = false, Error = SensitiveErrorTextRedactor.Redact(ex.Message)
 			};
 		}
 		catch (InvalidOperationException ex) {
-			return new ValidateProcessGraphResponse {
+			return new ValidateProcessGraphResponse { Warnings = warnings,
 				Success = false,
 				Error = ex.Message
 			};
 		}
 		catch (Exception ex) {
-			return new ValidateProcessGraphResponse {
+			return new ValidateProcessGraphResponse { Warnings = warnings,
 				Success = false,
 				Error = $"validate-process-graph failed: {SensitiveErrorTextRedactor.Redact(ex.Message)}. Expected args: " +
 					"{\"nodes\":[{\"name\":\"s\",\"type\":\"startEvent\"}],\"edges\":[{\"source\":\"s\",\"target\":\"r\",\"flow-kind\":\"sequence\"}]}."
@@ -362,6 +373,19 @@ public sealed class ValidateProcessGraphResponse {
 	[JsonPropertyName("findings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public List<ValidateProcessGraphFinding> Findings { get; init; }
+
+	private List<string> _warnings;
+
+	/// <summary>
+	/// Notes about how the call was read, e.g. that <c>graph</c> was accepted as <c>nodes</c>/<c>edges</c> (ENG-103025).
+	/// Omitted when there is nothing to say, so a canonical call answers byte-for-byte as before.
+	/// </summary>
+	[JsonPropertyName("warnings")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public List<string> Warnings {
+		get => _warnings;
+		init => _warnings = value is { Count: > 0 } ? value : null;
+	}
 }
 
 /// <summary>One finding in the validation response.</summary>

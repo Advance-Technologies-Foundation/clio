@@ -84,7 +84,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
 		 + "environment at CrtProcessBuilder 1.6.6.92 or newer — an older package is refused up front, naming the "
-		 + "version this operation needs; install or update it with install-process-builder. (The operation itself "
+		 + "version this operation needs; install or update it with install-process-builder after user approval. (The operation itself "
 		 + "first exists in 1.6.1.0; the floor moved to 1.6.2.1, to 1.6.6.14, to 1.6.6.30, to 1.6.6.40, to 1.6.6.77 and to 1.6.6.92 for the same reason "
 		 + "each time - the operations vocabulary grew email.messageSource/template/templateEntity, then "
 		 + "subProcess.multiInstanceOptions, then a scriptTask block on setElement, then sourceColumn / elementParameter.column, then names in a modify-path condition and the meta-path check, each of which an older "
@@ -96,7 +96,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "is a new process name, whose generated code does not exist until compiled). Heed the warning over this "
 		 + "sentence: in either case, ask the user and run compile-creatio with process-name set to the NEW version. "
 		 + "Either signal speaks for THIS call only: a compile an earlier save made owed is still owed. "
-		 + "Use describe-business-process to inspect the family.")]
+		 + "Use describe-business-process to inspect the family." + McpToolDescriptions.ProcessWriteDigest)]
 	public CommandExecutionResult ModifyProcessAsNewVersion(
 		[Description("modify-business-process-as-new-version parameters")] [Required]
 		ModifyProcessAsNewVersionArgs args
@@ -104,6 +104,16 @@ public class ModifyProcessAsNewVersionTool(
 		if (args is null) {
 			return CommandExecutionResult.FromValidationError(NullArgsError);
 		}
+
+		// ENG-103025: the identity synonyms modify-business-process accepts are accepted here too, by the same rule.
+		ProcessToolArgumentAliases.IdentityResolution identity = ProcessToolArgumentAliases.ResolveWriteTarget(
+			args.ExtensionData, args.ProcessName, args.ProcessUid);
+		if (identity.Error is not null) {
+			return CommandExecutionResult.FromValidationError(identity.Error);
+		}
+		args = args with {
+			ProcessName = identity.ProcessName, ProcessUid = identity.ProcessUid, ExtensionData = identity.Remaining
+		};
 
 		CommandExecutionResult targetError = ProcessTargetArguments.Validate(
 			args.ExtensionData, ValidArgsHint, args.EnvironmentName, args.ProcessName, args.ProcessUid);
@@ -141,10 +151,10 @@ public class ModifyProcessAsNewVersionTool(
 		// compile, and the package (from 1.6.6.30) warns in the same phrase.
 		CommandExecutionResult result = InternalExecute<ModifyProcessAsNewVersionCommand>(options);
 		if (result.ExitCode != 0) {
-			return result;
+			return ProcessToolArgumentAliases.WithWarnings(result, identity.Warnings);
 		}
 
-		return result.WithCompileNotRequiredNote();
+		return ProcessToolArgumentAliases.WithWarnings(result.WithCompileNotRequiredNote(), identity.Warnings);
 	}
 }
 

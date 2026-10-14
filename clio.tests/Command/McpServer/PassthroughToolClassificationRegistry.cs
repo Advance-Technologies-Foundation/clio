@@ -352,6 +352,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,
 			["get-sys-setting"] = PassthroughClassification.NotApplicable,
 			["get-target-package"] = PassthroughClassification.NotApplicable,
+			["place-section-in-workplace"] = PassthroughClassification.NotApplicable,
 			["get-theme"] = PassthroughClassification.NotApplicable,
 			["import-schema"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), not part of the ENG-93347 passthrough audit
 			["install-application"] = PassthroughClassification.NotApplicable,
@@ -412,6 +413,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-object-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as get-record-rights
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
+			["trigger-smoke"] = PassthroughClassification.NotApplicable, // ENG-103024: class (b) - one commandResolver.Resolve<ITriggerSmokeRunner>(...) per call, same pattern as odata-delete
 			["start-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-all-creatio"] = PassthroughClassification.NotApplicable,
 			["stop-creatio"] = PassthroughClassification.NotApplicable,

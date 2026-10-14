@@ -37,6 +37,24 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("ENG-103085: a filter nested inside setElement's readData STOPS the edit before anything is posted, and the refusal points to the setFilter operation.")]
+	public void ModifyProcess_ShouldNotPost_WhenABlockCarriesAKeyTheServerWouldDrop() {
+		// Arrange
+		IApplicationClient client = Substitute.For<IApplicationClient>();
+		ModifyBusinessProcessService service = CreateService(client);
+		const string operations = "[{\"op\":\"setElement\",\"elementName\":\"Read1\",\"elementUpdate\":"
+			+ "{\"readData\":{\"source\":\"Contact\",\"filter\":{}}}}]";
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*'elementUpdate.readData.filter'*setFilter*",
+			because: "the refusal names the misplaced key and the operation that sets a filter");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
 	[Description("Posts the process identity + operations array wrapped under 'request' to the ModifyProcess route and returns the applied-operation count on success.")]
 	public void ModifyProcess_ShouldPostWrappedRequestToModifyRoute_AndReturnResult_OnSuccess() {
 		// Arrange

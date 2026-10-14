@@ -262,6 +262,12 @@ public class EmailBlockExpectationTests {
 			because: "the caller needs the OBSERVATION stated plainly, since that is the part this check can stand behind");
 		warning.Should().Contain("install-process-builder",
 			because: "a warning without the remedy leaves the caller stuck");
+		warning.Should().Contain(Clio.Common.BundledPackages.ProcessBuilderInstallRemedy,
+			because: "ENG-102116: the warning rides on a SUCCESSFUL build, so the refusal hint never reaches it, and a "
+				+ "bare verb read as permission to run an install that rebuilds the configuration and restarts the "
+				+ "site for every user");
+		Clio.Common.BundledPackages.ProcessBuilderInstallRemedy.Should().Contain("after user approval",
+			because: "the remedy clause exists to carry the approval; without it the shared constant is a bare verb again");
 	}
 
 	[Test]
