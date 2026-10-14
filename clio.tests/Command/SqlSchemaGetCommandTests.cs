@@ -2,6 +2,7 @@ namespace Clio.Tests.Command;
 
 using System.IO;
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
 using NSubstitute;
@@ -36,6 +37,7 @@ public sealed class SqlSchemaGetCommandTests {
 	private IApplicationClient _applicationClient;
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
+	private ICaptionCultureResolver _captionCultureResolver;
 	private SqlSchemaGetCommand _command;
 
 	[SetUp]
@@ -43,10 +45,12 @@ public sealed class SqlSchemaGetCommandTests {
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_logger = Substitute.For<ILogger>();
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetSqlScriptSchema).Returns(GetSchemaUrl);
 		_command = new SqlSchemaGetCommand(
-			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger);
+			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger,
+			_captionCultureResolver);
 	}
 
 	[Test]
@@ -166,5 +170,38 @@ public sealed class SqlSchemaGetCommandTests {
 				"a login or error page can carry session tokens, so the body is never echoed back")
 			.And.NotContain("Error reading JObject",
 				"the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
+	}
+	[Test]
+	[Description("TryGetSchema returns the caption in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
+	public void TryGetSchema_Returns_Caption_In_Profile_Culture() {
+		// Arrange
+		string multiCultureJson = $$$"""
+			{
+			  "success": true,
+			  "schema": {
+			    "uId": "{{{SchemaUId}}}",
+			    "name": "UsrSchema",
+			    "body": "body",
+			    "caption": [
+			      {"cultureName": "ru-RU", "value": "Схема"},
+			      {"cultureName": "en-US", "value": "Schema"},
+			      {"cultureName": "uk-UA", "value": "Схема користувача"}
+			    ],
+			    "package": {"name": "Custom"}
+			  }
+			}
+			""";
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
+		var options = new SqlSchemaGetOptions { SchemaName = "UsrSchema" };
+		_captionCultureResolver.Resolve(options, null).Returns("uk-UA");
+
+		// Act
+		bool result = _command.TryGetSchema(options, out SqlSchemaGetResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema loads successfully");
+		response.Caption.Should().Be("Схема користувача",
+			because: "the caption must be in the user's profile culture (uk-UA), not the first listed ru-RU entry");
 	}
 }

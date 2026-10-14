@@ -29,6 +29,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 	private IClassicEnumVocabularyResolver _enumVocabularyResolver;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
+	private ICaptionCultureResolver _captionCultureResolver;
 
 	// Name-aware fake Creatio: schema name -> SysSchema layer rows; layer UId -> loaded schema object;
 	// layer UId -> merged localizable strings (returned only on a full-hierarchy load).
@@ -60,6 +61,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		_enumVocabularyResolver = Substitute.For<IClassicEnumVocabularyResolver>();
 		_ioFileSystem = new System.IO.Abstractions.TestingHelpers.MockFileSystem();
 		_logger = Substitute.For<ILogger>();
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		_serviceUrlBuilder.Build(Arg.Any<string>()).Returns("http://localhost/svc");
 		_serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>()).Returns("http://localhost/svc");
 		_applicationClient.ExecutePostRequest(default, default).ReturnsForAnyArgs(ci => Route(ci.ArgAt<string>(1)));
@@ -93,6 +95,7 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 		containerBuilder.AddSingleton(_enumVocabularyResolver);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
 		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton(_captionCultureResolver);
 	}
 
 	// The manifest content the command wrote, read back through the io file system — the single abstraction every
@@ -2636,5 +2639,33 @@ internal class GetClassicPageSourcesCommandTests : BaseCommandTests<GetClassicPa
 					new("Subject", Guid.Empty, "own", "Subject", null, "ShortText", false, false, null),
 					new("Account", Guid.Empty, "own", "Customer", null, "Lookup", false, false, "Account")
 				}));
+	}
+	[Test]
+	[Description("TryAssemblePageSources picks a detail's title in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
+	public void TryAssemblePageSources_ShouldPickDetailTitle_InProfileCulture() {
+		// Arrange
+		AddLayer("UsrCasePage", "uid-page", "UsrApp", 200);
+		AddSchema("uid-page",
+			"define(\"UsrCasePage\", [], function() { return { details: { D: { schemaName: \"UsrNoteDetail\" } } }; });",
+			EmptyGuid, "UsrApp");
+		AddLayer("UsrNoteDetail", "uid-detail", "UsrApp", 200);
+		AddSchema("uid-detail",
+			"define(\"UsrNoteDetail\", [], function() { return { entitySchemaName: \"UsrNote\" }; });",
+			EmptyGuid, "UsrApp");
+		_schemaByUid["uid-detail"]["caption"] = new JArray {
+			new JObject { ["cultureName"] = "ru-RU", ["value"] = "Заметки" },
+			new JObject { ["cultureName"] = "en-US", ["value"] = "Notes" },
+			new JObject { ["cultureName"] = "de-DE", ["value"] = "Notizen" }
+		};
+		GetClassicPageSourcesOptions options = new() { SchemaName = "UsrCasePage" };
+		_captionCultureResolver.Resolve(options, null).Returns("de-DE");
+
+		// Act
+		_command.TryAssemblePageSources(options, out GetClassicPageSourcesResponse response);
+
+		// Assert
+		JObject manifest = JObject.Parse(ReadManifest(response));
+		manifest["detailSchemas"]!["UsrNoteDetail"]!["title"]!.ToString().Should().Be("Notizen",
+			because: "the detail title must be in the user's profile culture (de-DE), not the first listed ru-RU entry");
 	}
 }

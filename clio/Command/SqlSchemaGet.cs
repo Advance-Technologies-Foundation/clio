@@ -1,6 +1,7 @@
 namespace Clio.Command;
 
 using System;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
@@ -62,16 +63,19 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
+	private readonly ICaptionCultureResolver _captionCultureResolver;
 
 	public SqlSchemaGetCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IoFileSystem ioFileSystem,
-		ILogger logger) {
+		ILogger logger,
+		ICaptionCultureResolver captionCultureResolver) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
+		_captionCultureResolver = captionCultureResolver;
 	}
 
 	public virtual bool TryGetSchema(SqlSchemaGetOptions options, out SqlSchemaGetResponse response) {
@@ -105,7 +109,8 @@ public class SqlSchemaGetCommand : Command<SqlSchemaGetOptions> {
 				return false;
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
-			string caption = SchemaDesignerHelper.ExtractCaption(schema);
+			string caption = SchemaDesignerHelper.ExtractCaption(
+				schema, () => _captionCultureResolver.Resolve(options, null));
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new SqlSchemaGetResponse {

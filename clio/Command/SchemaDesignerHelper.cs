@@ -516,11 +516,41 @@ internal static class SchemaDesignerHelper {
 				new JObject { ["cultureName"] = effectiveCulture, [ValueKey] = description });
 	}
 
-	internal static string ExtractCaption(JObject schema) {
-		if (schema["caption"] is JArray captions && captions.Count > 0)
-			return captions[0]?[ValueKey]?.ToString();
-		return schema["caption"]?.ToString();
+	/// <summary>
+	/// Picks one caption text out of a designer-service schema. GetSchema returns every culture that has a
+	/// value, in SysCulture enumeration order (no ORDER BY), so the first entry is an arbitrary culture. The
+	/// rule matches the write path: the connected user's profile culture, then <c>en-US</c>, then the first
+	/// non-empty entry.
+	/// </summary>
+	/// <param name="schema">The schema payload returned by GetSchema.</param>
+	/// <param name="resolvePreferredCulture">
+	/// Returns the profile culture. Called only when the caption carries more than one non-empty culture, so a
+	/// single-culture schema costs no profile lookup.
+	/// </param>
+	/// <returns>The selected caption text, or <c>null</c> when the schema has none.</returns>
+	internal static string ExtractCaption(JObject schema, Func<string> resolvePreferredCulture) {
+		if (schema["caption"] is not JArray captions)
+			return schema["caption"]?.ToString();
+		List<(string Culture, string Value)> values = captions
+			.OfType<JObject>()
+			.Select(entry => (Culture: entry["cultureName"]?.ToString(), Value: entry[ValueKey]?.ToString()))
+			.Where(entry => !string.IsNullOrEmpty(entry.Value))
+			.ToList();
+		if (values.Count == 0)
+			return null;
+		if (values.Count == 1)
+			return values[0].Value;
+		string preferredCulture = resolvePreferredCulture?.Invoke();
+		return FindCaptionValue(values, preferredCulture)
+			?? FindCaptionValue(values, EntitySchemaDesignerSupport.DefaultCultureName)
+			?? values[0].Value;
 	}
+
+	private static string FindCaptionValue(List<(string Culture, string Value)> values, string culture) =>
+		string.IsNullOrWhiteSpace(culture)
+			? null
+			: values.FirstOrDefault(entry => string.Equals(entry.Culture, culture.Trim(), StringComparison.OrdinalIgnoreCase))
+				.Value;
 
 	internal static (string body, string error) ResolveBody(string body, string bodyFile) {
 		if (!string.IsNullOrWhiteSpace(bodyFile)) {

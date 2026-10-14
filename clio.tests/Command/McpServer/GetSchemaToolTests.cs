@@ -57,7 +57,8 @@ public class GetSchemaToolTests {
 
 		public FakeGetSourceCodeSchemaCommand()
 			: base(Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<System.IO.Abstractions.IFileSystem>(), ConsoleLogger.Instance) {
+				Substitute.For<System.IO.Abstractions.IFileSystem>(), ConsoleLogger.Instance,
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>()) {
 		}
 
 		public override bool TryGetSchema(GetSourceCodeSchemaOptions options, out GetSourceCodeSchemaResponse response) {

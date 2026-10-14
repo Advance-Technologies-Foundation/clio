@@ -2,6 +2,7 @@ namespace Clio.Command;
 
 using System;
 using System.Collections.Generic;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json.Linq;
@@ -84,6 +85,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
+	private readonly ICaptionCultureResolver _captionCultureResolver;
 
 	/// <summary>
 	/// Creates the command with the collaborators it needs to fetch and persist client-unit schemas.
@@ -92,6 +94,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 	/// <param name="serviceUrlBuilder">Builds the absolute designer-service URLs for the target environment.</param>
 	/// <param name="ioFileSystem">File-system abstraction used for every write this command performs.</param>
 	/// <param name="logger">Logger for progress and error output.</param>
+	/// <param name="captionCultureResolver">Resolves the profile culture the returned caption is picked in.</param>
 	/// <remarks>
 	/// Every write this command performs goes through <c>OutputPathConfinement</c>, which takes
 	/// <see cref="IoFileSystem"/> — so that is the only file-system abstraction it needs.
@@ -100,11 +103,13 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IoFileSystem ioFileSystem,
-		ILogger logger) {
+		ILogger logger,
+		ICaptionCultureResolver captionCultureResolver) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
+		_captionCultureResolver = captionCultureResolver;
 	}
 
 	/// <summary>
@@ -140,7 +145,8 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 				return false;
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
-			string caption = SchemaDesignerHelper.ExtractCaption(schema);
+			string caption = SchemaDesignerHelper.ExtractCaption(
+				schema, () => _captionCultureResolver.Resolve(options, null));
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetClientUnitSchemaResponse {

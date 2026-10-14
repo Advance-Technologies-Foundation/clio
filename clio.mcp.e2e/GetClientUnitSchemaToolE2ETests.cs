@@ -29,7 +29,7 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 	[Description("Reads a real client unit schema through MCP with full-hierarchy=true and then fetches the same layer by schema-uid only.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-client-unit-schema supports full-hierarchy and schema-uid")]
-	[AllureDescription("Uses the real clio MCP server to call get-client-unit-schema for ContactPageV2 with full-hierarchy=true and output-file, verifies the written localizable-strings contract, then calls the same tool with schema-uid only and verifies the body is written to disk.")]
+	[AllureDescription("Uses the real clio MCP server to call get-client-unit-schema for ContactPageV2 with full-hierarchy=true and output-file, verifies the written localizable-strings contract and that caption is not a Cyrillic-culture text under the en-US profile, then calls the same tool with schema-uid only and verifies the body is written to disk.")]
 	public async Task GetSchema_Should_ReadFullHierarchy_And_FetchBySchemaUid() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -63,6 +63,11 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 			because: "the response should echo the requested full-hierarchy mode");
 		fullHierarchyResponse.SchemaUId.Should().NotBeNullOrWhiteSpace(
 			because: "the schema-uid returned by the name-based read is the stable selector for the direct fetch");
+		fullHierarchyResponse.Caption.Should().NotBeNullOrWhiteSpace(
+			because: "ContactPageV2 has a caption on every stand");
+		System.Text.RegularExpressions.Regex.IsMatch(fullHierarchyResponse.Caption, @"\p{IsCyrillic}").Should().BeFalse(
+			because: "the e2e Supervisor profile culture is en-US, so caption must not be the ru-RU/uk-UA text "
+				+ "GetSchema may list first (ENG-103380)");
 		fullHierarchyResponse.LocalizableStringCount.Should().BeGreaterThan(0,
 			because: "ContactPageV2 should expose merged localizable strings on a real stand");
 		fullHierarchyResponse.Body.Should().BeNull(
