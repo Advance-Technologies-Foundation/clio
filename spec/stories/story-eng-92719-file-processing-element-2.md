@@ -8,8 +8,8 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: deferred (its Jira issue exists; it moves to ready-for-dev once the owner answers and M1 that "Gating"
-names are recorded)
+**Status**: ready-for-dev (its Jira issue exists; the owner answers that "Gating" names were recorded on 2026-10-14;
+M1 (+ M2) still has to be recorded before the package PR leaves draft)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -20,7 +20,8 @@ variants in the handler and registry story 1 introduces): the package PR leaves 
 (E3) and merges after story 1's clio PR merged (E4). ENG-95984 File process parameter type
 (`story-eng-95984-file-parameter-type-1`, link L2, functional): the Process-parameter variant consumes File and
 FileCollection parameters, dotted process-parameter paths and `BindCollection`. Owner questions Q18 (and Q14, Q16 of
-story 1) answered before the package code and before RP-1 and RP-4 are pasted into Jira. Stand measurement M1 (+ M2)
+story 1) were answered on 2026-10-14, all as recommended, before the package code and before RP-1 and RP-4 are pasted
+into Jira. Stand measurement M1 (+ M2)
 RECORDED before the package PR leaves draft (analysis plan section 4.1, pr-split section 4.1); it also decides the
 single-file path.
 **Blocks**: story 3, SF (link L4: slot order RP then SF, Q4).
@@ -46,10 +47,10 @@ can be built, read back and changed without a generic user task that saves green
 ## Acceptance Criteria
 
 The full text is the PRD's RP table (it replaces the Jira acceptance criteria; agreed 2026-10-07). Each line below is
-that criterion in short. A row marked "conditional on Qnn" encodes the recommended answer to an open owner question; it
-is pasted into Jira (plan FE.0b) only after the answer, and a different answer rewrites it.
+that criterion in short. A row marked "Qnn, agreed" encodes the owner's answer to that question (agreed 2026-10-14, as
+recommended); it is pasted into Jira (plan FE.0b) as written.
 
-- [ ] **RP-1** (conditional on Q18, Q16, Q14) - `report.printable` accepts list-printables' `templateId` (preferred),
+- [ ] **RP-1** (Q18, Q16, Q14, agreed) - `report.printable` accepts list-printables' `templateId` (preferred),
   a `[#Lookup...#]` macro or a caption; an ambiguous caption is narrowed by `report.recordId`'s object or refused with
   every candidate; only MS Word printables of the reported object are accepted; FastReport, DevExpress and a printable
   with no object are refused; `report.recordId` takes the value sources and compiles to `Id = value` on the report
@@ -59,7 +60,7 @@ is pasted into Jira (plan FE.0b) only after the answer, and a different answer r
   ST-07 closes it).
 - [ ] **RP-3** - an unknown or missing printable is refused with "create it in System Designer -> Report setup" and up
   to N candidates by `templateId`; nothing is created or picked.
-- [ ] **RP-4** (conditional on Q16) - a Word report with no record scope and no filter condition at the end of the
+- [ ] **RP-4** (Q16, agreed) - a Word report with no record scope and no filter condition at the end of the
   request is refused before the pre-save gate (the pre-gate check story 1 adds); a scope that can match several records
   with save gets the "all N files go to one record" notice.
 - [ ] **RP-5** - `files` takes exactly one of `processParameter`, `sourceElement` + `sourceElementParameter`, or
@@ -85,8 +86,8 @@ is pasted into Jira (plan FE.0b) only after the answer, and a different answer r
 
 | Item | State (2026-10-14) | What waits on it |
 |---|---|---|
-| Q18 FastReport printables | **open** (recommended B: refused) | the package code (RP.1) AND the AC row RP-1, whose Jira paste waits for the answer |
-| Q14 naming bundle, Q16 record scope and empty-filter policy (story 1's questions; Q13, Q15, Q17 shape story 1's shared code) | **open** | the package code of this story too (the `report` group, `report.recordId`, the Word empty-filter refusal) AND the AC rows RP-1 and RP-4 |
+| Q18 FastReport printables | agreed 2026-10-14: B, refused (as recommended) | the package code (RP.1) AND the AC row RP-1, which stands as written |
+| Q14 naming bundle, Q16 record scope and empty-filter policy (story 1's questions; Q13, Q15, Q17 shape story 1's shared code) | agreed 2026-10-14, as recommended | the package code of this story too (the `report` group, `report.recordId`, the Word empty-filter refusal) AND the AC rows RP-1 and RP-4 |
 | M1 (+ M2): a nested-only `Files.File <- File` copies one file; an unset single File fails with an NRE | open; a designer-built probe `UsrG1FilesBindingProbe` (script task), a write | RECORDED before the package PR leaves draft; decides the single-file path (RP.2, TC-64, ST-03); M2 sets the guide wording |
 | M13 describe of PrintContractsReport | done 2026-10-02 (`Guid` with `referenceSchema: Contract`) | the TC-45 Report fixtures |
 | M15 FastReport packages and printables | done 2026-10-02 (none) | Q18 stands as recommended |
@@ -249,8 +250,8 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
 
 **Process**
 - [ ] M1 (+ M2) recorded before the package PR left draft.
-- [ ] Jira: RP-1..RP-10 pasted as this issue's acceptance criteria, RP-1 and RP-4 only after Q14, Q16 and Q18 are
-      answered (rewritten first if an answer differs from the recommendation); link L2 (ENG-95984 blocks this issue)
+- [ ] Jira: RP-1..RP-10 pasted as this issue's acceptance criteria, RP-1 and RP-4 encoding Q14, Q16 and Q18 as
+      agreed on 2026-10-14; link L2 (ENG-95984 blocks this issue)
       and L3 (ENG-96505 blocks this issue) in place.
 - [ ] Review gates 1, 2 (per commit, tier stated) and 3; no open Blocker or High.
 - [ ] Status flips as in "Status convention"; PR titles exactly `ENG-96506 Generated report + process parameter modes`;
@@ -259,7 +260,7 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
 ## Dev Agent Record
 
 - Implementation started:
-- Owner answers to Q14, Q16, Q18; O-TP1 settled as:
+- Owner answers to Q14, Q16, Q18: 2026-10-14, all as recommended; O-TP1 settled as:
 - M1 / M2 results (date, package version, verdict on the single-file path):
 - SC-0 record of PrintInvoiceReport's parameter set (date) and the exclusions TC-U-59 takes from it:
 - Package cut claimed (number, date, where claimed):

@@ -1,19 +1,18 @@
 # ADR: Process file element (ENG-92719)
 
 **Status**: Accepted in part, 2026-10-14. **Agreed**: Q1-Q12 on 2026-10-07 (Q7 answered by stand measurement M3 on
-2026-10-02), Q19 on 2026-10-08, Q20 on 2026-10-14 (A: trim existing text per tool, reviewer-approved). For this ADR
-they settle D15's SysFile half (Q3: a separate Sub-task SF), the slot order RP then SF (Q4), D22 (Q5), D23 (Q2), D24
+2026-10-02), Q19 on 2026-10-08, Q13-Q18 on 2026-10-14 (each as recommended) and Q20 on 2026-10-14 (A: trim existing text per
+tool, reviewer-approved). For this ADR they settle D15's SysFile half (Q3: a separate Sub-task SF), the slot order RP then SF (Q4), D22 (Q5), D23 (Q2), D24
 (Q1), D25's guide name (Q19) and description bytes (Q20), D27 (Q6), and the delivery items O1 (Q3), O3 (Q4) and
-O4-O8 (Q8), among them **O5: the variant registry is OA's design**. **Open**: Q13 (D10, token and discriminator),
-Q14 (D11, naming bundle), Q15 (D14, action inference), Q16 (D16, record scope and empty-filter policy, to be answered
-knowing the precedent of ENG-102537 Process elements built without their configuration block save green and fail or
-hang at run time), Q17 (D15, storage details) and Q18 (D17, FastReport). Each open decision is written below as
-recommended. A different answer changes the decision named AND the acceptance rows the PRD marks "conditional on" that
-question (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1, RP-4), whose paste into Jira waits for the answers, AND the test
-cases the test plan lists for it. Test-plan item O-TP1 (where TC-91 runs) is open too, recommended B: in RP's clio PR.
+O4-O8 (Q8), among them **O5: the variant registry is OA's design**, and D10 (Q13, token and discriminator), D11
+(Q14, naming bundle), D14 (Q15, action inference), D16 (Q16, record scope and empty-filter policy, answered knowing
+the precedent of ENG-102537 Process elements built without their configuration block save green and fail or hang at
+run time), D15's storage details (Q17) and D17 (Q18, FastReport). The acceptance rows the PRD marks with those
+questions (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1, RP-4) stand as written. Test-plan item O-TP1 (where TC-91 runs) is open too, recommended B: in RP's clio PR.
 **Date**: 2026-10-14
-**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); Sub-tasks ENG-96505
-Element readiness and object attachments mode (OA), ENG-96506 Generated report + process parameter modes (RP), and SF,
+**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); ENG-96505 Element
+readiness and object attachments mode (OA; a Task that relates to ENG-92719, converted from a Sub-task on 2026-10-14);
+Sub-tasks ENG-96506 Generated report + process parameter modes (RP) and SF,
 "SysFile attachment storage in the Process file element" (not created in Jira as of 2026-10-14)
 **PRD**: [prd-eng-92719-file-processing-element.md](../prd/prd-eng-92719-file-processing-element.md)
 **Stories**: [1](../stories/story-eng-92719-file-processing-element-1.md) (OA) ·
@@ -137,9 +136,9 @@ M4, M7, M8, M9, M12, M16, M17 runs, M18, M21, M22, M23, M25, M26.
 
 ## Decisions
 
-### D10 - One element type `fileProcessing`; the variant is the group present (owner: Q13, open)
+### D10 - One element type `fileProcessing`; the variant is the group present (agreed 2026-10-14, Q13)
 
-**Decision (recommended).** One token `ElementTypes.FileProcessing = "fileprocessing"` (wire spelling
+**Decision.** One token `ElementTypes.FileProcessing = "fileprocessing"` (wire spelling
 `fileProcessing`) with a second `SupportedTypes` token `"processfile"`; build and describe emit only the first.
 Discriminator form (ii): on create exactly one of `attachments` (Object schema), `report` (Report schema) or `files`
 (Process schema) must be present; none or two are refused, naming them. On update the stored schema UId fixes the
@@ -186,9 +185,9 @@ T3). Injecting the registry into `UserTaskElementHandler` changes its constructo
 constructions in 16 PBT files); OA either prices that in or builds the registry from the connection, as the schema
 identities are built (hypothesis about cost).
 
-### D11 - The `fileProcessing` block contract (owner: Q14, open)
+### D11 - The `fileProcessing` block contract (agreed 2026-10-14, Q14)
 
-**Decision (recommended).** One group per variant plus shared `action` and `saveTo`; the element-level `filter` stays
+**Decision.** One group per variant plus shared `action` and `saveTo`; the element-level `filter` stays
 the unchanged `FilterDescriptor`; the record scope lives in the group (D16).
 
 ```jsonc
@@ -294,9 +293,9 @@ per cut; in clio-knowledge, `element-catalog`'s "FOUR user tasks have their own 
 OA's knowledge PR, together with the three knowledge tests that pin FOUR and the `process-digest` card (about 3 bytes
 free), and RP extends the generic-route sentence to both other schemas.
 
-### D14 - `ResultActionType` (owner: Q15, open)
+### D14 - `ResultActionType` (agreed 2026-10-14, Q15)
 
-**Decision (recommended), on create only.** Object and Report: `action` is optional and inferred (`saveTo` present:
+**Decision, on create only.** Object and Report: `action` is optional and inferred (`saveTo` present:
 `saveToAttachments` = 0; absent: `useInProcess` = 1); `useInProcess` with `saveTo`, and `saveToAttachments` without
 it, are refused. Process variant: `action` omitted or `saveToAttachments`; `useInProcess` refused ("the platform throws
 for 'use in process'"); `saveTo` required. `ResultActionType` is ALWAYS written explicitly as a ConstValue on create.
@@ -310,7 +309,7 @@ silent no-save. A mandatory `action`: one more required key and more refusal rou
 Out process parameter (temporary files; wording pending M16). The Object variant gets no notice; the guide says its
 "use in process" output points at the source attachments.
 
-### D15 - The attachment-storage resolver (owner: Q17, open; SysFile in SF agreed, Q3)
+### D15 - The attachment-storage resolver (agreed 2026-10-14, Q17; SysFile in SF agreed 2026-10-07, Q3)
 
 **Decision.** `IAttachmentStorageResolver` with `Resolve(objectName, linkColumnName, role)` and `Decode(...)` (never
 throws), over a thin `IEntitySchemaHierarchyReader` adapter (`SchemaManager.GetAllParents` is non-virtual), following
@@ -323,7 +322,7 @@ in OA for both modes, so describe reports designer-built SysFile elements.
   attachment object, or use the files in the process". Designer-built SysFile elements are described without loss, and
   `setElement` / `setFilter` on them are refused until SF. SF lifts the refusal per variant after M7, M8, M21, M23 and
   M25; a case whose measurement fails keeps its refusal.
-- **The designer flag** is not read for behaviour (A, recommended); in SF a notice, never a refusal, when
+- **The designer flag** is not read for behaviour (A, agreed 2026-10-14); in SF a notice, never a refusal, when
   `Features.GetIsEnabled(<code name>)` reads off, shipped only after M25 confirms the read (through the one-method
   feature seam shared with D17).
 - **Link column**: a target file object needs a column that references the record object, or an explicit `linkColumn`
@@ -351,9 +350,9 @@ SysFile-only review findings would sit on OA's critical path.
 target. If M11 (c) ever confirms H-G3-1 (a designer open-and-save writing `SourceDataEntitySchemaUId = <X>File`): a
 Sub-task reporting it to CrtProcessDesigner, D12 rule 5 repairs a touched element, and a guide warning ships.
 
-### D16 - Filter and sort roots, the record scope, the empty-filter policy (owner: Q16, open)
+### D16 - Filter and sort roots, the record scope, the empty-filter policy (agreed 2026-10-14, Q16)
 
-**Decision (recommended).**
+**Decision.**
 - **Record scope R2**: `attachments.recordId` (Object) and `report.recordId` (Report), in the shared value-source
   contract. One helper, `FileProcessingScopeFilter`, owns the scope condition: `Split(stored) -> (scope, remainder)`
   and `Join(scope, remainder)`. The block binder writes `Join(newScope, storedRemainder)`, the filter target
@@ -393,7 +392,8 @@ clio's bagless filter DTO drops on describe (K4). R4 no sugar: the agent would h
 link column. Aliasing `filter.object` = the record object to the file object: hides the trap rather than teaching it.
 Notice everywhere: the precedent of ENG-102537 for Delete data / Modify data, weighed and not followed for the two
 harmful cases (copying arbitrary files onto a record; one Word document per record of the whole entity); the owner
-confirms knowing it (Q16).
+rejected it here knowing it (Q16, 2026-10-14): an unconfigured element visibly fails at run time, while an empty filter
+on this element runs "successfully" with a silent mass effect.
 
 **Consequences.** Describe reports `filter.object` = the runtime root and lifts the scope into `recordId` when `Split`
 finds exactly one top-level equality on the scope column that decodes to one value source; otherwise the condition
@@ -401,7 +401,7 @@ stays in `filter.conditions` and nothing is lost. The lift also applies to desig
 mode, describe reports an issue when the scope's lookup reference differs from `SourceDataEntitySchemaUId`.
 "Attachments of the records matching a condition" in SysFile mode is out of v1.
 
-### D17 - Generated report rules (owner: Q18, open)
+### D17 - Generated report rules (agreed 2026-10-14, Q18)
 
 **Decision.** `IReportTemplateReader`: an ESQ on `SysModuleReport` with `UseAdminRights = false` (the runtime's own
 query and entity fallback; columns `Id`, `Caption`, `Type.Name`, `SysEntitySchema.Name`, `ConvertInPDF`).
@@ -410,7 +410,7 @@ query and entity fallback; columns `Id`, `Caption`, `Type.Name`, `SysEntitySchem
 candidate matches, otherwise refused with every candidate's id, type and object. Refusals: missing, empty Guid,
 unknown or unreadable ("No printable 'X' is available. The Process file element cannot create one. Ask the user to
 create it in System Designer -> Report setup, then retry." plus up to N candidates), DevExpress and any other type,
-**FastReport (recommended B)**, a printable with no object, a bad `fileNameSuffixColumn` (separate off, not a text
+**FastReport (B, agreed 2026-10-14)**, a printable with no object, a bad `fileNameSuffixColumn` (separate off, not a text
 column of the report object, or together with `fileNameSuffix`). Word `separateReports` is written true when omitted;
 an explicit `false` is accepted with a notice. A constant `fileNameSuffix` is written through the localizable resource
 path. Notices: `ConvertInPDF` on; several records into one target; `EnableReportFileProcessingUserTask` off (through the
@@ -552,8 +552,8 @@ per-file test needs a callee File parameter.
 ### D24 - Acceptance-criteria corrections (agreed 2026-10-07, Q1)
 
 **Decision.** FE, OA and RP take the replacement text of the analysis decisions Part D (D-2, D-3, D-4), copied into
-the PRD. The rows that encode a recommended answer to an open question (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1,
-RP-4) are conditional on that answer and pasted into Jira only after it. SF takes the SysFile row of D-5 as a
+the PRD. The rows that encode a recommended answer to one of Q13-Q18 (FE-1, OA-1, OA-4, OA-6, OA-7, OA-9, RP-1,
+RP-4) were conditional on that answer; the owner agreed those answers on 2026-10-14, so the rows are pasted as written. SF takes the SysFile row of D-5 as a
 proposal, confirmed when the SF Sub-task is created (Q1 covered ENG-95984, FE, OA and RP only). "Binary / File"
 becomes File + FileCollection; serialization is compared per variant and per storage under a written rule; "rarely an
 endpoint" becomes the measured shipped pattern; Send email moves and the Creatio.ai pattern leaves; the source object
@@ -753,12 +753,12 @@ remote before its clio PR merges.
 | Q10-Q12 FileCollection declared as `type: FileCollection`; its Variable default; the binder policy (ENG-95984's contract, which D18 relies on) | agreed 2026-10-07 |
 | Q19 / D25 Guide name `process-files` | agreed 2026-10-08 |
 | Q20 / D25 Description bytes: a reviewer-approved trim per tool | agreed 2026-10-14 (A) |
-| **Q13 / D10 Token `fileProcessing` (alias `processFile`); the group is the variant** | **open**; conditional AC rows FE-1, OA-1, OA-4 |
-| **Q14 / D11 Naming bundle; `numberOfRecords` defaults to 50** | **open**; conditional AC rows OA-7, RP-1 (and member names everywhere) |
-| **Q15 / D14 Action inferred from `saveTo` on create, always written** | **open**; no AC row encodes it, the stories' and tests' action inference does |
-| **Q16 / D16 Record scope in the group; refuse saving and Word elements with no selecting filter** | **open** (weigh the ENG-102537 "notice, never a refusal" precedent); conditional AC rows OA-7, OA-9, RP-1, RP-4 |
-| **Q17 / D15 Flag not read for behaviour; no `linkColumn: "none"`; no SysFile override** | **open**; conditional AC row OA-6 |
-| **Q18 / D17 FastReport refused** | **open**; conditional AC row RP-1 |
+| Q13 / D10 Token `fileProcessing` (alias `processFile`); the group is the variant | agreed 2026-10-14; AC rows FE-1, OA-1, OA-4 |
+| Q14 / D11 Naming bundle; `numberOfRecords` defaults to 50 | agreed 2026-10-14; AC rows OA-7, RP-1 (and member names everywhere) |
+| Q15 / D14 Action inferred from `saveTo` on create, always written | agreed 2026-10-14; no AC row encodes it, the stories' and tests' action inference does |
+| Q16 / D16 Record scope in the group; refuse saving and Word elements with no selecting filter | agreed 2026-10-14 (the ENG-102537 "notice, never a refusal" precedent weighed and not followed, D16); AC rows OA-7, OA-9, RP-1, RP-4 |
+| Q17 / D15 Flag not read for behaviour; no `linkColumn: "none"`; no SysFile override | agreed 2026-10-14; AC row OA-6 |
+| Q18 / D17 FastReport refused | agreed 2026-10-14; AC row RP-1 |
 | **O-TP1 Where TC-91 runs** | **open** (recommended B: in RP's clio PR) |
 | **Nested `BK15` rows (D20)** | **open** (recommended: tolerated as N10; the alternative is writing the rows in the handler's create path) |
 | **What FE-1 means if SF narrows** | **open** (PRD "Open owner items") |

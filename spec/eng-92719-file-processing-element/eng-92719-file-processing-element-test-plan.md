@@ -33,7 +33,7 @@ Written 2026-10-01, read-only: nothing was built, run, committed, or written to 
 | Alias | Jira issue |
 |---|---|
 | **FE** | ENG-92719 File processing element (Story) |
-| **OA** | ENG-96505 Element readiness and object attachments mode (Sub-task of FE) |
+| **OA** | ENG-96505 Element readiness and object attachments mode (Task; converted from a Sub-task of FE on 2026-10-14, relates to FE) |
 | **RP** | ENG-96506 Generated report + process parameter modes (Sub-task of FE) |
 | **SF** | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
 | **PT** | ENG-95984 File process parameter type (Task; its cases are in its own [test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md)) |

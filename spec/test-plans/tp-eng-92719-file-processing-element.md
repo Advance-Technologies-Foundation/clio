@@ -1,9 +1,9 @@
 # Test Plan: Process file element (ENG-92719)
 
 **Feature**: eng-92719-file-processing-element
-**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); Sub-tasks ENG-96505
-Element readiness and object attachments mode (story 1), ENG-96506 Generated report + process parameter modes (story
-2), and the not-yet-created Sub-tasks "SysFile attachment storage in the Process file element" (story 3), "Refuse
+**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); ENG-96505 Element
+readiness and object attachments mode (story 1; a Task that relates to ENG-92719, converted from a Sub-task on
+2026-10-14); Sub-tasks ENG-96506 Generated report + process parameter modes (story 2), and the not-yet-created Sub-tasks "SysFile attachment storage in the Process file element" (story 3), "Refuse
 collection parameters as filter values" (story 4) and "Builder-made user tasks do not set SerializeToDB" (story 5)
 **PRD**: [prd-eng-92719-file-processing-element.md](../prd/prd-eng-92719-file-processing-element.md) - FE-1..FE-6,
 OA-1..OA-12, RP-1..RP-10, SF-1
@@ -18,8 +18,8 @@ OA-1..OA-12, RP-1..RP-10, SF-1
 are kept in the "Orig" column below. It holds the full case text, the harness, the mocking recipes and the evidence
 queries; this plan maps its ids to the repository convention and adds the cases of stories 4 and 5. The
 parameter-type cases (ENG-95984 File process parameter type) are in its own test plan.
-**Status**: Draft (the cases follow the recommended answers to the open owner questions Q13-Q18; the cases that move
-with an open item are in "Cases that move with an open decision")
+**Status**: Draft (the cases follow the owner's answers to Q13-Q18, agreed as recommended on 2026-10-14; the cases
+that move with a still-open item are in "Cases that move with an open decision")
 **Created**: 2026-10-14
 
 Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PBT/` =
@@ -418,18 +418,19 @@ M3, M3b (MI-0), M6 and M27 belong to ENG-95984's test plan; M5 is skipped (refus
 
 ## Cases that move with an open decision
 
-The "AC affected" column names the PRD acceptance rows that encode the trigger's recommended answer ("conditional on"
-in the PRD). Those rows are pasted into Jira only after the answer (plan FE.0b), and a different answer rewrites them
-together with the cases listed here.
+The "AC affected" column names the PRD acceptance rows that encode the trigger's recommended answer (the "Owner answer"
+column in the PRD). For an open trigger, a different answer rewrites those rows together with the cases listed here.
+Q13-Q18 were agreed as recommended on 2026-10-14: their rows are pasted into Jira as written (plan FE.0b), and the last
+column records the alternative that was not taken.
 
 | Trigger | AC affected | Cases affected | If it goes the other way |
 |---|---|---|---|
-| Q13 (token, discriminator) | FE-1, OA-1, OA-4 | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change; FE-1, OA-1 and OA-4 are rewritten |
-| Q14 (naming bundle) | OA-7, RP-1 (and member names in every row) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 and rewrites OA-7 |
-| Q15 (action inference) | none (OA-8's text encodes no answer; the stories' action inference does) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
-| Q16 (record scope, empty-filter policy) | OA-7, OA-9, RP-1, RP-4 | TC-U-18, TC-U-20, TC-U-21, TC-U-22, TC-I-22, TC-U-52, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, the `failedOperationIndex: null` assertion goes, and OA-9 and RP-4 are rewritten; a record scope in `filter` instead of the group rewrites OA-7, RP-1 and the scope cases |
-| Q17 (storage details) | OA-6 | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
-| Q18 (FastReport) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
+| Q13 (token, discriminator; agreed 2026-10-14) | FE-1, OA-1, OA-4 | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change; FE-1, OA-1 and OA-4 are rewritten |
+| Q14 (naming bundle; agreed 2026-10-14) | OA-7, RP-1 (and member names in every row) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 and rewrites OA-7 |
+| Q15 (action inference; agreed 2026-10-14) | none (OA-8's text encodes no answer; the stories' action inference does) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
+| Q16 (record scope, empty-filter policy; agreed 2026-10-14) | OA-7, OA-9, RP-1, RP-4 | TC-U-18, TC-U-20, TC-U-21, TC-U-22, TC-I-22, TC-U-52, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, the `failedOperationIndex: null` assertion goes, and OA-9 and RP-4 are rewritten; a record scope in `filter` instead of the group rewrites OA-7, RP-1 and the scope cases |
+| Q17 (storage details; agreed 2026-10-14) | OA-6 | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
+| Q18 (FastReport; agreed 2026-10-14) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
 | O-TP1 (where TC-91 runs) | none | TC-I-91 | option A: the cases move to ENG-95984's clio PR on the generic route, which story 2 later refuses and rewrites |
 | M1 / M2 | RP-5 (already written both ways) | TC-U-64, TC-M-03, TC-M-20 (E10) | M1 fails: TC-U-64 asserts the refusal, TC-M-03 is dropped, E10 leaves SC-4 |
 | M7, M8, M21, M23, M25 | SF-1 (proposed), FE-1 (the PRD's open item "What FE-1 means if SF narrows") | TC-U-76..TC-U-80, TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |

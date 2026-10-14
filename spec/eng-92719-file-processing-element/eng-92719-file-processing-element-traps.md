@@ -1,7 +1,7 @@
 # Traps: ENG-95984 File process parameter type and ENG-92719 File processing element
 
 **Summary.** This is the catalogue of hazards that the implementation of ENG-95984 File process parameter type and
-ENG-92719 File processing element (sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506
+ENG-92719 File processing element (ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and sub-task ENG-96506
 Generated report + process parameter modes) has to neutralise, and that the new `process-files` guide has to teach.
 There are 68 entries. 59 of them are **silent** (T-8 among them, which M3 refuted on 2026-10-02, and T-54, silent since CrtProcessBuilder 1.6.6.69): nothing throws, nothing is logged and the save answers success at the
 moment the mistake is made, and the damage shows up later (at run time, in the designer, or on the next round trip),
@@ -701,8 +701,8 @@ M-G6-4), [T-43](#t-43).
   designer process that already holds one is not refused. The refusal departs from ENG-102537's owner decision for
   the analogous Delete data / Modify data hazard ("a NOTICE, never a refusal",
   `PB/Elements/IElementConfigurationLedger.cs:22-27`), because saving copies arbitrary files and a Word report runs
-  once per record of the whole entity, a mass side effect rather than a run-time failure; the owner confirms it
-  knowing the precedent ([open-questions](eng-92719-file-processing-element-open-questions.md) Q16).
+  once per record of the whole entity, a mass side effect rather than a run-time failure; the owner confirmed it
+  on 2026-10-14 knowing the precedent ([open-questions](eng-92719-file-processing-element-open-questions.md) Q16).
 
 ### T-33
 **`numberOfRecords`: omitted means 50, not "all"; 0 reads nothing.**

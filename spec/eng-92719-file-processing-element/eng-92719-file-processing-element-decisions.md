@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| Issues | ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
+| Issues | ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object attachments mode (a Task that relates to it, converted from a Sub-task on 2026-10-14) and its sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task), on which the element depends |
 | Epic | ENG-92704 Create BP via AI Toolkit |
-| Status | Proposed, 2026-10-01. 6 decisions wait for the owner (section 1, Q13-Q18): D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, and D9 was answered by M3 on 2026-10-02. Q20 (where the description bytes for PT and OA come from, D25), opened 2026-10-13, was agreed on 2026-10-14 as A: trim existing text per tool, reviewer-approved |
+| Status | Proposed, 2026-10-01. No decision waits for the owner: D2, D3 (Variable), D5, D22, D23, D24, D25 and D27 were agreed as recommended on 2026-10-07, D15's SysFile half (Q3) too, D10, D11, D14, D15's storage details, D16 and D17 (section 1, Q13-Q18) on 2026-10-14, and D9 was answered by M3 on 2026-10-02. Q20 (where the description bytes for PT and OA come from, D25), opened 2026-10-13, was agreed on 2026-10-14 as A: trim existing text per tool, reviewer-approved |
 | Baselines | Anchors point to CrtProcessBuilder `main` `a6bfcbf6` (package 1.6.6.96, 2026-10-12), clio `master` `19e6f9c53` and clio-knowledge `master` `0b56d4a` (guidance libraryVersion 1.15.142), re-pinned and re-checked for meaning on 2026-10-13 (Appendix B, round 5). The stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand runs 1.6.6.96 since (list-packages, read-only, 2026-10-13). Creatio core 10.1.37 (the stand's core) |
 | How it was made | Read-only. Nothing was built, run, committed or written to a repository or to the stand. Jira was read for issue wording only; no Jira text is used as evidence for a platform fact |
 
@@ -59,7 +59,7 @@ some branch is never an argument for or against an option.
 |---|---|
 | PT | ENG-95984 File process parameter type (Task) |
 | FE | ENG-92719 File processing element (Story) |
-| OA | ENG-96505 Element readiness and object attachments mode (Sub-task of FE) |
+| OA | ENG-96505 Element readiness and object attachments mode (Task; converted from a Sub-task of FE on 2026-10-14, relates to FE) |
 | RP | ENG-96506 Generated report + process parameter modes (Sub-task of FE) |
 | SF | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
 | MH | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on M3, and M3 refuted the defect on 2026-10-02 |
@@ -111,12 +111,12 @@ named decision and nothing else unless stated.
 | 3 | D5 | Plain source onto a collection item whose parent is bound to a collection (P3) | Reset the parent, with a notice **Agreed 2026-10-07.** | Designer parity: keep the stale parent, which yields N copies of one file |
 | 4 | D5 | Scope of item pairing and the wrong-shape refusal (P2, R-M2) | File-consuming targets only **Agreed 2026-10-07.** | Every collection: also changes Read data -> multi-instance mappings, unmeasured and outside this work |
 | 5 | D9 | Where the mirror defect H-1 is fixed | Answered by M3 (2026-10-02): H-1 refuted, so no MH; binding the items is one parity commit in PK-PT (X4) | - |
-| 6 | D10 | Element token and how the variant is chosen | Token `fileProcessing` (alias `processFile`); the variant is the group present; `source` is an optional check | A required `source` enum (collides with `readData.source`); a `fileSource` key |
-| 7 | D11 | Naming bundle of the block | `attachments`, `report`, `files`, `saveTo`, `action: useInProcess / saveToAttachments`, `report.printable`, `fileNameSuffix`, `recordId` inside the groups | Any renaming before code; afterwards renames cost a deprecation |
-| 8 | D14 | `ResultActionType` when `action` is omitted on create | Inferred: `saveTo` present -> save, absent -> use in process; always written | Designer default (use in process: a caller who forgot `action` gets a silent no-save); mandatory `action` |
-| 9 | D15 | Storage behaviour | Feature flag not read for behaviour (notice only); no `linkColumn: "none"`; no SysFile override; SysFile in Sub-task SF | Read the flag and reproduce the OFF list (string-coupled, copies `ModuleStructure`); keep SysFile in ENG-96505 Element readiness and object attachments mode with five pre-code measurements on its path |
-| 10 | D16 | Record scope shape and the empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving or Word elements with no selecting filter | `filter.recordId` (two meanings of `recordId`, dropped by clio's filter DTO); notice only |
-| 11 | D17 | FastReport printables | Refused in this work (no stand evidence that the process path works) | Accept with a notice |
+| 6 | D10 | Element token and how the variant is chosen | Token `fileProcessing` (alias `processFile`); the variant is the group present; `source` is an optional check **Agreed 2026-10-14.** | A required `source` enum (collides with `readData.source`); a `fileSource` key |
+| 7 | D11 | Naming bundle of the block | `attachments`, `report`, `files`, `saveTo`, `action: useInProcess / saveToAttachments`, `report.printable`, `fileNameSuffix`, `recordId` inside the groups **Agreed 2026-10-14.** | Any renaming before code; afterwards renames cost a deprecation |
+| 8 | D14 | `ResultActionType` when `action` is omitted on create | Inferred: `saveTo` present -> save, absent -> use in process; always written **Agreed 2026-10-14.** | Designer default (use in process: a caller who forgot `action` gets a silent no-save); mandatory `action` |
+| 9 | D15 | Storage behaviour | Feature flag not read for behaviour (notice only); no `linkColumn: "none"`; no SysFile override; SysFile in Sub-task SF **Agreed 2026-10-14** (SysFile in SF on 2026-10-07). | Read the flag and reproduce the OFF list (string-coupled, copies `ModuleStructure`); keep SysFile in ENG-96505 Element readiness and object attachments mode with five pre-code measurements on its path |
+| 10 | D16 | Record scope shape and the empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving or Word elements with no selecting filter **Agreed 2026-10-14.** | `filter.recordId` (two meanings of `recordId`, dropped by clio's filter DTO); notice only |
+| 11 | D17 | FastReport printables | Refused in this work (no stand evidence that the process path works) **Agreed 2026-10-14.** | Accept with a notice |
 | 12 | D22 | Downstream consumer patterns | Send email -> ENG-95985 Send email attachments; Creatio.ai call out of scope **Agreed 2026-10-07.** | Keep both in ENG-92719 File processing element (needs dynamic attachment slots the builder cannot create) |
 | 13 | D23 | Jira links | L1-L5: ENG-95984 File process parameter type relates to ENG-96505 Element readiness and object attachments mode and blocks ENG-96506 Generated report + process parameter modes; OA blocks RP; RP blocks SF; PT and OA block ENG-95985 Send email attachments **Agreed 2026-10-07.** | Keep link 560203 "PT blocks OA" if the team uses "blocks" for sequencing (it then claims a functional dependency that does not exist) |
 | 14 | D24 | Acceptance criteria | Replace as in Part D **Agreed 2026-10-07.** | Keep as written (the "Binary / File" and "ResultActionType = 1" criteria cannot pass) |
@@ -145,14 +145,14 @@ above: it belongs to D25's tool-description budget and concerned the clio descri
 | D7 | Constants, `referenceSchema`, delete guard, `setParameter` shape | PT | no | - |
 | D8 | Describe of file parameters, nested-only bindings, single-token element sources | PT | no | - |
 | D9 | The shipped collection mirror binds the outer level only (H-1; refuted by M3) | PT | no (answered by M3) | - |
-| D10 | Element token; the variant is the group present | OA | **yes** | - |
-| D11 | The `fileProcessing` block contract | OA, RP | **yes** | - |
+| D10 | Element token; the variant is the group present | OA | agreed 2026-10-14 | - |
+| D11 | The `fileProcessing` block contract | OA, RP | agreed 2026-10-14 | - |
 | D12 | Source immutability and `setElement` semantics | OA | no | - |
 | D13 | The generic `userTask` route and raw configuration writes, per cut | OA, RP | no | - |
-| D14 | `ResultActionType` | OA, RP | **yes** | M16 (notice wording) |
-| D15 | The attachment-storage resolver | OA, SF | **yes** (Q17; SysFile in SF agreed 2026-10-07) | M8, M10, M11, M23, M25 |
-| D16 | Filter and sort roots, record scope, empty-filter policy | OA, RP, SF | **yes** | M7 (SysFile), M24 |
-| D17 | Generated report rules | RP | **yes** | M15, M16 |
+| D14 | `ResultActionType` | OA, RP | agreed 2026-10-14 | M16 (notice wording) |
+| D15 | The attachment-storage resolver | OA, SF | agreed 2026-10-14 (Q17; SysFile in SF agreed 2026-10-07) | M8, M10, M11, M23, M25 |
+| D16 | Filter and sort roots, record scope, empty-filter policy | OA, RP, SF | agreed 2026-10-14 | M7 (SysFile), M24 |
+| D17 | Generated report rules | RP | agreed 2026-10-14 | M15, M16 |
 | D18 | Process-parameter variant: the `files` input | RP | no | M1 |
 | D19 | Describe block of the element | OA, RP | no | M11, M13 |
 | D20 | Serialization parity, template defaults, nested UIds, diagram | OA | no | M14, M21 (SysFile) |
@@ -672,8 +672,8 @@ Discriminator, given (a):
 - Tests: the handler-order tripwire (`PBT/CrtProcessBuilderAppTests.cs:139-199`); `processFile` builds the same
   element as `fileProcessing`; a contradicting `userTaskName`, no group, two groups and `source: "Account"` are
   refused; a registered variant gets all of its claims or none.
-- **Owner decision: yes.** The token name (`fileProcessing` with alias `processFile`) and the discriminator form
-  (ii recommended; iii the alternative).
+- **Owner decision: agreed on 2026-10-14 as recommended.** The token name (`fileProcessing` with alias `processFile`)
+  and the discriminator form (ii; iii was the alternative).
 
 ## D11. The `fileProcessing` block contract
 
@@ -784,7 +784,7 @@ Rules common to the block:
 `ProcessElementDescriptor` (`PB/Contracts/ProcessDescriptorContracts.cs:13-249`) and `ProcessElementUpdateDescriptor`
 (`PB/Contracts/ModifyContracts.cs:318-525`). `FilterDescriptor` does not change, so the other filter targets and
 clio's bagless filter DTOs are untouched. If the strict-keys work above lands first, its allow-list learns the new
-write members and its read-back list the describe-only members (D26). **Owner decision: yes.** The naming bundle:
+write members and its read-back list the describe-only members (D26). **Owner decision: agreed on 2026-10-14 as recommended.** The naming bundle:
 `attachments`, `report`, `files`, `saveTo`, the `action` values, `report.printable`, `fileNameSuffix`, `recordId`
 inside the groups, and the discriminator form of D10.
 
@@ -977,7 +977,8 @@ contradictions refused; always written.
   element (a sub-process's files are deleted when the sub-process completes); consume them in this process or save
   them". **Pending M16** for the lifetime wording. The Object variant gets no notice; the guide says its
   `useInProcess` output points at the source attachments.
-- **Owner decision: yes.** Inference on create (recommended), the designer default, or a mandatory `action`.
+- **Owner decision: agreed on 2026-10-14 as recommended.** Inference on create (the alternatives were the designer
+  default and a mandatory `action`).
 
 ## D15. The attachment-storage resolver
 
@@ -1091,7 +1092,7 @@ contradictions refused; always written.
   conforming link column, a self-named file object, a tag-style object, an object with no claimant, SysFile
   missing; `recordId` constant unknown, empty, of another object, and existing; the OA SysFile refusal switch; in SF,
   the flag notice through a faked seam.
-- **Owner decision: yes.** Flag not read for behaviour (A + notice); no `linkColumn: "none"`; no SysFile override in
+- **Owner decision: agreed on 2026-10-14 as recommended (SysFile in SF on 2026-10-07).** Flag not read for behaviour (A + notice); no `linkColumn: "none"`; no SysFile override in
   v1; SysFile in Sub-task SF, with one interim release that refuses SysFile-mode sources and targets.
 
 ## D16. Filter and sort roots, the record scope, the empty-filter policy
@@ -1194,7 +1195,7 @@ contradictions refused; always written.
     `IElementConfigurationLedger`, which changes its contract).
   - The refusal names the element and the operations that touched it, and says "add `attachments.recordId`
     (`report.recordId`) or setFilter in the same request".
-  - Precedent to weigh (Q16): for the analogous Delete data / Modify data empty-filter hazard, ENG-102537's owner
+  - Precedent weighed (Q16, not followed; see the owner decision below): for the analogous Delete data / Modify data empty-filter hazard, ENG-102537's owner
     decision is "a NOTICE, never a refusal" (`PB/Elements/IElementConfigurationLedger.cs:22-27`). The refusal is
     still argued here: saving copies arbitrary files onto a record (a harmful action), and a Word report per record
     of the whole entity is a mass side effect, not a run-time failure.
@@ -1220,8 +1221,11 @@ contradictions refused; always written.
   element, type check; scope set twice; sort; OR wrap and unwrap; corpus filter lift; each writer keeps the other's
   half; a lossy decode is not lifted; `isNull` survives `Join`; empty-filter refusal and notice for touched elements
   only; the `numberOfRecords` notice.
-- **Owner decision: yes.** The R2 shape (`recordId` inside the groups); refuse (recommended) or notice for the
-  empty-filter cases (Q16, to be answered knowing the ENG-102537 "a NOTICE, never a refusal" precedent above).
+- **Owner decision: agreed on 2026-10-14 as recommended.** The R2 shape (`recordId` inside the groups); refuse for a
+  saving Object element and for Report (Word), notice for Object + use in process (Q16). The owner weighed the
+  ENG-102537 "a NOTICE, never a refusal" precedent above and rejected it here: an unconfigured element visibly fails
+  at run time, while an empty filter on this element runs "successfully" with a silent mass effect (it copies up to N
+  arbitrary files, or generates one Word document per record of the entity).
 
 ## D17. Generated report rules
 
@@ -1280,7 +1284,8 @@ numbering) is unspecified; captions are localized in the RUNNER's culture; a mid
 output; a sub-process's temporary files die with the sub-process (pending M16); the same-object printable swap keeps
 the filter (D12). e2e: `Assert.Ignore` when `list-printables` returns no rows; `ListPrintablesEnvelope`
 (`CLIO/clio.mcp.e2e/Support/Results/ListPrintablesEnvelope.cs:12-13`) gains `count` and `printables`.
-**Owner decision: yes.** FastReport refused (B, recommended) or accepted with a notice (A).
+**Owner decision: agreed on 2026-10-14 as recommended.** FastReport refused (B); accepting it with a notice (A) was the
+alternative.
 
 ## D18. Process-parameter variant: the `files` input
 

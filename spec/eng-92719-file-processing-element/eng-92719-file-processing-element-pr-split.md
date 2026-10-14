@@ -61,7 +61,7 @@ ENG-103164.
 |---|---|---|
 | **PT** | ENG-95984 File process parameter type | Task, epic ENG-92704 Create BP via AI Toolkit |
 | **FE** | ENG-92719 File processing element | Story, epic ENG-92704 Create BP via AI Toolkit |
-| **OA** | ENG-96505 Element readiness and object attachments mode | Sub-task of FE |
+| **OA** | ENG-96505 Element readiness and object attachments mode | Task, relates to FE (converted from a Sub-task of FE on 2026-10-14) |
 | **RP** | ENG-96506 Generated report + process parameter modes | Sub-task of FE |
 | **SF** | NEW: "SysFile attachment storage in the Process file element" (key assigned on creation) | Sub-task of FE |
 | **MH** | not created: "typeFromElement collection mirror leaves its items unbound" waited on M3, and M3 refuted defect H-1 on 2026-10-02 | (would have been a Sub-task of PT) |

@@ -115,7 +115,7 @@ five use cases. Section 3 tests each against the corpus.
 ### 1.4 Terminology: the shipped captions win
 
 Where Academy and the product disagree, guidance and tool texts use the **shipped** caption. The resource lines are
-basis=source. The builder vocabulary is the D10/D11 proposal and still awaits the owner's decision on naming.
+basis=source. The builder vocabulary is D10/D11, agreed by the owner on 2026-10-14.
 
 | Concept | Academy wording | Shipped caption | Evidence | Builder term (proposed) |
 |---|---|---|---|---|
