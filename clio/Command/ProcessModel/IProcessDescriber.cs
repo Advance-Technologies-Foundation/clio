@@ -2004,7 +2004,12 @@ public sealed class DescribedParameter {
 	[JsonPropertyName("uid")]
 	public string UId { get; set; }
 
-	/// <summary>Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>); null when unset.</summary>
+	/// <summary>
+	/// Data value type name (for example <c>ShortText</c>, <c>Integer</c>, <c>Lookup</c>, or <c>FileLocator</c> for a
+	/// single file). A PROCESS parameter that is a collection with no tag and exactly one FileLocator item reads back
+	/// as <c>FileCollection</c> (from <c>CrtProcessBuilder</c> 1.6.6.98; an older one reports
+	/// <c>CompositeObjectList</c>); an element parameter always keeps <c>CompositeObjectList</c>. Null when unset.
+	/// </summary>
 	[JsonPropertyName("type")]
 	public string Type { get; set; }
 
@@ -2078,20 +2083,25 @@ public sealed class DescribedParameter {
 	public string ValueDisplay { get; set; }
 
 	/// <summary>
-	/// For a <see cref="Value"/> that reads ONE column of a record another element returned (the three-segment
-	/// <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
-	/// <see cref="SourceElementParameter"/> and <see cref="SourceColumn"/> only when the server can name all three
-	/// AND those names re-apply to the identical stored value, so the trio feeds straight back into
-	/// <c>addMapping</c>. Null for every other value, and omitted by a <c>CrtProcessBuilder</c> older than 1.6.6.40.
+	/// For a <see cref="Value"/> that IS another element's output (a single <c>[Element].[Parameter]</c> meta path,
+	/// an item of a collection output included), or that reads ONE column of a record another element returned (the
+	/// three-segment <c>[Element].[Parameter].[EntityColumn]</c> meta path): the element's name. Reported with
+	/// <see cref="SourceElementParameter"/> (and <see cref="SourceColumn"/> for the column form) only when the server
+	/// can name them AND those names re-apply to the identical stored value without changing any other level of the
+	/// binding, so they feed straight back into <c>addMapping</c>. Null for every other value. The column form needs a
+	/// <c>CrtProcessBuilder</c> from 1.6.6.40, the element-output form one from 1.6.6.98; an older one omits them.
 	/// </summary>
 	[JsonPropertyName("sourceElement")]
 	public string SourceElement { get; set; }
 
-	/// <summary>The record parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>.</summary>
+	/// <summary>
+	/// The output parameter on <see cref="SourceElement"/>, for example <c>ResultEntity</c>; on a collection item it
+	/// is the dotted item path, for example <c>ObjectFiles.File</c>.
+	/// </summary>
 	[JsonPropertyName("sourceElementParameter")]
 	public string SourceElementParameter { get; set; }
 
-	/// <summary>The column of that record, by its code, for example <c>Owner</c>.</summary>
+	/// <summary>The column of that record, by its code, for example <c>Owner</c>; null unless the value reads one column.</summary>
 	[JsonPropertyName("sourceColumn")]
 	public string SourceColumn { get; set; }
 
@@ -2119,7 +2129,9 @@ public sealed class DescribedParameter {
 	/// Reading a tag as a required field is how a consumer written against the first case silently rejects every
 	/// instance of the second.</para>
 	/// <para>Feed a described collection back through <c>addParameter</c>'s <c>typeFromElement</c> naming its
-	/// source, never by re-typing the shape.</para>
+	/// source, never by re-typing the shape. The one exception is a process parameter described as
+	/// <c>FileCollection</c>: it has no source to mirror, so it is declared by <c>type: FileCollection</c>, and the
+	/// rebuild names its one item <c>File</c> whatever the described item was called.</para>
 	/// </summary>
 	[JsonPropertyName("itemProperties")]
 	public List<DescribedParameter> ItemProperties { get; set; }

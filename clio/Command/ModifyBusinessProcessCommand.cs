@@ -204,7 +204,11 @@ namespace Clio.Command;
 // older server DISCARDS `isTracing` and answers success, so the process is built untraced and nothing says so, and
 // refuses `setTracing` as an unsupported operation, which reads as a clio fault. 1.6.6.92 is the first archive
 // with both.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.92",
+// Raised to 1.6.6.98 by ENG-95984: the File and FileCollection parameter types and the two-level collection binder.
+// An older server refuses `type: File` loudly, but it silently binds only the level an `addMapping` names, leaves a
+// mirrored collection's items unbound and accepts a dotted mirror source, so a newer clio would describe binding rules
+// the server does not apply. 1.6.6.98 is the first archive with the types and the binder.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.98",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
