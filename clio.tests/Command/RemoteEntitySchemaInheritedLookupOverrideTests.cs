@@ -32,6 +32,7 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 		"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"ContactFolder\"}";
 
 	private IRemoteEntitySchemaDesignerClient _designer = null!;
+	private IRetryDelay _retryDelay = null!;
 	private FindEntitySchemaCommand _finder = null!;
 	private IApplicationPackageListProvider _packages = null!;
 	private IRemoteEntitySchemaCreator _creator = null!;
@@ -42,6 +43,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 	protected override void AdditionalRegistrations(IServiceCollection services) {
 		base.AdditionalRegistrations(services);
 		_designer = Substitute.For<IRemoteEntitySchemaDesignerClient>();
+		_retryDelay = Substitute.For<IRetryDelay>();
+		services.AddTransient(_ => _retryDelay);
 		_finder = Substitute.For<FindEntitySchemaCommand>(Substitute.For<IApplicationClient>(),
 			Substitute.For<IServiceUrlBuilder>(), Substitute.For<ILogger>());
 		_packages = Substitute.For<IApplicationPackageListProvider>();
@@ -378,7 +381,54 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "an unreadable target cannot be validated")
 			.WithMessage("*could not be read*");
+		_designer.Received(InheritedLookupOverride.TargetReadAttemptCount)
+			.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>());
+		_retryDelay.Received(InheritedLookupOverride.TargetReadAttemptCount - 1)
+			.Wait(InheritedLookupOverride.TargetReadRetryInterval);
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Reads the target again while it reads as missing after a publish, and redirects once a read succeeds.")]
+	public void Create_ShouldRedirectInheritedFolder_WhenTargetReadSucceedsAfterUnsuccessfulReads() {
+		// Arrange
+		int targetReads = 0;
+		_designer.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>())
+			.Returns(_ => ++targetReads < 3
+				? new RuntimeEntitySchemaResponse { Success = false }
+				: new RuntimeEntitySchemaResponse {
+					Success = true,
+					Schema = new RuntimeEntitySchemaDto {
+						UId = ContactFolderUId, Name = "ContactFolder", ParentUId = BaseFolderUId
+					}
+				});
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+
+		// Act
+		_creator.Create(options);
+
+		// Assert
+		SavedFolder().ReferenceSchema.UId.Should().Be(ContactFolderUId,
+			because: "the target is validated once its runtime read succeeds");
+		targetReads.Should().Be(3, because: "the target is read until the first successful answer");
+		_retryDelay.Received(2).Wait(InheritedLookupOverride.TargetReadRetryInterval);
+	}
+
+	[Test]
+	[Description("Ends the walk on an unsuccessful ancestor read without reading it again.")]
+	public void Create_ShouldRefuseOverride_WithoutRetry_WhenAncestorReadIsUnsuccessful() {
+		// Arrange
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"Contact\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "Contact does not inherit from BaseFolder")
+			.WithMessage("*does not inherit from 'BaseFolder'*");
+		_designer.Received(1).GetRuntimeEntitySchema(UnresolvableRootUId, Arg.Any<RemoteCommandOptions>());
+		_retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
 	}
 
 	[Test]

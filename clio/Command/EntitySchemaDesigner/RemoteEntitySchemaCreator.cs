@@ -177,9 +177,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 				ApplyInheritedLookupOverride(schema, parsedColumn, referenceSchemas, cultureName, options);
 				continue;
 			}
-			if (InheritedLookupOverride.IsInheritedColumn(schema, parsedColumn.Name)) {
+			if (EntitySchemaDesignerSupport.IsInheritedColumn(schema, parsedColumn.Name)) {
 				throw new InvalidOperationException(
-					InheritedLookupOverride.BuildInheritedNameConflictMessage(schema, parsedColumn.Name));
+					EntitySchemaDesignerSupport.BuildInheritedNameConflictMessage(schema, parsedColumn.Name));
 			}
 			columns.Add(CreateColumn(parsedColumn, referenceSchemas, cultureName, options));
 		}
@@ -200,10 +200,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	}
 
 	private static void EnsureSingleOverridePerColumn(IEnumerable<ParsedColumn> parsedColumns) {
-		string? repeatedColumnName = parsedColumns
+		string? repeatedColumnName = EntitySchemaDesignerSupport.FindRepeatedColumnName(parsedColumns
 			.Where(column => column.IsOverride)
-			.GroupBy(column => column.Name, StringComparer.OrdinalIgnoreCase)
-			.FirstOrDefault(group => group.Count() > 1)?.Key;
+			.Select(column => column.Name));
 		if (repeatedColumnName != null) {
 			throw new InvalidOperationException(
 				$"Inherited column '{repeatedColumnName}' is overridden more than once in one request; send one " +

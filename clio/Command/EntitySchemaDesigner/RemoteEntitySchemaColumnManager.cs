@@ -1175,8 +1175,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		if (!hasDuplicate) {
 			return;
 		}
-		throw new EntitySchemaDesignerException(InheritedLookupOverride.IsInheritedColumn(schema, name)
-			? InheritedLookupOverride.BuildInheritedNameConflictMessage(schema, name)
+		throw new EntitySchemaDesignerException(EntitySchemaDesignerSupport.IsInheritedColumn(schema, name)
+			? EntitySchemaDesignerSupport.BuildInheritedNameConflictMessage(schema, name)
 			: $"Column '{name}' already exists in schema '{schema.Name}'.");
 	}
 
@@ -1687,16 +1687,14 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private static void EnsureSingleInheritedRedirectPerColumn(
 		EntityDesignSchemaDto schema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
-		string? repeatedColumnName = operations
+		string? repeatedColumnName = EntitySchemaDesignerSupport.FindRepeatedColumnName(operations
 			.Where(operation => string.Equals(operation.Action?.Trim(), "modify", StringComparison.OrdinalIgnoreCase)
 				&& !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
 				&& !string.IsNullOrWhiteSpace(operation.ColumnName))
 			.Select(operation => operation.ColumnName.Trim())
-			.Where(columnName => InheritedLookupOverride.IsInheritedColumn(schema, columnName)
+			.Where(columnName => EntitySchemaDesignerSupport.IsInheritedColumn(schema, columnName)
 				&& !(schema.Columns ?? []).Any(column =>
-					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase)))
-			.GroupBy(columnName => columnName, StringComparer.OrdinalIgnoreCase)
-			.FirstOrDefault(group => group.Count() > 1)?.Key;
+					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase))));
 		if (repeatedColumnName != null) {
 			throw new EntitySchemaDesignerException(
 				$"Inherited column '{repeatedColumnName}' is redirected more than once in one request; send one " +

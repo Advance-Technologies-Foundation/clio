@@ -35,34 +35,17 @@ internal interface IInheritedLookupOverride {
 	void VerifyPersisted(EntityDesignSchemaDto reloadedSchema, string columnName, string referenceSchemaName);
 }
 
-internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient designerClient)
-	: IInheritedLookupOverride {
+internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient designerClient,
+	IRetryDelay retryDelay) : IInheritedLookupOverride {
 
 	/// <summary>Upper bound on the parent hops followed from the requested schema.</summary>
 	internal const int MaxHierarchyDepth = 32;
 
-	/// <summary>
-	/// Builds the refusal for a new column whose name the schema already inherits, naming the parent and the
-	/// override form that changes an inherited lookup instead.
-	/// </summary>
-	/// <param name="schema">Design schema that inherits the column.</param>
-	/// <param name="columnName">Requested column name.</param>
-	/// <returns>The caller-facing message.</returns>
-	internal static string BuildInheritedNameConflictMessage(EntityDesignSchemaDto schema, string columnName) {
-		string parentName = string.IsNullOrWhiteSpace(schema.ParentSchema?.Name)
-			? "its parent schema"
-			: $"parent schema '{schema.ParentSchema.Name}'";
-		return $"Column '{columnName}' is inherited by schema '{schema.Name}' from {parentName}, so it cannot be "
-			+ "added as a new column. To point an inherited lookup at another schema, override it instead: in "
-			+ $"create-entity-schema send {{\"name\":\"{columnName}\",\"override\":true,"
-			+ "\"reference-schema-name\":\"<Schema>\"}; on an existing schema use the modify action with "
-			+ "reference-schema-name. Otherwise choose a different column name.";
-	}
+	/// <summary>Number of reads of the requested schema before its hierarchy is reported unreadable.</summary>
+	internal const int TargetReadAttemptCount = 5;
 
-	/// <summary>Returns whether <paramref name="columnName"/> is one of the inherited columns of the schema.</summary>
-	internal static bool IsInheritedColumn(EntityDesignSchemaDto schema, string columnName) {
-		return FindInheritedColumn(schema, columnName) != null;
-	}
+	/// <summary>Wait between reads of the requested schema.</summary>
+	internal static readonly TimeSpan TargetReadRetryInterval = TimeSpan.FromSeconds(3);
 
 	/// <inheritdoc />
 	public EntitySchemaColumnDto Apply(EntityDesignSchemaDto schema, string columnName, string referenceSchemaName,
@@ -101,7 +84,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 				$"Column '{columnName}' was saved as an own column of schema '{reloadedSchema.Name}' instead of "
 				+ "overriding the inherited column.");
 		}
-		EntitySchemaColumnDto inheritedColumn = FindInheritedColumn(reloadedSchema, columnName)
+		EntitySchemaColumnDto inheritedColumn = EntitySchemaDesignerSupport.FindInheritedColumn(reloadedSchema, columnName)
 			?? throw new EntitySchemaDesignerException(
 				$"Inherited column '{columnName}' could not be reloaded for schema '{reloadedSchema.Name}'.");
 		string persistedReference = inheritedColumn.ReferenceSchema?.Name;
@@ -113,21 +96,15 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 		}
 	}
 
-	private static EntitySchemaColumnDto? FindInheritedColumn(EntityDesignSchemaDto schema, string columnName) {
-		return (schema.InheritedColumns ?? []).FirstOrDefault(column =>
-			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
-	}
-
 	private static EntitySchemaColumnDto RequireInheritedLookup(EntityDesignSchemaDto schema, string columnName) {
-		EntitySchemaColumnDto? column = FindInheritedColumn(schema, columnName);
+		EntitySchemaColumnDto? column = EntitySchemaDesignerSupport.FindInheritedColumn(schema, columnName);
 		if (column == null) {
 			bool isOwnColumn = (schema.Columns ?? []).Any(item =>
 				string.Equals(item.Name, columnName, StringComparison.OrdinalIgnoreCase));
 			throw new EntitySchemaDesignerException(isOwnColumn
-				? $"Column '{columnName}' is an own column of schema '{schema.Name}', not an inherited one; an "
-					+ "override applies only to a column inherited from the parent schema."
-				: $"Parent schema '{schema.ParentSchema?.Name ?? "<none>"}' of schema '{schema.Name}' has no column "
-					+ $"'{columnName}' to override.");
+				? EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(schema.Name, columnName)
+				: EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(schema.Name, schema.ParentSchema?.Name,
+					columnName));
 		}
 		if (!column.IsLookupType()) {
 			throw new EntitySchemaDesignerException(
@@ -185,25 +162,34 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 	}
 
 	// The root entity schema reports a parent the runtime service cannot resolve; the service answers that
-	// with an unsuccessful response, which ends the hierarchy above the target. The same answer for the target
-	// itself means its hierarchy could not be read. Transport and markup failures (InvalidOperationException
-	// subclasses) are not an answer and propagate.
+	// with an unsuccessful response, which ends the hierarchy above the target. The requested schema is read
+	// again on that answer, because a schema published moments ago reads as missing until the schema manager
+	// finishes refreshing it; when every read fails, its hierarchy could not be read. Transport and markup
+	// failures (InvalidOperationException subclasses) are not an answer and propagate.
 	private Guid ReadParentUId(Guid schemaUId, bool isTarget, RemoteCommandOptions options) {
-		try {
-			RuntimeEntitySchemaResponse response = designerClient.GetRuntimeEntitySchema(schemaUId, options);
-			if (response?.Success == true && response.Schema != null) {
-				return response.Schema.ParentUId;
+		int attemptCount = isTarget ? TargetReadAttemptCount : 1;
+		InvalidOperationException? lastAnswer = null;
+		for (int attempt = 1; attempt <= attemptCount; attempt++) {
+			if (attempt > 1) {
+				retryDelay.Wait(TargetReadRetryInterval);
 			}
-		} catch (InvalidOperationException exception) when (exception.GetType() == typeof(InvalidOperationException)) {
-			if (!isTarget) {
-				return Guid.Empty;
+			try {
+				RuntimeEntitySchemaResponse response = designerClient.GetRuntimeEntitySchema(schemaUId, options);
+				if (response?.Success == true && response.Schema != null) {
+					return response.Schema.ParentUId;
+				}
+				lastAnswer = null;
+			} catch (InvalidOperationException exception) when (exception.GetType() == typeof(InvalidOperationException)) {
+				lastAnswer = exception;
 			}
-			throw new EntitySchemaDesignerException(BuildUnreadableHierarchyMessage(schemaUId), exception);
 		}
 		if (!isTarget) {
 			return Guid.Empty;
 		}
-		throw new EntitySchemaDesignerException(BuildUnreadableHierarchyMessage(schemaUId));
+		string message = BuildUnreadableHierarchyMessage(schemaUId);
+		throw lastAnswer == null
+			? new EntitySchemaDesignerException(message)
+			: new EntitySchemaDesignerException(message, lastAnswer);
 	}
 
 	private static string BuildUnreadableHierarchyMessage(Guid schemaUId) {

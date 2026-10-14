@@ -150,7 +150,7 @@ internal class RemoteEntitySchemaColumnManagerTests
 				_lookupDefaultDisplayValueResolver,
 				_captionCultureResolver,
 				new CultureAvailabilityGuard(_cultureCatalog, _logger),
-				new InheritedLookupOverride(_designerClient)),
+				new InheritedLookupOverride(_designerClient, Substitute.For<IRetryDelay>())),
 			_designerClient,
 			_runtimeEntitySchemaReader,
 			_dependencyResolver,
