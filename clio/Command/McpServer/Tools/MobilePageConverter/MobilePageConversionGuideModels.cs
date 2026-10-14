@@ -673,7 +673,7 @@ public sealed class ElementMapEntry {
 	/// <item><description><c>"page"</c> — the parent is inserted by this map, from the source page.
 	/// </description></item>
 	/// <item><description><c>"converter"</c> — the parent is inserted by this map and was synthesized (a
-	/// tab-body grid or its Area card), so it carries no <see cref="WebName"/>.</description></item>
+	/// tab-body grid or its Area card, or a tablet band grid), so it carries no <see cref="WebName"/>.</description></item>
 	/// <item><description><c>"unknown"</c> — NEITHER this map nor the template provides it. This is the one
 	/// value that reaches the caller, projected into
 	/// <see cref="MobilePageConversionGuide.UnresolvedParents"/>, which owns the caller-facing contract.
@@ -1239,9 +1239,12 @@ public sealed class MobilePageConversionGuide {
 
 	// ── Adaptive (per-breakpoint) layout proposal ─────────────────────
 	/// <summary>
-	/// The responsive layout applied to each MULTI-column mobile grid container: how many grid columns per
-	/// breakpoint (<c>small</c> phone = 1, <c>medium</c>/<c>large</c> tablet = the web columns) and which
-	/// cell each child occupies. Both sides are ALREADY baked into the operations' values — the container's
+	/// The responsive layout applied to each MULTI-column mobile grid container: the grid columns per
+	/// breakpoint (<c>small</c> phone = 1; <c>medium</c>/<c>large</c> tablet = weighted columns taken from the web
+	/// grid) and which cell each child occupies. A grid whose rows differ in column structure is stacked on tablet,
+	/// and each band of rows with several columns gets its own synthesized <c>&lt;container&gt;_TabletBand&lt;N&gt;</c>
+	/// grid, listed here as a group of its own.
+	/// Both sides are ALREADY baked into the operations' values — the container's
 	/// <c>adaptive</c> columns into its own values and each child's placement into
 	/// <c>viewConfigDiff[].values.layoutConfig.adaptive</c> — so there is nothing separate to apply. Present
 	/// it at the conversion gate as what the conversion DID, and if the user wants it different, the change
@@ -1848,7 +1851,7 @@ public sealed class AdaptiveLayoutGroup {
 
 	/// <summary>
 	/// Advisory overview of the grid columns per breakpoint (already in the container's <c>values</c>):
-	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of CSS column sizes (e.g. ["1fr","1fr"]).
+	/// keys <c>small</c> / <c>medium</c> / <c>large</c>, each a list of column weights (e.g. ["1fr","2fr"]).
 	/// </summary>
 	[JsonPropertyName("columnsByBreakpoint")]
 	public IReadOnlyDictionary<string, IReadOnlyList<string>> ColumnsByBreakpoint { get; init; }
