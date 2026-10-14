@@ -442,7 +442,9 @@ internal sealed class PageSmokeRunner(
 				};
 				return;
 			}
-			await ReadWhatFollowedAsync(cdp, events, request, report, result, mark, budgetEnd, ct).ConfigureAwait(false);
+			int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
+				request.ClickWaitSeconds * 1000);
+			await ReadWhatFollowedAsync(cdp, events, report, result, mark, settleMs, ct).ConfigureAwait(false);
 			if (report.Settled == false) {
 				result.Warnings.Add($"The page was still changing when click-wait ({request.ClickWaitSeconds} s) ended; "
 					+ "what followed may be incomplete.");
@@ -460,12 +462,10 @@ internal sealed class PageSmokeRunner(
 
 	// What a pressed button led to: the settle wait, then the page address, overlays and invalid fields. The button was
 	// pressed, so a read that fails now must not hide that: an oversized reply costs only its own part of the report.
-	private async Task ReadWhatFollowedAsync(ICdpSession cdp, PageEventCollector events, PageSmokeRequest request,
-		PageClickReport report, PageSmokeResult result, int mark, DateTimeOffset budgetEnd, CancellationToken ct) {
+	private async Task ReadWhatFollowedAsync(ICdpSession cdp, PageEventCollector events, PageClickReport report,
+		PageSmokeResult result, int mark, int settleMs, CancellationToken ct) {
 		bool followedReported = false;
 		try {
-			int settleMs = (int)Math.Clamp((budgetEnd - Clock()).TotalMilliseconds - AnswerReserveMs, 0,
-				request.ClickWaitSeconds * 1000);
 			report.Settled = await WaitToSettleAsync(cdp, events, settleMs, ct).ConfigureAwait(false);
 			ReportWhatFollowed(report, events, mark, result);
 			followedReported = true;
