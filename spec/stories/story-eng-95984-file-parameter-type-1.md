@@ -5,7 +5,9 @@
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) - AC-1..AC-10
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D1-D9, D23, D25, D26
 **Test plan**: [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md)
-**Status**: review (implementation started 2026-10-13; `review` since 2026-10-14, when the clio feature PR https://github.com/Advance-Technologies-Foundation/clio/pull/1814 left draft)
+**Status**: review (implementation started 2026-10-13; `review` since 2026-10-14, when the clio feature PR
+https://github.com/Advance-Technologies-Foundation/clio/pull/1814 left draft). All three PRs merged on 2026-10-14; it
+stays `review` while V6, the Jira edits of ENG-95984 and the review of the `make check-knowledge` report are open.
 **Size**: L (about 7.5-15.5 h of AI-agent time and 4.5-10 h of the owner's time; about 3-5 working days of calendar)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one feature PR each, titled
 `ENG-95984 File process parameter type`, branch `feature/ENG-95984-file-process-parameter-type`)
@@ -19,7 +21,10 @@ its clio PR merges only after this story's knowledge generation is published. Fo
 
 > **Done 2026-10-14** (Q9: the follow-ups are created on day 0): the three follow-up Sub-tasks of ENG-95984 exist
 > in Jira as ENG-103162 (story 2), ENG-103163 (story 3) and ENG-103164 (story 4), and their keys are in the story
-> headers and the `jira` fields of the three follow-up rows in `spec/sprint-status.yaml`.
+> headers and the `jira` fields of the three follow-up rows in `spec/sprint-status.yaml`. The same day they were moved
+> to the new Task ENG-103304 File and collection process parameters: follow-ups (it relates to ENG-95984 and is
+> blocked by ENG-96506 Generated report + process parameter modes), because a Jira parent cannot close while it has
+> open Sub-tasks.
 
 ---
 
@@ -44,35 +49,36 @@ sub-process per file, and never save a binding green that fails at run time
 The full text is the spec's AC table (it replaces the Jira A1-A4; agreed 2026-10-07). Each line below is that criterion
 in short.
 
-- [ ] **AC-1** - `File` (aliases `file`, `filelocator`, `file locator`; FileLocator `A33C9252`) and `FileCollection`
+- [x] **AC-1** - `File` (aliases `file`, `filelocator`, `file locator`; FileLocator `A33C9252`) and `FileCollection`
   (aliases `filecollection`, `file collection`, `collection of files`; a `CompositeObjectList` with exactly one item
   `File`: FileLocator, Variable, no Tag) are accepted by create `parameters[]` and modify `addParameter`; the name
   `"File"` never reaches `DataValueTypeManager`; `Binary` / `Blob` are refused naming `File` and `FileCollection`,
   keeping "not supported" and "Binary".
-- [ ] **AC-2** - File and FileCollection default to Variable, an explicit `direction` wins; no constant form (`value`
+- [x] **AC-2** - File and FileCollection default to Variable, an explicit `direction` wins; no constant form (`value`
   on File, `addMapping value` onto any FileLocator or `CompositeObjectList` target refused); `referenceSchema` refused
   on both; `setParameter type: FileCollection` on another shape refused; `removeParameter` refused while any item is
-  referenced.
-- [ ] **AC-3** - describe reports File as `FileLocator` and the FileCollection predicate as `FileCollection` (plus
+  referenced. (Exception: `addMapping` with an empty `value: ""` is still stored as an empty constant, an optional
+  Minor note of the package PR's review, left as is.)
+- [x] **AC-3** - describe reports File as `FileLocator` and the FileCollection predicate as `FileCollection` (plus
   `itemProperties`); feeding that back rebuilds the same shape.
-- [ ] **AC-4** - `processParameter` / `targetProcessParameter` accept `Docs.File`; a process-level item's meta path
+- [x] **AC-4** - `processParameter` / `targetProcessParameter` accept `Docs.File`; a process-level item's meta path
   has no element segment.
-- [ ] **AC-5** - P1 binds both levels (including a multi-instance `InputRecordCollection`); P2 pairs the file item on
+- [x] **AC-5** - P1 binds both levels (including a multi-instance `InputRecordCollection`); P2 pairs the file item on
   file-consuming targets, and a file item it cannot pair gets a notice (cleared if bound elsewhere), not a refusal;
   R-M1 and R-M2 refuse; P2-MI and P3 give notices; an `expression` triggers none of them (only the meta-path check,
   since 1.6.6.79).
-- [ ] **AC-6** - a FileCollection maps from `ObjectFiles` / `ObjectFiles.File` and `ReportFiles` / `ReportFiles.File`
+- [x] **AC-6** - a FileCollection maps from `ObjectFiles` / `ObjectFiles.File` and `ReportFiles` / `ReportFiles.File`
   whatever the action (verified on hand-built elements for both `ResultActionType` values); a file-output mirror stays
   refused pointing to `FileCollection`; a dotted mirror source is refused.
-- [ ] **AC-7** - a value that is exactly one element-output token is described as `sourceElement` +
+- [x] **AC-7** - a value that is exactly one element-output token is described as `sourceElement` +
   `sourceElementParameter` (dotted for an item) when replaying those names changes no other level; an input bound only
   on a nested item is listed.
-- [ ] **AC-8** - the serialization of a File, a FileCollection declared with no direction (the Variable default) and a
+- [x] **AC-8** - the serialization of a File, a FileCollection declared with no direction (the Variable default) and a
   FileCollection declared with `direction: Out` equals the three shipped captures under the test plan's AC-8
   comparison rule (N5, PT-a, N9, N15, N14, PT-b; any other difference fails).
-- [ ] **AC-9** - the mapping shape onto the Process-parameter variant's `Files` is pinned at design time here;
+- [x] **AC-9** - the mapping shape onto the Process-parameter variant's `Files` is pinned at design time here;
   end-to-end consumption is verified in ENG-96506 Generated report + process parameter modes.
-- [ ] **AC-10** - the floor moves to the final cut; the create and modify descriptions name the two types;
+- [x] **AC-10** - the floor moves to the final cut; the create and modify descriptions name the two types;
   `process-files` exists; `clio.mcp.e2e` covers create, addParameter, describe read-back, the two-level
   multi-instance mapping and the refusals.
 
@@ -89,49 +95,51 @@ decision in the PR description: D1; D2 with D3; D4; D5 with `BindCollection`; D6
 commit, `b6dcd2c1`, and grew review-fix commits, listed in its description; whether to split before merge is the
 owner's call)
 
-- [ ] **PB-1** (D1) `PB/Parameters/ProcessParameterService.cs` `NormalizeParameterTypeName`: file aliases to the
+- [x] **PB-1** (D1) `PB/Parameters/ProcessParameterService.cs` `NormalizeParameterTypeName`: file aliases to the
   canonical FileLocator name; dedicated Binary / Blob refusal (F-T1); generic list adds `File, FileCollection`; doc
   comment corrected.
-- [ ] **PB-2** (D2, D3) `ProcessParameterService.cs`: `FileCollection` aliases beside the Collection aliases;
+- [x] **PB-2** (D2, D3) `ProcessParameterService.cs`: `FileCollection` aliases beside the Collection aliases;
   `AddProcessParameter` creates the single `File` item with a Variable default; the wrong "designer writes Out" comment
   corrected; `ToDescribeParameter` applies the FileCollection predicate (process-level only); doc comments in
   `PB/Contracts/ProcessDescriptorContracts.cs` (`ProcessParameterDescriptor`).
-- [ ] **PB-3** (D4) `PB/ProcessSchemaElementLocator.cs` (`DescendItemProperties` over a root collection plus owner
+- [x] **PB-3** (D4) `PB/ProcessSchemaElementLocator.cs` (`DescendItemProperties` over a root collection plus owner
   label; new `ResolveProcessParameterPath`, no `ContainerUId` backfill); both `ResolveProcessParameter` callers in
   `PB/Mappings/ProcessMappingService.cs` switched.
-- [ ] **PB-4** (D5) `PB/Mappings/ProcessMappingService.cs` `ApplyMapping`: P1, P2, P2-MI, P3, R-M1, R-M2 after the
+- [x] **PB-4** (D5) `PB/Mappings/ProcessMappingService.cs` `ApplyMapping`: P1, P2, P2-MI, P3, R-M1, R-M2 after the
   existing guards, all targets resolved before the first write; `BindCollection` on
   `PB/Mappings/IProcessMappingService.cs`; notices through `IProcessDesignNotices`. Root-cause T-68 (nested-item
   mapping in `mappings[]` on the create path, `PB/Design/ProcessBuildHandler.cs`) first, and run the binder on create
   as well as modify.
-- [ ] **PB-5** (D6, D2) `ProcessParameterService.cs` `ResolveTypeSourceParameter` flat only (F-T5; the re-mirror path
+- [x] **PB-5** (D6, D2) `ProcessParameterService.cs` `ResolveTypeSourceParameter` flat only (F-T5; the re-mirror path
   inherits it); `CloneItemProperties` gives an untagged FileLocator item the FileCollection hint (F-T6).
-- [ ] **PB-6** (D7) `PB/Parameters/ProcessParameterValueValidator.cs` `ValidateConstantValue` refuses a constant on
+- [x] **PB-6** (D7) `PB/Parameters/ProcessParameterValueValidator.cs` `ValidateConstantValue` refuses a constant on
   `IFileLocator` or `CompositeObjectList`; `ProcessParameterService.cs`: "no constant form", `referenceSchema` refusal
   extended to File / FileCollection, `SetProcessParameter` FileCollection-shape refusal, `FindParameterUsages` over
   item UIds recursively (`WithNestedParameters`).
-- [ ] **PB-7** (D8) `PB/Describe/ProcessDescriber.cs` lists an input whose nested item carries a value stamped with
+- [x] **PB-7** (D8) `PB/Describe/ProcessDescriber.cs` lists an input whose nested item carries a value stamped with
   this schema; single-token element-source decode beside `DecodeRecordColumnSource`; `PB/Contracts/DescribeContracts.cs`
   doc comment ("Null for every other value" no longer true).
-- [ ] **PB-8** (D9) `ProcessParameterService.cs` `BindMirroredCollection` calls `BindCollection` with the clone pairs;
+- [x] **PB-8** (D9) `ProcessParameterService.cs` `BindMirroredCollection` calls `BindCollection` with the clone pairs;
   the comment that predicted null rows narrowed (parity commit, contingency X4). The re-mirror path binds its items
   too and keeps a caller's formula on the outer level (`BindCollectionItems`; ADR D9).
-- [ ] **PB-9** (all) tests: `PBT/FileProcessParameterTests.cs`, `PBT/FileCollectionMappingTests.cs`,
+- [x] **PB-9** (all) tests: `PBT/FileProcessParameterTests.cs`, `PBT/FileCollectionMappingTests.cs`,
   `PBT/ElementSourceDecodeTests.cs` (new), extended `ProcessParameterServiceTests`, `ParameterTypeCompatibilityTests`,
   `ProcessDescriberTests`, `MultiInstanceMappingTests`; the probe `AddProcessParameter_ShouldNameCollection_InUnsupportedTypeMessage`
   moved from `Binary` to `Image` or `Color`; the shared helper `PBT/FileProcessingTestSupport.cs`, the drift guard
   `PBT/FileProcessingTemplateDriftTests.cs`, the three captures under `PBT/Fixtures/FileProcessing/` with their
-  `PROVENANCE.md` (SHA-256 pins). This PR owns the helper and guard; ENG-96505 and ENG-96506 inherit them.
-- [ ] **PB-10** (AC-8) NEW `docs/file-parameter-capture.md` (the capture convention, the three shipped captures, the
+  `PROVENANCE.md` (SHA-256 pins). This PR owns the helper and guard; ENG-96505 and ENG-96506 inherit them. (The probe
+  moved to `Image` and is now `AddProcessParameter_ShouldListCollectionFileAndFileCollection_InUnsupportedTypeMessage`.)
+- [x] **PB-10** (AC-8) NEW `docs/file-parameter-capture.md` (the capture convention, the three shipped captures, the
   fields compared); `docs/process-builder-architecture.md` rows for `IProcessParameterService` /
   `IProcessMappingService`; restamp `packages/CrtProcessBuilder/descriptor.json` LAST to the number claimed before
   cutting, in the PR description AND in the one shared cut claim (a comment on ENG-92719 File processing element);
   tag `crtprocessbuilder-<version>` pushed and verified with `git ls-remote --tags origin`;
-  `.codex/workspace-diary.md` entry.
+  `.codex/workspace-diary.md` entry. (1.6.6.99: restamp `abf2a67b`, tag `crtprocessbuilder-1.6.6.99` at the producing
+  commit `dcfdc83f`, on the remote; only the diary commit followed the restamp.)
 
 **clio** (base `master`; one feature PR, because the guards bind archive, pins, floors and descriptions to one tree)
 
-- [ ] **CL-1** Rebundle and floor: `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head>
+- [x] **CL-1** Rebundle and floor: `pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <package at PR head>
   -Version <claimed>`, where `<claimed>` is the number claimed before cutting in the PR description AND in the one
   shared cut claim on ENG-92719 File processing element (comment 550565; the next free number in the claim list at
   cut time); `clio/CrtProcessBuilder/CrtProcessBuilder.gz` and the four pins in
@@ -140,26 +148,28 @@ owner's call)
   `clio.tests/Command/ProcessDesignerRequiresPackageAttributeTests.cs`; the enforced-floor sentence in three
   descriptions. Install from the refreshed BUILD OUTPUT, each install after the user's explicit approval. A longer
   floor literal (a new digit) costs a byte in three descriptions: the budget test catches it, this PR trims (ADR D25).
-- [ ] **CL-2** Descriptions (Q20 = A (2026-10-14): trim, reviewer-approved): type lists in
+- [x] **CL-2** Descriptions (Q20 = A (2026-10-14): trim, reviewer-approved): type lists in
   `clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs` and `ModifyBusinessProcessTool.cs`
   (+30 / +28 B) paid by trimming existing text, each trim approved by the reviewer and measured by lowering the ceiling
   (the create candidate measured at cut, the modify trim chosen at cut with the reviewer; no ceiling raise);
   `DescribeProcessTool.cs` decoded-source clause (+40 B);
   `ModifyProcessAsNewVersionTool.cs` floor-history parenthetical rewritten once without its enumeration; the figures in
   the comment of `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` re-measured; no `name=` pointer, no
-  binder rules in any description; count words grepped in description and guide together.
-- [ ] **CL-3** `ManagerMap` arm: `clio/Command/ProcessModel/Schema.cs` adds `"fileprocessing" or "processfile"` to the
+  binder rules in any description; count words grepped in description and guide together. (Trimmed: the mirror
+  refusal's rationale in both write contracts and the member list of create's floor clause, approved with the clio
+  PR; modify 35,053 B, create 35,007 B, describe 34,195 B under the unchanged 35,072 B ceiling.)
+- [x] **CL-3** `ManagerMap` arm: `clio/Command/ProcessModel/Schema.cs` adds `"fileprocessing" or "processfile"` to the
   `EventType.UserTask` arm; `[TestCase]`s in `clio.tests/Command/ProcessModel/ManagerMapResolveDataIdTests.cs`; update
   `docs/knowledge/ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`.
-- [ ] **CL-4** `docs/McpCapabilityMap.md` rows (type names, FileCollection read-back, describe decode, floor), the
+- [x] **CL-4** `docs/McpCapabilityMap.md` rows (type names, FileCollection read-back, describe decode, floor), the
   collapse sentence left as it is; in `clio.mcp.e2e/ModifyBusinessProcessToolE2ETests.cs`, the existing
   `ModifyBusinessProcess_Should_RejectUnsupportedParameterType` keeps its assertions, and both its `[Description]`
   ("an unsupported (complex) type", `:2402`) and its Act comment ("a deferred complex type", `:2414`) are reworded to
   "refused for good: a file is type File".
-- [ ] **CL-5** `clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs` (FileLocator / FileCollection
+- [x] **CL-5** `clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs` (FileLocator / FileCollection
   read-back, decoded pair); the `DescribedParameter` doc comments `Type`, `SourceElement` and `ItemProperties` in
   `clio/Command/ProcessModel/IProcessDescriber.cs` rewritten; no DTO member change.
-- [ ] **CL-6** NEW `clio.mcp.e2e/FileParameterToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`,
+- [x] **CL-6** NEW `clio.mcp.e2e/FileParameterToolE2ETests.cs` (`[Category(McpE2ECategories.ProcessDesigner)]`,
   `MinimumPackageVersion` = the floor, every describe read-back with `mode=full`), without the generic `userTask`
   route for the Process file schemas: test-plan cases TC-I-01..TC-I-13. The cross-ticket cases XT-14a..d (the
   Process-parameter variant's `Files` over the wire) are planned in ENG-96506's clio PR (O-TP1) and are not part of
@@ -169,25 +179,30 @@ owner's call)
   `ProcessModel/a-file-collection-is-described-by-its-alias.md`, `platform/builder-process-parameters-carry-il2.md`
   (after V4), `ProcessModel/corpus-scan-b8-is-the-creation-version.md`; UPDATE the ManagerMap-arm record; REVIEW the
   records `make check-knowledge` reports. Status flips in `spec/sprint-status.yaml` (see "Status convention").
+  (The B8 record landed as `platform/process-schema-b8-is-the-creation-version.md`.) **Open:** nothing records that the
+  `make check-knowledge` report (89 records on the clio PR) was reviewed in full; the owner reviews it.
 
 **clio-knowledge** (base `master`, own worktree under `.worktrees/<task>/`)
 
-- [ ] **KB-1** NEW `guidance/mcp/guides/processes/files.md` (`process-files`, topic `creatio.process-files`, bundle path
+- [x] **KB-1** NEW `guidance/mcp/guides/processes/files.md` (`process-files`, topic `creatio.process-files`, bundle path
   `resources/process-files.md`), banner-less, not in `ProcessGuideSet.GoLiveFloor`; registered in `bundle-source.json`
   (entry, `requirements.itemIds`, `resourceUris`), `GuidanceMigrationTests.PostMigrationGuidance`, a routing row in the
   same generation; pin test `automation/Clio.Knowledge.Bundle.Tests/FileParameterGuidanceTests.cs`. Text rules: every
   read-back says `describe-business-process mode=full` (or `element=<name>`) with the gate "on clio older than
   8.1.0.141, omit `mode`" that `process-modeling.md` owns (`ClioToolSyncGuidanceTests`); consent wording within 80
   characters of every `install-process-builder` mention; no Jira key, issue or PR link; a "from clio <version>" line
-  with the real number at merge, a CrtProcessBuilder version only as inline evidence.
-- [ ] **KB-2** `guidance/mcp/guides/processes/parameters.md`: type list gains File and FileCollection (its
+  with the real number at merge, a CrtProcessBuilder version only as inline evidence. (Changed in review, `decefd9`,
+  reviewer-approved: the guides gate on the FULL create-business-process contract naming type File ("File-aware
+  clio"), not on a clio release number, and `mode` needs no 8.1.0.141 gate because every File-aware clio takes it.)
+- [x] **KB-2** `guidance/mcp/guides/processes/parameters.md`: type list gains File and FileCollection (its
   not-supported tail drops "file"); the FileCollection exception to "never by re-typing the shape";
   `CollectionParameterGuidanceTests.cs` rationale amended and the new sentences pinned.
-- [ ] **KB-3** `guidance/mcp/guides/processes/sub-process.md` and `sub-process-when.md`: the multi-instance passages
+- [x] **KB-3** `guidance/mcp/guides/processes/sub-process.md` and `sub-process-when.md`: the multi-instance passages
   rewritten under the "from clio <version>" gate, "send both" kept, read-backs with `mode=full` under the 8.1.0.141
   gate; pinned.
   libraryVersion above master and every branch claim at merge (1.15.144 or higher on 2026-10-14: master is 1.15.143,
-  released 2026-10-13).
+  released 2026-10-13). (The gate is the contract one of KB-1; the read-back in these passages is `element=<name>`;
+  library 1.15.146, published 2026-10-14.)
 
 ---
 
@@ -220,82 +235,96 @@ mode) and never pushed after an approval. The follow-up stories 2-4 do not gate 
 ## Definition of Done
 
 **CrtProcessBuilder**
-- [ ] `File` / `FileCollection` admitted with the D1 aliases; Binary and Blob refused with the "use File" text; the doc
+- [x] `File` / `FileCollection` admitted with the D1 aliases; Binary and Blob refused with the "use File" text; the doc
       comment of `NormalizeParameterTypeName` corrected.
-- [ ] FileCollection creates exactly one item `File` (FileLocator, Variable, no Tag, `ContainerUId = schema.UId`);
+- [x] FileCollection creates exactly one item `File` (FileLocator, Variable, no Tag, `ContainerUId = schema.UId`);
       describe reports `FileCollection` for the predicate; the round trip holds.
-- [ ] Dotted process-parameter paths on both sides; meta path without an element segment.
-- [ ] P1, P2, P2-MI, P3, R-M1, R-M2 in `ApplyMapping`, structured sources only (without `sourceColumn`: a record
+- [x] Dotted process-parameter paths on both sides; meta path without an element segment.
+- [x] P1, P2, P2-MI, P3, R-M1, R-M2 in `ApplyMapping`, structured sources only (without `sourceColumn`: a record
       column is not a parameter-to-parameter binding); `expression` as given (only the package's meta-path check
       applies); `BindCollection` on `IProcessMappingService`.
-- [ ] D6 and D7 refusals; item-aware delete guard; the D9 mirror item binding.
-- [ ] D8 describe listing and single-token element-source decode.
+- [x] D6 and D7 refusals; item-aware delete guard; the D9 mirror item binding.
+- [x] D8 describe listing and single-token element-source decode.
 - [x] T-68 root-caused; a nested-item mapping in ONE create request binds as it does through `addMapping` (no bare
       NullReferenceException), pinned by a regression test. (Ticked 2026-10-14: root cause and regression test in the
       package PR; on the stand no exception on 1.6.6.97 for 2 processes, and manual TC-04 passed. E2E-06 passed
       with V2.)
-- [ ] All new package fixtures carry the crt-process-builder house rule
+- [x] All new package fixtures carry the crt-process-builder house rule
       `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and nothing else (a crt-process-builder rule only:
       clio's `project-context.md` bans `UnitTests` for clio fixtures); AAA, `because:`, `[Description]`; the Binary
       probe moved to `Image` or `Color`; the Binary refusal pin unchanged;
       `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf` green from a
       short-path worktree with `.application` copied in (a deep path exceeds MAX_PATH and every net472 test then
-      fails in SetUp).
-- [ ] `FileProcessingTestSupport`, `FileProcessingTemplateDriftTests`, the three captures and `PROVENANCE.md`
+      fails in SetUp). (3435 passed on `dev-nf`.)
+- [x] `FileProcessingTestSupport`, `FileProcessingTemplateDriftTests`, the three captures and `PROVENANCE.md`
       committed; ENG-96505 inherits them.
-- [ ] `docs/file-parameter-capture.md` committed and matching V4; restamp last; tag pushed and verified on the remote
+- [x] `docs/file-parameter-capture.md` committed and matching V4; restamp last; tag pushed and verified on the remote
       before the merge.
-- [ ] `.codex/workspace-diary.md` entry added (the package's "Workspace diary" rule).
+- [x] `.codex/workspace-diary.md` entry added (the package's "Workspace diary" rule).
 
 **clio**
-- [ ] Rebundled with a strictly increasing `-Version`; four pins, three floor literals, the enforced-floor sentences,
+- [x] Rebundled with a strictly increasing `-Version`; four pins, three floor literals, the enforced-floor sentences,
       capability-map rows and the e2e `MinimumPackageVersion` all at the final cut.
-- [ ] Type lists and describe clause, paid by the byte swap Q20 settled (Q20 = A (2026-10-14): trim,
+- [x] Type lists and describe clause, paid by the byte swap Q20 settled (Q20 = A (2026-10-14): trim,
       reviewer-approved; the enforced-floor sentence and the `stopped validating formulas` clause left as they are);
       budget comment re-measured; ceiling unchanged.
-- [ ] Must stay green: `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`,
+- [x] Must stay green: `FloorSentences_ShouldNotCreditTheEnforcedFloorWithTheCollapse`,
       `EnforcedFloorSentences_ShouldEqualTheRequiresPackageLiteral`, the seven process-designer contracts within
       19,000 B on the wire (`GetToolContracts_ShouldFitTheSevenProcessDesignerContractsInline_WhenRequestedTogether`),
       and the three call-shape drift tests in `ToolContractShortFormTests`.
-- [ ] `ManagerMap` arm with `[TestCase]`s.
-- [ ] The three `DescribedParameter` doc comments rewritten; no new `CLIO*` analyzer warning in a touched file.
-- [ ] Every new or changed test in `clio.tests` and `clio.mcp.e2e`: explicit Arrange / Act / Assert, a `because` on
+- [x] `ManagerMap` arm with `[TestCase]`s.
+- [x] The three `DescribedParameter` doc comments rewritten; no new `CLIO*` analyzer warning in a touched file.
+- [x] Every new or changed test in `clio.tests` and `clio.mcp.e2e`: explicit Arrange / Act / Assert, a `because` on
       every assertion, `[Description]` on every test, runnable on macOS, Linux and Windows (no OS-specific paths or
       commands); clio unit tests carry `[Category("Unit")]`, never `UnitTests`.
-- [ ] `ServerProcessDescriberTests` cases; full unit suite green:
+- [x] `ServerProcessDescriberTests` cases; full unit suite green:
       `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit" < /dev/null` (run from bash; the change
-      spans four modules).
-- [ ] `FileParameterToolE2ETests` and the must-stay-green fixtures run against the stand on the cut with Ignored = 0.
-- [ ] Knowledge records added or updated; `make check-knowledge` report reviewed in full.
-- [ ] "MCP reviewed" (tools create-business-process, modify-business-process, describe-business-process,
+      spans four modules). (16,948 passed after the final master merge.)
+- [x] `FileParameterToolE2ETests` and the must-stay-green fixtures run against the stand on the cut with Ignored = 0.
+      (1.6.6.99: 13/13 on net10.0 and net8.0, the must-stay-green fixtures 20/20, Skipped = 0; the two failing
+      `SubProcessElementToolE2ETests` caption cases are a clio master regression since ENG-103023, not this ticket's.)
+- [ ] Knowledge records added or updated; `make check-knowledge` report reviewed in full. **Open:** the records are
+      in, but nothing records a full review of the 89-record report on the clio PR; the owner reviews it.
+- [x] "MCP reviewed" (tools create-business-process, modify-business-process, describe-business-process,
       modify-process-as-new-version floor, validate-process-graph's `ManagerMap` arm; prompts, resources and `clio/tpl`:
       no update required), "docs reviewed, no update required" (`clio/help/en`, `clio/docs/commands`,
       `clio/Commands.md`, `clio/Wiki/WikiAnchors.txt`: these MCP-only tools have none) and "ClioRing compatibility
       reviewed, no Ring-consumed contract changed" (inspected `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`,
       `clio-ring/ClioRing.Desktop/actions.json`) stated in the PR description, with the re-measured budget figures and
       the `Validated:` commands.
-- [ ] ClioRing: the Purpose leads of the touched tools are confirmed unchanged in `get-tool-contract`
-      `detail=index-entries` (the object index Ring reads), because a Q20 trim could change a lead.
+- [x] ClioRing: the Purpose leads of the touched tools are confirmed unchanged in `get-tool-contract`
+      `detail=index-entries` (the object index Ring reads), because a Q20 trim could change a lead. (Checked from the
+      source: every changed hunk of the four tools lies past the 120 characters of the first sentence that
+      `BuildPurpose` takes.)
 
 **clio-knowledge**
-- [ ] `process-files` born and fully registered (banner-less, not in `ProcessGuideSet.GoLiveFloor`); `parameters.md`
+- [x] `process-files` born and fully registered (banner-less, not in `ProcessGuideSet.GoLiveFloor`); `parameters.md`
       edits within budget; the two multi-instance passages rewritten under the version gate; read-backs say
       `describe-business-process mode=full` (or `element=<name>`); consent wording at every `install-process-builder`
       mention; no Jira key or PR link; pin tests; `ProcessGuideResponseSizeTests`, `GuidanceInlineReplyBudgetTests`,
       `ProcessDigestTests`, `ProcessBuilderInstallConsentGuidanceTests`, `ClioToolSyncGuidanceTests`,
       `ProcessSplitCoreRuleTests` and `InternalTaskReferenceTests` green; libraryVersion bumped; release published.
+      (The two passages are gated on the contract, as in KB-1, not on a version; bundle tests 394/394; 1.15.146
+      published 2026-10-14.)
 
 **Process**
-- [ ] This BMAD set merged before the package PR leaves draft.
+- [x] This BMAD set merged before the package PR leaves draft. (waived by the owner on 2026-10-14: the package PR
+      left draft before this BMAD set merged, edge E9; the BMAD PR merged after it, the same day.)
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.
+      **Open:** `in-progress` and `review` flipped; `done` waits for the open items here, flipped by whoever closes
+      the last one.
 - [ ] W0 measurements recorded with dates and basis; V0, SC-0 and V1-V6 executed and recorded (V7, V8 when run).
-- [ ] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated, skipped
+      **Open:** V6 (`info-knowledge` shows library 1.15.146) was not run; the owner runs it on the .NET Framework stand.
+- [x] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated, skipped
       only for a commit limited to docs, `*.gz` archives or the descriptor restamp (a clio rebundle commit moves
       floor literals, pins and descriptions, so it gets at least the single-lens review); gate 3 before
       ready-to-merge; Blocker and High findings resolved.
 - [ ] Jira: AC replaced with AC-1..AC-10; the description edit ("File (FileLocator) slice"); links changed (D23,
-      including ENG-95985 Send email attachments blocked by ENG-95984).
-- [ ] Only a human merges; hand-over order: package (tag verified on the remote), clio, knowledge.
+      including ENG-95985 Send email attachments blocked by ENG-95984). **Open:** read on 2026-10-14, ENG-95984 still
+      has the A1-A4 criteria, the "Binary / File slice" description and no link to ENG-95985; the owner edits it.
+- [x] Only a human merges; hand-over order: package (tag verified on the remote), clio, knowledge. (The owner merged
+      all on 2026-10-14 in the order package, knowledge, clio: the clio PR re-pinned `curated-knowledge-names.json`
+      to the knowledge generation, so that had to publish first.)
 
 ## Dev Agent Record
 
