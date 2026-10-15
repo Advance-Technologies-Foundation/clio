@@ -460,4 +460,28 @@ public sealed class DescribeProcessToolTests {
 			because: "the meaning of an absent key has to be stated, since the server omits the block while off");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back and the describe-only members to remove before resubmitting (ENG-96505): CrtProcessBuilder 1.6.6.100 reports actionStored, outputs, issues and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
+	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("a fileProcessing element's fileProcessing block (the Process file element: its ONE group is its variant",
+			because: "the describe contract must say which block a Process file element reports and what selects its variant");
+		toolText.Should().Contain("the describe-only actionStored, outputs, issues and each value source's display are removed before resubmitting (clio warns and ignores them if sent back)",
+			because: "those members are read-back only, so a resubmitted block must not carry them");
+		toolText.Should().Contain("get-guidance name=process-files owns the block",
+			because: "the contract must route the block to the guide that owns it");
+		prompt.Should().Contain("A `fileProcessing` element (the designer's \"Process file\") carries its `fileProcessing` block",
+			because: "the prompt lists every configuration block the tool reports");
+		prompt.Should().Contain("(`actionStored`, `outputs`, `issues`, and each value source's `display`) are removed before resubmitting;",
+			because: "the prompt must match the tool contract on the describe-only members");
+		prompt.Should().Contain("clio warns and ignores them if sent back.",
+			because: "the prompt states the same fallback as the contract, so neither surface claims a resubmitted read-back member is refused or applied");
+	}
 }

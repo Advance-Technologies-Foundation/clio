@@ -1141,10 +1141,10 @@ public static class ManagerMap{
 			// "preconfiguredpage" is the same case once more, and it was the last build token still missing: the
 			// element's own data-id is PreconfiguredPageUserTask, which the suffix arm below covers, while the
 			// token a DESCRIPTOR carries does not end in "usertask" and fell to Unknown.
-			// "fileprocessing" / "processfile" are the Process file element's build token and its alias (ENG-96505),
-			// listed one release BEFORE any CrtProcessBuilder emits them, so a clio that meets the first package that
-			// does already validates the graph; the three data-ids (Object/Process/ReportFileProcessingUserTask) end in
-			// the suffix and need no entry.
+			// "fileprocessing" / "processfile" are the Process file element's build token and its alias (ENG-96505):
+			// CrtProcessBuilder 1.6.6.100 builds both and describe emits the token, never the alias. A
+			// descriptor carries a token, not a data-id; the three data-ids (Object/Process/ReportFileProcessingUserTask) end
+			// in the suffix and need no entry.
 			"usertask" or "performtask" or "sendemail" or "approval" or "openeditpage" or "readdata"
 					or "changedata" or "adddata" or "changeaccessrights" or "preconfiguredpage"
 					or "fileprocessing" or "processfile" => EventType.UserTask,

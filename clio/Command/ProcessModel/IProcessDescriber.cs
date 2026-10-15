@@ -821,6 +821,21 @@ public sealed class DescribedElement {
 	public DescribedScriptTask ScriptTask { get; set; }
 
 	/// <summary>
+	/// For a Process file element of a variant the server configures (Object attachments): its <c>fileProcessing</c>
+	/// block with EFFECTIVE values - an inherited template default counts. <c>null</c> for every other element, the
+	/// other two variants included (they describe as a generic user task), and on a server that predates the block.
+	/// <para>The write members resubmit unchanged into a <c>create</c>/<c>modify</c> <c>fileProcessing</c> block, and
+	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>) are
+	/// accepted back when equal. The describe-only members - <c>actionStored</c>, <c>outputs</c>, <c>issues</c> and
+	/// every value source's <c>display</c> - are removed before resubmitting; clio warns and ignores them if sent
+	/// back. A member the server could not read is ABSENT, not a value to resubmit: a bound or invalid action reports
+	/// neither <c>action</c> nor <c>saveTo</c> (an entry of <c>issues</c> says why). The record scope is reported as
+	/// <c>attachments.recordId</c> and NOT repeated in <see cref="Filter"/>.</para>
+	/// </summary>
+	[JsonPropertyName("fileProcessing")]
+	public DescribedFileProcessing FileProcessing { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
@@ -2229,6 +2244,225 @@ public sealed class DescribedFormulaTarget {
 	public string Unresolved { get; set; }
 
 	/// <summary>Anything a newer server reports that this build does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A Process file element read back in the <c>fileProcessing</c> block vocabulary. Mirrors the server's
+/// <c>DescribeFileProcessingInfo</c> field for field.
+/// </summary>
+public sealed class DescribedFileProcessing {
+
+	/// <summary>Identity check: the variant, <c>attachments</c> for the Object attachments variant.</summary>
+	[JsonPropertyName("source")]
+	public string Source { get; set; }
+
+	/// <summary>
+	/// The EFFECTIVE action, <c>useInProcess</c> or <c>saveToAttachments</c>: an unset stored action runs as a save,
+	/// and <see cref="ActionStored"/> then reads <c>false</c>. <c>null</c> - with <see cref="SaveTo"/> <c>null</c>
+	/// and <see cref="ActionStored"/> <c>false</c> - when the action is bound to a mapping or a formula, or when the
+	/// stored constant is neither 0 nor 1 and the element fails at run time; an entry of <see cref="Issues"/> says
+	/// which.
+	/// </summary>
+	[JsonPropertyName("action")]
+	public string Action { get; set; }
+
+	/// <summary>
+	/// Describe-only: <c>true</c> only when a valid action constant is stored; <c>false</c> when <see cref="Action"/>
+	/// is the run-time default of an unset action, and when the action is bound or invalid (<see cref="Action"/> is
+	/// then <c>null</c>). Nullable defensively, so a server that omits it does not read as "not stored".
+	/// </summary>
+	[JsonPropertyName("actionStored")]
+	public bool? ActionStored { get; set; }
+
+	/// <summary>Which object's attachments the element reads, for which record, how many and in what order.</summary>
+	[JsonPropertyName("attachments")]
+	public DescribedFileProcessingAttachments Attachments { get; set; }
+
+	/// <summary>
+	/// Where the files are saved; <c>null</c> for an element that uses its files in the process, or whose action is
+	/// bound or invalid (<see cref="Action"/> is then <c>null</c> too).
+	/// </summary>
+	[JsonPropertyName("saveTo")]
+	public DescribedFileProcessingSaveTo SaveTo { get; set; }
+
+	/// <summary>
+	/// Describe-only: the output collections and their item, as a mapping names them (<c>ObjectFiles</c> /
+	/// <c>File</c>, <c>CreatedObjectFileIds</c> / <c>Id</c>).
+	/// </summary>
+	[JsonPropertyName("outputs")]
+	public List<DescribedFileProcessingOutput> Outputs { get; set; }
+
+	/// <summary>
+	/// Describe-only: hazards nothing else reports - an inconsistent storage pair, a target with no link column, a
+	/// sort or filter column the attachment object lacks, hidden sort entries, an unset, bound or invalid action, a
+	/// record scope that does not read back. <c>null</c> when there are none.
+	/// </summary>
+	[JsonPropertyName("issues")]
+	public List<string> Issues { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare, so a field a later
+	/// CrtProcessBuilder adds reaches the caller instead of being dropped on re-serialization.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The <c>attachments</c> group of a described Process file element. Mirrors <c>DescribeFileProcessingAttachmentsInfo</c>.</summary>
+public sealed class DescribedFileProcessingAttachments {
+
+	/// <summary>
+	/// The record object read (for example <c>Account</c>), or the attachment object when no object pairs with it;
+	/// <c>null</c> when none is stored or it does not resolve.
+	/// </summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>
+	/// Identity check: <c>dedicated</c>, <c>sysFile</c>, or the inconsistent <c>unpaired</c> / <c>invalid</c>, which
+	/// a write repairs; <c>null</c> when nothing is stored.
+	/// </summary>
+	[JsonPropertyName("storage")]
+	public string Storage { get; set; }
+
+	/// <summary>Identity check: the attachment object the element reads (for example <c>AccountFile</c>).</summary>
+	[JsonPropertyName("fileObject")]
+	public string FileObject { get; set; }
+
+	/// <summary>Identity check: the record-scope column; <c>null</c> when there is none.</summary>
+	[JsonPropertyName("linkColumn")]
+	public string LinkColumn { get; set; }
+
+	/// <summary>
+	/// The record whose attachments are read, lifted out of the stored filter; <c>null</c> when the filter carries no
+	/// scope the block can name, which then stays in the element's <c>filter</c>.
+	/// </summary>
+	[JsonPropertyName("recordId")]
+	public DescribedFileProcessingValueSource RecordId { get; set; }
+
+	/// <summary>How many files are read: the stored value, or the inherited template default (50).</summary>
+	[JsonPropertyName("numberOfRecords")]
+	public int? NumberOfRecords { get; set; }
+
+	/// <summary>
+	/// The EFFECTIVE primary sort entry; further stored entries are named in <see cref="DescribedFileProcessing.Issues"/>,
+	/// and sending <c>sort</c> replaces them.
+	/// </summary>
+	[JsonPropertyName("sort")]
+	public DescribedFileProcessingSort Sort { get; set; }
+
+	/// <summary>Anything the server reports inside this group that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The primary sort entry of the files a Process file element reads, in the Read data sort shape.</summary>
+public sealed class DescribedFileProcessingSort {
+
+	/// <summary>The direct column of the file object the files are ordered by.</summary>
+	[JsonPropertyName("column")]
+	public string Column { get; set; }
+
+	/// <summary>The sort direction, spelled as the write side accepts it.</summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
+	/// <summary>Anything the server reports inside the sort entry that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The <c>saveTo</c> member of a described Process file element. Mirrors <c>DescribeFileProcessingSaveToInfo</c>.</summary>
+public sealed class DescribedFileProcessingSaveTo {
+
+	/// <summary>
+	/// The record object receiving the files (for example <c>Contact</c>), or the attachment object when no object
+	/// pairs with it; <c>null</c> when it does not resolve.
+	/// </summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>The record receiving the files; <c>null</c> when unset.</summary>
+	[JsonPropertyName("recordId")]
+	public DescribedFileProcessingValueSource RecordId { get; set; }
+
+	/// <summary>
+	/// A write member: resubmitted, it keeps the column. <c>null</c> when none is stored, which leaves the saved files
+	/// linked to no record.
+	/// </summary>
+	[JsonPropertyName("linkColumn")]
+	public string LinkColumn { get; set; }
+
+	/// <summary>Identity check; see <see cref="DescribedFileProcessingAttachments.Storage"/>.</summary>
+	[JsonPropertyName("storage")]
+	public string Storage { get; set; }
+
+	/// <summary>Identity check: the attachment object the copies are saved to.</summary>
+	[JsonPropertyName("fileObject")]
+	public string FileObject { get; set; }
+
+	/// <summary>Anything the server reports inside this member that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One described value of a Process file element, exactly one source set: a single stored token decodes to a
+/// parameter or element source, anything else reads back as <see cref="Expression"/>. Mirrors
+/// <c>DescribeFileProcessingValueSource</c>.
+/// </summary>
+public sealed class DescribedFileProcessingValueSource {
+
+	/// <summary>A constant: the record id.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	/// <summary>The process parameter the value comes from.</summary>
+	[JsonPropertyName("processParameter")]
+	public string ProcessParameter { get; set; }
+
+	/// <summary>The element whose output the value comes from.</summary>
+	[JsonPropertyName("sourceElement")]
+	public string SourceElement { get; set; }
+
+	/// <summary>The output parameter on <see cref="SourceElement"/>, dotted for an item of a collection.</summary>
+	[JsonPropertyName("sourceElementParameter")]
+	public string SourceElementParameter { get; set; }
+
+	/// <summary>One column of the record <see cref="SourceElementParameter"/> carries.</summary>
+	[JsonPropertyName("sourceColumn")]
+	public string SourceColumn { get; set; }
+
+	/// <summary>The stored value as it is, when it is not one of the sources above.</summary>
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; }
+
+	/// <summary>
+	/// Describe-only: what the designer shows (a record's name, a parameter's caption); <c>null</c> when nothing is
+	/// stored or it would repeat the value.
+	/// </summary>
+	[JsonPropertyName("display")]
+	public string Display { get; set; }
+
+	/// <summary>Anything the server reports inside this value that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>One output collection of a described Process file element and its item. Mirrors <c>DescribeFileProcessingOutput</c>.</summary>
+public sealed class DescribedFileProcessingOutput {
+
+	/// <summary>The output collection, as <c>sourceElementParameter</c> names it (for example <c>ObjectFiles</c>).</summary>
+	[JsonPropertyName("parameter")]
+	public string Parameter { get; set; }
+
+	/// <summary>The item, dotted after the collection in a mapping (<c>ObjectFiles.File</c>).</summary>
+	[JsonPropertyName("item")]
+	public string Item { get; set; }
+
+	/// <summary>Anything the server reports about an output that this model does not declare.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }

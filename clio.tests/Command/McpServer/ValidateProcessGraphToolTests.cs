@@ -669,6 +669,21 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The tool description is the ONE buildable-slice list (ValidateProcessGraphPrompt defers to it by name), so it names the fileProcessing element (ENG-96505, the Object attachments variant). Without it an agent planning a Process file element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
+	public void ValidateTool_ShouldNameTheFileProcessingElementAsBuildable_WhenDescriptionIsRead() {
+		// Arrange
+		MethodInfo method = typeof(ValidateProcessGraphTool).GetMethod(nameof(ValidateProcessGraphTool.Validate));
+
+		// Act
+		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		description.Should().Contain("changeAccessRights/subProcess/fileProcessing (Object attachments) elements plus",
+			because: "the canonical buildable list must carry every element type create-business-process builds, the Process file element included");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The tool carries the read-only, non-destructive, idempotent, closed-world safety flags.")]
 	public void ValidateTool_ShouldCarryReadOnlySafetyFlags_WhenInspected() {
 		// Arrange
