@@ -11,7 +11,10 @@ using NUnit.Framework;
 
 namespace Clio.Tests.Common.BrowserSession;
 
-/// <summary>ENG-103032: the CDP session's correlation, event dispatch and failure handling, over a fake transport.</summary>
+/// <summary>
+/// ENG-103032, ENG-103330: the CDP session's correlation, event dispatch, flat-session routing and failure handling, over a
+/// fake transport.
+/// </summary>
 [TestFixture]
 [Category("Unit")]
 [Property("Module", "Common")]
@@ -27,7 +30,7 @@ public sealed class CdpSessionTests {
 
 		public Func<JsonElement, string> Responder { get; set; }
 
-		// Thrown by the next SendAsync, as a socket that dropped mid-send.
+		// Thrown by the next SendAsync, as a pipe that broke mid-send.
 		public Exception SendException { get; set; }
 
 		// Thrown by ReceiveAsync once set, as a failure the receive loop does not expect.
@@ -215,7 +218,7 @@ public sealed class CdpSessionTests {
 		byte[] prefix = System.Text.Encoding.UTF8.GetBytes("""{"id":1,"result":{"result":{"type":"string","value":"xxxxxxxx""");
 
 		// Act
-		transport.Push(WebSocketCdpTransport.OversizedMessageSentinel(prefix));
+		transport.Push(PipeCdpTransport.OversizedMessageSentinel(prefix));
 		Func<Task> failed = () => first.WaitAsync(Wait);
 		CdpReplyTooLargeException exception = (await failed.Should().ThrowAsync<CdpReplyTooLargeException>(
 			because: "the discarded reply belongs to this command, which must not wait for its timeout")).Which;
@@ -238,15 +241,73 @@ public sealed class CdpSessionTests {
 		byte[] evt = System.Text.Encoding.UTF8.GetBytes("""{"method":"Network.dataReceived","params":{"id":5""");
 
 		// Act
-		string replySentinel = WebSocketCdpTransport.OversizedMessageSentinel(reply);
-		string eventSentinel = WebSocketCdpTransport.OversizedMessageSentinel(evt);
+		string replySentinel = PipeCdpTransport.OversizedMessageSentinel(reply);
+		string eventSentinel = PipeCdpTransport.OversizedMessageSentinel(evt);
 
 		// Assert
 		JsonElement parsed = JsonDocument.Parse(replySentinel).RootElement;
 		parsed.GetProperty("id").GetInt32().Should().Be(123456789, because: "the reply's id is read from the kept prefix");
-		parsed.TryGetProperty(WebSocketCdpTransport.ReplyTooLargeMarker, out _).Should().BeTrue(
+		parsed.TryGetProperty(PipeCdpTransport.ReplyTooLargeMarker, out _).Should().BeTrue(
 			because: "the session recognises the sentinel by its marker");
 		eventSentinel.Should().Be("{}", because: "an id inside params is not a reply id, and nobody waits for an event");
+	}
+
+	[Test]
+	[Description("Once routed to an attached page, every command carries the page's session id, only that page's events are raised, and a reply is still matched by its id.")]
+	public async Task RouteToSession_Should_Address_Commands_And_Filter_Events_By_Session() {
+		// Arrange
+		FakeTransport transport = new() {
+			Responder = sent => $$"""{"id":{{sent.GetProperty("id").GetInt32()}},"result":{"ok":true},"sessionId":"S1"}"""
+		};
+		await using CdpSession session = new(transport);
+		List<string> raised = [];
+		session.EventReceived += (_, cdpEvent) => {
+			lock (raised) {
+				raised.Add(cdpEvent.Method);
+			}
+		};
+		await session.SendAsync("Target.getTargets", null, CancellationToken.None).WaitAsync(Wait);
+
+		// Act
+		session.RouteToSession("S1");
+		JsonElement answer = await session.SendAsync("Page.enable", null, CancellationToken.None).WaitAsync(Wait);
+		transport.Push("""{"method":"Target.targetCreated","params":{}}""");
+		transport.Push("""{"method":"Page.loadEventFired","params":{},"sessionId":"S2"}""");
+		transport.Push("""{"method":"Runtime.consoleAPICalled","params":{},"sessionId":"S1"}""");
+		await session.SendAsync("Runtime.enable", null, CancellationToken.None).WaitAsync(Wait);
+
+		// Assert
+		JsonElement[] sent = transport.Sent.ToArray();
+		sent[0].TryGetProperty("sessionId", out _).Should().BeFalse(because: "a command before the attach goes to the browser");
+		sent[1].GetProperty("sessionId").GetString().Should().Be("S1", because: "a routed command goes to the attached page");
+		answer.GetProperty("ok").GetBoolean().Should().BeTrue(because: "the page's reply is matched by its id");
+		lock (raised) {
+			raised.Should().Equal(["Runtime.consoleAPICalled"],
+				because: "browser-level events and another session's events are not this page's");
+		}
+	}
+
+	[Test]
+	[Description("The browser reporting the routed page detached closes the session: the pending command and every later one fail at once.")]
+	public async Task DetachedFromTarget_Should_Close_A_Routed_Session() {
+		// Arrange
+		FakeTransport transport = new();
+		await using CdpSession session = new(transport);
+		session.RouteToSession("S1");
+		Task<JsonElement> pending = session.SendAsync("Page.navigate", null, CancellationToken.None);
+		await WaitForSentAsync(transport, 1);
+
+		// Act
+		transport.Push("""{"method":"Target.detachedFromTarget","params":{"sessionId":"S2"}}""");
+		transport.Push("""{"method":"Target.detachedFromTarget","params":{"sessionId":"S1"}}""");
+		Func<Task> waitPending = () => pending.WaitAsync(Wait);
+		CdpSessionClosedException closed = (await waitPending.Should().ThrowAsync<CdpSessionClosedException>(
+			because: "the page this command was for is gone")).Which;
+		Func<Task> later = () => session.SendAsync("Runtime.enable", null, CancellationToken.None);
+
+		// Assert
+		closed.Message.Should().Contain("detached the page", because: "the caller is told why the session ended");
+		await later.Should().ThrowAsync<CdpSessionClosedException>(because: "no later command can reach a detached page");
 	}
 
 	[Test]
@@ -305,10 +366,10 @@ public sealed class CdpSessionTests {
 	}
 
 	[Test]
-	[Description("A socket that drops while a command is sent fails it with CdpSessionClosedException (the inner exception kept), not a raw WebSocketException that slips past the callers' filters.")]
+	[Description("A pipe that breaks while a command is sent (the browser exited) fails it with CdpSessionClosedException (the inner exception kept), not a raw IOException that slips past the callers' filters.")]
 	public async Task SendAsync_Should_Wrap_A_Transport_Send_Failure() {
 		// Arrange
-		FakeTransport transport = new() { SendException = new System.Net.WebSockets.WebSocketException("reset") };
+		FakeTransport transport = new() { SendException = new System.IO.IOException("Broken pipe") };
 		await using CdpSession session = new(transport);
 
 		// Act
@@ -316,7 +377,7 @@ public sealed class CdpSessionTests {
 
 		// Assert
 		(await send.Should().ThrowAsync<CdpSessionClosedException>(because: "the session is gone for every caller alike"))
-			.Which.InnerException.Should().BeOfType<System.Net.WebSockets.WebSocketException>(
+			.Which.InnerException.Should().BeOfType<System.IO.IOException>(
 				because: "the transport's own failure is kept for diagnosis");
 	}
 

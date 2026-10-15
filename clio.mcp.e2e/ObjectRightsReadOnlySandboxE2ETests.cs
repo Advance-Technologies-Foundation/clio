@@ -53,6 +53,9 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		// Assert
 		all.Success.Should().BeTrue(because: $"Contact's rights must be readable on a real stand. Error: {all.Error}");
 		all.Output.Should().Contain("Contact", because: "the result names the object it read");
+		all.Output.Should().Contain("Record permissions:",
+			because: "the record layer (switch and default rules) is read from the same administrated object");
+		all.Output.Should().MatchRegex("(?i)existing record", because: "the named object's record count is reported");
 		filtered.Success.Should().BeTrue(because: $"a grantee filter is a read too. Error: {filtered.Error}");
 		(filtered.Output ?? string.Empty).Should().Match(output => output.Contains($"({AllEmployees}):")
 				|| output.Contains($"grantee {AllEmployees} has NO row"),
@@ -159,9 +162,51 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
 				|| output.Contains("(no change)"),
 			because: "a preview either shows the planned change or says which row already holds it — and writes nothing");
-		after.Output.Should().Be(before.Output, because: "the preview must leave Contact's rights exactly as they were");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(before.Output),
+			because: "the preview must leave Contact's rights exactly as they were (the record count is not a right: another client can add a Contact between the two reads)");
 		before.Output.Should().Contain("priority order", because: "every listing states the priority rule its rows follow");
 	}
+
+	[Test]
+	[Description("On a real stand, a set-default-record-rights preview reads Contact's record layer, plans an enable plus a rule, and writes nothing.")]
+	[AllureTag(SetDefaultRecordRightsTool.ToolName)]
+	[AllureName("set-default-record-rights preview against the real RightManagementService")]
+	[AllureDescription("Previews an enable plus an All employees → All employees read rule on Contact, then checks Contact's rights are unchanged. Nothing is written.")]
+	public async Task SetDefaultRecordRights_Should_Preview_Without_Writing_On_A_Real_Stand() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync();
+		Dictionary<string, object?> readContact = new() {
+			["environment-name"] = context.EnvironmentName, ["entity-schema-name"] = "Contact"
+		};
+		ObjectRightsToolResponse before = await CallAsync(context, GetObjectRightsTool.ToolName, readContact);
+		Dictionary<string, object?> grant = new() {
+			["environment-name"] = context.EnvironmentName,
+			["entity-schema-name"] = "Contact",
+			["author"] = AllEmployees,
+			["grantee"] = AllEmployees,
+			["operations"] = "read",
+			["enable-record-permissions"] = true,
+			["preview"] = true
+		};
+
+		// Act
+		ObjectRightsToolResponse preview = await CallAsync(context, SetDefaultRecordRightsTool.ToolName, grant);
+		ObjectRightsToolResponse after = await CallAsync(context, GetObjectRightsTool.ToolName, readContact);
+
+		// Assert
+		preview.Success.Should().BeTrue(because: $"a preview of an allowed change is not a failure. Error: {preview.Error}");
+		(preview.Output ?? string.Empty).Should().Match(output => output.Contains("PREVIEW — nothing was changed")
+				|| output.Contains("(no change)"),
+			because: "a preview either shows the planned change or says the rule already holds it — and writes nothing");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(before.Output),
+			because: "the preview must leave Contact's rights exactly as they were (the record count is not a right: another client can add a Contact between the two reads)");
+	}
+
+	// The permission facts of a get-object-rights listing: every line except the named object's record count, which
+	// is data, not a right, and can change on the shared stand between two reads.
+	private static string WithoutRecordCount(string? output) =>
+		string.Join('\n', (output ?? string.Empty).Split('\n')
+			.Where(line => !line.Contains("existing record", StringComparison.OrdinalIgnoreCase)));
 
 	[Test]
 	[Description("On a real stand, the platform object Feature is shown by its title next to its code; get-object-rights reads it by that title, and a set-object-rights preview given the title is refused, naming the code. Nothing is written.")]
@@ -178,7 +223,7 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		ObjectRightsToolResponse byCode = await CallAsync(context, GetObjectRightsTool.ToolName, readFeature);
 		byCode.Success.Should().BeTrue(because: $"Feature is a platform object every stand has. Error: {byCode.Error}");
 		Match titled = Regex.Match(byCode.Output ?? string.Empty,
-			@"^Object operation permissions for '(?<title>[^']+)' \(Feature\):", RegexOptions.Multiline);
+			@"^Object permissions for '(?<title>[^']+)' \(Feature\):", RegexOptions.Multiline);
 		titled.Success.Should().BeTrue(because: $"Feature has a title of its own, shown next to its code. Output: {byCode.Output}");
 		string title = titled.Groups["title"].Value;
 		if (title.Contains('’') || title.Length >= 100) {
@@ -209,7 +254,7 @@ public sealed class ObjectRightsReadOnlySandboxE2ETests : McpContractFixtureBase
 		titledWrite.Success.Should().BeFalse(because: "a write names its object by its code");
 		titledWrite.Error.Should().Contain("is not an object code", because: "a title is refused");
 		titledWrite.Error.Should().Contain("it is the title of Feature", because: "the refusal names the code to pass");
-		after.Output.Should().Be(byCode.Output, because: "nothing was written");
+		WithoutRecordCount(after.Output).Should().Be(WithoutRecordCount(byCode.Output), because: "nothing was written");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallAsync(ArrangeContext context, string toolName,

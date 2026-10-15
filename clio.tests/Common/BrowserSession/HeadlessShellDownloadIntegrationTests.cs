@@ -8,7 +8,6 @@ using Clio.Common;
 using Clio.Common.BrowserSession;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
-using NSubstitute;
 using NUnit.Framework;
 using ClioFileSystem = Clio.Common.FileSystem;
 
@@ -26,7 +25,7 @@ namespace Clio.Tests.Common.BrowserSession;
 public sealed class HeadlessShellDownloadIntegrationTests {
 
 	[Test]
-	[Description("The pinned archive for this machine downloads, verifies against the pinned size and SHA-256, installs into <root>/<version>/, and starts headless with a working DevTools session.")]
+	[Description("The pinned archive for this machine downloads, verifies against the pinned size and SHA-256, installs into <root>/<version>/, and starts headless with a working DevTools session over its pipe.")]
 	public async Task InstallAsync_Should_Download_Verify_And_Launch_The_Pinned_Headless_Shell() {
 		// Arrange
 		string root = Path.Combine(Path.GetTempPath(), "clio-headless-shell-download-" + Guid.NewGuid().ToString("N"));
@@ -35,16 +34,14 @@ public sealed class HeadlessShellDownloadIntegrationTests {
 		HeadlessShellInstaller installer = new(httpClientFactory, new ChromeForTestingHeadlessShellSource(),
 			new System.IO.Abstractions.FileSystem(), TimeProvider.System, root, HeadlessShellRelease.CurrentPlatformKey());
 		ClioFileSystem fileSystem = new(new System.IO.Abstractions.FileSystem());
-		HeadlessBrowserLauncher launcher = new(new ProcessExecutor(Substitute.For<ILogger>()), fileSystem,
-			new FileSecurityHardening(), httpClientFactory);
+		HeadlessBrowserLauncher launcher = new(new PipeBrowserSpawner(), fileSystem, new FileSecurityHardening());
 		using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(3));
 		try {
 			// Act
 			string executable = await installer.InstallAsync(timeout.Token);
 			TestContext.Progress.WriteLine($"installed: {executable}");
 			await using IHeadlessBrowser browser = await launcher.LaunchAsync(executable, timeout.Token);
-			await using ICdpSession cdp = await new CdpSessionFactory().ConnectAsync(browser.PageWebSocketUrl, timeout.Token);
-			JsonElement answer = await cdp.SendAsync("Runtime.evaluate",
+			JsonElement answer = await browser.Page.SendAsync("Runtime.evaluate",
 				new { expression = "navigator.userAgent", returnByValue = true }, timeout.Token);
 
 			// Assert

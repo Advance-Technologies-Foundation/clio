@@ -156,8 +156,7 @@ public sealed class PageSmokeRunnerTests {
 		FakeCdpSession Cdp,
 		IHeadlessBrowser Browser,
 		IHeadlessBrowserLauncher Launcher,
-		ICreatedRecordWatcher Watcher,
-		ICdpSessionFactory Factory);
+		ICreatedRecordWatcher Watcher);
 
 	// With a time provider the runner's own clock, waits and timers all run on it; without one the waits are skipped
 	// on a fixed clock and the real timers (100 s, 10 s) never fire within a test.
@@ -172,14 +171,12 @@ public sealed class PageSmokeRunnerTests {
 			            {"name":".ASPXAUTH","value":"{{CookieValue}}","domain":"sandbox","path":"/","httpOnly":true}],"origins":[]}
 			""");
 		IHeadlessBrowser browser = Substitute.For<IHeadlessBrowser>();
-		browser.PageWebSocketUrl.Returns(new Uri("ws://127.0.0.1:9222/devtools/page/1"));
+		browser.Page.Returns(cdp);
 		IHeadlessBrowserLauncher launcher = Substitute.For<IHeadlessBrowserLauncher>();
 		launcher.LaunchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(browser);
-		ICdpSessionFactory factory = Substitute.For<ICdpSessionFactory>();
-		factory.ConnectAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>()).Returns(cdp);
 		ICreatedRecordWatcher watcher = Substitute.For<ICreatedRecordWatcher>();
 		DateTimeOffset now = new(2026, 10, 13, 12, 0, 0, TimeSpan.Zero);
-		PageSmokeRunner runner = new(environment, sessions, fileSystem, launcher, factory, watcher,
+		PageSmokeRunner runner = new(environment, sessions, fileSystem, launcher, watcher,
 			timeProvider ?? TimeProvider.System);
 		if (timeProvider is null) {
 			runner.Clock = () => now;
@@ -188,7 +185,7 @@ public sealed class PageSmokeRunnerTests {
 				return Task.CompletedTask;
 			};
 		}
-		return new Harness(runner, cdp, browser, launcher, watcher, factory);
+		return new Harness(runner, cdp, browser, launcher, watcher);
 	}
 
 	private static PageSmokeRequest Request(string recordId = RecordId, string click = null, int timeout = 30,
@@ -867,19 +864,19 @@ public sealed class PageSmokeRunnerTests {
 	}
 
 	[Test]
-	[Description("A step no command bound covers (connecting to the browser) ends at the 100 s budget on the injected clock, with the budget reply, and the launched browser is disposed.")]
+	[Description("A step no command bound covers (launching the browser and attaching to its page) ends at the 100 s budget on the injected clock, with the budget reply; the launch is handed the budget token, so a browser it started is its own to dispose.")]
 	public async Task RunAsync_Should_Stop_At_The_100_Second_Budget() {
 		// Arrange
 		ManualTimeProvider time = new();
 		Harness harness = Create(timeProvider: time);
-		TaskCompletionSource<CancellationToken> connecting = new(TaskCreationOptions.RunContinuationsAsynchronously);
-		harness.Factory.ConnectAsync(Arg.Any<Uri>(), Arg.Any<CancellationToken>()).Returns(call => {
+		TaskCompletionSource<CancellationToken> launching = new(TaskCreationOptions.RunContinuationsAsynchronously);
+		harness.Launcher.LaunchAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(call => {
 			CancellationToken token = call.ArgAt<CancellationToken>(1);
-			connecting.TrySetResult(token);
-			return new TaskCompletionSource<ICdpSession>().Task.WaitAsync(token);
+			launching.TrySetResult(token);
+			return new TaskCompletionSource<IHeadlessBrowser>().Task.WaitAsync(token);
 		});
 		Task<PageSmokeResult> run = harness.Runner.RunAsync(Request(), CancellationToken.None);
-		CancellationToken budgetToken = await connecting.Task.WaitAsync(Guard);
+		CancellationToken budgetToken = await launching.Task.WaitAsync(Guard);
 
 		// Act
 		time.Advance(TimeSpan.FromMilliseconds(99_999));
@@ -893,7 +890,6 @@ public sealed class PageSmokeRunnerTests {
 		result.Success.Should().BeFalse(because: "the check did not finish");
 		result.Error.Should().Be("The check ran out of its 100 s budget; what was read before is reported.",
 			because: "the answer gets out inside the worker's 120 s, saying the budget ended it");
-		await harness.Browser.Received(1).DisposeAsync();
 	}
 
 	[Test]
