@@ -159,7 +159,8 @@ public class GetClassicPageSourcesToolTests {
 				Substitute.For<IClassicDetailEditPageResolver>(),
 				Substitute.For<IClassicEnumVocabularyResolver>(),
 				Substitute.For<System.IO.Abstractions.IFileSystem>(),
-				ConsoleLogger.Instance) {
+				ConsoleLogger.Instance,
+				Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>(), new EnvironmentSettings()) {
 		}
 
 		public override bool TryAssemblePageSources(

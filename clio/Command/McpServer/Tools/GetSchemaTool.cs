@@ -34,6 +34,7 @@ public sealed class GetSchemaTool(
 	[Description(
 		"Read the C# body and metadata of a source-code schema from a remote Creatio environment. " +
 		"Use before update-schema to inspect current content. " +
+		"`caption` is in the connected user's profile culture, else en-US, else the first culture returned. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public GetSourceCodeSchemaResponse GetSchema(
 		[Description("Parameters: schema-name (required); output-file (optional); environment-name preferred; uri/login/password emergency fallback only.")]

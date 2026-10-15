@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using Clio.Command;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,6 +56,7 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private System.IO.Abstractions.TestingHelpers.MockFileSystem _ioFileSystem;
 	private ILogger _logger;
+	private ICaptionCultureResolver _captionCultureResolver;
 	private GetClientUnitSchemaCommand _command;
 
 	// An output-file under the OS temp root — one of the two locations OutputPathConfinement allows.
@@ -72,6 +74,7 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		_applicationClient.ClearReceivedCalls();
 		_serviceUrlBuilder.ClearReceivedCalls();
 		_logger.ClearReceivedCalls();
+		_captionCultureResolver.ClearReceivedCalls();
 		base.TearDown();
 	}
 
@@ -84,7 +87,9 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		containerBuilder.AddSingleton(_applicationClient);
 		containerBuilder.AddSingleton(_serviceUrlBuilder);
 		containerBuilder.AddSingleton<System.IO.Abstractions.IFileSystem>(_ioFileSystem);
+		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		containerBuilder.AddSingleton(_logger);
+		containerBuilder.AddSingleton(_captionCultureResolver);
 	}
 
 	[Test]
@@ -125,6 +130,80 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		response.Caption.Should().Be("Usr Helper");
 		response.Body.Should().Be("define('UsrHelper', []);");
 		response.BodyLength.Should().Be("define('UsrHelper', []);".Length);
+	}
+
+	[Test]
+	[Description("TryGetSchema returns the caption in the connected user's profile culture, not the culture GetSchema lists first (ENG-103380).")]
+	public void TryGetSchema_Returns_Caption_In_Profile_Culture() {
+		// Arrange
+		string multiCultureJson = $$$"""
+			{
+			  "success": true,
+			  "schema": {
+			    "uId": "{{{SchemaUId}}}",
+			    "name": "UsrHelper",
+			    "body": "define('UsrHelper', []);",
+			    "caption": [
+			      {"cultureName": "ru-RU", "value": "Страница записи"},
+			      {"cultureName": "id-ID", "value": "Halaman tab dengan area kiri"},
+			      {"cultureName": "en-US", "value": "Form page"},
+			      {"cultureName": "de-DE", "value": "Formularseite"}
+			    ],
+			    "package": {"name": "Custom"}
+			  }
+			}
+			""";
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper" };
+		_captionCultureResolver.Resolve(Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, EnvironmentSettings)), null)
+			.Returns("de-DE");
+
+		// Act
+		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema loads successfully");
+		response.Caption.Should().Be("Formularseite",
+			because: "the caption must be in the user's profile culture (de-DE), not the first listed ru-RU entry");
+		_captionCultureResolver.Received(1).Resolve(
+			Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, EnvironmentSettings)), default(string)!);
+	}
+
+	[Test]
+	[Description("TryGetSchema falls back to the en-US caption without a profile lookup when the command has no environment settings.")]
+	public void TryGetSchema_Returns_EnUs_Caption_When_EnvironmentSettings_Null() {
+		// Arrange
+		string multiCultureJson = $$$"""
+			{
+			  "success": true,
+			  "schema": {
+			    "uId": "{{{SchemaUId}}}",
+			    "name": "UsrHelper",
+			    "body": "define('UsrHelper', []);",
+			    "caption": [
+			      {"cultureName": "ru-RU", "value": "Страница записи"},
+			      {"cultureName": "en-US", "value": "Form page"},
+			      {"cultureName": "de-DE", "value": "Formularseite"}
+			    ],
+			    "package": {"name": "Custom"}
+			  }
+			}
+			""";
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
+		var command = new GetClientUnitSchemaCommand(
+			_applicationClient, _serviceUrlBuilder, _ioFileSystem, _logger, _captionCultureResolver, null);
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper" };
+
+		// Act
+		bool result = command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema loads successfully");
+		response.Caption.Should().Be("Form page",
+			because: "without environment settings there is no profile culture, so the en-US caption is returned");
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentSettings)!, default(string)!);
 	}
 
 	[Test]
