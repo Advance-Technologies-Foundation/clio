@@ -881,7 +881,7 @@ public sealed class PageBaselineGuardTests {
 	}
 
 	[Test]
-	[Description("TryArm_ShouldNotWarnAboutCorroboration_WhenNoChecksumWasPinned — the trace is about a CALLER pin; an ordinary unpinned save with no baseline is not an overwrite of anything and must stay quiet.")]
+	[Description("The corroboration trace is about a caller pin, so an unpinned save with no baseline never carries it; that save gets the did-not-run warning instead.")]
 	public void TryArm_ShouldNotWarnAboutCorroboration_WhenNoChecksumWasPinned() {
 		// Arrange — no meta.json on disk and no pin.
 		PageUpdateOptions options = CreateOptions();
@@ -892,7 +892,124 @@ public sealed class PageBaselineGuardTests {
 		// Assert
 		armed.Should().BeFalse(because: "there is no baseline to arm from");
 		(warning ?? string.Empty).Should().NotContain("could not be corroborated",
-			because: "warning on every first save of a page would make the trace worthless noise");
+			because: "nothing was pinned, so there is no pin to corroborate");
+	}
+
+	[Test]
+	[Description("An unpinned save without a selector and with no baseline on disk is unchecked, so the warning says the check did not run, why, and how to arm it.")]
+	public void TryArm_ShouldWarnThatDetectionDidNotRun_WhenAnUnpinnedSaveWithoutSelectorHasNoBaseline() {
+		// Arrange — no meta.json on disk, no pin, no selector.
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		refreshBaseline.Should().BeFalse(because: "there is no baseline to move forward");
+		options.ExpectedChecksum.Should().BeNull(because: "nothing arms the check");
+		warning.Should().Contain("External-modification detection did not run",
+			because: "the save reaches the server unchecked, and the caller must learn that");
+		warning.Should().Contain("no .clio-pages baseline from get-page was found",
+			because: "the warning names the cause");
+		warning.Should().Contain("run get-page",
+			because: "the warning says how to arm the check");
+		warning.Should().NotContain("target-package-uid / target-schema-uid would not be checked",
+			because: "no selector was passed, so the selector-only remark does not apply");
+	}
+
+	[Test]
+	[Description("An unpinned save without a selector whose baseline was captured for another environment is unchecked, so the warning says the check did not run and names the environment as the cause.")]
+	public void TryArm_ShouldWarnThatDetectionDidNotRun_WhenAnUnpinnedSaveWithoutSelectorHasAForeignEnvironmentBaseline() {
+		// Arrange
+		AddMetaWithBaseline("production", "checksum-1");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		refreshBaseline.Should().BeFalse(because: "a foreign-environment baseline is not moved forward");
+		warning.Should().Contain("did not run", because: "the save reaches the server unchecked");
+		warning.Should().Contain("captured for another environment", because: "the warning names the cause");
+	}
+
+	[Test]
+	[Description("An unpinned save without a selector whose meta.json cannot be read is unchecked, so the warning says the check did not run because the baseline could not be read.")]
+	public void TryArm_ShouldWarnThatDetectionDidNotRun_WhenAnUnpinnedSaveWithoutSelectorHitsUnreadableMeta() {
+		// Arrange
+		_fileSystem.AddFile(_metaPath, new MockFileData("{ this is not json"));
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		warning.Should().Contain("did not run", because: "the save reaches the server unchecked");
+		warning.Should().Contain("the .clio-pages baseline could not be read", because: "the warning names the cause");
+		warning.Should().NotContain("was found",
+			because: "saying no baseline was found contradicts the read warning on the same response");
+	}
+
+	[Test]
+	[Description("A save whose baseline matches the environment is checked, so it carries no did-not-run warning.")]
+	public void TryArm_ShouldNotWarnThatDetectionDidNotRun_WhenTheBaselineMatches() {
+		// Arrange
+		AddMetaWithBaseline("dev", "checksum-1");
+		PageUpdateOptions options = CreateOptions("dev");
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		refreshBaseline.Should().BeTrue(because: "the matching baseline arms the check");
+		(warning ?? string.Empty).Should().NotContain("did not run", because: "the check does run");
+	}
+
+	[Test]
+	[Description("A pinned save with no baseline is checked against the pin, so it carries only the could-not-be-corroborated trace and no did-not-run warning.")]
+	public void TryArm_ShouldOnlyTraceTheUncorroboratedPin_WhenAPinnedSaveWithoutSelectorHasNoBaseline() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		warning.Should().Contain("could not be corroborated", because: "nothing on disk backs the pin");
+		warning.Should().NotContain("did not run", because: "the pin still drives the check");
+	}
+
+	[Test]
+	[Description("A forced save skips the check by request, so a missing baseline adds no did-not-run warning.")]
+	public void TryArm_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveIsForced() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.Force = true;
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		(warning ?? string.Empty).Should().NotContain("did not run",
+			because: "running get-page first would not arm a check that force skips");
+	}
+
+	[Test]
+	[Description("A forced save with target-package-uid skips the check by request, so a missing baseline adds no did-not-run warning.")]
+	public void TryArm_ShouldNotWarnThatDetectionDidNotRun_WhenAForcedSelectorSaveHasNoBaseline() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+		options.Force = true;
+
+		// Act
+		(_, bool refreshBaseline, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		refreshBaseline.Should().BeFalse(because: "there is no baseline to move forward");
+		(warning ?? string.Empty).Should().NotContain("did not run",
+			because: "running get-page first would not arm a check that force skips");
 	}
 
 	// ---------------------------------------------------------------------------------------------
@@ -977,21 +1094,6 @@ public sealed class PageBaselineGuardTests {
 		armed.Should().BeFalse(because: "an unparseable baseline must fail toward no-check, never block the write");
 		warning.Should().NotBeNull(
 			because: "proceeding without external-modification detection is a fact the caller needs; the old code made it indistinguishable from having no baseline at all");
-	}
-
-	[Test]
-	[Description("TryArm must stay silent when no baseline exists — the ordinary state of a page that was never fetched.")]
-	public void TryArm_ShouldNotReturnWarning_WhenMetaMissing() {
-		// Arrange — no meta.json.
-		PageUpdateOptions options = CreateOptions("dev");
-
-		// Act
-		(_, bool armed, string warning) = _guard.TryArm(options, OutputDirectory);
-
-		// Assert
-		armed.Should().BeFalse(because: "there is no baseline to arm from");
-		warning.Should().BeNull(
-			because: "warning on every un-fetched page would make the channel noise and train callers to ignore it");
 	}
 
 	[Test]

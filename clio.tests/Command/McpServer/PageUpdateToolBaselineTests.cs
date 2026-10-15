@@ -227,6 +227,21 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	[Test]
+	[Description("update-page with no baseline, no checksum and no selector saves and warns in the response that the external-modification check did not run.")]
+	public void UpdatePage_ShouldSaveAndWarnThatDetectionDidNotRun_WhenNoBaselineExists() {
+		// Arrange — no meta.json on the mock file system.
+		StubChecksumByUId();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the warning never refuses the save");
+		response.Warnings.Should().Contain(w => w.Contains("External-modification detection did not run"),
+			because: "the caller must learn the save was unchecked");
+	}
+
+	[Test]
 	[Description("update-page with force=true must overwrite despite a stale baseline and refresh it afterwards.")]
 	public void UpdatePage_ShouldOverwriteAndRefreshBaseline_WhenForceTrue() {
 		// Arrange
