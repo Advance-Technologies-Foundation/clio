@@ -150,7 +150,7 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
 			string caption = SchemaDesignerHelper.ExtractCaption(
-				schema, ResolveCaptionCulture);
+				schema, () => _captionCultureResolver.ResolveOrDefault(_environmentSettings));
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetClientUnitSchemaResponse {
@@ -213,12 +213,6 @@ public class GetClientUnitSchemaCommand : Command<GetClientUnitSchemaOptions> {
 			_applicationClient, _serviceUrlBuilder, options.SchemaName, Kind);
 		return (resolvedUId, resolveError);
 	}
-
-	// The profile culture of the environment this command reads from. The injected settings, not the options: an
-	// mcp-http passthrough request carries its tenant in the container's settings and no environment name, so a
-	// name-based lookup would read the culture of the host's active environment. Null falls back to en-US.
-	private string ResolveCaptionCulture() =>
-		_environmentSettings is null ? null : _captionCultureResolver.Resolve(_environmentSettings, null);
 
 	public override int Execute(GetClientUnitSchemaOptions options) {
 		bool success = TryGetSchema(options, out GetClientUnitSchemaResponse response);

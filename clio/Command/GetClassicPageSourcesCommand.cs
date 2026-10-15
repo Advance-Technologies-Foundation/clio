@@ -290,9 +290,7 @@ public class GetClassicPageSourcesCommand : Command<GetClassicPageSourcesOptions
 				return false;
 			}
 			var ctx = new PageSourcesRunContext(
-				// The injected settings, not the options: an mcp-http passthrough request carries its tenant only in the
-				// container's settings. Null falls back to en-US.
-				() => _environmentSettings is null ? null : _captionCultureResolver.Resolve(_environmentSettings, null));
+				() => _captionCultureResolver.ResolveOrDefault(_environmentSettings));
 
 			// 1-3. Resolve the page's full replacing-layer chain (schemas[]) AND the parent-template seed[] in ONE
 			//      GetParentSchemas designer round-trip (useFullHierarchy=true returns the whole effective chain),

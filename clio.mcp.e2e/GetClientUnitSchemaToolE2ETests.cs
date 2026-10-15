@@ -29,7 +29,7 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 	[Description("Reads a real client unit schema through MCP with full-hierarchy=true and then fetches the same layer by schema-uid only.")]
 	[AllureTag(ToolName)]
 	[AllureName("get-client-unit-schema supports full-hierarchy and schema-uid")]
-	[AllureDescription("Uses the real clio MCP server to call get-client-unit-schema for ContactPageV2 with full-hierarchy=true and output-file, verifies the written localizable-strings contract and that caption is not a Cyrillic-culture text under the en-US profile, then calls the same tool with schema-uid only and verifies the body is written to disk.")]
+	[AllureDescription("Uses the real clio MCP server to call get-client-unit-schema for ContactPageV2 with full-hierarchy=true and output-file, verifies the written localizable-strings contract and that caption equals the en-US caption the designer service returns for the same schema (en-US profile), then calls the same tool with schema-uid only and verifies the body is written to disk.")]
 	public async Task GetSchema_Should_ReadFullHierarchy_And_FetchBySchemaUid() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -65,9 +65,11 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 			because: "the schema-uid returned by the name-based read is the stable selector for the direct fetch");
 		fullHierarchyResponse.Caption.Should().NotBeNullOrWhiteSpace(
 			because: "ContactPageV2 has a caption on every stand");
-		System.Text.RegularExpressions.Regex.IsMatch(fullHierarchyResponse.Caption, @"\p{IsCyrillic}").Should().BeFalse(
-			because: "the e2e Supervisor profile culture is en-US, so caption must not be the ru-RU/uk-UA text "
-				+ "GetSchema may list first (ENG-103380)");
+		string expectedCaption = await ReadEnUsCaptionAsync(
+			settings, arrangeContext, fullHierarchyResponse.SchemaUId!, outputDirectory);
+		fullHierarchyResponse.Caption.Should().Be(expectedCaption,
+			because: "the e2e Supervisor profile culture is en-US, so caption must be the schema's en-US entry, not the "
+				+ "arbitrary culture GetSchema may list first (ENG-103380)");
 		fullHierarchyResponse.LocalizableStringCount.Should().BeGreaterThan(0,
 			because: "ContactPageV2 should expose merged localizable strings on a real stand");
 		fullHierarchyResponse.Body.Should().BeNull(
@@ -159,6 +161,29 @@ public sealed class GetClientUnitSchemaToolE2ETests : McpContractFixtureBase {
 		response.Success.Should().BeFalse(because: "an output-file outside the allowed zones must not be written");
 		response.Error.Should().Contain("output-file", because: "the failure must name the offending option");
 		File.Exists(resolvedEscape).Should().BeFalse(because: "no file may be written to the out-of-bounds path");
+	}
+
+	// Reads the schema's en-US caption straight from the designer service (the same request the command sends), so
+	// the expected value comes from the stand under test: ContactPageV2's caption differs by its top-layer package.
+	private static async Task<string> ReadEnUsCaptionAsync(
+		McpE2ESettings settings, ArrangeContext arrangeContext, string schemaUId, string outputDirectory) {
+		string output = Path.Combine(outputDirectory, "ContactPageV2.designer-schema.json");
+		string body = JsonSerializer.Serialize(new { schemaUId, useFullHierarchy = true });
+		ClioCliCommandResult result = await ClioCliCommandRunner.RunAsync(settings,
+			["call-service", "-e", arrangeContext.EnvironmentName, "--service-path",
+				"ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema", "--body", body, "--destination", output],
+			cancellationToken: arrangeContext.CancellationTokenSource.Token);
+		result.ExitCode.Should().Be(0,
+			because: $"the independent designer-service read must succeed: {result.StandardOutput}{result.StandardError}");
+		using JsonDocument document = JsonDocument.Parse(
+			await File.ReadAllTextAsync(output, arrangeContext.CancellationTokenSource.Token));
+		string? enUsCaption = document.RootElement.GetProperty("schema").GetProperty("caption").EnumerateArray()
+			.Where(entry => string.Equals(
+				entry.GetProperty("cultureName").GetString(), "en-US", StringComparison.OrdinalIgnoreCase))
+			.Select(entry => entry.GetProperty("value").GetString())
+			.FirstOrDefault();
+		enUsCaption.Should().NotBeNullOrWhiteSpace(because: "ContactPageV2 has an en-US caption on every stand");
+		return enUsCaption!;
 	}
 
 	private async Task<ArrangeContext> ArrangeAsync(McpE2ESettings settings, TimeSpan timeout) {

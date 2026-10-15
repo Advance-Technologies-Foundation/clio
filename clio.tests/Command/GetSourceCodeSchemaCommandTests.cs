@@ -38,6 +38,7 @@ public sealed class GetSourceCodeSchemaCommandTests {
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private ILogger _logger;
 	private ICaptionCultureResolver _captionCultureResolver;
+	private EnvironmentSettings _environmentSettings;
 	private GetSourceCodeSchemaCommand _command;
 
 	[SetUp]
@@ -48,9 +49,10 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		_captionCultureResolver = Substitute.For<ICaptionCultureResolver>();
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build("ServiceModel/SourceCodeSchemaDesignerService.svc/GetSchema").Returns(GetSchemaUrl);
+		_environmentSettings = new EnvironmentSettings();
 		_command = new GetSourceCodeSchemaCommand(
 			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger,
-			_captionCultureResolver, new EnvironmentSettings());
+			_captionCultureResolver, _environmentSettings);
 	}
 
 	[Test]
@@ -151,7 +153,8 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
 		var options = new GetSourceCodeSchemaOptions { SchemaName = "UsrSchema" };
-		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("uk-UA");
+		_captionCultureResolver.Resolve(Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, _environmentSettings)), null)
+			.Returns("uk-UA");
 
 		// Act
 		bool result = _command.TryGetSchema(options, out GetSourceCodeSchemaResponse response);
@@ -160,5 +163,44 @@ public sealed class GetSourceCodeSchemaCommandTests {
 		result.Should().BeTrue(because: "the schema loads successfully");
 		response.Caption.Should().Be("Схема користувача",
 			because: "the caption must be in the user's profile culture (uk-UA), not the first listed ru-RU entry");
+		_captionCultureResolver.Received(1).Resolve(
+			Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, _environmentSettings)), default(string)!);
+	}
+
+	[Test]
+	[Description("TryGetSchema falls back to the en-US caption without a profile lookup when the command has no environment settings.")]
+	public void TryGetSchema_Returns_EnUs_Caption_When_EnvironmentSettings_Null() {
+		// Arrange
+		string multiCultureJson = $$$"""
+			{
+			  "success": true,
+			  "schema": {
+			    "uId": "{{{SchemaUId}}}",
+			    "name": "UsrSchema",
+			    "body": "body",
+			    "caption": [
+			      {"cultureName": "ru-RU", "value": "Схема"},
+			      {"cultureName": "en-US", "value": "Schema"},
+			      {"cultureName": "uk-UA", "value": "Схема користувача"}
+			    ],
+			    "package": {"name": "Custom"}
+			  }
+			}
+			""";
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
+		var command = new GetSourceCodeSchemaCommand(
+			_applicationClient, _serviceUrlBuilder, new System.IO.Abstractions.FileSystem(), _logger,
+			_captionCultureResolver, null);
+		var options = new GetSourceCodeSchemaOptions { SchemaName = "UsrSchema" };
+
+		// Act
+		bool result = command.TryGetSchema(options, out GetSourceCodeSchemaResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema loads successfully");
+		response.Caption.Should().Be("Schema",
+			because: "without environment settings there is no profile culture, so the en-US caption is returned");
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentSettings)!, default(string)!);
 	}
 }

@@ -156,7 +156,8 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
 		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
 		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper" };
-		_captionCultureResolver.Resolve(Arg.Any<EnvironmentSettings>(), null).Returns("de-DE");
+		_captionCultureResolver.Resolve(Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, EnvironmentSettings)), null)
+			.Returns("de-DE");
 
 		// Act
 		bool result = _command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
@@ -165,7 +166,44 @@ internal class GetClientUnitSchemaCommandTests : BaseCommandTests<GetClientUnitS
 		result.Should().BeTrue(because: "the schema loads successfully");
 		response.Caption.Should().Be("Formularseite",
 			because: "the caption must be in the user's profile culture (de-DE), not the first listed ru-RU entry");
-		_captionCultureResolver.Received(1).Resolve(Arg.Any<EnvironmentSettings>(), null);
+		_captionCultureResolver.Received(1).Resolve(
+			Arg.Is<EnvironmentSettings>(s => ReferenceEquals(s, EnvironmentSettings)), default(string)!);
+	}
+
+	[Test]
+	[Description("TryGetSchema falls back to the en-US caption without a profile lookup when the command has no environment settings.")]
+	public void TryGetSchema_Returns_EnUs_Caption_When_EnvironmentSettings_Null() {
+		// Arrange
+		string multiCultureJson = $$$"""
+			{
+			  "success": true,
+			  "schema": {
+			    "uId": "{{{SchemaUId}}}",
+			    "name": "UsrHelper",
+			    "body": "define('UsrHelper', []);",
+			    "caption": [
+			      {"cultureName": "ru-RU", "value": "Страница записи"},
+			      {"cultureName": "en-US", "value": "Form page"},
+			      {"cultureName": "de-DE", "value": "Formularseite"}
+			    ],
+			    "package": {"name": "Custom"}
+			  }
+			}
+			""";
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>()).Returns(SchemaFoundJson);
+		_applicationClient.ExecutePostRequest(GetSchemaUrl, Arg.Any<string>()).Returns(multiCultureJson);
+		var command = new GetClientUnitSchemaCommand(
+			_applicationClient, _serviceUrlBuilder, _ioFileSystem, _logger, _captionCultureResolver, null);
+		var options = new GetClientUnitSchemaOptions { SchemaName = "UsrHelper" };
+
+		// Act
+		bool result = command.TryGetSchema(options, out GetClientUnitSchemaResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: "the schema loads successfully");
+		response.Caption.Should().Be("Form page",
+			because: "without environment settings there is no profile culture, so the en-US caption is returned");
+		_captionCultureResolver.DidNotReceiveWithAnyArgs().Resolve(default(EnvironmentSettings)!, default(string)!);
 	}
 
 	[Test]
