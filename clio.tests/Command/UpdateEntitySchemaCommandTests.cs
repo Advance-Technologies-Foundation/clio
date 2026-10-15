@@ -84,6 +84,30 @@ internal sealed class UpdateEntitySchemaCommandTests : BaseClioModuleTests
 	}
 
 	[Test]
+	[Description("Forwards a modify that carries only reference-schema-name, the form that redirects an inherited lookup, to the column manager.")]
+	public void Execute_ForwardsReferenceOnlyModify_ForInheritedLookupOverride() {
+		// Arrange
+		UpdateEntitySchemaOptions options = new() {
+			Environment = "dev",
+			Package = "UsrPkg",
+			SchemaName = "UsrVehicleInFolder",
+			Operations = ["""{"action":"modify","column-name":"Folder","reference-schema-name":"UsrVehicleFolder"}"""]
+		};
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a reference-only modify is a valid operation");
+		_columnManager.Received(1).ModifyColumns(Arg.Is<IEnumerable<ModifyEntitySchemaColumnOptions>>(mutations =>
+			mutations.Count() == 1
+			&& mutations.ElementAt(0).Action == "modify"
+			&& mutations.ElementAt(0).ColumnName == "Folder"
+			&& mutations.ElementAt(0).ReferenceSchemaName == "UsrVehicleFolder"
+			&& mutations.ElementAt(0).Type == null));
+	}
+
+	[Test]
 	[Description("Rejects empty operation batches before any remote mutation is attempted.")]
 	public void Execute_ReturnsFailure_WhenNoOperationsWereProvided() {
 		// Arrange

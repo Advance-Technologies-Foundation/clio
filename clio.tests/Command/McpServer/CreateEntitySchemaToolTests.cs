@@ -515,6 +515,52 @@ public class CreateEntitySchemaToolTests {
 	}
 
 	[Test]
+	[Description("Serializes an override column without a type and without an auto-derived caption, so the inherited Lookup keeps its type and caption.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Serialize_OverrideColumn_WithoutTypeOrDefaultCaption() {
+		// Arrange
+		const string payload = """
+		{"name":"Folder","override":true,"reference-schema-name":"ContactFolder"}
+		""";
+		CreateEntitySchemaColumnArgs column = JsonSerializer.Deserialize<CreateEntitySchemaColumnArgs>(
+			payload, BindingsModule.CreateMcpSerializerOptions())!;
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns([column], "Schema 'UsrVehicleInFolder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("override").GetBoolean().Should().BeTrue(
+			because: "the override flag must reach the command layer");
+		document.RootElement.GetProperty("reference-schema-name").GetString().Should().Be("ContactFolder",
+			because: "the override target must reach the command layer");
+		document.RootElement.GetProperty("type").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "an override has no type of its own, so none may be defaulted");
+		document.RootElement.GetProperty("title-localizations").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "a caption derived from the column name would overwrite the inherited caption");
+	}
+
+	[Test]
+	[Description("Forwards a property an override may not carry, so the creator refuses it with a message naming that property.")]
+	[Category("Unit")]
+	public void CreateEntitySchema_Should_Forward_DisallowedOverrideProperty() {
+		// Arrange
+		var columns = new[] {
+			new CreateEntitySchemaColumnArgs("Folder", "Lookup", null, "ContactFolder") { Override = true, Required = true }
+		};
+
+		// Act
+		string serializedColumn = CreateEntitySchemaTool.SerializeColumns(columns, "Schema 'UsrVehicleInFolder'")!.Single();
+
+		// Assert
+		using JsonDocument document = JsonDocument.Parse(serializedColumn);
+		document.RootElement.GetProperty("type").GetString().Should().Be("Lookup",
+			because: "a type sent with an override must reach the creator, which refuses it");
+		document.RootElement.GetProperty("required").GetBoolean().Should().BeTrue(
+			because: "a flag sent with an override must reach the creator, which refuses it");
+	}
+
+	[Test]
 	[Description("Keeps the wire shape working when only the 'name' alias is sent, so accepting 'column-name' did not regress the spelling already in use by get-app-info round-trips (issue #947).")]
 	[Category("Unit")]
 	public void CreateEntitySchemaColumnArgs_Should_Deserialize_WireShape_WithOnlyName() {

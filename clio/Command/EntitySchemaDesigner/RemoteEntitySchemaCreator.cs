@@ -42,6 +42,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
 	private readonly FindEntitySchemaCommand _findEntitySchemaCommand;
 	private readonly ICultureAvailabilityGuard _cultureAvailabilityGuard;
+	private readonly IInheritedLookupOverride _inheritedLookupOverride;
 
 	#endregion
 
@@ -57,7 +58,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		string? DefaultValueSource,
 		string? DefaultValue,
 		EntitySchemaDefaultValueConfig? DefaultValueConfig,
-		bool? Masked){
+		bool? Masked,
+		bool IsOverride = false){
 		public bool IsLookup => EntitySchemaDesignerSupport.IsLookupTypeName(Type);
 	}
 
@@ -88,6 +90,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 
 		[property: JsonPropertyName("masked")]
 		public bool? Masked { get; init; }
+
+		[property: JsonPropertyName("override")]
+		public bool? Override { get; init; }
 	}
 
 	#endregion
@@ -106,7 +111,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		IEntitySchemaCaptionCultureResolver captionCultureResolver,
 		IEntitySchemaPublisher entitySchemaPublisher,
 		FindEntitySchemaCommand findEntitySchemaCommand,
-		ICultureAvailabilityGuard cultureAvailabilityGuard) {
+		ICultureAvailabilityGuard cultureAvailabilityGuard,
+		IInheritedLookupOverride inheritedLookupOverride) {
 		_applicationPackageListProvider = applicationPackageListProvider;
 		_defaultValueSourceResolver = defaultValueSourceResolver;
 		_entitySchemaDesignerClient = entitySchemaDesignerClient;
@@ -116,6 +122,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		_entitySchemaPublisher = entitySchemaPublisher;
 		_findEntitySchemaCommand = findEntitySchemaCommand;
 		_cultureAvailabilityGuard = cultureAvailabilityGuard;
+		_inheritedLookupOverride = inheritedLookupOverride;
 	}
 
 	/// <summary>
@@ -160,11 +167,20 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		NormalizeAdministrationMetadata(schema);
 
-		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup)
+		EnsureSingleOverridePerColumn(parsedColumns);
+		Dictionary<string, ManagerItemDto> referenceSchemas = parsedColumns.Any(c => c.IsLookup || c.IsOverride)
 			? GetReferenceSchemas(package.Descriptor.UId, options)
 			: new Dictionary<string, ManagerItemDto>(StringComparer.OrdinalIgnoreCase);
 		List<EntitySchemaColumnDto> columns = schema.Columns.ToList();
 		foreach (ParsedColumn parsedColumn in parsedColumns) {
+			if (parsedColumn.IsOverride) {
+				ApplyInheritedLookupOverride(schema, parsedColumn, referenceSchemas, cultureName, options);
+				continue;
+			}
+			if (EntitySchemaDesignerSupport.IsInheritedColumn(schema, parsedColumn.Name)) {
+				throw new InvalidOperationException(
+					EntitySchemaDesignerSupport.BuildInheritedNameConflictMessage(schema, parsedColumn.Name));
+			}
 			columns.Add(CreateColumn(parsedColumn, referenceSchemas, cultureName, options));
 		}
 
@@ -181,6 +197,33 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			schema.PrimaryColumn = columns.FirstOrDefault(column => column.IsGuidType()) ?? schema.PrimaryColumn;
 		}
 		schema.PrimaryDisplayColumn ??= columns.FirstOrDefault(column => column.IsTextType());
+	}
+
+	private static void EnsureSingleOverridePerColumn(IEnumerable<ParsedColumn> parsedColumns) {
+		string? repeatedColumnName = EntitySchemaDesignerSupport.FindRepeatedColumnName(parsedColumns
+			.Where(column => column.IsOverride)
+			.Select(column => column.Name));
+		if (repeatedColumnName != null) {
+			throw new InvalidOperationException(
+				$"Inherited column '{repeatedColumnName}' is overridden more than once in one request; send one " +
+				"override per inherited column.");
+		}
+	}
+
+	private void ApplyInheritedLookupOverride(
+		EntityDesignSchemaDto schema,
+		ParsedColumn parsedColumn,
+		IReadOnlyDictionary<string, ManagerItemDto> referenceSchemas,
+		string cultureName,
+		CreateEntitySchemaOptions options) {
+		referenceSchemas.TryGetValue(parsedColumn.ReferenceSchemaName, out ManagerItemDto? referenceSchema);
+		EntitySchemaColumnDto column = _inheritedLookupOverride.Apply(schema, parsedColumn.Name,
+			parsedColumn.ReferenceSchemaName, referenceSchema, options);
+		if (parsedColumn.TitleLocalizations == null && string.IsNullOrWhiteSpace(parsedColumn.Title)) {
+			return;
+		}
+		EntitySchemaDesignerSupport.ApplyColumnCaptionAndDescription(column, parsedColumn.Title,
+			parsedColumn.TitleLocalizations, null, null, cultureName);
 	}
 
 	private static void NormalizeAdministrationMetadata(EntityDesignSchemaDto schema) {
@@ -439,6 +482,9 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		if (structuredColumn is null) {
 			throw new InvalidOperationException("Structured column array must not contain null entries.");
 		}
+		if (structuredColumn.Override == true) {
+			return BuildOverrideColumn(structuredColumn, columnSpec);
+		}
 		string name = structuredColumn.Name?.Trim();
 		string type = structuredColumn.Type?.Trim();
 		ValidateSupportedColumnValues(columnSpec, name, type);
@@ -465,6 +511,49 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			structuredColumn.DefaultValue,
 			structuredColumn.DefaultValueConfig,
 			structuredColumn.Masked);
+	}
+
+	// An override changes only the reference schema and, optionally, the caption of an inherited lookup; every
+	// other column property belongs to the parent schema.
+	private static ParsedColumn BuildOverrideColumn(StructuredColumnSpec structuredColumn, string columnSpec) {
+		string name = structuredColumn.Name?.Trim();
+		if (string.IsNullOrWhiteSpace(name)) {
+			throw new InvalidOperationException(
+				$"Column '{columnSpec}' is missing its column code. Provide a non-empty column name.");
+		}
+		string? disallowedProperty = GetDisallowedOverrideProperty(structuredColumn);
+		if (disallowedProperty != null) {
+			throw new InvalidOperationException(
+				$"Override column '{name}' cannot set '{disallowedProperty}'. An override may set only " +
+				$"reference-schema-name and title or {TitleLocalizationsArgumentName}; the inherited column keeps " +
+				"every other property of the parent schema.");
+		}
+		if (string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)) {
+			throw new InvalidOperationException(
+				EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(name));
+		}
+		IReadOnlyDictionary<string, string>? titleLocalizations = structuredColumn.TitleLocalizations == null
+			? null
+			: EntitySchemaDesignerSupport.NormalizeLocalizationMap(
+				structuredColumn.TitleLocalizations,
+				TitleLocalizationsArgumentName);
+		string? title = !string.IsNullOrWhiteSpace(structuredColumn.Title)
+			? structuredColumn.Title.Trim()
+			: structuredColumn.Caption?.Trim();
+		return new ParsedColumn(name, null, title, titleLocalizations, structuredColumn.ReferenceSchemaName.Trim(),
+			null, null, null, null, null, IsOverride: true);
+	}
+
+	private static string? GetDisallowedOverrideProperty(StructuredColumnSpec structuredColumn) {
+		(bool IsSet, string Name)[] properties = [
+			(!string.IsNullOrWhiteSpace(structuredColumn.Type), "type"),
+			(structuredColumn.Required.HasValue, "required"),
+			(structuredColumn.DefaultValueSource != null, "default-value-source"),
+			(structuredColumn.DefaultValue != null, "default-value"),
+			(structuredColumn.DefaultValueConfig != null, "default-value-config"),
+			(structuredColumn.Masked.HasValue, "masked")
+		];
+		return properties.FirstOrDefault(property => property.IsSet).Name;
 	}
 
 	private static string GetLookupReferenceSchemaName(string[] parts) {
@@ -574,8 +663,23 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		return package ?? throw new InvalidOperationException($"Package '{packageName}' was not found.");
 	}
 
+	private void VerifyReloadedSchema(CreateEntitySchemaOptions options, EntityDesignSchemaDto reloadedSchema,
+		IReadOnlyCollection<ParsedColumn> overrideColumns) {
+		if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
+			throw new InvalidOperationException(
+				$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
+		}
+		if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
+			throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
+		}
+		foreach (ParsedColumn overrideColumn in overrideColumns) {
+			_inheritedLookupOverride.VerifyPersisted(reloadedSchema, overrideColumn.Name,
+				overrideColumn.ReferenceSchemaName);
+		}
+	}
+
 	private void VerifyCreatedSchema(CreateEntitySchemaOptions options, Guid packageUId,
-		string effectiveCultureName, Guid schemaUId) {
+		string effectiveCultureName, Guid schemaUId, IReadOnlyCollection<ParsedColumn> overrideColumns) {
 		// No separate runtime-availability probe after the publish. Publishing refreshes the schema manager
 		// through SchemaManager.RefreshItems, which clears the changed items and re-initialises them as two
 		// steps; a request that lands between them is told the schema does not exist even though it was saved
@@ -595,13 +699,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			EntityDesignSchemaDto reloadedSchema = designItemResponse.Schema
 				?? throw new InvalidOperationException(
 					$"Schema '{options.SchemaName}' could not be reloaded after save.");
-			if (!string.Equals(reloadedSchema.Name, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
-				throw new InvalidOperationException(
-					$"Schema '{options.SchemaName}' was reloaded with unexpected name '{reloadedSchema.Name}'.");
-			}
-			if (options.IsDBView.HasValue && reloadedSchema.IsDBView != options.IsDBView.Value) {
-				throw new InvalidOperationException($"Database-view flag was not persisted for schema '{options.SchemaName}'.");
-			}
+			VerifyReloadedSchema(options, reloadedSchema, overrideColumns);
 		} else {
 			// The designer service answered with an HTML error page, so the design-item reload above could not
 			// verify anything. Only here is the runtime read worth its risk: it is the sole remaining check,
@@ -617,6 +715,10 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 			if (options.IsDBView.HasValue) {
 				throw new InvalidOperationException(
 					$"Schema '{options.SchemaName}' was saved but the database-view flag could not be verified because the designer returned HTML.");
+			}
+			if (overrideColumns.Count > 0) {
+				throw new InvalidOperationException(
+					$"Schema '{options.SchemaName}' was saved but the inherited reference override could not be verified because the designer returned HTML.");
 			}
 			if (!string.Equals(runtimeName, options.SchemaName, StringComparison.OrdinalIgnoreCase)) {
 				throw new InvalidOperationException(
@@ -680,7 +782,8 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		_entitySchemaDesignerClient.SaveSchemaDbStructure(schemaUId, options);
 		PublishSchema(options);
-		VerifyCreatedSchema(options, package.Descriptor.UId, effectiveCultureName, schemaUId);
+		VerifyCreatedSchema(options, package.Descriptor.UId, effectiveCultureName, schemaUId,
+			parsedColumns.Where(column => column.IsOverride).ToList());
 		_logger.WriteInfo($"Entity schema '{options.SchemaName}' created in package '{options.Package}'.");
 	}
 

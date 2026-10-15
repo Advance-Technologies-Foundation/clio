@@ -14,7 +14,7 @@ public enum SchemaConvergenceOutcome {
 	/// <summary>The schema is absent and must be created.</summary>
 	Create,
 
-	/// <summary>The schema already exists in the target package and must be converged: the missing columns are added and any present-but-type-divergent columns are modified to the requested shape.</summary>
+	/// <summary>The schema already exists in the target package and must be converged: the missing columns are added, any present-but-type-divergent columns are modified to the requested shape, and an inherited lookup whose requested override reference differs from the stored one is redirected.</summary>
 	Reconcile,
 
 	/// <summary>The schema already exists in the target package and matches the requested shape; no mutation is required.</summary>
@@ -159,7 +159,12 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		}
 
 		(IReadOnlyList<CreateEntitySchemaColumnArgs> columnsToAdd,
-			IReadOnlyList<UpdateEntitySchemaOperationArgs> columnsToModify) = ComputeColumnDelta(target, requestedColumns);
+			IReadOnlyList<UpdateEntitySchemaOperationArgs> columnsToModify, string? overrideError) =
+			ComputeColumnDelta(target, existing.ParentSchemaName, requestedColumns);
+		if (overrideError != null) {
+			return new SchemaConvergencePlan(SchemaConvergenceOutcome.Collision, [], [], existing.PackageName,
+				$"Error: {overrideError}");
+		}
 
 		if (columnsToAdd.Count == 0 && columnsToModify.Count == 0) {
 			return new SchemaConvergencePlan(SchemaConvergenceOutcome.AlreadySatisfied, [], [], null, null);
@@ -199,12 +204,15 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 		return !string.Equals(requestedParent.Trim(), existingParent, StringComparison.OrdinalIgnoreCase);
 	}
 
+	// An override converges only on a column the schema inherits; an absent or own column of that name is
+	// refused with the create-entity-schema message instead of being added or reported as satisfied.
 	private (IReadOnlyList<CreateEntitySchemaColumnArgs> ColumnsToAdd,
-		IReadOnlyList<UpdateEntitySchemaOperationArgs> ColumnsToModify) ComputeColumnDelta(
+		IReadOnlyList<UpdateEntitySchemaOperationArgs> ColumnsToModify, string? OverrideError) ComputeColumnDelta(
 			SchemaConvergenceTarget target,
+			string? parentSchemaName,
 			IReadOnlyList<CreateEntitySchemaColumnArgs> requestedColumns) {
 		if (requestedColumns.Count == 0) {
-			return ([], []);
+			return ([], [], null);
 		}
 
 		IReadOnlyDictionary<string, EntitySchemaPropertyColumnInfo> existingColumns =
@@ -216,7 +224,16 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			if (string.IsNullOrWhiteSpace(columnName)) {
 				continue;
 			}
-			if (!existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn)) {
+			existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
+			if (column.Override == true) {
+				string? overrideError = AddOverrideRedirect(target.SchemaName, parentSchemaName, columnName, column,
+					existingColumn, columnsToModify);
+				if (overrideError != null) {
+					return ([], [], overrideError);
+				}
+				continue;
+			}
+			if (existingColumn is null) {
 				columnsToAdd.Add(column);
 				continue;
 			}
@@ -228,7 +245,29 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 				columnsToModify.Add(ToModifyOperation(column));
 			}
 		}
-		return (columnsToAdd, columnsToModify);
+		return (columnsToAdd, columnsToModify, null);
+	}
+
+	// An override item carries no type; it converges on the inherited column's reference schema only: a title
+	// sent with it is applied on create and not compared on an existing schema. Returns the refusal, or null
+	// after adding the redirect a differing reference needs.
+	private static string? AddOverrideRedirect(string schemaName, string? parentSchemaName, string columnName,
+		CreateEntitySchemaColumnArgs column, EntitySchemaPropertyColumnInfo? existingColumn,
+		List<UpdateEntitySchemaOperationArgs> columnsToModify) {
+		if (existingColumn is null) {
+			return EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(schemaName, parentSchemaName,
+				columnName);
+		}
+		if (!IsInheritedColumn(existingColumn)) {
+			return EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(schemaName, columnName);
+		}
+		if (string.IsNullOrWhiteSpace(column.ResolveReferenceSchemaName())) {
+			return EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(columnName);
+		}
+		if (!HasSameReference(column, existingColumn)) {
+			columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
+		}
+		return null;
 	}
 
 	/// <inheritdoc/>
@@ -251,6 +290,23 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			columns[column.Name] = column;
 		}
 		return columns;
+	}
+
+	private static bool IsInheritedColumn(EntitySchemaPropertyColumnInfo column) {
+		return string.Equals(column.Source, RemoteEntitySchemaColumnManager.InheritedColumnSource, StringComparison.OrdinalIgnoreCase);
+	}
+
+	private static bool HasSameReference(CreateEntitySchemaColumnArgs column, EntitySchemaPropertyColumnInfo existingColumn) {
+		return string.Equals(column.ResolveReferenceSchemaName()?.Trim(), existingColumn.ReferenceSchemaName?.Trim(),
+			StringComparison.OrdinalIgnoreCase);
+	}
+
+	// Carries only the column name and reference schema: every other property of an inherited column is read-only.
+	private static UpdateEntitySchemaOperationArgs ToInheritedReferenceModifyOperation(CreateEntitySchemaColumnArgs column) {
+		return new UpdateEntitySchemaOperationArgs(
+			Action: "modify",
+			ColumnName: column.ResolveName() ?? string.Empty,
+			ReferenceSchemaName: column.ResolveReferenceSchemaName()?.Trim());
 	}
 
 	private static UpdateEntitySchemaOperationArgs ToModifyOperation(CreateEntitySchemaColumnArgs column) {

@@ -251,6 +251,36 @@ internal static class EntitySchemaDesignerSupport
 		return new TitleLocalizationNormalizationResult(normalizedValues, effectiveTitle ?? normalizedFallbackValue);
 	}
 
+	/// <summary>
+	/// Writes a column caption and description in the effective culture: a localization map replaces the matching
+	/// cultures, otherwise a scalar value is set in the effective culture. An absent value leaves the field as is.
+	/// </summary>
+	internal static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column, string? title,
+		IReadOnlyDictionary<string, string>? titleLocalizations, string? description,
+		IReadOnlyDictionary<string, string>? descriptionLocalizations, string effectiveCultureName) {
+		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
+		List<LocalizableStringDto> descriptionValues = column.Description?.ToList() ?? [];
+		if (titleLocalizations != null) {
+			TitleLocalizationNormalizationResult titleNormalization = NormalizeTitleLocalizations(
+				titleLocalizations,
+				title,
+				"title-localizations",
+				effectiveCultureName);
+			ReplaceLocalizableValues(caption, titleNormalization.Localizations);
+		} else if (!string.IsNullOrWhiteSpace(title)) {
+			SetLocalizableValue(caption, title.Trim(), effectiveCultureName);
+		}
+		if (descriptionLocalizations != null) {
+			ReplaceLocalizableValues(
+				descriptionValues,
+				NormalizeLocalizationMap(descriptionLocalizations, "description-localizations"));
+		} else if (!string.IsNullOrWhiteSpace(description)) {
+			SetLocalizableValue(descriptionValues, description, effectiveCultureName);
+		}
+		column.Caption = caption;
+		column.Description = descriptionValues;
+	}
+
 	internal static List<LocalizableStringDto> CreateLocalizableStrings(
 		IReadOnlyDictionary<string, string>? values,
 		string? fallbackValue,
@@ -558,6 +588,79 @@ internal static class EntitySchemaDesignerSupport
 
 		throw new EntitySchemaDesignerException(
 			$"Unsupported dataValueType '{runtimeDataValueType}' for default-value-config source SystemValue.");
+	}
+
+	/// <summary>Returns the own column of the schema with the given name, or <see langword="null"/>.</summary>
+	internal static EntitySchemaColumnDto? FindOwnColumn(EntityDesignSchemaDto schema, string columnName) {
+		return (schema.Columns ?? []).FirstOrDefault(column =>
+			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>Returns the inherited column of the schema with the given name, or <see langword="null"/>.</summary>
+	internal static EntitySchemaColumnDto? FindInheritedColumn(EntityDesignSchemaDto schema, string columnName) {
+		return (schema.InheritedColumns ?? []).FirstOrDefault(column =>
+			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+	}
+
+	/// <summary>Returns whether <paramref name="columnName"/> is one of the inherited columns of the schema.</summary>
+	internal static bool IsInheritedColumn(EntityDesignSchemaDto schema, string columnName) {
+		return FindInheritedColumn(schema, columnName) != null;
+	}
+
+	/// <summary>
+	/// Builds the refusal for a new column whose name the schema already inherits, naming the parent and the
+	/// override form that changes an inherited lookup instead.
+	/// </summary>
+	/// <param name="schema">Design schema that inherits the column.</param>
+	/// <param name="columnName">Requested column name.</param>
+	/// <returns>The caller-facing message.</returns>
+	internal static string BuildInheritedNameConflictMessage(EntityDesignSchemaDto schema, string columnName) {
+		string parentName = string.IsNullOrWhiteSpace(schema.ParentSchema?.Name)
+			? "its parent schema"
+			: $"parent schema '{schema.ParentSchema.Name}'";
+		return $"Column '{columnName}' is inherited by schema '{schema.Name}' from {parentName}, so it cannot be "
+			+ "added as a new column. To point an inherited lookup at another schema, override it instead: in "
+			+ $"create-entity-schema send {{\"name\":\"{columnName}\",\"override\":true,"
+			+ "\"reference-schema-name\":\"<Schema>\"}; on an existing schema use the modify action with "
+			+ "reference-schema-name. Otherwise choose a different column name.";
+	}
+
+	/// <summary>Builds the refusal for an override that names an own column of the schema.</summary>
+	/// <param name="schemaName">Schema that owns the column.</param>
+	/// <param name="columnName">Requested column name.</param>
+	/// <returns>The caller-facing message.</returns>
+	internal static string BuildOverrideOfOwnColumnMessage(string? schemaName, string columnName) {
+		return $"Column '{columnName}' is an own column of schema '{schemaName}', not an inherited one; an override "
+			+ "applies only to a column inherited from the parent schema.";
+	}
+
+	/// <summary>Returns the refusal for an override column that names no reference schema.</summary>
+	internal static string BuildOverrideWithoutReferenceMessage(string columnName) {
+		return $"Override column '{columnName}' must specify reference-schema-name.";
+	}
+
+	/// <summary>Builds the refusal for an override that names a column the parent schema does not have.</summary>
+	/// <param name="schemaName">Schema the override targets.</param>
+	/// <param name="parentSchemaName">Parent schema of <paramref name="schemaName"/>.</param>
+	/// <param name="columnName">Requested column name.</param>
+	/// <returns>The caller-facing message.</returns>
+	internal static string BuildOverrideOfMissingColumnMessage(string? schemaName, string? parentSchemaName,
+		string columnName) {
+		return string.IsNullOrWhiteSpace(parentSchemaName)
+			? $"Override column '{columnName}' requires parent-schema-name: schema '{schemaName}' has no parent "
+				+ "to inherit the column from."
+			: $"Parent schema '{parentSchemaName}' of schema '{schemaName}' has no column '{columnName}' to override.";
+	}
+
+	/// <summary>
+	/// Returns the first column name that occurs more than once, compared case-insensitively, or
+	/// <see langword="null"/>. Callers pass the names of the inherited columns a request redirects, because
+	/// one save persists only one reference per inherited column.
+	/// </summary>
+	internal static string? FindRepeatedColumnName(IEnumerable<string> columnNames) {
+		return columnNames
+			.GroupBy(columnName => columnName, StringComparer.OrdinalIgnoreCase)
+			.FirstOrDefault(group => group.Count() > 1)?.Key;
 	}
 
 	internal static string GetFriendlyTypeName(int? dataValueType) {
