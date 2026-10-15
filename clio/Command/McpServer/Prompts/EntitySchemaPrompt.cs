@@ -58,7 +58,7 @@ public static class EntitySchemaPrompt {
 		 a column (for example Folder of a BaseItemInFolder child -> the entity's folder schema); send only
 		 `name`, `override`, `reference-schema-name` and optionally `title-localizations`. The parent must be
 		 virtual, the schema must not replace its parent, and the target must be a non-virtual schema that
-		 inherits from the column's current reference schema. Current clio entity-schema tools are part of the canonical clio MCP
+		 inherits from the column's reference in the parent schema. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
@@ -155,7 +155,7 @@ public static class EntitySchemaPrompt {
 		 A `modify` operation on an INHERITED column may override only its caption/description
 		 (`title-localizations` / `description-localizations`), and on an inherited Lookup its
 		 `reference-schema-name` when the parent is virtual, the schema does not replace its parent, and the target
-		 inherits from the column's current reference schema; changing its name, type, or flags is rejected and
+		 inherits from the column's reference in the parent schema; changing its name, type, or flags is rejected and
 		 stops the batch on that operation.
 		 `title-localizations` is OPTIONAL for an `add` operation; when omitted, `en-US` is auto-derived from a
 		 scalar title/caption or the column name. Provide `title-localizations` for a proper caption; the `en-US`
@@ -294,7 +294,7 @@ public static class EntitySchemaPrompt {
 		 `description-localizations` instead of legacy scalar `title` or `description`. For an INHERITED column,
 		 `modify` may override only its caption/description, and on an inherited Lookup its
 		 `reference-schema-name` when the parent is virtual, the schema does not replace its parent, and the target
-		 inherits from the column's current reference schema; its name, type, and flags are read-only and it cannot
+		 inherits from the column's reference in the parent schema; its name, type, and flags are read-only and it cannot
 		 be removed. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,

@@ -538,12 +538,55 @@ public sealed class SchemaConvergenceServiceTests {
 			because: "an ordinary lookup column is compared by type only");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Refuses an override item without reference-schema-name on an existing schema with the create-entity-schema message, instead of planning a modify with no reference.")]
+	public void Classify_ShouldReturnCollision_WhenOverrideColumnHasNoReference() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(InheritedLookup("Folder", "ContactFolder")));
+		SchemaConvergenceService service = new(resolver);
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(OverrideColumn("Folder", null)));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.Collision,
+			because: "an override without a target cannot converge");
+		plan.Error.Should().Be("Error: Override column 'Folder' must specify reference-schema-name.",
+			because: "the refusal matches the create-entity-schema message");
+		plan.ColumnsToModify.Should().BeEmpty(because: "a refused plan carries no mutation");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports an override item that differs from the stored column only by its title as AlreadySatisfied, because an override converges on the reference only.")]
+	public void Classify_ShouldReturnAlreadySatisfied_WhenOverrideDiffersByTitleOnly() {
+		// Arrange
+		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
+		FakeFind(resolver, [new EntitySchemaSearchResult(SchemaName, TargetPackage, "Custom", "BaseItemInFolder")]);
+		FakeProperties(resolver, Properties(InheritedLookup("Folder", "ContactFolder")));
+		SchemaConvergenceService service = new(resolver);
+		CreateEntitySchemaColumnArgs requested = OverrideColumn("Folder", "ContactFolder") with {
+			TitleLocalizations = new Dictionary<string, string> { ["en-US"] = "Contact folder" }
+		};
+
+		// Act
+		SchemaConvergencePlan plan = service.Classify(FolderItemTarget(requested));
+
+		// Assert
+		plan.Outcome.Should().Be(SchemaConvergenceOutcome.AlreadySatisfied,
+			because: "a title sent with an override is applied on create and not compared on an existing schema");
+		plan.ColumnsToModify.Should().BeEmpty(because: "the stored reference already matches");
+	}
+
 	private static SchemaConvergenceTarget FolderItemTarget(params CreateEntitySchemaColumnArgs[] requestedColumns) {
 		return new SchemaConvergenceTarget(
 			"dev", TargetPackage, SchemaName, "BaseItemInFolder", IsLookup: false, ExtendParent: false, requestedColumns);
 	}
 
-	private static CreateEntitySchemaColumnArgs OverrideColumn(string name, string referenceSchemaName) {
+	private static CreateEntitySchemaColumnArgs OverrideColumn(string name, string? referenceSchemaName) {
 		return new CreateEntitySchemaColumnArgs(name, null, null, referenceSchemaName) { Override = true };
 	}
 

@@ -1693,8 +1693,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				&& !string.IsNullOrWhiteSpace(operation.ColumnName))
 			.Select(operation => operation.ColumnName.Trim())
 			.Where(columnName => EntitySchemaDesignerSupport.IsInheritedColumn(schema, columnName)
-				&& !(schema.Columns ?? []).Any(column =>
-					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase))));
+				&& EntitySchemaDesignerSupport.FindOwnColumn(schema, columnName) == null));
 		if (repeatedColumnName != null) {
 			throw new EntitySchemaDesignerException(
 				$"Inherited column '{repeatedColumnName}' is redirected more than once in one request; send one " +
@@ -1712,9 +1711,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<EntitySchemaColumnDto> inheritedColumns = reloadedSchema.InheritedColumns?.ToList() ?? [];
 
 		// Expected OWN-column presence, accounting for renames (old name absent, new name present). An
-		// inherited-column caption/description override stays in InheritedColumns (never in Columns), so it is
-		// verified via VerifyInheritedCaptionOverride and excluded from the own-column presence check to avoid
-		// a false "could not be reloaded" failure.
+		// inherited-column caption, description or reference override stays in InheritedColumns (never in
+		// Columns), so it is verified via VerifyInheritedColumnOverride and excluded from the own-column presence
+		// check to avoid a false "could not be reloaded" failure.
 		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
@@ -1753,9 +1752,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	/// <summary>
-	/// Asserts that a caption override requested on an inherited column is reflected on the reloaded column in
-	/// the effective culture (en-US fallback). A description-only override supplies no expected caption and is
-	/// verified by existence alone.
+	/// Asserts that the caption and reference changes requested on an inherited column are persisted on the
+	/// reloaded schema.
 	/// </summary>
 	private void VerifyInheritedColumnOverride(
 		EntityDesignSchemaDto reloadedSchema,
@@ -1769,6 +1767,11 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
+	/// <summary>
+	/// Asserts that a caption override requested on an inherited column is reflected on the reloaded column in
+	/// the effective culture (en-US fallback). A description-only override supplies no expected caption and is
+	/// verified by existence alone.
+	/// </summary>
 	private static void VerifyInheritedCaptionOverride(
 		EntitySchemaColumnDto reloadedColumn,
 		ModifyEntitySchemaColumnOptions options,

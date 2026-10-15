@@ -154,7 +154,8 @@ The override is stored on the child schema and does not change the parent
 - an INHERITED Lookup column also accepts --reference-schema on modify, which redirects the
 inherited reference in place. The parent must be virtual (for example BaseItemInFolder), the
 schema must not replace its parent, and the target must be a non-virtual schema that inherits
-from the column's current reference schema; the new reference is read back after saving
+from the column's reference in the parent schema, so a redirected column can be redirected again;
+the new reference is read back after saving
 - add refuses a name the parent schema already has and names the parent
 - remove clears schema-level references to the deleted column and validates required fallbacks locally
 - unspecified modify options are preserved as-is in the saved payload

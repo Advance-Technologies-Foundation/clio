@@ -371,7 +371,52 @@ public sealed class SchemaSyncToolTests {
 			because: "the required flag of an inherited column is read-only");
 	}
 
-	private static SchemaSyncArgs FolderOverrideArgs(string referenceSchemaName) {
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a create-entity replay whose override item names no reference-schema-name as a collision and writes nothing.")]
+	public async Task SchemaSync_CreateEntityReplay_ShouldReportCollision_WhenOverrideHasNoReference() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = ExistingFolderItemResolver("ContactFolder", fakeCreateCommand, fakeUpdateCommand);
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new SchemaConvergenceService(commandResolver));
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(FolderOverrideArgs(null));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an override without a target cannot converge");
+		response.Results[0].Outcome.Should().Be("collision", because: "the refusal is reported as a collision");
+		response.Results[0].Error.Should().Contain("Override column 'Folder' must specify reference-schema-name",
+			because: "the message matches the create-entity-schema refusal");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(because: "a refused plan writes nothing");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(because: "an existing schema is never recreated");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Reports a create-entity replay whose override item names an own column of the existing schema as a collision and writes nothing.")]
+	public async Task SchemaSync_CreateEntityReplay_ShouldReportCollision_WhenOverrideNamesOwnColumn() {
+		// Arrange
+		var fakeCreateCommand = new FakeCreateEntitySchemaCommand();
+		var fakeUpdateCommand = new FakeUpdateEntitySchemaCommand();
+		IToolCommandResolver commandResolver = ExistingFolderItemResolver("ContactFolder", fakeCreateCommand,
+			fakeUpdateCommand, folderSource: "own");
+		SchemaSyncTool tool = new(commandResolver, ConsoleLogger.Instance, new SchemaConvergenceService(commandResolver));
+
+		// Act
+		SchemaSyncResponse response = await tool.SchemaSync(FolderOverrideArgs("ContactFolder"));
+
+		// Assert
+		response.Success.Should().BeFalse(because: "an override cannot converge on an own column");
+		response.Results[0].Outcome.Should().Be("collision", because: "the refusal is reported as a collision");
+		response.Results[0].Error.Should().Contain("is an own column of schema 'UsrContactInFolder'",
+			because: "the message matches the create-entity-schema refusal");
+		fakeUpdateCommand.CapturedOptions.Should().BeNull(because: "a refused plan writes nothing");
+		fakeCreateCommand.CapturedOptions.Should().BeNull(because: "an existing schema is never recreated");
+	}
+
+	private static SchemaSyncArgs FolderOverrideArgs(string? referenceSchemaName) {
 		return new SchemaSyncArgs(
 			"dev", "UsrPkg",
 			[new SchemaSyncOperation("create-entity", "UsrContactInFolder",
@@ -383,7 +428,8 @@ public sealed class SchemaSyncToolTests {
 	}
 
 	private static IToolCommandResolver ExistingFolderItemResolver(string storedReferenceSchemaName,
-		FakeCreateEntitySchemaCommand createCommand, FakeUpdateEntitySchemaCommand updateCommand) {
+		FakeCreateEntitySchemaCommand createCommand, FakeUpdateEntitySchemaCommand updateCommand,
+		string folderSource = "inherited") {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>()).Returns(createCommand);
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>()).Returns(updateCommand);
@@ -404,7 +450,7 @@ public sealed class SchemaSyncToolTests {
 				AdministratedByOperations: false, AdministratedByColumns: false, AdministratedByRecords: false,
 				UseDenyRecordRights: null, UseLiveEditing: null,
 				Columns: [
-					new EntitySchemaPropertyColumnInfo("Folder", Guid.NewGuid(), "inherited", "Folder", null, "Lookup",
+					new EntitySchemaPropertyColumnInfo("Folder", Guid.NewGuid(), folderSource, "Folder", null, "Lookup",
 						false, true, storedReferenceSchemaName)
 				]));
 		commandResolver.Resolve<GetEntitySchemaPropertiesCommand>(Arg.Any<EnvironmentOptions>()).Returns(properties);

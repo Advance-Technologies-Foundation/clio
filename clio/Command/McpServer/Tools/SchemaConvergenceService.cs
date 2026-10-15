@@ -234,7 +234,11 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 					return ([], [], EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(target.SchemaName,
 						columnName));
 				}
-				// An override item carries no type; it converges on the inherited column's reference schema.
+				if (string.IsNullOrWhiteSpace(column.ResolveReferenceSchemaName())) {
+					return ([], [], EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(columnName));
+				}
+				// An override item carries no type; it converges on the inherited column's reference schema only:
+				// a title sent with it is applied on create and not compared on an existing schema.
 				if (!HasSameReference(column, existingColumn)) {
 					columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
 				}

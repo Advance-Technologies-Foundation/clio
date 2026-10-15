@@ -413,7 +413,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 				folderColumnName,
 				cancellationToken,
 				referenceSchemaName: "ContactFolder"));
-		// A redirect target must inherit from the current reference, so the update step needs a ContactFolder child.
+		// A redirect target must inherit from the column's reference in the parent; the update step redirects to a ContactFolder child.
 		string derivedFolderSchemaName = arrangeContext.SchemaName + "Fld";
 		CommandExecutionEnvelope createDerivedFolderResult = McpCommandExecutionParser.Extract(
 			await CallCreateEntitySchemaAsync(
@@ -481,7 +481,7 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 		AssertCommandSucceeded(createDerivedFolderResult,
 			"create-entity-schema should save a child of ContactFolder");
 		AssertCommandSucceeded(updateResult,
-			"update-entity-schema should redirect the inherited Folder lookup to a schema that inherits from its current reference");
+			"update-entity-schema should redirect the inherited Folder lookup to a schema that inherits from its reference in the parent schema");
 		updatedSchemaProperties.OwnColumnCount.Should().Be(0,
 			because: "a reference redirect changes the inherited Folder and must not add an own column");
 		folderAfterUpdate.Source.Should().Be("inherited",

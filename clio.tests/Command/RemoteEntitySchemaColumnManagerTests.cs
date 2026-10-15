@@ -1487,6 +1487,169 @@ internal class RemoteEntitySchemaColumnManagerTests
 				Success = true,
 				Schema = new RuntimeEntitySchemaDto { UId = ContactFolderUId, Name = "ContactFolder", ParentUId = BaseFolderUId }
 			});
+		EntitySchemaColumnDto parentFolder = CreateLookupColumn("Folder", FolderColumnUId, "BaseFolder");
+		parentFolder.ReferenceSchema.UId = BaseFolderUId;
+		_designerClient.GetSchemaDesignItem(
+				Arg.Is<GetSchemaDesignItemRequestDto>(request => request.Name == "BaseItemInFolder" && request.UseFullHierarchy),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new Clio.Command.EntitySchemaDesigner.DesignerResponse<EntityDesignSchemaDto> {
+				Success = true,
+				Schema = new EntityDesignSchemaDto {
+					UId = BaseItemInFolderUId, Name = "BaseItemInFolder", IsVirtual = true,
+					Columns = [parentFolder], InheritedColumns = []
+				}
+			});
+	}
+
+	private static readonly Guid AccountFolderUId = Guid.Parse("a2a2a2a2-0000-4000-8000-000000000001");
+	private static readonly Guid ContactUId = Guid.Parse("16be3651-8fe2-4159-8dd0-a803d4683dd3");
+
+	// A Folder column already redirected to ContactFolder, with AccountFolder (a BaseFolder sibling of
+	// ContactFolder) and Contact (outside BaseFolder) available as targets.
+	private void SetupRedirectedFolder() {
+		_loadedSchema = CreateFolderChildSchema();
+		EntitySchemaColumnDto folder = _loadedSchema.InheritedColumns.Single();
+		folder.ReferenceSchema = new EntityDesignSchemaDto { UId = ContactFolderUId, Name = "ContactFolder" };
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		_designerClient.GetAvailableReferenceSchemas(Arg.Any<GetAvailableSchemasRequestDto>(),
+				Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new AvailableEntitySchemasResponse {
+				Success = true,
+				Items = [
+					new ManagerItemDto { UId = ContactFolderUId, Name = "ContactFolder", Caption = "Contact folder" },
+					new ManagerItemDto { UId = AccountFolderUId, Name = "AccountFolder", Caption = "Account folder" },
+					new ManagerItemDto { UId = ContactUId, Name = "Contact", Caption = "Contact" }
+				]
+			});
+		_designerClient.GetRuntimeEntitySchema(AccountFolderUId, Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto { UId = AccountFolderUId, Name = "AccountFolder", ParentUId = BaseFolderUId }
+			});
+		_designerClient.GetRuntimeEntitySchema(ContactUId, Arg.Any<Clio.Command.RemoteCommandOptions>())
+			.Returns(new RuntimeEntitySchemaResponse {
+				Success = true,
+				Schema = new RuntimeEntitySchemaDto { UId = ContactUId, Name = "Contact", ParentUId = Guid.Empty }
+			});
+	}
+
+	private static ModifyEntitySchemaColumnOptions RedirectFolder(string referenceSchemaName) => new() {
+		Package = "UsrPkg",
+		SchemaName = "UsrVehicleInFolder",
+		Action = "modify",
+		ColumnName = "Folder",
+		ReferenceSchemaName = referenceSchemaName
+	};
+
+	[Test]
+	[Description("Redirects an already redirected Folder to a sibling of its current reference, because the target is validated against the parent's BaseFolder.")]
+	public void ModifyColumn_ShouldRedirectAgainToSibling_WhenTargetInheritsParentReference() {
+		// Arrange
+		SetupRedirectedFolder();
+
+		// Act
+		_manager.ModifyColumn(RedirectFolder("AccountFolder"));
+
+		// Assert
+		EntitySchemaColumnDto folder = _savedSchema.InheritedColumns.Single(column => column.Name == "Folder");
+		folder.ReferenceSchema.UId.Should().Be(AccountFolderUId,
+			because: "AccountFolder inherits from BaseFolder, the reference Folder has in the parent schema");
+		_savedSchema.Columns.Should().BeEmpty(because: "a redirect must not add an own column");
+	}
+
+	[Test]
+	[Description("Keeps refusing an already redirected Folder when the target does not inherit from the parent's BaseFolder.")]
+	public void ModifyColumn_ShouldRefuseRedirect_WhenTargetDoesNotInheritParentReference() {
+		// Arrange
+		SetupRedirectedFolder();
+
+		// Act
+		Action act = () => _manager.ModifyColumn(RedirectFolder("Contact"));
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "Contact is outside the BaseFolder hierarchy")
+			.WithMessage("*'Contact' does not inherit from 'BaseFolder'*parent schema 'BaseItemInFolder'*",
+				because: "the message must name the parent's reference");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Applies a reference and a caption override of the same inherited lookup in one modify and verifies both.")]
+	public void ModifyColumn_ShouldRedirectAndRecaption_WhenReferenceAndTitleAreSupplied() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+		ModifyEntitySchemaColumnOptions options = RedirectFolder("ContactFolder");
+		options.TitleLocalizations = new Dictionary<string, string> { ["en-US"] = "Contact folder" };
+
+		// Act
+		_manager.ModifyColumn(options);
+
+		// Assert
+		EntitySchemaColumnDto folder = _savedSchema.InheritedColumns.Single(column => column.Name == "Folder");
+		folder.ReferenceSchema.UId.Should().Be(ContactFolderUId, because: "the reference override is applied");
+		EntitySchemaDesignerSupport.GetLocalizableValue(folder.Caption, "en-US").Should().Be("Contact folder",
+			because: "the caption override is applied in the same save");
+	}
+
+	[Test]
+	[Description("Refuses a modify redirect on a schema whose parent is not virtual, before saving.")]
+	public void ModifyColumn_ShouldRefuseRedirect_WhenParentIsNotVirtual() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		_loadedSchema.ParentSchema.IsVirtual = false;
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+
+		// Act
+		Action act = () => _manager.ModifyColumn(RedirectFolder("ContactFolder"));
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a non-virtual parent silently drops the change")
+			.WithMessage("*Parent schema 'BaseItemInFolder'*is not virtual*",
+				because: "the message must name the parent precondition");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Refuses a modify redirect on a schema that replaces its parent, before saving.")]
+	public void ModifyColumn_ShouldRefuseRedirect_WhenSchemaReplacesParent() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		_loadedSchema.ExtendParent = true;
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+
+		// Act
+		Action act = () => _manager.ModifyColumn(RedirectFolder("ContactFolder"));
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a replacement schema silently drops the change")
+			.WithMessage("*replaces its parent*", because: "the message must name the replacement precondition");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Refuses a modify redirect to a schema the reference lookup does not list, before saving.")]
+	public void ModifyColumn_ShouldRefuseRedirect_WhenTargetIsMissing() {
+		// Arrange
+		_loadedSchema = CreateFolderChildSchema();
+		SetupLoadedSchema();
+		SetupFolderHierarchy();
+
+		// Act
+		Action act = () => _manager.ModifyColumn(RedirectFolder("UsrMissingFolder"));
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a redirect needs an existing target")
+			.WithMessage("*'UsrMissingFolder' was not found*", because: "the message must name the missing target");
+		_designerClient.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(),
+			Arg.Any<Clio.Command.RemoteCommandOptions>());
 	}
 
 	[Test]

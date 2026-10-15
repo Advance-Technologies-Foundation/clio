@@ -590,6 +590,12 @@ internal static class EntitySchemaDesignerSupport
 			$"Unsupported dataValueType '{runtimeDataValueType}' for default-value-config source SystemValue.");
 	}
 
+	/// <summary>Returns the own column of the schema with the given name, or <see langword="null"/>.</summary>
+	internal static EntitySchemaColumnDto? FindOwnColumn(EntityDesignSchemaDto schema, string columnName) {
+		return (schema.Columns ?? []).FirstOrDefault(column =>
+			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
+	}
+
 	/// <summary>Returns the inherited column of the schema with the given name, or <see langword="null"/>.</summary>
 	internal static EntitySchemaColumnDto? FindInheritedColumn(EntityDesignSchemaDto schema, string columnName) {
 		return (schema.InheritedColumns ?? []).FirstOrDefault(column =>
@@ -628,6 +634,11 @@ internal static class EntitySchemaDesignerSupport
 			+ "applies only to a column inherited from the parent schema.";
 	}
 
+	/// <summary>Returns the refusal for an override column that names no reference schema.</summary>
+	internal static string BuildOverrideWithoutReferenceMessage(string columnName) {
+		return $"Override column '{columnName}' must specify reference-schema-name.";
+	}
+
 	/// <summary>Builds the refusal for an override that names a column the parent schema does not have.</summary>
 	/// <param name="schemaName">Schema the override targets.</param>
 	/// <param name="parentSchemaName">Parent schema of <paramref name="schemaName"/>.</param>
@@ -635,8 +646,10 @@ internal static class EntitySchemaDesignerSupport
 	/// <returns>The caller-facing message.</returns>
 	internal static string BuildOverrideOfMissingColumnMessage(string? schemaName, string? parentSchemaName,
 		string columnName) {
-		return $"Parent schema '{parentSchemaName ?? "<none>"}' of schema '{schemaName}' has no column "
-			+ $"'{columnName}' to override.";
+		return string.IsNullOrWhiteSpace(parentSchemaName)
+			? $"Override column '{columnName}' requires parent-schema-name: schema '{schemaName}' has no parent "
+				+ "to inherit the column from."
+			: $"Parent schema '{parentSchemaName}' of schema '{schemaName}' has no column '{columnName}' to override.";
 	}
 
 	/// <summary>

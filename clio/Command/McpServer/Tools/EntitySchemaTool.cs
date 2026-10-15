@@ -219,20 +219,9 @@ public sealed class CreateEntitySchemaTool(
 		// ResolveName(), not Name: the contract advertises `column-name` as the column identity field with
 		// `name` as its alias, so a contract-following caller sends `column-name` — reading the raw Name here
 		// serialized it as "name": null and the underlying creator rejected the whole batch (issue #947).
-		return JsonSerializer.Serialize(new Dictionary<string, object?> {
-			["name"] = resolvedName,
-			["type"] = resolvedType,
-			[TitleLocalizationsArgument] = titleLocalizations,
-			["reference-schema-name"] = string.IsNullOrWhiteSpace(resolvedReferenceSchemaName)
-				? null
-				: resolvedReferenceSchemaName.Trim(),
-			["required"] = column.ResolveRequired(),
-		    ["default-value-source"] = column.DefaultValueSource,
-		    ["default-value"] = column.DefaultValue,
-			["default-value-config"] = column.DefaultValueConfig,
-			["masked"] = column.Masked
-	});
-}
+		return SerializeColumnSpec(column, resolvedName, isOverride: false, resolvedType, titleLocalizations,
+			string.IsNullOrWhiteSpace(resolvedReferenceSchemaName) ? null : resolvedReferenceSchemaName.Trim());
+	}
 
 	// An override carries no type and keeps the inherited caption unless a title is sent, so neither is
 	// defaulted here. Every other property is forwarded unchanged for the creator to refuse.
@@ -247,18 +236,26 @@ public sealed class CreateEntitySchemaTool(
 				resolvedName,
 				context)
 			: null;
-		return JsonSerializer.Serialize(new Dictionary<string, object?> {
-			["name"] = resolvedName,
-			["override"] = true,
-			["type"] = column.ResolveType()?.Trim(),
-			[TitleLocalizationsArgument] = titleLocalizations,
-			["reference-schema-name"] = column.ResolveReferenceSchemaName()?.Trim(),
-			["required"] = column.ResolveRequired(),
-			["default-value-source"] = column.DefaultValueSource,
-			["default-value"] = column.DefaultValue,
-			["default-value-config"] = column.DefaultValueConfig,
-			["masked"] = column.Masked
-		});
+		return SerializeColumnSpec(column, resolvedName, isOverride: true, column.ResolveType()?.Trim(),
+			titleLocalizations, column.ResolveReferenceSchemaName()?.Trim());
+	}
+
+	private static string SerializeColumnSpec(CreateEntitySchemaColumnArgs column, string resolvedName,
+		bool isOverride, string? type, IReadOnlyDictionary<string, string>? titleLocalizations,
+		string? referenceSchemaName) {
+		Dictionary<string, object?> spec = new() { ["name"] = resolvedName };
+		if (isOverride) {
+			spec["override"] = true;
+		}
+		spec["type"] = type;
+		spec[TitleLocalizationsArgument] = titleLocalizations;
+		spec["reference-schema-name"] = referenceSchemaName;
+		spec["required"] = column.ResolveRequired();
+		spec["default-value-source"] = column.DefaultValueSource;
+		spec["default-value"] = column.DefaultValue;
+		spec["default-value-config"] = column.DefaultValueConfig;
+		spec["masked"] = column.Masked;
+		return JsonSerializer.Serialize(spec);
 	}
 }
 
@@ -755,8 +752,8 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "record cannot be read. "
 		+ "An INHERITED column can have only its caption/description overridden (title-localizations / "
 		+ "description-localizations) on a replacing/child schema, and an inherited Lookup its "
-		+ "reference-schema-name when the parent is virtual and the target inherits from the current reference "
-		+ "schema; its name, type, and flags stay read-only. "
+		+ "reference-schema-name when the parent is virtual and the target inherits from the column's "
+		+ "reference in the parent schema; its name, type, and flags stay read-only. "
 		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
@@ -1045,7 +1042,7 @@ public sealed record CreateEntitySchemaColumnArgs(
 						  Send only name, override, reference-schema-name and optionally title-localizations; type,
 						  required, defaults and masked are refused. The parent must be virtual, the schema must not
 						  replace its parent, and the target must be a non-virtual schema that inherits from the column's
-						  current reference schema. Omitted or false: a name that matches an inherited column is refused.
+						  reference in the parent schema. Omitted or false: a name that matches an inherited column is refused.
 						  """)]
 	public bool? Override { get; init; }
 

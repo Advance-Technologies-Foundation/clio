@@ -55,16 +55,14 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 		EnsureParentAppliesOverride(schema, columnName);
 		ManagerItemDto target = referenceSchema ?? throw CreateMissingTargetException(schema, columnName,
 			referenceSchemaName, options);
-		Guid currentReferenceUId = column.ReferenceSchema?.UId ?? Guid.Empty;
-		if (currentReferenceUId == Guid.Empty) {
+		EntityDesignSchemaDto parentReference = ReadParentReference(schema, columnName, options);
+		HierarchyWalk walk = WalkHierarchy(target.UId, parentReference.UId, options);
+		if (!walk.Reached) {
 			throw new EntitySchemaDesignerException(
-				$"Inherited column '{columnName}' has no reference schema to override.");
-		}
-		if (!InheritsFrom(target.UId, currentReferenceUId, options)) {
-			throw new EntitySchemaDesignerException(
-				$"Reference schema '{target.Name}' does not inherit from '{column.ReferenceSchema.Name}', the schema "
-				+ $"inherited column '{columnName}' currently references. An override must reference "
-				+ $"'{column.ReferenceSchema.Name}' or a schema that inherits from it.");
+				$"Reference schema '{target.Name}' does not inherit from '{parentReference.Name}', the schema "
+				+ $"column '{columnName}' references in parent schema '{schema.ParentSchema.Name}'. An override must "
+				+ $"reference '{parentReference.Name}' or a schema that inherits from it. The hierarchy of "
+				+ $"'{target.Name}' was read up to '{walk.LastSchemaName}'.");
 		}
 		column.ReferenceSchema = new EntityDesignSchemaDto {
 			UId = target.UId,
@@ -77,9 +75,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 	/// <inheritdoc />
 	public void VerifyPersisted(EntityDesignSchemaDto reloadedSchema, string columnName, string referenceSchemaName) {
 		ArgumentNullException.ThrowIfNull(reloadedSchema);
-		bool ownColumnExists = (reloadedSchema.Columns ?? []).Any(column =>
-			string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
-		if (ownColumnExists) {
+		if (EntitySchemaDesignerSupport.FindOwnColumn(reloadedSchema, columnName) != null) {
 			throw new EntitySchemaDesignerException(
 				$"Column '{columnName}' was saved as an own column of schema '{reloadedSchema.Name}' instead of "
 				+ "overriding the inherited column.");
@@ -99,8 +95,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 	private static EntitySchemaColumnDto RequireInheritedLookup(EntityDesignSchemaDto schema, string columnName) {
 		EntitySchemaColumnDto? column = EntitySchemaDesignerSupport.FindInheritedColumn(schema, columnName);
 		if (column == null) {
-			bool isOwnColumn = (schema.Columns ?? []).Any(item =>
-				string.Equals(item.Name, columnName, StringComparison.OrdinalIgnoreCase));
+			bool isOwnColumn = EntitySchemaDesignerSupport.FindOwnColumn(schema, columnName) != null;
 			throw new EntitySchemaDesignerException(isOwnColumn
 				? EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(schema.Name, columnName)
 				: EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(schema.Name, schema.ParentSchema?.Name,
@@ -123,9 +118,14 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 				$"Schema '{schema.Name}' replaces its parent, and Creatio does not apply a reference override of "
 				+ $"inherited column '{columnName}' on a replacement schema.");
 		}
-		if (schema.ParentSchema?.IsVirtual != true) {
+		if (schema.ParentSchema == null) {
 			throw new EntitySchemaDesignerException(
-				$"Parent schema '{schema.ParentSchema?.Name ?? "<none>"}' of schema '{schema.Name}' is not virtual, "
+				$"Schema '{schema.Name}' has no parent schema; an override of column '{columnName}' requires "
+				+ "parent-schema-name.");
+		}
+		if (!schema.ParentSchema.IsVirtual) {
+			throw new EntitySchemaDesignerException(
+				$"Parent schema '{schema.ParentSchema.Name}' of schema '{schema.Name}' is not virtual, "
 				+ $"and Creatio applies a reference override of inherited column '{columnName}' only when the parent "
 				+ "is virtual (for example BaseItemInFolder).");
 		}
@@ -149,16 +149,47 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 				+ $"'{columnName}'.");
 	}
 
-	private bool InheritsFrom(Guid schemaUId, Guid ancestorUId, RemoteCommandOptions options) {
+	// Reads the parent schema as seen from the schema's package, so a reference the parent itself redirects
+	// is the one the override is validated against.
+	private EntityDesignSchemaDto ReadParentReference(EntityDesignSchemaDto schema, string columnName,
+		RemoteCommandOptions options) {
+		string parentSchemaName = schema.ParentSchema.Name;
+		EntityDesignSchemaDto? parentSchema = designerClient.GetSchemaDesignItem(new GetSchemaDesignItemRequestDto {
+			Name = parentSchemaName,
+			PackageUId = schema.Package?.UId ?? Guid.Empty,
+			UseFullHierarchy = true,
+			Cultures = [EntitySchemaDesignerSupport.DefaultCultureName]
+		}, options)?.Schema;
+		EntitySchemaColumnDto? parentColumn = parentSchema == null
+			? null
+			: EntitySchemaDesignerSupport.FindOwnColumn(parentSchema, columnName)
+				?? EntitySchemaDesignerSupport.FindInheritedColumn(parentSchema, columnName);
+		EntityDesignSchemaDto? parentReference = parentColumn?.ReferenceSchema;
+		if (parentReference == null || parentReference.UId == Guid.Empty) {
+			throw new EntitySchemaDesignerException(
+				$"Column '{columnName}' of parent schema '{parentSchemaName}' has no reference schema to override.");
+		}
+		return parentReference;
+	}
+
+	private readonly record struct HierarchyWalk(bool Reached, string LastSchemaName);
+
+	private HierarchyWalk WalkHierarchy(Guid schemaUId, Guid ancestorUId, RemoteCommandOptions options) {
 		HashSet<Guid> visited = [];
 		Guid current = schemaUId;
+		string lastSchemaName = schemaUId.ToString();
 		for (int depth = 0; depth <= MaxHierarchyDepth && current != Guid.Empty && visited.Add(current); depth++) {
 			if (current == ancestorUId) {
-				return true;
+				return new HierarchyWalk(true, lastSchemaName);
 			}
-			current = ReadParentUId(current, isTarget: depth == 0, options);
+			RuntimeEntitySchemaDto? runtimeSchema = ReadRuntimeSchema(current, isTarget: depth == 0, options);
+			if (runtimeSchema == null) {
+				break;
+			}
+			lastSchemaName = string.IsNullOrWhiteSpace(runtimeSchema.Name) ? current.ToString() : runtimeSchema.Name;
+			current = runtimeSchema.ParentUId;
 		}
-		return false;
+		return new HierarchyWalk(false, lastSchemaName);
 	}
 
 	// The root entity schema reports a parent the runtime service cannot resolve; the service answers that
@@ -166,7 +197,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 	// again on that answer, because a schema published moments ago reads as missing until the schema manager
 	// finishes refreshing it; when every read fails, its hierarchy could not be read. Transport and markup
 	// failures (InvalidOperationException subclasses) are not an answer and propagate.
-	private Guid ReadParentUId(Guid schemaUId, bool isTarget, RemoteCommandOptions options) {
+	private RuntimeEntitySchemaDto? ReadRuntimeSchema(Guid schemaUId, bool isTarget, RemoteCommandOptions options) {
 		int attemptCount = isTarget ? TargetReadAttemptCount : 1;
 		InvalidOperationException? lastAnswer = null;
 		for (int attempt = 1; attempt <= attemptCount; attempt++) {
@@ -176,7 +207,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 			try {
 				RuntimeEntitySchemaResponse response = designerClient.GetRuntimeEntitySchema(schemaUId, options);
 				if (response?.Success == true && response.Schema != null) {
-					return response.Schema.ParentUId;
+					return response.Schema;
 				}
 				lastAnswer = null;
 			} catch (InvalidOperationException exception) when (exception.GetType() == typeof(InvalidOperationException)) {
@@ -184,7 +215,7 @@ internal sealed class InheritedLookupOverride(IRemoteEntitySchemaDesignerClient 
 			}
 		}
 		if (!isTarget) {
-			return Guid.Empty;
+			return null;
 		}
 		string message = BuildUnreadableHierarchyMessage(schemaUId);
 		throw lastAnswer == null

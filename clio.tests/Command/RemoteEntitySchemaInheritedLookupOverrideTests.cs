@@ -117,6 +117,21 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 			});
 		_designer.TryGetSchemaDesignItem(Arg.Any<GetSchemaDesignItemRequestDto>(), Arg.Any<RemoteCommandOptions>())
 			.Returns(_ => new DesignerResponse { Schema = _schema });
+		SetParentFolderReference(BaseFolderUId, "BaseFolder");
+	}
+
+	private void SetParentFolderReference(Guid referenceUId, string referenceName) {
+		_designer.GetSchemaDesignItem(Arg.Is<GetSchemaDesignItemRequestDto>(request =>
+					request.Name == "BaseItemInFolder" && request.PackageUId == PackageUId && request.UseFullHierarchy),
+				Arg.Any<RemoteCommandOptions>())
+			.Returns(new DesignerResponse { Schema = new EntityDesignSchemaDto {
+				UId = BaseItemInFolderUId, Name = "BaseItemInFolder", IsVirtual = true,
+				Columns = [new EntitySchemaColumnDto {
+					UId = FolderColumnUId, Name = "Folder", DataValueType = 10,
+					ReferenceSchema = new EntityDesignSchemaDto { UId = referenceUId, Name = referenceName }
+				}],
+				InheritedColumns = []
+			} });
 	}
 
 	private static ManagerItemDto[] NonVirtualReferenceSchemas() => [
@@ -225,7 +240,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "only an inherited lookup has a reference to override")
-			.WithMessage("*only the reference schema of an inherited Lookup column can be overridden*");
+			.WithMessage("*only the reference schema of an inherited Lookup column can be overridden*",
+				because: "the message must name the rule that refused the request");
 		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
 	}
 
@@ -241,7 +257,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "an override needs an inherited column")
-			.WithMessage("*Parent schema 'BaseItemInFolder'*has no column 'UsrFolder'*");
+			.WithMessage("*Parent schema 'BaseItemInFolder'*has no column 'UsrFolder'*",
+				because: "the message must name the rule that refused the request");
 		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
 	}
 
@@ -257,7 +274,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "a non-virtual parent silently drops the override")
-			.WithMessage("*Parent schema 'BaseItemInFolder'*is not virtual*");
+			.WithMessage("*Parent schema 'BaseItemInFolder'*is not virtual*",
+				because: "the message must name the rule that refused the request");
 		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
 	}
 
@@ -275,13 +293,14 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "a replacement schema silently drops the override")
-			.WithMessage("*replaces its parent*");
+			.WithMessage("*replaces its parent*",
+				because: "the message must name the rule that refused the request");
 		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
 	}
 
 	[Test]
 	[Description("Refuses Contact as the Folder target because it does not inherit from BaseFolder, ending the walk at the root whose parent the runtime service cannot resolve; ContactFolder passes.")]
-	public void Create_ShouldRefuseOverride_WhenTargetDoesNotInheritCurrentReference() {
+	public void Create_ShouldRefuseOverride_WhenTargetDoesNotInheritParentReference() {
 		// Arrange
 		CreateEntitySchemaOptions options = CreateOptions(
 			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"Contact\"}");
@@ -292,7 +311,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(
 				because: "the server saves an unrelated target and breaks the folder pair, so clio must refuse it")
-			.WithMessage("*'Contact' does not inherit from 'BaseFolder'*");
+			.WithMessage("*'Contact' does not inherit from 'BaseFolder'*",
+				because: "the message must name the rule that refused the request");
 		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
 	}
 
@@ -330,7 +350,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an override changes only the reference and caption")
-			.WithMessage($"*Override column 'Folder' cannot set '{propertyName}'*");
+			.WithMessage($"*Override column 'Folder' cannot set '{propertyName}'*",
+				because: "the message must name the rule that refused the request");
 		_designer.DidNotReceive().CreateNewSchema(Arg.Any<CreateEntitySchemaRequestDto>(), Arg.Any<RemoteCommandOptions>());
 		_saved.Should().BeEmpty(because: "the column spec is refused before the schema is created");
 	}
@@ -346,7 +367,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an override needs a target schema")
-			.WithMessage("*Override column 'Folder' must specify reference-schema-name*");
+			.WithMessage("*Override column 'Folder' must specify reference-schema-name*",
+				because: "the message must name the rule that refused the request");
 		_designer.DidNotReceive().CreateNewSchema(Arg.Any<CreateEntitySchemaRequestDto>(), Arg.Any<RemoteCommandOptions>());
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 	}
@@ -363,7 +385,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "only one target per inherited column can be persisted")
-			.WithMessage("*Inherited column 'Folder' is overridden more than once*");
+			.WithMessage("*Inherited column 'Folder' is overridden more than once*",
+				because: "the message must name the rule that refused the request");
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 	}
 
@@ -380,7 +403,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "an unreadable target cannot be validated")
-			.WithMessage("*could not be read*");
+			.WithMessage("*could not be read*",
+				because: "the message must name the rule that refused the request");
 		_designer.Received(InheritedLookupOverride.TargetReadAttemptCount)
 			.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>());
 		_retryDelay.Received(InheritedLookupOverride.TargetReadAttemptCount - 1)
@@ -426,7 +450,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "Contact does not inherit from BaseFolder")
-			.WithMessage("*does not inherit from 'BaseFolder'*");
+			.WithMessage("*does not inherit from 'BaseFolder'*hierarchy of 'Contact' was read up to*",
+				because: "the message must show where the hierarchy read stopped");
 		_designer.Received(1).GetRuntimeEntitySchema(UnresolvableRootUId, Arg.Any<RemoteCommandOptions>());
 		_retryDelay.DidNotReceive().Wait(Arg.Any<TimeSpan>());
 	}
@@ -444,7 +469,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "an unreadable target cannot be validated")
-			.WithMessage("*could not be read*")
+			.WithMessage("*could not be read*",
+				because: "the message must name the rule that refused the request")
 			.WithInnerException<InvalidOperationException>();
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 	}
@@ -467,8 +493,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 	}
 
 	[Test]
-	[Description("Accepts a target two parent hops below the current reference.")]
-	public void Create_ShouldRedirectInheritedFolder_WhenTargetInheritsCurrentReferenceThroughTwoHops() {
+	[Description("Accepts a target two parent hops below the reference the column has in the parent schema.")]
+	public void Create_ShouldRedirectInheritedFolder_WhenTargetInheritsParentReferenceThroughTwoHops() {
 		// Arrange
 		Guid subFolderUId = Guid.NewGuid();
 		AddReferenceSchema(subFolderUId, "UsrContactSubFolder", parentUId: ContactFolderUId);
@@ -498,8 +524,9 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 		Action act = () => _creator.Create(options);
 
 		// Assert
-		act.Should().Throw<EntitySchemaDesignerException>(because: "a cycle never reaches the current reference")
-			.WithMessage("*'UsrLoopFolder' does not inherit from 'BaseFolder'*");
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a cycle never reaches the parent's reference")
+			.WithMessage("*'UsrLoopFolder' does not inherit from 'BaseFolder'*",
+				because: "the message must name the rule that refused the request");
 		_designer.Received(2).GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
 	}
@@ -524,10 +551,172 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(because: "the walk is bounded")
-			.WithMessage("*'UsrDeepFolder' does not inherit from 'BaseFolder'*");
+			.WithMessage("*'UsrDeepFolder' does not inherit from 'BaseFolder'*",
+				because: "the message must name the rule that refused the request");
 		_designer.Received(InheritedLookupOverride.MaxHierarchyDepth + 1)
 			.GetRuntimeEntitySchema(Arg.Any<Guid>(), Arg.Any<RemoteCommandOptions>());
 		_designer.DidNotReceive().SaveSchema(Arg.Any<EntityDesignSchemaDto>(), Arg.Any<RemoteCommandOptions>());
+	}
+
+	[Test]
+	[Description("Validates the target against the reference the parent schema declares for the column, so a sibling of that reference is refused.")]
+	public void Create_ShouldRefuseOverride_WhenTargetDoesNotInheritReferenceDeclaredByParent() {
+		// Arrange
+		SetParentFolderReference(ContactFolderUId, "ContactFolder");
+		Guid siblingUId = Guid.NewGuid();
+		AddReferenceSchema(siblingUId, "UsrAccountFolder", parentUId: BaseFolderUId);
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrAccountFolder\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "the parent narrows the column to ContactFolder")
+			.WithMessage("*'UsrAccountFolder' does not inherit from 'ContactFolder'*parent schema 'BaseItemInFolder'*",
+				because: "the message must name the reference the parent declares");
+		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
+	}
+
+	[Test]
+	[Description("Refuses the override when the parent schema's column has no reference schema.")]
+	public void Create_ShouldRefuseOverride_WhenParentColumnHasNoReference() {
+		// Arrange
+		SetParentFolderReference(Guid.Empty, "BaseFolder");
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "there is no reference to validate the target against")
+			.WithMessage("*Column 'Folder' of parent schema 'BaseItemInFolder' has no reference schema*",
+				because: "the message must name the parent column");
+		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
+	}
+
+	[Test]
+	[Description("Refuses an override on a schema created without parent-schema-name with a message that asks for it.")]
+	public void Create_ShouldRefuseOverride_WhenParentSchemaNameIsMissing() {
+		// Arrange
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+		options.ParentSchemaName = null;
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a schema without a parent inherits no column")
+			.WithMessage("*Override column 'Folder' requires parent-schema-name*",
+				because: "the message must name the missing option instead of a '<none>' parent");
+		_saved.Should().BeEmpty(because: "the refusal must precede SaveSchema");
+	}
+
+	[Test]
+	[Description("Refuses an override on a design schema whose parent is not populated.")]
+	public void Apply_ShouldRefuseOverride_WhenParentSchemaIsNull() {
+		// Arrange
+		InheritedLookupOverride sut = new(_designer, _retryDelay);
+		EntityDesignSchemaDto schema = new() {
+			Name = "UsrVehicleInFolder", Columns = [], InheritedColumns = CreateInheritedColumns()
+		};
+
+		// Act
+		Action act = () => sut.Apply(schema, "Folder", "ContactFolder",
+			new ManagerItemDto { UId = ContactFolderUId, Name = "ContactFolder" }, new RemoteCommandOptions());
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "an override needs a parent schema")
+			.WithMessage("*'UsrVehicleInFolder' has no parent schema*requires parent-schema-name*",
+				because: "the message must ask for the parent schema");
+	}
+
+	[Test]
+	[Description("Reports a reloaded schema that holds the column as an own column as a failed override.")]
+	public void VerifyPersisted_ShouldThrow_WhenColumnWasSavedAsOwnColumn() {
+		// Arrange
+		InheritedLookupOverride sut = new(_designer, _retryDelay);
+		EntityDesignSchemaDto reloaded = new() {
+			Name = "UsrVehicleInFolder",
+			Columns = [new EntitySchemaColumnDto { Name = "Folder", DataValueType = 10 }],
+			InheritedColumns = CreateInheritedColumns()
+		};
+
+		// Act
+		Action act = () => sut.VerifyPersisted(reloaded, "Folder", "ContactFolder");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "an own column is not an override")
+			.WithMessage("*'Folder' was saved as an own column*",
+				because: "the message must say how the column was saved");
+	}
+
+	[Test]
+	[Description("Reports a reloaded schema without the inherited column as a failed override.")]
+	public void VerifyPersisted_ShouldThrow_WhenInheritedColumnIsMissing() {
+		// Arrange
+		InheritedLookupOverride sut = new(_designer, _retryDelay);
+		EntityDesignSchemaDto reloaded = new() { Name = "UsrVehicleInFolder", Columns = [], InheritedColumns = [] };
+
+		// Act
+		Action act = () => sut.VerifyPersisted(reloaded, "Folder", "ContactFolder");
+
+		// Assert
+		act.Should().Throw<EntitySchemaDesignerException>(because: "a missing column cannot confirm the override")
+			.WithMessage("*Inherited column 'Folder' could not be reloaded*",
+				because: "the message must say the column is missing after the save");
+	}
+
+	[Test]
+	[Description("Reads the target again after a thrown InvalidOperationException and redirects once a read succeeds.")]
+	public void Create_ShouldRedirectInheritedFolder_WhenTargetReadThrowsThenSucceeds() {
+		// Arrange
+		int targetReads = 0;
+		_designer.GetRuntimeEntitySchema(ContactFolderUId, Arg.Any<RemoteCommandOptions>())
+			.Returns(_ => ++targetReads < 2
+				? throw new InvalidOperationException("Can't find EntitySchema")
+				: new RuntimeEntitySchemaResponse {
+					Success = true,
+					Schema = new RuntimeEntitySchemaDto {
+						UId = ContactFolderUId, Name = "ContactFolder", ParentUId = BaseFolderUId
+					}
+				});
+		CreateEntitySchemaOptions options = CreateOptions(FolderOverride);
+
+		// Act
+		_creator.Create(options);
+
+		// Assert
+		SavedFolder().ReferenceSchema.UId.Should().Be(ContactFolderUId,
+			because: "a failed first read of a just-published target is retried");
+		_retryDelay.Received(1).Wait(InheritedLookupOverride.TargetReadRetryInterval);
+	}
+
+	[TestCase(InheritedLookupOverride.MaxHierarchyDepth, true)]
+	[TestCase(InheritedLookupOverride.MaxHierarchyDepth + 1, false)]
+	[Description("Accepts a target exactly MaxHierarchyDepth hops below the parent's reference and refuses one hop more.")]
+	public void Create_ShouldBoundHierarchyWalk_AtMaxHierarchyDepth(int hops, bool accepted) {
+		// Arrange
+		Guid[] chain = Enumerable.Range(0, hops).Select(_ => Guid.NewGuid()).ToArray();
+		AddReferenceSchema(chain[0], "UsrEdgeFolder", parentUId: hops > 1 ? chain[1] : BaseFolderUId);
+		for (int index = 1; index < chain.Length; index++) {
+			SetRuntimeParent(chain[index], index + 1 < chain.Length ? chain[index + 1] : BaseFolderUId);
+		}
+		CreateEntitySchemaOptions options = CreateOptions(
+			"{\"name\":\"Folder\",\"override\":true,\"reference-schema-name\":\"UsrEdgeFolder\"}");
+
+		// Act
+		Action act = () => _creator.Create(options);
+
+		// Assert
+		if (accepted) {
+			act.Should().NotThrow(because: "a reference reached within the depth limit is accepted");
+			SavedFolder().ReferenceSchema.UId.Should().Be(chain[0], because: "the target is applied");
+		} else {
+			act.Should().Throw<EntitySchemaDesignerException>(because: "the walk stops at the depth limit")
+				.WithMessage("*'UsrEdgeFolder' does not inherit from 'BaseFolder'*",
+					because: "a reference beyond the limit is not reached");
+		}
 	}
 
 	private void AddReferenceSchema(Guid schemaUId, string name, Guid parentUId) {
@@ -566,7 +755,8 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 		// Assert
 		act.Should().Throw<EntitySchemaDesignerException>(
 				because: "a reference change the server dropped must not be reported as success")
-			.WithMessage("*was not persisted*expected 'ContactFolder'*'BaseFolder'*");
+			.WithMessage("*was not persisted*expected 'ContactFolder'*'BaseFolder'*",
+				because: "the message must say what could not be confirmed after the save");
 	}
 
 	[Test]
@@ -582,6 +772,7 @@ internal sealed class RemoteEntitySchemaInheritedLookupOverrideTests : BaseClioM
 
 		// Assert
 		act.Should().Throw<InvalidOperationException>(because: "an unverifiable override must not be reported as success")
-			.WithMessage("*inherited reference override could not be verified*");
+			.WithMessage("*inherited reference override could not be verified*",
+				because: "the message must say what could not be confirmed after the save");
 	}
 }

@@ -154,7 +154,7 @@ NOTES
       required, defaults and masked are refused. The parent must be virtual (for
       example BaseItemInFolder), the schema must not replace its parent (no
       --extend-parent), and the target must be a non-virtual schema that inherits
-      from the column's current reference schema (for example ContactFolder, which
+      from the column's reference in the parent schema (for example ContactFolder, which
       inherits BaseFolder). The reference is read back after saving and a change
       the server did not persist is reported as an error
     - If no Guid column is supplied for a root schema, Id:Guid is added automatically

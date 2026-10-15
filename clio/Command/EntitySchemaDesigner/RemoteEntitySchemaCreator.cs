@@ -530,7 +530,7 @@ internal sealed class RemoteEntitySchemaCreator : IRemoteEntitySchemaCreator{
 		}
 		if (string.IsNullOrWhiteSpace(structuredColumn.ReferenceSchemaName)) {
 			throw new InvalidOperationException(
-				$"Override column '{name}' must specify reference-schema-name.");
+				EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(name));
 		}
 		IReadOnlyDictionary<string, string>? titleLocalizations = structuredColumn.TitleLocalizations == null
 			? null
