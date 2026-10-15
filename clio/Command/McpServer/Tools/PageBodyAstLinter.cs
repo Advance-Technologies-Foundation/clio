@@ -1522,7 +1522,7 @@ internal static class PageBodyAstLinter {
 		if (IsHandlerChainServiceProcess(call.Callee) && IsRequestLiteralWithoutScopes(call)) {
 			budget.TryAdd(RuleHandlerProcessWithoutScopes, LintSeverity.Warning,
 				call.Location.Start.Line, call.Location.Start.Column + 1,
-				() => "`HandlerChainService.instance.process({ ... })` without `scopes` reaches only handlers registered without scopes: the page's own SCHEMA_HANDLERS and scoped platform handlers (for example card-level save/open-page) are skipped silently, so the page handler is never called or only part of the platform chain runs. Pass `scopes: [...request.scopes]`");
+				() => "`HandlerChainService.instance.process({ ... })` without `scopes` reaches only handlers registered without scopes: the page's own SCHEMA_HANDLERS and scoped platform handlers (for example card-level save/open-page) may be skipped silently: a request handled by the page itself never reaches its handler, and a platform request may run only part of its chain. Pass `scopes: [...request.scopes]` unless the target request intentionally changes scope");
 		}
 		// Rule 10: direct `fetch(...)` / `globalThis.fetch(...)` / `window.fetch(...)`
 		// inside the converters schema subtree. Bounded via VisitContext.InsideConverters

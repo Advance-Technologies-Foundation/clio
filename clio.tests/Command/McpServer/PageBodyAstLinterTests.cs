@@ -499,9 +499,13 @@ internal class PageBodyAstLinterTests {
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 
 		// Assert
-		findings.Should().ContainSingle(f =>
+		PageBodyLintFinding finding = findings.Should().ContainSingle(f =>
 			f.Rule == PageBodyAstLinter.RuleHandlerProcessWithoutScopes && f.Severity == LintSeverity.Warning,
-			because: "a request without scopes reaches only handlers registered without scopes, so the page handler for usr.TargetRequest is skipped and the call resolves to undefined without error");
+			because: "a request without scopes reaches only handlers registered without scopes, so the page handler for usr.TargetRequest is skipped and the call resolves to undefined without error").Subject;
+		finding.Message.Should().Contain("scopes: [...request.scopes]",
+			because: "the warning must name the fix an agent can apply");
+		finding.Message.Should().Contain("may be skipped",
+			because: "a call whose target is handled only by unscoped platform handlers works, so the message must not claim the handler is always skipped");
 	}
 
 	[TestCase("{ type: \"usr.TargetRequest\", $context: request.$context, scopes: [...request.scopes] }", Description = "Explicit scopes property")]
