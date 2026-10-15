@@ -95,6 +95,7 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
 | M18 a constant file-name suffix under another culture | open; after this story's cut | the culture note in the guide; no code |
 | M4 the end-to-end Object -> FileCollection -> Process chain | open as a designer probe; its builder-written repeat V7 passed on 1.6.6.98 (2026-10-14) | verification only; ST-04 repeats it on this cut |
 | O-TP1 where TC-91 (ENG-95984's E2E-14a-d) runs | open (recommended B: in this story's clio PR) | TC-I-91 in RP.7 |
+| RF1 exception: ENG-95984's `CollectionBindingRules.TakesFiles` (`PB/Mappings/CollectionBindingRules.cs:168`) compares the element's `SchemaUId` with the literal `ProcessDesignConstants.FileProcessing.ProcessFileTaskSchemaUId`, the one production use of a file-task UId, against reuse RF1 (production resolves the task schemas by NAME; the UIds live in the test fixtures and the drift guard only) | open; decided in this story, which registers the Process variant | RP.2 / RP.3: either `TakesFiles` asks the variant registry for the Process variant (resolved by name) and the constant is deleted, or the constant stays as an exception to RF1 named in reuse RF1 and pinned by the drift guard |
 
 Contingency X2: if the Process-parameter half fails its stand proof (the M4 chain, ST-04) while the Report half is
 ready, the Report commit group is cherry-picked into this PR, the Process-parameter group moves to a new Sub-task
@@ -118,7 +119,8 @@ registrations, one commit group each, so that X2 can cherry-pick.
 
 - [ ] **RP.1** Report variant (D17): `IReportTemplateReader` (ESQ on `SysModuleReport`, `UseAdminRights = false`,
   columns `Id`, `Caption`, `Type.Name`, `SysEntitySchema.Name`, the module-entity fallback, `ConvertInPDF`); the
-  `report` group; the D17 refusals (missing or unknown printable with the Report setup hint and candidates by
+  `report` group's binding (the request contract already declares the group and its members; story 1 refuses it as
+  not written yet, and registering the variant replaces that refusal); the D17 refusals (missing or unknown printable with the Report setup hint and candidates by
   `templateId`; ambiguous caption; DevExpress; FastReport; no object; bad `fileNameSuffixColumn`); Word
   `separateReports` written true when omitted, an explicit `false` accepted with a notice; `report.recordId` compiled
   by `FileProcessingScopeFilter` as `Id = value`; a constant `fileNameSuffix` through the localizable resource path; a
@@ -155,11 +157,13 @@ registrations, one commit group each, so that X2 can cherry-pick.
   summaries; `clio.mcp.e2e/Support/Results/ListPrintablesEnvelope.cs` gains `count` and `printables`; the
   `list-user-tasks` exceptions and `ListUserTasksPrompt` extended to ReportFileProcessingUserTask and
   ProcessFileProcessingUserTask; `CreateBusinessProcessPrompt`'s `fileProcessing` sentence extended to the `report` and
-  `files` groups (TC-U-89 and TC-U-90 extended); in the archive's commit, the `fileProcessing` key set of story 1
-  (`ProcessBlockKeyCheck`) gains the `report` and `files` members this cut adds to the server contract (inference:
-  `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` holds the key sets equal to the archive; the analysis plan
-  names this step, from ENG-103085 Refuse element and block keys the process builder would drop silently, for OA only;
-  TC-U-93); no new `CLIO*` analyzer warning.
+  `files` groups (TC-U-89 and TC-U-90 extended); the `fileProcessing` key set of story 1 (`ProcessBlockKeyCheck`)
+  already carries the `report` and `files` groups and their write members, because story 1's server contract declares
+  them (so that it can refuse them by name), so this cut adds only the describe-only members its describe additions
+  bring (`report.caption`, `report.convertToPdf`, `bindingLevels`) to the read-back keys, in the archive's commit
+  (`KeySets_Should_EqualTheMembersOfTheBundledServerContracts` and `ReadBackFields_Should_BeDescribeOnlyMembers` hold
+  the key sets equal to the archive; ENG-103085 Refuse element and block keys the process builder would drop
+  silently; TC-U-93); no new `CLIO*` analyzer warning.
 - [ ] **RP.7** e2e (extend `ProcessFileElementToolE2ETests` or NEW
   `clio.mcp.e2e/ProcessFileReportAndParameterToolE2ETests.cs`):
   - Word SaveToFiles with `report.recordId` (TC-I-52, TC-I-60), with the `separateReports: false` notice and the

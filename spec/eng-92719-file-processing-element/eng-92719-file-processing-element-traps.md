@@ -540,7 +540,8 @@ M-G6-4), [T-43](#t-43).
   state), UO-4 (legacy state), 2026-10-01. source: `PD/EntitySchemaDesignerUtilities/EntitySchemaDesignerUtilities.js:343-387, 424-446, 509-515`.
   measured (corpus): 0 of 30 shipped elements use SysFile.
 - **Neutraliser.** D15: `IAttachmentStorageResolver` (+ `IEntitySchemaHierarchyReader`), deterministic, reproducing the
-  designer's ON algorithm; the whole pair is rewritten on every block write; `storage` / `fileObject` /
+  designer's ON algorithm; a side's whole pair is rewritten whenever a block sends its object, and an inconsistent
+  stored pair whenever a block touches the element (D12 rule 5); `storage` / `fileObject` /
   `attachments.linkColumn` are identity CHECK members (F-E8). OA ships legacy storage and refuses SysFile; SF lifts it.
   M10 compares the resolver with the designer's list before code.
 
@@ -597,9 +598,13 @@ M-G6-4), [T-43](#t-43).
 - **Basis / evidence.** source: `PD/BaseFileProcessingUserTaskPropertiesPage/BaseFileProcessingUserTaskPropertiesPage.js:668`
   (`initConnectedObjectInfo`), `:92-99`; `PD/EntitySchemaDesignerUtilities/EntitySchemaDesignerUtilities.js:440-445`. measured (corpus and stand describe,
   2026-10-01): GenerateDNSRecordsSpecification targets DNSGuideFile `337466a6...` with an empty `ConnectedObjectColumnUId`.
-- **Neutraliser.** D15: an orphan target is refused (R8) unless `saveTo.linkColumn` names a lookup column (for example
-  `{object: "DNSGuideFile", linkColumn: "SenderDomain"}`), which is accepted with warning W6 ("opening and saving this
-  element in the designer will clear it"); describe issue for an unlinked target.
+- **Neutraliser.** D15: an orphan named directly is dedicated storage with no record object, as the designer lists
+  it (its own entry, its own UId, `isFileSuccessor: true`). As a source it takes no `attachments.recordId` (refused,
+  pointing to `setFilter`). As a target it is refused (R8) unless `saveTo.linkColumn` names a lookup column whose
+  referenced object is eligible and becomes the record object (for example `{object: "DNSGuideFile", linkColumn:
+  "SenderDomain"}`), accepted with warning W6 ("opening and saving this element in the designer will clear it"); a
+  column every attachment object inherits from `File` (`CreatedBy`, ...) is never accepted as the link; describe
+  issue for an unlinked target.
 
 ### T-27
 **An empty `ConnectedObjectId` fails one storage and orphans the other.**
@@ -610,11 +615,13 @@ M-G6-4), [T-43](#t-43).
   edits it as a lookup of the record object.
 - **Silent or loud.** Legacy: loud at run time. SysFile: silent.
 - **Basis / evidence.** source: `GEN/FileProcessing.CrtProcessDesigner.cs:193-201`; `GEN/SysFileSchema.CrtCoreBase.cs:102-111`;
-  `PB/Parameters/ProcessParameterValueValidator.cs:230-232` (scalar Guid branch) against `:168-204` (lookup branch).
+  `PB/Parameters/ProcessParameterValueValidator.cs:262-263` (scalar Guid branch) against `:205-237` (lookup branch).
   Not measured (M17; its read-only foreign-key pre-check M17-Q7 runs first).
-- **Neutraliser.** D15: a constant `saveTo.recordId` is validated as a LOOKUP of the record object (parse, not empty,
-  the record exists, through `EnsureReferencedRecordExists` with `effectiveReference` = the record object); a mapped one
-  gets the notice "an empty value at run time fails a legacy target (foreign key) and orphans a SysFile target" (F-E9).
+- **Neutraliser.** D15: a constant `saveTo.recordId` is validated as a LOOKUP of the target's record object (parse,
+  not empty, the record exists, through `ProcessParameterValueValidator.EnsureRecordOfObjectExists` `:319-338`, a new
+  internal entry point over the private `EnsureReferencedRecordExists` `:368-386`); a mapped one is typed against
+  that object and gets the notice "an empty value at run time fails a legacy target (foreign key) and orphans a
+  SysFile target" (F-E9). A raw `addMapping` onto `ConnectedObjectId` runs the same rules (D13).
 
 ### T-28
 **H-G3-1: opening and closing a legacy Object element in the designer can break it.**
@@ -712,9 +719,9 @@ M-G6-4), [T-43](#t-43).
 - **Basis / evidence.** source: `PD/ObjectFileProcessingUserTask/metadata.json:48-56` (template `GS2 "50"`);
   `CORE/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:763-765` (unset reads 0); the designer range
   `PD/ObjectFileProcessingUserTaskPropertiesPage/ObjectFileProcessingUserTaskPropertiesPage.js:353-357` (1..5000).
-- **Neutraliser.** D16: 1..5000 validated (F-F3); omitted = the template copy (D20); on create, when omitted on a saving
-  or forwarding element, the notice "reads at most 50 files (numberOfRecords defaults to 50, max 5000)" (F-F4). The
-  guide states the difference from readData.
+- **Neutraliser.** D16: 1..5000 validated (F-F3); omitted = the template copy (D20); on every create that omits it
+  (every Object element saves or forwards its files), the notice "reads at most 50 files (numberOfRecords defaults to
+  50, max 5000)" (F-F4). The guide states the difference from readData.
 
 ### T-34
 **In SysFile mode the designer offers sort columns of the record object.**
@@ -907,12 +914,13 @@ M-G6-4), [T-43](#t-43).
   ENG-102537), none of which fires for the file schemas, and the end-of-request configuration ledger has no rule for
   them, so the element still saves green with no notice (hypothesis, source, 2026-10-13).
 - **Silent or loud.** Silent at save, loud at run time.
-- **Basis / evidence.** source: `PB/Elements/UserTaskElementHandler.cs:80-98` (the two refusals at `:86-87`);
+- **Basis / evidence.** source: `PB/Elements/UserTaskElementHandler.cs:83-102` (the two refusals at `:89-90`);
   `PB/Elements/ElementConfigurationNotices.cs:40-50`; `PD/ObjectFileProcessingUserTask/ObjectFileProcessingUserTask.cs:94-112`;
   `PB/Catalog/UserTaskCatalog.cs:17-46`; `PB/Contracts/ListUserTasksContracts.cs:43`.
 - **Neutraliser.** D13, F-E1, per cut: OA refuses the generic route for the Object schema, keyed on the RESOLVED schema
-  UId, after the two merged refusals (`PB/Elements/UserTaskElementHandler.cs:86-87`) and before the element is created
-  (`:88`), in the shape of ENG-102112's `RefusePreconfiguredPageOnGenericRoute` (covers case, whitespace and the
+  UId, with `RefuseFileProcessingOnGenericRoute` (`PB/Elements/UserTaskElementHandler.cs:91`) after the two merged
+  refusals (`:89-90`) and before the element is created (`:92`), in the shape of ENG-102112's
+  `RefusePreconfiguredPageOnGenericRoute` (covers case, whitespace and the
   `performTask` alias); RP refuses it for the other two. The server refusing a generic route is no longer unique to
   this element: the element-catalog sentence "FOUR user tasks have their own dedicated build type"
   (`KB/guidance/mcp/guides/processes/element-catalog.md:142-152`, preconfiguredPage already REFUSED on the generic
@@ -929,15 +937,17 @@ M-G6-4), [T-43](#t-43).
   `DataSourceFilters` and the like writes whatever is sent; for example `ResultActionType = 1` on the Process variant
   saves green and throws (T-18), and a storage half written alone produces T-24 or T-28.
 - **Silent or loud.** Silent at save.
-- **Basis / evidence.** source: `PB/Mappings/ProcessMappingService.cs:48-72` (the one funnel), D13. Since 1.6.6.69 the
+- **Basis / evidence.** source: `PB/Mappings/ProcessMappingService.cs:56-60` (the one funnel), D13. Since 1.6.6.69 the
   funnel writes a correct schema UId onto the four storage parameters too (T-54), but it still skips the block's
   checks and still accepts a `SysSchema` row Id.
-- **Neutraliser.** D13 F-E2, per cut: `addMapping` onto the 13 binder-owned parameters of a claimed schema is refused
-  and points to `setElement fileProcessing`; the value inputs (`Files`, `Files.File`, `ConnectedObjectId`, `ReportName`)
-  stay mappable and run the same rules as the block. Precedent: ENG-102113 (1.6.6.69) refuses block-owned targets in
-  the same funnel (`EnsureNotAnOpenEditPageObjectConstant`; `FindDataObjectSlot` + `EnsureTheDataObjectIsKept`, keyed
-  through `UserTaskSchemaIdentity`, `PB/Mappings/ProcessMappingService.cs:96-111, 136-183, 203-226`); F-E2 extends that
-  slot table.
+- **Neutraliser.** D13 F-E2, per cut: `addMapping` onto the binder-owned parameters of a claimed schema (10 of the 13
+  exist on the Object task) is refused, naming the block member and pointing to `setElement fileProcessing`; the
+  value inputs (`Files`, `Files.File`, `ConnectedObjectId`, `ReportName`) stay mappable and run the same rules as the
+  block (`ConnectedObjectId`: any source refused while the element saves to no object). Precedent: ENG-102113
+  (1.6.6.69) refuses block-owned targets in the same funnel (`EnsureNotAnOpenEditPageObjectConstant`
+  `PB/Mappings/ProcessMappingService.cs:219`; `FindDataObjectSlot` `:326` + `EnsureTheDataObjectIsKept` `:259`, keyed
+  through `UserTaskSchemaIdentity`); F-E2 is a guard of its own next to them, `EnsureNotABlockOwnedFileParameter`
+  (`:366-379`, called at `:135`), and `FindDataObjectSlot` returns no slot for a file element.
 
 ### T-48
 **An older package drops the `fileProcessing` block and answers success.**
@@ -1041,8 +1051,8 @@ M-G6-4), [T-43](#t-43).
   not in ENG-102113's data-object slot table, so its keep-only rule does not cover them.
 - **Silent or loud.** On 1.6.6.54 loud (a schema UId refused) or silently wrong (a row Id). Since 1.6.6.69 silent:
   the remaining hazard is the row Id that passes.
-- **Basis / evidence.** source: `PB/Parameters/ProcessParameterValueValidator.cs:180-212, 311-323` (the registry check
-  `IsEntitySchemaRegistry` at `:339-350`); `PBT/SchemaReferenceLookupTests.cs:183-200` (schema UId accepted) and
+- **Basis / evidence.** source: `PB/Parameters/ProcessParameterValueValidator.cs:205-237, 368-386` (the registry check
+  `IsEntitySchemaRegistry` at `:396-407`); `PBT/SchemaReferenceLookupTests.cs:183-200` (schema UId accepted) and
   `:241-255` (row Id still accepted); the same trap in `PB/Elements/ChangeDataConfigBinder.cs:908-917`. **Measured
   2026-10-02** on 1.6.6.54: `addMapping` of the ContactFile schema UId `e9eafee9…` onto `OF1.SourceEntitySchemaUId` is
   refused with "no SysSchema record has this id" (`48118164cdf1`), the loud half; so on 1.6.6.54 an agent could not
@@ -1052,6 +1062,12 @@ M-G6-4), [T-43](#t-43).
 - **Neutraliser.** D11: these parameters are written directly as ConstValue by the binder, from the resolved schema;
   raw `addMapping` onto them is refused (T-47), because that route bypasses the block's checks and still accepts a
   `SysSchema` row Id.
+
+**Out of scope, recorded so nobody files it under this feature:** the designer wraps the display value of every
+mapped source, a top-level one too (`[#Invoice#]` for `ConnectedObjectId`, `[#GetFile.Collection of files#]` for an
+outer `Files`; serialization-capture sections 5 and 7), while the builder writes the bare caption for a top-level
+source of every element it maps. OA writes the designer form for nested sources only (D20). A comparison that reads resource rows (SC-4, DT-02)
+fails on it. A separate task, not OA work.
 
 ---
 
@@ -1117,16 +1133,19 @@ M-G6-4), [T-43](#t-43).
 ### T-59
 **Describe-only members sent back on write.**
 - **What happens.** The block reports members that legitimately differ between a describe and a rebuild: localized
-  captions, an environment setting (`convertToPdf`), `issues`, `bindingLevels`, `actionStored`, display values. A rule
+  captions, an environment setting (`convertToPdf`), `issues`, `bindingLevels`, `actionStored`, the `display` of each
+  value source. A rule
   "accept when equal" would refuse correct resubmissions (another culture, a repaired state). Today WCF drops them;
   once SK (strict descriptor keys) lands they are refused as unknown keys.
 - **Silent or loud.** Silent today, loud later.
 - **Basis / evidence.** source: `PB/Contracts/VersionContracts.cs:22-26`; the existing blocks never declare describe-only
   fields on the write contract (`PB/Contracts/DescribeContracts.cs:425-546, 983-1070`).
 - **Neutraliser.** D11: two kinds of read-only member. Identity CHECK members (`source`, `storage`, `fileObject`,
-  `attachments.linkColumn`, `report.object`, `report.type`) are on the write contract, accepted when equal and refused
-  with the derived value otherwise (F-E8). Describe-only members are not on the write contract; the guide says "remove
-  them before resubmitting"; SK's read-back list must learn them (D26).
+  `attachments.linkColumn`, `report.object`, `report.type`) are on the write contract, accepted when equal to the
+  derived value or, for a side the block keeps, to what describe reports for it now (so a described unpaired pair
+  resubmits and is repaired), and refused with the derived value otherwise (F-E8). Describe-only members are not on
+  the write contract; the guide says "remove them before resubmitting" and names `display`; SK's read-back list must
+  learn them (D26).
 
 ---
 

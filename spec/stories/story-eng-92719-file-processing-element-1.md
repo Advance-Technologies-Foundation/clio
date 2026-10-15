@@ -128,74 +128,102 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
   (`Create`: `SchemaUId`, `ManagerItemUId`, `SerializeToDB` from the task schema, nested item UIds re-minted with `IL2`
   = the element UId; `CanBuild` / `CanDescribe` through the registry), registered BEFORE `UserTaskElementHandler` in
   `CrtProcessBuilderApp.cs`; the strict block gate; `WritesAConfigurationBlock`; the `setElement` field list and
-  dispatch; `FileProcessingDescriptor` (groups and the shared `FileProcessingValueSourceDescriptor`) on the build and
-  update contracts (`PB/Contracts/ProcessDescriptorContracts.cs`, `PB/Contracts/ModifyContracts.cs`). If the strict keys
-  of ENG-95244 [Arch debt] Proven Solutions: give the process descriptor a real schema and wire the R1-R17 graph
-  validator into the write path (ENG-88414) landed first (ENG-88414 is AI-driven application development), teach its
-  allow-list the write members and its read-back list the describe-only members.
+  dispatch; `FileProcessingDescriptor` (all three groups with their members, so that "two groups" and "another
+  variant's group" can be refused by name, and the shared `FileProcessingValueSourceDescriptor`) on the build and
+  update contracts (`PB/Contracts/ProcessDescriptorContracts.cs`, `PB/Contracts/ModifyContracts.cs`); a group no
+  registered variant owns (`report`, `files`) is refused as not written yet. The registry is built from the
+  connection by every consumer, not registered in the container. The strict keys of ENG-95244 [Arch debt] Proven
+  Solutions: give the process descriptor a real schema and wire the R1-R17 graph validator into the write path
+  (ENG-88414) (ENG-88414 is AI-driven application development) and this block meet in whichever of the two lands
+  second, which teaches the allow-list the write members and the read-back list the describe-only members; this
+  package change writes no allow-list.
 - [ ] **OA.2** Binder and applier (D11, D12, D14): a static `FileProcessingConfigBinder` shared by the handler's
   `Configure` and by `setElement` (the `OpenEditPageConfigBinder` structure): validate everything before the first
   write; the D11 parameter table; D14 inference; caller-chosen values as new `ProcessSchemaParameterValue`s (`Source`
   before `Value`, `ModifiedInSchemaUId` = the process); template defaults copied exactly (D20); value sources through
-  `ApplyMapping`. Every value-source `expression` (`saveTo.recordId` here) runs the length bound and the
+  `ApplyMapping` (a mapped `saveTo.recordId` through the new `IProcessMappingService.ApplyBlockMapping`, which skips
+  the raw-route `ConnectedObjectId` rules the binder has already run; it is the one write that can still refuse, so
+  it goes first). The binder is static and split into two internal static helpers, `FileProcessingStoragePlanner`
+  (the storage pairs and the identity checks) and `FileProcessingRecordRules` (the `saveTo.recordId` rules a raw
+  `ConnectedObjectId` mapping shares). Every value-source `expression` (`saveTo.recordId` here) runs the length bound and the
   `MetaPathTokenReference` check `openEditPage.recordId.expression` runs; the new surfaces join that check's call-site
   list, with a PBT case each (a misspelled token, a token from another process). `FileProcessingConfigApplier`: D12
-  rules 1-5; the source-change refusal and the `useInProcess` refusal while `CreatedObjectFileIds` is mapped take their
+  rules 1-5 (rule 5 per side: a sent object rewrites the pair; without it a consistent pair is kept and an
+  inconsistent one re-resolved with a notice); the source-change refusal and the `useInProcess` refusal while
+  `CreatedObjectFileIds` or its item is mapped (an action bound to a mapping counts as possibly saving there) take their
   dependents from an injected `IProcessDependencySnapshot` (`FindDependents(element)`, `FindDependents(element,
   parameter)`), worded as the refusals of ENG-100041 Sub-process retarget guard scans the live schema instead of the
-  request dependency snapshot ("or did when this request started"; "in a SEPARATE, earlier call"), asked from the
-  applier only, never from the create path; a template parameter missing after `GetDesignInstance` is refused.
+  request dependency snapshot ("or did when this request started"; "in a SEPARATE, earlier call"), each dependent
+  named qualified (`<element>.<parameter>`, `process parameter '<name>'`), asked from the applier only, never from the
+  create path; a template parameter missing after `GetDesignInstance` is refused.
 - [ ] **OA.3** Storage resolver, dedicated mode (D15): `IAttachmentStorageResolver.Resolve` / `Decode` (never throws)
   over a thin `IEntitySchemaHierarchyReader` adapter; eligibility and the `<X>File` / `FileLead` rule; SysFile results
-  refused through a switch SF flips; refusals R1-R9, warnings W6 / W7; a constant `saveTo.recordId` validated as an
-  existing record of the record object through a new internal entry point of
-  `ProcessParameterValueValidator.EnsureReferencedRecordExists`; a mapped `recordId` gets the notice.
+  refused through a switch SF flips; refusals R1-R9 (R9 also refusing a column every attachment object inherits from
+  `File`, and a `linkColumn` that references another object than the record object), warnings W6 / W7; an
+  attachment object no record object pairs with (`DNSGuideFile`), named directly, is dedicated storage with no
+  record object, as the designer lists it; a constant `saveTo.recordId` validated as an existing record of the
+  target's record object through `ProcessParameterValueValidator.EnsureRecordOfObjectExists`, a new internal entry
+  point over the private `EnsureReferencedRecordExists`; a mapped `recordId` gets the notice and is typed against the
+  target's record object (a Lookup of it or a Guid; one column of an element's record a lookup of it or its `Id`).
 - [ ] **OA.4** Record scope, filter target, sort, empty filter (D16): `FileProcessingScopeFilter.Split` / `Join`
   (legacy scope = a lookup InFilter on the link column; a root OR wrapped as `AND(scope, OR)`; no lift from a decode
   that is not `DecodedCompletely`; `Join` keeps `isNull`); `FileProcessingFilterTarget` (priority 50, between Signal 100
   and DataNode 0) claiming through the registry, with the root, unconfigured-element, type and scope-set-twice
-  refusals; the **sort codec extraction**: `ResolveOrderInfoValue` + `ParseSortDirection` and `DescribeSort` +
-  `DescribeSortDirection` move out of `ReadDataConfigBinder` into a shared internal codec (proposed
-  `PB/Elements/ReadDataSortCodec.cs`) that takes the element label and kind, so the Read data refusals stay
-  byte-identical, and `ReadDataConfigBinder` calls the codec; `numberOfRecords` 1..5000 and the "at most 50 files"
-  notice; the empty filter in two halves: the **notice** is one `Rules` entry for the Object schema name in
+  refusals; the filter target keeps the record scope (`setFilter` writes `Join(storedScope, newRemainder)`,
+  `clearFilter` keeps the scope) and `TryRead` reports the filter without it; the **sort codec extraction**:
+  `ResolveOrderInfoValue` + `ParseSortDirection` and `DescribeSort` + `DescribeSortDirection` move out of
+  `ReadDataConfigBinder` into a shared internal codec, `PB/Elements/ReadDataSortCodec.cs`, that takes the element
+  kind, its label and the member name, so the Read data refusals stay byte-identical, and `ReadDataConfigBinder`
+  calls the codec; `numberOfRecords` 1..5000 and the "at most 50 files" notice on every create that omits it; the
+  empty filter in two halves: the **notice** is one `Rules` entry for the Object schema name in
   `PB/Elements/ElementConfigurationNotices.cs` plus a `Describe...` method, reusing `HasSelectingFilter` and
   `ProcessSchemaElementLocator.HasEffectiveValue` (no new tracking, no new reconcile site); the **refusal** is a new
-  pre-gate check with its own record of touched elements (`IFileProcessingFilterLedger`, or a read-only tracked-set
-  accessor added to `IElementConfigurationLedger`), called on modify next to
+  pre-gate check with its own record of touched elements, a separate `IFileProcessingFilterLedger`
+  (`IElementConfigurationLedger`'s contract unchanged), told by the caller of each touch (the build for `create`,
+  `AddElementOperation` for `addElement`, the applier, the filter target) about the block written and the filter set
+  or cleared, never about a raw `addMapping`, called on modify next to
   `EnsureFormulasStillBelongOnTouchedConnectors` (`PB/Design/ProcessEditPipeline.cs`) and on build at the end of
   `ApplyDeclarativeContent` (`PB/Design/ProcessBuildHandler.cs`), thrown outside the operation loop so
   `failedOperationIndex` is null; the `ProcessFilterApplier` refusal text lists the element.
 - [ ] **OA.5** Refusals of the other routes (D13): the generic `userTask` route naming the Object schema, keyed on the
-  resolved schema UId, inserted in `UserTaskElementHandler.Create` after the two merged refusals of ENG-102112
+  resolved schema UId, `RefuseFileProcessingOnGenericRoute` in `UserTaskElementHandler.Create`
+  (`PB/Elements/UserTaskElementHandler.cs:91`), after the two merged refusals of ENG-102112
   create-business-process silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage
-  block and ENG-102537 and before the element is created, in their shape (create-only; the message names the element,
-  the task, the type used, `fileProcessing` with its group and the `setElement` repair); tests for the plain name,
-  another name resolving to the same UId, and a "tolerated" case for the Report and Process schemas (pattern
-  `PBT/UserTaskElementHandlerCreateTests.cs`, every task schema on ONE manager). Raw `addMapping` onto the 13
-  binder-owned configuration parameters refused by extending the `FindDataObjectSlot` / `EnsureTheDataObjectIsKept`
-  slot table of ENG-102113 modify-business-process addMapping: Add data object (EntitySchemaId) is validated against
-  the record Id instead of the schema UId (`PB/Mappings/ProcessMappingService.cs`); `ConnectedObjectId` stays legal and
-  runs the block's rules. Injecting the
-  registry changes `UserTaskElementHandler`'s constructor (its registration and 39 direct constructions in 16 PBT
-  files): price that in, or build the registry from the connection as the identities are built.
+  block and ENG-102537 (`:89-90`) and before the element is created (`:92`), in their shape (create-only; the message
+  names the element, the task, the type used, `fileProcessing` with its group and the `setElement` repair); tests for
+  the plain name, another name resolving to the same UId, and a "tolerated" case for the Report and Process schemas
+  (pattern `PBT/UserTaskElementHandlerCreateTests.cs`, every task schema on ONE manager). Raw `addMapping` onto the
+  13 binder-owned configuration parameters (10 exist on the Object task; `ReportId`, `IsSeparateReports` and
+  `ReportNameDataSourceColumnUId` only on the Report task) refused, naming the block member, by a guard of its own,
+  `EnsureNotABlockOwnedFileParameter` (`PB/Mappings/ProcessMappingService.cs:366-379`), next to the
+  `FindDataObjectSlot` / `EnsureTheDataObjectIsKept` slot table of ENG-102113 modify-business-process addMapping: Add
+  data object (EntitySchemaId) is validated against the record Id instead of the schema UId, which returns no slot
+  for a file element; `ConnectedObjectId` stays legal and runs `saveTo.recordId`'s rules (any source refused while
+  the element saves to no object). `UserTaskElementHandler` builds the registry from the connection, as it builds
+  the identities, so its constructor, its registration and its direct constructions in the tests are unchanged.
 - [ ] **OA.6** Describe and serialization (D19, D20): `DescribeFileProcessingInfo` on `DescribeProcessElement`: effective
-  values, identity checks vs describe-only members, `storage` from `Decode`, the record scope lifted by `Split`, value
-  sources decoded from single tokens, `issues` (link column missing; a sort or filter column the root lacks; hidden
+  values, identity checks vs describe-only members (an identity check also accepts the describe value of a side the
+  block keeps, so a described unpaired or invalid pair resubmits and is repaired; describe-only: `actionStored`,
+  `outputs`, `issues` and the `display` of every value source), `storage` from `Decode`, the record scope lifted by
+  `Split` and reported once (`FileProcessingFilterTarget.TryRead` returns the filter without it), value sources
+  decoded from single tokens, `issues` (link column missing; a sort or filter column the root lacks; hidden
   `OrderByInfo` entries; an unset action; an inconsistent storage pair), tolerant of unconverged snapshots;
-  nested-source display values in the designer form `[#<el>.<collection>:<item>#]`.
+  nested-source display values in the designer form `[#<el>.<collection>:<item>#]` on every binding path (this
+  changes the multi-instance per-item display too); a top-level source keeps its bare caption (the designer's
+  `[#X#]` for it is out of scope, plan section 9).
 - [ ] **OA.7** Package tests (test-plan unit cases of this story): handler, binder, applier, resolver (fake hierarchy
   reader), scope filter, filter target, empty-filter refusal on both paths and the notice rule, describe round trip
   (issues, a uk-UA caption, the identity-check refusal), the registry ("all five or none"), the D20 writes, parity with
   SkillFilesValidationProcess, the tripwire; the extracted sort codec and the **Read data regression**:
-  `PBT/ReadDataConfigBinderTests.cs` and `PBT/ReadDataConfigApplierTests.cs` green with their assertions unchanged (only
-  the applier suite's `SetElementOperation` constructions gain the applier argument). Every new fixture
+  `PBT/ReadDataConfigBinderTests.cs` and `PBT/ReadDataConfigApplierTests.cs` green with their assertions unchanged
+  (every existing `SetElementOperation` construction gains the applier argument: 14 constructions in 9 test files,
+  the Read data applier suite's three among them). Every new fixture
   `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`, AAA, `because:`, `[Description]`.
 - [ ] **OA.7a** Carried over from the review of the ENG-95984 package PR
   (https://creatio.ghe.com/engineering/crt-process-builder/pull/96), deferred there so that its approval stays:
-  (a) `ProcessParameterValueValidator.ValidateConstantValue` returns on an empty string before the File and
-  FileCollection refusals, so `addMapping` with `value: ""` on a file or collection target stores an empty
-  constant. Refuse it, or treat it as "no source", and pin the choice with a test on every constant route.
+  (a) An empty `value` on a File or FileCollection target is refused like any other constant:
+  `ProcessParameterValueValidator.ValidateConstantValue` runs the File and FileCollection refusals before the
+  empty-value no-op, which every other type keeps; pinned with a test on every constant route.
   (b) `ProcessMappingService.Commit`'s doc says that a throw from the platform's `SourceValue` setter (its Mappings
   sync) can leave earlier writes of the same plan applied in memory with no notice, and that nothing persists
   because the request does not save. `Plan`'s guarantee covers only our own refusals.
@@ -229,7 +257,9 @@ to one tree)
     fails; the entry (about 25-30 B) is never cut, so kept short-form text of one of the seven process-designer
     contracts is trimmed (reviewer-approved) to stay under the 19,000 B wire guard.
   - (c) in the archive's commit, a `fileProcessing` `KeySet` in `clio/Command/ProcessModel/ProcessBlockKeyCheck.cs`
-    (ENG-103085 Refuse element and block keys the process builder would drop silently): its groups as children, the
+    (ENG-103085 Refuse element and block keys the process builder would drop silently): its groups as children, all
+    three of them (`attachments`, `report` and `files`, with their members, because the server contract declares
+    them from OA on), the
     describe-only members of `DescribeFileProcessingInfo` as read-back keys, listed in `Blocks` so it links into the
     create element and the `setElement` update; `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` and
     `ReadBackFields_Should_BeDescribeOnlyMembers` (`clio.tests/Command/ProcessModel/ProcessBlockKeyCheckTests.cs`)
@@ -290,7 +320,8 @@ to one tree)
 - [ ] **OA.12** `guidance/mcp/guides/processes/files.md` (`process-files`) sections: the element and "the group is the
   variant"; `attachments` (`recordId`; `numberOfRecords` defaults to 50 and does NOT read all; the sort shape with the
   M24 result); the member-wise merge; identity checks vs describe-only ("remove the describe-only members before
-  resubmitting"); dedicated storage and "SysFile storage is refused in this version"; the action per variant (the
+  resubmitting", naming `actionStored`, `outputs`, `issues` and each value source's `display`); dedicated storage
+  and "SysFile storage is refused in this version"; the action per variant (the
   sentence "after saving, `ObjectFiles` points at the source files" only after M26, as "measured <date>"); the endpoint
   sentence of the PRD's OA-11, never "rarely an endpoint"; consumers (Send email attachments and Creatio.ai not
   buildable through this tool yet); the Modify data re-find pattern with its hazards. `element-catalog.md`: the
