@@ -9241,6 +9241,79 @@ public sealed class WebToMobileConversionServiceTests {
 		TabletColumnsOf(guide).Should().Equal(["1fr", "1fr"], because: "B has only two web columns left from column 3");
 	}
 
+	private const string AudienceList = """
+		{ "name": "Audience", "type": "crt.DataGrid", "items": "$Audience",
+		  "columns": [ { "id": "c1", "code": "AudienceDS_Name", "path": "Name" } ],
+		  "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 } }
+		""";
+
+	private static JsonNode ScrollableOf(MobilePageConversionGuide guide) => Element(guide, "Audience").Values!["scrollable"];
+
+	[Test]
+	[Description("ENG-103470: a list that shares its grid with other content is embedded (scrollable: false); otherwise the runtime treats it as infinite-height, gives it only the height its siblings leave, and the tab stops scrolling.")]
+	public void Analyze_ListNextToOtherContent_IsEmbedded() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, $$"""
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  {{AudienceList}} ]
+			""");
+
+		// Assert
+		ScrollableOf(guide).Should().NotBeNull(because: "the runtime reads a missing scrollable as true");
+		ScrollableOf(guide)!.GetValue<bool>().Should().BeFalse(
+			because: "a list with a sibling must not claim infinite height");
+	}
+
+	[Test]
+	[Description("ENG-103470: a list that is the only content of its page keeps the runtime default and scrolls by itself.")]
+	public void Analyze_ListAsTheOnlyContent_KeepsScrolling() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, $"[ {AudienceList} ]");
+
+		// Assert
+		ScrollableOf(guide).Should().BeNull(because: "a list that owns its screen gets the bounded height and scrolls itself");
+	}
+
+	[Test]
+	[Description("ENG-103470: a list that is the only child of a grid placed next to other content is still embedded: the infinite height passes up to the outer grid, which squeezes the inner one.")]
+	public void Analyze_ListAloneInANestedGridWithSiblings_IsEmbedded() {
+		// Arrange & Act
+		MobilePageConversionGuide guide = AnalyzeGrid(TwoColumns, $$"""
+			[ { "name": "A", "type": "crt.Input", "layoutConfig": { "column": 1, "row": 1, "colSpan": 1, "rowSpan": 1 } },
+			  { "name": "Inner", "type": "crt.GridContainer", "columns": [ "1fr" ],
+			    "layoutConfig": { "column": 1, "row": 2, "colSpan": 2, "rowSpan": 1 },
+			    "items": [ {{AudienceList}} ] } ]
+			""");
+
+		// Assert
+		ParentOf(guide, "Audience").Should().Be("Inner", because: "the list stays in its own grid");
+		ScrollableOf(guide).Should().NotBeNull(because: "the runtime reads a missing scrollable as true");
+		ScrollableOf(guide)!.GetValue<bool>().Should().BeFalse(
+			because: "a sibling anywhere on the way up to the tab squeezes the list");
+	}
+
+	[Test]
+	[Description("ENG-103470: children the mobile template already owns count as siblings: a list that is the page's only insert into a template container that holds other template content is embedded.")]
+	public void Analyze_ListBesideTemplateContent_IsEmbedded() {
+		// Arrange
+		MobilePageConversionGuide probe = AnalyzeGrid(TwoColumns, $"[ {AudienceList} ]");
+		string gridParent = ParentOf(probe, "Grid");
+
+		// Act
+		MobilePageConversionGuide guide = Analyze(Bundle($$"""
+				[ { "name": "Grid", "type": "crt.GridContainer", "columns": {{TwoColumns}}, "items": [ {{AudienceList}} ] } ]
+				"""),
+			webByType: Reg(("crt.GridContainer", true), ("crt.DataGrid", false)),
+			mobileContainerParents: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+				["TemplateProfile"] = gridParent
+			});
+
+		// Assert
+		ScrollableOf(guide).Should().NotBeNull(because: "the runtime reads a missing scrollable as true");
+		ScrollableOf(guide)!.GetValue<bool>().Should().BeFalse(
+			because: $"'{gridParent}' also holds the template's own TemplateProfile");
+	}
+
 	[Test]
 	[Description("In the fallback grid a list that spans only part of the slots merges just the slots it covers, and their weights add up.")]
 	public void Analyze_FallbackListSpanningPartOfTheSlots_MergesOnlyThoseSlots() {

@@ -396,6 +396,10 @@ public static partial class WebToMobileAnalysisService {
 		// be what guarantees it.
 		NormalizePlacements(elementMap);
 
+		// Over the finished tree: band grids, tab-area layers and every removal must already be in place, since
+		// whether a list scrolls depends on the siblings it ends up with.
+		EmbedListsSharingTheirScreen(elementMap, mobileContainerParents, mobileTypesByName);
+
 		// Answer "where does this insert's parent come from?" ONCE, over the finished map. Deliberately a
 		// post-pass rather than a decision taken while each entry is built: the parent set is only complete
 		// after BuildTabAreaLayers (which adds the synthesized layers AND re-points a tab's children at them),
@@ -5528,6 +5532,71 @@ public static partial class WebToMobileAnalysisService {
 	/// </summary>
 	private static readonly HashSet<string> MobileListComponentTypes =
 		new(StringComparer.OrdinalIgnoreCase) { "crt.List", "crt.FileList" };
+
+	/// <summary>
+	/// The mobile runtime reads a <c>crt.List</c> without <c>scrollable: false</c> as infinite-height and passes that
+	/// up to every ancestor container, so a grid holding the list and anything else gives the list only the height
+	/// its siblings leave and the tab stops scrolling. Such a list is therefore embedded (<c>scrollable: false</c>)
+	/// unless it is the only child of every container up to its tab or page. An explicit <c>scrollable</c> is kept.
+	/// </summary>
+	private static void EmbedListsSharingTheirScreen(
+		List<ElementMapEntry> elementMap,
+		IReadOnlyDictionary<string, string> templateParents,
+		IReadOnlyDictionary<string, string> templateTypes) {
+		var parentOf = new Dictionary<string, string>(
+			templateParents ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+		var typeOf = new Dictionary<string, string>(
+			templateTypes ?? new Dictionary<string, string>(), StringComparer.OrdinalIgnoreCase);
+		foreach (ElementMapEntry entry in elementMap) {
+			if (!(IsInsert(entry) || IsMerge(entry)) || string.IsNullOrWhiteSpace(entry.Name)) {
+				continue;
+			}
+			if (MobileTypeOf(entry) is { Length: > 0 } type) {
+				typeOf[entry.Name] = type;
+			}
+			if (!string.IsNullOrWhiteSpace(entry.ParentName)
+				&& (entry.PropertyName is null || entry.PropertyName == "items")) {
+				parentOf[entry.Name] = entry.ParentName;
+			}
+		}
+		Dictionary<string, int> childCount = parentOf.Values
+			.GroupBy(parent => parent, StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+		foreach (ElementMapEntry entry in elementMap) {
+			if (IsInsert(entry)
+				&& string.Equals(MobileTypeOf(entry), "crt.List", StringComparison.OrdinalIgnoreCase)
+				&& entry.Values is JsonObject values
+				&& !values.ContainsKey("scrollable")
+				&& !OwnsItsScreen(entry.Name, parentOf, typeOf, childCount)) {
+				values["scrollable"] = false;
+			}
+		}
+	}
+
+	private static string MobileTypeOf(ElementMapEntry entry) =>
+		!string.IsNullOrWhiteSpace(entry.MobileType)
+			? entry.MobileType
+			: entry.Values is JsonObject values && values["type"] is JsonValue type && type.TryGetValue(out string text)
+				? text
+				: null;
+
+	private static bool OwnsItsScreen(string name, IReadOnlyDictionary<string, string> parentOf,
+		IReadOnlyDictionary<string, string> typeOf, IReadOnlyDictionary<string, int> childCount) {
+		var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		string current = name;
+		while (parentOf.TryGetValue(current, out string parent) && visited.Add(parent)) {
+			if (childCount.GetValueOrDefault(parent) > 1) {
+				return false;
+			}
+			if (typeOf.TryGetValue(parent, out string parentType)
+				&& string.Equals(parentType, "crt.TabContainer", StringComparison.OrdinalIgnoreCase)) {
+				return true;
+			}
+			current = parent;
+		}
+		return true;
+	}
 
 	/// <summary>A child's frozen web grid cell (1-based); <c>Span</c> is the web <c>colSpan</c>.</summary>
 	private readonly record struct WebCell(int Column, int Row, int Span, int RowSpan = 1);

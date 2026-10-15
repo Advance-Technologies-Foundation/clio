@@ -719,7 +719,7 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 	}
 
 	[Test]
-	[Description("ENG-94835 end to end: every adaptive grid the guide reports carries the tablet layout the mobile runtime can render — medium equals large, the phone is one column, every tablet column is an integer <n>fr weight (a minmax() or a space-separated string renders as an equal or a single column), the container's own values carry exactly the reported weights, and every child's tablet column exists with a span of 1.")]
+	[Description("ENG-94835 end to end: every adaptive grid the guide reports carries the tablet layout the mobile runtime can render — medium equals large, the phone is one column, every tablet column is an integer <n>fr weight (a minmax() or a space-separated string renders as an equal or a single column), the container's own values carry exactly the reported weights, and every child's tablet column exists with a span of 1. ENG-103470: a crt.List inserted beside other content is embedded (scrollable: false).")]
 	[AllureTag(ToolName)]
 	[AllureName("get-mobile-page-conversion-guide returns runtime-renderable tablet grid weights")]
 	[AllureDescription("Iterates the seeded application's pages through the real clio MCP server until one converts with an adaptiveLayout, then checks every group against its container's and children's serialized values. No seeded page with a multi-column grid degrades to Ignore; a conversion failure always fails the test.")]
@@ -817,6 +817,14 @@ public sealed class MobilePageConversionGuideSandboxE2ETests : McpContractFixtur
 			guide.ViewConfigDiff.Where(op => op.ParentName == band.Name)
 				.Should().OnlyContain(child => order.IndexOf(child.Name) > order.IndexOf(band.Name),
 					because: $"'{band.Name}' must be inserted before the children moved into it");
+		}
+		foreach (ViewConfigDiffOperation list in guide.ViewConfigDiff.Where(op => op.Operation == "insert"
+			&& op.Values?["type"]?.GetValue<string>() == "crt.List"
+			&& guide.ViewConfigDiff.Count(sibling => sibling.Operation == "insert"
+				&& sibling.ParentName == op.ParentName && (sibling.PropertyName ?? "items") == "items") > 1)) {
+			(list.Values!["scrollable"]?.GetValue<bool>()).Should().Be(false,
+				because: $"ENG-103470: '{list.Name}' shares '{list.ParentName}' with other content, so it must be "
+					+ "embedded or the runtime squeezes it into the height its siblings leave");
 		}
 	}
 
