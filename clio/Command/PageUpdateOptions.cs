@@ -1052,7 +1052,7 @@
 				// warning on the response instead (ENG-95262 AC-02).
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
-			AppendBaselineWarning(response, baselineWarning);
+			AppendBaselineWarning(response, PageBaselineGuard.ForSaveOutcome(baselineWarning, success));
 			// A failed persisted-key read never changes the verdict, but its reason must reach the caller
 			// on the response - not only the log - so a 401 or an unresolved hierarchy is not reported as
 			// "resource is neither auto-provided nor registered" (issue #1320).

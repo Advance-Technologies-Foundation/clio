@@ -242,6 +242,44 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	[Test]
+	[Description("A failed update-page with no baseline, no checksum and no selector carries no did-not-run warning.")]
+	public void UpdatePage_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveFails() {
+		// Arrange
+		StubChecksumByUId();
+		StubFailedSave();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the server refused the save");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("External-modification detection did not run"),
+			because: "no write proceeded");
+	}
+
+	[Test]
+	[Description("A failed update-page with target-package-uid and no baseline carries no did-not-run warning.")]
+	public void UpdatePage_ShouldNotWarnThatDetectionDidNotRun_WhenASelectorSaveFails() {
+		// Arrange
+		StubChecksumByUId();
+		StubFailedSave();
+		PageUpdateArgs args = CreateArgs() with { TargetPackageUId = "99999999-8888-7777-6666-555555555555" };
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the save did not land");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("External-modification detection did not run"),
+			because: "no write proceeded");
+	}
+
+	private void StubFailedSave() =>
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Save failed"}}""");
+
+	[Test]
 	[Description("update-page with force=true must overwrite despite a stale baseline and refresh it afterwards.")]
 	public void UpdatePage_ShouldOverwriteAndRefreshBaseline_WhenForceTrue() {
 		// Arrange

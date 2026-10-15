@@ -206,4 +206,22 @@ public sealed class PageUpdateCommandBaselineTests {
 		exitCode.Should().Be(0, because: "the warning never refuses the save");
 		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
 	}
+
+	[Test]
+	[Description("A failed unpinned CLI save without a selector or a baseline exits non-zero and carries no did-not-run warning.")]
+	public void Execute_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveFails() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Save failed"}}""");
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the server refused the save");
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
+	}
 }

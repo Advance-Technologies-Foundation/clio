@@ -473,8 +473,28 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// <param name="cause">Why no baseline applies, as a clause.</param>
 	/// <param name="armingAdvice">How the caller arms the check, as one or more sentences.</param>
 	private static string DetectionDidNotRunWarning(string schemaName, string cause, string armingAdvice) =>
-		$"External-modification detection did not run for this save of '{schemaName}': {cause}. "
-			+ "The write proceeds unchecked. " + armingAdvice;
+		$"{DetectionDidNotRunPrefix}'{schemaName}': {cause}. The write proceeds unchecked. " + armingAdvice;
+
+	private const string DetectionDidNotRunPrefix = "External-modification detection did not run for this save of ";
+
+	/// <summary>
+	/// Returns the <see cref="TryArm"/> warning that applies to a save with the given outcome. A failed save
+	/// drops the did-not-run warning, because no write proceeded; every other guard warning is kept.
+	/// </summary>
+	/// <remarks><see cref="TryArm"/> adds the did-not-run warning last, so it is the suffix of the joined warning.</remarks>
+	/// <param name="warning">The warning returned by <see cref="TryArm"/>.</param>
+	/// <param name="saveSucceeded">Whether the save, or the dry run, succeeded.</param>
+	public static string ForSaveOutcome(string warning, bool saveSucceeded) {
+		if (saveSucceeded || warning is null) {
+			return warning;
+		}
+		int index = warning.IndexOf(DetectionDidNotRunPrefix, StringComparison.Ordinal);
+		if (index < 0) {
+			return warning;
+		}
+		string kept = warning[..index].Trim();
+		return kept.Length == 0 ? null : kept;
+	}
 
 	/// <summary>
 	/// Names the reason no on-disk baseline exists for this page and environment, or returns <c>null</c> when

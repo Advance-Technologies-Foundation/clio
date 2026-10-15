@@ -1219,5 +1219,63 @@ public sealed class PageBaselineGuardTests {
 		meta.Baseline.Should().BeNull(
 			because: "a baseline that cannot be moved to the saved checksum would make the next update-page report a false conflict");
 	}
-}
 
+	[Test]
+	[Description("A failed save without a selector drops the did-not-run warning and keeps the unreadable-baseline warning.")]
+	public void ForSaveOutcome_ShouldDropOnlyTheDidNotRunWarning_WhenASaveWithoutSelectorFails() {
+		// Arrange
+		_fileSystem.AddFile(_metaPath, new MockFileData("{ this is not json"));
+		(_, _, string warning) = _guard.TryArm(CreateOptions("dev"), OutputDirectory);
+
+		// Act
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+
+		// Assert
+		failedSaveWarning.Should().Contain("could not be read", because: "other guard warnings stay on a failed save");
+		failedSaveWarning.Should().NotContain("did not run", because: "no write proceeded");
+	}
+
+	[Test]
+	[Description("A failed selector save with no baseline carries no did-not-run warning.")]
+	public void ForSaveOutcome_ShouldDropTheDidNotRunWarning_WhenASelectorSaveFails() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Act
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+
+		// Assert
+		warning.Should().Contain("did not run", because: "the selector save is unchecked");
+		failedSaveWarning.Should().BeNull(because: "the did-not-run warning was the only one, and no write proceeded");
+	}
+
+	[Test]
+	[Description("A successful save keeps the did-not-run warning unchanged.")]
+	public void ForSaveOutcome_ShouldKeepTheWarning_WhenTheSaveSucceeds() {
+		// Arrange
+		(_, _, string warning) = _guard.TryArm(CreateOptions("dev"), OutputDirectory);
+
+		// Act
+		string savedWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: true);
+
+		// Assert
+		savedWarning.Should().Be(warning, because: "the write proceeded unchecked");
+	}
+
+	[Test]
+	[Description("A failed pinned save keeps the could-not-be-corroborated trace.")]
+	public void ForSaveOutcome_ShouldKeepTheUncorroboratedPinTrace_WhenAPinnedSaveFails() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		options.ExpectedChecksum = "caller-pinned-checksum";
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Act
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+
+		// Assert
+		failedSaveWarning.Should().Be(warning, because: "only the did-not-run warning is dropped");
+	}
+}

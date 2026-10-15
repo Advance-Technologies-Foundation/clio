@@ -748,10 +748,11 @@ public sealed class PageSyncTool(
 			validationResult = AppendPreSaveWarnings(validationResult, page, opOptions);
 			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
-			if (baselineWarning != null) {
-				validationResult = AppendCommandWarnings(validationResult, [baselineWarning]);
-			}
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
+			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateResponse.Success);
+			if (outcomeBaselineWarning != null) {
+				validationResult = AppendCommandWarnings(validationResult, [outcomeBaselineWarning]);
+			}
 			if (!updateResponse.Success) {
 				// A rejected save can still carry findings for the same body (update-page keeps them beside the
 				// error), so they travel in the per-page envelope here too.
