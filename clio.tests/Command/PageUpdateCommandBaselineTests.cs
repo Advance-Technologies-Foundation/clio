@@ -1,3 +1,4 @@
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -31,6 +32,8 @@ public sealed class PageUpdateCommandBaselineTests {
 	private IPageBaselineGuard _guard;
 	private ILogger _logger;
 	private PageUpdateCommand _command;
+	private IServiceUrlBuilder _serviceUrlBuilder;
+	private IPageDesignerHierarchyClient _hierarchyClient;
 
 	[SetUp]
 	public void SetUp() {
@@ -60,8 +63,13 @@ public sealed class PageUpdateCommandBaselineTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		_guard = Substitute.For<IPageBaselineGuard>();
-		_command = new PageUpdateCommand(_applicationClient, serviceUrlBuilder, logger, _guard, new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		_serviceUrlBuilder = serviceUrlBuilder;
+		_hierarchyClient = hierarchyClient;
+		_command = CreateCommand(_guard);
 	}
+
+	private PageUpdateCommand CreateCommand(IPageBaselineGuard guard) =>
+		new(_applicationClient, _serviceUrlBuilder, _logger, guard, new PersistedResourceKeyReader(), _hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 	private void StubChecksumByUId(params string[] responses) {
 		System.Collections.Generic.Queue<string> queue = new(responses);
@@ -182,5 +190,20 @@ public sealed class PageUpdateCommandBaselineTests {
 		// Assert
 		exitCode.Should().Be(0, because: "an unreadable baseline must fail toward no-check, not block the write");
 		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains(DiscoveryWarning)));
+	}
+
+	[Test]
+	[Description("An unpinned CLI save without a selector or a baseline must succeed and carry the guard's did-not-run warning.")]
+	public void Execute_ShouldWarnThatDetectionDidNotRun_WhenNoBaselineExists() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the warning never refuses the save");
+		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
 	}
 }

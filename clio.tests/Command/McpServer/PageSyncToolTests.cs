@@ -655,7 +655,7 @@ public sealed class PageSyncToolTests {
 		response.Success.Should().BeTrue(
 			because: "validation is disabled so the page should be updated directly");
 		(response.Pages[0].Validation?.Errors ?? []).Should().BeEmpty(
-			because: "no validation results should be present when validation is skipped");
+			because: "no validation errors should be present when validation is skipped");
 		(response.Pages[0].Validation?.Warnings ?? []).Should().OnlyContain(
 			warning => warning.Contains("External-modification detection did not run"),
 			because: "the only warning left is the baseline guard's, since the page has no baseline");
