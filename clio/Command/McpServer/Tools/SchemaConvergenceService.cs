@@ -226,21 +226,10 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			}
 			existingColumns.TryGetValue(columnName, out EntitySchemaPropertyColumnInfo? existingColumn);
 			if (column.Override == true) {
-				if (existingColumn is null) {
-					return ([], [], EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(target.SchemaName,
-						parentSchemaName, columnName));
-				}
-				if (!IsInheritedColumn(existingColumn)) {
-					return ([], [], EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(target.SchemaName,
-						columnName));
-				}
-				if (string.IsNullOrWhiteSpace(column.ResolveReferenceSchemaName())) {
-					return ([], [], EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(columnName));
-				}
-				// An override item carries no type; it converges on the inherited column's reference schema only:
-				// a title sent with it is applied on create and not compared on an existing schema.
-				if (!HasSameReference(column, existingColumn)) {
-					columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
+				string? overrideError = AddOverrideRedirect(target.SchemaName, parentSchemaName, columnName, column,
+					existingColumn, columnsToModify);
+				if (overrideError != null) {
+					return ([], [], overrideError);
 				}
 				continue;
 			}
@@ -257,6 +246,28 @@ public sealed class SchemaConvergenceService(IToolCommandResolver commandResolve
 			}
 		}
 		return (columnsToAdd, columnsToModify, null);
+	}
+
+	// An override item carries no type; it converges on the inherited column's reference schema only: a title
+	// sent with it is applied on create and not compared on an existing schema. Returns the refusal, or null
+	// after adding the redirect a differing reference needs.
+	private static string? AddOverrideRedirect(string schemaName, string? parentSchemaName, string columnName,
+		CreateEntitySchemaColumnArgs column, EntitySchemaPropertyColumnInfo? existingColumn,
+		List<UpdateEntitySchemaOperationArgs> columnsToModify) {
+		if (existingColumn is null) {
+			return EntitySchemaDesignerSupport.BuildOverrideOfMissingColumnMessage(schemaName, parentSchemaName,
+				columnName);
+		}
+		if (!IsInheritedColumn(existingColumn)) {
+			return EntitySchemaDesignerSupport.BuildOverrideOfOwnColumnMessage(schemaName, columnName);
+		}
+		if (string.IsNullOrWhiteSpace(column.ResolveReferenceSchemaName())) {
+			return EntitySchemaDesignerSupport.BuildOverrideWithoutReferenceMessage(columnName);
+		}
+		if (!HasSameReference(column, existingColumn)) {
+			columnsToModify.Add(ToInheritedReferenceModifyOperation(column));
+		}
+		return null;
 	}
 
 	/// <inheritdoc/>
