@@ -534,7 +534,7 @@ internal static class SchemaDesignerHelper {
 		List<(string Culture, string Value)> values = captions
 			.OfType<JObject>()
 			.Select(entry => (Culture: entry["cultureName"]?.ToString(), Value: entry[ValueKey]?.ToString()))
-			.Where(entry => !string.IsNullOrEmpty(entry.Value))
+			.Where(entry => !string.IsNullOrWhiteSpace(entry.Value))
 			.ToList();
 		if (values.Count == 0)
 			return null;

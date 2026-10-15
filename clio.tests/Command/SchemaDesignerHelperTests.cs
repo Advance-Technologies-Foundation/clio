@@ -646,17 +646,18 @@ public sealed class SchemaDesignerHelperTests {
 		blankCulture.Should().Be("Form page", because: "a blank profile culture is treated as missing");
 	}
 
-	[Test]
-	[Description("ExtractCaption skips an empty profile-culture entry and falls back to en-US.")]
-	public void ExtractCaption_ShouldSkipEmptyProfileCultureValue() {
+	[Description("ExtractCaption skips an empty or whitespace-only profile-culture entry and falls back to en-US.")]
+	[TestCase("")]
+	[TestCase("   ")]
+	public void ExtractCaption_ShouldSkipEmptyProfileCultureValue(string profileValue) {
 		// Arrange
-		JObject schema = SchemaWithCaptions(("it-IT", ""), ("ru-RU", "Страница записи"), ("en-US", "Form page"));
+		JObject schema = SchemaWithCaptions(("it-IT", profileValue), ("ru-RU", "Страница записи"), ("en-US", "Form page"));
 
 		// Act
 		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "it-IT");
 
 		// Assert
-		caption.Should().Be("Form page", because: "an empty value is no caption, so the en-US fallback applies");
+		caption.Should().Be("Form page", because: "an empty or whitespace-only value is no caption, so the en-US fallback applies");
 	}
 
 	[Test]
