@@ -53,9 +53,9 @@ public interface IPageBaselineGuard {
 	/// <c>RefreshBaseline: false</c> with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
-	/// to be indistinguishable. A missing baseline stays silent; an unreadable one, or an anchor that
-	/// could not be resolved, reports that external-modification detection is disarmed. It is a warning
-	/// and never an exception: a discovery failure must not fail a write the caller is entitled to make.
+	/// to be indistinguishable. An unpinned, unforced save with no usable baseline reports that detection
+	/// did not run and why; an anchor that could not be resolved reports that detection is disarmed.
+	/// It is a warning and never an exception: a discovery failure must not fail a write the caller is entitled to make.
 	/// </para>
 	/// </returns>
 	(string MetaFilePath, bool RefreshBaseline, string Warning) TryArm(PageUpdateOptions options, string outputDirectory);
@@ -129,6 +129,14 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		+ "overwrites the change that caused the conflict - re-read the page and merge before saving.";
 
 	/// <summary>
+	/// Advice appended to the "did not run" warning when re-running <c>get-page</c> arms the check.
+	/// </summary>
+	private const string GetPageArmingAdvice =
+		"To have it checked, run get-page for this page first (same environment and output-directory), "
+		+ "or pass the editable.checksum from that get-page as the checksum (MCP checksum, CLI "
+		+ "--expected-checksum).";
+
+	/// <summary>
 	/// Warning returned by <see cref="RefreshAfterSave"/> when the on-disk baseline did not describe the page as
 	/// it was right before the save. <c>{0}</c> is the schema name.
 	/// </summary>
@@ -190,6 +198,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		options.ExpectedChecksum = string.IsNullOrWhiteSpace(options.ExpectedChecksum)
 			? null
 			: options.ExpectedChecksum.Trim();
+		options.DetectionDidNotRunWarning = null;
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		// A selector means nothing can be armed HERE: the target is resolved only after this method returns.
 		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
@@ -251,7 +260,9 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		// The resolve warning embeds the raw body-file path, so it is redacted for the same reason as the
 		// failure detail above: it travels to the MCP caller verbatim.
 		AddWarning(warnings, SensitiveErrorTextRedactor.Redact(resolveWarning));
-		if (baseline is null || !PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri)) {
+		bool baselineMatchesEnvironment =
+			PageBaselineStore.MatchesEnvironment(baseline, options.Environment, options.Uri);
+		if (baseline is null || !baselineMatchesEnvironment) {
 			if (callerPinnedChecksum) {
 				// The pin still GOVERNS the save on this path: TryCheckForExternalModification gates on
 				// ExpectedChecksum alone and never consults the returned flag. So a pinned overwrite used to reach the
@@ -264,6 +275,12 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 					$"The checksum pinned for '{options.SchemaName}' governs this save but could not be "
 					+ "corroborated locally: no .clio-pages baseline was found for this anchor and environment. "
 					+ PinnedChecksumMergeAdvice);
+			} else if (!options.Force) {
+				// An unpinned save with no applicable baseline reaches the server unchecked. A forced save
+				// skips the check by request, so the arming advice does not apply to it.
+				AddDetectionDidNotRunWarning(warnings, options,
+					DescribeMissingBaseline(metaFilePath, readWarning, baseline, baselineMatchesEnvironment),
+					GetPageArmingAdvice);
 			}
 			return (metaFilePath, false, JoinWarnings(warnings));
 		}
@@ -435,19 +452,91 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 				+ "came from another schema, the save is refused. " + PinnedChecksumMergeAdvice);
 			return (null, false, JoinWarnings(selectorWarnings));
 		}
+		// A forced save skips the check by request, so it gets no did-not-run warning.
+		if (options.Force) {
+			return (metaFilePath, false, JoinWarnings(selectorWarnings));
+		}
 		// The arming advice depends on the cause. A recorded design package reaches this point only on the
 		// target-schema-uid path, and there get-page cannot help: it writes the same absent-schema baseline
 		// again, and no editable schema exists to supply an editable.checksum.
 		string armingAdvice = recordedDesignPackageUId is not null
 			? "To have it checked, save without target-schema-uid, or with target-package-uid set to the "
 				+ $"design package {recordedDesignPackageUId} instead."
-			: "To have it checked, run get-page for this page first (same environment and output-directory), "
-				+ "or pass the editable.checksum from that get-page as the checksum (MCP checksum, CLI "
-				+ "--expected-checksum).";
-		AddWarning(selectorWarnings,
-			$"External-modification detection did not run for this save of '{options.SchemaName}': {cause}. "
-				+ "The write proceeds unchecked. " + armingAdvice);
+			: GetPageArmingAdvice;
+		AddDetectionDidNotRunWarning(selectorWarnings, options, cause, armingAdvice);
 		return (metaFilePath, false, JoinWarnings(selectorWarnings));
+	}
+
+	/// <summary>
+	/// Builds the warning for an unpinned save that reaches the server without the external-modification check.
+	/// </summary>
+	/// <param name="schemaName">The page schema being saved.</param>
+	/// <param name="cause">Why no baseline applies, as a clause.</param>
+	/// <param name="armingAdvice">How the caller arms the check, as one or more sentences.</param>
+	private static string DetectionDidNotRunWarning(string schemaName, string cause, string armingAdvice) =>
+		$"{DetectionDidNotRunPrefix}'{schemaName}': {cause}. The write proceeds unchecked. " + armingAdvice;
+
+	private const string DetectionDidNotRunPrefix = "External-modification detection did not run for this save of ";
+
+	/// <summary>
+	/// Adds the did-not-run warning and records it on <paramref name="options"/>, so
+	/// <see cref="ForSaveOutcome"/> can drop exactly that text from a failed save.
+	/// </summary>
+	private static void AddDetectionDidNotRunWarning(
+		List<string> warnings, PageUpdateOptions options, string cause, string armingAdvice) {
+		options.DetectionDidNotRunWarning = DetectionDidNotRunWarning(options.SchemaName, cause, armingAdvice);
+		warnings.Add(options.DetectionDidNotRunWarning);
+	}
+
+	/// <summary>
+	/// Returns the <see cref="TryArm"/> warning that applies to a save with the given outcome. A save that
+	/// failed before its request was sent, or that the server refused, drops the did-not-run warning, because
+	/// no write proceeded. A save whose outcome is unknown keeps it, and every other guard warning is kept.
+	/// </summary>
+	/// <param name="warning">The warning returned by <see cref="TryArm"/>.</param>
+	/// <param name="options">The options passed to <see cref="TryArm"/> and to the save.</param>
+	/// <param name="saveSucceeded">Whether the save, or the dry run, succeeded.</param>
+	public static string ForSaveOutcome(string warning, PageUpdateOptions options, bool saveSucceeded) {
+		string didNotRun = options.DetectionDidNotRunWarning;
+		if (saveSucceeded || options.SaveOutcomeUnknown || warning is null || string.IsNullOrEmpty(didNotRun)) {
+			return warning;
+		}
+		int start = warning.IndexOf(didNotRun, StringComparison.Ordinal);
+		if (start < 0) {
+			return warning;
+		}
+		int end = start + didNotRun.Length;
+		if (start > 0 && warning[start - 1] == ' ') {
+			start--;
+		} else if (end < warning.Length && warning[end] == ' ') {
+			end++;
+		}
+		string kept = warning.Remove(start, end - start);
+		return kept.Length == 0 ? null : kept;
+	}
+
+	/// <summary>
+	/// Names the reason no on-disk baseline exists for this page and environment, or returns <c>null</c> when
+	/// an environment-matched baseline was read.
+	/// </summary>
+	private static string DescribeMissingBaseline(
+		string metaFilePath,
+		string readWarning,
+		PageBaselineInfo baseline,
+		bool baselineMatchesEnvironment) {
+		if (metaFilePath is null) {
+			return "the .clio-pages baseline location could not be resolved";
+		}
+		if (!string.IsNullOrWhiteSpace(readWarning)) {
+			return "the .clio-pages baseline could not be read";
+		}
+		if (baseline is null) {
+			return "no .clio-pages baseline from get-page was found for this page and workspace anchor";
+		}
+		if (!baselineMatchesEnvironment) {
+			return "the .clio-pages baseline for this page was captured for another environment";
+		}
+		return null;
 	}
 
 	/// <summary>
@@ -455,8 +544,8 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	/// "did not run" / "could not be corroborated" traces.
 	/// </summary>
 	/// <remarks>
-	/// Only the first two reasons leave the same save unchecked without the selector as well; the trace
-	/// says so for them, because that is what tells the caller the selector is not the cause.
+	/// A missing baseline leaves the same save unchecked without the selector as well; the trace says so,
+	/// because that is what tells the caller the selector is not the cause.
 	/// </remarks>
 	private static string DescribeWhyNoBaselineApplies(
 		string metaFilePath,
@@ -464,21 +553,10 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		PageBaselineInfo baseline,
 		bool baselineMatchesEnvironment,
 		string recordedDesignPackageUId) {
-		const string sameWithoutSelector =
-			", so the same save without target-package-uid / target-schema-uid would not be checked either";
-		if (metaFilePath is null) {
-			return "the .clio-pages baseline location could not be resolved" + sameWithoutSelector;
-		}
-		if (!string.IsNullOrWhiteSpace(readWarning)) {
-			return "the .clio-pages baseline could not be read" + sameWithoutSelector;
-		}
-		if (baseline is null) {
-			return "no .clio-pages baseline from get-page was found for this page and workspace anchor"
-				+ sameWithoutSelector;
-		}
-		if (!baselineMatchesEnvironment) {
-			return "the .clio-pages baseline for this page was captured for another environment"
-				+ sameWithoutSelector;
+		string missingBaseline = DescribeMissingBaseline(metaFilePath, readWarning, baseline, baselineMatchesEnvironment);
+		if (missingBaseline is not null) {
+			return missingBaseline
+				+ ", so the same save without target-package-uid / target-schema-uid would not be checked either";
 		}
 		if (baseline.EditableSchemaExists) {
 			return "the .clio-pages baseline does not record which schema it describes";

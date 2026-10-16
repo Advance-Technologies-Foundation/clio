@@ -7,7 +7,7 @@ applies-to:
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/LocalizePageCommand.cs
-ticket: GH-1320, GH-1464, GH-1538, ENG-90576, GH-1741
+ticket: GH-1320, GH-1464, GH-1538, ENG-90576, GH-1741, ENG-103500
 date: 2026-10-07
 ---
 
@@ -87,10 +87,17 @@ selector was refused as `schema-created-externally`.
 
 **The selector-path "did not run" warning must name its cause.** It is reached only when nothing on disk
 can be matched to the target. Usually that means no environment-matched baseline at all, and then the
-same save WITHOUT the selector is unchecked too (and silent, by the "no baseline" contract). Until GH-1741
+same save WITHOUT the selector is unchecked too, and from ENG-103500 on it gives the same did-not-run
+warning, naming the cause without the selector-only suffix. Until GH-1741
 the text said the selector had redirected the write in every case, so a report that "passing
 target-package-uid turns the check off" looked like a real lost-update defect. Reading that wording as
 proof of a redirect sends the next investigation after the wrong cause.
+
+**A failed save drops only the recorded did-not-run text.** `TryArm` records the did-not-run warning it
+added on `PageUpdateOptions.DetectionDidNotRunWarning`, and `PageBaselineGuard.ForSaveOutcome` removes
+exactly that text from the joined warning when the save failed before its request was sent or the
+server refused it. `PageUpdateOptions.SaveOutcomeUnknown` marks a request that got no readable reply;
+the write may have landed there, so the warning stays. Every other guard warning stays on any outcome.
 
 **`localize-page` writes the page too, but arms no check.** It re-reads the schema immediately before
 its save and changes only resource values, so it never calls `TryArm`. After a save it calls
