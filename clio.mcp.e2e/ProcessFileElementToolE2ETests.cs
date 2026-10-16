@@ -516,8 +516,8 @@ public sealed class ProcessFileElementToolE2ETests {
 	#region Methods: Tests - refusals
 
 	[TestCase("userTask", ObjectTaskName)]
-	[TestCase("userTask", " objectfileprocessingusertask ")]
-	[Description("TC-I-12: the generic userTask route for ObjectFileProcessingUserTask - by its name, and by the name in another letter case with padding - is refused on create, pointing to type fileProcessing with its attachments group: that route carries no file source, record or target, so the element would save green and fail at run time.")]
+	[TestCase("userTask", " ObjectFileProcessingUserTask ")]
+	[Description("TC-I-12: the generic userTask route for ObjectFileProcessingUserTask - by its name, and by the name with padding - is refused (a name in another letter case is not found at all: the platform looks the user-task schema up case-sensitively, before the route is judged) on create, pointing to type fileProcessing with its attachments group: that route carries no file source, record or target, so the element would save green and fail at run time.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses the generic user-task route for the Object attachments task")]
 	public async Task CreateBusinessProcess_Should_RefuseTheGenericRoute_ForTheObjectTask(string type, string userTaskName) {
@@ -750,9 +750,9 @@ public sealed class ProcessFileElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) leaves F2, the designer-built Generated report element, intact - its node in the raw SysSchema.MetaData row and its SysLocalizableValue rows (keys BaseElements.<F2>.*) are byte-identical before and after - and leaves F1, the designer-built Object attachments element, intact too - its raw node is byte-identical - because the builder re-saves the WHOLE designer-built process, so every element it does not touch is at stake, read from the database and never from describe, within the same run so a re-run on an already builder-saved fixture stays valid. The probe parameter is removed again afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
+	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list: the position BL3; ConnectedObjectId retyped Lookup -> Guid to its user-task template; a template L9 = SysSchema added on a schema lookup), F2's resource rows stay byte-identical; a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
 	[AllureTag(ModifyToolName)]
-	[AllureName("an unrelated modify leaves a designer-built Generated report element byte-identical")]
+	[AllureName("an unrelated modify leaves designer-built Process file elements intact")]
 	public async Task DesignerFixture_Should_LeaveTheReportElementByteIdentical_OnAnUnrelatedModify() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context = await StartAsync();
@@ -763,6 +763,7 @@ public sealed class ProcessFileElementToolE2ETests {
 		string f2UId = UId(f2);
 		string f1UId = UId(SingleElementOfTask(graph, ObjectTaskName, "F1"));
 		string probeName = $"UsrFpE2eProbe{Guid.NewGuid():N}"[..21];
+		string secondProbeName = $"UsrFpE2eProbe{Guid.NewGuid():N}"[..21];
 		IReadOnlyList<string> nodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f2UId);
 		IReadOnlyList<string> resourcesBefore = await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name);
 		IReadOnlyList<string> f1NodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
@@ -771,22 +772,69 @@ public sealed class ProcessFileElementToolE2ETests {
 			CallToolResult callResult = await ModifyAsync(context, DesignerFixtureName, $$"""
 				[ { "op": "addParameter", "parameter": { "name": "{{probeName}}", "type": "Text" } } ]
 				""");
+			IReadOnlyList<string> nodesAfterFirst = await ReadElementNodesAsync(context, DesignerFixtureName, f2UId);
+			IReadOnlyList<string> f1NodesAfterFirst = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
+			IReadOnlyList<string> resourcesAfterFirst =
+				await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name);
+			CallToolResult secondResult = await ModifyAsync(context, DesignerFixtureName, $$"""
+				[ { "op": "addParameter", "parameter": { "name": "{{secondProbeName}}", "type": "Text" } } ]
+				""");
 
 			// Assert
 			ShouldHaveLanded(callResult, "an unrelated addParameter is an ordinary edit of the designer-built process");
+			ShouldHaveLanded(secondResult, "a second unrelated addParameter is an ordinary edit too");
 			ParameterNames(await DescribeGraphAsync(context, DesignerFixtureName)).Should().Contain(probeName,
-				because: "the positive control: the process WAS saved, so an unchanged F2 is evidence and not a no-op");
+				because: "the positive control: the process WAS saved, so an intact F2 is evidence and not a no-op");
 			resourcesBefore.Should().NotBeEmpty(
 				because: "the read must be shown able to see F2's rows (its caption at least), or 'unchanged' proves nothing");
-			(await ReadElementNodesAsync(context, DesignerFixtureName, f2UId)).Should().Equal(nodesBefore,
-				because: "a save of the whole process must leave F2's stored node byte-identical");
-			(await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name)).Should().Equal(resourcesBefore,
+			nodesAfterFirst.Select(WithoutFirstSaveNormalization).Should()
+				.Equal(nodesBefore.Select(WithoutFirstSaveNormalization),
+					because: "the first save of the whole process may change F2 only by the platform's design-session normalization and the relayout");
+			f1NodesAfterFirst.Select(WithoutFirstSaveNormalization).Should()
+				.Equal(f1NodesBefore.Select(WithoutFirstSaveNormalization),
+					because: "and F1, the designer-built Object attachments element, likewise");
+			resourcesAfterFirst.Should().Equal(resourcesBefore, because: "F2's resource rows stay byte-identical");
+			(await ReadElementNodesAsync(context, DesignerFixtureName, f2UId)).Should().Equal(nodesAfterFirst,
+				because: "once normalized, a further save of the whole process leaves F2's stored node byte-identical");
+			(await ReadElementNodesAsync(context, DesignerFixtureName, f1UId)).Should().Equal(f1NodesAfterFirst,
+				because: "and F1's stored node byte-identical: the builder does not drift");
+			(await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name)).Should().Equal(resourcesAfterFirst,
 				because: "and F2's resource rows byte-identical");
-			(await ReadElementNodesAsync(context, DesignerFixtureName, f1UId)).Should().Equal(f1NodesBefore,
-				because: "the same save re-writes F1, the designer-built Object attachments element, which must keep its stored node byte-identical as well");
 		} finally {
 			await RemoveProbeParameterAsync(context, probeName);
+			await RemoveProbeParameterAsync(context, secondProbeName);
 		}
+	}
+
+	// The platform re-synchronizes a user-task element's parameters against its template when the design session
+	// loads it (ProcessSchemaActivity.SynchronizeParameter), which the classic designer's save path never does: the
+	// Process file pages force ConnectedObjectId to Lookup (the template declares Guid) and save schema lookups
+	// without the template's ReferenceSchemaUId (L9 = SysSchema). The builder also re-lays out the diagram (BL3).
+	// These three, and nothing else, may differ after the FIRST builder save of a designer-built element.
+	private const string LookupDataValueTypeUId = "b295071f-7ea9-4e62-8d1a-919bf3732ff2";
+	private const string GuidDataValueTypeUId = "23018567-a13c-4320-8687-fd6f9e3699bd";
+	private const string SysSchemaUId = "6c7394db-06ff-4050-91ef-8278e21dce15";
+
+	private static string WithoutFirstSaveNormalization(string rawNode) {
+		// A read node is "<path>: <raw JSON>"; only the JSON part is normalized.
+		int jsonStart = rawNode.IndexOf('{');
+		if (jsonStart < 0 || JsonNode.Parse(rawNode[jsonStart..]) is not JsonObject node) {
+			return rawNode;
+		}
+		node.Remove("BL3");
+		if (node["BP2"] is JsonArray parameters) {
+			foreach (JsonObject parameter in parameters.OfType<JsonObject>()) {
+				if (string.Equals(parameter["L9"]?.GetValue<string>(), SysSchemaUId, StringComparison.OrdinalIgnoreCase)) {
+					parameter.Remove("L9");
+				}
+				if (parameter["A2"]?.GetValue<string>() == "ConnectedObjectId"
+						&& string.Equals(parameter["L1"]?.GetValue<string>(), LookupDataValueTypeUId,
+							StringComparison.OrdinalIgnoreCase)) {
+					parameter["L1"] = GuidDataValueTypeUId;
+				}
+			}
+		}
+		return rawNode[..jsonStart] + node.ToJsonString();
 	}
 
 	#endregion
