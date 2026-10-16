@@ -26,6 +26,7 @@ public sealed class EntityConnectionsServiceTests {
 	private static readonly Guid Contact = Guid.Parse("cc000000-0000-0000-0000-000000000003");
 	private static readonly Guid Name = Guid.Parse("cc000000-0000-0000-0000-000000000004");
 	private static readonly Guid Deleted = Guid.Parse("cc000000-0000-0000-0000-0000000000dd");
+	private static readonly Guid Hidden = Guid.Parse("cc000000-0000-0000-0000-0000000000ee");
 
 	private IEntityAddonTargetResolver _targetResolver = null!;
 	private IAddonSchemaDesignerClient _addonClient = null!;
@@ -386,6 +387,82 @@ public sealed class EntityConnectionsServiceTests {
 		act.Should().Throw<InvalidOperationException>().WithMessage("*a column the add-on removes is still listed*",
 			because: "removals of all layers are united, so no other package can bring a removed column back");
 		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Update reports success with changed=true, a warning and the written list when the save succeeded but the state cannot be read back.")]
+	public void Update_ShouldReportSavedState_WhenReadBackFails() {
+		// Arrange
+		int reads = 0;
+		_reader.Read(Arg.Any<Guid>()).Returns(_ => ++reads == 1
+			? new EntityConnectionsSnapshot([Owner, Account], false, null)
+			: throw new InvalidOperationException("read back broke"));
+
+		// Act
+		EntityConnectionsUpdateResult result = _service.Update(Update("Account", "Owner"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "the save is committed before the read-back");
+		_addonClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		result.State.Warnings.Should().Contain(
+			"Connections were saved, but reading them back failed: read back broke",
+			because: "the caller must learn that the written state was not verified");
+		result.State.Connections.Select(connection => connection.ColumnName).Should().Equal(["Account", "Owner"],
+			because: "without a read-back the result describes the requested list that was written");
+		result.State.PackageLayer.Items.Should().Equal(["Account"],
+			because: "the package layer is the metadata that was written");
+	}
+
+	[Test]
+	[Description("Update warns that the written order could not be verified when the state read back came from the table fallback.")]
+	public void Update_ShouldWarnOrderNotVerified_WhenReadBackCameFromTableFallback() {
+		// Arrange
+		Effective(Owner, Account);
+		_snapshots.Enqueue(new EntityConnectionsSnapshot([Owner, Account], true, "table fallback"));
+
+		// Act
+		EntityConnectionsUpdateResult result = _service.Update(Update("Account", "Owner"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "the save is committed before the read-back");
+		result.State.Warnings.Should().Contain(warning => warning.Contains("could not be verified"),
+			because: "a table-fallback list does not reflect the add-on, so the order check is not silently skipped");
+	}
+
+	[Test]
+	[Description("Get names connections whose column package-name cannot resolve, so a caller does not send them back.")]
+	public void Get_ShouldWarnAboutUnresolvableColumns_WhenEffectiveListHasThem() {
+		// Arrange
+		Effective(Owner, Hidden);
+
+		// Act
+		EntityConnectionsReadResult result = _service.Get(new EntityConnectionsReadRequest("Custom", "UsrOrder"));
+
+		// Assert
+		result.Connections[1].ColumnName.Should().BeNull(because: "the column is not visible from the package");
+		result.Warnings.Should().ContainSingle(warning =>
+				warning.StartsWith("1 connection(s) point to columns not visible from package 'Custom'")
+				&& warning.Contains(Hidden.ToString("D")),
+			because: "the warning counts and names the connections that must not be sent back");
+	}
+
+	[Test]
+	[Description("Update leaves a connection package-name cannot resolve untouched: it is not written into the removals and does not cause a false 'differs' warning.")]
+	public void Update_ShouldKeepUnresolvableColumn_WhenItIsInEffectiveList() {
+		// Arrange
+		Effective(Owner, Account, Hidden);
+		Effective(Account, Owner, Hidden);
+
+		// Act
+		EntityConnectionsUpdateResult result = _service.Update(Update("Account", "Owner"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "a different order is written");
+		ColumnsOf(Saved(), "removed").Should().NotContain(Hidden,
+			because: "a column the server still lists exists on the object and is kept, not removed");
+		ColumnsOf(Saved(), "items").Should().Equal([Account], because: "only the moved column becomes an item");
+		result.State.Warnings.Should().NotContain(warning => warning.Contains("differs from the requested"),
+			because: "the unresolvable column is excluded from the order comparison");
 	}
 
 	[TestCase(null, "Custom", "entity-schema-name")]

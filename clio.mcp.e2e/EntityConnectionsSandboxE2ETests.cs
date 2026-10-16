@@ -91,6 +91,8 @@ public sealed class EntityConnectionsSandboxE2ETests {
 		} finally {
 			// A separate deadline lets the restoration run even when the assertion deadline expired.
 			using CancellationTokenSource restoreDeadline = new(TimeSpan.FromMinutes(3));
+			// The restore brings back the original ORDER only: like the Object designer's diff, it may leave items in
+			// the Custom layer of the add-on instead of returning the layer to its original content. By design.
 			await AllureApi.Step("Restore and verify the original order", async () => {
 				EntityConnectionsResponse restored = await CallAsync(session, UpdateEntityConnectionsTool.ToolName,
 					new Dictionary<string, object?>(target) { ["connections"] = originalNames }, restoreDeadline.Token);

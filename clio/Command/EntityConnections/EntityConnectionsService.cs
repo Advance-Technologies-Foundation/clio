@@ -114,6 +114,12 @@ internal sealed class EntityConnectionsService(
 		+ "of another package (outside this package's parents) may place or remove connections, or the server does "
 		+ "not apply the add-on because the UseConnectionsComponent feature is off on this environment.";
 
+	internal const string ReadBackFailedWarningPrefix = "Connections were saved, but reading them back failed: ";
+
+	internal const string OrderNotVerifiedWarning =
+		"Connections were saved, but the written order could not be verified: the list was read back from the "
+		+ "EntityConnection table, which does not reflect the EntityConnections add-on.";
+
 	/// <inheritdoc />
 	public EntityConnectionsReadResult Get(EntityConnectionsReadRequest request) {
 		ArgumentNullException.ThrowIfNull(request);
@@ -141,13 +147,17 @@ internal sealed class EntityConnectionsService(
 				+ " Writing the add-on from that list could drop changes made by other packages.");
 		}
 
+		// A column the server still lists but package-name cannot resolve exists on the object (another package
+		// outside this package's hierarchy adds it), so it is not deleted: it stays out of the diff, is never added
+		// to the removals, and is kept as it is.
+		HashSet<Guid> known = KnownColumns(state.Target.EntitySchema);
+		HashSet<Guid> unresolvable = [.. state.Snapshot.ColumnUIds.Where(columnUId => !known.Contains(columnUId))];
 		// A column the object no longer has leaves the stored content: the server rejects an add-on that still
 		// references it (the same clean-up both designers do before a save).
-		HashSet<Guid> known = [.. SchemaColumns(state.Target.EntitySchema).Select(column => column.UId)];
-		HashSet<Guid> deleted = [.. state.Content.Items.Concat(state.Content.Removed).Concat(state.Snapshot.ColumnUIds)
-			.Where(columnUId => !known.Contains(columnUId))];
+		HashSet<Guid> deleted = [.. state.Content.Items.Concat(state.Content.Removed)
+			.Where(columnUId => !known.Contains(columnUId) && !unresolvable.Contains(columnUId))];
 		EntityConnectionsAddonContent baseContent = addonMetadata.WithoutColumns(state.Content, deleted);
-		List<Guid> effective = state.Snapshot.ColumnUIds.Where(columnUId => !deleted.Contains(columnUId)).ToList();
+		List<Guid> effective = state.Snapshot.ColumnUIds.Where(columnUId => !unresolvable.Contains(columnUId)).ToList();
 		// Only a removed column that is still listed proves the add-on is not applied: removals of all layers are
 		// united, so no other package can bring it back. Items out of place can come from another package's layer.
 		if (!AreRemovalsReflected(baseContent, effective)) {
@@ -169,16 +179,37 @@ internal sealed class EntityConnectionsService(
 		List<string> warnings = [];
 		AddWarning(warnings, addonSchemaDesignerClient.ResetClientScriptCache());
 
-		State after = ReadState(request.PackageName, request.EntitySchemaName);
-		if (!after.Snapshot.IsTableFallback && !after.Snapshot.ColumnUIds.SequenceEqual(desired)) {
-			warnings.Add(
-				"The add-on was saved, but the effective list differs from the requested one. A column removed by "
-				+ "another package layer cannot be brought back from this package (removals of all layers are united), "
-				+ "and the server may not apply the add-on when the UseConnectionsComponent feature is off.");
+		State after;
+		try {
+			after = ReadState(request.PackageName, request.EntitySchemaName);
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			// The save is committed: report it as done and describe the state from what was written.
+			warnings.Add(ReadBackFailedWarningPrefix + exception.Message);
+			State written = state with {
+				Content = metadata,
+				Snapshot = new EntityConnectionsSnapshot(desired, false, null)
+			};
+			return new EntityConnectionsUpdateResult(
+				ToResult(request.EntitySchemaName, request.PackageName, written, warnings), true);
+		}
+		if (after.Snapshot.IsTableFallback) {
+			warnings.Add(OrderNotVerifiedWarning);
+		} else {
+			HashSet<Guid> knownAfter = KnownColumns(after.Target.EntitySchema);
+			// Columns package-name cannot resolve were left as they are, so they do not take part in the comparison.
+			if (!after.Snapshot.ColumnUIds.Where(knownAfter.Contains).SequenceEqual(desired)) {
+				warnings.Add(
+					"The add-on was saved, but the effective list differs from the requested one. A column removed by "
+					+ "another package layer cannot be brought back from this package (removals of all layers are united), "
+					+ "and the server may not apply the add-on when the UseConnectionsComponent feature is off.");
+			}
 		}
 		return new EntityConnectionsUpdateResult(
 			ToResult(request.EntitySchemaName, request.PackageName, after, warnings), true);
 	}
+
+	private static HashSet<Guid> KnownColumns(EntityDesignSchemaDto entitySchema) =>
+		[.. SchemaColumns(entitySchema).Select(column => column.UId)];
 
 	private static void ValidateTarget(string entitySchemaName, string packageName) {
 		if (string.IsNullOrWhiteSpace(entitySchemaName)) {
@@ -291,6 +322,15 @@ internal sealed class EntityConnectionsService(
 
 		List<string> warnings = [];
 		AddWarning(warnings, state.Snapshot.Warning);
+		List<string> unresolvable = state.Snapshot.ColumnUIds
+			.Where(columnUId => !byUId.ContainsKey(columnUId))
+			.Select(columnUId => columnUId.ToString("D"))
+			.ToList();
+		if (unresolvable.Count > 0) {
+			warnings.Add(
+				$"{unresolvable.Count} connection(s) point to columns not visible from package '{packageName}'; they "
+				+ $"are kept as they are and must not be sent back: {string.Join(", ", unresolvable)}.");
+		}
 		if (!state.Snapshot.IsTableFallback) {
 			if (!AreRemovalsReflected(state.Content, state.Snapshot.ColumnUIds)) {
 				warnings.Add(LayerMismatchWarning);

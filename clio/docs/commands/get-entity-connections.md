@@ -18,8 +18,14 @@ the `EntityConnections` add-on of every package layer. For each connection the c
 column `UId`, caption, referenced object and position. It also reports the `EntityConnections` add-on content read
 for `--package-name` (`packageLayer.items` — columns placed first, `packageLayer.removed` — removed columns).
 
-When `EntityConnectionsService` is not available, the list is read from the `EntityConnection` table ordered by
-`Position`, and a warning says that the add-on items and removals are not reflected.
+The list reflects the add-on only when the `UseConnectionsComponent` feature is on (CrtUIv2
+`EntityConnectionsService/GetConnections`). With the feature off the server ignores the add-on and returns the legacy
+`EntityConnection` table rows only. When `EntityConnectionsService` is not available, the list is read from the
+`EntityConnection` table ordered by `Position`, and a warning says that the add-on items and removals are not
+reflected.
+
+A connection with `columnName: null` points to a column that is not visible from `--package-name`. A warning names
+its `UId`; `update-entity-connections` keeps it as it is, so do not send it back.
 
 **Read-only** — it performs no save. Use it before [`update-entity-connections`](update-entity-connections.md),
 which takes the full desired ordered list.

@@ -36,7 +36,8 @@ public sealed class GetEntityConnectionsTool(
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[Description("Read an object's Connections — the ordered lookup columns of the Object designer \"Connections\" node, shown as fields by the Freedom UI crt.Connections page component. " +
 		"Returns the EFFECTIVE ordered list (connections[]: columnName, columnUId, caption, referenceSchemaName, position) as the server merges the EntityConnection rows with the EntityConnections add-on of every package layer, plus packageLayer (items/removed: the add-on content read for package-name, parent layers folded with it). " +
-		"When the EntityConnectionsService endpoint is unavailable the list is read from the EntityConnection table and a warning says the add-on is not reflected. " +
+		"The list reflects the add-on only when the UseConnectionsComponent feature is on (CrtUIv2 EntityConnectionsService/GetConnections); with it off, or when that endpoint is unavailable (then read from the legacy EntityConnection table, with a warning), only the table rows are listed. " +
+		"An entry with a null columnName points to a column not visible from package-name; a warning names it, and it must not be sent back. " +
 		"Read-only — makes no changes. Use it before update-entity-connections, which takes the FULL desired ordered list. " +
 		"Unknown or misspelled argument names are refused.")]
 	public EntityConnectionsResponse GetEntityConnections(
@@ -105,7 +106,9 @@ public sealed class UpdateEntityConnectionsTool(
 	[Description("Set an object's Connections (the Object designer \"Connections\" node; fields of the Freedom UI crt.Connections component) to the FULL desired ordered list of lookup column names. " +
 		"Read-modify-write: call get-entity-connections first, change its connections[].columnName list (add, remove, reorder), and send the whole list back — a column left out is REMOVED, an empty list removes every connection. " +
 		"Only LOOKUP columns of the object (own or inherited) are accepted; an unknown, non-lookup or repeated column fails with no write. " +
-		"Writes the EntityConnections add-on of package-name exactly as the Object designer does (only the difference from the parent layers), resets the client script cache, and returns the state read back with changed=true; when the list already matches nothing is written (changed=false). " +
+		"Do not send entries with a null columnName (columns not visible from package-name); they are kept as they are. " +
+		"Writes ONLY the object's EntityConnections add-on in package-name, exactly as the Object designer does (only the difference from the parent layers); never rows of the legacy EntityConnection table. That list drives crt.Connections and, with the UseConnectionsComponent feature on, the server's merged list (CrtUIv2 EntityConnectionsService/GetConnections); with the feature off the server ignores the add-on and returns the table rows only. " +
+		"Then resets the client script cache and returns the state read back with changed=true; when the list already matches nothing is written (changed=false). " +
 		"Refuses to write when the effective list cannot be read with the add-on applied (EntityConnectionsService unavailable or not applying the add-on). A column removed by another package layer cannot be brought back from this package; a warning says so. " +
 		"Unknown or misspelled argument names are refused.")]
 	public EntityConnectionsResponse UpdateEntityConnections(
