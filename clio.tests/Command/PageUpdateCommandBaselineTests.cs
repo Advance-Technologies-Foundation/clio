@@ -222,6 +222,25 @@ public sealed class PageUpdateCommandBaselineTests {
 
 		// Assert
 		exitCode.Should().Be(1, because: "the server refused the save");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json => json.Contains("Save failed")));
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
+	}
+
+	[Test]
+	[Description("A CLI save whose request gets no parsed reply exits non-zero and keeps the did-not-run warning, because the write may have landed.")]
+	public void Execute_ShouldKeepTheDidNotRunWarning_WhenTheSaveOutcomeIsUnknown() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html>Gateway Timeout</html>");
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the reply could not be parsed");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
 	}
 }

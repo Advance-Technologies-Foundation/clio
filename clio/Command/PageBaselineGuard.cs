@@ -53,9 +53,9 @@ public interface IPageBaselineGuard {
 	/// <c>RefreshBaseline: false</c> with a warning.
 	/// <para>
 	/// The warning exists because "no check" is a legitimate outcome AND a failure mode, and the two used
-	/// to be indistinguishable. A missing baseline stays silent; an unreadable one, or an anchor that
-	/// could not be resolved, reports that external-modification detection is disarmed. It is a warning
-	/// and never an exception: a discovery failure must not fail a write the caller is entitled to make.
+	/// to be indistinguishable. An unpinned, unforced save with no usable baseline reports that detection
+	/// did not run and why; an anchor that could not be resolved reports that detection is disarmed.
+	/// It is a warning and never an exception: a discovery failure must not fail a write the caller is entitled to make.
 	/// </para>
 	/// </returns>
 	(string MetaFilePath, bool RefreshBaseline, string Warning) TryArm(PageUpdateOptions options, string outputDirectory);
@@ -198,6 +198,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		options.ExpectedChecksum = string.IsNullOrWhiteSpace(options.ExpectedChecksum)
 			? null
 			: options.ExpectedChecksum.Trim();
+		options.DetectionDidNotRunWarning = null;
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		// A selector means nothing can be armed HERE: the target is resolved only after this method returns.
 		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
@@ -277,9 +278,9 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			} else if (!options.Force) {
 				// An unpinned save with no applicable baseline reaches the server unchecked. A forced save
 				// skips the check by request, so the arming advice does not apply to it.
-				AddWarning(warnings, DetectionDidNotRunWarning(options.SchemaName,
+				AddDetectionDidNotRunWarning(warnings, options,
 					DescribeMissingBaseline(metaFilePath, readWarning, baseline, baselineMatchesEnvironment),
-					GetPageArmingAdvice));
+					GetPageArmingAdvice);
 			}
 			return (metaFilePath, false, JoinWarnings(warnings));
 		}
@@ -462,7 +463,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			? "To have it checked, save without target-schema-uid, or with target-package-uid set to the "
 				+ $"design package {recordedDesignPackageUId} instead."
 			: GetPageArmingAdvice;
-		AddWarning(selectorWarnings, DetectionDidNotRunWarning(options.SchemaName, cause, armingAdvice));
+		AddDetectionDidNotRunWarning(selectorWarnings, options, cause, armingAdvice);
 		return (metaFilePath, false, JoinWarnings(selectorWarnings));
 	}
 
@@ -478,21 +479,39 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 	private const string DetectionDidNotRunPrefix = "External-modification detection did not run for this save of ";
 
 	/// <summary>
-	/// Returns the <see cref="TryArm"/> warning that applies to a save with the given outcome. A failed save
-	/// drops the did-not-run warning, because no write proceeded; every other guard warning is kept.
+	/// Adds the did-not-run warning and records it on <paramref name="options"/>, so
+	/// <see cref="ForSaveOutcome"/> can drop exactly that text from a failed save.
 	/// </summary>
-	/// <remarks><see cref="TryArm"/> adds the did-not-run warning last, so it is the suffix of the joined warning.</remarks>
+	private static void AddDetectionDidNotRunWarning(
+		List<string> warnings, PageUpdateOptions options, string cause, string armingAdvice) {
+		options.DetectionDidNotRunWarning = DetectionDidNotRunWarning(options.SchemaName, cause, armingAdvice);
+		warnings.Add(options.DetectionDidNotRunWarning);
+	}
+
+	/// <summary>
+	/// Returns the <see cref="TryArm"/> warning that applies to a save with the given outcome. A save that
+	/// failed before its request was sent, or that the server refused, drops the did-not-run warning, because
+	/// no write proceeded. A save whose outcome is unknown keeps it, and every other guard warning is kept.
+	/// </summary>
 	/// <param name="warning">The warning returned by <see cref="TryArm"/>.</param>
+	/// <param name="options">The options passed to <see cref="TryArm"/> and to the save.</param>
 	/// <param name="saveSucceeded">Whether the save, or the dry run, succeeded.</param>
-	public static string ForSaveOutcome(string warning, bool saveSucceeded) {
-		if (saveSucceeded || warning is null) {
+	public static string ForSaveOutcome(string warning, PageUpdateOptions options, bool saveSucceeded) {
+		string didNotRun = options.DetectionDidNotRunWarning;
+		if (saveSucceeded || options.SaveOutcomeUnknown || warning is null || string.IsNullOrEmpty(didNotRun)) {
 			return warning;
 		}
-		int index = warning.IndexOf(DetectionDidNotRunPrefix, StringComparison.Ordinal);
-		if (index < 0) {
+		int start = warning.IndexOf(didNotRun, StringComparison.Ordinal);
+		if (start < 0) {
 			return warning;
 		}
-		string kept = warning[..index].Trim();
+		int end = start + didNotRun.Length;
+		if (start > 0 && warning[start - 1] == ' ') {
+			start--;
+		} else if (end < warning.Length && warning[end] == ' ') {
+			end++;
+		}
+		string kept = warning.Remove(start, end - start);
 		return kept.Length == 0 ? null : kept;
 	}
 

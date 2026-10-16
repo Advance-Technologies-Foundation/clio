@@ -455,22 +455,25 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("A sync-pages page whose save fails carries no did-not-run warning; a saved page without a baseline keeps it.")]
+	[Description("A sync-pages page whose save fails keeps its unreadable-baseline warning and carries no did-not-run warning; a saved page without a baseline keeps it.")]
 	public async Task SyncPages_ShouldNotWarnThatDetectionDidNotRun_WhenAPageSaveFails() {
 		// Arrange
 		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithFailureForSchema("UsrBroken_FormPage");
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem baselineFileSystem = new();
+		baselineFileSystem.AddFile("/ws/.clio-pages/UsrBroken_FormPage/meta.json", new MockFileData("{ this is not json"));
 		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
 			Substitute.For<IComponentInfoCatalog>(),
-			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+			new PageBaselineGuard(baselineFileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
 		PageSyncArgs args = new(
 			"dev",
 			[
 				new PageSyncPageInput("UsrBroken_FormPage", ValidPageBody),
 				new PageSyncPageInput("UsrWorking_ListPage", ValidPageBody)
 			],
-			Validate: false);
+			Validate: false,
+			OutputDirectory: "/ws");
 
 		// Act
 		PageSyncResponse response = await tool.SyncPages(args);
@@ -478,7 +481,9 @@ public sealed class PageSyncToolTests {
 		// Assert
 		PageSyncPageResult failedPage = response.Pages.Single(page => page.SchemaName == "UsrBroken_FormPage");
 		failedPage.Success.Should().BeFalse(because: "the page save failed");
-		(failedPage.Validation?.Warnings ?? []).Should().NotContain(
+		failedPage.Validation.Warnings.Should().Contain(warning => warning.Contains("could not be read"),
+			because: "the other guard warnings stay on a failed save");
+		failedPage.Validation.Warnings.Should().NotContain(
 			warning => warning.Contains("External-modification detection did not run"),
 			because: "no write proceeded");
 		(response.Pages.Single(page => page.SchemaName == "UsrWorking_ListPage").Validation?.Warnings ?? [])

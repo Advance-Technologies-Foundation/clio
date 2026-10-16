@@ -749,7 +749,7 @@ public sealed class PageSyncTool(
 			(string metaFilePath, bool refreshBaseline, string baselineWarning, PageUpdateOptions updateOptions) =
 				BuildUpdateRequest(page, opOptions);
 			opOptions.UpdateCommand.TryUpdatePage(updateOptions, out PageUpdateResponse updateResponse);
-			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateResponse.Success);
+			string outcomeBaselineWarning = PageBaselineGuard.ForSaveOutcome(baselineWarning, updateOptions, updateResponse.Success);
 			if (outcomeBaselineWarning != null) {
 				validationResult = AppendCommandWarnings(validationResult, [outcomeBaselineWarning]);
 			}

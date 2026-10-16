@@ -878,6 +878,10 @@ public sealed class PageBaselineGuardTests {
 		armed.Should().BeFalse();
 		warning.Should().Contain("DISARMED",
 			because: "an unpinned save really does reach the server with no external-modification check at all");
+		warning.Should().NotContain("did not run",
+			because: "the DISARMED warning already reports the skipped check, so it is the only one");
+		PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false).Should().Be(warning,
+			because: "a failed save drops only the did-not-run warning");
 	}
 
 	[Test]
@@ -1225,10 +1229,11 @@ public sealed class PageBaselineGuardTests {
 	public void ForSaveOutcome_ShouldDropOnlyTheDidNotRunWarning_WhenASaveWithoutSelectorFails() {
 		// Arrange
 		_fileSystem.AddFile(_metaPath, new MockFileData("{ this is not json"));
-		(_, _, string warning) = _guard.TryArm(CreateOptions("dev"), OutputDirectory);
+		PageUpdateOptions options = CreateOptions("dev");
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Act
-		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
 
 		// Assert
 		failedSaveWarning.Should().Contain("could not be read", because: "other guard warnings stay on a failed save");
@@ -1244,7 +1249,7 @@ public sealed class PageBaselineGuardTests {
 		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Act
-		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
 
 		// Assert
 		warning.Should().Contain("did not run", because: "the selector save is unchecked");
@@ -1255,10 +1260,11 @@ public sealed class PageBaselineGuardTests {
 	[Description("A successful save keeps the did-not-run warning unchanged.")]
 	public void ForSaveOutcome_ShouldKeepTheWarning_WhenTheSaveSucceeds() {
 		// Arrange
-		(_, _, string warning) = _guard.TryArm(CreateOptions("dev"), OutputDirectory);
+		PageUpdateOptions options = CreateOptions("dev");
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Act
-		string savedWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: true);
+		string savedWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: true);
 
 		// Assert
 		savedWarning.Should().Be(warning, because: "the write proceeded unchecked");
@@ -1273,9 +1279,74 @@ public sealed class PageBaselineGuardTests {
 		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
 
 		// Act
-		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, saveSucceeded: false);
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
 
 		// Assert
 		failedSaveWarning.Should().Be(warning, because: "only the did-not-run warning is dropped");
+	}
+
+	[Test]
+	[Description("A selector save whose baseline location cannot be resolved warns that detection did not run and names the unresolved location as the cause.")]
+	public void TryArm_ShouldNameTheUnresolvedLocation_WhenASelectorSaveCannotResolveTheAnchor() {
+		// Arrange
+		PageBaselineGuard guard = new(BuildFileSystemThatCannotResolvePaths(), _fileGate);
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = "99999999-8888-7777-6666-555555555555";
+
+		// Act
+		(_, bool armed, string warning) = guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		armed.Should().BeFalse(because: "nothing local was discovered");
+		warning.Should().Contain("did not run", because: "the selector save reaches the server unchecked");
+		warning.Should().Contain("the .clio-pages baseline location could not be resolved",
+			because: "the warning names the cause");
+	}
+
+	[Test]
+	[Description("A failed save drops the did-not-run warning wherever it sits in the joined warning and keeps the text around it.")]
+	public void ForSaveOutcome_ShouldDropOnlyTheRecordedDidNotRunWarning_WhenOtherWarningsFollowIt() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		_guard.TryArm(options, OutputDirectory);
+		string warning = $"First warning. {options.DetectionDidNotRunWarning} Last warning.";
+
+		// Act
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
+
+		// Assert
+		options.DetectionDidNotRunWarning.Should().Contain("did not run", because: "TryArm records the warning it added");
+		failedSaveWarning.Should().Be("First warning. Last warning.",
+			because: "only the recorded did-not-run text is removed");
+	}
+
+	[Test]
+	[Description("A failed save whose request was sent without a parsed reply keeps the did-not-run warning, because the write may have landed.")]
+	public void ForSaveOutcome_ShouldKeepTheDidNotRunWarning_WhenTheSaveOutcomeIsUnknown() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+		options.SaveOutcomeUnknown = true;
+
+		// Act
+		string failedSaveWarning = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
+
+		// Assert
+		failedSaveWarning.Should().Be(warning, because: "the write may have landed unchecked");
+	}
+
+	[Test]
+	[Description("TryArm clears a did-not-run warning recorded by an earlier call with the same options.")]
+	public void TryArm_ShouldClearTheRecordedDidNotRunWarning_WhenTheBaselineMatches() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions("dev");
+		_guard.TryArm(options, OutputDirectory);
+		AddMetaWithBaseline("dev", "checksum-before");
+
+		// Act
+		_guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.DetectionDidNotRunWarning.Should().BeNull(because: "the second save is checked");
 	}
 }

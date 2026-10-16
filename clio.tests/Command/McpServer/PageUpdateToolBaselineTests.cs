@@ -242,9 +242,10 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	[Test]
-	[Description("A failed update-page with no baseline, no checksum and no selector carries no did-not-run warning.")]
+	[Description("A failed update-page with an unreadable baseline, no checksum and no selector keeps the unreadable-baseline warning and carries no did-not-run warning.")]
 	public void UpdatePage_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveFails() {
 		// Arrange
+		_fileSystem.AddFile(MetaPath, new MockFileData("{ this is not json"));
 		StubChecksumByUId();
 		StubFailedSave();
 
@@ -253,8 +254,28 @@ public sealed class PageUpdateToolBaselineTests
 
 		// Assert
 		response.Success.Should().BeFalse(because: "the server refused the save");
-		(response.Warnings ?? []).Should().NotContain(w => w.Contains("External-modification detection did not run"),
+		response.Warnings.Should().Contain(w => w.Contains("could not be read"),
+			because: "the other guard warnings stay on a failed save");
+		response.Warnings.Should().NotContain(w => w.Contains("External-modification detection did not run"),
 			because: "no write proceeded");
+	}
+
+	[Test]
+	[Description("An update-page whose save request gets no parsed reply keeps the did-not-run warning, because the write may have landed.")]
+	public void UpdatePage_ShouldKeepTheDidNotRunWarning_WhenTheSaveOutcomeIsUnknown() {
+		// Arrange
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html>Gateway Timeout</html>");
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the reply could not be parsed");
+		response.Warnings.Should().Contain(w => w.Contains("External-modification detection did not run"),
+			because: "the write may have landed unchecked");
 	}
 
 	[Test]
