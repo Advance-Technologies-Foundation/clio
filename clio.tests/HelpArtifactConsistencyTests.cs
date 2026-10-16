@@ -120,6 +120,27 @@ internal class HelpArtifactConsistencyTests {
 		}
 	}
 
+	[Test]
+	[Description("The object Connections verbs are classified in the Development group with a description, so the catalog does not fall back to source-index classification (ENG-101678).")]
+	public void EntityConnectionsCommands_ShouldBeClassifiedWithDescription_WhenCatalogBuilt() {
+		// Arrange
+		string[] verbs = [
+			"get-entity-connections",
+			"update-entity-connections"
+		];
+		CommandHelpCatalog catalog = new();
+
+		// Act & Assert
+		foreach (string verb in verbs) {
+			catalog.TryGetCommand(verb, out HelpCommandMetadata command).Should().BeTrue(
+				because: $"'{verb}' must be present in the canonical help catalog");
+			command.GroupId.Should().Be(HelpGroupId.Development,
+				because: $"'{verb}' edits object metadata and must be grouped with the entity-schema verbs under Development");
+			command.ShortDescription.Should().NotBe(verb,
+				because: $"'{verb}' must carry a description rather than echoing its own verb name");
+		}
+	}
+
 	[TestCase("create-entity-schema")]
 	[TestCase("update-entity-schema")]
 	[TestCase("modify-entity-schema-column")]

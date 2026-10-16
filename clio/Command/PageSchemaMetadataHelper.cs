@@ -362,6 +362,58 @@ namespace Clio.Command {
 			return (rows[0]["UId"]?.ToString(), null);
 		}
 
+		/// <summary>
+		/// Reads the <c>EntityConnection</c> rows of an object ordered by <c>Position</c> (then <c>Id</c>) — the
+		/// fallback the Object designer uses when <c>EntityConnectionsService.GetConnections</c> is unavailable. The
+		/// rows are the baseline table only: the <c>EntityConnections</c> add-on items and removals are NOT applied.
+		/// </summary>
+		/// <param name="applicationClient">Authenticated Creatio HTTP client.</param>
+		/// <param name="serviceUrlBuilder">Environment-aware URL builder.</param>
+		/// <param name="entitySchemaUId">The object's schema UId (<c>EntityConnection.SysEntitySchemaUId</c>).</param>
+		/// <returns>The connection column UIds in row order, or the error that prevented the read.</returns>
+		internal static (System.Collections.Generic.IReadOnlyList<Guid> columnUIds, string error) QueryEntityConnectionColumnUIds(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			Guid entitySchemaUId) {
+			var query = new JObject {
+				[RootSchemaNameKey] = "EntityConnection", [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("bySchema", BuildEqFilter("SysEntitySchemaUId", 0, entitySchemaUId.ToString("D")))),
+				[ColumnsKey] = new JObject {
+					[ItemsKey] = new JObject {
+						["ColumnUId"] = new JObject {
+							[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "ColumnUId" }
+						},
+						["Position"] = new JObject {
+							["orderDirection"] = 1,
+							["orderPosition"] = 0,
+							[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Position" }
+						},
+						["Id"] = new JObject {
+							// Stable tiebreaker for rows with the same position, as the Object designer orders them.
+							["orderDirection"] = 1,
+							["orderPosition"] = 1,
+							[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "Id" }
+						}
+					}
+				},
+				[RowCountKey] = -1
+			};
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
+			if (!success)
+				return (null, "Failed to query EntityConnection");
+			var columnUIds = new System.Collections.Generic.List<Guid>();
+			foreach (JToken row in rows) {
+				if (Guid.TryParse(row?["ColumnUId"]?.ToString(), out Guid columnUId) && columnUId != Guid.Empty
+					&& !columnUIds.Contains(columnUId)) {
+					columnUIds.Add(columnUId);
+				}
+			}
+			return (columnUIds, null);
+		}
+
 		internal static string ParseSaveErrorMessage(JObject saveResponse, string defaultMessage) {
 			string errorMessage = defaultMessage;
 			if (saveResponse["errorInfo"] is JObject errorInfo) {

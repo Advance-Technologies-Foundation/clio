@@ -1,0 +1,49 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    get-entity-connections - Read an object's Connections (the ordered lookup columns shown by the
+    Freedom UI Connections component)
+
+DESCRIPTION
+    Reads the "Connections" of an object (entity schema): the ordered lookup columns of the Object
+    designer "Connections" node, which the Freedom UI crt.Connections page component shows as fields.
+
+    The effective list is read from EntityConnectionsService (CrtUIv2), which merges the
+    EntityConnection rows with the EntityConnections add-on of every package layer. For each connection
+    it reports the column name, column UId, caption, referenced object and position. It also reports the
+    EntityConnections add-on content read for --package-name (items placed first, removed columns).
+
+    When EntityConnectionsService is not available, the list is read from the EntityConnection table
+    ordered by Position and a warning says that the add-on items and removals are not reflected.
+
+    Read-only: it performs no save and changes nothing. Use it before update-entity-connections, which
+    takes the full desired ordered list.
+
+SYNOPSIS
+    clio get-entity-connections -e ENVIRONMENT --entity-schema-name NAME --package-name NAME
+
+OPTIONS
+    -e, --environment NAME
+        Registered Creatio environment to target.
+
+    --entity-schema-name NAME
+        Required. Object (entity schema) name, e.g. 'Account'.
+
+    --package-name NAME
+        Required. Package whose EntityConnections add-on layer is read, e.g. 'Custom'.
+
+    -u, --uri URI / -l, --login LOGIN / -p, --password PASSWORD
+        Direct connection fallback when no registered environment is used.
+
+EXAMPLES
+    # Read the current connections of an object.
+    clio get-entity-connections -e dev --entity-schema-name Account --package-name Custom
+
+NOTES
+    Aliases: entity-connections-get.
+
+    Pairs with update-entity-connections: read -> change the column list -> update with the full list.
+
+    warnings lists non-fatal issues: the table fallback, or an effective list that does not reflect
+    the add-on (the UseConnectionsComponent feature may be off on the environment).
