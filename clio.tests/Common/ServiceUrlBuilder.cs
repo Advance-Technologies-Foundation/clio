@@ -197,6 +197,9 @@ internal class ServiceUrlBuilderCommandTests
 			// ENG-103024: run-process cleanup cancels a parked run before deleting what it created.
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.CancelProcessExecution, "https://localhost/0/ServiceModel/ProcessEngineService.svc/CancelExecution");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.CancelProcessExecution, "https://localhost/ServiceModel/ProcessEngineService.svc/CancelExecution");
+			// ENG-101678: get/update-entity-connections read the effective Connections list of an object.
+			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.GetEntityConnections, "https://localhost/0/rest/EntityConnectionsService/GetConnections");
+			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.GetEntityConnections, "https://localhost/rest/EntityConnectionsService/GetConnections");
 			yield return new(false, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/0/DataService/json/SyncReply/BatchQuery");
 			yield return new(true, "https://localhost", ServiceUrlBuilder.KnownRoute.BatchQuery, "https://localhost/DataService/json/SyncReply/BatchQuery");
 			// ENG-90576 (localize-page): page designer schema read/save and the post-save script-cache reset.

@@ -54,8 +54,11 @@ public sealed class RelatedPageAddonServiceTests {
 			.Do(callInfo => _savedSchema = callInfo.Arg<AddonSchemaDto>());
 		// The object (entity schema) is resolved through the entity schema designer, not a SelectQuery.
 		StubEntitySchema(new EntityDesignSchemaDto { UId = Guid.Parse(EntityUId), Name = "UsrDeliveryItem" });
+		// The real target resolver over the faked transport: these tests queue the package lookup together with the
+		// page and role lookups, and several of them pin the resolver's package/object error messages.
 		_service = new RelatedPageAddonService(
-			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient, _entitySchemaDesignerClient,
+			_applicationClient, _serviceUrlBuilder, _addonSchemaDesignerClient,
+			new EntityAddonTargetResolver(_applicationClient, _serviceUrlBuilder, _entitySchemaDesignerClient),
 			_pageSchemaResolver, _logger);
 	}
 

@@ -1,8 +1,10 @@
 ---
-description: GetSchemaDesignItem can synthesize an unsaved replacing entity; use the add-on response targetSchemaUId for related-page identity
+description: GetSchemaDesignItem can synthesize an unsaved replacing entity; use the add-on response targetSchemaUId for related-page and entity-connections identity
 applies-to:
   - clio/Command/RelatedPages/RelatedPageAddonService.cs
   - clio/Command/AddonSchemaDesigner/AddonSchemaDesignerDtos.cs
+  - clio/Command/AddonSchemaDesigner/EntityAddonTarget.cs
+  - clio/Command/EntityConnections/EntityConnectionsService.cs
 ticket: GH-1302
 date: 2026-09-12
 ---
@@ -17,6 +19,9 @@ in Custom on Creatio 10.0.0.858 (.NET Framework, PostgreSQL), against persisted 
 not an entity-identity lookup. `AddonSchemaDesignerService.GetAddonInfo` resolves the supplied
 target or parent through the entity manager and canonicalizes the target by name. Keep that
 request path: replacing it with a flat SysSchema name query is ambiguous across replacing rows.
+The same identity is what `EntityConnection.SysEntitySchemaUId` and `EntityConnectionsService.GetConnections`
+key on, so the entity-connections tools send `targetSchemaUId`, not the designer `uId` (both go through
+`EntityAddonTargetResolver.TryReadTargetSchemaUId`).
 
 **What breaks if you ignore it** — Reads and successful writes report different invented
 entity IDs even while their bindings persist correctly. Read the existing add-on extension

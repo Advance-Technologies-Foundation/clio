@@ -408,7 +408,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     semicolon-separated ids, not a JSON array (an array is accepted with 200 and cancels nothing). The
 		///     cancellation is asynchronous: the SysProcessLog status moves to Canceled shortly after the call.
 		/// </summary>
-		CancelProcessExecution = 119
+		CancelProcessExecution = 119,
+
+		/// <summary>
+		///     Reads the effective "Connections" of an object (CrtUIv2 <c>EntityConnectionsService</c>): the
+		///     <c>EntityConnection</c> rows merged with the <c>EntityConnections</c> add-on, ordered by position. The body is
+		///     <c>{"entitySchemaUId":"&lt;guid&gt;"}</c>; the response carries <c>connections[].columnUId</c> and no names.
+		/// </summary>
+		GetEntityConnections = 120
 
 	}
 
@@ -541,6 +548,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.GetCurrentUserInfo, CreatioServicePaths.GetCurrentUserInfo},
 		{KnownRoute.DesignReady, "api/Probes/DesignReady"},
 		{KnownRoute.CancelProcessExecution, "ServiceModel/ProcessEngineService.svc/CancelExecution"},
+		{KnownRoute.GetEntityConnections, "/rest/EntityConnectionsService/GetConnections"},
 	};
 
 	private EnvironmentSettings _environmentSettings;
