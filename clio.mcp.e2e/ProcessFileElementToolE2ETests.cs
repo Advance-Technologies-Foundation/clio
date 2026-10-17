@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -82,6 +83,15 @@ public sealed class ProcessFileElementToolE2ETests {
 
 	/// <summary>The designer-built fixture of TC-I-46 (plan section 5.1, OA.0).</summary>
 	private const string DesignerFixtureName = "UsrFpOaDesignerFixture";
+
+	/// <summary>The Lookup data value type - what the designer stores on <c>ConnectedObjectId</c>.</summary>
+	private const string LookupDataValueTypeUId = "b295071f-7ea9-4e62-8d1a-919bf3732ff2";
+
+	/// <summary>The Guid data value type - what the user-task template declares on <c>ConnectedObjectId</c>.</summary>
+	private const string GuidDataValueTypeUId = "23018567-a13c-4320-8687-fd6f9e3699bd";
+
+	/// <summary>SysSchema - the template <c>L9</c> of a schema-lookup parameter.</summary>
+	private const string SysSchemaUId = "6c7394db-06ff-4050-91ef-8278e21dce15";
 
 	#region Methods: Tests - create and describe
 
@@ -750,10 +760,10 @@ public sealed class ProcessFileElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list: the position BL3; ConnectedObjectId retyped Lookup -> Guid to its user-task template; a template L9 = SysSchema added on a schema lookup), F2's resource rows stay byte-identical; a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
+	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none), F2's resource rows stay byte-identical; a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("an unrelated modify leaves designer-built Process file elements intact")]
-	public async Task DesignerFixture_Should_LeaveTheReportElementByteIdentical_OnAnUnrelatedModify() {
+	public async Task DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		await IgnoreUnlessDesignerFixtureExistsAsync(context);
@@ -787,13 +797,15 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "the positive control: the process WAS saved, so an intact F2 is evidence and not a no-op");
 			resourcesBefore.Should().NotBeEmpty(
 				because: "the read must be shown able to see F2's rows (its caption at least), or 'unchanged' proves nothing");
-			nodesAfterFirst.Select(WithoutFirstSaveNormalization).Should()
-				.Equal(nodesBefore.Select(WithoutFirstSaveNormalization),
+			nodesAfterFirst.Select(WithoutLayout).Should()
+				.Equal(ExpectedAfterFirstSave(nodesBefore, nodesAfterFirst),
 					because: "the first save of the whole process may change F2 only by the platform's design-session normalization and the relayout");
-			f1NodesAfterFirst.Select(WithoutFirstSaveNormalization).Should()
-				.Equal(f1NodesBefore.Select(WithoutFirstSaveNormalization),
+			f1NodesAfterFirst.Select(WithoutLayout).Should()
+				.Equal(ExpectedAfterFirstSave(f1NodesBefore, f1NodesAfterFirst),
 					because: "and F1, the designer-built Object attachments element, likewise");
 			resourcesAfterFirst.Should().Equal(resourcesBefore, because: "F2's resource rows stay byte-identical");
+			ParameterNames(await DescribeGraphAsync(context, DesignerFixtureName)).Should().Contain(secondProbeName,
+				because: "the positive control of the second save: it WAS saved, so byte-identity after it is evidence");
 			(await ReadElementNodesAsync(context, DesignerFixtureName, f2UId)).Should().Equal(nodesAfterFirst,
 				because: "once normalized, a further save of the whole process leaves F2's stored node byte-identical");
 			(await ReadElementNodesAsync(context, DesignerFixtureName, f1UId)).Should().Equal(f1NodesAfterFirst,
@@ -804,37 +816,6 @@ public sealed class ProcessFileElementToolE2ETests {
 			await RemoveProbeParameterAsync(context, probeName);
 			await RemoveProbeParameterAsync(context, secondProbeName);
 		}
-	}
-
-	// The platform re-synchronizes a user-task element's parameters against its template when the design session
-	// loads it (ProcessSchemaActivity.SynchronizeParameter), which the classic designer's save path never does: the
-	// Process file pages force ConnectedObjectId to Lookup (the template declares Guid) and save schema lookups
-	// without the template's ReferenceSchemaUId (L9 = SysSchema). The builder also re-lays out the diagram (BL3).
-	// These three, and nothing else, may differ after the FIRST builder save of a designer-built element.
-	private const string LookupDataValueTypeUId = "b295071f-7ea9-4e62-8d1a-919bf3732ff2";
-	private const string GuidDataValueTypeUId = "23018567-a13c-4320-8687-fd6f9e3699bd";
-	private const string SysSchemaUId = "6c7394db-06ff-4050-91ef-8278e21dce15";
-
-	private static string WithoutFirstSaveNormalization(string rawNode) {
-		// A read node is "<path>: <raw JSON>"; only the JSON part is normalized.
-		int jsonStart = rawNode.IndexOf('{');
-		if (jsonStart < 0 || JsonNode.Parse(rawNode[jsonStart..]) is not JsonObject node) {
-			return rawNode;
-		}
-		node.Remove("BL3");
-		if (node["BP2"] is JsonArray parameters) {
-			foreach (JsonObject parameter in parameters.OfType<JsonObject>()) {
-				if (string.Equals(parameter["L9"]?.GetValue<string>(), SysSchemaUId, StringComparison.OrdinalIgnoreCase)) {
-					parameter.Remove("L9");
-				}
-				if (parameter["A2"]?.GetValue<string>() == "ConnectedObjectId"
-						&& string.Equals(parameter["L1"]?.GetValue<string>(), LookupDataValueTypeUId,
-							StringComparison.OrdinalIgnoreCase)) {
-					parameter["L1"] = GuidDataValueTypeUId;
-				}
-			}
-		}
-		return rawNode[..jsonStart] + node.ToJsonString();
 	}
 
 	#endregion
@@ -1321,6 +1302,66 @@ public sealed class ProcessFileElementToolE2ETests {
 				.OfType<string>()
 				.ToList()
 			: [];
+
+	// The platform re-synchronizes a user-task element's parameters against its template when the design session
+	// loads it (ProcessSchemaActivity.SynchronizeParameter), which the classic designer's save path never does: the
+	// Process file pages force ConnectedObjectId to Lookup (the template declares Guid) and save schema lookups
+	// without the template's ReferenceSchemaUId (L9 = SysSchema). The builder also re-lays out the diagram (BL3).
+	// These three, in that direction only, may differ after the FIRST builder save of an element in the designer's form.
+	private static IEnumerable<string> ExpectedAfterFirstSave(IReadOnlyList<string> before, IReadOnlyList<string> after) {
+		if (before.Count != after.Count) {
+			return before;
+		}
+		return before.Select((node, index) => WithFirstSaveNormalization(node, after[index]));
+	}
+
+	private static string WithFirstSaveNormalization(string beforeNode, string afterNode) {
+		if (!TrySplitNode(beforeNode, out string prefix, out JsonObject? before)
+				|| !TrySplitNode(afterNode, out _, out JsonObject? after)) {
+			return beforeNode;
+		}
+		before.Remove("BL3");
+		if (before["BP2"] is JsonArray parameters && after["BP2"] is JsonArray afterParameters) {
+			Dictionary<string, JsonObject> afterByName = afterParameters.OfType<JsonObject>()
+				.Where(parameter => parameter["A2"] is not null)
+				.GroupBy(parameter => parameter["A2"]!.GetValue<string>())
+				.ToDictionary(group => group.Key, group => group.First());
+			foreach (JsonObject parameter in parameters.OfType<JsonObject>()) {
+				string? name = parameter["A2"]?.GetValue<string>();
+				if (name is null || !afterByName.TryGetValue(name, out JsonObject? afterParameter)) {
+					continue;
+				}
+				if (name.EndsWith("EntitySchemaUId", StringComparison.Ordinal) && parameter["L9"] is null
+						&& IsUId(afterParameter["L9"], SysSchemaUId)) {
+					parameter["L9"] = afterParameter["L9"]!.GetValue<string>();
+				}
+				if (name == "ConnectedObjectId" && IsUId(parameter["L1"], LookupDataValueTypeUId)
+						&& IsUId(afterParameter["L1"], GuidDataValueTypeUId)) {
+					parameter["L1"] = afterParameter["L1"]!.GetValue<string>();
+				}
+			}
+		}
+		return prefix + before.ToJsonString();
+	}
+
+	private static string WithoutLayout(string rawNode) {
+		if (!TrySplitNode(rawNode, out string prefix, out JsonObject? node)) {
+			return rawNode;
+		}
+		node.Remove("BL3");
+		return prefix + node.ToJsonString();
+	}
+
+	// A read node is "<UId>: <raw JSON>"; only the JSON part is compared structurally.
+	private static bool TrySplitNode(string rawNode, out string prefix, [NotNullWhen(true)] out JsonObject? node) {
+		int jsonStart = rawNode.IndexOf('{');
+		prefix = jsonStart < 0 ? rawNode : rawNode[..jsonStart];
+		node = jsonStart < 0 ? null : JsonNode.Parse(rawNode[jsonStart..]) as JsonObject;
+		return node is not null;
+	}
+
+	private static bool IsUId(JsonNode? value, string uid) =>
+		value is JsonValue && string.Equals(value.GetValue<string>(), uid, StringComparison.OrdinalIgnoreCase);
 
 	#endregion
 

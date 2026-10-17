@@ -258,7 +258,10 @@ namespace Clio.Command;
 // field to change"); but beside another field it drops the block in silence and answers success - the same
 // silent-discard shape - so that part of the edit is lost while nothing says so. And a generic userTask naming
 // ObjectFileProcessingUserTask, which this clio's contract now steers to the new type, builds there an element with
-// no file source that saves without error and fails at run time. 1.6.6.102 is the first archive with the element.
+// no file source that saves without error and fails at run time. The element first ships in 1.6.6.100; the floor is
+// 1.6.6.102 because from it the element is written in the classic designer's stored form (a [#Lookup.<object>.<id>#]
+// Script record constant, ConnectedObjectId typed Lookup) and describe decodes that formula back to {value, display},
+// so describing a designer-built record and sending it back holds; 1.6.6.100 and 1.6.6.101 were never bundled.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.102",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
