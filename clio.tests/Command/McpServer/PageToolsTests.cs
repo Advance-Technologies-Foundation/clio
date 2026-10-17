@@ -5170,9 +5170,10 @@ public class PageToolsTests
 			"/**SCHEMA_CONVERTERS*/{\"usr.ToUpperCase\":function(value){return value.toUpperCase();}}/**SCHEMA_CONVERTERS*/ " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
 		// Incoming body intentionally omits the SCHEMA_CONVERTERS marker entirely.
+		// GH-1839: an all-empty fragment is rejected, so the fragment carries one unrelated modelConfigDiff entry.
 		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"usrKeep\":true}}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
 
 		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
@@ -5191,9 +5192,10 @@ public class PageToolsTests
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_CONVERTERS*/{\"usr.FormatDate\":function(value){return new Date(value).toLocaleDateString();}}/**SCHEMA_CONVERTERS*/ " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		// GH-1839: an all-empty fragment is rejected, so the fragment carries one unrelated modelConfigDiff entry.
 		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"usrKeep\":true}}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
 
@@ -5446,9 +5448,10 @@ public class PageToolsTests
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
+		// GH-1839: an all-empty fragment is rejected, so the fragment carries one unrelated modelConfigDiff entry.
 		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"usrKeep\":true}}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/";
 
@@ -5521,9 +5524,10 @@ public class PageToolsTests
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/ " +
 			"/**SCHEMA_VALIDATORS*/{\"usr.Keep\":{validator:function(){return function(){return null;};},params:[],async:false}}/**SCHEMA_VALIDATORS*/";
+		// GH-1839: an all-empty fragment is rejected, so the fragment carries one unrelated modelConfigDiff entry.
 		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
 			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
-			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"usrKeep\":true}}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
 			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/ " +
 			"/**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/";
 
@@ -5586,17 +5590,89 @@ public class PageToolsTests
 	}
 
 	[Test]
-	[Description("PageBodyMerger mobile: incoming body with empty arrays leaves current arrays unchanged")]
+	[Description("PageBodyMerger mobile: incoming body with empty view arrays leaves current view arrays unchanged")]
 	public void PageBodyMerger_Mobile_Should_Preserve_Current_When_Incoming_Is_Empty() {
 		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[{\"operation\":\"insert\",\"name\":\"VM1\"}],\"modelConfigDiff\":[]}";
-		string incomingBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		// GH-1839: an all-empty fragment is rejected, so the fragment carries one modelConfigDiff entry.
+		string incomingBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[{\"operation\":\"merge\",\"path\":[],\"values\":{\"usrKeep\":true}}]}";
 
 		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
 
 		JObject result = JObject.Parse(merged);
 		((JArray)result["viewConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewConfigDiff is empty");
 		((JArray)result["viewModelConfigDiff"]).Count.Should().Be(1, because: "current entry must survive when incoming viewModelConfigDiff is empty");
-		((JArray)result["modelConfigDiff"]).Count.Should().Be(0, because: "both sides are empty so result is empty");
+		((JArray)result["modelConfigDiff"]).Count.Should().Be(1, because: "the one incoming modelConfigDiff entry is appended");
+	}
+
+	[Test]
+	[Description("PageBodyMerger: a fragment carrying only modelConfigDiff appends it and reports the count separately from viewConfigDiff (GH-1839)")]
+	public void PageBodyMerger_Should_Append_ModelConfigDiff_Only_Fragment_And_Report_Its_Count() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
+		string incomingBody = "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[" +
+			"{\"operation\":\"merge\",\"path\":[],\"values\":{\"primaryDataSourceName\":\"PDS\"}}," +
+			"{\"operation\":\"merge\",\"path\":[\"dataSources\"],\"values\":{\"PDS\":{\"type\":\"crt.EntityDataSource\"}}}" +
+			"]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody, out PageAppendProjection projection);
+
+		// Assert
+		merged.Should().Contain("primaryDataSourceName", because: "the modelConfigDiff operations are appended");
+		projection.IncomingOperationCount.Should().Be(0, because: "incomingOperationCount speaks for viewConfigDiff only");
+		projection.IncomingModelConfigDiffOperationCount.Should().Be(2,
+			because: "a config-diff-only fragment must not read as an append of nothing");
+	}
+
+	[Test]
+	[Description("PageBodyMerger: a web fragment whose every section is empty is rejected instead of saving the page unchanged (GH-1839)")]
+	public void PageBodyMerger_Should_Reject_Fragment_That_Contributes_No_Operation() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+		string incomingBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
+
+		// Act
+		System.Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<System.InvalidOperationException>(because: "an append that adds nothing must not report success")
+			.WithMessage("*contributes no operation*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger mobile: a fragment whose arrays are all empty is rejected (GH-1839)")]
+	public void PageBodyMerger_Mobile_Should_Reject_Fragment_That_Contributes_No_Operation() {
+		// Arrange
+		string currentBody = "{\"viewConfigDiff\":[{\"operation\":\"merge\",\"name\":\"A\"}],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+		string incomingBody = "{\"viewConfigDiff\":[],\"viewModelConfigDiff\":[],\"modelConfigDiff\":[]}";
+
+		// Act
+		System.Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<System.InvalidOperationException>(because: "an empty mobile fragment appends nothing")
+			.WithMessage("*contributes no operation*");
+	}
+
+	[Test]
+	[Description("PageBodyMerger: incoming modelConfigDiff against a stored body without that marker pair is rejected, not silently dropped (GH-1839)")]
+	public void PageBodyMerger_Should_Reject_ModelConfigDiff_When_Current_Body_Lacks_Its_Marker_Pair() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/";
+		string incomingBody = "/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"a\":1}}]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+
+		// Act
+		System.Action act = () => PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		act.Should().Throw<System.InvalidOperationException>(
+				because: "the write-back is a marker-pair replace, so without the pair the operations would vanish behind success")
+			.WithMessage("*SCHEMA_MODEL_CONFIG_DIFF*marker pair*");
 	}
 
 	[Test]

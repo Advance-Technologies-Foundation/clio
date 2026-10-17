@@ -273,25 +273,40 @@ internal static class PageBodyMerger {
 	private static string MergeWeb(string currentBody, string incomingBody, ProjectionCollector collector) {
 		// Precondition: Merge() has already rejected a full-config current or incoming body via the shared
 		// UsesUnsupportedFullConfigForm predicate, so this method only ever sees diff-form bodies.
+		JArray incomingViewConfigDiff = ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF");
+		JArray incomingViewModelConfigDiff = ReadJsonArray(incomingBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF");
+		JArray incomingModelConfigDiff = ReadJsonArray(incomingBody, "SCHEMA_MODEL_CONFIG_DIFF");
+		string incomingHandlers = ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]";
+		string incomingConverters = ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}";
+		string incomingValidators = ReadRawSection(incomingBody, "SCHEMA_VALIDATORS") ?? "{}";
+		// GH-1839: a fragment whose every section is empty used to merge to the stored body unchanged and
+		// still report success, so a caller whose operations sat outside the marker pairs believed they were
+		// written.
+		if (incomingViewConfigDiff.Count == 0 && incomingViewModelConfigDiff.Count == 0
+			&& incomingModelConfigDiff.Count == 0 && IsEmptyRawSection(incomingHandlers)
+			&& IsEmptyRawSection(incomingConverters) && IsEmptyRawSection(incomingValidators)) {
+			throw new InvalidOperationException(NothingToAppendMessage);
+		}
+		collector.SetConfigDiffCounts(incomingViewModelConfigDiff.Count, incomingModelConfigDiff.Count);
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_CONFIG_DIFF"),
-			ReadJsonArray(incomingBody, "SCHEMA_VIEW_CONFIG_DIFF"),
+			incomingViewConfigDiff,
 			collector);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			ReadJsonArray(currentBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"),
-			ReadJsonArray(incomingBody, "SCHEMA_VIEW_MODEL_CONFIG_DIFF"));
+			incomingViewModelConfigDiff);
 		JArray mergedModelConfigDiff = MergeArrayAppend(
 			ReadJsonArray(currentBody, "SCHEMA_MODEL_CONFIG_DIFF"),
-			ReadJsonArray(incomingBody, "SCHEMA_MODEL_CONFIG_DIFF"));
+			incomingModelConfigDiff);
 		string mergedHandlers = MergeHandlersRaw(
 			ReadRawSection(currentBody, "SCHEMA_HANDLERS") ?? "[]",
-			ReadRawSection(incomingBody, "SCHEMA_HANDLERS") ?? "[]");
+			incomingHandlers);
 		string mergedConverters = MergeKeyedObjectRaw(
 			ReadRawSection(currentBody, "SCHEMA_CONVERTERS") ?? "{}",
-			ReadRawSection(incomingBody, "SCHEMA_CONVERTERS") ?? "{}");
+			incomingConverters);
 		string mergedValidators = MergeKeyedObjectRaw(
 			ReadRawSection(currentBody, "SCHEMA_VALIDATORS") ?? "{}",
-			ReadRawSection(incomingBody, "SCHEMA_VALIDATORS") ?? "{}");
+			incomingValidators);
 
 		// GH-1150: ReplaceSection is a single-match Regex.Replace over a marker PAIR. With no pair it returns
 		// the body UNCHANGED and the merged array is silently discarded - behaviour Merge's own remarks
@@ -304,11 +319,40 @@ internal static class PageBodyMerger {
 		result = ReplaceSection(result, "SCHEMA_VIEW_CONFIG_DIFF",
 			mergedViewConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented), out bool viewConfigDiffApplied);
 		collector.SetViewConfigDiffApplied(viewConfigDiffApplied);
-		result = ReplaceSection(result, "SCHEMA_VIEW_MODEL_CONFIG_DIFF", mergedViewModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
-		result = ReplaceSection(result, "SCHEMA_MODEL_CONFIG_DIFF", mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented));
-		result = ReplaceSection(result, "SCHEMA_HANDLERS", mergedHandlers);
-		result = ReplaceSection(result, "SCHEMA_CONVERTERS", mergedConverters);
-		result = ReplaceSection(result, "SCHEMA_VALIDATORS", mergedValidators);
+		// GH-1839: the other sections had no such flag, so an incoming modelConfigDiff (or handlers, ...)
+		// against a stored body without that marker pair vanished behind `success: true`. The fragment's own
+		// content for that section is what would be lost, so refuse rather than report.
+		result = ReplaceSectionOrThrow(result, "SCHEMA_VIEW_MODEL_CONFIG_DIFF",
+			mergedViewModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented), incomingViewModelConfigDiff.Count > 0);
+		result = ReplaceSectionOrThrow(result, "SCHEMA_MODEL_CONFIG_DIFF",
+			mergedModelConfigDiff.ToString(Newtonsoft.Json.Formatting.Indented), incomingModelConfigDiff.Count > 0);
+		result = ReplaceSectionOrThrow(result, "SCHEMA_HANDLERS", mergedHandlers, !IsEmptyRawSection(incomingHandlers));
+		result = ReplaceSectionOrThrow(result, "SCHEMA_CONVERTERS", mergedConverters, !IsEmptyRawSection(incomingConverters));
+		result = ReplaceSectionOrThrow(result, "SCHEMA_VALIDATORS", mergedValidators, !IsEmptyRawSection(incomingValidators));
+		return result;
+	}
+
+	/// <summary>
+	/// Rejection for an append fragment that contributes nothing to any section (GH-1839).
+	/// </summary>
+	internal const string NothingToAppendMessage =
+		"The append fragment contributes no operation: every section in it is empty, so the merge would save the page "
+		+ "unchanged. Put the new operations INSIDE their marker pairs, for example "
+		+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[ ... ]/**SCHEMA_MODEL_CONFIG_DIFF*/.";
+
+	private static bool IsEmptyRawSection(string raw) {
+		string trimmed = raw?.Trim();
+		return string.IsNullOrEmpty(trimmed) || trimmed == "[]" || trimmed == "{}";
+	}
+
+	private static string ReplaceSectionOrThrow(string body, string marker, string newContent, bool incomingHasContent) {
+		string result = ReplaceSection(body, marker, newContent, out bool replaced);
+		if (!replaced && incomingHasContent) {
+			throw new InvalidOperationException(
+				$"The page's stored body has no /**{marker}*/ marker pair, so the {marker} content of the fragment "
+				+ "has nowhere to go and would be silently discarded. Read the body with get-page and save it with "
+				+ "mode 'replace', including the new content inside that marker pair.");
+		}
 		return result;
 	}
 
@@ -338,16 +382,24 @@ internal static class PageBodyMerger {
 		// Mobile assigns the property unconditionally below, creating it when absent, so the merged array
 		// always lands - there is no marker-pair precondition to miss as there is on the web path.
 		collector.SetViewConfigDiffApplied(true);
+		JArray incomingViewConfigDiff = incoming["viewConfigDiff"] as JArray ?? new JArray();
+		JArray incomingViewModelConfigDiff = incoming["viewModelConfigDiff"] as JArray ?? new JArray();
+		JArray incomingModelConfigDiff = incoming["modelConfigDiff"] as JArray ?? new JArray();
+		if (incomingViewConfigDiff.Count == 0 && incomingViewModelConfigDiff.Count == 0
+			&& incomingModelConfigDiff.Count == 0) {
+			throw new InvalidOperationException(NothingToAppendMessage);
+		}
+		collector.SetConfigDiffCounts(incomingViewModelConfigDiff.Count, incomingModelConfigDiff.Count);
 		JArray mergedViewConfigDiff = MergeViewConfigDiffOperations(
 			current["viewConfigDiff"] as JArray ?? new JArray(),
-			incoming["viewConfigDiff"] as JArray ?? new JArray(),
+			incomingViewConfigDiff,
 			collector);
 		JArray mergedViewModelConfigDiff = MergeArrayAppend(
 			current["viewModelConfigDiff"] as JArray ?? new JArray(),
-			incoming["viewModelConfigDiff"] as JArray ?? new JArray());
+			incomingViewModelConfigDiff);
 		JArray mergedModelConfigDiff = MergeArrayAppend(
 			current["modelConfigDiff"] as JArray ?? new JArray(),
-			incoming["modelConfigDiff"] as JArray ?? new JArray());
+			incomingModelConfigDiff);
 
 		current["viewConfigDiff"] = mergedViewConfigDiff;
 		current["viewModelConfigDiff"] = mergedViewModelConfigDiff;
@@ -756,6 +808,8 @@ internal static class PageBodyMerger {
 		private int _replacedCount;
 		private int _droppedCount;
 		private int _collapsedIncomingCount;
+		private int _incomingViewModelConfigDiffCount;
+		private int _incomingModelConfigDiffCount;
 		private bool _viewConfigDiffApplied;
 
 		public void RecordReplaced(OperationIdentity identity) {
@@ -814,6 +868,11 @@ internal static class PageBodyMerger {
 		/// </remarks>
 		public void SetViewConfigDiffApplied(bool applied) => _viewConfigDiffApplied = applied;
 
+		public void SetConfigDiffCounts(int incomingViewModelConfigDiffCount, int incomingModelConfigDiffCount) {
+			_incomingViewModelConfigDiffCount = incomingViewModelConfigDiffCount;
+			_incomingModelConfigDiffCount = incomingModelConfigDiffCount;
+		}
+
 		public void SetSectionCounts(int currentCount, int incomingCount, int projectedCount) {
 			_currentCount = currentCount;
 			_incomingCount = incomingCount;
@@ -833,6 +892,8 @@ internal static class PageBodyMerger {
 				CollapsedIncomingOperations = _collapsedIncoming,
 				CollapsedIncomingOperationCount = _collapsedIncomingCount,
 				ViewConfigDiffApplied = _viewConfigDiffApplied,
+				IncomingViewModelConfigDiffOperationCount = _incomingViewModelConfigDiffCount,
+				IncomingModelConfigDiffOperationCount = _incomingModelConfigDiffCount,
 				SupersededDropWarnings = _supersededDropWarnings
 			};
 
