@@ -421,6 +421,150 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("GH-1839: create-page with entity-schema-name binds a primary PDS data source to the entity, and get-page reads it back in the merged model config.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-page with entity-schema-name creates a page with a primary data source")]
+	public async Task PageCreateTool_Should_Bind_Primary_Data_Source_When_Entity_Is_Given() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string schemaName = $"UsrE2E_PdsPage_{Guid.NewGuid():N}".Substring(0, 40);
+
+		try {
+			// Act
+			CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["template"] = "PageWithTabsFreedomTemplate",
+						["package-name"] = PackageName,
+						["entity-schema-name"] = "Contact",
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			PageCreateResponse createResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(createResult);
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, schemaName, environmentName);
+
+			// Assert
+			createResponse.Success.Should().BeTrue(because: $"create-page must succeed. Error: {createResponse.Error}");
+			createResponse.PrimaryDataSourceName.Should().Be("PDS",
+				because: "a tabbed record page template has no primary data source, so create-page adds PDS");
+			getResponse.Success.Should().BeTrue(because: $"the created page must be readable. Error: {getResponse.Error}");
+			JsonNode modelConfig = await ReadModelConfigAsync(getResponse);
+			modelConfig["primaryDataSourceName"]?.GetValue<string>().Should().Be("PDS",
+				because: "components bound to the primary data source show nothing without it");
+			modelConfig["dataSources"]?["PDS"]?["config"]?["entitySchemaName"]?.GetValue<string>()
+				.Should().Be("Contact", because: "PDS must be bound to the requested entity");
+			modelConfig["dataSources"]?["AttachmentListDS"].Should().NotBeNull(
+				because: "the template's own data sources must survive the seeded merge");
+		} finally {
+			await DeleteSchemaAsync(settings, schemaName, environmentName);
+		}
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("GH-1839: update-page append of a modelConfigDiff-only fragment onto a page with an empty stored body saves a full page body and reports the config-diff count; an all-empty fragment is rejected.")]
+	[AllureTag(PageUpdateTool.ToolName)]
+	[AllureName("update-page append of modelConfigDiff onto an empty body is written; an empty fragment is rejected")]
+	public async Task PageUpdateTool_Append_ModelConfigDiff_Onto_Empty_Body_Is_Written() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		string schemaName = $"UsrE2E_AppendMc_{Guid.NewGuid():N}".Substring(0, 40);
+		const string fragment =
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[" +
+			"{\"operation\":\"merge\",\"path\":[],\"values\":{\"primaryDataSourceName\":\"PDS\"}}," +
+			"{\"operation\":\"merge\",\"path\":[\"dataSources\"],\"values\":{\"PDS\":{\"type\":\"crt.EntityDataSource\",\"scope\":\"page\",\"config\":{\"entitySchemaName\":\"Contact\"}}}}" +
+			"]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+		const string emptyFragment = "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+
+		try {
+			CallToolResult createResult = await arrangeContext.Session.CallToolAsync(
+				ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = schemaName,
+						["template"] = "PageWithTabsFreedomTemplate",
+						["package-name"] = PackageName,
+						["environment-name"] = environmentName
+					}
+				},
+				arrangeContext.CancellationTokenSource.Token);
+			PageCreateResponse createResponse = EntitySchemaStructuredResultParser.Extract<PageCreateResponse>(createResult);
+			createResponse.Success.Should().BeTrue(because: $"create-page must succeed. Error: {createResponse.Error}");
+
+			// Act
+			PageUpdateResponse emptyResponse = await AppendAsync(arrangeContext, schemaName, environmentName, emptyFragment);
+			PageUpdateResponse appendResponse = await AppendAsync(arrangeContext, schemaName, environmentName, fragment);
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, schemaName, environmentName);
+
+			// Assert
+			emptyResponse.Success.Should().BeFalse(because: "an append that contributes no operation must not report success");
+			emptyResponse.Error.Should().Contain("contributes no operation",
+				because: "the rejection must say why nothing would be written");
+			appendResponse.Success.Should().BeTrue(because: $"the modelConfigDiff fragment must be appended. Error: {appendResponse.Error}");
+			appendResponse.AppendProjection.IncomingModelConfigDiffOperationCount.Should().Be(2,
+				because: "the projection reports the config-diff operations, not only viewConfigDiff");
+			(await File.ReadAllTextAsync(getResponse.Files.BodyFile)).Should().StartWith($"define(\"{schemaName}\"",
+				because: "the fragment is merged into the empty page body, not saved as the whole body");
+			(await ReadModelConfigAsync(getResponse))["primaryDataSourceName"]?.GetValue<string>().Should().Be("PDS",
+				because: "the appended modelConfigDiff operations reach the page");
+		} finally {
+			await DeleteSchemaAsync(settings, schemaName, environmentName);
+		}
+	}
+
+	private static async Task<PageGetResponse> GetPageAsync(ArrangeContext arrangeContext, string schemaName, string environmentName) {
+		CallToolResult getResult = await arrangeContext.Session.CallToolAsync(
+			PageGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		return EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+	}
+
+	private static async Task<JsonNode> ReadModelConfigAsync(PageGetResponse getResponse) {
+		JsonNode bundle = JsonNode.Parse(await File.ReadAllTextAsync(getResponse.Files.BundleFile))!;
+		return bundle["modelConfig"] ?? new JsonObject();
+	}
+
+	private static async Task<PageUpdateResponse> AppendAsync(
+		ArrangeContext arrangeContext, string schemaName, string environmentName, string body) {
+		CallToolResult result = await arrangeContext.Session.CallToolAsync(
+			PageUpdateTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["schema-name"] = schemaName,
+					["body"] = body,
+					["mode"] = "append",
+					["environment-name"] = environmentName
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		return EntitySchemaStructuredResultParser.Extract<PageUpdateResponse>(result);
+	}
+
+	private static async Task DeleteSchemaAsync(McpE2ESettings settings, string schemaName, string environmentName) {
+		using CancellationTokenSource cleanupCts = new(TimeSpan.FromMinutes(2));
+		await ClioCliCommandRunner.RunAsync(
+			settings,
+			["delete-schema", schemaName, "--remote", "-e", environmentName],
+			cancellationToken: cleanupCts.Token);
+	}
+
 	private static async Task<string> ResolveReachableEnvironmentAsync(McpE2ESettings settings) {
 		// The opt-in is consulted BEFORE the environment is resolved, so neither a clio process nor the
 		// stand is reached while it is off. Every caller is a sandbox test that creates a real schema on

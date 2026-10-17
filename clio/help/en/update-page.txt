@@ -240,7 +240,14 @@ DESCRIPTION
     may omit sections, but it must carry at least one section marker pair, e.g.
     /**SCHEMA_VIEW_CONFIG_DIFF*/[ ... ]/**SCHEMA_VIEW_CONFIG_DIFF*/. A body with no
     marker pair at all is rejected - every section would read as empty and the
-    merge would discard everything you sent while reporting success.
+    merge would discard everything you sent while reporting success. A fragment
+    whose marker pairs are all empty is rejected too, and so is a section the
+    stored body has no marker pair for (it would vanish; use --mode replace).
+    A page whose stored body is empty (any page create-page makes) is appended to
+    as the empty page body; the fragment is never saved as the whole body.
+    appendProjection counts speak for viewConfigDiff only; a config-diff-only
+    fragment reads incomingOperationCount: 0 and reports its operations in
+    incomingModelConfigDiffOperationCount / incomingViewModelConfigDiffOperationCount.
     A viewConfigDiff entry is replaced only when both operation and name match one
     of yours - and, for a remove or a set, whether it targets properties. Incoming
     wins and keeps the existing entry's position; every other existing operation

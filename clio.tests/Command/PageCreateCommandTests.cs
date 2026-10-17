@@ -357,6 +357,84 @@ public sealed class PageCreateCommandTests
 	}
 
 	[Test]
+	[Description("With entity-schema-name a web page is saved with a body that binds a primary data source PDS to the entity, the shape of stock record pages (GH-1839).")]
+	public void TryCreatePage_Seeds_Primary_Data_Source_For_Entity() {
+		// Arrange
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}""",
+			"""{"success": true, "rows": [{"UId": "cccccccc-cccc-cccc-cccc-cccccccccccc"}]}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		string savePayload = null;
+		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
+			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_FormPage",
+			Template = TemplateName,
+			PackageName = "Custom",
+			EntitySchemaName = "UsrDemoEntity"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		response.PrimaryDataSourceName.Should().Be("PDS", because: "a template without a data source gets PDS as primary");
+		response.DataSourceName.Should().Be("PDS", because: "PDS is the data source bound to the entity");
+		string body = JObject.Parse(savePayload)["body"]!.ToString();
+		body.Should().StartWith("define(\"UsrDemo_FormPage\"", because: "the page is saved with a full diff-form body");
+		PageParsedSchemaBody parsed = new PageSchemaBodyParser().Parse(body);
+		JArray modelConfigDiff = (JArray)parsed.ModelConfigDiff;
+		modelConfigDiff.ToString().Should().Contain("\"primaryDataSourceName\": \"PDS\"",
+			because: "components bound to the primary data source need it to be named");
+		modelConfigDiff.ToString().Should().Contain("\"entitySchemaName\": \"UsrDemoEntity\"",
+			because: "PDS must be bound to the requested entity");
+	}
+
+	[Test]
+	[Description("A mobile page with entity-schema-name keeps the empty body and says that no data source was added (GH-1839).")]
+	public void TryCreatePage_Does_Not_Seed_Data_Source_For_Mobile_Page() {
+		// Arrange
+		_catalog.FindTemplate("BaseMobilePageTemplate").Returns(new PageTemplateInfo {
+			UId = "a6a776d7-4415-4726-bf63-a1f19edef6e7", Name = "BaseMobilePageTemplate",
+			Title = "Record page mobile", GroupName = "MobilePage", SchemaType = 10
+		});
+		Queue<string> selectResponses = new([
+			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
+			"""{"success": true, "rows": []}""",
+			"""{"success": true, "rows": [{"UId": "cccccccc-cccc-cccc-cccc-cccccccccccc"}]}"""
+		]);
+		_applicationClient.ExecutePostRequest(SelectQueryUrl, Arg.Any<string>())
+			.Returns(_ => selectResponses.Dequeue());
+		_applicationClient.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>())
+			.Returns("""{"success": true}""");
+		string savePayload = null;
+		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
+			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateOptions options = new() {
+			SchemaName = "UsrDemo_MobileFormPage",
+			Template = "BaseMobilePageTemplate",
+			PackageName = "Custom",
+			EntitySchemaName = "UsrDemoEntity"
+		};
+
+		// Act
+		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		JObject.Parse(savePayload)["body"]!.ToString().Should().BeEmpty(
+			because: "mobile bodies are not seeded by create-page");
+		response.PrimaryDataSourceName.Should().BeNull(because: "no data source was added to the mobile page");
+		response.Note.Should().Contain("no data source", because: "the caller must learn the page is not bound");
+	}
+
+	[Test]
 	public void TryCreatePage_Fails_When_Entity_Schema_Missing() {
 		Queue<string> selectResponses = new([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
