@@ -9,7 +9,7 @@ ticket: ENG-96505
 date: 2026-10-15
 ---
 
-**What is true** — read in the package source at tag `crtprocessbuilder-1.6.6.101`
+**What is true** — read in the package source at tag `crtprocessbuilder-1.6.6.102`
 (`FileProcessingVariantRegistry.RegisteredVariants`, `UserTaskElementHandler.RefuseFileProcessingOnGenericRoute`).
 The cut registers ONE Process file variant, `ObjectFileProcessingVariant`, so only `ObjectFileProcessingUserTask`
 is claimed: built with `type: "fileProcessing"` and an `attachments` group, refused on the generic `userTask` route,

@@ -234,7 +234,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-96505 (2026-10-15, the fileProcessing element, Object attachments variant) named the fileProcessing type
 	// and the fileProcessing block (routed to process-files) in create's element list, the block in modify's addElement
 	// and setElement lists, describe's read-back clause with the describe-only members, and moved the floor literal to
-	// 1.6.6.101 - one byte longer in each write contract. It paid by SWAP, per owner decision Q20 (a reviewer-approved
+	// 1.6.6.102 - one byte longer in each write contract. It paid by SWAP, per owner decision Q20 (a reviewer-approved
 	// trim, no ceiling raise), and the first swap cut RULES, not redundancy: create's "A branch on an activity RESULT is
 	// built here too, with flows[].results" (the flows[] clause lists results? but says a conditional flow REQUIRES a
 	// condition) and modify's "the two configurations that build green and change nothing" (the hazard

@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 /// End-to-end coverage for process tracing (ENG-102111) across the three tools that carry it:
 /// <c>create-business-process</c> (<c>isTracing</c>), <c>modify-business-process</c> (<c>setTracing</c>) and
 /// <c>describe-business-process</c> (<c>tracing</c>). NOT in CI — run manually against a reachable sandbox carrying
-/// CrtProcessBuilder 1.6.6.101 or newer (the create and modify floor; tracing itself arrived in 1.6.6.92) and a
+/// CrtProcessBuilder 1.6.6.102 or newer (the create and modify floor; tracing itself arrived in 1.6.6.92) and a
 /// writable "Custom" package. On the version path only the REFUSAL is
 /// exercised end to end - it fires before any clone, so nothing is created; a version can never be deleted, so the
 /// accepted mixed batch stays with the unit tests.
@@ -40,7 +40,7 @@ public sealed class ProcessTracingToolE2ETests {
 	private const string WrittenAgainst = "1.6.6.99";
 
 	[Test]
-	[Description("Over the real MCP path: a process created with isTracing:true is traced - the build warns about what a traced run stores and when the switch turns itself off, and describe reports the tracing block - and a modify carrying ONLY setTracing enabled:false switches it off, after which describe omits the block (ENG-102111). The switch is a platform user property, not schema metadata, so only a describe on a live stand proves it landed. Needs CrtProcessBuilder 1.6.6.101 on the stand, the create and modify floor.")]
+	[Description("Over the real MCP path: a process created with isTracing:true is traced - the build warns about what a traced run stores and when the switch turns itself off, and describe reports the tracing block - and a modify carrying ONLY setTracing enabled:false switches it off, after which describe omits the block (ENG-102111). The switch is a platform user property, not schema metadata, so only a describe on a live stand proves it landed. Needs CrtProcessBuilder 1.6.6.102 on the stand, the create and modify floor.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("create-business-process isTracing switches tracing on and setTracing switches it off")]
 	public async Task Tracing_Should_SwitchOnAtCreate_AndOffWithSetTracing() {
@@ -84,7 +84,7 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: setTracing without 'enabled' is refused with the server's reason and nothing changes (ENG-102111). The process is created TRACED, so a refusal that wrongly switched it off - the misreading of a missing value as false this rule exists to prevent - would show as a missing block. Needs CrtProcessBuilder 1.6.6.101 on the stand, the create and modify floor.")]
+	[Description("Over the real MCP path: setTracing without 'enabled' is refused with the server's reason and nothing changes (ENG-102111). The process is created TRACED, so a refusal that wrongly switched it off - the misreading of a missing value as false this rule exists to prevent - would show as a missing block. Needs CrtProcessBuilder 1.6.6.102 on the stand, the create and modify floor.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process refuses setTracing without enabled")]
 	public async Task SetTracing_Should_BeRefused_WhenEnabledIsMissing() {
@@ -117,7 +117,7 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: modify-business-process-as-new-version refuses a batch made ONLY of setTracing BEFORE anything is cloned, so no version is created, and names modify-business-process (ENG-102111, owner decision): a version made only to flip a switch would be permanent. It also covers the version route without leaving an undeletable version on the stand. Needs CrtProcessBuilder 1.6.6.101 on the stand, the create and modify floor.")]
+	[Description("Over the real MCP path: modify-business-process-as-new-version refuses a batch made ONLY of setTracing BEFORE anything is cloned, so no version is created, and names modify-business-process (ENG-102111, owner decision): a version made only to flip a switch would be permanent. It also covers the version route without leaving an undeletable version on the stand. Needs CrtProcessBuilder 1.6.6.102 on the stand, the create and modify floor.")]
 	[AllureTag(NewVersionToolName)]
 	[AllureName("modify-business-process-as-new-version refuses a setTracing-only batch and creates no version")]
 	public async Task SetTracing_Should_BeRefusedBeforeAVersionExists_OnTheVersionRoute() {
@@ -152,7 +152,7 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path (TC-04): switching on a process that is already traced writes nothing - the answer says so and the switch-off date describe reports does not move (ENG-102111). Needs CrtProcessBuilder 1.6.6.101 on the stand, the create and modify floor.")]
+	[Description("Over the real MCP path (TC-04): switching on a process that is already traced writes nothing - the answer says so and the switch-off date describe reports does not move (ENG-102111). Needs CrtProcessBuilder 1.6.6.102 on the stand, the create and modify floor.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process setTracing on an already traced process writes nothing")]
 	public async Task SetTracing_Should_WriteNothing_WhenTracingIsAlreadyOn() {
@@ -189,7 +189,7 @@ public sealed class ProcessTracingToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path (TC-06): an edit and setTracing travel in ONE modify-business-process batch - the edit is saved, the switch is written after it, and the answer carries the tracing warning (ENG-102111). Needs CrtProcessBuilder 1.6.6.101 on the stand, the create and modify floor.")]
+	[Description("Over the real MCP path (TC-06): an edit and setTracing travel in ONE modify-business-process batch - the edit is saved, the switch is written after it, and the answer carries the tracing warning (ENG-102111). Needs CrtProcessBuilder 1.6.6.102 on the stand, the create and modify floor.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process saves an edit and switches tracing in one batch")]
 	public async Task SetTracing_Should_SwitchAfterTheEdit_WhenTheBatchAlsoEditsTheProcess() {

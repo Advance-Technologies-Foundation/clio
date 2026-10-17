@@ -9,7 +9,7 @@ ticket: ENG-96505
 date: 2026-10-15
 ---
 
-**What is true** — read in the package source at tag `crtprocessbuilder-1.6.6.101`:
+**What is true** — read in the package source at tag `crtprocessbuilder-1.6.6.102`:
 `ProcessDesignConstants.FileProcessing.SysFileStorageSupported = false`, the `NotSupportedException` in
 `AttachmentStorageResolver.SysFileMode`, and `FileProcessingBlockDescriber.SysFileIssue`. An object with no
 attachment object of its own (the designer's SysFile case, `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md`)

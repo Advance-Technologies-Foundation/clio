@@ -462,7 +462,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back and the describe-only members to remove before resubmitting (ENG-96505): CrtProcessBuilder 1.6.6.101 reports actionStored, outputs, issues and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
+	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back and the describe-only members to remove before resubmitting (ENG-96505): CrtProcessBuilder 1.6.6.102 reports actionStored, outputs, issues and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
 	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();

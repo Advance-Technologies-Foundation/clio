@@ -428,7 +428,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.101 (for isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.102 (for isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
@@ -457,7 +457,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias) and its fileProcessing block, and routes the block to process-files (ENG-96505); its prompt says the group is the variant and that a generic userTask naming ObjectFileProcessingUserTask is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask CrtProcessBuilder 1.6.6.101 refuses.")]
+	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias) and its fileProcessing block, and routes the block to process-files (ENG-96505); its prompt says the group is the variant and that a generic userTask naming ObjectFileProcessingUserTask is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask CrtProcessBuilder 1.6.6.102 refuses.")]
 	public void CreateBusinessProcessTool_ShouldOfferTheFileProcessingElementAndRouteToItsGuide() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)
