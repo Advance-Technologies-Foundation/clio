@@ -22,6 +22,12 @@ DESCRIPTION
     directly, bypassing name resolution). --full-hierarchy additionally returns
     the localizable strings merged across the full inheritance/package hierarchy.
 
+    caption holds one culture's text: the connected user's profile culture,
+    else en-US, else the first culture the designer service returned. A culture
+    in which the schema has no caption of its own can carry a caption from
+    another schema in its hierarchy (for example the page template), so read
+    per-culture texts from the localizable strings rather than from caption.
+
     When --output-file is set, the schema body is written to the specified file
     and the body field is omitted from the response JSON printed to stdout.
 

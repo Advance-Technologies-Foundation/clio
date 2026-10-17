@@ -109,3 +109,24 @@ public sealed class CaptionCultureResolver : ICaptionCultureResolver {
 		return EntitySchemaDesignerSupport.DefaultCultureName;
 	}
 }
+
+/// <summary>
+/// The read-path rule shared by the schema read commands (get-client-unit-schema, get-schema, get-sql-schema,
+/// get-classic-page-sources) for the culture a returned caption is picked in.
+/// </summary>
+public static class CaptionCultureResolverExtensions {
+	/// <summary>
+	/// Returns the profile culture of the environment a read command is bound to, or <c>null</c> when the command
+	/// has no environment settings (the caption then falls back to <c>en-US</c>).
+	/// </summary>
+	/// <remarks>
+	/// Takes the injected <see cref="EnvironmentSettings"/>, not the command options: an mcp-http passthrough
+	/// request carries its tenant in the container's settings and no environment name, so a name-based lookup
+	/// would read the culture of the host's active environment instead of the tenant's.
+	/// </remarks>
+	/// <param name="resolver">The caption culture resolver.</param>
+	/// <param name="settings">The environment settings the command was constructed with; may be <c>null</c>.</param>
+	/// <returns>The profile culture name, or <c>null</c> when <paramref name="settings"/> is <c>null</c>.</returns>
+	public static string ResolveOrDefault(this ICaptionCultureResolver resolver, EnvironmentSettings settings) =>
+		settings is null ? null : resolver.Resolve(settings, null);
+}

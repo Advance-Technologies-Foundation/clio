@@ -462,19 +462,92 @@ internal class PageBodyAstLinterTests {
 	#region Tests: behavioural warnings (non-blocking severity)
 
 	[Test]
-	[Description("`request.$context.executeRequest({ ... })` raises a handler-uses-context-execute-request Warning — Creatio Academy SCHEMA_HANDLERS examples use `sdk.HandlerChainService.instance.process(...)`, executeRequest is not part of the documented @creatio-devkit/common public surface")]
+	[Description("`request.$context.executeRequest({ ... })` raises a handler-uses-context-execute-request Warning whose message says the call works and that `scopes` must be kept when it is converted to `sdk.HandlerChainService.instance.process(...)`")]
 	public void Lint_ShouldEmitWarning_WhenHandlerUsesContextExecuteRequest() {
+		// Arrange
 		string body =
 			"define(\"X\", [], function() { return { handlers: [{ " +
 			"request: \"crt.HandleViewModelInitRequest\", " +
 			"handler: async function(request, next) { await request.$context.executeRequest({ type: \"crt.OpenPageRequest\" }); return next?.handle(request); } }], " +
 			"converters: {}, validators: {} }; });";
 
+		// Act
 		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
 
-		findings.Should().ContainSingle(f =>
+		// Assert
+		PageBodyLintFinding finding = findings.Should().ContainSingle(f =>
 			f.Rule == PageBodyAstLinter.RuleHandlerUsesContextExecuteRequest && f.Severity == LintSeverity.Warning,
-			because: "Academy uniformly uses `sdk.HandlerChainService.instance.process(...)` in SCHEMA_HANDLERS examples; `request.$context.executeRequest(...)` is reachable but undocumented and may break across minor versions");
+			because: "executeRequest is not declared in the typed @creatio-devkit/common surface, and Academy SCHEMA_HANDLERS examples use `sdk.HandlerChainService.instance.process(...)`").Subject;
+		finding.Message.Should().Contain("works",
+			because: "the call dispatches through the same handler chain and fills in the page scopes, so the message must not push an agent to rewrite working code as broken");
+		finding.Message.Should().Contain("scopes: [...request.scopes]",
+			because: "converting executeRequest to process(...) without scopes silently skips the page's own handlers, so the suggested replacement must carry scopes");
+	}
+
+	[TestCase("sdk.HandlerChainService.instance.process", Description = "Namespace import bound as sdk")]
+	[TestCase("HandlerChainService.instance.process", Description = "Destructured HandlerChainService import")]
+	[Description("`HandlerChainService.instance.process({ ... })` whose object literal has no `scopes` raises a handler-process-without-scopes Warning: page SCHEMA_HANDLERS are registered with the page's scope, so such a call never reaches them")]
+	public void Lint_ShouldEmitWarning_WhenHandlerChainServiceProcessHasNoScopes(string processCall) {
+		// Arrange
+		string body =
+			"define(\"X\", [\"@creatio-devkit/common\"], function(sdk) { return { handlers: [{ " +
+			"request: \"usr.RunRequest\", " +
+			$"handler: async (request, next) => {{ await {processCall}({{ type: \"usr.TargetRequest\", $context: request.$context }}); return next?.handle(request); }} }}], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		PageBodyLintFinding finding = findings.Should().ContainSingle(f =>
+			f.Rule == PageBodyAstLinter.RuleHandlerProcessWithoutScopes && f.Severity == LintSeverity.Warning,
+			because: "a request without scopes reaches only handlers registered without scopes, so the page handler for usr.TargetRequest is skipped and the call resolves to undefined without error").Subject;
+		finding.Message.Should().Contain("scopes: [...request.scopes]",
+			because: "the warning must name the fix an agent can apply");
+		finding.Message.Should().Contain("may be skipped",
+			because: "a call whose target is handled only by unscoped platform handlers works, so the message must not claim the handler is always skipped");
+	}
+
+	[TestCase("{ type: \"usr.TargetRequest\", $context: request.$context, scopes: [...request.scopes] }", Description = "Explicit scopes property")]
+	[TestCase("{ type: \"usr.TargetRequest\", $context: request.$context, \"scopes\": request.scopes }", Description = "Quoted scopes key")]
+	[TestCase("{ ...request, type: \"usr.TargetRequest\" }", Description = "Spread may carry scopes")]
+	[TestCase("{ type: \"usr.TargetRequest\", [key]: value }", Description = "Computed key may be scopes")]
+	[TestCase("forwardedRequest", Description = "Non-literal argument is not read")]
+	[Description("`HandlerChainService.instance.process(...)` does NOT raise handler-process-without-scopes when the literal carries `scopes`, or when the linter cannot tell (spread, computed key, request built in a variable)")]
+	public void Lint_ShouldNotWarn_WhenHandlerChainServiceProcessScopesPresentOrUnknown(string argument) {
+		// Arrange
+		string body =
+			"define(\"X\", [\"@creatio-devkit/common\"], function(sdk) { return { handlers: [{ " +
+			"request: \"usr.RunRequest\", " +
+			$"handler: async (request, next) => {{ const key = \"k\"; const value = 1; const forwardedRequest = request; await sdk.HandlerChainService.instance.process({argument}); return next?.handle(request); }} }}], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerProcessWithoutScopes,
+			because: "the rule fires only when an object literal provably lacks scopes; anything that may carry them must not be flagged");
+	}
+
+	[TestCase("chain.process({ type: \"usr.TargetRequest\", $context: request.$context })", Description = "Aliased instance is out of scope")]
+	[TestCase("sdk.Other.instance.process({ type: \"usr.TargetRequest\" })", Description = "Another service's instance.process")]
+	[TestCase("sdk.HandlerChainService.instance.register({ type: \"usr.TargetRequest\" })", Description = "Another HandlerChainService method")]
+	[Description("handler-process-without-scopes matches only a direct `HandlerChainService.instance.process` call: an aliased instance and unrelated `instance.process` / other methods are not flagged")]
+	public void Lint_ShouldNotWarn_WhenCallIsNotDirectHandlerChainServiceProcess(string call) {
+		// Arrange
+		string body =
+			"define(\"X\", [\"@creatio-devkit/common\"], function(sdk) { return { handlers: [{ " +
+			"request: \"usr.RunRequest\", " +
+			$"handler: async (request, next) => {{ const chain = sdk.HandlerChainService.instance; await {call}; return next?.handle(request); }} }}], " +
+			"converters: {}, validators: {} }; });";
+
+		// Act
+		IReadOnlyList<PageBodyLintFinding> findings = LintBody(body);
+
+		// Assert
+		findings.Should().NotContain(f => f.Rule == PageBodyAstLinter.RuleHandlerProcessWithoutScopes,
+			because: "following an alias needs data-flow analysis (the same accepted limitation as the executeRequest rule), and other services or methods are not handler dispatch");
 	}
 
 	[Test]

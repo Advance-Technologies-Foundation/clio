@@ -2449,6 +2449,37 @@ public sealed class ToolContractGetToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Advertises the inherited lookup override on create-entity-schema columns and sync-schemas operations, and not on create-lookup columns.")]
+	public void ToolContractGet_Should_Advertise_Inherited_Lookup_Override_Only_Where_It_Applies() {
+		// Arrange
+		ToolContractGetTool tool = new();
+		string[] requestedTools = [
+			SchemaSyncTool.ToolName,
+			CreateLookupTool.CreateLookupToolName,
+			CreateEntitySchemaTool.CreateEntitySchemaToolName
+		];
+
+		// Act
+		ToolContractGetResponse result = tool.GetToolContracts(new ToolContractGetArgs(requestedTools, ToolContractShortForm.FullDetail));
+
+		// Assert
+		result.Success.Should().BeTrue(because: "all three schema contracts should be served");
+		string FieldDescription(string toolName, string fieldName) => result.Tools!
+			.Single(contract => contract.Name == toolName)
+			.InputSchema.Properties.Single(field => field.Name == fieldName).Description;
+		FieldDescription(CreateEntitySchemaTool.CreateEntitySchemaToolName, "columns")
+			.Should().Contain("`override: true`",
+				because: "create-entity-schema columns must name the flag that redirects an inherited lookup");
+		FieldDescription(CreateLookupTool.CreateLookupToolName, "columns")
+			.Should().NotContain("override",
+				because: "a create-lookup schema has a BaseLookup parent, so the override does not apply to it");
+		FieldDescription(SchemaSyncTool.ToolName, "operations")
+			.Should().Contain("create-entity `columns` item with `override: true`",
+				because: "sync-schemas create-entity accepts the same override column as create-entity-schema");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Returns the full canonical entity-schema contract surface with authoritative flows and metadata from clio.")]
 	public void ToolContractGet_Should_Return_Canonical_EntitySchema_Surface() {
 		// Arrange

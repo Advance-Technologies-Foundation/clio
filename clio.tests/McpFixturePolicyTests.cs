@@ -118,6 +118,7 @@ public sealed class McpFixturePolicyTests {
 	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldReadBackDateTime_WhenTemporalAliasesAreWritten))]
 	[TestCase(typeof(SchemaSyncToolE2ETests), nameof(SchemaSyncToolE2ETests.SchemaSync_ShouldPersistDbView_WhenCreatedAndReplayed))]
 	[TestCase(typeof(EntitySchemaToolE2ETests), nameof(EntitySchemaToolE2ETests.EntitySchema_ShouldPersistDbView_WhenCreatedAndUpdated))]
+	[TestCase(typeof(EntitySchemaToolE2ETests), nameof(EntitySchemaToolE2ETests.CreateEntitySchema_Should_Override_Inherited_Folder_And_Refuse_Unrelated_Target))]
 	[Description("Keeps schema-publishing probes explicit and manual without disabling shared fixtures automatic tests.")]
 	public void PublishingProbe_ShouldStayExplicitAndManual_WhenSharingAnAutomaticFixture(Type fixture, string methodName) {
 		// Arrange

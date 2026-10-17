@@ -53,7 +53,12 @@ public static class EntitySchemaPrompt {
 		 and `EmailAddress` can be used as an alias for `Email`. For an image/photo field shown with the
 		 `crt.ImageInput` component, use `ImageLookup` ("Image link"), NOT the binary `Image` type. `ImageLookup` references the `SysImage` schema automatically,
 		 so do not pass `reference-schema-name` for it. For `Lookup` columns,
-		 provide `reference-schema-name`. Current clio entity-schema tools are part of the canonical clio MCP
+		 provide `reference-schema-name`. A column whose name the parent schema already has is refused unless it
+		 sets `override: true`, which redirects that inherited Lookup to `reference-schema-name` instead of adding
+		 a column (for example Folder of a BaseItemInFolder child -> the entity's folder schema); send only
+		 `name`, `override`, `reference-schema-name` and optionally `title-localizations`. The parent must be
+		 virtual, the schema must not replace its parent, and the target must be a non-virtual schema that
+		 inherits from the column's reference in the parent schema. Current clio entity-schema tools are part of the canonical clio MCP
 		 contract, so keep using `create-entity-schema` instead of frontend-only names like `entity.create`.
 		 For broader app-modeling guardrails, call `{GuidanceGetTool.ToolName}` with `name` set to `app-modeling`.
 		 When the caller needs richer metadata, each `columns` item can also include `required`,
@@ -147,8 +152,10 @@ public static class EntitySchemaPrompt {
 		 `is-required` for `required`.
 		 Do not send legacy scalar `description`, and do not translate the payload into frontend
 		 `entity.update.operationsJson`.
-		 A `modify` operation on an INHERITED column may override ONLY its caption/description
-		 (`title-localizations` / `description-localizations`); changing its name, type, or flags is rejected and
+		 A `modify` operation on an INHERITED column may override only its caption/description
+		 (`title-localizations` / `description-localizations`), and on an inherited Lookup its
+		 `reference-schema-name` when the parent is virtual, the schema does not replace its parent, and the target
+		 inherits from the column's reference in the parent schema; changing its name, type, or flags is rejected and
 		 stops the batch on that operation.
 		 `title-localizations` is OPTIONAL for an `add` operation; when omitted, `en-US` is auto-derived from a
 		 scalar title/caption or the column name. Provide `title-localizations` for a proper caption; the `en-US`
@@ -285,7 +292,9 @@ public static class EntitySchemaPrompt {
 		 rejected, use a key like `uk-UA`); for `Lookup`, also supply `reference-schema-name`. For
 		 `modify`, include only the fields that should change, using `title-localizations` and
 		 `description-localizations` instead of legacy scalar `title` or `description`. For an INHERITED column,
-		 `modify` may override ONLY its caption/description; its name, type, and flags are read-only and it cannot
+		 `modify` may override only its caption/description, and on an inherited Lookup its
+		 `reference-schema-name` when the parent is virtual, the schema does not replace its parent, and the target
+		 inherits from the column's reference in the parent schema; its name, type, and flags are read-only and it cannot
 		 be removed. For `remove`, do not pass property-change options. Use this tool for a single-column mutation. For ordered
 		 multi-column updates, prefer `{UpdateEntitySchemaTool.UpdateEntitySchemaToolName}`. The tool accepts
 		 frontend-style type aliases such as `ShortText`, `Float`, `Date`, and `Time`. For default values,

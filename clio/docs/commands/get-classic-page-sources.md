@@ -101,9 +101,10 @@ and, when resolvable, `seed`, `entity`, `entityColumns`, `columnTitles`, `resour
   `childPageSchemas` manifest carries its own `resourceStrings` the same way, and no flat `resources`; when a
   child page's strings cannot be loaded, its manifest omits `resourceStrings` and a warning names the child page.
 - Each `detailSchemas` entry carries `body` (the top layer's), `title`, and `resourceStrings`: the detail's strings
-  merged across its layers, in every culture. `title` is the detail schema's internal caption, not the title the
-  page shows; Classic takes that title from the page's `captionName` resource, then the page's
-  `<Detail>DetailCaptionOnPage` resource, then the detail's own `Caption` string.
+  merged across its layers, in every culture. `title` is the detail schema's internal caption (in the user's
+  profile culture, else `en-US`), not the title the page shows; Classic takes that title from the page's
+  `captionName` resource, then the page's `<Detail>DetailCaptionOnPage` resource, then the detail's own `Caption`
+  string.
 - Each `detailSchemas` entry also carries `bodies`: every replacing layer of the detail, base->top, as
   `[{ "pkg": "…", "body": "…" }]`, each with that layer's own body (the last item is the top layer). A lower layer
   can declare behavior the top layer does not repeat, so read `bodies` to see the whole detail. When any layer of
