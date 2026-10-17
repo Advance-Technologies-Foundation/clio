@@ -82,8 +82,24 @@ public sealed class PageEntityDataSourceSeederTests {
 	}
 
 	[Test]
-	[Description("An unreadable template hierarchy falls back to a primary PDS and says so instead of failing page creation.")]
-	public void BuildSeed_FallsBackWithWarning_WhenHierarchyCannotBeRead() {
+	[Description("A template data source without a config object gets the entity through a merge on the data source itself, because a merge into a missing path is skipped.")]
+	public void BuildFromTemplateModelConfig_MergesConfigIntoDataSource_WhenTemplateSourceHasNoConfig() {
+		// Arrange
+		JsonObject modelConfig = JsonNode.Parse("""{"dataSources":{"PDS":{"scope":"viewElement"}}}""")!.AsObject();
+
+		// Act
+		PageEntityDataSourceSeed seed = PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(modelConfig, Entity);
+
+		// Assert
+		seed.ModelConfigDiff[0]["path"].Should().BeEquivalentTo(new JArray("dataSources", "PDS"),
+			because: "the data source exists, its config does not");
+		seed.ModelConfigDiff[0]["values"]!["config"]!["entitySchemaName"]!.ToString().Should().Be(Entity,
+			because: "the config object is created by the merge with the entity inside it");
+	}
+
+	[Test]
+	[Description("An unreadable template hierarchy binds no data source and says so instead of guessing a shape or failing page creation.")]
+	public void BuildSeed_BindsNothingWithWarning_WhenHierarchyCannotBeRead() {
 		// Arrange
 		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
 		hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
@@ -95,7 +111,9 @@ public sealed class PageEntityDataSourceSeederTests {
 		PageEntityDataSourceSeed seed = seeder.BuildSeed("tpl-uid", "pkg-uid", Entity);
 
 		// Assert
-		seed.DataSourceName.Should().Be("PDS", because: "the default record-page shape is the safe fallback");
+		seed.ModelConfigDiff.Should().BeEmpty(
+			because: "a blind primary PDS would turn the list template's viewElement PDS into a page-scoped primary source");
+		seed.DataSourceName.Should().BeNull(because: "nothing was bound");
 		seed.Warning.Should().Contain("designer down", because: "the caller must learn the template was not inspected");
 	}
 

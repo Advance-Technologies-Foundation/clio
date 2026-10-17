@@ -152,6 +152,8 @@ namespace Clio.Command {
 					// every field, crt.Connections and the template's #DataSourceEntityName()# macro showed nothing.
 					dataSourceSeed = _dataSourceSeeder?.BuildSeed(template.UId, packageUId, options.EntitySchemaName)
 						?? PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(null, options.EntitySchemaName);
+				}
+				if (dataSourceSeed is { ModelConfigDiff.Count: > 0 }) {
 					body = PageUpdateCommand.BuildEmptyReplacingBody(options.SchemaName, PageSchemaType.Web)
 						.Replace("/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
 							"/**SCHEMA_MODEL_CONFIG_DIFF*/"
@@ -193,6 +195,7 @@ namespace Clio.Command {
 					Note = dataSourceSeed?.Warning
 				};
 				if (hasEntity && dataSourceSeed is null) {
+					// Mobile: the seeder is not consulted.
 					response.Note = "Mobile page: the entity is recorded in the page dependencies only; no data source "
 						+ "was added. Bind it with update-page.";
 				}
@@ -226,7 +229,7 @@ namespace Clio.Command {
 				response.WillCreateReplacingInDesignPackage = true;
 				string note = $"Chosen package '{response.PackageName}' is not the app's design package "
 					+ $"(uId={designPackageUId}). A subsequent update-page WITHOUT target-schema-uid would create a "
-					+ $"replacing schema in the design package and leave this schema empty"
+					+ $"replacing schema in the design package and write the body there instead of into this schema"
 					+ (PageSchemaTypeExtensions.FromNumericValue(response.SchemaType) == PageSchemaType.Mobile
 						? " (an empty mobile page crashes the Creatio Mobile app)" : "")
 					+ $". Pass target-schema-uid={newSchemaUId} on update-page to write into this schema.";

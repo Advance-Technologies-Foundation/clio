@@ -18,7 +18,8 @@ the exception: it declares `PDS` itself, as a `viewElement` list source, and sto
 `PageEntityDataSourceSeeder` reads the template's merged `modelConfig` and picks one of three shapes:
 bind the template's named primary, bind the list `PDS` without making it primary, or add a primary `PDS`.
 A template with no `dataSources` object gets the last shape as one root `merge` (see
-`a-config-merge-into-a-missing-path-is-skipped.md`). Mobile pages are not seeded.
+`a-config-merge-into-a-missing-path-is-skipped.md`). Mobile pages are not seeded, and a template that
+cannot be read binds nothing (a blind guess could make the list `PDS` primary); both say so in `note`.
 
 A page `create-page` makes WITHOUT an entity is still saved with `body: ""`. `get-page` shows a
 synthesized empty scaffold for it, so the empty stored body is invisible from the read side.

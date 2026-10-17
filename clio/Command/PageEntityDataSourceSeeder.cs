@@ -10,12 +10,12 @@ using Newtonsoft.Json.Linq;
 /// The <c>modelConfigDiff</c> operations that bind a new page to its entity, and what they bind.
 /// </summary>
 /// <param name="ModelConfigDiff">Operations to put into the new page body.</param>
-/// <param name="DataSourceName">The data source the operations bind to the entity.</param>
+/// <param name="DataSourceName">The data source the operations bind to the entity; <see langword="null"/> when none.</param>
 /// <param name="IsPrimary">Whether that data source is the page's primary data source.</param>
 /// <param name="Warning">Why the template could not be inspected, when the default shape was used blind.</param>
 public sealed record PageEntityDataSourceSeed(
 	JArray ModelConfigDiff,
-	string DataSourceName,
+	string? DataSourceName,
 	bool IsPrimary,
 	string? Warning);
 
@@ -32,8 +32,8 @@ public interface IPageEntityDataSourceSeeder {
 	/// source bound to the entity; one that declares a <c>PDS</c> without making it primary (the list page
 	/// template, whose <c>PDS</c> is a <c>viewElement</c> list source) gets <c>PDS</c> bound; any other template
 	/// gets a page-scoped <c>PDS</c> that becomes the primary data source, as on stock record pages.
-	/// A template that cannot be read falls back to the last shape and says so in
-	/// <see cref="PageEntityDataSourceSeed.Warning"/>; it never fails page creation.
+	/// A template that cannot be read gets no operations and a <see cref="PageEntityDataSourceSeed.Warning"/>;
+	/// it never fails page creation.
 	/// </remarks>
 	/// <param name="templateUId">Template (parent) schema identifier.</param>
 	/// <param name="packageUId">Package the page is created in.</param>
@@ -61,11 +61,11 @@ internal sealed class PageEntityDataSourceSeeder(
 				.ToList();
 			templateModelConfig = bundleBuilder.Build(parts).ModelConfig;
 		} catch (Exception ex) {
-			PageEntityDataSourceSeed fallback = BuildFromTemplateModelConfig(null, entitySchemaName);
-			return fallback with {
-				Warning = $"Could not read the template's model config ({ex.Message}); bound a new page-scoped "
-					+ $"'{DefaultDataSourceName}' as the primary data source."
-			};
+			// Guessing the shape blind could turn the list template's viewElement PDS into a page-scoped primary
+			// source, so an unreadable template binds nothing and says so.
+			return new PageEntityDataSourceSeed(new JArray(), null, false,
+				$"Could not read the template's model config ({ex.Message}); no data source was bound to "
+				+ $"'{entitySchemaName}' - the entity is recorded in the page dependencies only. Bind it with update-page.");
 		}
 		return BuildFromTemplateModelConfig(templateModelConfig, entitySchemaName);
 	}
@@ -79,13 +79,18 @@ internal sealed class PageEntityDataSourceSeeder(
 		string? primary = (templateModelConfig?["primaryDataSourceName"] as JsonValue)?.TryGetValue(out string? name) == true
 			? name
 			: null;
-		if (!string.IsNullOrWhiteSpace(primary) && dataSources?[primary] is JsonObject) {
-			return new PageEntityDataSourceSeed(BindExisting(primary, entitySchemaName), primary, true, null);
-		}
-		if (string.IsNullOrWhiteSpace(primary) && dataSources?[DefaultDataSourceName] is JsonObject) {
+		if (!string.IsNullOrWhiteSpace(primary) && dataSources?[primary] is JsonObject primarySource) {
 			return new PageEntityDataSourceSeed(
-				BindExisting(DefaultDataSourceName, entitySchemaName), DefaultDataSourceName, false, null);
+				BindExisting(primary, primarySource, entitySchemaName), primary, true, null);
 		}
+		if (string.IsNullOrWhiteSpace(primary) && dataSources?[DefaultDataSourceName] is JsonObject listSource) {
+			return new PageEntityDataSourceSeed(
+				BindExisting(DefaultDataSourceName, listSource, entitySchemaName), DefaultDataSourceName, false, null);
+		}
+		string? warning = string.IsNullOrWhiteSpace(primary)
+			? null
+			: $"The template names primary data source '{primary}' but does not declare it; "
+				+ $"'{DefaultDataSourceName}' was added and made primary instead.";
 		var pageDataSource = new JObject {
 			["type"] = "crt.EntityDataSource",
 			["scope"] = "page",
@@ -114,13 +119,20 @@ internal sealed class PageEntityDataSourceSeeder(
 					["path"] = new JArray("dataSources"),
 					["values"] = new JObject { [DefaultDataSourceName] = pageDataSource }
 				});
-		return new PageEntityDataSourceSeed(operations, DefaultDataSourceName, true, null);
+		return new PageEntityDataSourceSeed(operations, DefaultDataSourceName, true, warning);
 	}
 
-	private static JArray BindExisting(string dataSourceName, string entitySchemaName) =>
-		new(new JObject {
-			["operation"] = "merge",
-			["path"] = new JArray("dataSources", dataSourceName, "config"),
-			["values"] = new JObject { ["entitySchemaName"] = entitySchemaName }
-		});
+	// A merge into a missing path is skipped, so the entity goes into `config` only when the source has one.
+	private static JArray BindExisting(string dataSourceName, JsonObject dataSource, string entitySchemaName) =>
+		dataSource["config"] is JsonObject
+			? new JArray(new JObject {
+				["operation"] = "merge",
+				["path"] = new JArray("dataSources", dataSourceName, "config"),
+				["values"] = new JObject { ["entitySchemaName"] = entitySchemaName }
+			})
+			: new JArray(new JObject {
+				["operation"] = "merge",
+				["path"] = new JArray("dataSources", dataSourceName),
+				["values"] = new JObject { ["config"] = new JObject { ["entitySchemaName"] = entitySchemaName } }
+			});
 }

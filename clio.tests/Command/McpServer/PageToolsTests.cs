@@ -5660,6 +5660,22 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("PageBodyMerger: a whitespace-only handlers array counts as empty, so a stored body without the handlers marker pair does not reject the fragment (GH-1839)")]
+	public void PageBodyMerger_Should_Treat_Whitespace_Handlers_As_Empty() {
+		// Arrange
+		string currentBody = "/**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/ " +
+			"/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+		string incomingBody = "/**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"a\":1}}]/**SCHEMA_MODEL_CONFIG_DIFF*/ " +
+			"/**SCHEMA_HANDLERS*/[ \n ]/**SCHEMA_HANDLERS*/";
+
+		// Act
+		string merged = PageBodyMerger.Merge(currentBody, incomingBody);
+
+		// Assert
+		merged.Should().Contain("\"a\": 1", because: "the modelConfigDiff entry is appended and the empty handlers array carries nothing to lose");
+	}
+
+	[Test]
 	[Description("PageBodyMerger: incoming modelConfigDiff against a stored body without that marker pair is rejected, not silently dropped (GH-1839)")]
 	public void PageBodyMerger_Should_Reject_ModelConfigDiff_When_Current_Body_Lacks_Its_Marker_Pair() {
 		// Arrange

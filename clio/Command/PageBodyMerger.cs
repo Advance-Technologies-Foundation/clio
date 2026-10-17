@@ -336,13 +336,14 @@ internal static class PageBodyMerger {
 	/// Rejection for an append fragment that contributes nothing to any section (GH-1839).
 	/// </summary>
 	internal const string NothingToAppendMessage =
-		"The append fragment contributes no operation: every section in it is empty, so the merge would save the page "
+		"The append fragment contributes no operation: every section append merges (viewConfigDiff, viewModelConfigDiff, "
+		+ "modelConfigDiff, handlers, converters, validators) is empty or missing, so the merge would save the page "
 		+ "unchanged. Put the new operations INSIDE their marker pairs, for example "
 		+ "modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[ ... ]/**SCHEMA_MODEL_CONFIG_DIFF*/.";
 
 	private static bool IsEmptyRawSection(string raw) {
-		string trimmed = raw?.Trim();
-		return string.IsNullOrEmpty(trimmed) || trimmed == "[]" || trimmed == "{}";
+		string compact = raw is null ? string.Empty : string.Concat(raw.Where(c => !char.IsWhiteSpace(c)));
+		return compact.Length == 0 || compact == "[]" || compact == "{}";
 	}
 
 	private static string ReplaceSectionOrThrow(string body, string marker, string newContent, bool incomingHasContent) {
