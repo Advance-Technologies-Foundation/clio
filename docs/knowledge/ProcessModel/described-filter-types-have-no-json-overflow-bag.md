@@ -3,7 +3,7 @@ description: this record OWNS which Described* types in IProcessDescriber.cs car
 applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
 ticket: ENG-91842
-date: 2026-10-09
+date: 2026-10-15
 ---
 
 **What is true** — `describe-business-process` deserializes the server payload into the
@@ -12,8 +12,9 @@ per-kind configuration blocks each hold a `[JsonExtensionData]` overflow bag, so
 survives the round trip. **Counted against the file, not remembered** — this membership has now gone
 stale TWICE, and both times in a record whose whole point is that the list goes stale - and a third
 time between ENG-92707 and ENG-102111, when six bagged types arrived and none was added here.
-**Recounted at ENG-102111 (2026-10-09) by `[JsonExtensionData]` attribute lines, not by mentions in
-comments: 21 types carry a bag, 9 do not.** The 9 exclude `ServerProcessDescriber`, which is the
+**Recounted at ENG-96505 (2026-10-15) by `[JsonExtensionData]` attribute lines, not by mentions in
+comments: 27 types carry a bag, 9 do not** (21 at ENG-102111; the six new ones are the
+`fileProcessing` block's). The 9 exclude `ServerProcessDescriber`, which is the
 reader rather than a DTO, and the identity and wire helpers `ProcessIdentity`, `ResolvedIdentity`,
 `DescribeProcessResultEnvelope` and `DescribeProcessWireResult`, which this record does not classify.
 
@@ -22,7 +23,8 @@ reader rather than a DTO, and the identity and wire helpers `ProcessIdentity`, `
   `DescribedPerformer`, `DescribedApproval`, `DescribedSubProcess` (+ `DescribedMultiInstanceOptions`),
   `DescribedOpenEditPage` (+ `ResultsByColumn`, `LogActivity`, `ActivityInterval`),
   `DescribedPreconfiguredPage` (+ `Performer`, `DataSource`, `Button`), `DescribedFormula`
-  (+ `DescribedFormulaTarget`), `DescribedScriptTask`, `DescribedUsing`
+  (+ `DescribedFormulaTarget`), `DescribedScriptTask`, `DescribedUsing`, `DescribedFileProcessing`
+  (+ `Attachments`, `Sort`, `SaveTo`, `ValueSource`, `Output`)
 - **no bag, still dropped in silence:** `DescribedFilter`, `DescribedFilterGroup`,
   `DescribedFilterCondition`, `DescribedFilterElementRef`, `DescribedConnection`,
   `DescribedSignal`, `DescribedParameter`, `DescribedProcessTracing` (the `tracing` block: a field the

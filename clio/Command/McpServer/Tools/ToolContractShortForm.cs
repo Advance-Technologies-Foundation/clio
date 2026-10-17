@@ -84,7 +84,7 @@ internal static class ToolContractShortForm {
 	internal static readonly IReadOnlyList<string> CreateElementBlockShape = [
 		"signal (signalStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
 		"email (sendEmail)", "performer (performTask)", "approval", "openEditPage", "preconfiguredPage",
-		"formula (formulaTask)", "subProcess", "scriptTask"
+		"formula (formulaTask)", "subProcess", "scriptTask", "fileProcessing"
 	];
 
 	/// <summary>The flow fields: every member of the bundled server's flow descriptor, under the drift test.</summary>

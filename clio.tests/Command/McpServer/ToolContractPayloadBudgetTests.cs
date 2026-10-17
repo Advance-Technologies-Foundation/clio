@@ -230,6 +230,24 @@ public sealed class ToolContractPayloadBudgetTests {
 	// states itself, and create dropped the member list "{enabled, executionMode, ignoreErrors}" from its floor
 	// clause, as modify had already done. Re-measured by lowering the ceiling: modify-business-process 35053,
 	// create-business-process 35007, describe-business-process 34195 - 19 and 65 bytes of headroom.
+	//
+	// ENG-96505 (2026-10-15, the fileProcessing element, Object attachments variant) named the fileProcessing type
+	// and the fileProcessing block (routed to process-files) in create's element list, the block in modify's addElement
+	// and setElement lists, describe's read-back clause with the describe-only members, and moved the floor literal to
+	// 1.6.6.102 - one byte longer in each write contract. It paid by SWAP, per owner decision Q20 (a reviewer-approved
+	// trim, no ceiling raise), and the first swap cut RULES, not redundancy: create's "A branch on an activity RESULT is
+	// built here too, with flows[].results" (the flows[] clause lists results? but says a conditional flow REQUIRES a
+	// condition) and modify's "the two configurations that build green and change nothing" (the hazard
+	// docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md requires every description to
+	// keep). The gate review restored both, compactly, and both are now pinned by a unit test. Create paid with
+	// redundancy: "The MODIFY path expands names in a condition too." (modify's own contract states its rule), a second
+	// "because on create the UIds do not exist yet" in the formula paragraph (the flows[].condition clause it points
+	// to gives the same reason) and "accessRights by name=process-access-rights;" in the closing guide list (the
+	// accessRights? clause already routes there). Modify paid with headroom, also for naming ObjectFileProcessingUserTask
+	// among the tasks a generic userTask is refused for; describe gained "(clio warns and ignores them if sent back)".
+	// Re-measured by lowering the ceiling: create-business-process 35051, modify-business-process 35045,
+	// describe-business-process 34647 - 21, 27 and 425 bytes of headroom (create leaves its never-emitted processFile
+	// alias out). The next sentence on either write contract needs a swap.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -242,6 +260,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 1 KB here - and keeps fitting conservative. ENG-102797 spends that difference: the short create- and
 	// modify-business-process contracts carry their call shapes, so Fit's measure of this bundle stays over
 	// 18 432 even all short (pinned below) while the reply the agent receives stays inline.
+	//
+	// ENG-96505 added "fileProcessing" to the create call shape's block list, which is never cut: 17 bytes, taking
+	// the bundle from 18986 to 19003 on the wire. Paid by a reviewer-approved trim of kept short-form text (Q20):
+	// modify-business-process-as-new-version's permanence sentence, kept by its safety marker, lost its opening
+	// "Note that " (10 bytes). The gate-review follow-ups (the activity-result sentence, the access-rights hazard, the
+	// fileProcessing entry in validate-process-graph's buildable list, describe's warn-and-ignore clause) carry no
+	// safety marker, so no short form keeps them and the bundle did not move. Re-measured by lowering this guard: 18993
+	// bytes on the wire - 7 bytes under it, so the next entry in a call shape, or the next marked sentence in any of the
+	// seven, needs a trim of its own.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
