@@ -19,9 +19,10 @@ client bytes without that sync, and its Process file pages force `ConnectedObjec
 (`BaseFileProcessingUserTaskPropertiesPage.js:369-375`, CrtProcessDesigner 7.8.0).
 
 From 1.6.6.101 the builder writes the same designer form itself (source, `FileProcessingConfigBinder.TypeAsLookup` /
-`DropSchemaRegistryReferencesOfWritten`, tag `crtprocessbuilder-1.6.6.102`): create and a `setElement` that writes
-the target type `ConnectedObjectId` as Lookup, and create clears `L9` on the schema lookups it writes - `setElement`
-never clears it. So a BUILDER-created element changes the same way, once, on its next unrelated builder save.
+`DropSchemaRegistryReferencesOfWritten`, tag `crtprocessbuilder-1.6.6.102`): create, a `setElement` that writes a
+target with a record object, and a `setElement` that switches the element to use its files in the process type
+`ConnectedObjectId` as Lookup; create clears `L9` on the schema lookups it writes - `setElement` never clears it.
+So a BUILDER-created element changes the same way, once, on its next unrelated builder save.
 
 **Why it is this way** — the designer types `ConnectedObjectId` as a lookup only to render a record picker; the
 template declares Guid, and the run time reads it as a Guid either way (`GetGuidValue`). The package calls the
@@ -30,5 +31,5 @@ platform's own design-session load and does not touch these parameters on an unr
 **What breaks if you ignore it** — a byte-identity check across the first unrelated builder save of an element in the
 designer's form - designer-built or builder-created - fails on a fresh process and passes on every re-run, which
 reads as a flaky test or as a builder defect. Compare the first save with this allow-list and assert byte-identity
-from the second save on. A designer no-op re-save (DT-01) writes `ConnectedObjectId` back as Lookup, so the two sides
-oscillate on that one field.
+from the second save on. A designer no-op re-save writes `ConnectedObjectId` back as Lookup (measured on the stand,
+DT-01), so the two sides oscillate on that one field.

@@ -1341,7 +1341,7 @@ public sealed class ProcessFileElementToolE2ETests {
 				}
 			}
 		}
-		return prefix + before.ToJsonString();
+		return prefix + Canonical(before).ToJsonString();
 	}
 
 	private static string WithoutLayout(string rawNode) {
@@ -1349,7 +1349,7 @@ public sealed class ProcessFileElementToolE2ETests {
 			return rawNode;
 		}
 		node.Remove("BL3");
-		return prefix + node.ToJsonString();
+		return prefix + Canonical(node).ToJsonString();
 	}
 
 	// A read node is "<UId>: <raw JSON>"; only the JSON part is compared structurally.
@@ -1359,6 +1359,16 @@ public sealed class ProcessFileElementToolE2ETests {
 		node = jsonStart < 0 ? null : JsonNode.Parse(rawNode[jsonStart..]) as JsonObject;
 		return node is not null;
 	}
+
+	// The platform writes a parameter's keys in a fixed order (an added L9 sits before L12), so both sides are compared
+	// with their object keys sorted: the allow-list adds keys, and only the VALUES are what is asserted.
+	[return: NotNullIfNotNull(nameof(node))]
+	private static JsonNode? Canonical(JsonNode? node) => node switch {
+		JsonObject obj => new JsonObject(obj.OrderBy(pair => pair.Key, StringComparer.Ordinal)
+			.Select(pair => KeyValuePair.Create(pair.Key, Canonical(pair.Value)))),
+		JsonArray array => new JsonArray(array.Select(Canonical).ToArray()),
+		_ => node?.DeepClone()
+	};
 
 	private static bool IsUId(JsonNode? value, string uid) =>
 		value is JsonValue && string.Equals(value.GetValue<string>(), uid, StringComparison.OrdinalIgnoreCase);
