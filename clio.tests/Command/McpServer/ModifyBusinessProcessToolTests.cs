@@ -685,7 +685,7 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.100, for setTracing,",
+		description.Should().Contain("this clio requires 1.6.6.101, for setTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
@@ -725,7 +725,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as CrtProcessBuilder 1.6.6.100 behaves (ENG-96505): attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object only a consistent dedicated pair is kept - an unpaired or invalid one is rewritten with a notice and a SysFile pair refuses the whole update. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite or a refusal.")]
+	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as CrtProcessBuilder 1.6.6.101 behaves (ENG-96505): attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object only a consistent dedicated pair is kept - an unpaired or invalid one is rewritten with a notice and a SysFile pair refuses the whole update. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite or a refusal.")]
 	public void ModifyBusinessProcessPrompt_ShouldStateTheFileProcessingClearingAndPairRules() {
 		// Arrange
 		const string processName = "UsrSampleProcess";
