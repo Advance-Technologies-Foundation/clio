@@ -1,9 +1,9 @@
 # Test Plan: Process file element (ENG-92719)
 
 **Feature**: eng-92719-file-processing-element
-**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); Sub-tasks ENG-96505
-Element readiness and object attachments mode (story 1), ENG-96506 Generated report + process parameter modes (story
-2), and the not-yet-created Sub-tasks "SysFile attachment storage in the Process file element" (story 3), "Refuse
+**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit); ENG-96505 Element
+readiness and object attachments mode (story 1; a Task that relates to ENG-92719, converted from a Sub-task on
+2026-10-14); Sub-tasks ENG-96506 Generated report + process parameter modes (story 2), and the not-yet-created Sub-tasks "SysFile attachment storage in the Process file element" (story 3), "Refuse
 collection parameters as filter values" (story 4) and "Builder-made user tasks do not set SerializeToDB" (story 5)
 **PRD**: [prd-eng-92719-file-processing-element.md](../prd/prd-eng-92719-file-processing-element.md) - FE-1..FE-6,
 OA-1..OA-12, RP-1..RP-10, SF-1
@@ -18,8 +18,8 @@ OA-1..OA-12, RP-1..RP-10, SF-1
 are kept in the "Orig" column below. It holds the full case text, the harness, the mocking recipes and the evidence
 queries; this plan maps its ids to the repository convention and adds the cases of stories 4 and 5. The
 parameter-type cases (ENG-95984 File process parameter type) are in its own test plan.
-**Status**: Draft (the cases follow the recommended answers to the open owner questions Q13-Q18; the cases that move
-with an open item are in "Cases that move with an open decision")
+**Status**: Draft (the cases follow the owner's answers to Q13-Q18, agreed as recommended on 2026-10-14; the cases
+that move with a still-open item are in "Cases that move with an open decision")
 **Created**: 2026-10-14
 
 Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PBT/` =
@@ -124,8 +124,9 @@ dotnet test automation/Clio.Knowledge.Bundle.Tests/Clio.Knowledge.Bundle.Tests.c
 ## Regression scope
 
 - **Package**: the whole suite before every push. Must stay green with assertions unchanged:
-  `ReadDataConfigBinderTests` and `ReadDataConfigApplierTests` (the sort codec moves out; only the applier suite's
-  `SetElementOperation` constructions gain an argument), `UserTaskElementHandlerCreateTests` (the merged generic-route
+  `ReadDataConfigBinderTests` and `ReadDataConfigApplierTests` (the sort codec moves out; every existing
+  `SetElementOperation` construction gains the applier argument, 14 in 9 test files, the applier suite's three among
+  them), `UserTaskElementHandlerCreateTests` (the merged generic-route
   refusals), `ElementConfigurationLedgerTests` and `ElementConfigurationTrackingTests` (one rule added per cut),
   `DataNodeFilterTargetTests` (Report elements stay on it until story 2), the ENG-95984 binder suites.
 - **clio**: the full unit suite; specifically `BundledProcessBuilderPackageTests` (pins, floor sentences),
@@ -172,7 +173,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-10 | TC-10 | pkg | 1 | `userTaskName` matching (ignored) / contradicting (refused) | OA-4 |
 | TC-U-11 | TC-11 | pkg | 1 | a `fileProcessing` block on another element type: refused by the strict gate | OA-4 |
 | TC-U-12, TC-I-12 | TC-12 | pkg, e2e | 1, 2 | the generic route for the Object schema (case, padding, `performTask`, another name for the same UId) refused on create; Report and Process tolerated in story 1, refused in story 2 | OA-5 |
-| TC-U-13 | TC-13 | pkg | 1, 2 | raw `addMapping` onto the 13 binder-owned parameters refused; onto `ConnectedObjectId`, `Files`, `Files.File`, `ReportName` allowed with the block's rules | OA-5 |
+| TC-U-13 | TC-13 | pkg | 1, 2 | raw `addMapping` onto the binder-owned parameters refused naming the block member (story 1: the 10 of 13 on the Object task; story 2: the three report parameters); onto `ConnectedObjectId`, `Files`, `Files.File`, `ReportName` allowed with the block's rules (`ConnectedObjectId`: typed against the target's record object, any source refused while the element saves to no object) | OA-5 |
 | TC-U-14 | TC-14 | pkg | 1 | the task schema cannot be resolved: "cannot resolve", not "wrong kind" | OA-4 |
 
 ### Object attachments: object, storage, record scope, filter, sort (D15 dedicated, D16)
@@ -180,15 +181,15 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | ID | Orig | Repo | Story | Case | AC |
 |---|---|---|---|---|---|
 | TC-U-15 | TC-15 | pkg | 1 | resolver over the fake hierarchy (AccountFile, ContactFile, FileLead, the LeadFile ambiguity, DNSGuideFile, a view, a SysFile-family object, a tag object, no claimant, SysFile missing); `Decode` never throws | OA-6 |
-| TC-U-16 | TC-16 | pkg | 1 | the record object or its file object give the same pair; no `SourceDataEntitySchemaUId` for a legacy source | OA-6 |
+| TC-U-16 | TC-16 | pkg | 1 | the record object or its file object give the same pair; no `SourceDataEntitySchemaUId` for a legacy source; an orphan attachment object named directly is dedicated with no record object; a sent object rewrites the side's pair, an update without it keeps a consistent pair and re-resolves an inconsistent one with a notice | OA-6 |
 | TC-U-17, TC-I-17 | TC-17 | pkg, e2e | 1 | a SysFile-mode source or target refused with the D15 text; the switch tested on its own | OA-6 |
 | TC-U-18, TC-I-18 | TC-18 | pkg, e2e | 1 | `attachments.recordId` per source; CurrentUserContact compiles to the macro; another formula refused | OA-7, FE-4 |
 | TC-U-19 | TC-19 | pkg | 1 | record-scope type check | OA-7 |
 | TC-U-20 | TC-20 | pkg | 1 | filter root, unconfigured element, scope set twice: refused | OA-7 |
 | TC-U-21 | TC-21 | pkg | 1 | `Split` / `Join`: each writer keeps the other half; OR wrap and unwrap; a corpus filter lifts and resubmits byte-stable; a lossy decode lifts nothing; `isNull` survives | OA-2 |
-| TC-U-22, TC-I-22 | TC-22 | pkg, e2e | 1 | empty filter at the end of the request: saving refused before the gate (`failedOperationIndex: null`), "use in process" notice after the gate; a later `setFilter` in the batch satisfies both; untouched elements ignored | OA-9 |
-| TC-U-23 | TC-23 | pkg | 1 | `sort`: one direct root column; a path or non-root column refused; a stored multi-entry `OrderByInfo` kept; the extracted codec with both labels | OA-7 |
-| TC-U-24 | TC-24 | pkg | 1 | `numberOfRecords` 1..5000; omitted = the template copy with its `GS5` and a notice; an explicit 50 a new value | OA-7 |
+| TC-U-22, TC-I-22 | TC-22 | pkg, e2e | 1 | empty filter at the end of the request: saving refused before the gate (`failedOperationIndex: null`), "use in process" notice after the gate; a later `setFilter` in the batch satisfies both; untouched elements ignored, and a raw `addMapping` (onto `ConnectedObjectId` too) is no touch | OA-9 |
+| TC-U-23 | TC-23 | pkg | 1 | `sort`: one direct root column; a path or non-root column refused; a stored multi-entry `OrderByInfo` kept; the extracted codec with both element kinds and members; the describe half (primary entry, hidden-entries issue) asserted with TC-U-43 | OA-7 |
+| TC-U-24 | TC-24 | pkg | 1 | `numberOfRecords` 1..5000; omitted on create = the template copy with its `GS5` and a notice on every such create; an explicit 50 a new value | OA-7 |
 
 ### Action and save target (D14, D15)
 
@@ -196,8 +197,8 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 |---|---|---|---|---|---|
 | TC-U-25 | TC-25 | pkg | 1 | action inference on create; contradictions refused; always written | OA-8 |
 | TC-U-26 | TC-26 | pkg | 1 | `saveTo` a legacy object: the UO-4 shape; a `linkColumn` override with W6; `"none"` refused | OA-8 |
-| TC-U-27 | TC-27 | pkg | 1 | `saveTo.recordId` constant: unparseable, empty, unknown or of another object refused; existing accepted | OA-8 |
-| TC-U-28, TC-I-28 | TC-28 | pkg, e2e | 1 | `saveTo.recordId` from a process parameter, `sourceColumn`, CurrentUserContact, each with the notice; a bad meta-path token refused | OA-8, FE-4 |
+| TC-U-27 | TC-27 | pkg | 1 | `saveTo.recordId` constant: unparseable, empty, unknown or of another object refused; existing accepted (the record stub cannot tell another object's record from a missing id) | OA-8 |
+| TC-U-28, TC-I-28 | TC-28 | pkg, e2e | 1 | `saveTo.recordId` from a process parameter, `sourceColumn`, CurrentUserContact, each with the notice; a source not of the target's record object refused; a bad meta-path token refused | OA-8, FE-4 |
 
 ### `setElement` semantics (D12)
 
@@ -205,10 +206,10 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 |---|---|---|---|---|---|
 | TC-U-29 | TC-29 | pkg | 1 | same group = no-op; another variant's group refused naming the dependents from the snapshot; the same-batch case refused | OA-2 |
 | TC-U-30 | TC-30 | pkg | 1 | member-wise merge; empty clears; a value source replaced whole | OA-2 |
-| TC-U-31 | TC-31 | pkg | 1 | retarget Account -> Contact clears filter, sort and scope unless a new `recordId` is sent | OA-2 |
+| TC-U-31 | TC-31 | pkg | 1 | retarget Account -> Contact clears filter, sort and scope unless the block sends their replacement (a new `recordId` becomes the whole filter) | OA-2 |
 | TC-U-32 | TC-32 | pkg | 1 | `saveTo.object` changed without `saveTo.recordId`: refused | OA-8 |
 | TC-U-33 | TC-33 | pkg | 1 | action on update; save -> use in process clears the four target fields and is refused while `CreatedObjectFileIds` is mapped | OA-8 |
-| TC-U-34 | TC-34 | pkg | 1 | repair on touch over stored pairs (H-G3-1, unpaired, consistent) | OA-2 |
+| TC-U-34 | TC-34 | pkg | 1 | repair on touch over stored pairs (H-G3-1, unpaired, consistent): an inconsistent pair re-resolved with a notice, a consistent one kept unless its object is sent | OA-2 |
 
 ### Outputs, consumers, serialization (D20)
 
@@ -218,7 +219,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-36 | TC-36 | pkg | 1 | a later mapping in the create batch embeds the RE-MINTED nested UId | OA-1 |
 | TC-U-37 | TC-37 | pkg | 1 | template copies on create; never re-pinned on edit; derived values carry the process `GS5` | FE-5 |
 | TC-U-38 | TC-38 | pkg | 1 | nested UIds re-minted on create only; kept on modify with their consumers | FE-5 |
-| TC-U-39 | TC-39 | pkg | 1 | nested-source display value in the designer form | FE-5 |
+| TC-U-39 | TC-39 | pkg | 1 | nested-source display value in the designer form on every binding path, element and process-parameter forms; a top-level source keeps its bare caption | FE-5 |
 | TC-U-40 | TC-40 | pkg | 1 | a template parameter missing after `GetDesignInstance`: refused, never hand-created | OA-1 |
 | TC-U-41 | TC-41 | pkg | 1 | parity with SkillFilesValidationProcess (read side) and FileCopyProcessPP (save side) under the TC-41 rule; the parameters FileCopyProcessPP predates (`ConsiderTimeInFilter`, `SourceDataEntitySchemaUId`, `TargetDataEntitySchemaUId`) are excluded and named in the test until SC-1's E2 replaces that oracle | OA-10, FE-5 |
 
@@ -228,7 +229,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 |---|---|---|---|---|---|
 | TC-U-42 | TC-42 | pkg | 1 | effective values (inherited `RecordsToRead`, `actionStored: false`, storage, lifted `recordId`, outputs) | OA-2 |
 | TC-U-43 | TC-43 | pkg | 1 | `issues` per hazard | OA-2 |
-| TC-U-44 | TC-44 | pkg | 1, 2 | round trip: describe -> drop describe-only -> resubmit unchanged; identity check equal accepted, changed refused; a uk-UA caption | OA-2, RP-7 |
+| TC-U-44 | TC-44 | pkg | 1, 2 | round trip: describe -> drop describe-only (`actionStored`, `outputs`, `issues`, every `display`) -> resubmit unchanged, the scope described once; identity check equal (or equal to the describe value of a kept side) accepted, changed refused; a uk-UA caption | OA-2, RP-7 |
 | TC-U-45 | TC-45 | pkg | 1, 2 | snapshot tolerance per variant (M13: `Guid` + `referenceSchema`; a Lookup-typed `ConnectedObjectId` reads like a Guid) | OA-2, RP-7 |
 | TC-U-46, TC-I-46 | TC-46 | pkg, e2e | 1, 2 | per-cut preservation: Report and Process stay generic and byte-identical through a modify; a designer-built SysFile element described and its change refused (on `UsrFpOaDesignerFixture`); story 2 extends TC-I-46: the fixture's F2 now describes as `fileprocessing`, read-only | OA-2, RP-7 |
 | TC-U-47 | TC-47 | clio | 1, 2 | `DescribedFileProcessing` keeps an unknown member at every level; outbound wire names pinned | OA-2 |
@@ -304,7 +305,7 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 | TC-U-88 | TC-88 | kb | 1, 2, 3 | knowledge pins per rule family; the endpoint sentence and no "rarely an endpoint"; the M26 sentence only after M26; size target; FOUR -> FIVE with its three tests and the card; consent wording; read-backs with `mode=full`; no Jira keys | OA-11, RP-9, FE-3 |
 | TC-U-89 | TC-89 | clio | 1, 2 | `list-user-tasks` description: the claimed schemas with `fileProcessing` and a "no generic fallback" clause; no count word | OA-5, OA-12, RP-10 |
 | TC-U-90 | TC-90 | clio | 1, 2 | the four prompt sentences pinned (`ListUserTasksPrompt`, `CreateBusinessProcessPrompt`, `ModifyBusinessProcessPrompt`, `DescribeProcessPrompt`) | OA-12, RP-10, FE-6 |
-| (new) TC-U-93 | - | clio | 1, 2 | `ProcessBlockKeyCheckTests`: `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` and `ReadBackFields_Should_BeDescribeOnlyMembers` green with the `fileProcessing` key set (ENG-103085 Refuse element and block keys the process builder would drop silently, on clio master since 2026-10-14; the analysis test plan predates it) | OA-12, RP-10 |
+| (new) TC-U-93 | - | clio | 1, 2 | `ProcessBlockKeyCheckTests`: `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` and `ReadBackFields_Should_BeDescribeOnlyMembers` green with the `fileProcessing` key set (ENG-103085 Refuse element and block keys the process builder would drop silently, on clio master since 2026-10-14; the analysis test plan predates it): story 1 with all three groups and their write members, story 2 adding the describe-only members of `report` and `files` | OA-12, RP-10 |
 
 ## Side Sub-tasks (proposed; refined when each Sub-task is created)
 
@@ -418,18 +419,19 @@ M3, M3b (MI-0), M6 and M27 belong to ENG-95984's test plan; M5 is skipped (refus
 
 ## Cases that move with an open decision
 
-The "AC affected" column names the PRD acceptance rows that encode the trigger's recommended answer ("conditional on"
-in the PRD). Those rows are pasted into Jira only after the answer (plan FE.0b), and a different answer rewrites them
-together with the cases listed here.
+The "AC affected" column names the PRD acceptance rows that encode the trigger's recommended answer (the "Owner answer"
+column in the PRD). For an open trigger, a different answer rewrites those rows together with the cases listed here.
+Q13-Q18 were agreed as recommended on 2026-10-14: their rows are pasted into Jira as written (plan FE.0b), and the last
+column records the alternative that was not taken.
 
 | Trigger | AC affected | Cases affected | If it goes the other way |
 |---|---|---|---|
-| Q13 (token, discriminator) | FE-1, OA-1, OA-4 | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change; FE-1, OA-1 and OA-4 are rewritten |
-| Q14 (naming bundle) | OA-7, RP-1 (and member names in every row) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 and rewrites OA-7 |
-| Q15 (action inference) | none (OA-8's text encodes no answer; the stories' action inference does) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
-| Q16 (record scope, empty-filter policy) | OA-7, OA-9, RP-1, RP-4 | TC-U-18, TC-U-20, TC-U-21, TC-U-22, TC-I-22, TC-U-52, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, the `failedOperationIndex: null` assertion goes, and OA-9 and RP-4 are rewritten; a record scope in `filter` instead of the group rewrites OA-7, RP-1 and the scope cases |
-| Q17 (storage details) | OA-6 | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
-| Q18 (FastReport) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
+| Q13 (token, discriminator; agreed 2026-10-14) | FE-1, OA-1, OA-4 | TC-U-06..TC-U-11, TC-I-06 | a required `source` enum or a `fileSource` key: the "group present" cases become "key present" cases; the refusal texts F-E3 change; FE-1, OA-1 and OA-4 are rewritten |
+| Q14 (naming bundle; agreed 2026-10-14) | OA-7, RP-1 (and member names in every row) | every case naming a member; TC-U-24 | a rename before code changes names only; `numberOfRecords` defaulting to "all" drops the notice of TC-U-24 and rewrites OA-7 |
+| Q15 (action inference; agreed 2026-10-14) | none (OA-8's text encodes no answer; the stories' action inference does) | TC-U-25, TC-U-33 | the designer default (use in process) or a mandatory `action`: TC-U-25 asserts the other rule |
+| Q16 (record scope, empty-filter policy; agreed 2026-10-14) | OA-7, OA-9, RP-1, RP-4 | TC-U-18, TC-U-20, TC-U-21, TC-U-22, TC-I-22, TC-U-52, TC-U-56 | "notice everywhere": the refusal cases become notice cases, the pre-gate check and its touched-element record are not built, the `failedOperationIndex: null` assertion goes, and OA-9 and RP-4 are rewritten; a record scope in `filter` instead of the group rewrites OA-7, RP-1 and the scope cases |
+| Q17 (storage details; agreed 2026-10-14) | OA-6 | TC-U-15, TC-U-26, TC-U-80 | reading the designer flag for behaviour adds flag-OFF cases; `linkColumn: "none"` adds an accepted case with a warning |
+| Q18 (FastReport; agreed 2026-10-14) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
 | O-TP1 (where TC-91 runs) | none | TC-I-91 | option A: the cases move to ENG-95984's clio PR on the generic route, which story 2 later refuses and rewrites |
 | M1 / M2 | RP-5 (already written both ways) | TC-U-64, TC-M-03, TC-M-20 (E10) | M1 fails: TC-U-64 asserts the refusal, TC-M-03 is dropped, E10 leaves SC-4 |
 | M7, M8, M21, M23, M25 | SF-1 (proposed), FE-1 (the PRD's open item "What FE-1 means if SF narrows") | TC-U-76..TC-U-80, TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |
