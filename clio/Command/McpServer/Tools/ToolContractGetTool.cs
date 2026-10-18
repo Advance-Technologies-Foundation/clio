@@ -5140,12 +5140,14 @@ internal static class ToolContractCatalog {
 		const string clientTypeField = "client-type";
 		const string rolesField = "roles";
 		const string removeField = "remove-from-my-applications";
+		const string workplaceTypeField = "workplace-type";
 		return new ToolContractDefinition(
 			PlaceSectionInWorkplaceTool.ToolName,
 			"Places an app section in a navigation workplace and grants roles access, in one call, replacing the manual " +
 			"SysWorkplace / SysModuleInWorkplace / SysAdminUnitInWorkplace recipe. " +
 			"Confirm the target workplace and the roles with the user before calling: a grant decides who sees the data behind the section. " +
-			"The workplace is matched by workplace-name and client-type (preferring one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's Type and LoaderId read back. " +
+			"The workplace is matched by workplace-name and client-type (preferring one of the requested workplace-type, then one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's LoaderId and Type read back. " +
+			"workplace-type (general, portal, self-service) sets the Type of a created workplace and is carried in its binding; a Portal workplace is what external (portal) users reach. An existing workplace of another type is refused before any write, never retyped. " +
 			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added. " +
 			"A move is refused before any write when no role would see the target workplace (pass roles), or when another package ships the moved row (pass that package as package-name). " +
 			"An existing workplace another package ships is used but not bound into package-name (a warning names its owner), and a position change for it is refused. " +
@@ -5160,6 +5162,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(sectionCodeField, StringType, "The section's SysModule.Code (a create-app app's code), not its caption. A code shared by several sections is resolved by the one already placed in a workplace."),
 					Field(workplaceNameField, StringType, "Workplace to create or reuse; required unless mode is none."),
+					Field(workplaceTypeField, StringType, "general, portal or self-service. On create: the workplace's Type (omitted: the platform default, General). On an existing workplace: the type it must already have; a different type is refused before any write, never changed. Omitted: no check."),
 					Field("mode", StringType, "existing: the workplace must exist. new: create it, refused when a same-named workplace exists that package-name does not already ship. none: write nothing and only report section-workplaces. Omitted: reuse it when it exists, create it otherwise."),
 					Field(PackageNameFieldName, StringType, "Package that ships every row; use the app's own package. Omitted: the environment's current package, as get-target-package resolves it. Must be editable."),
 					Field(clientTypeField, StringType, "web (default) or mobile."),
@@ -5172,7 +5175,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(PackageNameFieldName, StringType, "Package that ships every row."),
-				Field("workplace", ObjectType, "id, name, client-type, position, created (false: reused), binding-name (absent when another package ships the workplace)."),
+				Field("workplace", ObjectType, "id, name, client-type, type (general, portal, self-service, or another type's name), position, created (false: reused), binding-name (absent when another package ships the workplace)."),
 				Field("section", ObjectType, "section-id, code, placement-id, action (moved, created or already-present), binding-name."),
 				Field(rolesField, ArrayType, "Per role: role-id, name, grant-id, action (granted or already-granted), binding-name."),
 				Field("warnings", ArrayType, "Non-fatal findings to relay: a duplicate workplace name, an adopted workplace, a workplace another package ships (used, not bound), My applications not identified (added, not moved), a workplace with no grant."),
@@ -5186,7 +5189,8 @@ internal static class ToolContractCatalog {
 				EnvironmentNameParameterAlias(),
 				PackageNameParameterAlias(),
 				Alias(ParameterScope, sectionCodeField, "app-code", RejectedStatus, $"Use '{sectionCodeField}' instead of 'app-code'."),
-				Alias(ParameterScope, workplaceNameField, "workplace", RejectedStatus, $"Use '{workplaceNameField}' instead of 'workplace'.")
+				Alias(ParameterScope, workplaceNameField, "workplace", RejectedStatus, $"Use '{workplaceNameField}' instead of 'workplace'."),
+				Alias(ParameterScope, workplaceTypeField, "type", RejectedStatus, $"Use '{workplaceTypeField}' instead of 'type'.")
 			],
 			[
 				Default(clientTypeField, "web", "Most workplaces are web workplaces."),
@@ -5199,6 +5203,14 @@ internal static class ToolContractCatalog {
 					[sectionCodeField] = ExampleOrdersSectionCode,
 					[workplaceNameField] = "Orders",
 					[rolesField] = new[] { "Sales managers" }
+				}),
+				Example("Put a section in a new portal workplace for external users", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[sectionCodeField] = ExampleOrdersSectionCode,
+					[workplaceNameField] = "Customer portal",
+					[workplaceTypeField] = "portal",
+					[rolesField] = new[] { "All external users" }
 				})
 			],
 			Flow([ApplicationCreateTool.ApplicationCreateToolName, PlaceSectionInWorkplaceTool.ToolName],
