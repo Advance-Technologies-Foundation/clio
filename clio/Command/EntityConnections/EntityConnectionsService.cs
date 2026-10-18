@@ -238,10 +238,9 @@ internal sealed class EntityConnectionsService(
 	private static List<Guid> ResolveDesiredColumns(IReadOnlyList<string> connections, EntityDesignSchemaDto entitySchema) {
 		Dictionary<string, EntitySchemaColumnDto> byName = new(StringComparer.OrdinalIgnoreCase);
 		// Own columns first, so an own column wins over an inherited one with the same name.
-		foreach (EntitySchemaColumnDto column in SchemaColumns(entitySchema)) {
-			if (!string.IsNullOrWhiteSpace(column.Name)) {
-				byName.TryAdd(column.Name, column);
-			}
+		foreach (EntitySchemaColumnDto column in SchemaColumns(entitySchema)
+			.Where(column => !string.IsNullOrWhiteSpace(column.Name))) {
+			byName.TryAdd(column.Name, column);
 		}
 		List<string> unknown = [];
 		List<string> notLookup = [];

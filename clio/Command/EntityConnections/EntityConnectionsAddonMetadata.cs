@@ -240,12 +240,7 @@ internal sealed class EntityConnectionsAddonMetadata : IEntityConnectionsAddonMe
 		if (parent.TryGetPropertyValue(key, out JsonNode exact)) {
 			return exact;
 		}
-		foreach (KeyValuePair<string, JsonNode> property in parent) {
-			if (IsKey(property.Key, key)) {
-				return property.Value;
-			}
-		}
-		return null;
+		return parent.FirstOrDefault(property => IsKey(property.Key, key)).Value;
 	}
 
 	private static bool IsKey(string candidate, string key) =>
