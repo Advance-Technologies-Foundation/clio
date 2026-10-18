@@ -145,23 +145,8 @@ namespace Clio.Command {
 					LogFailure(response.Error);
 					return false;
 				}
-				PageEntityDataSourceSeed dataSourceSeed = null;
-				string body = string.Empty;
-				if (hasEntity && PageSchemaTypeExtensions.FromNumericValue(template.SchemaType) != PageSchemaType.Mobile) {
-					// GH-1839: the entity used to reach only `dependsOn`, so the page had no primary data source and
-					// every field, crt.Connections and the template's #DataSourceEntityName()# macro showed nothing.
-					dataSourceSeed = _dataSourceSeeder?.BuildSeed(template.UId, packageUId, options.EntitySchemaName)
-						?? PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(null, options.EntitySchemaName);
-				}
-				if (dataSourceSeed is { ModelConfigDiff.Count: > 0 }) {
-					body = PageUpdateCommand.BuildEmptyReplacingBody(options.SchemaName, PageSchemaType.Web)
-						.Replace("/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
-							"/**SCHEMA_MODEL_CONFIG_DIFF*/"
-							+ dataSourceSeed.ModelConfigDiff.ToString(Formatting.Indented)
-							+ "/**SCHEMA_MODEL_CONFIG_DIFF*/", StringComparison.Ordinal);
-					_logger.WriteInfo($"         data source: {dataSourceSeed.DataSourceName} -> {options.EntitySchemaName}"
-						+ (dataSourceSeed.IsPrimary ? " (primary)" : string.Empty));
-				}
+				string body = BuildEntityBoundBody(options, template, packageUId, hasEntity,
+					out PageEntityDataSourceSeed dataSourceSeed);
 				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				// ENG-91044: the page caption is stored under the effective culture, so reject text whose
@@ -178,27 +163,8 @@ namespace Clio.Command {
 					return false;
 				}
 				_logger.WriteInfo($"Page '{options.SchemaName}' created successfully (schemaUId={newSchemaUId}).");
-				response = new PageCreateResponse {
-					Success = true,
-					SchemaName = options.SchemaName,
-					SchemaUId = newSchemaUId,
-					PackageName = options.PackageName,
-					PackageUId = packageUId,
-					TemplateName = template.Name,
-					TemplateUId = template.UId,
-					SchemaType = template.SchemaType,
-					Caption = caption,
-					EntitySchemaName = options.EntitySchemaName,
-					EntitySchemaUId = entitySchemaUId,
-					DataSourceName = dataSourceSeed?.DataSourceName,
-					PrimaryDataSourceName = dataSourceSeed is { IsPrimary: true } ? dataSourceSeed.DataSourceName : null,
-					Note = dataSourceSeed?.Warning
-				};
-				if (hasEntity && dataSourceSeed is null) {
-					// Mobile: the seeder is not consulted.
-					response.Note = "Mobile page: the entity is recorded in the page dependencies only; no data source "
-						+ "was added. Bind it with update-page.";
-				}
+				response = BuildSuccessResponse(options, template, packageUId, newSchemaUId, caption,
+					entitySchemaUId, hasEntity, dataSourceSeed);
 				WarnIfNotDesignPackage(response, newSchemaUId, packageUId);
 				return true;
 			} catch (Exception ex) {
@@ -206,6 +172,58 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// GH-1839: builds the new page body that binds the entity to a data source; the entity used to reach only
+		/// <c>dependsOn</c>, so the page had no primary data source and every field, crt.Connections and the
+		/// template's #DataSourceEntityName()# macro showed nothing. Mobile pages are not seeded.
+		/// </summary>
+		private string BuildEntityBoundBody(PageCreateOptions options, PageTemplateInfo template, string packageUId,
+			bool hasEntity, out PageEntityDataSourceSeed dataSourceSeed) {
+			dataSourceSeed = null;
+			if (!hasEntity || PageSchemaTypeExtensions.FromNumericValue(template.SchemaType) == PageSchemaType.Mobile) {
+				return string.Empty;
+			}
+			dataSourceSeed = _dataSourceSeeder?.BuildSeed(template.UId, packageUId, options.EntitySchemaName)
+				?? PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(null, options.EntitySchemaName);
+			if (dataSourceSeed.ModelConfigDiff.Count == 0) {
+				return string.Empty;
+			}
+			_logger.WriteInfo($"         data source: {dataSourceSeed.DataSourceName} -> {options.EntitySchemaName}"
+				+ (dataSourceSeed.IsPrimary ? " (primary)" : string.Empty));
+			return PageUpdateCommand.BuildEmptyReplacingBody(options.SchemaName, PageSchemaType.Web)
+				.Replace("/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
+					"/**SCHEMA_MODEL_CONFIG_DIFF*/"
+					+ dataSourceSeed.ModelConfigDiff.ToString(Formatting.Indented)
+					+ "/**SCHEMA_MODEL_CONFIG_DIFF*/", StringComparison.Ordinal);
+		}
+
+		private static PageCreateResponse BuildSuccessResponse(PageCreateOptions options, PageTemplateInfo template,
+			string packageUId, string newSchemaUId, string caption, string entitySchemaUId, bool hasEntity,
+			PageEntityDataSourceSeed dataSourceSeed) {
+			PageCreateResponse response = new() {
+				Success = true,
+				SchemaName = options.SchemaName,
+				SchemaUId = newSchemaUId,
+				PackageName = options.PackageName,
+				PackageUId = packageUId,
+				TemplateName = template.Name,
+				TemplateUId = template.UId,
+				SchemaType = template.SchemaType,
+				Caption = caption,
+				EntitySchemaName = options.EntitySchemaName,
+				EntitySchemaUId = entitySchemaUId,
+				DataSourceName = dataSourceSeed?.DataSourceName,
+				PrimaryDataSourceName = dataSourceSeed is { IsPrimary: true } ? dataSourceSeed.DataSourceName : null,
+				Note = dataSourceSeed?.Warning
+			};
+			if (hasEntity && dataSourceSeed is null) {
+				// Mobile: the seeder is not consulted.
+				response.Note = "Mobile page: the entity is recorded in the page dependencies only; no data source "
+					+ "was added. Bind it with update-page.";
+			}
+			return response;
 		}
 
 		/// <summary>

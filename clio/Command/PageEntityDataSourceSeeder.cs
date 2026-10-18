@@ -49,6 +49,11 @@ internal sealed class PageEntityDataSourceSeeder(
 	IPageBundleBuilder bundleBuilder) : IPageEntityDataSourceSeeder {
 
 	internal const string DefaultDataSourceName = "PDS";
+	private const string DataSourcesKey = "dataSources";
+	private const string ConfigKey = "config";
+	private const string OperationKey = "operation";
+	private const string MergeOperation = "merge";
+	private const string ValuesKey = "values";
 
 	/// <inheritdoc />
 	public PageEntityDataSourceSeed BuildSeed(string templateUId, string packageUId, string entitySchemaName) {
@@ -75,7 +80,7 @@ internal sealed class PageEntityDataSourceSeeder(
 	/// </summary>
 	internal static PageEntityDataSourceSeed BuildFromTemplateModelConfig(
 		JsonObject? templateModelConfig, string entitySchemaName) {
-		JsonObject? dataSources = templateModelConfig?["dataSources"] as JsonObject;
+		JsonObject? dataSources = templateModelConfig?[DataSourcesKey] as JsonObject;
 		string? primary = (templateModelConfig?["primaryDataSourceName"] as JsonValue)?.TryGetValue(out string? name) == true
 			? name
 			: null;
@@ -94,45 +99,45 @@ internal sealed class PageEntityDataSourceSeeder(
 		var pageDataSource = new JObject {
 			["type"] = "crt.EntityDataSource",
 			["scope"] = "page",
-			["config"] = new JObject { ["entitySchemaName"] = entitySchemaName }
+			[ConfigKey] = new JObject { ["entitySchemaName"] = entitySchemaName }
 		};
 		// A merge whose path does not exist is skipped by the runtime applier (and by clio's bundle builder), so a
 		// template with no `dataSources` object (the mini page template) gets the data source from the root merge,
 		// which merges deep. Stock record pages, whose template does declare `dataSources`, use the two-step form.
 		JArray operations = dataSources is null
 			? new JArray(new JObject {
-				["operation"] = "merge",
+				[OperationKey] = MergeOperation,
 				["path"] = new JArray(),
-				["values"] = new JObject {
+				[ValuesKey] = new JObject {
 					["primaryDataSourceName"] = DefaultDataSourceName,
-					["dataSources"] = new JObject { [DefaultDataSourceName] = pageDataSource }
+					[DataSourcesKey] = new JObject { [DefaultDataSourceName] = pageDataSource }
 				}
 			})
 			: new JArray(
 				new JObject {
-					["operation"] = "merge",
+					[OperationKey] = MergeOperation,
 					["path"] = new JArray(),
-					["values"] = new JObject { ["primaryDataSourceName"] = DefaultDataSourceName }
+					[ValuesKey] = new JObject { ["primaryDataSourceName"] = DefaultDataSourceName }
 				},
 				new JObject {
-					["operation"] = "merge",
-					["path"] = new JArray("dataSources"),
-					["values"] = new JObject { [DefaultDataSourceName] = pageDataSource }
+					[OperationKey] = MergeOperation,
+					["path"] = new JArray(DataSourcesKey),
+					[ValuesKey] = new JObject { [DefaultDataSourceName] = pageDataSource }
 				});
 		return new PageEntityDataSourceSeed(operations, DefaultDataSourceName, true, warning);
 	}
 
 	// A merge into a missing path is skipped, so the entity goes into `config` only when the source has one.
 	private static JArray BindExisting(string dataSourceName, JsonObject dataSource, string entitySchemaName) =>
-		dataSource["config"] is JsonObject
+		dataSource[ConfigKey] is JsonObject
 			? new JArray(new JObject {
-				["operation"] = "merge",
-				["path"] = new JArray("dataSources", dataSourceName, "config"),
-				["values"] = new JObject { ["entitySchemaName"] = entitySchemaName }
+				[OperationKey] = MergeOperation,
+				["path"] = new JArray(DataSourcesKey, dataSourceName, ConfigKey),
+				[ValuesKey] = new JObject { ["entitySchemaName"] = entitySchemaName }
 			})
 			: new JArray(new JObject {
-				["operation"] = "merge",
-				["path"] = new JArray("dataSources", dataSourceName),
-				["values"] = new JObject { ["config"] = new JObject { ["entitySchemaName"] = entitySchemaName } }
+				[OperationKey] = MergeOperation,
+				["path"] = new JArray(DataSourcesKey, dataSourceName),
+				[ValuesKey] = new JObject { [ConfigKey] = new JObject { ["entitySchemaName"] = entitySchemaName } }
 			});
 }
