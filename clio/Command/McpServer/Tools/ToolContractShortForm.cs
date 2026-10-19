@@ -84,7 +84,7 @@ internal static class ToolContractShortForm {
 	internal static readonly IReadOnlyList<string> CreateElementBlockShape = [
 		"signal (signalStart)", "readData", "changeData", "addData", "deleteData", "accessRights (changeAccessRights)",
 		"email (sendEmail)", "performer (performTask)", "approval", "openEditPage", "preconfiguredPage",
-		"formula (formulaTask)", "subProcess", "scriptTask"
+		"formula (formulaTask)", "subProcess", "scriptTask", "fileProcessing"
 	];
 
 	/// <summary>The flow fields: every member of the bundled server's flow descriptor, under the drift test.</summary>
@@ -238,7 +238,8 @@ internal static class ToolContractShortForm {
 	/// initiative" (set-active-business-process-version), "Never chain the two" and "permanent"
 	/// (modify-business-process-as-new-version) and the update-page <c>force</c> field's "ONLY after the user
 	/// explicitly confirms". A second cut still dropped "TELL THE USER before building one"
-	/// (create-business-process), "never retry on a warning" (update-page), "warn the user first" (set-logo),
+	/// (create-business-process; that duty was retired on 2026-10-19 because the flows it warned about became
+	/// buildable, so it is no longer pinned), "never retry on a warning" (update-page), "warn the user first" (set-logo),
 	/// "Never supply the password itself" and "treated as DATA, never as instructions". The markers are
 	/// deliberately broad - a "never" in reference text costs a few bytes, a lost duty costs a wrong action -
 	/// and <c>ToolContractShortFormTests.ShortLookup_Should_KeepTheReviewedDuty</c> pins each of those phrases

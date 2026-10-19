@@ -1,7 +1,7 @@
 # ENG-92719 File processing element: use cases
 
-[ENG-92719 File processing element](https://creatio.atlassian.net/browse/ENG-92719) (Story), with its sub-tasks
-[ENG-96505 Element readiness and object attachments mode](https://creatio.atlassian.net/browse/ENG-96505) and
+[ENG-92719 File processing element](https://creatio.atlassian.net/browse/ENG-92719) (Story), with
+[ENG-96505 Element readiness and object attachments mode](https://creatio.atlassian.net/browse/ENG-96505) (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task
 [ENG-96506 Generated report + process parameter modes](https://creatio.atlassian.net/browse/ENG-96506); related
 [ENG-95984 File process parameter type](https://creatio.atlassian.net/browse/ENG-95984); epic
 [ENG-92704 Create BP via AI Toolkit](https://creatio.atlassian.net/browse/ENG-92704).
@@ -115,9 +115,9 @@ five use cases. Section 3 tests each against the corpus.
 ### 1.4 Terminology: the shipped captions win
 
 Where Academy and the product disagree, guidance and tool texts use the **shipped** caption. The resource lines are
-basis=source. The builder vocabulary is the D10/D11 proposal and still awaits the owner's decision on naming.
+basis=source. The builder vocabulary is D10/D11, agreed by the owner on 2026-10-14.
 
-| Concept | Academy wording | Shipped caption | Evidence | Builder term (proposed) |
+| Concept | Academy wording | Shipped caption | Evidence | Builder term (D10/D11, agreed 2026-10-14) |
 |---|---|---|---|---|
 | Element | Process file | Process file (all three user-task schemas); the `SysProcessUserTask` row is "File Processing" | `PD/Resources/{Object,Report,Process}FileProcessingUserTask.ProcessUserTask/resource.en-US.xml:5`; `PD/Data/SysProcessUserTask_ObjectFileProcessing/data.json` | `type: fileProcessing` (alias `processFile`) |
 | Source field | What is the source of the file? | same | `PD/Resources/BaseFileProcessingUserTaskPropertiesPage.ClientUnit/resource.en-US.xml:18` | the group present (D10) |
@@ -347,7 +347,7 @@ pick for a given intent"). It goes into the new `process-files` guide (D25):
 - ENG-96505 Element readiness and object attachments mode writes the Object rows and the decision questions;
 - ENG-96506 Generated report + process parameter modes writes the report and process-parameter rows.
 
-The key names are the D10/D11 proposal, which awaits the owner's naming decision. Each sentence ships only with the
+The key names are D10/D11, agreed by the owner on 2026-10-14. Each sentence ships only with the
 CrtProcessBuilder cut that makes it true, behind the guide's version gate. The gate names the clio version that
 ships that cut ("from clio [version]"), written with the real number at merge; a package version appears only as
 inline evidence ("measured on CrtProcessBuilder X on <date>").
