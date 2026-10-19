@@ -37,6 +37,9 @@ public sealed class GetClientUnitSchemaTool(
 		"Pass full-hierarchy=true to ALSO return the localizable strings merged across the whole inheritance/package " +
 		"chain (with parentSchemaUId provenance); the body still reflects this schema's own top layer (the view is " +
 		"not folded). " +
+		"`caption` is one culture's text: the connected user's profile culture, else en-US, else the first culture " +
+		"returned. A culture the schema has no own caption in can carry a parent schema's caption, so `caption` is " +
+		"not a reliable page title in other cultures; read per-culture texts from the localizable strings. " +
 		"An explicit output-file must resolve inside the workspace or the OS temp directory (a path outside both is " +
 		"rejected). " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]

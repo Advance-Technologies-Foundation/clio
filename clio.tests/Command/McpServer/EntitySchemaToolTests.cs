@@ -1123,6 +1123,16 @@ public sealed class EntitySchemaToolTests {
 			because: "column-read prompt guidance should point callers to the existing-app maintenance guide through the guidance tool");
 		columnPrompt.Should().Contain("before and after `modify-entity-schema-column`",
 			because: "column-read prompt guidance should describe the canonical verification pattern for single-column edits");
+		createPrompt.Should().Contain("`override: true`",
+			because: "create prompt guidance should describe the column form that redirects an inherited lookup");
+		updatePrompt.Should().Contain("on an inherited Lookup its",
+			because: "batch update prompt guidance should allow redirecting an inherited lookup");
+		updatePrompt.Should().NotContain("override ONLY",
+			because: "batch update prompt guidance must not forbid the inherited lookup redirect");
+		modifyPrompt.Should().Contain("on an inherited Lookup its",
+			because: "modify prompt guidance should allow redirecting an inherited lookup");
+		modifyPrompt.Should().NotContain("override ONLY",
+			because: "modify prompt guidance must not forbid the inherited lookup redirect");
 		modifyPrompt.Should().Contain(ModifyEntitySchemaColumnTool.ModifyEntitySchemaColumnToolName,
 			because: "modify prompt guidance should reference the exact production tool name");
 		modifyPrompt.Should().Contain("description-localizations",

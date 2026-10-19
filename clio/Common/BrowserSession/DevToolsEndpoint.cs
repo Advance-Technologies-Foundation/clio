@@ -9,8 +9,8 @@ namespace Clio.Common.BrowserSession;
 
 /// <summary>
 /// Finds the DevTools endpoint of a Chromium started with <c>--remote-debugging-port=0</c>: the port it wrote to
-/// <c>DevToolsActivePort</c>, then the WebSocket URL of its page target. Shared by the visible authenticated
-/// launcher and the headless page-smoke launcher.
+/// <c>DevToolsActivePort</c>, then the WebSocket URL of its page target. Used by the visible authenticated
+/// launcher only, whose browser must outlive clio; page-smoke's headless browser opens no port at all.
 /// </summary>
 internal static class DevToolsEndpoint {
 

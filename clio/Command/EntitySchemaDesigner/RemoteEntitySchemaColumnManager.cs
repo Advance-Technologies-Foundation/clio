@@ -71,7 +71,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// Synthetic package label reported by the merged (all-packages) schema read when no package is supplied.
 	/// </summary>
 	internal const string MergedSchemaPackageName = "(merged: all packages)";
-	private const string InheritedColumnSource = "inherited";
+	internal const string InheritedColumnSource = "inherited";
 
 	private readonly IApplicationPackageListProvider _applicationPackageListProvider;
 	private readonly IEntitySchemaDefaultValueSourceResolver _defaultValueSourceResolver;
@@ -82,6 +82,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	private readonly ICultureAvailabilityGuard _cultureAvailabilityGuard;
 	private readonly IEntitySchemaDependencyResolver _dependencyResolver;
 	private readonly IEntitySchemaPublisher _entitySchemaPublisher;
+	private readonly IInheritedLookupOverride _inheritedLookupOverride;
 	private readonly ILogger _logger;
 
 	public RemoteEntitySchemaColumnManager(IApplicationPackageListProvider applicationPackageListProvider,
@@ -98,6 +99,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		_lookupDefaultDisplayValueResolver = columnResolvers.LookupDisplayValueResolver;
 		_captionCultureResolver = columnResolvers.CaptionCultureResolver;
 		_cultureAvailabilityGuard = columnResolvers.CultureAvailabilityGuard;
+		_inheritedLookupOverride = columnResolvers.InheritedLookupOverride;
 		_dependencyResolver = dependencyResolver;
 		_entitySchemaPublisher = entitySchemaPublisher;
 		_logger = logger;
@@ -127,6 +129,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		PackageInfo package = ResolvePackage(rootOperation.Package);
 		EntityDesignSchemaDto schema = LoadSchema(rootOperation.SchemaName, package.Descriptor.UId, package.Descriptor.Name, rootOperation, DependencyDiagnosis.Report);
 		EnsureBatchTargetsSingleSchema(operations, rootOperation);
+		EnsureSingleInheritedRedirectPerColumn(schema, operations);
 		string effectiveCultureName = ResolveEffectiveCultureName(rootOperation);
 		// Captured BEFORE the mutation loop: the names this package's layer already had. The loop mutates the
 		// design schema in memory and nothing is saved until below, so after the first operation the layer no
@@ -772,11 +775,10 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		string effectiveCultureName) {
 		(EntitySchemaColumnDto column, bool isInherited) = FindColumnForMutation(schema, options.ColumnName);
 		if (isInherited) {
-			// An inherited column is owned by the parent schema: only its caption/description may be overridden
-			// on this (child/replacing) schema, applied in place on the InheritedColumns entry. Its uId, name,
-			// and type stay unchanged, so the server persists a caption override keyed
-			// '<Schema>.Columns.<Column>.Caption' without redefining the column or touching the parent.
-			ApplyInheritedColumnCaptionOverride(column, options, effectiveCultureName);
+			// An inherited column is owned by the parent schema and is changed in place on its InheritedColumns
+			// entry: its caption/description, and for a lookup its reference schema. Its uId, name, and type
+			// stay unchanged.
+			ApplyInheritedColumnOverride(schema, package, column, options, effectiveCultureName);
 			return;
 		}
 		int effectiveDataValueType = options.Type == null
@@ -799,20 +801,27 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	/// <summary>
-	/// Applies a caption/description-only override to an inherited column, in place on the schema's
-	/// <c>InheritedColumns</c> entry. Rejects any attempt to change a non-caption property (name, type, or any
-	/// flag) of an inherited column, and rejects a modify that carries no caption/description change at all.
+	/// Applies an override to an inherited column, in place on the schema's <c>InheritedColumns</c> entry: the
+	/// caption/description, and for a lookup the reference schema. Rejects any other property (name, type, or any
+	/// flag) and a modify that changes none of the overridable properties.
 	/// </summary>
-	private static void ApplyInheritedColumnCaptionOverride(EntitySchemaColumnDto column,
-		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
-		if (HasNonCaptionInheritedMutation(options)) {
+	private void ApplyInheritedColumnOverride(EntityDesignSchemaDto schema, PackageInfo package,
+		EntitySchemaColumnDto column, ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
+		if (HasNonOverridableInheritedMutation(options)) {
 			throw new EntitySchemaDesignerException(
-				$"Column '{options.ColumnName}' is inherited; only its caption and description can be overridden. " +
-				"Its name, type, and flags are read-only.");
+				$"Column '{options.ColumnName}' is inherited; only its caption, description, and (for a lookup) " +
+				"reference-schema-name can be overridden. Its name, type, and flags are read-only.");
 		}
-		if (!HasCaptionOrDescriptionChange(options)) {
+		bool redirectsReference = !string.IsNullOrWhiteSpace(options.ReferenceSchemaName);
+		if (!redirectsReference && !HasCaptionOrDescriptionChange(options)) {
 			throw new EntitySchemaDesignerException(
-				$"Column '{options.ColumnName}' is inherited; provide title-localizations (or a description) to override its caption.");
+				$"Column '{options.ColumnName}' is inherited; provide title-localizations (or a description) to override its caption, " +
+				"or reference-schema-name to redirect an inherited lookup.");
+		}
+		if (redirectsReference) {
+			string referenceSchemaName = options.ReferenceSchemaName.Trim();
+			_inheritedLookupOverride.Apply(schema, column.Name, referenceSchemaName,
+				FindReferenceSchema(package.Descriptor.UId, referenceSchemaName, options), options);
 		}
 		ApplyColumnCaptionAndDescription(column, options, effectiveCultureName);
 	}
@@ -826,13 +835,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	}
 
 	/// <summary>
-	/// Returns whether the modify request touches any property other than caption/description — the set that is
-	/// read-only on an inherited column (name, type, reference, and every scalar/flag/default option).
+	/// Returns whether the modify request touches any property other than caption, description, and reference
+	/// schema — the set that is read-only on an inherited column (name, type, and every scalar/flag/default option).
 	/// </summary>
-	private static bool HasNonCaptionInheritedMutation(ModifyEntitySchemaColumnOptions options) {
+	private static bool HasNonOverridableInheritedMutation(ModifyEntitySchemaColumnOptions options) {
 		return !string.IsNullOrWhiteSpace(options.NewName)
 			|| !string.IsNullOrWhiteSpace(options.Type)
-			|| !string.IsNullOrWhiteSpace(options.ReferenceSchemaName)
 			|| options.Required.HasValue
 			|| options.Indexed.HasValue
 			|| options.Cloneable.HasValue
@@ -857,32 +865,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 	/// </summary>
 	private static void ApplyColumnCaptionAndDescription(EntitySchemaColumnDto column,
 		ModifyEntitySchemaColumnOptions options, string effectiveCultureName) {
-		List<LocalizableStringDto> caption = column.Caption?.ToList() ?? [];
-		List<LocalizableStringDto> description = column.Description?.ToList() ?? [];
-		if (options.TitleLocalizations != null) {
-			TitleLocalizationNormalizationResult titleNormalization =
-				EntitySchemaDesignerSupport.NormalizeTitleLocalizations(
-					options.TitleLocalizations,
-					options.Title,
-					"title-localizations",
-					effectiveCultureName);
-			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
-				caption,
-				titleNormalization.Localizations!);
-		} else if (!string.IsNullOrWhiteSpace(options.Title)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(caption, options.Title.Trim(), effectiveCultureName);
-		}
-		if (options.DescriptionLocalizations != null) {
-			EntitySchemaDesignerSupport.ReplaceLocalizableValues(
-				description,
-				EntitySchemaDesignerSupport.NormalizeLocalizationMap(
-					options.DescriptionLocalizations,
-					"description-localizations")!);
-		} else if (!string.IsNullOrWhiteSpace(options.Description)) {
-			EntitySchemaDesignerSupport.SetLocalizableValue(description, options.Description, effectiveCultureName);
-		}
-		column.Caption = caption;
-		column.Description = description;
+		EntitySchemaDesignerSupport.ApplyColumnCaptionAndDescription(column, options.Title, options.TitleLocalizations,
+			options.Description, options.DescriptionLocalizations, effectiveCultureName);
 	}
 
 	/// <summary>
@@ -1184,14 +1168,16 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 			column.ReferenceSchema?.Name);
 	}
 
-	private void EnsureNameIsUnique(EntityDesignSchemaDto schema, string name, Guid? excludeUId) {
+	private static void EnsureNameIsUnique(EntityDesignSchemaDto schema, string name, Guid? excludeUId) {
 		bool hasDuplicate = GetAllColumns(schema)
 			.Any(column => column.UId != excludeUId
 				&& string.Equals(column.Name, name, StringComparison.OrdinalIgnoreCase));
-		if (hasDuplicate) {
-			throw new EntitySchemaDesignerException(
-				$"Column '{name}' already exists in schema '{schema.Name}'.");
+		if (!hasDuplicate) {
+			return;
 		}
+		throw new EntitySchemaDesignerException(EntitySchemaDesignerSupport.IsInheritedColumn(schema, name)
+			? EntitySchemaDesignerSupport.BuildInheritedNameConflictMessage(schema, name)
+			: $"Column '{name}' already exists in schema '{schema.Name}'.");
 	}
 
 	/// <summary>
@@ -1541,6 +1527,12 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 
 	private ManagerItemDto ResolveReferenceSchema(Guid packageUId, string referenceSchemaName,
 		RemoteCommandOptions options) {
+		return FindReferenceSchema(packageUId, referenceSchemaName, options)
+			?? throw new EntitySchemaDesignerException($"Reference schema '{referenceSchemaName}' was not found.");
+	}
+
+	private ManagerItemDto? FindReferenceSchema(Guid packageUId, string referenceSchemaName,
+		RemoteCommandOptions options) {
 		AvailableEntitySchemasResponse response = _entitySchemaDesignerClient.GetAvailableReferenceSchemas(
 			new GetAvailableSchemasRequestDto {
 				PackageUId = packageUId,
@@ -1548,10 +1540,8 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				AllowVirtual = false
 			},
 			options);
-		ManagerItemDto referenceSchema = response.Items?.FirstOrDefault(item =>
+		return response.Items?.FirstOrDefault(item =>
 			string.Equals(item.Name, referenceSchemaName, StringComparison.OrdinalIgnoreCase));
-		return referenceSchema ?? throw new EntitySchemaDesignerException(
-			$"Reference schema '{referenceSchemaName}' was not found.");
 	}
 
 	private static EntityDesignSchemaDto CreateReferenceSchema(ManagerItemDto referenceSchema) {
@@ -1694,7 +1684,24 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		}
 	}
 
-	private static void VerifyColumnMutations(
+	private static void EnsureSingleInheritedRedirectPerColumn(
+		EntityDesignSchemaDto schema,
+		IEnumerable<ModifyEntitySchemaColumnOptions> operations) {
+		string? repeatedColumnName = EntitySchemaDesignerSupport.FindRepeatedColumnName(operations
+			.Where(operation => string.Equals(operation.Action?.Trim(), "modify", StringComparison.OrdinalIgnoreCase)
+				&& !string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)
+				&& !string.IsNullOrWhiteSpace(operation.ColumnName))
+			.Select(operation => operation.ColumnName.Trim())
+			.Where(columnName => EntitySchemaDesignerSupport.IsInheritedColumn(schema, columnName)
+				&& EntitySchemaDesignerSupport.FindOwnColumn(schema, columnName) == null));
+		if (repeatedColumnName != null) {
+			throw new EntitySchemaDesignerException(
+				$"Inherited column '{repeatedColumnName}' is redirected more than once in one request; send one " +
+				"reference-schema-name per inherited column.");
+		}
+	}
+
+	private void VerifyColumnMutations(
 		EntityDesignSchemaDto reloadedSchema,
 		IEnumerable<ModifyEntitySchemaColumnOptions> operations,
 		string effectiveCultureName) {
@@ -1704,9 +1711,9 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 		List<EntitySchemaColumnDto> inheritedColumns = reloadedSchema.InheritedColumns?.ToList() ?? [];
 
 		// Expected OWN-column presence, accounting for renames (old name absent, new name present). An
-		// inherited-column caption/description override stays in InheritedColumns (never in Columns), so it is
-		// verified via VerifyInheritedCaptionOverride and excluded from the own-column presence check to avoid
-		// a false "could not be reloaded" failure.
+		// inherited-column caption, description or reference override stays in InheritedColumns (never in
+		// Columns), so it is verified via VerifyInheritedColumnOverride and excluded from the own-column presence
+		// check to avoid a false "could not be reloaded" failure.
 		Dictionary<string, bool> expectedColumnPresence = new(StringComparer.OrdinalIgnoreCase);
 		foreach (ModifyEntitySchemaColumnOptions operation in operations) {
 			EntitySchemaColumnAction action = NormalizeAction(operation.Action);
@@ -1717,7 +1724,7 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				EntitySchemaColumnDto inheritedMatch = inheritedColumns.FirstOrDefault(column =>
 					string.Equals(column.Name, columnName, StringComparison.OrdinalIgnoreCase));
 				if (inheritedMatch != null) {
-					VerifyInheritedCaptionOverride(inheritedMatch, operation, effectiveCultureName);
+					VerifyInheritedColumnOverride(reloadedSchema, inheritedMatch, operation, effectiveCultureName);
 					continue;
 				}
 			}
@@ -1741,6 +1748,22 @@ internal sealed class RemoteEntitySchemaColumnManager : IRemoteEntitySchemaColum
 				throw new EntitySchemaDesignerException(
 					$"Column '{columnName}' is still present after save.");
 			}
+		}
+	}
+
+	/// <summary>
+	/// Asserts that the caption and reference changes requested on an inherited column are persisted on the
+	/// reloaded schema.
+	/// </summary>
+	private void VerifyInheritedColumnOverride(
+		EntityDesignSchemaDto reloadedSchema,
+		EntitySchemaColumnDto inheritedColumn,
+		ModifyEntitySchemaColumnOptions operation,
+		string effectiveCultureName) {
+		VerifyInheritedCaptionOverride(inheritedColumn, operation, effectiveCultureName);
+		if (!string.IsNullOrWhiteSpace(operation.ReferenceSchemaName)) {
+			_inheritedLookupOverride.VerifyPersisted(reloadedSchema, inheritedColumn.Name,
+				operation.ReferenceSchemaName.Trim());
 		}
 	}
 
@@ -1850,7 +1873,8 @@ internal sealed record EntitySchemaColumnResolvers(
 	IEntitySchemaDefaultValueSourceResolver DefaultValueSourceResolver,
 	ILookupDefaultDisplayValueResolver LookupDisplayValueResolver,
 	IEntitySchemaCaptionCultureResolver CaptionCultureResolver,
-	ICultureAvailabilityGuard CultureAvailabilityGuard);
+	ICultureAvailabilityGuard CultureAvailabilityGuard,
+	IInheritedLookupOverride InheritedLookupOverride);
 
 internal enum EntitySchemaColumnAction
 {

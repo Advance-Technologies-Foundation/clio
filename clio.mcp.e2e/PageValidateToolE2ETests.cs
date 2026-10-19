@@ -94,6 +94,36 @@ public sealed class PageValidateToolE2ETests : McpContractFixtureBase {
 				because: "the factory contains only the returned schema"));
 	}
 
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("The real MCP transport warns when a handler dispatches through HandlerChainService.instance.process without scopes, and stays silent when scopes are passed")]
+	[AllureTag(ToolName)]
+	[AllureName("validate-page flags HandlerChainService.instance.process without scopes")]
+	[AllureDescription("A handler forwards a page request through sdk.HandlerChainService.instance.process with and without scopes; only the scope-less call carries the handler-process-without-scopes warning, and neither blocks validation.")]
+	public async Task PageValidateTool_ShouldWarnOnProcessWithoutScopes_OnlyWhenScopesAreMissing(bool passScopes) {
+		// Arrange
+		await using var context = Arrange(TimeSpan.FromMinutes(3));
+		string scopes = passScopes ? ", scopes: [...request.scopes]" : string.Empty;
+		string body = ValidPageBody.Replace("/**SCHEMA_DEPS*/[]", "/**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]")
+			.Replace("/**SCHEMA_ARGS*/()", "/**SCHEMA_ARGS*/(sdk)")
+			.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request:'usr.ProbeRequest',handler:async (request, next)=>{ "
+				+ $"await sdk.HandlerChainService.instance.process({{ type: 'usr.TargetRequest', $context: request.$context{scopes} }}); "
+				+ "return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		// Act
+		PageValidateResponse response = await AllureApi.Step("Validate process dispatch through stdio MCP",
+			async () => await CallAsync(context.Session, context.CancellationTokenSource.Token, body));
+		// Assert
+		AllureApi.Step("Verify the warning does not block validation", () =>
+			response.Valid.Should().BeTrue(because: "the scope rule is a warning; errors: "
+				+ string.Join("; ", response.Validation.Errors ?? [])));
+		AllureApi.Step("Verify the scope warning appears only without scopes", () => {
+			bool warned = (response.Validation.Warnings ?? []).Any(w => w.Contains("handler-process-without-scopes"));
+			warned.Should().Be(!passScopes,
+				because: "a process call without scopes skips the page's own handlers silently, while one with scopes reaches them");
+		});
+	}
+
 	[Test]
 	[Description("Advertises validate-page MCP tool in the server tool list so callers can discover and invoke it.")]
 	[AllureTag(ToolName)]

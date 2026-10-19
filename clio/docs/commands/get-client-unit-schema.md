@@ -23,6 +23,11 @@ schema) or `--schema-uid` (fetches that exact schema UId directly, bypassing nam
 `--full-hierarchy` additionally returns the localizable strings merged across the full
 inheritance/package hierarchy, each with its `parentSchemaUId` provenance.
 
+`caption` holds one culture's text: the connected user's profile culture, else `en-US`, else the
+first culture the designer service returned. A culture in which the schema has no caption of its own
+can carry a caption from another schema in its hierarchy (for example the page template), so read
+per-culture texts from the localizable strings rather than from `caption`.
+
 When `--output-file` is set, the schema body is written to the specified file and the body
 field is omitted from the response JSON printed to stdout. This keeps the terminal output
 small and makes it easy to edit the body locally before piping it back through

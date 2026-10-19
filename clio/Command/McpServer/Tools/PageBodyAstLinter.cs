@@ -61,6 +61,7 @@ internal static class PageBodyAstLinter {
 	internal const string RuleConverterCrtPrefixReserved = "converter-crt-prefix-reserved";
 	internal const string RuleBodyTooDeeplyNested = "body-too-deeply-nested";
 	internal const string RuleHandlerUsesContextExecuteRequest = "handler-uses-context-execute-request";
+	internal const string RuleHandlerProcessWithoutScopes = "handler-process-without-scopes";
 	internal const string RuleConverterFetchCall = "converter-fetch-call";
 	internal const string RuleEntityDataSourceStaticFilters = "entity-data-source-static-filters";
 	internal const string RuleHandlerAttributeChangeUnscopedWrite = "handler-attribute-change-unscoped-write";
@@ -188,9 +189,10 @@ internal static class PageBodyAstLinter {
 	//      anywhere under `converters` — `InsideConverters` is sufficient
 	//      because the anti-pattern is render-time HTTP regardless of
 	//      function nesting depth.
-	//   3) `handler-uses-context-execute-request` (CheckCallExpression) has
-	//      no schema-section gate — handler dispatch through `$context` is
-	//      wrong in any deployed page-body location.
+	//   3) `handler-uses-context-execute-request` and
+	//      `handler-process-without-scopes` (CheckCallExpression) have no
+	//      schema-section gate — handler dispatch is the same in any deployed
+	//      page-body location.
 	// `params-empty` and `crt-prefix-reserved` are now driven directly off
 	// the validators/converters ObjectExpression in CheckSchemaSectionShape
 	// (direct-child walk), not through this context — see the comments on
@@ -1501,15 +1503,26 @@ internal static class PageBodyAstLinter {
 	}
 
 	private static void CheckCallExpression(CallExpression call, VisitContext ctx, LintFindingBudget budget) {
-		// Rule 9: request.$context.executeRequest(...) is reachable from handler code
-		// but it is NOT part of the @creatio-devkit/common public surface — Creatio
-		// Academy uniformly uses sdk.HandlerChainService.instance.process(...) in
-		// SCHEMA_HANDLERS examples. The reverse direction (process discouraged in
-		// favour of executeRequest) was the previous guidance and is no longer correct.
+		// Rule 9: request.$context.executeRequest(...) works — it dispatches through the
+		// same handler chain and fills in the view model's scopes when the request has
+		// none — but it is not declared in the typed @creatio-devkit/common surface, and
+		// Creatio Academy SCHEMA_HANDLERS examples use sdk.HandlerChainService.instance.process(...).
+		// The message says the call works so an agent does not rewrite working code as broken.
 		if (IsContextExecuteRequest(call.Callee)) {
 			budget.TryAdd(RuleHandlerUsesContextExecuteRequest, LintSeverity.Warning,
 				call.Location.Start.Line, call.Location.Start.Column + 1,
-				() => "`request.$context.executeRequest(...)` is not part of the documented @creatio-devkit/common public API; use `sdk.HandlerChainService.instance.process({ type, $context, scopes })` in deployed page-body handlers (per Creatio Academy SCHEMA_HANDLERS examples)");
+				() => "`request.$context.executeRequest(...)` works (it fills in the page scopes itself) but is not part of the typed @creatio-devkit/common API; write new dispatch code as `sdk.HandlerChainService.instance.process({ type, $context: request.$context, scopes: [...request.scopes] })`. When converting an existing call, keep `scopes`: without it the call silently skips the page's own handlers");
+		}
+		// Rule 9a: HandlerChainService.instance.process({ ... }) without `scopes`. A handler
+		// registered with scopes runs only for requests whose scopes contain one of them, and
+		// every SCHEMA_HANDLERS entry is registered with its page's scope (as are card-level
+		// platform handlers), so such a call reaches only unscoped handlers: a page-handled
+		// request resolves to undefined without error. Only an object literal argument is
+		// read; a spread may carry scopes, so it is not flagged.
+		if (IsHandlerChainServiceProcess(call.Callee) && IsRequestLiteralWithoutScopes(call)) {
+			budget.TryAdd(RuleHandlerProcessWithoutScopes, LintSeverity.Warning,
+				call.Location.Start.Line, call.Location.Start.Column + 1,
+				() => "`HandlerChainService.instance.process({ ... })` without `scopes` reaches only handlers registered without scopes: the page's own SCHEMA_HANDLERS and scoped platform handlers (for example card-level save/open-page) may be skipped silently: a request handled by the page itself never reaches its handler, and a platform request may run only part of its chain. Pass `scopes: [...request.scopes]` unless the target request intentionally changes scope");
 		}
 		// Rule 10: direct `fetch(...)` / `globalThis.fetch(...)` / `window.fetch(...)`
 		// inside the converters schema subtree. Bounded via VisitContext.InsideConverters
@@ -1610,6 +1623,33 @@ internal static class PageBodyAstLinter {
 		// `$context` member walk are intentionally out of scope (would need data-flow analysis).
 		callee is MemberExpression { Property: Identifier { Name: "executeRequest" }, Object: MemberExpression contextMember }
 		&& contextMember.Property is Identifier { Name: "$context" };
+
+	private static bool IsHandlerChainServiceProcess(Node callee) =>
+		// matches `<x>.HandlerChainService.instance.process` and `HandlerChainService.instance.process`;
+		// an aliased instance (`const chain = sdk.HandlerChainService.instance; chain.process(...)`)
+		// is out of scope, like the executeRequest alias limitation above.
+		callee is MemberExpression { Property: Identifier { Name: "process" }, Computed: false, Object: MemberExpression instanceMember }
+		&& instanceMember is { Property: Identifier { Name: "instance" }, Computed: false }
+		&& instanceMember.Object switch {
+			Identifier { Name: "HandlerChainService" } => true,
+			MemberExpression { Property: Identifier { Name: "HandlerChainService" }, Computed: false } => true,
+			_ => false
+		};
+
+	private static bool IsRequestLiteralWithoutScopes(CallExpression call) {
+		if (call.Arguments.Count == 0 || call.Arguments[0] is not ObjectExpression request) {
+			return false;
+		}
+		foreach (Node property in request.Properties) {
+			if (property is SpreadElement) {
+				return false;
+			}
+			if (property is Property prop && (prop.Computed || TryGetStaticPropertyName(prop) == "scopes")) {
+				return false;
+			}
+		}
+		return true;
+	}
 
 	#endregion
 }

@@ -36,27 +36,59 @@ public sealed class AmbientProxy : IWebProxy {
 	private static IWebProxy SystemProxy() => WebRequest.GetSystemWebProxy();
 #pragma warning restore SYSLIB0014
 
-	/// <inheritdoc />
-	public ICredentials Credentials { get; set; }
+	/// <summary>
+	/// Credentials for a proxy, looked up by the proxy's own address each time: only the user:password written into
+	/// HTTPS_PROXY / HTTP_PROXY, and only for the proxy that URL names. A system or PAC/WPAD-chosen proxy gets none -
+	/// the user's Windows (NTLM/Kerberos) credentials are never offered to a proxy an auto-detect could have picked. The
+	/// setter refuses a value: credentials come from the variables, never from instance state another proxy could inherit.
+	/// </summary>
+	public ICredentials Credentials {
+		get => new ConfiguredProxyCredentials(this);
+		set => throw new NotSupportedException(
+			"Proxy credentials come only from the user:password in HTTPS_PROXY / HTTP_PROXY, for that proxy alone.");
+	}
 
-	/// <inheritdoc />
-	public Uri GetProxy(Uri destination) {
-		string configured = Configured(destination);
+	// Resolves a credential for exactly one proxy URI (scheme, host and port) from the variables as they are now.
+	private sealed class ConfiguredProxyCredentials(AmbientProxy owner) : ICredentials {
+		public NetworkCredential GetCredential(Uri uri, string authType) => owner.CredentialFor(uri);
+	}
+
+	internal NetworkCredential CredentialFor(Uri proxyAddress) {
+		foreach (string name in new[] { "HTTPS_PROXY", "HTTP_PROXY" }) {
+			Uri configured = Parse(Read(name));
+			if (configured is not null && !string.IsNullOrEmpty(configured.UserInfo)
+				&& string.Equals(configured.Scheme, proxyAddress.Scheme, StringComparison.OrdinalIgnoreCase)
+				&& string.Equals(configured.Host, proxyAddress.Host, StringComparison.OrdinalIgnoreCase)
+				&& configured.Port == proxyAddress.Port) {
+				string[] parts = configured.UserInfo.Split(':', 2);
+				return new NetworkCredential(Uri.UnescapeDataString(parts[0]),
+					parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty);
+			}
+		}
+		return null;
+	}
+
+	// The handler embeds the proxy URI in its own error text (a 407 tunnel failure names it), so the URI it gets never
+	// carries the user:password; CredentialFor still finds the credentials by scheme, host and port.
+	private static Uri WithoutUserInfo(Uri proxy) =>
+		proxy is null || string.IsNullOrEmpty(proxy.UserInfo)
+			? proxy
+			: new UriBuilder(proxy) { UserName = string.Empty, Password = string.Empty }.Uri;
+
+	private static Uri Parse(string configured) {
 		if (configured is null) {
-			return SystemProxyFor(destination);
+			return null;
 		}
 		if (!configured.Contains("://", StringComparison.Ordinal)) {
 			configured = "http://" + configured;
 		}
-		if (!Uri.TryCreate(configured, UriKind.Absolute, out Uri proxy)) {
-			return null;
-		}
-		if (!string.IsNullOrEmpty(proxy.UserInfo)) {
-			string[] parts = proxy.UserInfo.Split(':', 2);
-			Credentials = new NetworkCredential(Uri.UnescapeDataString(parts[0]),
-				parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : string.Empty);
-		}
-		return proxy;
+		return Uri.TryCreate(configured, UriKind.Absolute, out Uri proxy) ? proxy : null;
+	}
+
+	/// <inheritdoc />
+	public Uri GetProxy(Uri destination) {
+		string configured = Configured(destination);
+		return configured is null ? SystemProxyFor(destination) : WithoutUserInfo(Parse(configured));
 	}
 
 	/// <inheritdoc />
@@ -81,7 +113,6 @@ public sealed class AmbientProxy : IWebProxy {
 		if (proxy is null || proxy == destination) {
 			return null;
 		}
-		Credentials ??= CredentialCache.DefaultCredentials;
 		return proxy;
 	}
 

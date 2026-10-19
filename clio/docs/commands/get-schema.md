@@ -16,6 +16,8 @@ The get-schema command reads the body and metadata of an existing C# source-code
 remote Creatio environment via SourceCodeSchemaDesignerService. The schema is resolved by name
 (ManagerName=SourceCodeSchemaManager) and the full schema descriptor (UId, name, caption,
 package, body, etc.) is returned. No local workspace files are created or modified.
+`caption` is in the connected user's profile culture, else `en-US`, else the first culture the
+designer service returned.
 
 When `--output-file` is set, the schema body is written to the specified file and the body
 field is omitted from the response JSON printed to stdout. This keeps the terminal output

@@ -52,7 +52,8 @@ public sealed class GetClassicPageSourcesTool(
 		"(`{ \"Key\": { \"en-US\": \"…\", \"fr-FR\": \"…\" } }`, the get-page bundle.resources.strings shape), " +
 		"and each detail entry and each nested child-page manifest carries its own merged strings as " +
 		"`resourceStrings` in the same shape (a child manifest has no flat `resources`). A detail's " +
-		"`title` is the schema's internal caption, not the title the page shows. Each detail entry also carries " +
+		"`title` is the schema's internal caption (in the user's profile culture, else en-US), not the title the " +
+		"page shows. Each detail entry also carries " +
 		"`bodies`: every replacing layer of the detail base->top as [{pkg, body}], each with its own-layer body " +
 		"(`body` stays the top layer), so behavior declared only in a lower layer is visible; it is omitted, with a " +
 		"warning, when any layer of the detail fails to load. " +

@@ -62,7 +62,7 @@ public sealed class CdpReplyTooLargeException : InvalidOperationException {
 	public string Method { get; }
 }
 
-/// <summary>The DevTools connection is gone (the browser exited or the socket dropped); no later command can succeed.</summary>
+/// <summary>The DevTools connection is gone (the browser exited or its DevTools pipe closed); no later command can succeed.</summary>
 public sealed class CdpSessionClosedException : InvalidOperationException {
 
 	/// <summary>Creates the exception.</summary>
@@ -77,17 +77,7 @@ public sealed class CdpSessionClosedException : InvalidOperationException {
 	}
 }
 
-/// <summary>Opens <see cref="ICdpSession"/> instances.</summary>
-public interface ICdpSessionFactory {
-
-	/// <summary>Connects to a page target's DevTools WebSocket.</summary>
-	/// <param name="webSocketUrl">The target's <c>webSocketDebuggerUrl</c>, a loopback address.</param>
-	/// <param name="ct">Cancels the connect.</param>
-	/// <returns>An open session; dispose it to close the connection.</returns>
-	Task<ICdpSession> ConnectAsync(Uri webSocketUrl, CancellationToken ct);
-}
-
-/// <summary>The text-message channel a <see cref="CdpSession"/> runs over; a WebSocket in production.</summary>
+/// <summary>The text-message channel a <see cref="CdpSession"/> runs over; the browser's DevTools pipe in production.</summary>
 public interface ICdpTransport : IAsyncDisposable {
 
 	/// <summary>Sends one text message. Never called concurrently by the session.</summary>

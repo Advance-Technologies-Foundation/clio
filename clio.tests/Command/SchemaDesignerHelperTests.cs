@@ -568,4 +568,129 @@ public sealed class SchemaDesignerHelperTests {
 			.And.NotContain("Error reading JObject",
 				because: "the bare Newtonsoft parser message is exactly what issue #1322 reported as unactionable");
 	}
+	private static JObject SchemaWithCaptions(params (string Culture, string Value)[] captions) {
+		JArray array = new();
+		foreach ((string culture, string value) in captions) {
+			array.Add(new JObject { ["cultureName"] = culture, ["value"] = value });
+		}
+		return new JObject { ["caption"] = array };
+	}
+
+	[Test]
+	[Description("ExtractCaption returns the profile-culture caption even when GetSchema lists another culture first (ENG-103380).")]
+	public void ExtractCaption_ShouldReturnProfileCulture_WhenItIsNotFirst() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(
+			("ru-RU", "Страница записи"), ("id-ID", "Halaman tab"), ("en-US", "Form page"), ("it-IT", "Pagina"));
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "it-IT");
+
+		// Assert
+		caption.Should().Be("Pagina",
+			because: "the caption must be the connected user's profile culture, not whatever culture GetSchema listed first");
+	}
+
+	[Test]
+	[Description("ExtractCaption falls back to en-US when the schema has no caption in the profile culture.")]
+	public void ExtractCaption_ShouldFallBackToEnUs_WhenProfileCultureIsMissing() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("ru-RU", "Страница записи"), ("en-US", "Form page"));
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "uk-UA");
+
+		// Assert
+		caption.Should().Be("Form page", because: "en-US is the fallback the write path also uses");
+	}
+
+	[Test]
+	[Description("ExtractCaption returns the first non-empty entry when neither the profile culture nor en-US has a caption.")]
+	public void ExtractCaption_ShouldReturnFirstNonEmpty_WhenNeitherProfileNorEnUsExists() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("ru-RU", ""), ("de-DE", "Seite"), ("fr-FR", "Page"));
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "uk-UA");
+
+		// Assert
+		caption.Should().Be("Seite", because: "with no preferred culture available the first non-empty caption is the last resort");
+	}
+
+	[Test]
+	[Description("ExtractCaption matches the culture name case-insensitively.")]
+	public void ExtractCaption_ShouldMatchCultureCaseInsensitively() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(
+			("ru-RU", "Страница записи"), ("en-US", "Form page"), ("it-it", "Pagina"));
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "IT-IT");
+
+		// Assert
+		caption.Should().Be("Pagina", because: "Creatio and .NET spell culture names with different casing");
+	}
+
+	[Test]
+	[Description("ExtractCaption falls back to en-US when the profile culture cannot be resolved.")]
+	public void ExtractCaption_ShouldFallBackToEnUs_WhenProfileCultureIsBlank() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("ru-RU", "Страница записи"), ("en-US", "Form page"));
+
+		// Act
+		string nullCulture = SchemaDesignerHelper.ExtractCaption(schema, () => null);
+		string blankCulture = SchemaDesignerHelper.ExtractCaption(schema, () => "  ");
+
+		// Assert
+		nullCulture.Should().Be("Form page", because: "a missing profile culture must not fall through to the first entry");
+		blankCulture.Should().Be("Form page", because: "a blank profile culture is treated as missing");
+	}
+
+	[Description("ExtractCaption skips an empty or whitespace-only profile-culture entry and falls back to en-US.")]
+	[TestCase("")]
+	[TestCase("   ")]
+	public void ExtractCaption_ShouldSkipEmptyProfileCultureValue(string profileValue) {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("it-IT", profileValue), ("ru-RU", "Страница записи"), ("en-US", "Form page"));
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, () => "it-IT");
+
+		// Assert
+		caption.Should().Be("Form page", because: "an empty or whitespace-only value is no caption, so the en-US fallback applies");
+	}
+
+	[Test]
+	[Description("ExtractCaption does not resolve the profile culture when the schema has a single caption.")]
+	public void ExtractCaption_ShouldNotResolveProfileCulture_WhenOnlyOneCaptionExists() {
+		// Arrange
+		JObject schema = SchemaWithCaptions(("ru-RU", "Страница записи"), ("en-US", ""));
+		Func<string> resolver = Substitute.For<Func<string>>();
+
+		// Act
+		string caption = SchemaDesignerHelper.ExtractCaption(schema, resolver);
+
+		// Assert
+		caption.Should().Be("Страница записи", because: "the only non-empty caption is the only possible answer");
+		resolver.DidNotReceive().Invoke();
+	}
+
+	[Test]
+	[Description("ExtractCaption returns a plain-string caption unchanged and null when the schema has no caption.")]
+	public void ExtractCaption_ShouldHandleStringAndMissingCaption() {
+		// Arrange
+		JObject plain = new() { ["caption"] = "Form page" };
+		JObject missing = new();
+		JObject empty = new() { ["caption"] = new JArray() };
+
+		// Act
+		string plainCaption = SchemaDesignerHelper.ExtractCaption(plain, () => "en-US");
+		string missingCaption = SchemaDesignerHelper.ExtractCaption(missing, () => "en-US");
+		string emptyCaption = SchemaDesignerHelper.ExtractCaption(empty, () => "en-US");
+
+		// Assert
+		plainCaption.Should().Be("Form page", because: "a non-localized caption has nothing to choose from");
+		missingCaption.Should().BeNull(because: "a schema without a caption has no caption to return");
+		emptyCaption.Should().BeNull(because: "an empty caption array has no caption to return");
+	}
 }

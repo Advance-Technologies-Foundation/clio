@@ -33,7 +33,8 @@ public sealed class AmbientProxyTests {
 		// Assert
 		used.Host.Should().Be("proxy.corp", because: "the corporate proxy is the way out");
 		used.Port.Should().Be(3128, because: "its port is kept");
-		((NetworkCredential)proxy.Credentials).Password.Should().Be("p@ss", because: "the proxy's credentials are decoded");
+		proxy.Credentials.GetCredential(used, "Basic").Password.Should().Be("p@ss",
+			because: "the credentials written into HTTPS_PROXY are decoded for that proxy");
 	}
 
 	[Test]
@@ -79,7 +80,7 @@ public sealed class AmbientProxyTests {
 	}
 
 	[Test]
-	[Description("Without proxy variables the system proxy (Windows / macOS settings, PAC included) is used, with the default credentials.")]
+	[Description("Without proxy variables the system proxy (Windows / macOS settings, PAC included) is used, and it is offered NO credentials - never the user's default (NTLM/Kerberos) ones, which a WPAD-chosen proxy could harvest.")]
 	public void GetProxy_Should_Fall_Back_To_The_System_Proxy() {
 		// Arrange
 		AmbientProxy proxy = Proxy(new(), SystemProxy("http://pac-chosen.corp:8080"));
@@ -89,7 +90,10 @@ public sealed class AmbientProxyTests {
 
 		// Assert
 		used.Should().Be(new Uri("http://pac-chosen.corp:8080"), because: "a machine configured through its OS settings reaches the internet that way");
-		proxy.Credentials.Should().BeSameAs(CredentialCache.DefaultCredentials, because: "a system proxy authenticates as the user");
+		proxy.Credentials.GetCredential(used, "Negotiate").Should().BeNull(
+			because: "a proxy the system or an auto-detect picked is never given the user's credentials");
+		proxy.Credentials.GetCredential(used, "NTLM").Should().NotBeSameAs(CredentialCache.DefaultNetworkCredentials,
+			because: "the default network credentials are never attached");
 	}
 
 	[Test]
@@ -105,5 +109,42 @@ public sealed class AmbientProxyTests {
 		// Assert
 		bypassed.Should().BeTrue(because: "NO_PROXY applies whichever proxy would be used");
 		proxied.Should().BeFalse(because: "other hosts still go through the system proxy");
+	}
+
+	[Test]
+	[Description("A credential belongs to the one proxy whose URL carried it: another proxy (a different host, port or scheme) gets nothing, and nothing carries over between lookups.")]
+	public void Credentials_Should_Never_Reach_A_Proxy_They_Were_Not_Configured_For() {
+		// Arrange
+		Dictionary<string, string> environment = new() { ["HTTPS_PROXY"] = "http://agent:secret@proxy.corp:3128" };
+		AmbientProxy proxy = Proxy(environment, SystemProxy("http://pac-chosen.corp:8080"));
+		Uri configured = proxy.GetProxy(new Uri("https://storage.googleapis.com/x.zip"));
+
+		// Act
+		environment.Remove("HTTPS_PROXY");
+		Uri systemChosen = proxy.GetProxy(new Uri("https://storage.googleapis.com/x.zip"));
+		NetworkCredential forSystemProxy = proxy.Credentials.GetCredential(systemChosen, "Basic");
+		NetworkCredential forOtherPort = proxy.Credentials.GetCredential(new Uri("http://proxy.corp:8080"), "Basic");
+
+		// Assert
+		configured.Host.Should().Be("proxy.corp", because: "the configured proxy was used first");
+		systemChosen.Host.Should().Be("pac-chosen.corp", because: "with the variable gone the system proxy applies");
+		forSystemProxy.Should().BeNull(because: "a credential written for proxy.corp never reaches another proxy");
+		forOtherPort.Should().BeNull(because: "the credential is keyed by scheme, host AND port");
+	}
+
+	[Test]
+	[Description("The proxy URI handed to the handler carries no user:password (the handler writes it into its own error text), while the credentials are still found for that proxy.")]
+	public void GetProxy_Should_Return_The_Proxy_Without_Its_User_Info() {
+		// Arrange
+		AmbientProxy proxy = Proxy(new() { ["HTTPS_PROXY"] = "http://agent:s3cr3t@proxy.corp:3128" });
+
+		// Act
+		Uri used = proxy.GetProxy(new Uri("https://storage.googleapis.com/x.zip"));
+
+		// Assert
+		used.UserInfo.Should().BeEmpty(because: "a password in the URI would surface in a 407 error message");
+		used.ToString().Should().NotContain("s3cr3t", because: "the URI text is what .NET embeds in its errors");
+		proxy.Credentials.GetCredential(used, "Basic").Password.Should().Be("s3cr3t",
+			because: "the handler still authenticates to the proxy the user configured");
 	}
 }

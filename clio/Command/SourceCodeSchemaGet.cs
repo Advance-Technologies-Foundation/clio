@@ -1,6 +1,7 @@
 namespace Clio.Command;
 
 using System;
+using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
 using CommandLine;
 using Newtonsoft.Json;
@@ -62,16 +63,22 @@ public class GetSourceCodeSchemaCommand : Command<GetSourceCodeSchemaOptions> {
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly IoFileSystem _ioFileSystem;
 	private readonly ILogger _logger;
+	private readonly ICaptionCultureResolver _captionCultureResolver;
+	private readonly EnvironmentSettings _environmentSettings;
 
 	public GetSourceCodeSchemaCommand(
 		IApplicationClient applicationClient,
 		IServiceUrlBuilder serviceUrlBuilder,
 		IoFileSystem ioFileSystem,
-		ILogger logger) {
+		ILogger logger,
+		ICaptionCultureResolver captionCultureResolver,
+		EnvironmentSettings environmentSettings) {
 		_applicationClient = applicationClient;
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_ioFileSystem = ioFileSystem;
 		_logger = logger;
+		_captionCultureResolver = captionCultureResolver;
+		_environmentSettings = environmentSettings;
 	}
 
 	public virtual bool TryGetSchema(GetSourceCodeSchemaOptions options, out GetSourceCodeSchemaResponse response) {
@@ -105,7 +112,8 @@ public class GetSourceCodeSchemaCommand : Command<GetSourceCodeSchemaOptions> {
 				return false;
 			}
 			string body = schema["body"]?.ToString() ?? string.Empty;
-			string caption = SchemaDesignerHelper.ExtractCaption(schema);
+			string caption = SchemaDesignerHelper.ExtractCaption(
+				schema, () => _captionCultureResolver.ResolveOrDefault(_environmentSettings));
 			string packageName = schema["package"]?["name"]?.ToString();
 			string schemaName = schema["name"]?.ToString() ?? options.SchemaName;
 			response = new GetSourceCodeSchemaResponse {
