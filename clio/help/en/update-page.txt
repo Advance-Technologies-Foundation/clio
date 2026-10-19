@@ -222,7 +222,9 @@ DESCRIPTION
     deliberately overwrite. After a successful save the on-disk baseline is
     refreshed automatically, so consecutive updates in the same session do not
     false-conflict. A small race window between the check and the save remains
-	(last write wins).
+	(last write wins). With no applicable baseline, no explicit checksum and no
+	--force, the write proceeds unchecked and the response warns that detection
+	did not run and why.
 
 	With --target-package-uid or --target-schema-uid, the on-disk baseline applies
 	only when the target resolves to the page it was captured for: the same editable
@@ -230,8 +232,8 @@ DESCRIPTION
 	package (--target-package-uid only). A target that resolves elsewhere is a
 	redirect: the baseline is not used and meta.json is not refreshed. A
 	caller-supplied checksum is still compared with the resolved target; a mismatch
-	remains a conflict. With no applicable baseline and no explicit checksum, the
-	write proceeds unchecked and the warning says why.
+	remains a conflict. With no applicable baseline, no explicit checksum and no
+	--force, the write proceeds unchecked and the warning says why.
 
 	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the

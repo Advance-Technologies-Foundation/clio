@@ -175,7 +175,7 @@ public sealed class PageUpdateTool(
 			MergeWarnings(
 				MergeWarnings(validationWarnings, response.Warnings),
 				lintWarnings),
-			BaselineWarnings(baselineWarning, refreshWarning));
+			BaselineWarnings(PageBaselineGuard.ForSaveOutcome(baselineWarning, options, response.Success), refreshWarning));
 		response.Warnings = mergedWarnings.Count > 0 ? mergedWarnings : null;
 		AppendPersistedResourceKeyWarning(response, options);
 		// Idempotent for anything TryUpdatePage already stamped; this catches the ResolveCommand failure

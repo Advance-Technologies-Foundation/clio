@@ -1771,6 +1771,43 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("An update-page with no baseline, no checksum and no selector proceeds and warns that external-modification detection did not run, naming the missing baseline as the cause.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page warns that the conflict check did not run when no baseline exists")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: get-page reads the body into one temp directory, then a dry-run update-page without a selector or checksum is anchored at an empty directory. It must succeed and carry the 'External-modification detection did not run' warning that names the missing .clio-pages baseline. Only a dry run reaches the stand, so this needs no AllowDestructiveMcpTests opt-in.")]
+	public async Task PageUpdateTool_Should_Warn_That_Detection_Did_Not_Run_When_No_Baseline_Exists() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-session-").FullName;
+		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-nobaseline-empty-").FullName;
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse response = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, emptyAnchorDir, dryRun: true);
+
+			// Assert
+			response.Success.Should().BeTrue(
+				because: $"the warning never refuses the save. Error: {response.Error}");
+			(response.Warnings ?? []).Should().Contain(
+				warning => warning.Contains("External-modification detection did not run")
+					&& warning.Contains("no .clio-pages baseline"),
+				because: "the caller must learn the save was unchecked and why");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(emptyAnchorDir);
+		}
+	}
+
+	[Test]
 	[Description("AC-1 behavioural round trip (PR #1356 review): get-page's `editable.checksum` is passed verbatim as update-page's `checksum` on two consecutive pinned saves, both of which must report conflict:false, and the checksum get-page returns after a save must be byte-identical to the `newChecksum` that save reported. The stale first baseline is then re-sent and must be refused with reason `checksum-mismatch` without landing a save. This is the exact reproduction in issue #1320; the contract test above only asserts that the served description mentions `checksum`.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page round-trips get-page's checksum through two consecutive pinned saves")]
