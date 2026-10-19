@@ -309,6 +309,13 @@ baseline is refreshed automatically, so consecutive updates in the same session 
 false-conflict. A small race window between the check and the save remains (last write
 wins). A save with `--target-package-uid` / `--target-schema-uid` uses the `.clio-pages`
 baseline only when the target resolves to the page that baseline describes (see below).
+A save with no applicable baseline (no prior `get-page`, an unreadable `meta.json`, a
+baseline captured for another environment or anchor), no explicit checksum and no `--force`
+proceeds unchecked; the response warns `External-modification detection did not run ...` and
+names the cause. A `.clio-pages` location that cannot be resolved is reported as
+`External-modification detection is DISARMED ...` instead. A save that fails before its request
+is sent, or that the server refuses, carries no did-not-run warning; a save whose request got no
+readable reply keeps it, because the write may have landed.
 
 If you pass `--expected-checksum` while an on-disk baseline is also present, the explicit
 value wins the CHECKSUM comparison and the auto-armed baseline's checksum is ignored — so
@@ -350,10 +357,10 @@ Two scope limits worth knowing before you rely on the pin:
   save. An explicit `checksum` is kept and compared with the resolved target in every case; a
   mismatch is refused as a conflict. The response carries a warning that says the baseline
   applies only if the target resolves to the page it describes. When nothing on disk can be
-  matched to the target, the warning says the check did not run and why: no baseline was found
-  for this page, environment and anchor (then the same save without the selector is unchecked
-  too), or the baseline recorded no editable schema and the selector cannot be matched to its
-  design package. Neither case is a reason to reach for `--force`.
+  matched to the target and the save is not forced, the warning says the check did not run and
+  why: no baseline was found for this page, environment and anchor (then the same save without
+  the selector is unchecked too), or the baseline recorded no editable schema and the selector
+  cannot be matched to its design package. Neither case is a reason to reach for `--force`.
 
 A `checksum-mismatch` response returns the server's current value as
 `conflictDetails.actualChecksum`. Re-sending that value as `--expected-checksum` /
