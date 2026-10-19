@@ -107,7 +107,7 @@ public sealed record PageCreateArgs(
 	string? Description = null,
 
 	[property: JsonPropertyName("entity-schema-name")]
-	[property: Description("Optional entity schema name to record in the new page dependencies.")]
+	[property: Description("Optional entity schema the page is bound to. A web page is created with a data source for it: a page-scoped `PDS` made the primary data source (record, mini and blank page templates), the template's own primary data source when it names one, or the list template's `PDS` (not made primary). The response reports `dataSourceName` / `primaryDataSourceName`. A mobile page only records the entity in its dependencies.")]
 	string? EntitySchemaName = null,
 
 	[property: JsonPropertyName("caption-culture")]
