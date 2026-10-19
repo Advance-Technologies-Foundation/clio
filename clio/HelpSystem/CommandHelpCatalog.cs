@@ -295,6 +295,8 @@ internal sealed class CommandHelpCatalog {
 			"generate-process-model",
 			"get-entity-schema-column-properties",
 			"get-entity-schema-properties",
+			"get-entity-connections",
+			"update-entity-connections",
 			"enroll-sequence-participants",
 			"get-sequence-context",
 			"execute-dataservice-batch",

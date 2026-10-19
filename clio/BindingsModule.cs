@@ -24,6 +24,7 @@ using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
 using Clio.Command.RelatedPages;
+using Clio.Command.EntityConnections;
 using Clio.Command.RuntimeVerification;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Branding;
@@ -504,7 +505,11 @@ public class BindingsModule {
 		services.AddTransient<ISchemaTransferClient, SchemaTransferClient>();
 		services.AddTransient<ISchemaBundleStore, SchemaBundleStore>();
 		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
+		services.AddTransient<IEntityAddonTargetResolver, EntityAddonTargetResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
+		services.AddTransient<IEntityConnectionsAddonMetadata, EntityConnectionsAddonMetadata>();
+		services.AddTransient<IEntityConnectionsReader, EntityConnectionsReader>();
+		services.AddTransient<IEntityConnectionsService, EntityConnectionsService>();
 		services.AddTransient<IBusinessRuleAddonService, BusinessRuleAddonService>();
 		services.AddTransient<IBusinessRulePackageResolver, BusinessRulePackageResolver>();
 		services.AddTransient<IBusinessRuleFormulaValidationService, BusinessRuleFormulaValidationService>();
@@ -580,6 +585,8 @@ public class BindingsModule {
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<CreateRelatedPageAddonCommand>();
 		services.AddTransient<GetRelatedPageAddonCommand>();
+		services.AddTransient<GetEntityConnectionsCommand>();
+		services.AddTransient<UpdateEntityConnectionsCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
 		services.AddTransient<SourceCodeSchemaCreateCommand>();
 		services.AddTransient<SourceCodeSchemaUpdateCommand>();
@@ -741,6 +748,8 @@ public class BindingsModule {
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<CreateRelatedPageAddonTool>();
 		services.AddTransient<GetRelatedPageAddonTool>();
+		services.AddTransient<GetEntityConnectionsTool>();
+		services.AddTransient<UpdateEntityConnectionsTool>();
 		services.AddTransient<PageTemplatesListTool>();
 		services.AddTransient<SchemaCreateTool>();
 		services.AddTransient<SchemaUpdateTool>();

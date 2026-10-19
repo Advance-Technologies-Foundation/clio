@@ -245,7 +245,7 @@ public sealed class EmittedSchemaRequiredContractTests {
 		// Arrange
 		McpToolInvokerRegistry registry = EmittedSchemaProbe.BuildProductionRegistry();
 		string[] toolsOfferingBothPaths = ["list-page-templates", "create-page", "get-related-page-addon",
-			"create-related-page-addon"];
+			"create-related-page-addon", "get-entity-connections", "update-entity-connections"];
 
 		foreach (string toolName in toolsOfferingBothPaths) {
 			// Act
@@ -327,6 +327,21 @@ public sealed class EmittedSchemaRequiredContractTests {
 			["entity-schema-name", "package-name"],
 			because: "the read target is mandatory but the connection path is a choice between " +
 				"environment-name and the explicit uri triple");
+	}
+
+	[TestCase("get-entity-connections", new[] { "entity-schema-name", "package-name" })]
+	[TestCase("update-entity-connections", new[] { "entity-schema-name", "package-name", "connections" })]
+	[Category("Unit")]
+	[Description("get-entity-connections and update-entity-connections require only their target (and the desired list for the write), leaving the connection args optional (ENG-101678).")]
+	public void EntityConnectionsTools_Should_RequireOnlyTarget_InEmittedInputSchema(string toolName, string[] expected) {
+		// Arrange & Act
+		using JsonDocument schema = EmittedSchemaProbe.EmittedInputSchema(toolName);
+		JsonElement argsSchema = schema.RootElement.GetProperty("properties").GetProperty("args");
+
+		// Assert
+		EmittedSchemaProbe.RequiredNames(argsSchema).Should().BeEquivalentTo(expected,
+			because: "the target is mandatory but the connection path is a choice between environment-name and the " +
+				"explicit uri triple, so a strict client must not demand both");
 	}
 
 	[Test]

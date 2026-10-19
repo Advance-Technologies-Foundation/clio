@@ -90,6 +90,7 @@ Commands:
   get-classic-page-sources                    Collect the Classic page sources for folding (the full replacing-layer chain + parent-template seed + resolution inputs) and write the manifest JSON to disk for the migration engine to fold, classic-migration-bundle, classic-page-sources, get-classic-migration-bundle
   get-client-unit-schema                      Read the body and metadata of a client unit (JavaScript) schema from a remote Creatio environment, client-unit-schema-get
   get-component-info                          Get curated Freedom UI component metadata by component type or list the catalog, component-info
+  get-entity-connections                      Read an object's Connections (ordered lookup columns shown by the Freedom UI Connections component), entity-connections-get
   get-entity-schema-column-properties         Get column properties from a remote Creatio entity schema
   get-entity-schema-properties                Get properties from a remote Creatio entity schema
   get-identity-assertion                      Issue a short-lived signed identity assertion (JWT) for the current authorized user, identity-assertion
@@ -220,6 +221,7 @@ Commands:
   update-app-section                          Update metadata of a section inside an existing installed application
   update-cli                                  Update clio, update
   update-client-unit-schema                   Update the raw body of a client unit schema, client-unit-schema-update
+  update-entity-connections                   Set an object's Connections to a full ordered list of lookup columns (writes the EntityConnections add-on), entity-connections-set, set-entity-connections
   update-entity-schema                        Apply batch column operations to a remote Creatio entity schema
   update-knowledge                            Update verified knowledge from one source or all enabled sources
   update-page                                 Update the raw schema body of a Freedom UI page, page-update
