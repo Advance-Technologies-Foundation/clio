@@ -86,6 +86,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 		"get-entity-schema-properties",
 		// Reads BulkEmail, EmailTemplate, EmailTemplateLang, and BfEmailTemplate content without mutation.
 		"get-email-template",
+		// Reads the EntityConnections add-on and the effective Connections list; never saves the add-on.
+		"get-entity-connections",
 		"get-fsm-mode",
 		"get-guidance",
 		"get-knowledge-feedback-policy",
@@ -243,6 +245,20 @@ public sealed class DurableInvocationGateCompletenessTests {
 		registry.IsDestructive("set-user-theme").Should().BeTrue(
 			because: "applying a theme overwrites (or clears) the profile's existing Theme value, so it must be " +
 				"host-gated rather than silently executable — consistent with update-theme/delete-theme");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("update-entity-connections is classified destructive and not read-only, so the durable gate never silently runs it — a column left out of its full list is removed from the object's Connections (ENG-101678).")]
+	public void UpdateEntityConnections_ShouldBeDestructive_SoTheGateNeverSilentlyRunsIt() {
+		// Arrange
+		McpToolInvokerRegistry registry = BuildRegistryOverFullCatalog();
+
+		// Act & Assert
+		registry.IsDestructive("update-entity-connections").Should().BeTrue(
+			because: "the full-list write removes every connection the list leaves out, so it is not an additive update");
+		registry.IsReadOnly("update-entity-connections").Should().BeFalse(
+			because: "the tool saves the EntityConnections add-on, so it must be host-confirmed");
 	}
 
 	[Test]

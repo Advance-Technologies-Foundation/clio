@@ -347,6 +347,8 @@ internal static class PassthroughToolClassificationRegistry {
 			["inspect-license"] = PassthroughClassification.NotApplicable,
 			["manage-license"] = PassthroughClassification.NotApplicable,
 			["get-related-page-addon"] = PassthroughClassification.NotApplicable,
+			["get-entity-connections"] = PassthroughClassification.NotApplicable,
+			["update-entity-connections"] = PassthroughClassification.NotApplicable,
 			["get-schema"] = PassthroughClassification.NotApplicable,
 			["get-schema-name-prefix"] = PassthroughClassification.NotApplicable,
 			["get-sql-schema"] = PassthroughClassification.NotApplicable,

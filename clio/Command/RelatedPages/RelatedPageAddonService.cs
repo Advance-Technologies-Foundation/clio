@@ -128,7 +128,7 @@ internal sealed class RelatedPageAddonService(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
 	IAddonSchemaDesignerClient addonSchemaDesignerClient,
-	IRemoteEntitySchemaDesignerClient entitySchemaDesignerClient,
+	IEntityAddonTargetResolver targetResolver,
 	IPageSchemaResolver pageSchemaResolver,
 	ILogger logger)
 	: IRelatedPageAddonService {
@@ -139,7 +139,6 @@ internal sealed class RelatedPageAddonService(
 	// by RelatedPageAddonRequest/RelatedPageAddonReadRequest.SchemaType == Mobile (used by the mobile conversion flow
 	// to register a converted mobile form page as the object's default mobile edit page).
 	private const string MobileRelatedPageAddonName = "MobileRelatedPage";
-	private const string EntitySchemaManagerName = "EntitySchemaManager";
 
 	// Maps the requested UI target to the platform add-on name written into the schema-designer request.
 	private static string AddonNameFor(RelatedPageSchemaType schemaType) =>
@@ -477,20 +476,9 @@ internal sealed class RelatedPageAddonService(
 
 	// Keep the fetched wire payload intact: the designer UId may identify an unsaved replacement,
 	// whereas the add-on service has already resolved its persisted root target.
-	private static string ReadTargetSchemaUId(AddonSchemaDto schema) {
-		if (schema.AdditionalData != null) {
-			foreach (var field in schema.AdditionalData) {
-				if (string.Equals(field.Key, "targetSchemaUId", StringComparison.OrdinalIgnoreCase)
-					&& field.Value.ValueKind == JsonValueKind.String
-					&& Guid.TryParse(field.Value.GetString(), out Guid targetUId)
-					&& targetUId != Guid.Empty) {
-					return targetUId.ToString("D");
-				}
-			}
-		}
-		throw new InvalidOperationException(
-			RelatedPageAddonMessages.TargetSchemaUIdInvalid);
-	}
+	private static string ReadTargetSchemaUId(AddonSchemaDto schema) =>
+		EntityAddonTargetResolver.TryReadTargetSchemaUId(schema)?.ToString("D")
+		?? throw new InvalidOperationException(RelatedPageAddonMessages.TargetSchemaUIdInvalid);
 
 	/// <summary>
 	/// Decodes the add-on's <c>metaData</c> JSON string into the page set, mirroring the shape
@@ -592,62 +580,18 @@ internal sealed class RelatedPageAddonService(
 	/// </summary>
 	private (string packageUId, Guid packageId, EntityDesignSchemaDto entitySchema) ResolveTarget(
 		string packageName, string entitySchemaName) {
-		(string packageUId, string packageError) = PageSchemaMetadataHelper.QueryPackageUId(
-			applicationClient, serviceUrlBuilder, packageName);
-		if (packageError != null) {
-			throw new InvalidOperationException(packageError);
-		}
-		if (!Guid.TryParse(packageUId, out Guid packageId)) {
-			throw new InvalidOperationException(
-				$"Resolved package '{packageName}' UId '{packageUId}' is not a valid GUID.");
-		}
-		EntityDesignSchemaDto entitySchema = ResolveEntitySchema(entitySchemaName, packageId, packageName);
-		return (packageUId, packageId, entitySchema);
+		EntityAddonTarget target = targetResolver.Resolve(packageName, entitySchemaName);
+		return (target.PackageUId, target.PackageId, target.EntitySchema);
 	}
 
 	/// <summary>
 	/// Builds the related-page add-on <c>GetSchema</c> request for the resolved object — the single shape both
 	/// <see cref="Create"/> and <see cref="Get"/> send. <paramref name="addonName"/> selects the web
-	/// (<c>RelatedPage</c>) or mobile (<c>MobileRelatedPage</c>) add-on. Mirrors the Interface Designer / Business
-	/// Rule add-on path: a replacing or derived object reports the parent it extends; a plain object reports none
-	/// (<c>Guid.Empty</c>).
+	/// (<c>RelatedPage</c>) or mobile (<c>MobileRelatedPage</c>) add-on.
 	/// </summary>
 	private static AddonGetRequestDto BuildAddonGetRequest(
 		EntityDesignSchemaDto entitySchema, Guid packageId, string addonName) =>
-		new() {
-			AddonName = addonName,
-			TargetSchemaUId = entitySchema.UId,
-			TargetParentSchemaUId = entitySchema.ParentSchema?.UId ?? Guid.Empty,
-			TargetPackageUId = packageId,
-			TargetSchemaManagerName = EntitySchemaManagerName,
-			UseFullHierarchy = true
-		};
-
-	/// <summary>
-	/// Resolves the target object (entity schema) through the entity schema designer — the same source the
-	/// Business Rule add-on path uses — so the add-on request carries the object's real <c>UId</c> and,
-	/// for a replacing/derived schema, its parent schema <c>UId</c> (none for a plain object). Returns a
-	/// clean "not found" failure when the object does not exist in the package.
-	/// </summary>
-	private EntityDesignSchemaDto ResolveEntitySchema(string entitySchemaName, Guid packageId, string packageName) {
-		// Use the throwing GetSchemaDesignItem (like the business-rule path), NOT TryGetSchemaDesignItem: the
-		// Try variant returns null on an HTML / auth-redirect / server-error page, which would be misreported as
-		// "object not found" below. GetSchemaDesignItem surfaces those transport/server faults with a clear error.
-		// Note: it returns Clio.Command.EntitySchemaDesigner.DesignerResponse, which collides by simple name with
-		// Clio.Command.DesignerResponse — let the compiler infer the type.
-		var response = entitySchemaDesignerClient.GetSchemaDesignItem(
-			new GetSchemaDesignItemRequestDto {
-				Name = entitySchemaName.Trim(),
-				PackageUId = packageId,
-				UseFullHierarchy = true,
-				Cultures = [EntitySchemaDesignerSupport.DefaultCultureName]
-			},
-			new RemoteCommandOptions());
-		return response?.Schema
-			?? throw new InvalidOperationException(
-				$"Object (entity schema) '{entitySchemaName}' not found in package '{packageName}'. The object must "
-				+ "be visible from that package — if it lives elsewhere, add a package dependency.");
-	}
+		EntityAddonTargetResolver.BuildGetRequest(entitySchema, packageId, addonName);
 
 	/// <summary>
 	/// Verifies a supplied <c>TypeColumnUId</c> is a real column of the resolved object (its own or an inherited

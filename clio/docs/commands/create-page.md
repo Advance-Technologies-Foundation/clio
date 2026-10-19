@@ -54,8 +54,10 @@ clio create-page [options]
 
 --description                      Optional schema description
 
---entity-schema-name               Optional entity schema to record in the
-                                   new page dependencies
+--entity-schema-name               Optional entity schema the page is bound
+                                   to. A web page gets a data source for it
+                                   (see Notes); the schema is also recorded
+                                   in the page dependencies
 
 --optional-properties              Optional JSON array of {key, value} objects
                                    seeded into the new schema optionalProperties.
@@ -102,6 +104,8 @@ create a desktop (a desktop-selector workspace) from the CentralAreaDesktopTempl
 - `--optional-properties` accepts a JSON array of `{key, value}` objects that are written verbatim into the new schema's `optionalProperties`. A malformed payload fails before any remote call.
 - To create a **dashboard**, use `--template BaseDashboardTemplate` and pass its link-back properties (`DashboardsEntitySchemaName`, `DashboardsElementName`, `DashboardsClientUnitSchemaUId`) through `--optional-properties`. When the host page has replacements, `DashboardsClientUnitSchemaUId` must be the root schema's UId. MCP callers should read the `dashboard-creation` guidance (`get-guidance name=dashboard-creation`) for how to retrieve each value.
 - To create a **desktop** (a workspace listed in the desktop selector), use `--template CentralAreaDesktopTemplate`. The created schema gets group `Desktop`, and the schema group is what makes the platform (`DesktopAppEventListener`) auto-register the desktop in the `Desktop` entity; clio never writes that record itself. Note that inheriting the template as a *parent* is not enough on its own — a page that keeps a non-`Desktop` group (e.g. the template's own `DesktopTemplate` group, which the generic page designer copies) will not appear in the selector; `create-page` stamps group `Desktop` for you. Deleting the desktop schema (`delete-schema --remote`) auto-removes its selector record. MCP callers should read the `desktop-page` guidance (`get-guidance name=desktop-page`) first.
+
+- With `--entity-schema-name`, a **web** page is saved with a body that binds a data source to the entity, the way the Freedom UI designer does when a data source is set. The template decides the shape: a template with no primary data source (record, mini and blank page templates) gets a page-scoped `PDS` that becomes `primaryDataSourceName`, the shape of stock record pages such as `Accounts_FormPage`; a template that already names a primary data source gets that one bound; the list page template's `PDS` (a `viewElement` list source, not primary) is bound without being made primary. The response reports `dataSourceName` and, when it is primary, `primaryDataSourceName`. Without a primary data source, fields, `crt.Connections`, `crt.Feed` and the templates' `#DataSourceEntityName()#` / `#PrimaryDataSourceName()#` macros show nothing. A **mobile** page is not seeded: the entity is only recorded in its dependencies, and `note` says so.
 
 ## Reporting Bugs
 
