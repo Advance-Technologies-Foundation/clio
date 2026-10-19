@@ -107,6 +107,7 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	private readonly TimeSpan _budget;
 	private readonly TimeSpan _stageEventSilenceBound;
 	private readonly TimeSpan _postTerminalExitGrace;
+	private readonly TimeSpan _terminalStageHandshakeBound;
 	private readonly TimeSpan _stickyCallBudget;
 	private readonly TimeSpan _stickyCompletionLinger;
 
@@ -164,6 +165,12 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 	/// <see cref="DefaultStickyCompletionLinger"/>. Stated by a test so the reap is observable without
 	/// waiting out a window measured in minutes.
 	/// </param>
+	/// <param name="terminalStageHandshakeBound">
+	/// How long a <c>terminal-stage</c> call waits for the worker's MCP handshake before killing it as a
+	/// worker that never started the operation; defaults to the stage-event silence bound. Stated
+	/// separately by a test whose subject is a scaled-down silence bound, so that bound measures the run
+	/// alone and a slow handshake on a loaded host cannot expire it.
+	/// </param>
 	/// <exception cref="ArgumentNullException">A dependency is missing.</exception>
 	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
 		Justification = "Composition root for the worker relay: process supervisor, transport owner, relay, " +
@@ -185,7 +192,8 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		TimeSpan? stageEventSilenceBound = null,
 		TimeSpan? postTerminalExitGrace = null,
 		TimeSpan? stickyCallBudget = null,
-		TimeSpan? stickyCompletionLinger = null) {
+		TimeSpan? stickyCompletionLinger = null,
+		TimeSpan? terminalStageHandshakeBound = null) {
 		ArgumentNullException.ThrowIfNull(supervisor);
 		ArgumentNullException.ThrowIfNull(transportOwner);
 		ArgumentNullException.ThrowIfNull(relay);
@@ -209,6 +217,7 @@ public sealed partial class McpWorkerCallDispatcher : IMcpWorkerCallDispatcher {
 		_budget = budget;
 		_stageEventSilenceBound = stageEventSilenceBound ?? DefaultStageEventSilenceBound;
 		_postTerminalExitGrace = postTerminalExitGrace ?? DefaultPostTerminalExitGrace;
+		_terminalStageHandshakeBound = terminalStageHandshakeBound ?? _stageEventSilenceBound;
 	}
 
 	/// <summary>

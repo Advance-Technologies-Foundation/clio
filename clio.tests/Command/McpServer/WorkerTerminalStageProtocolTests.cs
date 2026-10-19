@@ -67,28 +67,33 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// The silence bound for every test whose subject is NOT expiry — deliberately generous.
 	/// </summary>
 	/// <remarks>
-	/// <see cref="TerminalStageWatch"/> starts its silence clock when it is CONSTRUCTED, which is before
-	/// the transport is connected and the relay opened. So this bound is charged the SDK client
-	/// construction, the initialize round trip, the tools/call dispatch and the child's first emit — none
-	/// of which this fixture is measuring. At the tight expiry value that budget is a coin flip on a cold
-	/// assembly under three-way fixture parallelism, and it would flip the HAPPY-PATH tests into spurious
-	/// indeterminates. The shipped default is 300 s and swallows the handshake completely; only a test
-	/// that scales it down can be bitten, so only the tests about expiry take that risk.
+	/// It is also the handshake bound of EVERY test in this fixture. The dispatcher bounds the worker
+	/// handshake with the silence bound unless told otherwise, so a test that scaled the silence bound down
+	/// without separating the two gave a cold SDK client and an initialize round trip on a loaded four-CPU
+	/// agent the same few hundred milliseconds — and a handshake that overran them was killed before the
+	/// run began, failing the expiry tests on runs that never reached the silence they were about.
+	/// <see cref="CreateSut"/> therefore always passes this value as the handshake bound, and the silence
+	/// clock itself starts only when the operation is requested, so a scaled-down bound measures the run.
 	/// </remarks>
 	private static readonly TimeSpan SilenceBound = TimeSpan.FromSeconds(20);
 
 	/// <summary>The scaled-down bound used ONLY by the tests whose subject is the silence timer expiring.</summary>
-	private static readonly TimeSpan ExpirySilenceBound = TimeSpan.FromMilliseconds(400);
+	/// <remarks>
+	/// The first window still has to cover the tools/call reaching the child and its first stage event
+	/// coming back — two hops through the relay that each need a thread-pool thread. 400 ms left that a
+	/// coin flip on a loaded four-CPU agent running other fixtures; a second costs each expiry test about
+	/// half a second more and leaves the scripted child, which answers in milliseconds, a wide margin.
+	/// </remarks>
+	private static readonly TimeSpan ExpirySilenceBound = TimeSpan.FromSeconds(1);
 
 	/// <summary>
 	/// The silence bound the LONG-STAGE test runs with, and the one number it is really about.
 	/// </summary>
 	/// <remarks>
-	/// Deliberately far above <see cref="ExpirySilenceBound"/>: this test's subject is a HEALTHY run, so
-	/// the handshake that <see cref="TerminalStageWatch"/> charges to the first window must never be able
-	/// to expire it. The child's single stage then runs for <see cref="LongStageDuration"/> — three times
-	/// this bound — which is what makes the test discriminating: nothing but an in-stage liveness refresh
-	/// can carry a run across that gap.
+	/// This test's subject is a HEALTHY run, so the gap between two liveness refreshes — a third of this
+	/// bound — must never be able to expire it. The child's single stage then runs for
+	/// <see cref="LongStageDuration"/> — three times this bound — which is what makes the test
+	/// discriminating: nothing but an in-stage liveness refresh can carry a run across that gap.
 	/// </remarks>
 	private static readonly TimeSpan LongStageSilenceBound = TimeSpan.FromSeconds(1);
 
@@ -207,6 +212,33 @@ public sealed class WorkerTerminalStageProtocolTests {
 			because: "the operator-facing consequence of an indeterminate deploy is the state of the target, not the state of the call");
 		_spawnCount.Should().Be(1,
 			because: "retry-on-ambiguity is how one half-installed environment becomes two, and a retry loop is invisible to every other assertion here");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A worker handshake slower than the whole silence bound is not charged to the run: the silence clock starts when the operation is requested, so a healthy deploy behind a slow initialize answers for itself instead of being reported indeterminate before it could emit anything.")]
+	public async Task DispatchAsync_ShouldNotChargeTheHandshakeToTheSilenceBound_WhenTheHandshakeIsSlow() {
+		// Arrange — the child answers initialize only after one and a half silence windows, then streams
+		// straight to its terminal stage. Measured from the watch's construction, the bound has expired
+		// before the operation is even requested; measured from the request, the run never falls silent.
+		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.AnswersAfterTerminalStage,
+			ExpirySilenceBound, initializeDelay: ExpirySilenceBound * 1.5);
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut(silenceBound: ExpirySilenceBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		result.IsError.Should().NotBeTrue(
+			because: "the run streamed to a successful terminal stage the moment it was asked to run; reporting it indeterminate blames the deploy for the time its worker took to start");
+		ReadStructured(result)?["answered-by"]?.GetValue<string>().Should().Be("worker",
+			because: "a parent-composed answer here means the silence bound resolved the call before the run spoke");
+		_supervisor.DidNotReceive().KillContained(Arg.Any<IWorkerLease>());
+		worker.CallCount.Should().Be(1,
+			because: "the operation must actually have been requested, or this test would pass on a call that never reached the silence clock at all");
+		_spawnCount.Should().Be(1,
+			because: "one tool call spawns exactly one worker, whatever its handshake cost");
 	}
 
 	[Test]
@@ -568,7 +600,8 @@ public sealed class WorkerTerminalStageProtocolTests {
 			new WorkerMcpRelay(_logger), _settingsRepository, stickyWorkers,
 			new StickyWorkerPoll(_supervisor, stickyWorkers, _logger), reservations,
 			Substitute.For<Clio.Command.McpServer.Tools.IToolCommandResolver>(), _logger,
-			ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound, ExitGrace);
+			ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound, ExitGrace,
+			terminalStageHandshakeBound: SilenceBound);
 	}
 
 	private static async Task<CallToolResult> DispatchAsync(
@@ -601,11 +634,15 @@ public sealed class WorkerTerminalStageProtocolTests {
 	/// call the killed worker was still free to answer.
 	/// </remarks>
 	/// <param name="behaviour">What the scripted child does once it is asked to run the tool.</param>
+	/// <param name="silenceBound">The silence bound the child is scripted against; <see cref="SilenceBound"/> when omitted.</param>
+	/// <param name="initializeDelay">How long the child waits before answering <c>initialize</c>.</param>
 	/// <returns>The scripted child, so a test can state what it saw and what it emitted.</returns>
-	private StageStreamingWorkerChild ArrangeWorker(ChildBehaviour behaviour, TimeSpan? silenceBound = null) {
+	private StageStreamingWorkerChild ArrangeWorker(ChildBehaviour behaviour, TimeSpan? silenceBound = null,
+		TimeSpan? initializeDelay = null) {
 		// The child's own silence is measured against the SAME bound the dispatcher runs with; passing them
 		// separately is how a test would accidentally arrange a child that never out-waits the timer.
-		StageStreamingWorkerChild worker = new(behaviour, silenceBound ?? SilenceBound);
+		StageStreamingWorkerChild worker =
+			new(behaviour, silenceBound ?? SilenceBound, initializeDelay ?? TimeSpan.Zero);
 		_supervisor
 			.SpawnContainedAsync(Arg.Any<WorkerSpawnRequest>(), Arg.Any<CancellationToken>())
 			.Returns(_ => {
@@ -749,6 +786,7 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 		private readonly ChildBehaviour _behaviour;
 		private readonly TimeSpan _silenceBound;
+		private readonly TimeSpan _initializeDelay;
 		private readonly Guid _runId = Guid.NewGuid();
 		private readonly AnonymousPipeServerStream _parentToChildReader;
 		private readonly AnonymousPipeClientStream _parentToChildWriter;
@@ -763,9 +801,10 @@ public sealed class WorkerTerminalStageProtocolTests {
 		private int _runningEventsForTheLongStage;
 		private TimeSpan _stageDuration;
 
-		internal StageStreamingWorkerChild(ChildBehaviour behaviour, TimeSpan silenceBound) {
+		internal StageStreamingWorkerChild(ChildBehaviour behaviour, TimeSpan silenceBound, TimeSpan initializeDelay) {
 			_behaviour = behaviour;
 			_silenceBound = silenceBound;
+			_initializeDelay = initializeDelay;
 			_parentToChildReader = new AnonymousPipeServerStream(PipeDirection.In, HandleInheritability.None);
 			_parentToChildWriter =
 				new AnonymousPipeClientStream(PipeDirection.Out, _parentToChildReader.GetClientHandleAsString());
@@ -866,6 +905,8 @@ public sealed class WorkerTerminalStageProtocolTests {
 			JsonNode request = JsonNode.Parse(line);
 			string method = request?["method"]?.GetValue<string>();
 			if (method == "initialize") {
+				// A slow worker start, stated by the test rather than left to the host's load.
+				await Task.Delay(_initializeDelay).ConfigureAwait(false);
 				await WriteAsync(toParent, new JsonObject {
 					["jsonrpc"] = "2.0",
 					["id"] = request["id"]?.DeepClone(),

@@ -119,13 +119,27 @@ internal sealed class TerminalStageWatch {
 
 	/// <summary>
 	/// Gets how long it has been since ANY stage event arrived — the quantity the silence bound measures.
-	/// Counted from the moment the watch was created, so a worker that never emits anything is bounded
-	/// exactly like one that fell silent halfway.
+	/// Counted from the moment the watch was created, or from <see cref="RestartSilenceClock"/> when the
+	/// run has not spoken yet, so a worker that never emits anything is bounded exactly like one that fell
+	/// silent halfway.
 	/// </summary>
 	internal TimeSpan SinceLastStageEvent {
 		get {
 			lock (_stateLock) {
 				return Stopwatch.GetElapsedTime(_lastStageEventTimestamp);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Restarts the silence clock at the moment the operation is requested, so the first silence window
+	/// measures the run rather than the worker handshake that preceded it. Ignored once any stage event
+	/// has arrived: from then on only the run's own events move the clock.
+	/// </summary>
+	internal void RestartSilenceClock() {
+		lock (_stateLock) {
+			if (_stageEventCount == 0) {
+				_lastStageEventTimestamp = Stopwatch.GetTimestamp();
 			}
 		}
 	}
