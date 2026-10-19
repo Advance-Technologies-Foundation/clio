@@ -734,6 +734,110 @@ public sealed class ServerProcessDescriberTests {
 				+ "required input, and it reaches them only through the serialized output");
 	}
 
+	private const string FileProcessingBlock =
+		"{\"source\":\"attachments\",\"action\":\"saveToAttachments\",\"actionStored\":true,"
+		+ "\"attachments\":{\"object\":\"Account\",\"storage\":\"dedicated\",\"fileObject\":\"AccountFile\","
+		+ "\"linkColumn\":\"Account\",\"recordId\":{\"processParameter\":\"PAccount\",\"display\":\"Account\","
+		+ "\"futureValueFact\":1},\"numberOfRecords\":50,"
+		+ "\"sort\":{\"column\":\"CreatedOn\",\"direction\":\"desc\",\"futureSortFact\":\"s\"},\"futureAttachmentsFact\":true},"
+		+ "\"saveTo\":{\"object\":\"Contact\",\"recordId\":{\"sourceElement\":\"ReadContact\","
+		+ "\"sourceElementParameter\":\"ResultEntity\",\"sourceColumn\":\"Id\",\"futureValueFact\":2},"
+		+ "\"linkColumn\":\"Contact\",\"storage\":\"dedicated\",\"fileObject\":\"ContactFile\",\"futureSaveToFact\":[1]},"
+		+ "\"outputs\":[{\"parameter\":\"ObjectFiles\",\"item\":\"File\",\"futureOutputFact\":\"o\"},"
+		+ "{\"parameter\":\"CreatedObjectFileIds\",\"item\":\"Id\"}],"
+		+ "\"issues\":[\"the sort keeps 1 hidden entry\"],"
+		+ "\"futureFileProcessingFact\":{\"nested\":\"kept\"}}";
+
+	private static IApplicationClient ClientReportingFileProcessing(string block) =>
+		ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000003\",\"name\":\"ReadFiles\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"fileprocessing\","
+			+ "\"userTaskName\":\"ObjectFileProcessingUserTask\","
+			+ $"\"fileProcessing\":{block},\"parameters\":[]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+
+	[Test]
+	[Description("Deserializes the fileProcessing block of a Process file element by name - every typed member of the block, its attachments and saveTo groups, both value sources, the sort and the outputs. The describe output is re-serialized from this model, so a member it does not declare, or one whose JsonPropertyName drifts from the server's DataMember, reaches nobody.")]
+	public void Describe_ShouldReadTheFileProcessingBlock_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReportingFileProcessing(FileProcessingBlock);
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFileProcessing block = result.Value.Elements[0].FileProcessing;
+		block.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared block");
+		block.Source.Should().Be("attachments", because: "the variant identity check reads back by name");
+		block.Action.Should().Be("saveToAttachments", because: "the effective action reads back by name");
+		block.ActionStored.Should().BeTrue(because: "actionStored tells a stored action from the run-time default");
+		block.Attachments.Object.Should().Be("Account", because: "the record object read is the write member 'object'");
+		block.Attachments.Storage.Should().Be("dedicated", because: "the storage identity check reads back by name");
+		block.Attachments.FileObject.Should().Be("AccountFile", because: "the file object identity check reads back");
+		block.Attachments.LinkColumn.Should().Be("Account", because: "the record-scope column reads back");
+		block.Attachments.RecordId.ProcessParameter.Should().Be("PAccount",
+			because: "the record scope is reported as attachments.recordId in the value-source vocabulary");
+		block.Attachments.RecordId.Display.Should().Be("Account", because: "the describe-only display reads back");
+		block.Attachments.NumberOfRecords.Should().Be(50, because: "the effective file count reads back");
+		block.Attachments.Sort.Column.Should().Be("CreatedOn", because: "the primary sort column reads back");
+		block.Attachments.Sort.Direction.Should().Be("desc", because: "the primary sort direction reads back");
+		block.SaveTo.Object.Should().Be("Contact", because: "the target record object reads back");
+		block.SaveTo.RecordId.SourceElement.Should().Be("ReadContact", because: "an element source decodes by name");
+		block.SaveTo.RecordId.SourceElementParameter.Should().Be("ResultEntity",
+			because: "the element output of the source reads back");
+		block.SaveTo.RecordId.SourceColumn.Should().Be("Id", because: "the column of the output record reads back");
+		block.SaveTo.LinkColumn.Should().Be("Contact", because: "the writable link column reads back");
+		block.SaveTo.Storage.Should().Be("dedicated", because: "the target storage identity check reads back");
+		block.SaveTo.FileObject.Should().Be("ContactFile", because: "the target file object identity check reads back");
+		block.Outputs.Select(output => $"{output.Parameter}.{output.Item}").Should().Equal(
+			["ObjectFiles.File", "CreatedObjectFileIds.Id"],
+			because: "the outputs name what a mapping addresses, in the order the server reports them");
+		block.Issues.Should().Equal(["the sort keeps 1 hidden entry"], because: "the describe-only issues read back");
+		block.AdditionalData.Should().ContainKey("futureFileProcessingFact",
+			because: "an undeclared block member lands in the overflow bag instead of being discarded");
+	}
+
+	[Test]
+	[Description("Forwards the fileProcessing block VERBATIM under the describe command's own options: re-serialized, it equals what the server sent, including an unknown future key at every nesting level - block, attachments, saveTo, value source, sort, output. An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, nor a nested type without an overflow bag.")]
+	public void Describe_ShouldForwardTheFileProcessingBlockVerbatim_UnderTheCommandsOwnOptions() {
+		// Arrange
+		IApplicationClient client = ClientReportingFileProcessing(FileProcessingBlock);
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		JsonNode forwarded = JsonNode.Parse(reserialized)!["elements"]![0]!["fileProcessing"];
+		JsonNode.DeepEquals(forwarded, JsonNode.Parse(FileProcessingBlock)).Should().BeTrue(
+			because: $"the block must reach the caller exactly as the server sent it, but came out as {forwarded?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Leaves the fileProcessing block unset (null) on an element of another kind or from a server that predates it, so it serializes away rather than surfacing as an empty block.")]
+	public void Describe_ShouldLeaveTheFileProcessingBlockNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000001\",\"name\":\"task1\","
+			+ "\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"usertask\",\"parameters\":[]}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		string reserialized = JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions);
+
+		// Assert
+		result.Value.Elements[0].FileProcessing.Should().BeNull(because: "an absent block must stay null");
+		JsonNode.Parse(reserialized)!["elements"]![0]!.AsObject().ContainsKey("fileProcessing").Should().BeFalse(
+			because: "a null block serializes away instead of appearing on every element of every other kind");
+	}
+
 	[Test]
 	[Description("Leaves the subProcess block and isRequired unset (null) when an older server omits them, so an element of another kind - and an older package - serialize away cleanly rather than surfacing an empty block.")]
 	public void Describe_ShouldLeaveTheSubProcessBlockNull_WhenServerOmitsIt() {

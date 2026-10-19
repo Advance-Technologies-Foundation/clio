@@ -1,11 +1,11 @@
 # ENG-92719 File processing element and ENG-95984 File process parameter type: open questions and evidence status
 
 This document lists what is still open before and during the implementation of ENG-95984 File process parameter
-type (Task) and ENG-92719 File processing element (Story), with its sub-tasks ENG-96505 Element readiness and object
-attachments mode and ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
+type (Task) and ENG-92719 File processing element (Story), with ENG-96505 Element readiness and object
+attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes (epic ENG-92704 Create BP via AI Toolkit).
 It has four parts. **Part A** holds 20 owner questions (Q1-Q20). Each has options, a recommendation the plan already
 assumes, and what a different answer changes. Q1-Q9 are about Jira and delivery; **the owner agreed
-Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, and Q19 (`process-files`) on 2026-10-08. Q10-Q19 fix the contract. Q20, added on 2026-10-13, asks where the clio description bytes come from; the owner agreed it on 2026-10-14 (A: trim existing text). **Part B** holds 28 stand measurements with exact recipes and read-only evidence
+Q1-Q9 as recommended on 2026-10-07** (Q7 had been answered by M3), Q10 (option A), Q11 (Variable) and Q12 (as recommended) the same day, Q19 (`process-files`) on 2026-10-08, and Q13-Q18 as recommended on 2026-10-14. Q10-Q19 fix the contract. Q20, added on 2026-10-13, asks where the clio description bytes come from; the owner agreed it on 2026-10-14 (A: trim existing text). **Part B** holds 28 stand measurements with exact recipes and read-only evidence
 queries (M27 was added on 2026-10-14). Seven are read-only. The rest need writes on disposable processes in the `Custom` package, and each needs
 the user's go-ahead. Fifteen of them gate code; the rest verify or tune wording. **Part C** records what was already
 measured on 2026-10-01: versions, feature states, the user's designer observations UO-1..UO-4, describe of the
@@ -16,7 +16,7 @@ and two have none scheduled because a refusal covers the case. Nothing in this d
 
 | | |
 |---|---|
-| Status | Open. Written 2026-10-01; Q1-Q12 agreed 2026-10-07, Q19 2026-10-08 and Q20 2026-10-14 (A; added 2026-10-13); Q13-Q18 open. |
+| Status | Open. Written 2026-10-01; Q1-Q12 agreed 2026-10-07, Q19 2026-10-08, Q13-Q18 (as recommended) and Q20 (A; added 2026-10-13) 2026-10-14; all 20 owner questions are answered. |
 | Sibling documents | [README](README.md) · [platform-reference](eng-92719-file-processing-element-platform-reference.md) · [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) · [use-cases](eng-92719-file-processing-element-use-cases.md) · [traps](eng-92719-file-processing-element-traps.md) · [reuse](eng-92719-file-processing-element-reuse.md) · [decisions](eng-92719-file-processing-element-decisions.md) · [plan](eng-92719-file-processing-element-plan.md) · [test-plan](eng-92719-file-processing-element-test-plan.md) · [pr-split](eng-92719-file-processing-element-pr-split.md) · [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) · [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) |
 | Numbering | `D1`-`D30` are the decisions in [decisions](eng-92719-file-processing-element-decisions.md). `M1`-`M26` are the measurements of its D29 (M26 is the T-19 probe of [traps](eng-92719-file-processing-element-traps.md)); M3b is added here and is the baseline the [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) calls MI-0. M27 is added here too (2026-10-14): the open item of the [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) section 3.1; its recipe is only in B.5. Refusal and notice ids (`F-T*`, `F-M*`, `F-E*`, `F-F*`, `F-R*`, `F-P*`) are those of the decisions' Appendix A. `O1`-`O8`, `L1`-`L7` and the contingencies `X1`-`X8` are in [pr-split](eng-92719-file-processing-element-pr-split.md) sections 11-13; "decisions X1-X7" are the corrections in section 0 of the decisions. |
 | Methods | [test-plan](eng-92719-file-processing-element-test-plan.md) section 8 gives each measurement's method in one row, and its section 9 the evidence queries. Part B here is the full recipe and follows both; Part B and test-plan section 8 now give one recipe for every measurement. Rows 35-37 of Part D record the places where they differed before the reconciliation of 2026-10-01. |
@@ -61,12 +61,12 @@ the owner row of the sibling documents.
 | Q10 | How a caller declares a file collection | `type: FileCollection`, read back as `FileCollection` **Agreed 2026-10-07.** | PK-PT | D2; decisions row 1 |
 | Q11 | Default direction of a FileCollection | Variable (revised from Out after the 2026-10-07 recount) **Agreed 2026-10-07.** | PK-PT | D3; decisions row 2 |
 | Q12 | Two-level binder policy (P3, P2 scope) | P3 resets a stale parent with a notice; P2 and R-M2 only on file-consuming targets **Agreed 2026-10-07.** | PK-PT | D5; decisions rows 3, 4 |
-| Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check | PK-OA | D10; decisions row 6 |
-| Q14 | Naming bundle of the `fileProcessing` block | as proposed, including `numberOfRecords` defaulting to 50 | PK-OA | D11; decisions row 7 |
-| Q15 | `ResultActionType` when `action` is omitted on create | inferred from `saveTo`, always written | PK-OA | D14; decisions row 8 |
-| Q16 | Record scope shape and empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving and Word elements with no selecting filter (to confirm knowing the "a NOTICE, never a refusal" precedent in the Q16 note of 2026-10-13) | PK-OA | D16; decisions row 10 |
-| Q17 | Storage policy details | do not read the designer flag for behaviour; no `linkColumn: "none"`; no SysFile override | PK-OA | D15; decisions row 9 |
-| Q18 | FastReport printables | refused in this work | PK-RP | D17; decisions row 11 |
+| Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check **Agreed 2026-10-14.** | PK-OA | D10; decisions row 6 |
+| Q14 | Naming bundle of the `fileProcessing` block | as proposed, including `numberOfRecords` defaulting to 50 **Agreed 2026-10-14.** | PK-OA | D11; decisions row 7 |
+| Q15 | `ResultActionType` when `action` is omitted on create | inferred from `saveTo`, always written **Agreed 2026-10-14.** | PK-OA | D14; decisions row 8 |
+| Q16 | Record scope shape and empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving and Word elements with no selecting filter, notice for Object + use in process **Agreed 2026-10-14**, the "a NOTICE, never a refusal" precedent in the Q16 note of 2026-10-13 weighed and not followed. | PK-OA | D16; decisions row 10 |
+| Q17 | Storage policy details | do not read the designer flag for behaviour; no `linkColumn: "none"`; no SysFile override **Agreed 2026-10-14.** | PK-OA | D15; decisions row 9 |
+| Q18 | FastReport printables | refused in this work **Agreed 2026-10-14.** | PK-RP | D17; decisions row 11 |
 | Q19 | Name of the new guide | `process-files` **Agreed 2026-10-08.** | KB-PT | D25; decisions row 15 |
 | Q20 | Where do the description bytes for PT and OA come from? (added 2026-10-13) | A: trim existing text per tool, reviewer-approved, measured by lowering the ceiling **Agreed 2026-10-14.** | CL-PT's description edit (CL-2) and CL-OA; no package code | D25; ENG-95984 File process parameter type plan CL-2; pr-split X1 |
 
@@ -219,10 +219,11 @@ on 2026-10-08, produced exactly one automated clio PR (clio #1780, 1.6.6.91), an
 `main`), so M20 still holds; it is the only in-flight work left. ENG-102112 create-business-process silently accepts
 a generic userTask PreconfiguredPageUserTask without the preconfiguredPage block merged on 2026-10-08 (package #90,
 CrtProcessBuilder 1.6.6.88; clio #1777; knowledge #262). `UserTaskElementHandler.Create` now calls
-`RefusePreconfiguredPageOnGenericRoute` (`PB/Elements/UserTaskElementHandler.cs:86`) and, since ENG-102537 Process
+`RefusePreconfiguredPageOnGenericRoute` (`PB/Elements/UserTaskElementHandler.cs:89`) and, since ENG-102537 Process
 elements built without their configuration block save green and fail or hang at run time,
-`RefuseUnconfigurablePageTask` (`:87`), then creates the element (`:88`). OA.5 copies that shape and goes after `:87`,
-before `:88`: a rebase onto merged code, not a merge conflict.
+`RefuseUnconfigurablePageTask` (`:90`), then creates the element (`:92`). OA.5 copies that shape:
+`RefuseFileProcessingOnGenericRoute` (`:91`) runs after them and before the element is created. (These line numbers are
+at the OA head, tag `crtprocessbuilder-1.6.6.103`; on `main` the two merged refusals sit at `:86` and `:87`.)
 
 #### Q9. Which follow-up Sub-tasks to create, and when (agreed 2026-10-07: as recommended)
 
@@ -305,7 +306,7 @@ decisions D5 and the guide's binder section. P1 moves the `[RequiresPackage]` fl
 
 ### A.3 ENG-92719 File processing element contract
 
-#### Q13. Element token and variant discriminator
+#### Q13. Element token and variant discriminator (agreed 2026-10-14: `fileProcessing`, alias `processFile`; option (ii))
 
 "Process file" is one palette entry backed by three schemas, and changing the source REPLACES the element (measured
 live: `getExcludedMenuItems()` = `["ReportFileProcessingUserTask","ProcessFileProcessingUserTask"]`, 2026-10-01).
@@ -320,7 +321,7 @@ live: `getExcludedMenuItems()` = `["ReportFileProcessingUserTask","ProcessFilePr
 **What changes:** the type lists and the block clause in the create/modify descriptions, the ManagerMap arm that ships
 in CL-PT, and the refusal texts F-E3.
 
-#### Q14. Naming bundle of the block
+#### Q14. Naming bundle of the block (agreed 2026-10-14: as proposed)
 
 Proposed (D11): groups `attachments`, `report`, `files`, `saveTo`; `action: useInProcess | saveToAttachments`;
 `report.printable` (accepts list-printables' `templateId`); `report.fileNameSuffix` / `fileNameSuffixColumn`;
@@ -334,7 +335,7 @@ The contract, the guide and a create-time notice state this.
 **Recommendation:** accept as proposed. Renaming before code is free; afterwards it costs a deprecation. **What
 changes:** contract member names in package and clio DTOs, the guide, and the description bytes (to be re-measured).
 
-#### Q15. `ResultActionType` when `action` is omitted on create
+#### Q15. `ResultActionType` when `action` is omitted on create (agreed 2026-10-14: as recommended)
 
 SaveToFiles = 0, UseInProcess = 1. The designer defaults the Object and Report pages to 1
 (`PD/BaseFileProcessingUserTaskPropertiesPage/BaseFileProcessingUserTaskPropertiesPage.js:11-12, 894-903`). An
@@ -350,7 +351,7 @@ The Process variant accepts only saveToAttachments in every option (1 throws `No
 `PD/ProcessFileProcessingUserTask/ProcessFileProcessingUserTask.cs:89-97`). **What changes:** refusals F-E6, the
 describe member `actionStored`, and the guide.
 
-#### Q16. Record scope shape and empty-filter policy
+#### Q16. Record scope shape and empty-filter policy (agreed 2026-10-14: R2; refuse / notice)
 
 The natural phrasing `filter {object: "Account", Id = X}` evaluates as `AccountFile.Id = <account id>` and finds zero
 files, with success (`PB/Filters/DataNodeFilterTarget.cs:57-91`, basis=source). An empty filter reads up to N
@@ -375,7 +376,7 @@ analogous Delete data / Modify data empty-filter hazard the rule is the same: "a
 - The recommendation above stays. It is still argued, because the file element differs in what the empty filter
   does: saving copies arbitrary files (a harmful action, not a run-time failure), and a Word element generates one
   document per record of the whole entity (a mass side effect). The use-in-process case keeps the notice, as the
-  precedent does. **The owner should confirm Q16 knowing the precedent.**
+  precedent does. **The owner agreed Q16 knowing the precedent** (answer below).
 - Whatever the answer, the notice half is cheap: one `Rules` entry in `PB/Elements/ElementConfigurationNotices.cs`
   (keyed by task name, `:40-50`) plus a `Describe...` method, reusing `HasSelectingFilter` (`:248-259`). The ledger
   already tracks a file element at every touch site, and per-cut scoping carries over (OA adds the Object rule, RP
@@ -385,10 +386,14 @@ analogous Delete data / Modify data empty-filter hazard the rule is the same: "a
   and it exposes no touched-set query. A refusal needs its own pre-gate check (modify next to
   `EnsureFormulasStillBelongOnTouchedConnectors`, `PB/Design/ProcessEditPipeline.cs:130-133`; build at the end of
   `ApplyDeclarativeContent`, `PB/Design/ProcessBuildHandler.cs:583`) and its own record of touched elements.
-- If the owner chooses "notice everywhere", that pre-gate check and its ledger are not built, and OA.4 shrinks
-  further (inference).
+- The "notice everywhere" option, under which that pre-gate check and its ledger would not be built, was not taken.
 
-#### Q17. Storage policy details
+**Answer (2026-10-14).** R2, and refuse / notice as recommended. The owner weighed the ENG-102537 precedent and
+rejected it here: an unconfigured element visibly fails at run time, while an empty filter on this element runs
+"successfully" with a silent mass effect (it copies up to N arbitrary files, or generates one Word document per
+record of the entity).
+
+#### Q17. Storage policy details (agreed 2026-10-14: as recommended)
 
 These choices remain inside the storage resolver whichever answer Q3 gets (D15):
 
@@ -401,7 +406,7 @@ These choices remain inside the storage resolver whichever answer Q3 gets (D15):
 
 **What changes:** refusals and warnings F-E7, describe `storage`, and the guide's storage section.
 
-#### Q18. FastReport printables
+#### Q18. FastReport printables (agreed 2026-10-14: B)
 
 The stand has 0 FastReport printables (measured: `SysModuleReport` 5 rows, all MS Word, 2026-10-01). The stand
 root (`C:/Projects/Creatio/.devenv/repos/core/TSBpm/Src/Lib/Terrasoft.WebApp.Loader`, where the installed
@@ -717,7 +722,7 @@ resolver's prediction (decisions D15):
 | Contact | `Contact (Contact attachment)` (measured, UO-2) |
 | Lead | `Lead (<FileLead caption>)`: the `FileLead` special case |
 | Account address | plain entry, SysFile (measured, UO-2) |
-| DNS guide file (CrtEmailMarketingApp is installed) | listed by its own caption, as an orphan file object |
+| DNS guide file (CrtEmailMarketingApp is installed) | listed by its own caption, as an orphan file object (dedicated storage: its own UId, `isFileSuccessor: true`) |
 | Uploaded file, FeedFile | plain entries |
 | VwSysProcessFile | orphan entry |
 
@@ -1025,7 +1030,7 @@ there).
 
 | Id | Result | How |
 |---|---|---|
-| M10 | Matches the prediction. 1,218 objects are offered. Legacy file details are listed as `<Entity> (<file object caption>)` (about 40 of them), including `Lead (Lead attachment)` (the `FileLead` case). `DNS guide file`, `Uploaded file` (SysFile itself), `Process files`, `Feed uploaded file`, `Attached file`, `Message file`, `File and link of mailbox synchronization settings` and `File and object link of OAuth 2.0 application` are plain entries: file objects that no entity claims by name are offered as ordinary objects | full list read from the opened combobox's DOM with the field text cleared |
+| M10 | Matches the prediction. 1,218 objects are offered. Legacy file details are listed as `<Entity> (<file object caption>)` (about 40 of them), including `Lead (Lead attachment)` (the `FileLead` case). `DNS guide file`, `Uploaded file` (SysFile itself), `Process files`, `Feed uploaded file`, `Attached file`, `Message file`, `File and link of mailbox synchronization settings` and `File and object link of OAuth 2.0 application` are plain entries, listed under their own caption. M10 read captions only, so it does not show the storage of an entry: by source (`EntitySchemaDesignerUtilities.js:343-357`, `_addFileEntities`) an orphan file object such as DNSGuideFile is a file-object entry with its own UId and `isFileSuccessor: true`, i.e. dedicated storage, while `Uploaded file` (SysFile) and `Feed uploaded file` (FeedFile) are the SysFile family's degenerate SysFile entries (platform-reference section 7.3) | full list read from the opened combobox's DOM with the field text cleared |
 | M11 (a) | Not reproduced. PrintQuotationReport's report element: before opening the panel `TargetDataEntitySchemaUId` had no value; after opening and closing the panel unchanged it holds source None, value null, not OpportunityFile `4135a9ba…`. The other target parameters (`TargetEntitySchemaUId` = OpportunityFile, `ConnectedObjectColumnUId`, `ConnectedObjectId`, `IsSeparateReports` true, `ResultActionType` 0) are unchanged. The panel shows "Generate separate report for each record" checked and disabled for the Word printable Quotation | designer JavaScript on the open schema |
 | M11 (b) | Not reproduced in memory. Object element, source `Account (File and link of account)`, "Use in process": `SourceDataEntitySchemaUId` is None/null after the first close and still None/null after reopening and closing the panel unchanged. Per the recipe this is "not reproduced in memory", not "refuted"; step (c), a save and reload, would settle it | designer JavaScript |
 | M13 | `ConnectedObjectId` reads back as type `Guid` with `referenceSchema: Contract`, source Script `[#ContractId#]`; the stored metadata types it Lookup. Describe therefore reports the CONVERGED type while keeping the snapshot's reference schema: D19 fixtures carry `Guid` plus `referenceSchema`. `TargetDataEntitySchemaUId` and `ConsiderTimeInFilter` are absent (not stored on this element) | `describe-business-process PrintContractsReport` through a current clio (`get-tool-contract` checked first), correlation `7534ca075c72` |
@@ -1060,7 +1065,7 @@ the contact and its two files through one SQL DELETE by Id, whose cascades remov
 | M24 | (a) an array into the object member `readData.sort` is refused with "'sort' requires a 'column'" (`efb48ac50196`); (b) an object into the array member `readData.columns` is refused with "mode 'collection' requires explicit 'columns'" (`8bc67379307b`). Both wrong shapes are NULLED by the binder and only a later rule refuses, with a text that names the wrong cause; nothing was saved. The `attachments.sort` guide sentence: a wrong JSON shape is not reported as such |
 | NEW: schema UId as a Lookup constant | `modify addMapping {elementName: OF1, elementParameter: SourceEntitySchemaUId, value: "e9eafee9-…"}` (the ContactFile schema UId, exactly what the designer stores, UO-4) is **refused**: "no SysSchema record has this id" (`48118164cdf1`). The builder's Lookup-constant check looks the value up by `SysSchema.Id`, while these parameters hold a schema **UId**. So on 1.6.6.54 the generic route cannot write a correct `SourceEntitySchemaUId` / `TargetEntitySchemaUId` / `*DataEntitySchemaUId` (a `SysSchema.Id` would pass the check and reference the wrong thing at run time); for M6 the object was picked in the designer. **Since 1.6.6.69** (ENG-102113; a reading of code, not re-measured) a Lookup to the SysSchema registry accepts an entity-schema UId and labels it with the schema caption, so this refusal no longer occurs; a `SysSchema` row Id still passes through the record fallback. The `fileProcessing` binder still writes these through its own path (schema name -> UId), not through the generic mapping, because that path skips the block's checks and still accepts a row Id ([traps](eng-92719-file-processing-element-traps.md) T-54, predicted from source and measured on 1.6.6.54) |
 | NEW: dotted `typeFromElementParameter` | `parameters[{name: F, typeFromElement: OF1, typeFromElementParameter: "ObjectFiles.File"}]` creates `F` with the right type (`L1` = FileLocator `a33c9252…`) but **no source** (`L8 {}`), while the outer form (M3's `P`) gets the Script mapping. The dotted form types the parameter only; the value needs an explicit `addMapping` (`3cf363739721`) |
-| NEW: Freedom UI upload lands in the legacy table | The two files uploaded on the Contact Freedom UI page landed in `ContactFile` (`TypeId` File), none in `SysFile`, on this stand (`UseSysFileInObjectFileProcessing` off). Consistent with the per-entity storage rule (Contact keeps its legacy `ContactFile`) |
+| NEW: Freedom UI upload lands in the legacy table | The two files uploaded on the Contact Freedom UI page landed in `ContactFile` (`TypeId` File), none in `SysFile`, on this stand (`UseSysFileInObjectFileProcessing` on, C.2). Consistent with the per-entity storage rule (Contact keeps its legacy `ContactFile`) |
 | NEW: transient timeout | One `modify` carrying `setFilter` and `addMapping` together timed out and wrote nothing (`ModifiedOn` unchanged); the same two operations sent one per call both applied (`74bc25618f3b`, `3cf363739721`). Not reproduced; recorded only so a later timeout is not read as a builder defect without a retry |
 | M6 | **R-M1 stays a refusal.** `UsrFpM6FlatFile` was saved and published in the designer by the main session (the publish compiled `PROBE`; its message window listed only warnings from other packages), then run once: instance `c3c86025…`, OF1 `Completed`, PROBE `Error` with **`System.Exception: M6 F=`**, so `F` was empty: no NullReferenceException, no first or last row. That the source was not empty is proven by the instance data: `SysProcessElementData.PropertiesData` of OF1 holds `ObjectFiles` with **two** `EntityFileLocator`s, `ContactFile` `ccfdece7…` and `1cac5fed…`, `CreatedObjectFileIds` empty, `ResultActionType` 1. F was mapped Script <- `[Element:{OF1}].[Parameter:{1ddb6de7…}]` (the item `ObjectFiles.File`). So a flat File taken from a collection item outside a row context reads **null, silently**: the builder must refuse it (F-M2) |
 | NEW: element output evidence | `SysProcessElementData.PropertiesData` (varbinary holding JSON; `CONVERT(varchar(max), …)` reads it) keeps each executed element's parameter values per instance, collections included, with each locator's `_entitySchemaName` and `_recordId`. It is a runtime oracle the plan did not have: it shows what an element produced without a second probe element (B.1 EV-8) |
