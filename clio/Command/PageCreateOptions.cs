@@ -164,7 +164,7 @@ namespace Clio.Command {
 				}
 				_logger.WriteInfo($"Page '{options.SchemaName}' created successfully (schemaUId={newSchemaUId}).");
 				response = BuildSuccessResponse(options, template, packageUId, newSchemaUId, caption,
-					entitySchemaUId, hasEntity, dataSourceSeed);
+					entitySchemaUId, dataSourceSeed);
 				WarnIfNotDesignPackage(response, newSchemaUId, packageUId);
 				return true;
 			} catch (Exception ex) {
@@ -200,7 +200,7 @@ namespace Clio.Command {
 		}
 
 		private static PageCreateResponse BuildSuccessResponse(PageCreateOptions options, PageTemplateInfo template,
-			string packageUId, string newSchemaUId, string caption, string entitySchemaUId, bool hasEntity,
+			string packageUId, string newSchemaUId, string caption, string entitySchemaUId,
 			PageEntityDataSourceSeed dataSourceSeed) {
 			PageCreateResponse response = new() {
 				Success = true,
@@ -218,7 +218,7 @@ namespace Clio.Command {
 				PrimaryDataSourceName = dataSourceSeed is { IsPrimary: true } ? dataSourceSeed.DataSourceName : null,
 				Note = dataSourceSeed?.Warning
 			};
-			if (hasEntity && dataSourceSeed is null) {
+			if (!string.IsNullOrWhiteSpace(options.EntitySchemaName) && dataSourceSeed is null) {
 				// Mobile: the seeder is not consulted.
 				response.Note = "Mobile page: the entity is recorded in the page dependencies only; no data source "
 					+ "was added. Bind it with update-page.";
