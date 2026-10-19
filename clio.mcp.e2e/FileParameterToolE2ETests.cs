@@ -41,14 +41,14 @@ public sealed class FileParameterToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
-	/// <summary>The cut that declares File and FileCollection; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.6.99";
+	/// <summary>
+	/// The create/modify floor this clio enforces (File and FileCollection arrived in 1.6.6.99; the floor rose to
+	/// 1.6.6.103 with the Process file element); named in the skip message so a developer knows what to install.
+	/// </summary>
+	private const string MinimumPackageVersion = "1.6.6.103";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "File process parameter";
-
-	/// <summary>The line only a genuinely successful build logs.</summary>
-	private const string CreatedLine = "created (UId:";
 
 	/// <summary>The platform type name describe reports for one file.</summary>
 	private const string FileLocatorType = "FileLocator";
@@ -702,56 +702,6 @@ public sealed class FileParameterToolE2ETests {
 
 	#endregion
 
-	#region Methods: Result assertions
-
-	/// <summary>A create that must have built: exit code 0 and the created-schema line.</summary>
-	private static void ShouldHaveBuilt(CallToolResult result, string because) {
-		ShouldHaveLanded(result, because);
-		LogText(result).Should().Contain(CreatedLine,
-			because: "only a genuinely successful build logs the created-schema line; the server said: {0}",
-			LogText(result));
-	}
-
-	/// <summary>
-	/// A write that must have LANDED - exit code 0, not merely no transport error - with an Info line, carrying the
-	/// server's own log into the failure message, because the reason is the whole diagnosis on a live stand.
-	/// </summary>
-	private static void ShouldHaveLanded(CallToolResult result, string because) {
-		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(result);
-		envelope.ExitCode.Should().Be(0, Escape(because) + ". The server said: {0}", LogText(result));
-		(envelope.Output ?? []).Should().Contain(message => message.MessageType == LogDecoratorType.Info,
-			because: "a successful write reports at least one Info line");
-	}
-
-	/// <summary>A write that must have been refused: a non-zero exit code and an Error line carrying the reason.</summary>
-	private static void ShouldBeRefused(CallToolResult result, string because) {
-		CommandExecutionEnvelope envelope = McpCommandExecutionParser.Extract(result);
-		envelope.ExitCode.Should().NotBe(0, Escape(because) + ". The server said: {0}", LogText(result));
-		(envelope.Output ?? []).Should().Contain(message => message.MessageType == LogDecoratorType.Error,
-			because: "a refusal is reported as an Error line, which is where the caller reads the reason");
-	}
-
-	/// <summary>Every execution-log message of a tool result, decoded, one per line.</summary>
-	private static string LogText(CallToolResult result) =>
-		string.Join("\n", (McpCommandExecutionParser.Extract(result).Output ?? [])
-			.Select(message => message.Value ?? string.Empty));
-
-	/// <summary>The Warning lines of a tool result, decoded - where the server's binder notices arrive.</summary>
-	private static string WarningText(CallToolResult result) =>
-		string.Join("\n", (McpCommandExecutionParser.Extract(result).Output ?? [])
-			.Where(message => message.MessageType == LogDecoratorType.Warning)
-			.Select(message => message.Value ?? string.Empty));
-
-	/// <summary>The raw text of a tool result, for the package-version refusal markers.</summary>
-	private static string ToolText(CallToolResult result) =>
-		string.Join(" ", result.Content.OfType<TextContentBlock>().Select(block => block.Text));
-
-	/// <summary>Escapes a reason for use as a format string.</summary>
-	private static string Escape(string because) =>
-		because.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal);
-
-	#endregion
-
 	#region Methods: Graph reading and assertions
 
 	/// <summary>
@@ -842,10 +792,6 @@ public sealed class FileParameterToolE2ETests {
 	/// <summary>The metapath segment that names the parameter with <paramref name="parameterUId"/>.</summary>
 	private static string ParameterSegment(string parameterUId) =>
 		"[Parameter:{" + Guid.Parse(parameterUId).ToString("D") + "}]";
-
-	/// <summary>The string value of a member, or <c>null</c> when it is absent, null or not a string.</summary>
-	private static string? Text(JsonObject node, string key) =>
-		node[key] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
 	/// <summary>The objects of a JSON array, or none when the member is absent or not an array.</summary>
 	private static IReadOnlyList<JsonObject> Objects(JsonNode? node) =>

@@ -285,7 +285,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"AEF1030C94712E497DE69B1359D2811B28C6F8934B618406E6D226EFFD3AB1D0";
+		"2BDBE1FCB08A910CE8053221CCBC4C4B0BA945B9FE8DE0FBA39AA75713E7D3DF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -313,7 +313,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.99";
+	private const string ExpectedArchiveVersion = "1.6.6.103";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -325,7 +325,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "dcfdc83fd1a3aebea0ad5235215eb51943d35929";
+	private const string ExpectedProducingCommit = "ca2430623367e290badec58550768417ab16e194";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -351,7 +351,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1791970039000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792385678000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1649,6 +1649,48 @@ public class BundledProcessBuilderPackageTests {
 		foreach (string member in new[] { "enabled", "turnOffDate" }) {
 			DeclaresMemberOn(archive, "DescribeProcessTracing", member).Should().BeTrue(
 				because: $"DescribedProcessTracing reads '{member}'");
+		}
+	}
+
+	[Test]
+	[Description("clio checks the fileProcessing block's keys before sending it and TYPES its describe block, all hand-mirrored across two repositories: an archive that lost ProcessElementUpdateDescriptor.FileProcessing would drop a setElement's block and answer success, and one whose describe names drifted would report the block empty. Each member is asserted on its NAMED type, because one field name alone is satisfied by any contract that carries it.")]
+	public void BundledArchive_ShouldDeclareTheFileProcessingWireNamesClioReads() {
+		// Arrange
+		string archive = ReadBundledArchiveAsText();
+
+		// Act & Assert
+		DeclaresMemberOn(archive, "ProcessElementDescriptor", "fileProcessing").Should().BeTrue(
+			because: "create-business-process and addElement send the block on this member");
+		DeclaresMemberOn(archive, "ProcessElementUpdateDescriptor", "fileProcessing").Should().BeTrue(
+			because: "setElement sends the block on this member; without it the server drops the update in silence");
+		DeclaresMemberOn(archive, "DescribeProcessElement", "fileProcessing").Should().BeTrue(
+			because: "DescribedElement.FileProcessing reads the block off this member");
+		foreach (string member in new[] { "source", "action", "actionStored", "attachments", "saveTo", "outputs", "issues" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingInfo", member).Should().BeTrue(
+				because: $"DescribedFileProcessing reads '{member}'");
+		}
+		foreach (string member in new[] {
+				"object", "storage", "fileObject", "linkColumn", "recordId", "numberOfRecords", "sort" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingAttachmentsInfo", member).Should().BeTrue(
+				because: $"DescribedFileProcessingAttachments reads '{member}'");
+		}
+		foreach (string member in new[] { "object", "recordId", "linkColumn", "storage", "fileObject" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingSaveToInfo", member).Should().BeTrue(
+				because: $"DescribedFileProcessingSaveTo reads '{member}'");
+		}
+		foreach (string member in new[] {
+				"value", "processParameter", "sourceElement", "sourceElementParameter", "sourceColumn", "expression",
+				"display" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingValueSource", member).Should().BeTrue(
+				because: $"DescribedFileProcessingValueSource reads '{member}'");
+		}
+		foreach (string member in new[] { "parameter", "item" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingOutput", member).Should().BeTrue(
+				because: $"DescribedFileProcessingOutput reads '{member}'");
+		}
+		foreach (string member in new[] { "column", "direction" }) {
+			DeclaresMemberOn(archive, "ReadDataSortDescriptor", member).Should().BeTrue(
+				because: $"DescribedFileProcessingSort reads '{member}' off the shared Read data sort contract");
 		}
 	}
 
