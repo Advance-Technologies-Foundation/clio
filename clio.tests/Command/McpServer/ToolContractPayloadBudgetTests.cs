@@ -237,7 +237,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 1.6.6.103 - one byte longer in each write contract. It paid by SWAP, per owner decision Q20 (a reviewer-approved
 	// trim, no ceiling raise), and the first swap cut RULES, not redundancy: create's "A branch on an activity RESULT is
 	// built here too, with flows[].results" (the flows[] clause lists results? but says a conditional flow REQUIRES a
-	// condition) and modify's "the configuration that builds green and changes nothing" (the hazard
+	// condition) and modify's "the two configurations that build green and change nothing" (the hazard
 	// docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md requires every description to
 	// keep). The gate review restored both, compactly, and both are now pinned by a unit test. Create paid with
 	// redundancy: "The MODIFY path expands names in a condition too." (modify's own contract states its rule), a second
@@ -248,6 +248,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-measured by lowering the ceiling: create-business-process 35051, modify-business-process 35045,
 	// describe-business-process 34647 - 21, 27 and 425 bytes of headroom (create leaves its never-emitted processFile
 	// alias out). The next sentence on either write contract needs a swap.
+	//
+	// Owner decisions 2026-10-19 (ENG-96505): create's resultsByColumn clause dropped the retired duty "TELL THE USER
+	// before building one: the CONDITIONAL flows that route those results are not buildable here..." for "branch on
+	// its results with flows[].results", and modify and describe now say "the configuration that builds green and
+	// changes nothing" (through the builder only add and remove both empty builds green). Re-measured by lowering the
+	// ceiling: create-business-process 34917, modify-business-process 35042, describe-business-process 34644 - 155, 30
+	// and 428 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

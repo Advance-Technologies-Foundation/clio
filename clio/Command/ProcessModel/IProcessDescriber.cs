@@ -1036,7 +1036,8 @@ public sealed class DescribedOpenEditPage {
 /// <summary>
 /// The "Create a list of results by column" configuration of an Open edit page element.
 /// <para>Reading it back is the only way to see the result list a step offers; the flows that branch on those
-/// results are built with <c>flows[].results</c>, as for the other activity results.</para>
+/// results are built with <c>flows[].results</c> on create and <c>setFlowResults</c> on modify, as for the other
+/// activity results.</para>
 /// </summary>
 public sealed class DescribedOpenEditPageResultsByColumn {
 	/// <summary>Whether the results list is generated; <c>null</c> when the flag is not stored on the element.</summary>
