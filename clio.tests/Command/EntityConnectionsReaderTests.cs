@@ -52,11 +52,14 @@ public sealed class EntityConnectionsReaderTests {
 		_applicationClient.DidNotReceive().ExecutePostRequest(SelectQueryUrl, Arg.Any<string>());
 	}
 
-	[TestCase("<html>404</html>")]
-	[TestCase("""{"success":false,"errorInfo":{"message":"boom"}}""")]
-	[TestCase("")]
-	[Description("Falls back to the EntityConnection rows ordered by Position when the service is missing or fails, and warns that the add-on is not reflected.")]
-	public void Read_ShouldFallBackToTable_WhenServiceIsUnavailable(string serviceBody) {
+	[TestCase("<html>404</html>", "did not return JSON")]
+	[TestCase("""{"success":false,"errorInfo":{"message":"boom"}}""", "boom")]
+	[TestCase("", "empty response")]
+	[TestCase("""{"success":true,"connections":[{"columnUId":"not-a-guid"}]}""", "invalid column UId")]
+	[TestCase("""{"success":true,"connections":[{"columnUId":"00000000-0000-0000-0000-000000000000"}]}""", "invalid column UId")]
+	[TestCase("""{"success":true}""", "returned no connections")]
+	[Description("Falls back to the EntityConnection rows ordered by Position when the service is missing, fails or answers with unusable connections, and warns why and that the add-on is not reflected.")]
+	public void Read_ShouldFallBackToTable_WhenServiceIsUnavailable(string serviceBody, string expectedCause) {
 		// Arrange
 		_applicationClient.ExecutePostRequest(ConnectionsUrl, Arg.Any<string>()).Returns(serviceBody);
 		StubTable($$"""{"success":true,"rows":[{"ColumnUId":"{{A}}","Position":0},{"ColumnUId":"{{B}}","Position":1}]}""");
@@ -68,6 +71,7 @@ public sealed class EntityConnectionsReaderTests {
 		snapshot.ColumnUIds.Should().Equal([A, B], because: "the table rows are returned in their position order");
 		snapshot.IsTableFallback.Should().BeTrue(because: "the list did not come from the service");
 		snapshot.Warning.Should().Contain("NOT reflected", because: "a caller must learn that the add-on is not applied");
+		snapshot.Warning.Should().Contain(expectedCause, because: "the warning names why the service answer was not used");
 		_applicationClient.Received(1).ExecutePostRequest(SelectQueryUrl, Arg.Is<string>(body =>
 			body.Contains("\"EntityConnection\"") && body.Contains("SysEntitySchemaUId")
 			&& body.Contains(EntityUId.ToString("D")) && body.Contains("orderDirection")));

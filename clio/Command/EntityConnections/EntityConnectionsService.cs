@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntitySchemaDesigner;
 using Clio.Common;
@@ -182,15 +183,20 @@ internal sealed class EntityConnectionsService(
 		State after;
 		try {
 			after = ReadState(request.PackageName, request.EntitySchemaName);
-		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			// The save is committed: report it as done and describe the state from what was written.
+		} catch (Exception exception) when (exception is not OperationCanceledException
+			|| exception is TaskCanceledException) {
+			// The save is committed: report it as done and describe the state from what was written. A
+			// TaskCanceledException is a transport timeout here (no caller token reaches this call), not a cancellation.
 			warnings.Add(ReadBackFailedWarningPrefix + exception.Message);
-			State written = state with {
+			// The kept unresolvable connections stay in the list (and keep their warning); the server places them
+			// by other packages' layers, so their position after the written ones is not verified.
+			List<Guid> written = [.. desired, .. state.Snapshot.ColumnUIds.Where(unresolvable.Contains)];
+			State writtenState = state with {
 				Content = metadata,
-				Snapshot = new EntityConnectionsSnapshot(desired, false, null)
+				Snapshot = new EntityConnectionsSnapshot(written, false, null)
 			};
 			return new EntityConnectionsUpdateResult(
-				ToResult(request.EntitySchemaName, request.PackageName, written, warnings), true);
+				ToResult(request.EntitySchemaName, request.PackageName, writtenState, warnings), true);
 		}
 		if (after.Snapshot.IsTableFallback) {
 			warnings.Add(OrderNotVerifiedWarning);

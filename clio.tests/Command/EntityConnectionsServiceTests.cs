@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.AddonSchemaDesigner;
 using Clio.Command.EntityConnections;
@@ -389,14 +390,19 @@ public sealed class EntityConnectionsServiceTests {
 		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 
-	[Test]
-	[Description("Update reports success with changed=true, a warning and the written list when the save succeeded but the state cannot be read back.")]
-	public void Update_ShouldReportSavedState_WhenReadBackFails() {
+	private static IEnumerable<TestCaseData> ReadBackFailures() {
+		yield return new TestCaseData(new InvalidOperationException("read back broke")).SetArgDisplayNames("InvalidOperation");
+		yield return new TestCaseData(new TaskCanceledException("read back broke")).SetArgDisplayNames("TaskCanceledTimeout");
+	}
+
+	[TestCaseSource(nameof(ReadBackFailures))]
+	[Description("Update reports success with changed=true, a warning and the written list when the save succeeded but the state cannot be read back, including a transport timeout (TaskCanceledException).")]
+	public void Update_ShouldReportSavedState_WhenReadBackFails(Exception readBackFailure) {
 		// Arrange
 		int reads = 0;
 		_reader.Read(Arg.Any<Guid>()).Returns(_ => ++reads == 1
 			? new EntityConnectionsSnapshot([Owner, Account], false, null)
-			: throw new InvalidOperationException("read back broke"));
+			: throw readBackFailure);
 
 		// Act
 		EntityConnectionsUpdateResult result = _service.Update(Update("Account", "Owner"));
@@ -411,6 +417,29 @@ public sealed class EntityConnectionsServiceTests {
 			because: "without a read-back the result describes the requested list that was written");
 		result.State.PackageLayer.Items.Should().Equal(["Account"],
 			because: "the package layer is the metadata that was written");
+	}
+
+	[Test]
+	[Description("Update keeps the unresolvable connections and their warning in the reported list when the save succeeded but the state cannot be read back.")]
+	public void Update_ShouldKeepUnresolvableColumnInSavedState_WhenReadBackFails() {
+		// Arrange
+		int reads = 0;
+		_reader.Read(Arg.Any<Guid>()).Returns(_ => ++reads == 1
+			? new EntityConnectionsSnapshot([Owner, Account, Hidden], false, null)
+			: throw new InvalidOperationException("read back broke"));
+
+		// Act
+		EntityConnectionsUpdateResult result = _service.Update(Update("Account", "Owner"));
+
+		// Assert
+		result.Changed.Should().BeTrue(because: "the save is committed before the read-back");
+		result.State.Connections.Select(connection => connection.ColumnUId).Should().Equal(
+			[Account.ToString("D"), Owner.ToString("D"), Hidden.ToString("D")],
+			because: "the kept unresolvable connection is still on the server and must not vanish from the result");
+		result.State.Warnings.Should().Contain(warning =>
+				warning.StartsWith("1 connection(s) point to columns not visible from package 'Custom'")
+				&& warning.Contains(Hidden.ToString("D")),
+			because: "the caller must still learn not to send that connection back");
 	}
 
 	[Test]
