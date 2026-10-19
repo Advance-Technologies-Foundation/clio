@@ -2302,8 +2302,8 @@ public sealed class DescribedFileProcessing {
 
 	/// <summary>
 	/// Describe-only: which levels of a Process parameter element's <c>Files</c> input are bound - <c>both</c>,
-	/// <c>itemOnly</c> (one file, or a formula), <c>outerOnly</c> (fails at run time) or <c>none</c> (copies
-	/// nothing). <c>null</c> for the other variants.
+	/// <c>itemOnly</c> (one file, or a formula), <c>outerOnly</c> (fails at run time) or <c>none</c> (the
+	/// process cannot start). <c>null</c> for the other variants.
 	/// </summary>
 	[JsonPropertyName("bindingLevels")]
 	public string BindingLevels { get; set; }

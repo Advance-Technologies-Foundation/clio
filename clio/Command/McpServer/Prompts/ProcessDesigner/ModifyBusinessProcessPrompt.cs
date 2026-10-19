@@ -151,8 +151,8 @@ public static class ModifyBusinessProcessPrompt {
 		 re-sent, or none sent) the stored value is kept. A `report.printable` of ANOTHER object clears the stored filter, record
 		 scope and suffix column unless the same block sends their replacement; one of the SAME object keeps them and
 		 checks the stored scope again. `files` is ONE value source: sent, it replaces the binding as a whole;
-		 omitted, it is kept; it cannot be emptied, because an element whose `Files` are bound to nothing copies
-		 nothing. Read `get-guidance name=process-files` first — it owns the block;
+		 omitted, it is kept; it cannot be emptied, because an element whose `Files` are bound to nothing keeps
+		 the whole process from starting. Read `get-guidance name=process-files` first — it owns the block;
 		 `setConnections` binds the "Connected to" links of the
 		 Activity an element creates and is an UPSERT keyed on `column`, so columns you do not list are left alone,
 		 and `clearConnections` unbinds them). An `addMapping` with a `value` on a Lookup parameter takes a bare

@@ -45,7 +45,8 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
-	/// <summary>The cut that registers the Generated report and Process parameter variants; named in the skip message.</summary>
+	/// <summary>The create/modify floor: 1.6.6.105 registered the Generated report and Process parameter variants and
+	/// 1.6.6.106 carries their final-review fixes; named in the skip message.</summary>
 	private const string MinimumPackageVersion = "1.6.6.106";
 
 	/// <summary>What the skip message calls these tests.</summary>
@@ -441,7 +442,7 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 					("PF1", FileElement("PF1", blockJson))));
 
 			// Assert
-			ShouldBeRefused(callResult, $"the {caseName} case would build an element that copies nothing or fails at run time");
+			ShouldBeRefused(callResult, $"the {caseName} case would build an element that keeps the process from starting or fails at run time");
 			string log = LogText(callResult);
 			log.Should().Contain(fragment, because: "the refusal says what is wrong with the block");
 			log.Should().NotContain(CreatedLine, because: "a refused build saves nothing");

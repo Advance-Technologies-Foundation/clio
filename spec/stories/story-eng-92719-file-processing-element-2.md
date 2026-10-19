@@ -290,8 +290,9 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   clio unit: the rebundle's bundle, key-set and budget tests 88/88 at the install, the full targeted run on the clio
   PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` ran against the .NET Framework sandbox on
   2026-10-19 with 21 passed, 0 failed, 1 skipped on both net10.0 and net8.0 - the skip is the designer-fixture test,
-  whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox; the isolated agent run of TC-01..TC-12
-  passed; knowledge: clio-knowledge PR 297, its bundle tests green.
+  whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox. Run first on CrtProcessBuilder
+  1.6.6.105 and again on 1.6.6.106 after the final-review cut, with the same result; the isolated agent run of TC-01..TC-12
+  passed on 1.6.6.105; knowledge: clio-knowledge PR 297, its bundle tests green.
 - Stand records (ST-03..ST-07, DT-03, SC-4): all PASS on 2026-10-19, CrtProcessBuilder 1.6.6.105. ST-03 2 callee
   copies, one per iteration; ST-04 the M4 chain with `bindingLevels: both`, 2 copies; ST-05 two consumers, copies on
   both targets, sources unchanged; ST-06 1 InvoiceFile `Invoice. <Number>.docx` re-found and tagged; ST-07 1

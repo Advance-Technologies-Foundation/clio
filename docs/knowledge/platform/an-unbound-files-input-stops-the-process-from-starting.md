@@ -3,6 +3,7 @@ description: a Process parameter Process file whose Files input is bound to noth
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/McpServer/Prompts/ProcessDesigner/DescribeProcessPrompt.cs
+  - clio/Command/McpServer/Prompts/ProcessDesigner/ModifyBusinessProcessPrompt.cs
 ticket: ENG-96506
 date: 2026-10-19
 ---

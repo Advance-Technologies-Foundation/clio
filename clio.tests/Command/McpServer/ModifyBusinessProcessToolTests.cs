@@ -783,8 +783,10 @@ public class ModifyBusinessProcessToolTests {
 			because: "a printable of the same object keeps them, which differs from the designer and must be stated");
 		prompt.Should().Contain("`files` is ONE value source: sent, it replaces the binding as a whole;",
 			because: "the files group is not merged field by field");
-		prompt.Should().Contain("it cannot be emptied, because an element whose `Files` are bound to nothing copies",
+		prompt.Should().Contain("it cannot be emptied, because an element whose `Files` are bound to nothing keeps",
 			because: "the server refuses a files group naming no source");
+		prompt.Should().Contain("the whole process from starting.",
+			because: "an element whose Files is bound to nothing makes the platform refuse to start the process - it does not copy nothing and succeed");
 	}
 
 	[Test]
