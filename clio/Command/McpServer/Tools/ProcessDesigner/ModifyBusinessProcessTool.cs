@@ -257,7 +257,7 @@ public class ModifyBusinessProcessTool(
 		 + "will match or name why no count is possible, tell the user the OBJECT (as the designer names it, "
 		 + "unshortened), the NUMBER and the consequences, and get an explicit yes; get-guidance "
 		 + "name=process-delete-data carries the message template and the exchange rules), "
-		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place - get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES, what a read-back cannot see and the two configurations that build green and change nothing), "
+		 + "accessRights {object?, considerTimeInFilter?, add?, remove?} reconfigures a Change access rights element in place - get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES, what a read-back cannot see and the configuration that builds green and changes nothing), "
 		 + "email "
 		 + "(sendEmail elements only, same block as create-business-process) rewrites the fields you pass — mode, "
 		 + "sender, subject, body, template, templateEntity, importance, ignoreErrors, performer replace the current value "

@@ -758,7 +758,7 @@ public class ModifyBusinessProcessToolTests {
 
 		// Assert
 		description.Should().Contain(
-			"get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES, what a read-back cannot see and the two configurations that build green and change nothing)",
+			"get-guidance name=process-access-rights owns that block in full, including what a supplied collection REPLACES, what a read-back cannot see and the configuration that builds green and changes nothing)",
 			because: "the always-loaded contract must say a green build is no evidence the rights changed, and route to the guide that names the configurations");
 	}
 

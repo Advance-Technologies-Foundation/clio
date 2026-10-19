@@ -237,7 +237,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 1.6.6.103 - one byte longer in each write contract. It paid by SWAP, per owner decision Q20 (a reviewer-approved
 	// trim, no ceiling raise), and the first swap cut RULES, not redundancy: create's "A branch on an activity RESULT is
 	// built here too, with flows[].results" (the flows[] clause lists results? but says a conditional flow REQUIRES a
-	// condition) and modify's "the two configurations that build green and change nothing" (the hazard
+	// condition) and modify's "the configuration that builds green and changes nothing" (the hazard
 	// docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md requires every description to
 	// keep). The gate review restored both, compactly, and both are now pinned by a unit test. Create paid with
 	// redundancy: "The MODIFY path expands names in a condition too." (modify's own contract states its rule), a second

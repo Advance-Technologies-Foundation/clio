@@ -1035,9 +1035,8 @@ public sealed class DescribedOpenEditPage {
 
 /// <summary>
 /// The "Create a list of results by column" configuration of an Open edit page element.
-/// <para>Reading it back is the only way to see the result list a step offers. Note the limitation this reflects:
-/// clio cannot yet build the CONDITIONAL flows that route those results, so a clio-built process carries the list
-/// without branching on it until a human wires the flows in the designer.</para>
+/// <para>Reading it back is the only way to see the result list a step offers; the flows that branch on those
+/// results are built with <c>flows[].results</c>, as for the other activity results.</para>
 /// </summary>
 public sealed class DescribedOpenEditPageResultsByColumn {
 	/// <summary>Whether the results list is generated; <c>null</c> when the flag is not stored on the element.</summary>
