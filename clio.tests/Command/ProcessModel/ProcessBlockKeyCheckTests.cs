@@ -121,7 +121,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A Process file element carrying a valid fileProcessing block - every group of the Object attachments variant, the shared value-source vocabulary and the reused Read data sort - passes clean on create and in a setElement update, so clio does not refuse the block before the server reads it (ENG-96505).")]
+	[Description("A Process file element carrying a valid fileProcessing block - every group of the Object attachments variant, the shared value-source vocabulary and the reused Read data sort - passes clean on create and in a setElement update, so clio does not refuse the block before the server reads it.")]
 	public void Check_Should_AcceptAValidFileProcessingBlock_OnCreateAndSetElement() {
 		// Arrange
 		string element = """
@@ -151,7 +151,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A misspelled key inside fileProcessing.attachments is refused naming the element and the full key path, with the case-only pointer - instead of the server dropping it and reading the attachments of no record (ENG-96505).")]
+	[Description("A misspelled key inside fileProcessing.attachments is refused naming the element and the full key path, with the case-only pointer - instead of the server dropping it and reading the attachments of no record.")]
 	public void Check_Should_RefuseATypoInsideFileProcessingAttachments_NamingThePath() {
 		// Act
 		ProcessBlockKeyCheckResult result = CheckElements(
@@ -171,7 +171,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but named in the read-back warning (ENG-96505).")]
+	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but named in the read-back warning.")]
 	public void Check_Should_WarnButNotRefuse_FileProcessingDescribeOnlyFields() {
 		// Arrange
 		string element = """

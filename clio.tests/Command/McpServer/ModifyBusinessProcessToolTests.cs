@@ -685,7 +685,7 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.102, for setTracing,",
+		description.Should().Contain("this clio requires 1.6.6.103, for setTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
@@ -695,7 +695,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract offers the fileProcessing block on addElement and setElement and routes it to process-files (ENG-96505), and its prompt carries the setElement merge rule (ENG-92719 D12): inside attachments and saveTo an omitted member keeps its stored value, a value source replaces as a whole, and a different group is a refused source change. An agent that resends the whole described block on every edit, or expects an omitted member to clear, rewrites or loses configuration nobody asked to change.")]
+	[Description("The modify contract offers the fileProcessing block on addElement and setElement and routes it to process-files, and its prompt carries the setElement merge rule (ENG-92719 D12): inside attachments and saveTo an omitted member keeps its stored value, a value source replaces as a whole, and a different group is a refused source change. An agent that resends the whole described block on every edit, or expects an omitted member to clear, rewrites or loses configuration nobody asked to change.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferTheFileProcessingBlockAndItsMergeRule() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -725,7 +725,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as CrtProcessBuilder 1.6.6.102 behaves (ENG-96505): attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object only a consistent dedicated pair is kept - an unpaired or invalid one is rewritten with a notice and a SysFile pair refuses the whole update. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite or a refusal.")]
+	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as CrtProcessBuilder 1.6.6.103 behaves: attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object only a consistent dedicated pair is kept - an unpaired or invalid one is rewritten with a notice and a SysFile pair refuses the whole update. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite or a refusal.")]
 	public void ModifyBusinessProcessPrompt_ShouldStateTheFileProcessingClearingAndPairRules() {
 		// Arrange
 		const string processName = "UsrSampleProcess";
@@ -748,7 +748,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract's accessRights clause keeps the hazard that a Change access rights element can build green and change nothing, beside its route to process-access-rights. docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md requires the tool descriptions to keep carrying it: the element has no output parameters, so an agent that reads a successful build as 'the rights changed' has nothing at run time to correct it. ENG-96505 trimmed the sentence once to pay for its own text; this pin keeps the next trim from doing so unseen.")]
+	[Description("The modify contract's accessRights clause keeps the hazard that a Change access rights element can build green and change nothing, beside its route to process-access-rights. docs/knowledge/ProcessModel/change-access-rights-runs-green-and-changes-nothing.md requires the tool descriptions to keep carrying it: the element has no output parameters, so an agent that reads a successful build as 'the rights changed' has nothing at run time to correct it. The Process file element's description trimmed the sentence once to pay for its own text; this pin keeps the next trim from doing so unseen.")]
 	public void ModifyBusinessProcess_Description_ShouldKeepTheAccessRightsBuildsGreenAndChangesNothingHazard() {
 		// Arrange
 		Type toolType = typeof(ModifyBusinessProcessTool);

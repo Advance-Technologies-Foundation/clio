@@ -19,7 +19,7 @@ client bytes without that sync, and its Process file pages force `ConnectedObjec
 (`BaseFileProcessingUserTaskPropertiesPage.js:369-375`, CrtProcessDesigner 7.8.0).
 
 From 1.6.6.101 the builder writes the same designer form itself (source, `FileProcessingConfigBinder.TypeAsLookup` /
-`DropSchemaRegistryReferencesOfWritten`, tag `crtprocessbuilder-1.6.6.102`): create, a `setElement` that writes a
+`DropSchemaRegistryReferencesOfWritten`, tag `crtprocessbuilder-1.6.6.103`): create, a `setElement` that writes a
 target with a record object, and a `setElement` that switches the element to use its files in the process type
 `ConnectedObjectId` as Lookup; create clears `L9` on the schema lookups it writes - `setElement` never clears it.
 So a BUILDER-created element changes the same way, once, on its next unrelated builder save.

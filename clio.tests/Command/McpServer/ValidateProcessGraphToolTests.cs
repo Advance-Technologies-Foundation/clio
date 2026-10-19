@@ -669,7 +669,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The tool description is the ONE buildable-slice list (ValidateProcessGraphPrompt defers to it by name), so it names the fileProcessing element (ENG-96505, the Object attachments variant). Without it an agent planning a Process file element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
+	[Description("The tool description is the ONE buildable-slice list (ValidateProcessGraphPrompt defers to it by name), so it names the fileProcessing element (the Object attachments variant). Without it an agent planning a Process file element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
 	public void ValidateTool_ShouldNameTheFileProcessingElementAsBuildable_WhenDescriptionIsRead() {
 		// Arrange
 		MethodInfo method = typeof(ValidateProcessGraphTool).GetMethod(nameof(ValidateProcessGraphTool.Validate));

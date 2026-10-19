@@ -758,7 +758,7 @@ public sealed class ServerProcessDescriberTests {
 			+ "\"flows\":[],\"parameters\":[]}}");
 
 	[Test]
-	[Description("Deserializes the fileProcessing block of a Process file element by name - every typed member of the block, its attachments and saveTo groups, both value sources, the sort and the outputs (ENG-96505). The describe output is re-serialized from this model, so a member it does not declare, or one whose JsonPropertyName drifts from the server's DataMember, reaches nobody.")]
+	[Description("Deserializes the fileProcessing block of a Process file element by name - every typed member of the block, its attachments and saveTo groups, both value sources, the sort and the outputs. The describe output is re-serialized from this model, so a member it does not declare, or one whose JsonPropertyName drifts from the server's DataMember, reaches nobody.")]
 	public void Describe_ShouldReadTheFileProcessingBlock_WhenServerReportsIt() {
 		// Arrange
 		IApplicationClient client = ClientReportingFileProcessing(FileProcessingBlock);
@@ -801,7 +801,7 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Forwards the fileProcessing block VERBATIM under the describe command's own options: re-serialized, it equals what the server sent, including an unknown future key at every nesting level - block, attachments, saveTo, value source, sort, output (ENG-96505). An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, nor a nested type without an overflow bag.")]
+	[Description("Forwards the fileProcessing block VERBATIM under the describe command's own options: re-serialized, it equals what the server sent, including an unknown future key at every nesting level - block, attachments, saveTo, value source, sort, output. An inbound-only assertion cannot see a JsonPropertyName that drifted from the server's DataMember, nor a nested type without an overflow bag.")]
 	public void Describe_ShouldForwardTheFileProcessingBlockVerbatim_UnderTheCommandsOwnOptions() {
 		// Arrange
 		IApplicationClient client = ClientReportingFileProcessing(FileProcessingBlock);
@@ -818,7 +818,7 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Leaves the fileProcessing block unset (null) on an element of another kind or from a server that predates it, so it serializes away rather than surfacing as an empty block (ENG-96505).")]
+	[Description("Leaves the fileProcessing block unset (null) on an element of another kind or from a server that predates it, so it serializes away rather than surfacing as an empty block.")]
 	public void Describe_ShouldLeaveTheFileProcessingBlockNull_WhenServerOmitsIt() {
 		// Arrange
 		IApplicationClient client = ClientReturning(

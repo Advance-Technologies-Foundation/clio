@@ -285,7 +285,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"387C062719E63B1CB8622B0760A1CB917383AB6B17300A6F702D23F0A2E4DDD1";
+		"2BDBE1FCB08A910CE8053221CCBC4C4B0BA945B9FE8DE0FBA39AA75713E7D3DF";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -313,7 +313,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.102";
+	private const string ExpectedArchiveVersion = "1.6.6.103";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, written by
@@ -325,7 +325,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "9106a6afbcc3c641c1afc2c57ffbf7a588350a68";
+	private const string ExpectedProducingCommit = "ca2430623367e290badec58550768417ab16e194";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -351,7 +351,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792264564000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792385678000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1653,7 +1653,7 @@ public class BundledProcessBuilderPackageTests {
 	}
 
 	[Test]
-	[Description("clio checks the fileProcessing block's keys before sending it and TYPES its describe block, all hand-mirrored across two repositories (ENG-96505): an archive that lost ProcessElementUpdateDescriptor.FileProcessing would drop a setElement's block and answer success, and one whose describe names drifted would report the block empty. Each member is asserted on its NAMED type, because one field name alone is satisfied by any contract that carries it.")]
+	[Description("clio checks the fileProcessing block's keys before sending it and TYPES its describe block, all hand-mirrored across two repositories: an archive that lost ProcessElementUpdateDescriptor.FileProcessing would drop a setElement's block and answer success, and one whose describe names drifted would report the block empty. Each member is asserted on its NAMED type, because one field name alone is satisfied by any contract that carries it.")]
 	public void BundledArchive_ShouldDeclareTheFileProcessingWireNamesClioReads() {
 		// Arrange
 		string archive = ReadBundledArchiveAsText();

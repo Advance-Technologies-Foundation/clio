@@ -156,7 +156,7 @@ public class ModifyBusinessProcessTool(
 		 + "[#BooleanValue.True#]. An expression is VALIDATED, by the PLATFORM, at the pre-save gate — so a bad "
 		 + "one aborts the whole edit with 'Process validation failed' and nothing is saved, rather than being "
 		 + "attributed to the one operation that carried it, which is why such a refusal reports NO "
-		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.102, for "
+		 + "failedOperationIndex while one caused by a single operation reports its zero-based index (on CrtProcessBuilder this clio requires 1.6.6.103, for "
 		 + "setTracing, the meta-path checks, sourceColumn, scriptTask, addUsing/removeUsing/setMethods and subProcess.multiInstanceOptions; "
 		 + "1.4.0.41 is where the PACKAGE stopped validating formulas itself). It must parse, every parameter "
 		 + "reference must resolve in THIS process - a UId meta path exactly as the platform does (every segment "

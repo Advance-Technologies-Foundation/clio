@@ -25,7 +25,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the "Process file" element, Object attachments variant (ENG-96505, story 1 of ENG-92719)
-/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.102 or later.
+/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.103 or later.
 /// <para>What only this level can show is the wire and the platform: the <c>fileProcessing</c> block travels as JSON
 /// members a WCF contract drops in silence when they are misspelled, the attachment storage is derived from the
 /// stand's REAL entity schemas (<c>AccountFile</c>, <c>ContactFile</c>, and an object with none, which is SysFile
@@ -49,7 +49,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	/// <summary>The cut that ships the Object attachments variant; named in the skip message.</summary>
-	private const string MinimumPackageVersion = "1.6.6.102";
+	private const string MinimumPackageVersion = "1.6.6.103";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element";
@@ -705,6 +705,51 @@ public sealed class ProcessFileElementToolE2ETests {
 			string log = LogText(callResult);
 			log.Should().Contain("is not accepted", because: "the refusal says the formula is refused");
 			log.Should().Contain(CurrentUserContact, because: "the refusal names the one formula a record scope takes");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-33b: moving a saving Process file element's target to another object is refused while a multi-instance sub-process iterates its CreatedObjectFileIds - the copies would land in another attachment object than the reader was built for, which the designer refuses too (onEntitySchemaChange). The refusal names the side, the member and the reader, and the element reads back unchanged.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses moving the target while CreatedObjectFileIds is read")]
+	public async Task ModifyBusinessProcess_Should_RefuseATargetObjectChange_WhileCreatedObjectFileIdsIsRead() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string calleeName = NewProcessName("CopyCallee");
+			string callerName = NewProcessName("CopyCaller");
+			await ArrangeProcessAsync(context, created, calleeName,
+				PlainDescriptor(calleeName, """[ { "name": "FileId", "type": "Guid", "direction": "In" } ]"""),
+				"the called process taking one copy's Id");
+			await ArrangeProcessAsync(context, created, callerName,
+				LinearDescriptor(callerName, RecordRefParametersJson,
+					[("OF1", FileElement(SavingBlockJson)), ("SubProcess1", MultiInstanceJson(calleeName))],
+					"""
+					[ { "elementName": "SubProcess1", "elementParameter": "InputRecordCollection.FileId",
+					    "sourceElement": "OF1", "sourceElementParameter": "CreatedObjectFileIds.Id" } ]
+					"""),
+				"the saving Process file element whose copies a multi-instance sub-process iterates");
+			string before = FileProcessingBlock(Element(await DescribeGraphAsync(context, callerName), "OF1")).ToJsonString();
+
+			// Act
+			CallToolResult callResult = await ModifyAsync(context, callerName, """
+				[ { "op": "setElement", "elementName": "OF1",
+				    "elementUpdate": { "fileProcessing": { "saveTo": { "object": "Contact",
+				      "recordId": { "processParameter": "ContactRef" } } } } } ]
+				""");
+
+			// Assert
+			ShouldBeRefused(callResult, "the sub-process was built for AccountFile copies, and ContactFile copies would not match it");
+			string refusal = LogText(callResult);
+			refusal.Should().Contain("cannot move its target to another object ('saveTo.object')",
+				because: "the refusal names the side and the member that moved it");
+			refusal.Should().Contain("SubProcess1", because: "the refusal names the reader of CreatedObjectFileIds");
+			refusal.Should().Contain("SEPARATE, earlier call", because: "and the remedy: re-point the reader first");
+			FileProcessingBlock(Element(await DescribeGraphAsync(context, callerName), "OF1")).ToJsonString()
+				.Should().Be(before, because: "a refused update leaves the element as it was");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
