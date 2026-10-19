@@ -1057,6 +1057,83 @@ public sealed class PageSyncToolE2ETests : McpContractFixtureBase {
 		}
 	}
 
+	[Test]
+	[Description("sync-pages warns per page that external-modification detection did not run when a page has no baseline and no checksum, naming the missing baseline, and gives no such warning for the same page with force: true.")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-pages warns per page that the conflict check did not run when no baseline exists")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: get-page reads the body into one temp directory, then sync-pages saves that same body back anchored at an empty directory, first unforced and then with force: true. The unforced page must carry the 'External-modification detection did not run' warning naming the missing .clio-pages baseline; the forced page must carry none. Both saves write the unchanged body, so the seed page stays as it was.")]
+	public async Task PageSyncTool_Should_Warn_That_Detection_Did_Not_Run_When_No_Baseline_Exists() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive sync-pages no-baseline warning test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using ArrangeContext context = await ArrangeAsync();
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-sync-nobaseline-session-").FullName;
+		string emptyAnchorDir = Directory.CreateTempSubdirectory("clio-e2e-sync-nobaseline-empty-").FullName;
+		try {
+			CallToolResult getResult = await context.Session.CallToolAsync(
+				PageGetTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["schema-name"] = SavePage,
+						["environment-name"] = environmentName,
+						["output-directory"] = sessionDir
+					}
+				},
+				context.CancellationTokenSource.Token);
+			PageGetResponse getResponse = EntitySchemaStructuredResultParser.Extract<PageGetResponse>(getResult);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{SavePage}'. Error: {getResponse.Error}");
+			string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act
+			PageSyncResponse uncheckedResponse = await SyncWithoutBaselineAsync(context, environmentName, body, emptyAnchorDir, force: false);
+			PageSyncResponse forcedResponse = await SyncWithoutBaselineAsync(context, environmentName, body, emptyAnchorDir, force: true);
+
+			// Assert
+			uncheckedResponse.Success.Should().BeTrue(
+				because: $"the warning never refuses the save. Per-page error: {uncheckedResponse.Pages.FirstOrDefault()?.Error}");
+			(uncheckedResponse.Pages.Single().Validation?.Warnings ?? []).Should().Contain(
+				warning => warning.Contains("External-modification detection did not run")
+					&& warning.Contains("no .clio-pages baseline"),
+				because: "the caller must learn the page was saved unchecked and why");
+			forcedResponse.Success.Should().BeTrue(
+				because: $"the forced save of the unchanged body must succeed. Per-page error: {forcedResponse.Pages.FirstOrDefault()?.Error}");
+			(forcedResponse.Pages.Single().Validation?.Warnings ?? []).Should().NotContain(
+				warning => warning.Contains("External-modification detection did not run"),
+				because: "force skips the check by request");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+			TryDeleteDirectory(emptyAnchorDir);
+		}
+	}
+
+	/// <summary>Saves one body to <c>SavePage</c> through sync-pages, anchored at a directory with no baseline.</summary>
+	private static async Task<PageSyncResponse> SyncWithoutBaselineAsync(
+		ArrangeContext context, string environmentName, string body, string anchorDir, bool force) {
+		CallToolResult result = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = environmentName,
+					["pages"] = new[] {
+						new Dictionary<string, object?> {
+							["schema-name"] = SavePage,
+							["body"] = body,
+							["force"] = force
+						}
+					},
+					["validate"] = true,
+					["output-directory"] = anchorDir
+				}
+			},
+			context.CancellationTokenSource.Token);
+		return EntitySchemaStructuredResultParser.Extract<PageSyncResponse>(result);
+	}
+
 	private static void TryDeleteDirectory(string path) {
 		try {
 			if (Directory.Exists(path)) {

@@ -215,6 +215,38 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("sync-pages warns per page that external-modification detection did not run when a page has no baseline and no checksum, and stays quiet about it for a forced page.")]
+	public async Task SyncPages_ShouldWarnThatDetectionDidNotRun_WhenAPageHasNoBaseline() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreateSuccessfulPageUpdateCommandWithClient(out _);
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(new MockFileSystem()), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrForced_FormPage", ValidPageBody, Force: true),
+				new PageSyncPageInput("UsrTodo_FormPage", ValidPageBody)
+			]);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult uncheckedPage = response.Pages.Single(page => page.SchemaName == "UsrTodo_FormPage");
+		uncheckedPage.Success.Should().BeTrue(because: "the warning never refuses the save");
+		(uncheckedPage.Validation?.Warnings ?? []).Should().Contain(
+			warning => warning.Contains("External-modification detection did not run"),
+			because: "sync-pages reports an unchecked save the same way update-page does");
+		(response.Pages.Single(page => page.SchemaName == "UsrForced_FormPage").Validation?.Warnings ?? [])
+			.Should().NotContain(warning => warning.Contains("did not run"),
+				because: "force skips the check by request");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Successfully updates a single page when Creatio responds with success")]
 	public async Task SyncPages_Should_Succeed_For_Valid_Page() {
 		// Arrange
@@ -423,6 +455,44 @@ public sealed class PageSyncToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A sync-pages page whose save fails keeps its unreadable-baseline warning and carries no did-not-run warning; a saved page without a baseline keeps it.")]
+	public async Task SyncPages_ShouldNotWarnThatDetectionDidNotRun_WhenAPageSaveFails() {
+		// Arrange
+		PageUpdateCommand updateCommand = CreatePageUpdateCommandWithFailureForSchema("UsrBroken_FormPage");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>()).Returns(updateCommand);
+		MockFileSystem baselineFileSystem = new();
+		baselineFileSystem.AddFile("/ws/.clio-pages/UsrBroken_FormPage/meta.json", new MockFileData("{ this is not json"));
+		PageSyncTool tool = new(commandResolver, new MockFileSystem(), Substitute.For<IMobileComponentInfoCatalog>(),
+			Substitute.For<IComponentInfoCatalog>(),
+			new PageBaselineGuard(baselineFileSystem), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		PageSyncArgs args = new(
+			"dev",
+			[
+				new PageSyncPageInput("UsrBroken_FormPage", ValidPageBody),
+				new PageSyncPageInput("UsrWorking_ListPage", ValidPageBody)
+			],
+			Validate: false,
+			OutputDirectory: "/ws");
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		PageSyncPageResult failedPage = response.Pages.Single(page => page.SchemaName == "UsrBroken_FormPage");
+		failedPage.Success.Should().BeFalse(because: "the page save failed");
+		failedPage.Validation.Warnings.Should().Contain(warning => warning.Contains("could not be read"),
+			because: "the other guard warnings stay on a failed save");
+		failedPage.Validation.Warnings.Should().NotContain(
+			warning => warning.Contains("External-modification detection did not run"),
+			because: "no write proceeded");
+		(response.Pages.Single(page => page.SchemaName == "UsrWorking_ListPage").Validation?.Warnings ?? [])
+			.Should().Contain(warning => warning.Contains("External-modification detection did not run"),
+				because: "the saved page was unchecked");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Continues processing remaining pages when one page fails")]
 	public async Task SyncPages_Should_Continue_On_Failure() {
 		// Arrange
@@ -622,8 +692,11 @@ public sealed class PageSyncToolTests {
 		// Assert
 		response.Success.Should().BeTrue(
 			because: "validation is disabled so the page should be updated directly");
-		response.Pages[0].Validation.Should().BeNull(
-			because: "no validation results should be present when validation is skipped");
+		(response.Pages[0].Validation?.Errors ?? []).Should().BeEmpty(
+			because: "no validation errors should be present when validation is skipped");
+		(response.Pages[0].Validation?.Warnings ?? []).Should().OnlyContain(
+			warning => warning.Contains("External-modification detection did not run"),
+			because: "the only warning left is the baseline guard's, since the page has no baseline");
 	}
 
 	[Test]

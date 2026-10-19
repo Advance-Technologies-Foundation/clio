@@ -1,3 +1,4 @@
+using System.IO.Abstractions.TestingHelpers;
 using Clio.Command;
 using Clio.Common;
 using FluentAssertions;
@@ -31,6 +32,8 @@ public sealed class PageUpdateCommandBaselineTests {
 	private IPageBaselineGuard _guard;
 	private ILogger _logger;
 	private PageUpdateCommand _command;
+	private IServiceUrlBuilder _serviceUrlBuilder;
+	private IPageDesignerHierarchyClient _hierarchyClient;
 
 	[SetUp]
 	public void SetUp() {
@@ -60,8 +63,13 @@ public sealed class PageUpdateCommandBaselineTests {
 			new PageDesignerHierarchySchema { UId = SchemaUId, Name = SchemaName, PackageUId = "test-pkg-uid" }
 		]);
 		_guard = Substitute.For<IPageBaselineGuard>();
-		_command = new PageUpdateCommand(_applicationClient, serviceUrlBuilder, logger, _guard, new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		_serviceUrlBuilder = serviceUrlBuilder;
+		_hierarchyClient = hierarchyClient;
+		_command = CreateCommand(_guard);
 	}
+
+	private PageUpdateCommand CreateCommand(IPageBaselineGuard guard) =>
+		new(_applicationClient, _serviceUrlBuilder, _logger, guard, new PersistedResourceKeyReader(), _hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
 
 	private void StubChecksumByUId(params string[] responses) {
 		System.Collections.Generic.Queue<string> queue = new(responses);
@@ -182,5 +190,57 @@ public sealed class PageUpdateCommandBaselineTests {
 		// Assert
 		exitCode.Should().Be(0, because: "an unreadable baseline must fail toward no-check, not block the write");
 		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains(DiscoveryWarning)));
+	}
+
+	[Test]
+	[Description("An unpinned CLI save without a selector or a baseline must succeed and carry the guard's did-not-run warning.")]
+	public void Execute_ShouldWarnThatDetectionDidNotRun_WhenNoBaselineExists() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(0, because: "the warning never refuses the save");
+		_logger.Received().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
+	}
+
+	[Test]
+	[Description("A failed unpinned CLI save without a selector or a baseline exits non-zero and carries no did-not-run warning.")]
+	public void Execute_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveFails() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Save failed"}}""");
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the server refused the save");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json => json.Contains("Save failed")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
+	}
+
+	[Test]
+	[Description("A CLI save whose request gets no parsed reply exits non-zero and keeps the did-not-run warning, because the write may have landed.")]
+	public void Execute_ShouldKeepTheDidNotRunWarning_WhenTheSaveOutcomeIsUnknown() {
+		// Arrange
+		PageUpdateCommand command = CreateCommand(new PageBaselineGuard(new MockFileSystem()));
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html>Gateway Timeout</html>");
+
+		// Act
+		int exitCode = command.Execute(CreateOptions());
+
+		// Assert
+		exitCode.Should().Be(1, because: "the reply could not be parsed");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(json => json.Contains("External-modification detection did not run")));
 	}
 }

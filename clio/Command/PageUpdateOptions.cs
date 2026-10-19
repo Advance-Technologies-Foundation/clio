@@ -165,6 +165,18 @@
 		internal bool ConditionalBaselineApplied { get; set; }
 
 		/// <summary>
+		/// Gets or sets the did-not-run warning that <see cref="IPageBaselineGuard.TryArm"/> added for this save,
+		/// or <c>null</c> when it added none.
+		/// </summary>
+		internal string? DetectionDidNotRunWarning { get; set; }
+
+		/// <summary>
+		/// Gets or sets a value indicating whether the save request was sent and no parsed reply came back, so
+		/// the write may have landed.
+		/// </summary>
+		internal bool SaveOutcomeUnknown { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the successful save path should attempt a
 		/// best-effort Designer Presence push. Internal orchestration flag; not exposed as a CLI
 		/// option and enabled only by the dedicated <c>update-page</c> entry points.
@@ -512,7 +524,7 @@
 				};
 				return false;
 			}
-			if (!TrySaveSchema(prepared.Schema, out response)) return false;
+			if (!TrySaveSchema(prepared.Schema, options, out response)) return false;
 			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
 			// learn what the merge did.
@@ -1052,7 +1064,7 @@
 				// warning on the response instead (ENG-95262 AC-02).
 				AppendBaselineWarning(response, _pageBaselineGuard.RefreshOrDrop(metaFilePath, options, response));
 			}
-			AppendBaselineWarning(response, baselineWarning);
+			AppendBaselineWarning(response, PageBaselineGuard.ForSaveOutcome(baselineWarning, options, success));
 			// A failed persisted-key read never changes the verdict, but its reason must reach the caller
 			// on the response - not only the log - so a 401 or an unresolved hierarchy is not reported as
 			// "resource is neither auto-provided nor registered" (issue #1320).
@@ -1382,10 +1394,12 @@
 				"});";
 		}
 
-		private bool TrySaveSchema(JObject schemaToSave, out PageUpdateResponse response) {
+		private bool TrySaveSchema(JObject schemaToSave, PageUpdateOptions options, out PageUpdateResponse response) {
 			string saveUrl = _serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveClientUnitDesignerSchema);
+			options.SaveOutcomeUnknown = true;
 			string saveJson = _applicationClient.ExecutePostRequest(saveUrl, schemaToSave.ToString(Formatting.None));
 			var saveResponse = JObject.Parse(saveJson);
+			options.SaveOutcomeUnknown = false;
 			if (saveResponse["success"]?.Value<bool>() ?? false) {
 				TryResetScriptCache();
 				response = null;
