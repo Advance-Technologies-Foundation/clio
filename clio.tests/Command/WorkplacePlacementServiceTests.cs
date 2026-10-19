@@ -678,6 +678,67 @@ public sealed class WorkplacePlacementServiceTests {
 	}
 
 	[Test]
+	[Description("Without workplace-type, the same-named workplace that already holds the section is reused and the move out of My applications is skipped, so no role is needed.")]
+	public void Place_ShouldReuseHolderAndSkipMove_WhenSeveralShareTheNameWithoutWorkplaceType() {
+		// Arrange
+		Guid myAppsRow = _env.SeedMyApplicationsPlacement(bindInPackage: true);
+		_env.SeedWorkplace(WorkplaceName);
+		Guid holder = _env.SeedWorkplace(WorkplaceName);
+		_env.Placements.Add(new WorkplaceJunctionRecord(Guid.NewGuid(), holder, FakeEnvironment.SectionId));
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request(roles: []));
+
+		// Assert
+		result.Workplace.Id.Should().Be(holder, because: "the workplace that already holds the section wins over the oldest");
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionAlreadyPresent,
+			because: "the section is already in the reused workplace");
+		_env.Placements.Single(row => row.Id == myAppsRow).WorkplaceId.Should().Be(FakeEnvironment.MyApplicationsId,
+			because: "the move check is skipped, so the My applications row is neither refused nor moved");
+	}
+
+	[Test]
+	[Description("With workplace-type, a same-named workplace of the requested type is reused even when another one holds the section, and the move check runs for it: no role sees it, so the move is refused before any write.")]
+	public void Place_ShouldRefuseMoveIntoRequestedTypeWorkplace_WhenAnotherSameNamedOneHoldsTheSectionAndNoRoleSeesIt() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		Guid general = _env.SeedWorkplace(WorkplaceName);
+		_env.Placements.Add(new WorkplaceJunctionRecord(Guid.NewGuid(), general, FakeEnvironment.SectionId));
+		_env.SeedWorkplace(WorkplaceName, FakeEnvironment.PortalTypeId);
+
+		// Act
+		Action act = () => _sut.Place(Request(roles: []) with { WorkplaceType = "portal" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*hide the app*",
+			because: "the Portal workplace is the target, and no role sees it");
+		_env.Upserts.Should().BeEmpty(because: "the refusal comes before the first write");
+	}
+
+	[Test]
+	[Description("With workplace-type, the My applications row is moved into the same-named workplace of the requested type, not left because another same-named workplace holds the section.")]
+	public void Place_ShouldMoveIntoRequestedTypeWorkplace_WhenAnotherSameNamedOneHoldsTheSection() {
+		// Arrange
+		Guid myAppsRow = _env.SeedMyApplicationsPlacement(bindInPackage: true);
+		Guid general = _env.SeedWorkplace(WorkplaceName);
+		_env.Placements.Add(new WorkplaceJunctionRecord(Guid.NewGuid(), general, FakeEnvironment.SectionId));
+		Guid portal = _env.SeedWorkplace(WorkplaceName, FakeEnvironment.PortalTypeId);
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request() with { WorkplaceType = "portal" });
+
+		// Assert
+		result.Workplace.Id.Should().Be(portal, because: "the name and the type both have to match");
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionMoved,
+			because: "the section is not in the Portal workplace yet");
+		result.Section.PlacementId.Should().Be(myAppsRow, because: "the My applications row is moved, not a new one added");
+		_env.Placements.Single(row => row.Id == myAppsRow).WorkplaceId.Should().Be(portal,
+			because: "the moved row now points at the Portal workplace");
+		_env.Upserts.Should().Contain("SysModuleInWorkplace_UsrOrders",
+			because: "the moved row is written through its existing binding");
+	}
+
+	[Test]
 	[Description("The platform-seeded type id wins over another row that shares its code, so a custom type is never taken for General.")]
 	public void Place_ShouldPreferSeededTypeId_WhenAnotherRowSharesTheCode() {
 		// Arrange
