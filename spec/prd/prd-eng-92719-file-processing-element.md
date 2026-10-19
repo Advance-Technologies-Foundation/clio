@@ -316,7 +316,7 @@ longer waits.
 **Q16 note (2026-10-13).** For the analogous Delete data / Modify data empty-filter hazard, ENG-102537 Process
 elements built without their configuration block save green and fail or hang at run time settled "a NOTICE, never a
 refusal" by owner decision, because creating a bare element and configuring it in a later call is a supported flow.
-The refusal is still recommended here, because the file element's empty filter is predicted to do something different
+The refusal was recommended here, because the file element's empty filter is predicted to do something different
 (source, not measured): saving copies up to 50 arbitrary files onto a record (a harmful action), and a Word element
 generates one document per record of the whole entity (a mass side effect). The owner answered Q16 on 2026-10-14
 knowing this precedent and kept the refusal (the reason is recorded in analysis open-questions Q16 and ADR D16); the

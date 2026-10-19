@@ -222,7 +222,8 @@ CrtProcessBuilder 1.6.6.88; clio #1777; knowledge #262). `UserTaskElementHandler
 `RefusePreconfiguredPageOnGenericRoute` (`PB/Elements/UserTaskElementHandler.cs:89`) and, since ENG-102537 Process
 elements built without their configuration block save green and fail or hang at run time,
 `RefuseUnconfigurablePageTask` (`:90`), then creates the element (`:92`). OA.5 copies that shape:
-`RefuseFileProcessingOnGenericRoute` (`:91`) runs after them and before the element is created.
+`RefuseFileProcessingOnGenericRoute` (`:91`) runs after them and before the element is created. (These line numbers are
+at the OA head, tag `crtprocessbuilder-1.6.6.103`; on `main` the two merged refusals sit at `:86` and `:87`.)
 
 #### Q9. Which follow-up Sub-tasks to create, and when (agreed 2026-10-07: as recommended)
 

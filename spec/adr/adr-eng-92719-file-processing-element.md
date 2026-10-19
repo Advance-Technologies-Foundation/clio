@@ -80,8 +80,8 @@ Package (source; CrtProcessBuilder 1.6.6.96, re-read 2026-10-13):
 - **P1** The generic route builds the same unconfigured element for the three file schemas.
   `UserTaskElementHandler.Create` already refuses the generic Pre-configured page (ENG-102112 create-business-process
   silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage block,
-  `PB/Elements/UserTaskElementHandler.cs:89`) and Auto-generated page / User dialog (ENG-102537, `:90`), keyed on the
-  resolved schema UId.
+  `PB/Elements/UserTaskElementHandler.cs:86`) and Auto-generated page / User dialog (ENG-102537, `:87`), keyed on the
+  resolved schema UId. (Lines on `main`; on the OA head, tag `crtprocessbuilder-1.6.6.103`, they are `:89` and `:90`.)
 - **P2** `DataNodeFilterTarget` claims any node with `DataSourceFilters` and roots the filter on whatever object the
   caller names, unchecked (`PB/Filters/DataNodeFilterTarget.cs:57-91`).
 - **P3** The element-configuration ledger of ENG-102537 (`IElementConfigurationLedger`) evaluates every touched
