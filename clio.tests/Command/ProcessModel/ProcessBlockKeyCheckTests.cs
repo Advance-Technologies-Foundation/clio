@@ -107,6 +107,9 @@ public sealed class ProcessBlockKeyCheckTests {
 	[TestCase("readData", "{\"Source\":\"Contact\"}", "readData.Source", "keys are case-sensitive: write 'source'")]
 	[TestCase("readData", "{\"source\":\"Contact\",\"caption\":\"x\"}", "readData.caption", "element-level key: move it out")]
 	[TestCase("readData", "{\"source\":\"Contact\",\"sort\":{\"column\":\"Name\",\"order\":\"desc\"}}", "readData.sort.order", "Accepted sort keys")]
+	[TestCase("fileProcessing", "{\"attachments\":{\"object\":\"Account\"},\"filter\":{}}", "fileProcessing.filter", "ELEMENT-level 'filter'")]
+	[TestCase("fileProcessing", "{\"report\":{\"printable\":\"P\",\"fileNameSuffix\":{\"text\":\"x\"}}}", "fileProcessing.report.fileNameSuffix.text", "Accepted value source keys")]
+	[TestCase("fileProcessing", "{\"files\":{\"parameter\":\"PFiles\"}}", "fileProcessing.files.parameter", "Accepted files keys")]
 	[Description("An unknown key in any configuration block - not only readData - is refused with its key path and a pointer: a known synonym, a case-only mismatch, an element-level key misplaced into the block, or the block's accepted keys.")]
 	public void Check_Should_RefuseAnUnknownKeyInAnyBlock(string block, string body, string path, string pointer) {
 		// Act
@@ -115,6 +118,83 @@ public sealed class ProcessBlockKeyCheckTests {
 		// Assert
 		result.Error.Should().Contain($"'{path}'", because: "the refusal names the exact key path");
 		result.Error.Should().Contain(pointer, because: "the refusal says where the key belongs or what is accepted");
+	}
+
+	[Test]
+	[Description("A Process file element carrying a valid fileProcessing block - every group of the Object attachments variant, the shared value-source vocabulary and the reused Read data sort - passes clean on create and in a setElement update, so clio does not refuse the block before the server reads it.")]
+	public void Check_Should_AcceptAValidFileProcessingBlock_OnCreateAndSetElement() {
+		// Arrange
+		string element = """
+			{ "name": "ReadFiles", "type": "fileProcessing",
+			  "fileProcessing": { "source": "attachments", "action": "saveToAttachments",
+			    "attachments": { "object": "Account", "storage": "dedicated", "fileObject": "AccountFile", "linkColumn": "Account",
+			      "recordId": { "processParameter": "PAccount" }, "numberOfRecords": 10,
+			      "sort": { "column": "CreatedOn", "direction": "desc" } },
+			    "saveTo": { "object": "Contact", "linkColumn": "Contact", "storage": "dedicated", "fileObject": "ContactFile",
+			      "recordId": { "sourceElement": "ReadContact", "sourceElementParameter": "ResultEntity", "sourceColumn": "Id" } } },
+			  "filter": { "object": "AccountFile", "conditions": [ { "column": "Name", "comparison": "contains", "value": ".pdf" } ] } }
+			""";
+		string operations = """
+			[ { "op": "setElement", "elementName": "ReadFiles", "elementUpdate": {
+			    "fileProcessing": { "attachments": { "recordId": { "expression": "[#SysVariable.CurrentUserContact#]" } } } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult update = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every fileProcessing key is one FileProcessingDescriptor and its groups declare");
+		update.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "setElement takes the same fileProcessing block through ProcessElementUpdateDescriptor.FileProcessing");
+	}
+
+	[Test]
+	[Description("A misspelled key inside fileProcessing.attachments is refused naming the element and the full key path, with the case-only pointer - instead of the server dropping it and reading the attachments of no record.")]
+	public void Check_Should_RefuseATypoInsideFileProcessingAttachments_NamingThePath() {
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(
+			"{\"name\":\"ReadFiles\",\"type\":\"fileProcessing\",\"fileProcessing\":{\"attachments\":{\"object\":\"Account\","
+			+ "\"recordID\":{\"processParameter\":\"PAccount\"},\"numberOfRecord\":5}}}");
+
+		// Assert
+		result.Error.Should().Contain("'ReadFiles'", because: "the refusal names the element");
+		result.Error.Should().Contain("'fileProcessing.attachments.recordID'",
+			because: "the refusal names the exact key path inside the attachments group");
+		result.Error.Should().Contain("keys are case-sensitive: write 'recordId'",
+			because: "a case-only mismatch is pointed to the declared spelling");
+		result.Error.Should().Contain("'fileProcessing.attachments.numberOfRecord'",
+			because: "every unknown key is reported, not only the first");
+		result.Error.Should().Contain("Accepted attachments keys:",
+			because: "the refusal lists the attachments group's real keys");
+	}
+
+	[Test]
+	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but named in the read-back warning.")]
+	public void Check_Should_WarnButNotRefuse_FileProcessingDescribeOnlyFields() {
+		// Arrange
+		string element = """
+			{ "name": "ReadFiles", "type": "fileProcessing",
+			  "fileProcessing": { "source": "attachments", "action": "useInProcess", "actionStored": false,
+			    "outputs": [ { "parameter": "ObjectFiles", "item": "File" } ], "issues": [ "an unset action" ],
+			    "attachments": { "object": "Account", "recordId": { "processParameter": "PAccount", "display": "Account" } },
+			    "saveTo": { "object": "Contact", "recordId": { "value": "c1", "display": "John Best" } } } }
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().BeNull(because: "describe-only members are derived and harmless to ignore");
+		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+			.Which.Should().Contain("fileProcessing.actionStored", because: "the block's describe-only flag is named")
+			.And.Contain("fileProcessing.outputs", because: "the derived outputs are named")
+			.And.Contain("fileProcessing.issues", because: "the derived issues are named")
+			.And.Contain("fileProcessing.attachments.recordId.display",
+				because: "a value source's display is describe-only")
+			.And.Contain("fileProcessing.saveTo.recordId.display",
+				because: "display is tolerated on every value source, saveTo's included");
 	}
 
 	[Test]

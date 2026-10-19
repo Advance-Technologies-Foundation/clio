@@ -252,7 +252,19 @@ namespace Clio.Command;
 // An older server refuses `type: File` loudly, but it silently binds only the level an `addMapping` names, leaves a
 // mirrored collection's items unbound and accepts a dotted mirror source, so a newer clio would describe binding rules
 // the server does not apply. 1.6.6.99 is the first archive clio bundles with the types and the binder.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.99",
+// Raised to 1.6.6.103 by ENG-96505: the fileProcessing element (Object attachments variant) - the
+// `type:"fileProcessing"` token with its `fileProcessing` block, and the same block on setElement. An older server
+// refuses the unknown TYPE loudly, and a setElement carrying ONLY a `fileProcessing` block loudly too ("specifies no
+// field to change"); but beside another field it drops the block in silence and answers success - the same
+// silent-discard shape - so that part of the edit is lost while nothing says so. And a generic userTask naming
+// ObjectFileProcessingUserTask, which this clio's contract now steers to the new type, builds there an element with
+// no file source that saves without error and fails at run time. The element first ships in 1.6.6.100. From 1.6.6.101
+// it is written in the classic designer's stored form (a [#Lookup.<object>.<id>#] Script record constant,
+// ConnectedObjectId typed Lookup) and describe decodes that formula back to {value, display}, so describing a
+// designer-built record and sending it back holds; 1.6.6.103 also refuses moving the source or the target to another
+// object while another element reads CreatedObjectFileIds, as the designer does. 1.6.6.100-1.6.6.102 were never
+// released.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.103",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

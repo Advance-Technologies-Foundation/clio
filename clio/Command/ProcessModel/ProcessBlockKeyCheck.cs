@@ -157,11 +157,13 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet SignalBlock = new("ProcessSignalDescriptor", Signal, "DescribeSignalInfo",
 		"entity on changedColumns", "entitySchemaUId");
 
+	private static readonly KeySet ReadDataSort = new("ReadDataSortDescriptor", "sort", null, "column direction");
+
 	private static readonly KeySet ReadDataBlock = new KeySet("ReadDataConfigDescriptor", "readData",
 			"DescribeReadDataInfo", "source mode aggregation columns numberOfRecords sort", "sourceSchemaUId outputs",
 			DataBlockPointers)
 		.With(new KeySet("ReadDataAggregationDescriptor", "aggregation", null, "function column"))
-		.With(new KeySet("ReadDataSortDescriptor", "sort", null, "column direction"));
+		.With(ReadDataSort);
 
 	private static readonly KeySet ColumnValue = new("ChangeDataValueDescriptor", "values entry", null,
 		"column value processParameter sourceElement sourceElementParameter sourceColumn expression selectionColumn");
@@ -266,13 +268,34 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet ScriptTaskBlock = new("ScriptTaskDescriptor", "scriptTask", "DescribeScriptTaskInfo",
 		"body forInterpretedProcess");
 
+	// One value-source vocabulary for every value the block takes; describe adds the designer's 'display' to each.
+	private static readonly KeySet FileProcessingValueSource = new("FileProcessingValueSourceDescriptor",
+		"value source", "DescribeFileProcessingValueSource",
+		"value processParameter sourceElement sourceElementParameter sourceColumn expression", "display");
+
+	private static readonly KeySet FileProcessingBlock = new KeySet("FileProcessingDescriptor", "fileProcessing",
+			"DescribeFileProcessingInfo", "source action attachments report files saveTo", "actionStored outputs issues")
+		.With(new KeySet("FileProcessingAttachmentsDescriptor", "attachments", "DescribeFileProcessingAttachmentsInfo",
+				"object recordId numberOfRecords sort storage fileObject linkColumn")
+			.With(RecordId, FileProcessingValueSource)
+			.With(ReadDataSort))
+		.With(new KeySet("FileProcessingReportDescriptor", "report", null,
+				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type")
+			.With($"{RecordId} fileNameSuffix", FileProcessingValueSource))
+		.With(new KeySet("FileProcessingFilesDescriptor", "files", null,
+			"processParameter sourceElement sourceElementParameter expression value"))
+		.With(new KeySet("FileProcessingSaveToDescriptor", "saveTo", "DescribeFileProcessingSaveToInfo",
+				"object recordId linkColumn storage fileObject")
+			.With(RecordId, FileProcessingValueSource));
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
 	/// </summary>
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
-		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock
+		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
+		FileProcessingBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));
