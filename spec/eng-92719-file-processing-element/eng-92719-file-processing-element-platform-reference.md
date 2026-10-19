@@ -1,8 +1,8 @@
 # Platform reference: ENG-92719 File processing element and ENG-95984 File process parameter type
 
 **Summary.** This document describes what the Creatio platform already does, end to end, for the "Process file"
-element and for file-typed process parameters. It is the background for ENG-92719 File processing element (sub-tasks
-ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes) and
+element and for file-typed process parameters. It is the background for ENG-92719 File processing element (ENG-96505
+Element readiness and object attachments mode, a related Task since 2026-10-14, formerly a Sub-task, and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes) and
 for ENG-95984 File process parameter type, all in epic ENG-92704 Create BP via AI Toolkit. "Process file" is not one
 element: it is **three user-task schemas that share one caption**, and the designer's "What is the source of the
 file?" choice selects the schema; it is not a parameter. A file always travels through a process as a **reference**
@@ -612,11 +612,14 @@ With `ProcessFeatures.UseSysFileInObjectFileProcessing` ON (§10), `getFileEntit
 2. **File objects** are BaseFile descendants that are neither BaseFile itself nor in the SysFile family (SysFile and
    its descendants such as FeedFile) (`:314-325`).
 3. Each file object is paired with a record entity **by name**: strip the `File` suffix; `FileLead` pairs with `Lead`
-   (`:424-446`). A file object whose name does not resolve to an entity is listed on its own (an orphan, e.g.
-   DNSGuideFile, CreatioAIIntentFile, MailboxSettingsFile).
+   (`:424-446`). A file object whose name does not resolve to an entity (an orphan, e.g. DNSGuideFile,
+   CreatioAIIntentFile, MailboxSettingsFile) is listed on its own, under its own caption, as a file-object entry:
+   `fileEntitySchemaUId` = its own UId and `isFileSuccessor: true` (`_addFileEntities`, `:343-357`). So an orphan is
+   dedicated storage with no record entity, not a SysFile entry; the builder's resolver reads it the same way (D15).
 4. A paired file object becomes one entry captioned **"`<Entity>` (`<file object caption>`)"**, with
    `isFileSuccessor: true` (`:343-358`).
-5. **Every other** eligible entity that no file object claims becomes a SysFile entry with its plain caption,
+5. **Every other** eligible entity that no file object claims, and that is not itself a file object of step 2,
+   becomes a SysFile entry with its plain caption,
    `fileEntitySchemaUId = SysFile`, `isFileSuccessor: false` (`:363-387`). SysFile itself and FeedFile land here too,
    as degenerate entries.
 6. The link column is `SysFile.RecordId` for a SysFile entry (`PD/BaseFileProcessingUserTaskPropertiesPage/…js:527-540`).
@@ -912,13 +915,14 @@ the stand (PrintInvoiceReport, read-only JS): the adapter emits `type: "userTask
 
 CrtProcessBuilder's generic `{type: "userTask", userTaskName: "<schema>"}` route already writes `ManagerItemUId =
 SchemaUId` whenever the schema has a `SysProcessUserTask` row, which all three have, plus the 69x55 size and the lane
-(`PB/Elements/UserTaskElementHandler.cs:73`, `:80-98`, `:401-411`; `PB/Elements/ProcessElementFactory.cs:114-125`). It
-writes no configuration. Since 1.6.6.88 / 1.6.6.91 the route's create runs two refusals first (`:86-87`): one for
+(`PB/Elements/UserTaskElementHandler.cs:76`, `:83-102`, `:432-442`; `PB/Elements/ProcessElementFactory.cs:114-125`). It
+writes no configuration. Since 1.6.6.88 / 1.6.6.91 the route's create runs two refusals first (`:89-90`): one for
 the Pre-configured page (ENG-102112 create-business-process silently accepts a generic userTask
 PreconfiguredPageUserTask without the preconfiguredPage block), and one for Auto-generated page and User dialog
 (ENG-102537 Process elements built without their configuration block save green and fail or hang at run time).
 Neither fires for the three file schemas, so on 1.6.6.96 the route still builds the same drawn, unconfigured element
-(source; hypothesis until measured). Today describe returns these elements as a generic `usertask` (`userTaskName`,
+(source; hypothesis until measured). With OA a third refusal, `RefuseFileProcessingOnGenericRoute` (`:91`), refuses
+the route for the Object schema; the Report and Process schemas keep it until RP (D13). Today describe returns these elements as a generic `usertask` (`userTaskName`,
 `managerItemUId`, every typed block null) with only the parameters persisted in the element: template defaults that
 were never written are invisible, and `ReportId` and `TargetEntitySchemaUId` come back as bare GUIDs (measured
 2026-10-01 on three of the four installed report processes, PrintInvoiceReport, PrintQuotationReport and

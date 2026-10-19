@@ -1,8 +1,8 @@
 # PRD: Process file element (ENG-92719)
 
-**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit), delivered through its
-Sub-tasks ENG-96505 Element readiness and object attachments mode (OA) and ENG-96506 Generated report + process
-parameter modes (RP), and a new Sub-task "SysFile attachment storage in the Process file element" (SF; not created in
+**Jira**: ENG-92719 File processing element (Story; epic ENG-92704 Create BP via AI Toolkit), delivered through
+ENG-96505 Element readiness and object attachments mode (OA; a Task that relates to ENG-92719, converted from a
+Sub-task on 2026-10-14), ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes (RP), and a new Sub-task "SysFile attachment storage in the Process file element" (SF; not created in
 Jira as of 2026-10-14, its key is assigned on creation)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md)
 **Stories**: [1](../stories/story-eng-92719-file-processing-element-1.md) (OA) ·
@@ -17,14 +17,13 @@ inventory, traps T-1..T-68, decisions D1-D30 with their source anchors, the plan
 split and the open questions. This PRD restates what the stories need; where it is shorter, the analysis holds the
 detail.
 **Status**: Accepted in part. The owner agreed Q1-Q12 on 2026-10-07 (Q7 answered by stand measurement M3), Q19 on
-2026-10-08 and Q20 on 2026-10-14 (A: trim existing text). Among them: the replacement acceptance criteria (Q1), the
+2026-10-08, and Q13-Q18 (as recommended) and Q20 (A: trim existing text) on 2026-10-14. Among them: the replacement acceptance criteria (Q1), the
 Jira links (Q2), SysFile storage in its own Sub-task (Q3), RP before SF (Q4), the consumer split (Q5) and the PR split
-(Q6). The six element-contract questions Q13-Q18 are open (see "Open owner items"); every story plans on their
-recommended answers. Q1 agreed the replacement text, but several of its rows already encode a recommended answer to an
-open question: those rows are marked "conditional on Qnn" below, and their paste into Jira (plan FE.0b) waits for the
-answers. The SF criterion is proposed, not agreed (decisions D-5); it is confirmed when the SF Sub-task is created.
+(Q6). The six element-contract questions Q13-Q18 were agreed as recommended (see "Open owner items"), so the rows of
+the replacement text that encode them stand as written: they name their question in the column "Owner answer" below,
+and are pasted into Jira (plan FE.0b). The SF criterion is proposed, not agreed (decisions D-5); it is confirmed when the SF Sub-task is created.
 **Created**: 2026-10-14
-**Size estimate**: three main Sub-tasks, each one package -> clio -> knowledge PR triple, plus two side Sub-tasks of
+**Size estimate**: three main issues (OA, RP, SF), each one package -> clio -> knowledge PR triple, plus two side Sub-tasks of
 size S. With an AI agent writing the code: about 26.5-52.5 h of agent time and 15-33.5 h of the owner's time, about
 7-10 working days of calendar after ENG-95984 File process parameter type merges (analysis plan section 8). The side
 Sub-tasks are outside that total, about 4-6 h each for their triple (inference). The full BMAD form is used because the
@@ -163,11 +162,10 @@ are a faithful condensed copy with editorial differences only, except where a ro
 OA-n, RP-n, SF-1) number the replacement bullets in order, as the analysis test plan section 11 does; the plan's
 section 1.2 ids (AC-FE1..AC-RP9) number the Jira text as written and are not used here.
 
-**Rows conditional on an open owner question.** The column "Open answer" names the question whose recommended answer
-the row encodes (see "Open owner items"). Such a row is conditional on that answer: its paste into Jira (plan FE.0b)
-waits for the answer, and a different answer rewrites the row, the decision, and the test cases the test plan lists for
-that question. Member names in any row (`fileProcessing`, `attachments`, `report`, `files`, `saveTo`, `recordId`, and
-the rest) follow Q13 and Q14; a rename there changes names only.
+**Rows that encode an owner answer.** The column "Owner answer" names the question whose answer the row encodes (see
+"Open owner items"). Q13-Q18 were agreed as recommended on 2026-10-14, so these rows stand as written and are pasted
+into Jira (plan FE.0b); the test plan lists the test cases tied to each question. Member names in any row
+(`fileProcessing`, `attachments`, `report`, `files`, `saveTo`, `recordId`, and the rest) follow Q13 and Q14, as agreed.
 
 **The comparison rule** (shared by FE-5, OA-10, RP-8 and SF-1; analysis serialization-capture section 10): element UId,
 name and lane are ignored (elements are paired by caption), and so are parameter and nested UIds; a nested item's `IL2`
@@ -188,9 +186,9 @@ plan calls the whole rule the TC-41 rule.
 
 ### ENG-92719 File processing element (Story)
 
-| # | Acceptance criterion | Open answer |
+| # | Acceptance criterion | Owner answer |
 |---|---|---|
-| FE-1 | All three source variants (Object attachments, Generated report, Process parameter) and the save target can be built through create and modify as one element, type `fileProcessing`, and read back by `describe-business-process`. Delivered by OA (Object attachments), RP (Generated report, Process parameter) and SF (objects without their own attachment object) | conditional on Q13 (recommended: one type `fileProcessing`); the SF half depends on SF (see "Open owner items") |
+| FE-1 | All three source variants (Object attachments, Generated report, Process parameter) and the save target can be built through create and modify as one element, type `fileProcessing`, and read back by `describe-business-process`. Delivered by OA (Object attachments), RP (Generated report, Process parameter) and SF (objects without their own attachment object) | Q13, agreed 2026-10-14: one type `fileProcessing`; the SF half depends on SF (see "Open owner items") |
 | FE-2 | An element's output collection can be mapped by more than one downstream element | - |
 | FE-3 | Guidance covers which source variant to pick for a given intent and the element pairings from the use-case inventory. Creating a new printable is out of scope: when none fits, the refusal tells the user to create it in System Designer, Report setup, and the element never picks an unrelated one | - |
 | FE-4 | Values are set through the ENG-91844 Implement full parameter mapping (sources) value sources, including File and FileCollection parameters (ENG-95984 File process parameter type) | - |
@@ -199,29 +197,29 @@ plan calls the whole rule the TC-41 rule.
 
 ### ENG-96505 Element readiness and object attachments mode (OA)
 
-| # | Acceptance criterion | Open answer |
+| # | Acceptance criterion | Owner answer |
 |---|---|---|
-| OA-1 | The element (type `fileProcessing`, alias `processFile`) can be added through create and modify and connected like any other element; it is drawn as the designer draws it (manager item = the schema, 69x55, in a lane) | conditional on Q13 (recommended: token `fileProcessing`, alias `processFile`) |
+| OA-1 | The element (type `fileProcessing`, alias `processFile`) can be added through create and modify and connected like any other element; it is drawn as the designer draws it (manager item = the schema, 69x55, in a lane) | Q13, agreed 2026-10-14: token `fileProcessing`, alias `processFile` |
 | OA-2 | `describe-business-process` returns the element with its source variant and configuration in a `fileProcessing` block in the build vocabulary; feeding the write members back rebuilds it. An Object element in an existing process, designer-built or builder-built, is read back and modified without loss. Report and Process-parameter elements are described and preserved as generic user tasks until RP; a modify of a process that holds one leaves it intact. A designer-built SysFile element is described without loss; changing it is refused until SF | - |
 | OA-3 | The element's output file collection can be mapped by more than one downstream element | - |
-| OA-4 | Element identity resolves to the user-task schema per source variant; the variant is the group the request sends, so adding a variant later does not change the layout contract | conditional on Q13 (recommended: the group present is the variant) |
+| OA-4 | Element identity resolves to the user-task schema per source variant; the variant is the group the request sends, so adding a variant later does not change the layout contract | Q13, agreed 2026-10-14: the group present is the variant |
 | OA-5 | Building ObjectFileProcessingUserTask as a generic `userTask` is refused with a message that points to `fileProcessing` | - |
-| OA-6 | The source object is chosen by name in `attachments.object`, and its attachment storage is derived per object as the designer derives it. SysFile storage is not part of this Sub-task: such sources and targets are refused with a message, designer-built SysFile elements are described without loss, and SF delivers the support | conditional on Q17 for the details (recommended: the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override) |
-| OA-7 | The record whose attachments are read is set in `attachments.recordId` through the value sources: a record id, a process parameter, an element output or one column of it, or `[#SysVariable.CurrentUserContact#]`. The number of files (default 50, at most 5000) and one sort column can be set | conditional on Q16 (recommended: the record scope inside the group) and Q14 (recommended: `numberOfRecords` defaults to 50) |
-| OA-8 | Files can be saved to a target record's Attachments detail (`saveTo`), with the record set through the same value sources; a constant record id must be an existing record of the target object | - (the row's text encodes no open answer; the action inference that stories and tests attach to `saveTo` is Q15's) |
-| OA-9 | A saving element with no record scope and no filter condition is refused; a "use in process" element without one gets a notice | conditional on Q16 (recommended: refuse; the alternative is a notice) |
+| OA-6 | The source object is chosen by name in `attachments.object`, and its attachment storage is derived per object as the designer derives it. SysFile storage is not part of this issue: such sources and targets are refused with a message, designer-built SysFile elements are described without loss, and SF delivers the support | Q17 for the details, agreed 2026-10-14: the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override |
+| OA-7 | The record whose attachments are read is set in `attachments.recordId` through the value sources: a record id, a process parameter, an element output or one column of it, or `[#SysVariable.CurrentUserContact#]`. The number of files (default 50, at most 5000) and one sort column can be set | Q16 and Q14, agreed 2026-10-14: the record scope inside the group; `numberOfRecords` defaults to 50 |
+| OA-8 | Files can be saved to a target record's Attachments detail (`saveTo`), with the record set through the same value sources; a constant record id must be an existing record of the target object | - (the row's text encodes no owner answer; the action inference that stories and tests attach to `saveTo` is Q15's, agreed 2026-10-14) |
+| OA-9 | A saving element with no record scope and no filter condition is refused; a "use in process" element without one gets a notice | Q16, agreed 2026-10-14: refuse |
 | OA-10 | Server serialization matches the designer-built capture SkillFilesValidationProcess, under the comparison rule. The test plan's TC-41 also compares the save side against FileCopyProcessPP, with the parameters it predates excluded and named (a PRD addition taken from the analysis test plan; decisions D-3 names only SkillFilesValidationProcess) | - |
 | OA-11 | Guidance states "Most shipped uses end in a record's attachments; when a following element needs the files, map the element's output collection." (pinned by TC-88), covers the Object attachments pairings from the use-case inventory, and says which consumers are not buildable yet | - |
 | OA-12 | Unit tests, e2e, stand verification, clio MCP tool descriptions and clio-knowledge guidance updated in the same change, merged package, then clio, then knowledge. Public surface: coordinated change | - |
 
 ### ENG-96506 Generated report + process parameter modes (RP)
 
-| # | Acceptance criterion | Open answer |
+| # | Acceptance criterion | Owner answer |
 |---|---|---|
-| RP-1 | The report is chosen in `report.printable` from the MS Word printables whose object is the record being reported on, preferably by the `templateId` that `list-printables` returns (a caption or a lookup macro is also accepted; an ambiguous caption is refused with the candidates). The record is set in `report.recordId` through the value sources. FastReport and DevExpress printables are refused | conditional on Q18 (recommended: FastReport refused), Q16 (recommended: `report.recordId` in the group) and Q14 (recommended: `report.printable` takes an id, a macro or a caption) |
+| RP-1 | The report is chosen in `report.printable` from the MS Word printables whose object is the record being reported on, preferably by the `templateId` that `list-printables` returns (a caption or a lookup macro is also accepted; an ambiguous caption is refused with the candidates). The record is set in `report.recordId` through the value sources. FastReport and DevExpress printables are refused | Q18, Q16 and Q14, agreed 2026-10-14: FastReport refused; `report.recordId` in the group; `report.printable` takes an id, a macro or a caption |
 | RP-2 | The generated files can be saved to a record's Attachments detail, or handed to a following element as a file collection (temporary files that live as long as the process instance; source, pending M16, and TC-M-07 (ST-07) closes it) | - |
 | RP-3 | Creating a new printable is out of scope. When no suitable printable exists, the refusal tells the person to create it in System Designer, Report setup, and the element never picks an unrelated printable | - |
-| RP-4 | A Word report with no record scope and no filter condition is refused | conditional on Q16 (recommended: refuse; the alternative is a notice) |
+| RP-4 | A Word report with no record scope and no filter condition is refused | Q16, agreed 2026-10-14: refuse |
 | RP-5 | The Process-parameter source is set in `files`: a FileCollection or File process parameter, an element's file output, or a formula. A collection source binds both levels of the element's `Files` input. A single File is accepted if M1 shows that the platform copies it; otherwise it is refused, and the guidance says to wrap it in a FileCollection | - |
 | RP-6 | The Process-parameter files are saved to a record's Attachments detail (a target is required); the copies are then available to following elements (`ObjectFiles.ObjectFile`, `CreatedObjectFileIds`). "Use in process" does not exist for this source and is refused | - |
 | RP-7 | `describe-business-process` round-trips both variants (the source, the printable or the input files, the record, the save target). The shipped product processes with report elements describe as `buildType: fileprocessing` (checked read-only) | - |
@@ -301,12 +299,12 @@ On the .NET Framework stand carrying each cut (analysis pr-split section 14):
 
 ## Open owner items
 
-The six element-contract questions are open. Each has a recommendation the stories plan on; a different answer changes
-the decision named, the acceptance rows marked with that question above, and the test cases the test plan lists for it
-under "Cases that move with an open decision" (analysis open-questions Part A). The Jira paste of those rows (FE.0b)
-waits for the answers.
+The six element-contract questions were agreed on 2026-10-14, each as recommended. The stories plan on these answers;
+the acceptance rows marked with a question above and the test cases the test plan lists for it under "Cases that move
+with an open decision" (analysis open-questions Part A) stand as written, and the Jira paste of those rows (FE.0b) no
+longer waits.
 
-| Q | Question | Recommended | ADR | Needed before |
+| Q | Question | Agreed 2026-10-14 (as recommended) | ADR | Needed before |
 |---|---|---|---|---|
 | Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present (`attachments`, `report`, `files`) is the variant; `source` is an optional identity check | D10 | OA package code |
 | Q14 | Naming bundle of the block | as proposed, including `numberOfRecords` defaulting to 50 (not "read all" as in `readData`) | D11 | OA package code |
@@ -318,11 +316,11 @@ waits for the answers.
 **Q16 note (2026-10-13).** For the analogous Delete data / Modify data empty-filter hazard, ENG-102537 Process
 elements built without their configuration block save green and fail or hang at run time settled "a NOTICE, never a
 refusal" by owner decision, because creating a bare element and configuring it in a later call is a supported flow.
-The refusal is still recommended here, because the file element's empty filter is predicted to do something different
+The refusal was recommended here, because the file element's empty filter is predicted to do something different
 (source, not measured): saving copies up to 50 arbitrary files onto a record (a harmful action), and a Word element
-generates one document per record of the whole entity (a mass side effect). The owner answers Q16 knowing this
-precedent. If the answer is "notice everywhere", OA builds no pre-gate check and its own touched-element record
-(inference).
+generates one document per record of the whole entity (a mass side effect). The owner answered Q16 on 2026-10-14
+knowing this precedent and kept the refusal (the reason is recorded in analysis open-questions Q16 and ADR D16); the
+"notice everywhere" alternative was not taken.
 
 **What FE-1 means if SF narrows** (open, added 2026-10-14). FE-1 promises all three variants with the save target, and
 SF delivers objects without their own attachment object. If a SysFile measurement fails, SF keeps that case's refusal
