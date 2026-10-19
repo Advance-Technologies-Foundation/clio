@@ -272,7 +272,7 @@ internal sealed class WorkplacePlacementService(
 		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, existing);
 		CheckWorkplaceType(reused, requestedTypeId, workplaceTypes);
 		PackageBindingRecord workplaceOwner = FindForeignWorkplaceOwner(request, package, reused);
-		CheckMoveBeforeWriting(request, package, roles, sectionPlacements, myApplicationsIds, existing, reused);
+		CheckMoveBeforeWriting(request, package, roles, sectionPlacements, myApplicationsIds, reused);
 
 		WorkplacePlacementResult placed;
 		if (existing.Count > 1 && reused is not null) {
@@ -280,8 +280,8 @@ internal sealed class WorkplacePlacementService(
 				$"({string.Join(", ", existing.Select(record => record.Id))}); {reused.Id} was used.");
 		}
 		try {
-			WorkplaceState workplace = EnsureWorkplace(request, package, clientTypeId, requestedTypeId, bindingSuffix,
-				reused, workplaceOwner, warnings);
+			WorkplaceState workplace = EnsureWorkplace(request, package, new WorkplaceKind(clientTypeId, requestedTypeId),
+				bindingSuffix, reused, workplaceOwner, warnings);
 			// Grant before placing: a failed grant then leaves the section where it was, not in a workplace nobody sees.
 			List<WorkplacePlacementRole> grants = roles
 				.Select(role => EnsureRoleGrant(request, package, workplace.Record.Id, role, bindingSuffix))
@@ -443,7 +443,7 @@ internal sealed class WorkplacePlacementService(
 	private void CheckMoveBeforeWriting(WorkplacePlacementRequest request, PackageTargetResolution package,
 		IReadOnlyList<AdminUnitRecord> roles,
 		IReadOnlyList<WorkplaceJunctionRecord> sectionPlacements, HashSet<Guid> myApplicationsIds,
-		IReadOnlyList<WorkplaceRecord> existing, WorkplaceRecord reused) {
+		WorkplaceRecord reused) {
 		if (!request.RemoveFromMyApplications) {
 			return;
 		}
@@ -600,8 +600,9 @@ internal sealed class WorkplacePlacementService(
 	}
 
 	private WorkplaceState EnsureWorkplace(WorkplacePlacementRequest request, PackageTargetResolution package,
-		Guid clientTypeId, Guid? typeId, string bindingSuffix, WorkplaceRecord reused, PackageBindingRecord foreignOwner,
+		WorkplaceKind kind, string bindingSuffix, WorkplaceRecord reused, PackageBindingRecord foreignOwner,
 		List<string> warnings) {
+		(Guid clientTypeId, Guid? typeId) = kind;
 		string workplaceName = request.WorkplaceName.Trim();
 		if (foreignOwner is not null) {
 			// Another package owns the row: binding it here too would let either install overwrite or remove it.
@@ -871,6 +872,9 @@ internal sealed class WorkplacePlacementService(
 	}
 
 	private sealed record WorkplaceState(WorkplaceRecord Record, bool Created, string BindingName);
+
+	/// <summary>The client type a workplace is created with, and the requested type (null: platform default).</summary>
+	private sealed record WorkplaceKind(Guid ClientTypeId, Guid? TypeId);
 
 	private sealed record ReadBack(IReadOnlyList<WorkplaceJunctionRecord> Placements, int GrantCount);
 }
