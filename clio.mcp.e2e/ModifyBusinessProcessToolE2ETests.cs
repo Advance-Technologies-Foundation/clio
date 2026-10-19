@@ -1073,7 +1073,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange - both connectors declared PLAIN, so every decision on them is made by the operations below.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpOpenEditPageResultsModE2e{Guid.NewGuid():N}";
-		await CreateProcessAsync(context, processName, BuildOpenEditPageResultBranchDescriptor(processName));
+		// Built here rather than through CreateProcessAsync, so an outdated sandbox package is reported as such
+		// instead of as a failed arrange.
+		CallToolResult created = await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName)
+		});
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.103");
+		ShouldHaveBuilt(created, $"the arrange must actually create '{processName}', or the test measures nothing");
 
 		try {
 			// Act

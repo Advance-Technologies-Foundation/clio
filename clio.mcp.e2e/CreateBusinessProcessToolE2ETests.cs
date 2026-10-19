@@ -1677,9 +1677,8 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
 				because: "a refused build must leave nothing behind");
 		} finally {
-			if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
-				await DeleteProcessAsync(context.EnvironmentName!, processName);
-			}
+			// Unconditional: the delete reports rather than throws, so a describe here could only mask the failure.
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
 	}
 
