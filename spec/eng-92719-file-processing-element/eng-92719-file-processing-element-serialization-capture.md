@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Issues | ENG-92719 File processing element (Story), sub-tasks ENG-96505 Element readiness and object attachments mode and ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
+| Issues | ENG-92719 File processing element (Story), ENG-96505 Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task ENG-96506 Generated report + process parameter modes; ENG-95984 File process parameter type (Task) |
 | Epic | ENG-92704 Create BP via AI Toolkit |
 | Acceptance criteria served | "Server serialization matches a designer-built capture" in all four issues (plan AC-FE5, AC-OA7, AC-RP6; ENG-95984 File process parameter type plan AC-8) |
 | Baselines | Creatio core 10.1.37 (the stand's core); CrtProcessDesigner 7.8.0 (byte-identical to what the stand serves). Anchors point to CrtProcessBuilder `main` `a6bfcbf6` = 1.6.6.96 and clio `master` `19e6f9c53`, re-pinned 2026-10-13; the stand measurements of 2026-10-02 ran on CrtProcessBuilder 1.6.6.54 (`3f4cce50`); the stand ran 1.6.6.96 on 2026-10-13 (measured with `list-packages`, read-only) |
@@ -500,7 +500,9 @@ only while the client feature `ProcessParameterCollections` is on (`:167`); the 
 
 `GetFile` is the source element's caption (`BaseElements.ObjectFileProcessingUserTask5.Caption`, `:5`). The card of
 the Process variant shows the stored nested display value as is. A builder that stores the bare item caption ("File")
-shows "File" on the card ([decisions](eng-92719-file-processing-element-decisions.md) D20 fixes the form; M14 checks).
+shows "File" on the card ([decisions](eng-92719-file-processing-element-decisions.md) D20 writes the nested form; M14
+checks). The top-level form (`[#GetFile.Collection of files#]` on the outer `Files`) is not written by the builder,
+which stores the bare caption for a top-level source of every element: a separate task (plan section 9).
 
 ---
 
@@ -710,7 +712,7 @@ table for elements. The ENG-95984 File process parameter type AC-8 rule (its tes
 process-parameter rows. The table lists every known or predicted difference and says how the comparison treats it.
 "Today" means the generic route on 1.6.6.54, where M14 measured it ([decisions](eng-92719-file-processing-element-decisions.md) D13; G4 f.1);
 the generic route builds the same element for the file schemas on 1.6.6.96. It gained refusals for three other tasks
-(`PB/Elements/UserTaskElementHandler.cs:86-87`, both merged 2026-10-08): the Pre-configured page (ENG-102112
+(`PB/Elements/UserTaskElementHandler.cs:89-90`, both merged 2026-10-08): the Pre-configured page (ENG-102112
 create-business-process silently accepts a generic userTask PreconfiguredPageUserTask without the preconfiguredPage
 block), and Auto-generated page and User dialog (ENG-102537 Process elements built without their configuration block
 save green and fail or hang at run time). Neither fires for the three file schemas (hypothesis, source).
@@ -732,7 +734,7 @@ save green and fail or hang at run time). Neither fires for the three file schem
 | N13 | DisplayValue rows of hidden constants (`ResultActionType`, `ConnectedObjectColumnUId`, `ReportId`, `IsSeparateReports`, `ConsiderTimeInFilter`) | value text | unknown | unknown | reported, not failing: the cards render these from the value. Must match for displayed values (`ConnectedObjectId`, `Files`, `Files.File`, `ReportName`) | SC-4 |
 | N14 | resource cultures | authoring culture | request culture | same | compare the authoring culture only | - |
 | N15 | "no value" forms `{}`, `{"GS5":<P>}`, `{"GS5":<T>}` | all three occur | `{}` | - | equal | - |
-| N16 | `DataSourceFilters` | wrapper with two inner strings | `ProcessFilterService.BuildFilterValue` (both forms) | same | parse both inner strings; filter `key`s and the value `Id`s are normalised to positions; `rootSchemaName` must match | SC-4 |
+| N16 | `DataSourceFilters` | wrapper with two inner strings | `ProcessFilterService.BuildFilterValue` (both forms) | same | parse both inner strings; filter `key`s and the value `Id`s are normalised to positions; `rootSchemaName` must match. In the edit form (`serializedFilterEditData`) a lookup constant's value object is compared on `value` and `displayValue` only: the other keys are the lookup window's grid row (the primary image and colour columns DataService adds, the display column under its real name, extra profile columns), they vary with the environment and the picker's column profile, and nothing reads them at run time (`ProcessFilterFactory` reads only `dataSourceFilters`) or in the designer (caption from `displayValue`, selection by `value`); the builder writes `{Name, Id, value, displayValue}`, the form of 97 % of the shipped lookup constants (stand comparison 2026-10-17, DT-02: the designer added `AccountLogo: ""`) | SC-4, DT-02 |
 
 TC-41 and DT-02 carry N2, N9, N10 and N13 as named, finite exceptions, and so does the ENG-95984 File process
 parameter type AC-8 rule for N9 (its plan AC-8 and V4). The table sorts its rows into four classes, and the
