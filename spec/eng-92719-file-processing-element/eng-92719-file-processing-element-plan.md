@@ -434,13 +434,15 @@ only after the named measurement, and say "measured <date>".
 
 | Repository | Record (proposed path) | The fact | PR | Condition |
 |---|---|---|---|---|
-| clio | `docs/knowledge/platform/the-process-file-source-is-three-user-task-schemas.md` | "What is the source of the file?" is not a parameter; the palette offers only the Object schema; a source change replaces the element; the selector is hidden behind `EnableReportFileProcessingUserTask`, which the server never reads | CL-OA | - |
+| clio | `docs/knowledge/platform/the-process-file-source-is-three-user-task-schemas.md` | "What is the source of the file?" is not a parameter; a source change replaces the element | CL-OA | - |
+| clio | `docs/knowledge/platform/the-process-file-palette-offers-only-the-object-variant.md` | the palette offers only the Object schema; the selector is hidden behind `EnableReportFileProcessingUserTask`, which the server never reads | CL-OA | - |
 | clio | `docs/knowledge/platform/an-unset-result-action-type-runs-as-save-to-files.md` | No metadata default; the designer defaults Object/Report to 1; a generic element therefore saves | CL-OA | - |
 | clio | `docs/knowledge/platform/object-file-processing-filters-on-the-file-object.md` | The runtime root is `SourceEntitySchemaUId`, the stored `rootSchemaName` is ignored, reads always add `Type = File`; a record-object filter reads zero files with success; an empty filter reads `RecordsToRead` arbitrary files | CL-OA | - |
 | clio | `docs/knowledge/platform/after-saving-object-files-points-at-the-source-files.md` | After SaveToFiles the Object variant's `ObjectFiles` holds the SOURCE locators; the copies are only in `CreatedObjectFileIds` | CL-OA | after M26 (traps T-19) |
 | clio | `docs/knowledge/platform/attachment-storage-is-chosen-per-entity-by-the-designer.md` | The `<X>File` / SysFile rule, the flag's code default, the server never reading it, 0 of 30 shipped SysFile elements | CL-OA; updated by CL-SF | - |
 | clio | `docs/knowledge/platform/a-file-copy-without-a-link-column-lands-on-the-source-record.md` | `CopyAttributes` copies only what the target has not set (`CORE/Terrasoft.File/File.cs:174-180`): a same-schema copy with no link column duplicates onto the source record | CL-OA | - |
-| clio | `docs/knowledge/platform/a-server-built-user-task-takes-the-existing-process-default.md` | `DefValueForExistingProcess` makes a server-created `ConsiderTimeInFilter` "false"; server-built nested items keep the template's UIds | CL-OA | after M14 |
+| clio | `docs/knowledge/platform/a-server-built-user-task-takes-the-existing-process-default.md` | `DefValueForExistingProcess` makes a server-created `ConsiderTimeInFilter` "false" | CL-OA | after M14 |
+| clio | `docs/knowledge/platform/a-server-built-user-task-keeps-the-template-nested-item-uids.md` | server-built nested items keep the template's UIds | CL-OA | after M14 |
 | clio | `docs/knowledge/platform/designer-stamps-modified-in-schema-only-on-a-changed-value.md` | an untouched template default keeps the template's GS5, so "set by the designer" means GS5 = process; a cleared value keeps the process stamp without a source (serialization-capture §14) | CL-OA | - |
 | clio | `docs/knowledge/platform/a-designer-resave-of-a-dedicated-object-attachments-element-throws.md` | H-G3-1 | CL-OA | only if M11 confirms it |
 | clio | UPDATE `docs/knowledge/ProcessModel/described-filter-types-have-no-json-overflow-bag.md` | it owns which `Described*` types carry a bag; `IProcessDescriber.cs` is in its `applies-to` | CL-OA | - |

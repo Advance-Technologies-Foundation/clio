@@ -51,6 +51,11 @@ public static class DescribeProcessPrompt {
 		   receives the id of the record the page saved, the handle later steps map from and the only place it
 		   is reported. Read `inSync` and `shadowedPageParameters` there too: `inSync: true` means "nothing
 		   left to synchronize", not "the element carries every page parameter".
+		   A `fileProcessing` element (the designer's "Process file") carries its `fileProcessing` block: the ONE
+		   group present is its variant (`attachments` for Object attachments - which record's files it reads, how
+		   many and in what order), plus `action` and `saveTo`. Narrate it in those terms. Its describe-only members
+		   (`actionStored`, `outputs`, `issues`, and each value source's `display`) are removed before resubmitting;
+		   clio warns and ignores them if sent back. `get-guidance name=process-files` owns the block.
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
 		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an

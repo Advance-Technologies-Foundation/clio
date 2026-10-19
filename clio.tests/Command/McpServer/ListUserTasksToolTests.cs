@@ -142,6 +142,45 @@ public class ListUserTasksToolTests {
 			because: "the prompt otherwise sends a caller to build a task the server refuses");
 	}
 
+	[Test]
+	[Description("list-user-tasks routes ObjectFileProcessingUserTask to type fileProcessing and says its generic route is refused: CrtProcessBuilder 1.6.6.103 refuses that route because it carries no file source, record or target, so the element would save green and fail at run time. It stands apart from the EmailTemplateUserTask / ApprovalUserTask fallback, which an older package builds with the block; the Report and Process-parameter file tasks stay on the generic route for now.")]
+	[Category("Unit")]
+	public void ListUserTasks_Description_ShouldRouteObjectFileProcessingToItsDedicatedType() {
+		// Arrange
+		string description = typeof(ListUserTasksTool).GetMethod(nameof(ListUserTasksTool.ListUserTasks))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		int dedicated = description.IndexOf("ObjectFileProcessingUserTask (Process file, Object attachments)", System.StringComparison.Ordinal);
+		int fallback = description.IndexOf("for EmailTemplateUserTask and ApprovalUserTask only", System.StringComparison.Ordinal);
+
+		// Assert
+		description.Should().Contain("ObjectFileProcessingUserTask (Process file, Object attachments) is built ONLY as type "
+				+ "fileProcessing with its fileProcessing block - the generic route carries no file source and is REFUSED",
+			because: "the description sends task names down the generic route by default, and the server refuses that route for this task");
+		dedicated.Should().BeGreaterThanOrEqualTo(0,
+			because: "the task must be named among the exceptions");
+		fallback.Should().BeGreaterThan(dedicated,
+			because: "the older-package fallback to a generic userTask covers only the Send email and Approval tasks, and this task must not read as one of them");
+		description.Should().NotContain("ReportFileProcessingUserTask",
+			because: "the Report variant has no dedicated route in this version, so it stays a plain generic task");
+	}
+
+	[Test]
+	[Description("The list-user-tasks prompt carves out ObjectFileProcessingUserTask and points to the fileProcessing element, the same way its tool description does - the prompt has to match its tool's contract.")]
+	[Category("Unit")]
+	public void ListUserTasksPrompt_ShouldRouteObjectFileProcessingToFileProcessing() {
+		// Arrange
+		const string environmentName = "sandbox";
+
+		// Act
+		string prompt = Clio.Command.McpServer.Prompts.ListUserTasksPrompt.PromptByEnvironmentName(environmentName);
+
+		// Assert
+		prompt.Should().Contain("`ObjectFileProcessingUserTask`, which is built as a `fileProcessing` element with its `fileProcessing`",
+			because: "the prompt otherwise sends a caller down the generic userTask route the server refuses for this task");
+	}
+
 	private sealed class FakeListUserTasksCommand : ListUserTasksCommand {
 		public ListUserTasksOptions? CapturedOptions { get; private set; }
 

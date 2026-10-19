@@ -172,7 +172,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 | TC-U-09 | TC-09 | pkg | 1 | `source` equal / different / entity-like | OA-4 |
 | TC-U-10 | TC-10 | pkg | 1 | `userTaskName` matching (ignored) / contradicting (refused) | OA-4 |
 | TC-U-11 | TC-11 | pkg | 1 | a `fileProcessing` block on another element type: refused by the strict gate | OA-4 |
-| TC-U-12, TC-I-12 | TC-12 | pkg, e2e | 1, 2 | the generic route for the Object schema (case, padding, `performTask`, another name for the same UId) refused on create; Report and Process tolerated in story 1, refused in story 2 | OA-5 |
+| TC-U-12, TC-I-12 | TC-12 | pkg, e2e | 1, 2 | the generic route for the Object schema (case, padding, `performTask`, another name for the same UId) refused on create (e2e covers padding and the exact name only: on the platform another letter case is not found at all, the user-task schema lookup being case-sensitive, so the case variant is TC-U-12 only); Report and Process tolerated in story 1, refused in story 2 | OA-5 |
 | TC-U-13 | TC-13 | pkg | 1, 2 | raw `addMapping` onto the binder-owned parameters refused naming the block member (story 1: the 10 of 13 on the Object task; story 2: the three report parameters); onto `ConnectedObjectId`, `Files`, `Files.File`, `ReportName` allowed with the block's rules (`ConnectedObjectId`: typed against the target's record object, any source refused while the element saves to no object) | OA-5 |
 | TC-U-14 | TC-14 | pkg | 1 | the task schema cannot be resolved: "cannot resolve", not "wrong kind" | OA-4 |
 

@@ -428,8 +428,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.99 (for isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.103 (for isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -453,6 +453,49 @@ public class CreateBusinessProcessToolTests {
 			because: "a File has no constant form, and the contract must say so before the server refuses it");
 		toolDescription.Should().Contain("a Collection defaults to direction Out, a FileCollection to Variable, unless you set one",
 			because: "a FileCollection does not follow a Collection's Out default, and an agent expecting Out gets a Variable parameter with no notice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias) and its fileProcessing block, and routes the block to process-files; its prompt says the group is the variant and that a generic userTask naming ObjectFileProcessingUserTask is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask CrtProcessBuilder 1.6.6.103 refuses.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheFileProcessingElementAndRouteToItsGuide() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("|scriptTask|fileProcessing (aliases ",
+			because: "the element type list is where an agent learns which type tokens a build accepts");
+		toolDescription.Should().NotContain("processFile",
+			because: "the server accepts processFile on build but never emits it, and it reads like the Process-parameter variant, so the contract names only fileProcessing");
+		toolDescription.Should().Contain("fileProcessing? (fileProcessing elements only - the Process file element, whose ONE group is its variant: attachments (Object attachments); get-guidance name=process-files owns the block)",
+			because: "the block clause names the element, the group that selects the variant and the guide that owns the block");
+		prompt.Should().Contain("not a generic `userTask` naming `ObjectFileProcessingUserTask`, which carries no",
+			because: "the prompt must keep the agent off the generic route the server refuses");
+		prompt.Should().Contain("The ONE group the block carries IS the element's variant: `attachments` for",
+			because: "the group selects the variant, so an agent must send exactly one");
+		prompt.Should().Contain("Read `get-guidance name=process-files` before writing it",
+			because: "the guide owns the block's members and refusals");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract's flows[] clause says, for every element kind, that a branch on an activity RESULT takes flows[].results and no condition. The clause around it says a conditional flow REQUIRES a condition, and only the Approval block said otherwise, so without this sentence an agent branching on a Perform task, Pre-configured page or Open edit page result writes a formula the build refuses. The Process file element's description trimmed the sentence once to pay for its own text; this pin keeps the next trim from doing so unseen.")]
+	public void CreateBusinessProcessTool_ShouldSayAnActivityResultBranchTakesResults_ForEveryResultSource() {
+		// Arrange
+		MethodInfo method = typeof(CreateBusinessProcessTool).GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!;
+
+		// Act
+		string toolDescription = method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Assert
+		toolDescription.Should().Contain(
+			"An activity-RESULT branch (approval, performTask, preconfiguredPage, openEditPage resultsByColumn) takes flows[].results, no condition.",
+			because: "the element-agnostic rule must name every result-enumerating element, not only the Approval whose block repeats it");
 	}
 
 }
