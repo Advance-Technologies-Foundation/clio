@@ -775,6 +775,106 @@ public sealed class WorkplacePlacementServiceTests {
 	}
 
 	[Test]
+	[Description("A custom SysWorkplaceType row with an empty Code is not taken for General, so the code fallback still finds the only General row.")]
+	public void Place_ShouldIgnoreTypeRowWithoutCode_WhenResolvingByCode() {
+		// Arrange
+		_env.WorkplaceTypes.Add(new(Guid.NewGuid(), "Custom", null));
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request() with { WorkplaceType = "general" });
+
+		// Assert
+		_env.WorkplaceInserts.Single()["Type"].Should().Be(FakeEnvironment.DefaultTypeId.ToString(),
+			because: "a row with no code must not make code 0 ambiguous");
+		result.Workplace.Type.Should().Be("general", because: "the General row is reported by its argument value");
+	}
+
+	[Test]
+	[Description("Moving the section out of My applications into a portal workplace warns that internal users no longer reach it there; adding a placement does not.")]
+	public void Place_ShouldWarn_WhenSectionIsMovedIntoNonGeneralWorkplace() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+
+		// Act
+		WorkplacePlacementResult moved = _sut.Place(Request() with { WorkplaceType = "portal" });
+		WorkplacePlacementResult general = _sut.Place(Request(workplace: "Back office"));
+
+		// Assert
+		moved.Section.Action.Should().Be(WorkplacePlacementService.ActionMoved, because: "the default moves the row");
+		moved.Warnings.Should().Contain(warning => warning.Contains("portal workplace")
+			&& warning.Contains("remove-from-my-applications=false"),
+			because: "the caller learns that internal users lost the app from My applications and how to keep it");
+		general.Warnings.Should().NotContain(warning => warning.Contains("internal users"),
+			because: "a placement into a General workplace needs no such warning");
+	}
+
+	[Test]
+	[Description("No warning about internal users when the portal placement is added and the section stays in My applications.")]
+	public void Place_ShouldNotWarnAboutInternalUsers_WhenPlacementIsAddedToPortalWorkplace() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request(remove: false) with { WorkplaceType = "portal" });
+
+		// Assert
+		result.Section.Action.Should().Be(WorkplacePlacementService.ActionCreated, because: "a second placement is added");
+		result.Warnings.Should().NotContain(warning => warning.Contains("internal users"),
+			because: "the section is still in My applications");
+	}
+
+	[Test]
+	[Description("When the platform does not apply the requested Type on the insert, the call fails after its first write instead of shipping a workplace of the wrong type.")]
+	public void Place_ShouldFailAfterFirstWrite_WhenPlatformIgnoresRequestedType() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		_env.IgnoreTypeOnInsert = true;
+
+		// Act
+		WorkplacePlacementResult result = _sut.Place(Request() with { WorkplaceType = "portal" });
+
+		// Assert
+		result.Error.Should().Contain("did not apply the requested type",
+			because: "a success reporting type general would ship a General binding for a portal request");
+		result.Written.Should().NotBeEmpty(because: "the workplace row was inserted before the type was read back");
+		Guid workplaceId = _env.FindWorkplaces(WorkplaceName, FakeEnvironment.WebClientTypeId).Single().Id;
+		_env.BoundRow("SysWorkplace_Orders", workplaceId).Keys.Should().NotContain("LoaderId",
+			because: "the binding was not completed for a workplace of the wrong type");
+	}
+
+	[Test]
+	[Description("mode=new with workplace-type refuses a same-named workplace of the requested type that the package does not ship, even when the package ships another same-named one.")]
+	public void Place_ShouldRefuseForeignWorkplaceOfRequestedType_WhenModeIsNew() {
+		// Arrange
+		_env.SeedMyApplicationsPlacement(bindInPackage: true);
+		Guid own = _env.SeedWorkplace(WorkplaceName);
+		_env.Bindings["SysWorkplace_Orders"] = ("SysWorkplace", new() {
+			[own] = new() { ["Id"] = own.ToString() }
+		});
+		_env.SeedWorkplace(WorkplaceName, FakeEnvironment.PortalTypeId);
+
+		// Act
+		Action act = () => _sut.Place(Request() with { Mode = "new", WorkplaceType = "portal" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*already exists*",
+			because: "the Portal workplace was not made by this package, so mode=new must not use it");
+		_env.Upserts.Should().BeEmpty(because: "the mode is checked before the first write");
+	}
+
+	[Test]
+	[Description("mode=none refuses workplace-type, because no type is set or checked when nothing is written.")]
+	public void Place_ShouldThrow_WhenModeIsNoneAndWorkplaceTypeIsGiven() {
+		// Act
+		Action act = () => _sut.Place(Request(roles: [], workplace: null) with { Mode = "none", WorkplaceType = "bogus" });
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>().WithMessage("*omit workplace-type*",
+			because: "the caller must not believe the type was checked");
+	}
+
+	[Test]
 	[Description("mode=new refuses a name another workplace already uses, but converges on its own re-run.")]
 	public void Place_ShouldRefuseTakenNameButConverge_WhenModeIsNew() {
 		// Arrange
@@ -918,6 +1018,7 @@ public sealed class WorkplacePlacementServiceTests {
 		internal List<string> CreatedBindings { get; } = [];
 		internal List<string> Upserts { get; } = [];
 		internal bool FillDefaultsOnInsert { get; set; } = true;
+		internal bool IgnoreTypeOnInsert { get; set; }
 		internal List<Dictionary<string, string>> WorkplaceInserts { get; } = [];
 
 		// Ids are not the seeded ones on purpose: a type is found by its culture-independent code.
@@ -1049,7 +1150,7 @@ public sealed class WorkplacePlacementServiceTests {
 			WorkplaceRecord existing = GetWorkplace(id);
 			if (existing is null) {
 				WorkplaceInserts.Add(values);
-				Guid typeId = values.TryGetValue("Type", out string type) ? Guid.Parse(type)
+				Guid typeId = values.TryGetValue("Type", out string type) && !IgnoreTypeOnInsert ? Guid.Parse(type)
 					: FillDefaultsOnInsert ? DefaultTypeId : Guid.Empty;
 				Workplaces.Add(new WorkplaceRecord(id, values["Name"], 9, Guid.Parse(values["SysApplicationClientType"]),
 					typeId, FillDefaultsOnInsert ? DefaultLoaderId : Guid.Empty));

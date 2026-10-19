@@ -179,7 +179,7 @@ public sealed record PlaceSectionInWorkplaceArgs(
 	int? Position = null,
 
 	[property: JsonPropertyName("mode")]
-	[property: Description("existing (workplace must exist), new (create it; refused if a same-named one exists that package-name does not ship), none (leave the section where it is, only report), or omit to reuse-or-create")]
+	[property: Description("existing (workplace must exist), new (create it; refused if a same-named one exists that package-name does not ship), none (leave the section where it is, only report; roles and workplace-type are refused), or omit to reuse-or-create")]
 	string Mode = null,
 
 	[property: JsonPropertyName("workplace-type")]

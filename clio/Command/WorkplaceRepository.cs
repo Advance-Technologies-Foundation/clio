@@ -22,7 +22,7 @@ public sealed record WorkplaceRecord(Guid Id, string Name, int Position, Guid Cl
 /// <param name="Id">Type identifier.</param>
 /// <param name="Name">Type name in the current user's culture.</param>
 /// <param name="Code">The culture-independent type code (0 General, 1 Portal, 3 Self-service).</param>
-public sealed record WorkplaceTypeRecord(Guid Id, string Name, int Code);
+public sealed record WorkplaceTypeRecord(Guid Id, string Name, int? Code);
 
 /// <summary>A section registration (<c>SysModule</c>).</summary>
 /// <param name="Id">Section identifier.</param>
@@ -140,7 +140,7 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 	/// <inheritdoc />
 	public IReadOnlyList<WorkplaceTypeRecord> FindWorkplaceTypes() {
 		return Select("SysWorkplaceType", [Column(IdColumn), Column("Name"), Column("Code")], [])
-			.Select(row => new WorkplaceTypeRecord(ReadGuid(row, IdColumn), ReadString(row, "Name"), ReadInt(row, "Code")))
+			.Select(row => new WorkplaceTypeRecord(ReadGuid(row, IdColumn), ReadString(row, "Name"), ReadNullableInt(row, "Code")))
 			.ToArray();
 	}
 
@@ -343,7 +343,10 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 		Guid.TryParse(ReadString(row, key), out Guid id) ? id : Guid.Empty;
 
 	private static int ReadInt(Dictionary<string, JsonElement> row, string key) =>
-		int.TryParse(ReadString(row, key), out int value) ? value : 0;
+		ReadNullableInt(row, key) ?? 0;
+
+	private static int? ReadNullableInt(Dictionary<string, JsonElement> row, string key) =>
+		int.TryParse(ReadString(row, key), out int value) ? value : null;
 
 
 	private sealed class RowsResponse : SelectQueryHelper.SelectQueryResponseBaseDto {

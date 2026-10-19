@@ -219,12 +219,14 @@ internal sealed class WorkplacePlacementService(
 		["mobile"] = "Mobile"
 	};
 
+	private const string GeneralWorkplaceType = "general";
+
 	/// <summary>
 	/// The accepted workplace-type values: matched by the platform-seeded id, and by the culture-independent
 	/// <c>SysWorkplaceType.Code</c> only when no seeded row exists and exactly one row carries the code.
 	/// </summary>
 	private static readonly IReadOnlyList<(string Value, int Code, Guid SeededId)> WorkplaceTypes = [
-		("general", 0, new Guid("000a9225-728b-4778-a951-c42439ffe024")),
+		(GeneralWorkplaceType, 0, new Guid("000a9225-728b-4778-a951-c42439ffe024")),
 		("portal", 1, new Guid("111c7ff1-8224-45b0-a24e-fcc983fc0c70")),
 		("self-service", 3, new Guid("a77fefc0-227d-4e21-9992-a9a7ee889e21"))
 	];
@@ -269,7 +271,7 @@ internal sealed class WorkplacePlacementService(
 			.OrderByDescending(record => requestedTypeId is null || record.TypeId == requestedTypeId)
 			.ThenByDescending(record => holdingSection.Contains(record.Id))
 			.FirstOrDefault();
-		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, existing);
+		CheckModeAgainstExistingWorkplaces(request, package, mode, workplaceName, existing, reused);
 		CheckWorkplaceType(reused, requestedTypeId, workplaceTypes);
 		PackageBindingRecord workplaceOwner = FindForeignWorkplaceOwner(request, package, reused);
 		CheckMoveBeforeWriting(request, package, roles, sectionPlacements, myApplicationsIds, reused);
@@ -289,6 +291,12 @@ internal sealed class WorkplacePlacementService(
 			WorkplacePlacementSection placement = EnsureSectionPlacement(request, package, section, workplace.Record,
 				sectionPlacements, myApplicationsIds, warnings);
 
+			string placedType = DescribeWorkplaceType(workplace.Record.TypeId, workplaceTypes);
+			if (placement.Action == ActionMoved && placedType is not null && placedType != GeneralWorkplaceType) {
+				warnings.Add($"The section was moved out of '{MyApplicationsWorkplaceName}' into the {placedType} " +
+					$"workplace '{workplace.Record.Name}', so internal users no longer reach it from " +
+					$"'{MyApplicationsWorkplaceName}'. Pass remove-from-my-applications=false to keep it there too.");
+			}
 			ReadBack readBack = VerifyReadBack(section, workplace.Record, placement, grants);
 			if (readBack.GrantCount == 0) {
 				warnings.Add("The workplace has no role grant, so nobody sees it. Pass roles to grant access.");
@@ -414,7 +422,7 @@ internal sealed class WorkplacePlacementService(
 		string.IsNullOrWhiteSpace(mode) ? null : mode.Trim().ToLowerInvariant();
 
 	private void CheckModeAgainstExistingWorkplaces(WorkplacePlacementRequest request, PackageTargetResolution package,
-		string mode, string workplaceName, IReadOnlyList<WorkplaceRecord> existing) {
+		string mode, string workplaceName, IReadOnlyList<WorkplaceRecord> existing, WorkplaceRecord reused) {
 		if (mode is null) {
 			return;
 		}
@@ -424,9 +432,10 @@ internal sealed class WorkplacePlacementService(
 		}
 		if (mode == ModeNew && existing.Count > 0) {
 			// A re-run of an earlier mode=new call finds its own workplace already shipped by this package, even when
-			// that call failed before placing the section. A same-named workplace made any other way is refused.
-			bool ownRerun = existing.Any(workplace =>
-				FindBindingContaining(request, package, WorkplaceSchema, workplace.Id) is not null);
+			// that call failed before placing the section. A same-named workplace made any other way is refused, and so
+			// is a re-run that would use a same-named workplace other than its own (one of the requested type).
+			bool ownRerun = reused is not null
+				&& FindBindingContaining(request, package, WorkplaceSchema, reused.Id) is not null;
 			if (!ownRerun) {
 				throw new InvalidOperationException(
 					$"A workplace named '{workplaceName}' already exists ({string.Join(", ", existing.Select(w => w.Id))}); " +
@@ -530,6 +539,10 @@ internal sealed class WorkplacePlacementService(
 		if (mode == ModeNone) {
 			if (request.Roles is { Count: > 0 }) {
 				throw new InvalidOperationException("mode=none writes nothing, so roles cannot be granted; omit roles.");
+			}
+			if (!string.IsNullOrWhiteSpace(request.WorkplaceType)) {
+				throw new InvalidOperationException(
+					"mode=none writes nothing, so no workplace type is set or checked; omit workplace-type.");
 			}
 			return;
 		}
@@ -643,6 +656,12 @@ internal sealed class WorkplacePlacementService(
 
 		WorkplaceRecord record = repository.GetWorkplace(workplaceId)
 			?? throw new InvalidOperationException($"Workplace {workplaceId} could not be read back.");
+		if (created && typeId is not null && record.TypeId != typeId.Value) {
+			// Shipping it would install a workplace of the wrong type, and a re-run would refuse it as never retyped.
+			throw new InvalidOperationException(
+				$"Workplace {workplaceId} was created with Type {record.TypeId}, not the requested {typeId.Value}; " +
+				"the platform did not apply the requested type, so its binding was not written.");
+		}
 		int position = request.Position ?? record.Position;
 		Dictionary<string, object> values = new() {
 			["Id"] = record.Id,

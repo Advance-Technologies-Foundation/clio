@@ -5148,11 +5148,11 @@ internal static class ToolContractCatalog {
 			"Confirm the target workplace and the roles with the user before calling: a grant decides who sees the data behind the section. " +
 			"The workplace is matched by workplace-name and client-type (preferring one of the requested workplace-type, then one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's LoaderId and Type read back. " +
 			"workplace-type (general, portal, self-service) sets the Type of a created workplace and is carried in its binding; a Portal workplace is what external (portal) users reach. An existing workplace of another type is refused before any write, never retyped. " +
-			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added. " +
+			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added; a move into a non-General (for example portal) workplace is reported in warnings, since internal users then no longer reach the app from `My applications` (pass false to keep it there). " +
 			"A move is refused before any write when no role would see the target workplace (pass roles), or when another package ships the moved row (pass that package as package-name). " +
 			"An existing workplace another package ships is used but not bound into package-name (a warning names its owner), and a position change for it is refused. " +
 			"Every row is written live and bound into package-name (SysWorkplace_<Workplace>, SysModuleInWorkplace_<SectionCode>, SysAdminUnitInWorkplace_<Workplace>, or the binding that already ships the row), so it transfers with the package. " +
-			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report), or omitted (reuse or create). " +
+			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report; roles and workplace-type are refused), or omitted (reuse or create). " +
 			"section-workplaces always reports where the section is after the call. " +
 			"Inputs are resolved before the first write, so an input error changes nothing; a failure after the first write returns writes-started=true and the written rows. Re-running converges and never duplicates; the tool never deletes a row. " +
 			"Afterwards tell the user to log out and back in; a refresh is not enough. For the model behind it, call get-guidance with name `workplaces`.",
@@ -5210,7 +5210,8 @@ internal static class ToolContractCatalog {
 					[sectionCodeField] = ExampleOrdersSectionCode,
 					[workplaceNameField] = "Customer portal",
 					[workplaceTypeField] = "portal",
-					[rolesField] = new[] { "All external users" }
+					[rolesField] = new[] { "All external users" },
+					[removeField] = false
 				})
 			],
 			Flow([ApplicationCreateTool.ApplicationCreateToolName, PlaceSectionInWorkplaceTool.ToolName],

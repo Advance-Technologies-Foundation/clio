@@ -21,4 +21,6 @@ and a binding ships only the columns it carries: an install supplies no defaults
 **What breaks if you ignore it** — If the read-back is dropped, or the binding is written before the insert,
 the package installs a workplace with an empty `Type` and `LoaderId` on every other environment. A
 corrected package cannot repair that, because bindings are first-install-only. The tool warns when the
-read-back comes back empty; treat that warning as a platform change, not as noise.
+read-back comes back empty; treat that warning as a platform change, not as noise. When `workplace-type` was
+passed and the read-back `Type` differs from it, the call fails after the insert instead of binding the row:
+shipping it would install the wrong type, and the tool never retypes, so a re-run could not repair it.
