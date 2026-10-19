@@ -18,6 +18,12 @@ namespace Clio.Command;
 public sealed record WorkplaceRecord(Guid Id, string Name, int Position, Guid ClientTypeId, Guid TypeId,
 	Guid LoaderId);
 
+/// <summary>A workplace type (<c>SysWorkplaceType</c>).</summary>
+/// <param name="Id">Type identifier.</param>
+/// <param name="Name">Type name in the current user's culture.</param>
+/// <param name="Code">The culture-independent type code (0 General, 1 Portal, 3 Self-service).</param>
+public sealed record WorkplaceTypeRecord(Guid Id, string Name, int? Code);
+
 /// <summary>A section registration (<c>SysModule</c>).</summary>
 /// <param name="Id">Section identifier.</param>
 /// <param name="Code">Section code.</param>
@@ -55,6 +61,9 @@ public interface IWorkplaceRepository {
 	/// <summary>Finds the <c>SysApplicationClientType</c> whose name is <paramref name="name"/> (e.g. Web, Mobile).</summary>
 	/// <returns>The client type id, or <see langword="null"/> when none matches.</returns>
 	Guid? FindClientTypeId(string name);
+
+	/// <summary>Reads every <c>SysWorkplaceType</c> row.</summary>
+	IReadOnlyList<WorkplaceTypeRecord> FindWorkplaceTypes();
 
 	/// <summary>Finds every <c>SysModule</c> with the given code. Codes are not unique.</summary>
 	IReadOnlyList<SectionModuleRecord> FindSectionsByCode(string code);
@@ -126,6 +135,13 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 			return byName;
 		}
 		return rows.Any(row => ReadGuid(row, IdColumn) == wellKnown) ? wellKnown : null;
+	}
+
+	/// <inheritdoc />
+	public IReadOnlyList<WorkplaceTypeRecord> FindWorkplaceTypes() {
+		return Select("SysWorkplaceType", [Column(IdColumn), Column("Name"), Column("Code")], [])
+			.Select(row => new WorkplaceTypeRecord(ReadGuid(row, IdColumn), ReadString(row, "Name"), ReadNullableInt(row, "Code")))
+			.ToArray();
 	}
 
 	/// <inheritdoc />
@@ -327,7 +343,11 @@ internal sealed class WorkplaceRepository(IApplicationClient applicationClient, 
 		Guid.TryParse(ReadString(row, key), out Guid id) ? id : Guid.Empty;
 
 	private static int ReadInt(Dictionary<string, JsonElement> row, string key) =>
-		int.TryParse(ReadString(row, key), out int value) ? value : 0;
+		ReadNullableInt(row, key) ?? 0;
+
+	private static int? ReadNullableInt(Dictionary<string, JsonElement> row, string key) =>
+		int.TryParse(ReadString(row, key), out int value) ? value : null;
+
 
 	private sealed class RowsResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 		[JsonPropertyName("rows")]
