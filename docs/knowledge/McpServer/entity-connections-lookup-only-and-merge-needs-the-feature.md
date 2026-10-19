@@ -20,6 +20,12 @@ date: 2026-10-16
    removals. clio then refuses the write, the same way the Object designer makes the node read-only, and
    `get-entity-connections` reports a warning instead of a `featureEnabled` flag — clio has no reader for feature
    values, so the mismatch between the list and the add-on content is what it checks.
+3. *Both sides of the diff are ports with no shared code.* `EntityConnectionsAddonMetadata` ports creatio-ui
+   `libs/studio-enterprise/data-access/common-api/src/lib/entity-connection/entity-connections-addon.ts`
+   (`buildEntityConnectionsMetadata`; last upstream change at the time of the port: `15b60888e10`, 2026-10-15),
+   and the `AreRemovalsReflected` / `AreItemsLeading` checks of clio's `EntityConnectionsService` mirror how the CrtUIv2 `EntityConnectionsService`
+   merges the add-on into the list. clio CI runs neither, so an upstream change is not detected here: compare
+   against those two sources when either changes.
 
 **Why it is this way** — the backend accepting any column is the platform's contract, not a product promise; the
 UI is the product. And a diff computed from a list that ignores the add-on rewrites the add-on from incomplete data.
