@@ -58,6 +58,11 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	// A lookup column present on Account on every environment, so the results list needs no seeded metadata.
 	private const string OpenEditPageResultColumn = "Owner";
 
+	// The column the result-BRANCH tests decide on. Its referenced lookup (AccountCategory) ships four rows in CrtBase
+	// - A, B, C and D - captioned identically in every shipped culture, and the results an Open edit page offers are
+	// every row of that lookup. Owner would offer every contact on the stand, so its captions are not fixed anywhere.
+	private const string OpenEditPageBranchColumn = "AccountCategory";
+
 	// A platform role present on every environment, so the name-resolution path can be exercised without seeding data.
 	private const string OpenEditPagePerformerRole = "All employees";
 	// A text column of that object, for the add-mode pre-filled value: a constant is only storable on a TEXT column.
@@ -1592,6 +1597,93 @@ public sealed class CreateBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, create-business-process builds an openEditPage element with a results-by-column list and BRANCHES on those results through flows[].results, and describe reads every branch back as a result selection rather than a formula. The results are the rows of the column's lookup, resolved by the platform's own user task on the server, so only a stand proves that a caption the caller names maps to a stored result.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process branches on openEditPage results through flows[].results")]
+	public async Task CreateBusinessProcess_Should_BranchOnOpenEditPageResults_ThroughFlowResults() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageBranchE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName,
+				"\"results\": [\"A\", \"B\"]", "\"results\": [\"C\"]")
+		});
+		// Before the try: when this fires nothing was built, and there is nothing to clean up.
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.103");
+
+		try {
+			// Assert
+			ShouldHaveBuilt(callResult,
+				"an Open edit page with a results list is a result-deciding activity, so branches selecting its "
+				+ "results are the dialect its connectors take");
+			DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
+			graph.Elements.Single(node => node.Name == "OpenPage1").OpenEditPage!.ResultsByColumn!.Column
+				.Should().Be(OpenEditPageBranchColumn,
+					because: "the results the branches select are the rows of this column's lookup");
+			DescribedFlow first = graph.Flows.Single(flow => flow.Source == "OpenPage1" && flow.Target == "EndAB");
+			DescribedFlow second = graph.Flows.Single(flow => flow.Source == "OpenPage1" && flow.Target == "EndC");
+			first.Results.Should().Equal(new[] { "A", "B" },
+				because: "a selection reads back as the captions it was written with, which is what lets a caller "
+					+ "verify, diff or preserve it");
+			second.Results.Should().Equal(new[] { "C" },
+				because: "each branch keeps its own selection rather than sharing the activity's");
+			foreach (DescribedFlow branch in new[] { first, second }) {
+				branch.Kind.Should().Be("conditional",
+					because: "a result selection is stored on a conditional connector");
+				branch.BranchesOnActivityResult.Should().BeTrue(
+					because: "the designer opens this connector as a checkbox list of results, not a formula field");
+				branch.ResultsActivity.Should().Be("OpenPage1",
+					because: "the results belong to the Open edit page the connector leaves");
+				branch.Condition.Should().BeNull(
+					because: "a selected branch carries no formula, so nothing unreadable is stored beside it");
+			}
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a CONDITION on a connector leaving an openEditPage element with a results-by-column list is refused and the process is not created. The platform would run such a formula, but the designer edits that connector as a result selection and shows no formula field, so it opens as an empty panel; the refusal sends the caller to flows[].results and lists the results the element offers.")]
+	[AllureTag(ToolName)]
+	[AllureName("create-business-process refuses a condition on an openEditPage result branch")]
+	public async Task CreateBusinessProcess_Should_RefuseACondition_OnAnOpenEditPageResultBranch() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageFormulaE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName,
+				"\"condition\": \"1 > 0\"", "\"results\": [\"C\"]")
+		});
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.103");
+
+		try {
+			// Assert
+			ShouldBeRefused(callResult,
+				"a formula on a result-deciding connector would be stored where the designer cannot show it");
+			string log = LogText(callResult);
+			log.Should().Contain("Pass 'results' instead",
+				because: "the refusal has to name the field that expresses this branch, or the caller cannot act on it");
+			log.Should().Contain("OpenPage1 offers",
+				because: "the refusal names the deciding element whose results the caller can select");
+			log.Should().Contain("'A', 'B', 'C', 'D'",
+				because: "the offered results are the rows of the column's lookup, so the caller can pick captions "
+					+ "without a second round trip");
+			JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
+				because: "a refused build must leave nothing behind");
+		} finally {
+			if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+				await DeleteProcessAsync(context.EnvironmentName!, processName);
+			}
+		}
+	}
+
+	[Test]
 	[Description("Over the real MCP path, create-business-process configures an openEditPage element's Log activity block and describe reads every scheduling PAIR back with its unit. Only a real server proves the pairing: each interval is two independent platform parameters, and a stand is the only place that shows both members actually landed - a number stored without its period would read back with a null unit here rather than failing anywhere.")]
 	[AllureTag(ToolName)]
 	[AllureName("create-business-process configures an openEditPage element's Log activity block")]
@@ -1741,6 +1833,35 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		  "flows": [
 		    { "source": "StartEvent1", "target": "OpenPage1" },
 		    { "source": "OpenPage1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// An Open edit page deciding on AccountCategory with two conditional branches. Each branch's deciding member is
+	// passed as raw JSON - a results selection or a condition - so one shape serves the build and the refusal.
+	private static string BuildOpenEditPageResultBranchDescriptor(string processName, string firstBranch,
+		string secondBranch) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Open Edit Page Result Branches E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Categorise the account",
+		      "openEditPage": {
+		        "page": "{{OpenEditPageName}}",
+		        "editMode": "add",
+		        "recommendation": "Pick the account category",
+		        "resultsByColumn": { "column": "{{OpenEditPageBranchColumn}}" }
+		      } },
+		    { "name": "EndAB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndAB", "kind": "conditional", {{firstBranch}} },
+		    { "source": "OpenPage1", "target": "EndC", "kind": "conditional", {{secondBranch}} }
 		  ]
 		}
 		""";

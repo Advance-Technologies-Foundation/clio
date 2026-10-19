@@ -1038,7 +1038,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		callResult.IsError.Should().NotBeTrue(
 			because: "writing a result selection onto an Approval branch must complete without a transport error");
 
-		DescribedFlow branch = await DescribeBranchAsync(context, processName, "EndOk");
+		DescribedFlow branch = await DescribeBranchAsync(context, processName, "Approve", "EndOk");
 		branch.Results.Should().Equal(new[] { "Positive" },
 			because: "a selection has to read back as the captions it was written with, or a caller cannot "
 				+ "verify, diff or preserve it");
@@ -1059,11 +1059,91 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		declared.IsError.Should().NotBeTrue(
 			because: "flows[].results is a build-path field on a package that has just accepted the equivalent "
 				+ "operation, so a refusal here is the build wire and not the version");
-		DescribedFlow declaredBranch = await DescribeBranchAsync(context, declaredName, "EndNo");
+		DescribedFlow declaredBranch = await DescribeBranchAsync(context, declaredName, "Approve", "EndNo");
 		declaredBranch.Results.Should().Equal(new[] { "Negative" },
 			because: "a selection declared WHERE THE FLOW IS has to reach the graph, which the modify path "
 				+ "above cannot show - they are different wires into the same builder");
 	}
+
+	[Test]
+	[Description("Over the real MCP path, setFlowResults writes a result selection onto a connector leaving an openEditPage element with a results-by-column list, describe reads it back as a result selection, and setFlowCondition on a sibling connector of the same element is refused with a pointer to setFlowResults. The results are the rows of the column's lookup, enumerated by the platform's own user task, so only a stand proves the captions map to stored results.")]
+	[AllureTag(ToolName)]
+	[AllureName("setFlowResults branches on openEditPage results; setFlowCondition is refused there")]
+	public async Task ModifyBusinessProcess_Should_BranchOnOpenEditPageResults_ThroughSetFlowResults() {
+		// Arrange - both connectors declared PLAIN, so every decision on them is made by the operations below.
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpOpenEditPageResultsModE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildOpenEditPageResultBranchDescriptor(processName));
+
+		try {
+			// Act
+			await ModifyExpectingSuccessAsync(context, processName, """
+				[
+				  { "op": "setFlowResults", "source": "OpenPage1", "target": "EndAB", "results": ["A", "B"] }
+				]
+				""");
+			CallToolResult formula = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """
+					[
+					  { "op": "setFlowCondition", "source": "OpenPage1", "target": "EndC", "condition": "1 > 0" }
+					]
+					"""
+			});
+
+			// Assert
+			DescribedFlow branch = await DescribeBranchAsync(context, processName, "OpenPage1", "EndAB");
+			branch.Results.Should().Equal(new[] { "A", "B" },
+				because: "the selection reads back as the captions it was written with");
+			branch.Kind.Should().Be("conditional",
+				because: "writing a selection turns the plain connector into a conditional one");
+			branch.BranchesOnActivityResult.Should().BeTrue(
+				because: "the designer opens this connector as a checkbox list of results, not a formula field");
+			branch.ResultsActivity.Should().Be("OpenPage1",
+				because: "the results belong to the Open edit page the connector leaves");
+			branch.Condition.Should().BeNull(because: "a selected branch carries no formula");
+
+			ShouldBeRefused(formula,
+				"a formula on a result-deciding connector would be stored where the designer cannot show it");
+			LogText(formula).Should().Contain("Pass 'results' instead",
+				because: "the refusal has to send the caller to the selection dialect this connector takes");
+			LogText(formula).Should().Contain("'A', 'B', 'C', 'D'",
+				because: "the refusal lists the results the element offers, which are the rows of the column's lookup");
+			DescribedFlow untouched = await DescribeBranchAsync(context, processName, "OpenPage1", "EndC");
+			untouched.Condition.Should().BeNull(because: "the refused formula must not have been written");
+			untouched.Results.Should().BeNull(because: "the refused edit must leave the sibling connector unchanged");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
+	// An Open edit page deciding on AccountCategory, whose lookup ships four rows in CrtBase - A, B, C and D - captioned
+	// identically in every shipped culture. Owner would offer every contact on the stand instead.
+	private static string BuildOpenEditPageResultBranchDescriptor(string processName) => $$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio e2e Open edit page result branches",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "OpenPage1", "type": "openEditPage", "caption": "Categorise the account",
+		      "openEditPage": {
+		        "page": "AccountPageV2",
+		        "editMode": "add",
+		        "recommendation": "Pick the account category",
+		        "resultsByColumn": { "column": "AccountCategory" }
+		      } },
+		    { "name": "EndAB", "type": "endEvent" },
+		    { "name": "EndC", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "OpenPage1" },
+		    { "source": "OpenPage1", "target": "EndAB" },
+		    { "source": "OpenPage1", "target": "EndC" }
+		  ]
+		}
+		""";
 
 	// The version gate, and it is a NEGATIVE one - see the test's Description for what that does and does not
 	// establish. It sits after a successful build deliberately: on a process that failed to build, the
@@ -1080,15 +1160,15 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		}
 	}
 
-	// Describes the process and returns the branch leaving the Approval for the named target.
+	// Describes the process and returns the branch between the named elements.
 	private static async Task<DescribedFlow> DescribeBranchAsync(ArrangeContext context, string processName,
-			string target) {
+			string source, string target) {
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
 				["mode"] = "full",
 				["environment-name"] = context.EnvironmentName, ["process-name"] = processName
 			}));
-		return described.Flows.Single(f => f.Source == "Approve" && f.Target == target);
+		return described.Flows.Single(f => f.Source == source && f.Target == target);
 	}
 
 	/// <summary>
