@@ -900,6 +900,24 @@ public sealed class PageAppendProjection {
 	public int CollapsedIncomingOperationCount { get; init; }
 
 	/// <summary>
+	/// Gets the number of <c>viewModelConfigDiff</c> operations the fragment appends. The counts above speak
+	/// for <c>viewConfigDiff</c> only, so a fragment carrying just config diffs reads
+	/// <c>incomingOperationCount: 0</c> even though it is written (GH-1839).
+	/// </summary>
+	[DataMember(Name = "incomingViewModelConfigDiffOperationCount")]
+	[JsonProperty("incomingViewModelConfigDiffOperationCount")]
+	[JsonPropertyName("incomingViewModelConfigDiffOperationCount")]
+	public int IncomingViewModelConfigDiffOperationCount { get; init; }
+
+	/// <summary>
+	/// Gets the number of <c>modelConfigDiff</c> operations the fragment appends (GH-1839).
+	/// </summary>
+	[DataMember(Name = "incomingModelConfigDiffOperationCount")]
+	[JsonProperty("incomingModelConfigDiffOperationCount")]
+	[JsonPropertyName("incomingModelConfigDiffOperationCount")]
+	public int IncomingModelConfigDiffOperationCount { get; init; }
+
+	/// <summary>
 	/// Gets a value indicating whether the merged <c>viewConfigDiff</c> array actually reaches the body
 	/// that would be written. <c>false</c> means EVERY count above describes an array the write discards.
 	/// </summary>
@@ -1354,6 +1372,26 @@ public sealed class PageCreateResponse {
 	[JsonPropertyName("entitySchemaUId")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string EntitySchemaUId { get; set; }
+
+	/// <summary>
+	/// Gets or sets the data source bound to <c>entitySchemaName</c>; absent when no entity was given or the
+	/// page is a mobile page (GH-1839).
+	/// </summary>
+	[DataMember(Name = "dataSourceName")]
+	[JsonProperty("dataSourceName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("dataSourceName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string DataSourceName { get; set; }
+
+	/// <summary>
+	/// Gets or sets the page's primary data source when create-page set it; absent for a template whose bound
+	/// data source is not primary (the list page template's <c>PDS</c>).
+	/// </summary>
+	[DataMember(Name = "primaryDataSourceName")]
+	[JsonProperty("primaryDataSourceName", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("primaryDataSourceName")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string PrimaryDataSourceName { get; set; }
 
 	/// <summary>
 	/// Schema type of the template used to create this page.

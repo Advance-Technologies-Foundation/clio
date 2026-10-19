@@ -355,7 +355,7 @@
 			out PageUpdateResponse response) {
 			prepared = null;
 			if (!TryLoadSchemaForSave(options.SchemaName, context, out JObject schemaToSave, out response)) return false;
-			if (!TryResolveBodyToWrite(schemaToSave, options, out string bodyToWrite,
+			if (!TryResolveBodyToWrite(schemaToSave, options, context.SchemaType, out string bodyToWrite,
 				out PageAppendProjection projection, out response)) return false;
 			if (!TryValidatePlacementSlots(bodyToWrite, IsAppendMode(options), out response)) return false;
 			if (!TryValidateParents(bodyToWrite, context, out response)) return false;
@@ -1000,29 +1000,39 @@
 		}
 
 		private static bool TryResolveBodyToWrite(JObject schemaToSave, PageUpdateOptions options,
-			out string bodyToWrite, out PageAppendProjection projection, out PageUpdateResponse response) {
+			PageSchemaType schemaType, out string bodyToWrite, out PageAppendProjection projection,
+			out PageUpdateResponse response) {
 			projection = null;
 			bodyToWrite = options.Body;
 			response = null;
 			if (IsAppendMode(options)) {
 				string currentBody = schemaToSave["body"]?.ToString();
-				if (!string.IsNullOrWhiteSpace(currentBody)) {
-					try {
-						bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
-					} catch (Exception ex) {
-						// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
-						// message) is already a complete, self-contained sentence — it names the offending body
-						// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
-						// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
-						// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
-						// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
-						// a server-side blocker (ENG-94422).
-						string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
-							? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
-							: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
-						response = new PageUpdateResponse { Success = false, Error = error };
-						return false;
+				if (string.IsNullOrWhiteSpace(currentBody)) {
+					// GH-1839: a schema saved with an empty body (a page create-page makes without an entity) used to skip the
+					// merge and save the FRAGMENT verbatim as the whole body - a modelConfigDiff-only fragment
+					// replaced the page with one line and no define() wrapper. Merge into the empty page instead.
+					currentBody = BuildEmptyReplacingBody(
+						schemaToSave["name"]?.ToString() ?? options.SchemaName, schemaType);
+					if (schemaType != PageSchemaType.Mobile) {
+						// A complete body keeps its define() deps and args (the sdk its handlers call).
+						currentBody = PageBodyMerger.AdoptSchemaHeader(currentBody, options.Body);
 					}
+				}
+				try {
+					bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);
+				} catch (Exception ex) {
+					// A full-config rejection (identified by its dedicated exception type, not by re-parsing the
+					// message) is already a complete, self-contained sentence — it names the offending body
+					// (incoming vs the server's) and points at replace mode — so it needs neither the "Append merge
+					// failed:" prefix (which double-states the verb) nor the generic marker-pairs hint (a full-config
+					// body HAS valid markers, it is just the wrong form). Keep both only for genuine marker-shape
+					// merge failures, and phrase the hint role-agnostically so it never blames the incoming body for
+					// a server-side blocker (ENG-94422).
+					string error = ex is PageBodyMerger.FullConfigAppendNotSupportedException
+						? $"{ex.Message} [hint: see docs://mcp/guides/page-modification for the append diff-form contract.]"
+						: $"Append merge failed: {ex.Message} [hint: the body must contain valid marker pairs with new viewConfigDiff/handlers operations. See docs://mcp/guides/page-modification.]";
+					response = new PageUpdateResponse { Success = false, Error = error };
+					return false;
 				}
 			}
 			if (!IsAppendMode(options) ||
@@ -1378,7 +1388,13 @@
 			return dto;
 		}
 
-		private static string BuildEmptyReplacingBody(string schemaName, PageSchemaType schemaType) {
+		/// <summary>
+		/// Builds an empty diff-form page body: all marker pairs present, every section empty.
+		/// </summary>
+		/// <param name="schemaName">Schema name for the web <c>define</c> call.</param>
+		/// <param name="schemaType">Web or mobile body shape.</param>
+		/// <returns>The empty body.</returns>
+		internal static string BuildEmptyReplacingBody(string schemaName, PageSchemaType schemaType) {
 			if (schemaType == PageSchemaType.Mobile) {
 				return "{\n\t\"viewConfigDiff\": [],\n\t\"viewModelConfigDiff\": [],\n\t\"modelConfigDiff\": []\n}";
 			}
