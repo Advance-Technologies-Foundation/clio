@@ -4807,8 +4807,8 @@ stories:
   # crt-process-builder -> clio -> clio-knowledge triple per story.
   # Status rule of this block: ready-for-dev only when the story's Jira issue exists and nothing gates its code (no open
   # owner answer, slot or stand measurement); deferred otherwise. Story 1 moved to ready-for-dev when the owner agreed
-  # Q13-Q18, which its "Gating" table names, on 2026-10-14; story 2 stays deferred for M1 (+ M2) and O-TP1, stories
-  # 3-5 for their slots and measurements. A story moves to ready-for-dev in the commit that records the last answer it waits for.
+  # Q13-Q18, which its "Gating" table names, on 2026-10-14; story 2 stayed deferred for M1 (+ M2) and O-TP1 until both
+  # were recorded on 2026-10-19, and stories 3-5 stay deferred for their slots and measurements. A story moves to ready-for-dev in the commit that records the last answer it waits for.
   # Merge order: this BMAD set is the docs-only clio PR titled "ENG-92719 File processing element". It merges after the
   # ENG-95984 BMAD PR https://github.com/Advance-Technologies-Foundation/clio/pull/1811, which appends its rows at this
   # same place in this file (this PR merges master in after that PR merges), and before the Story's first package
@@ -4820,7 +4820,7 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
-    status: ready-for-dev
+    status: done
     jira: ENG-96505
     file: spec/stories/story-eng-92719-file-processing-element-1.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
@@ -4852,7 +4852,7 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: M
-    status: deferred
+    status: in-progress
     jira: ENG-96506
     file: spec/stories/story-eng-92719-file-processing-element-2.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
@@ -4873,7 +4873,10 @@ stories:
       in three descriptions; the budget test catches it at that cut and a reviewer-approved trim pays it (Q20 = A). Two
       variant registrations, one commit group each, so that contingency X2 can cherry-pick the Report half if the
       Process half fails its stand proof. Visible change: the four shipped product report processes describe as
-      fileprocessing. Done carried by story 3's clio PR.
+      fileprocessing. Done carried by story 3's clio PR. 2026-10-19: in-progress with its clio draft; M1 passed and M2
+      as predicted (the single-file path ships), O-TP1 = B (TC-I-91 in this story's clio PR), cut 1.6.6.105, stand
+      proofs ST-03..ST-07, DT-03 and SC-4 passed on 1.6.6.105. Story 1 flipped to done in this PR (its package, clio
+      and knowledge PRs merged).
 
   - id: story-eng-92719-file-processing-element-3
     title: "SysFile attachment storage in the Process file element"

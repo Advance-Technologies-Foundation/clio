@@ -18,7 +18,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the File and FileCollection process parameter types (ENG-95984) over the real MCP path.
-/// NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.99 or later.
+/// NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.105 or later (File and FileCollection arrived in 1.6.6.99; 1.6.6.105 is the create and modify floor).
 /// <para>What only this level can show is the wire: the type names, the FileCollection read-back, the dotted
 /// <c>processParameter</c> member, the server's refusals and the binder notices travel as JSON members and log
 /// lines that the unit tests construct in C#, so a renamed or dropped member would leave every unit suite green.
@@ -43,9 +43,10 @@ public sealed class FileParameterToolE2ETests {
 
 	/// <summary>
 	/// The create/modify floor this clio enforces (File and FileCollection arrived in 1.6.6.99; the floor rose to
-	/// 1.6.6.103 with the Process file element); named in the skip message so a developer knows what to install.
+	/// 1.6.6.103 with the Process file element and to 1.6.6.105 with its Generated report and Process parameter
+	/// variants); named in the skip message so a developer knows what to install.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.103";
+	private const string MinimumPackageVersion = "1.6.6.105";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "File process parameter";

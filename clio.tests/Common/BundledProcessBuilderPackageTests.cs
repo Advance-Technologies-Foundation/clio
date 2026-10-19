@@ -69,17 +69,13 @@ public class BundledProcessBuilderPackageTests {
 	];
 
 	/// <summary>
-	/// SHA-256 of the committed archive. Produced by <c>rebundle-process-builder.ps1</c> at
-	/// <see cref="ExpectedArchiveVersion"/> from
-	/// the <c>ProcessBuilder</c> repository (<c>packages/CrtProcessBuilder</c>, branch
-	/// <c>feature/ENG-99856-multi-instance</c>, merged from <c>main</c> — so the cut also carries everything
-	/// <c>main</c> had accumulated by then, including the ENG-95890/ENG-98448 branch-band layout and connector
-	/// geometry that landed there while this branch was open, and, transitively, the ENG-95986 Send-email
-	/// template-mode work and the earlier ENG-91853 flow-labels and ENG-94374 process-versioning work), at the
-	/// commit recorded mechanically in
-	/// <see cref="ExpectedProducingCommit"/> — the script captures <c>git rev-parse HEAD</c> and refuses to cut
-	/// from a tree with uncommitted changes, so this reference is no longer a sentence anyone has to keep true
-	/// by hand. Many numbers below the current one are burned rather than reused — some because two branches drew
+	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>5792f25d</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.105</c>) on branch <c>feature/ENG-96506-process-file-report-and-parameter</c>, which
+	/// was merged from <c>main</c> at <c>4a277295</c> (1.6.6.104), so the cut carries everything 1.6.6.104 shipped.
+	/// This cut was made by the MANUAL route (see below), not by <c>rebundle-process-builder.ps1</c>, so the commit
+	/// reference was typed rather than captured by the script; verify it as the remarks describe.
+	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
 	/// so a gap is always cheaper than an ambiguous number, and a version identifying two different byte sets is
@@ -91,126 +87,26 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries, over the 1.6.1.9 flow-label delivery (ENG-91853) on <c>nitro/sprint-3-release</c>
-	/// it was cut above: the Send email TEMPLATE message mode (ENG-95986) — <c>email.messageSource</c>,
-	/// <c>email.template</c> and <c>email.templateEntity</c>, written as the three-parameter template mode with the
-	/// shared <c>EmailTemplateResolver</c>; the subject-only regression fixed (a subject no longer flips a template
-	/// element to a custom message); an <c>IsDBNull</c> guard on the template reads; and the review fixes (describe
-	/// hides a stale template in custom mode, the <c>templateEntity</c> texts name a record ID rather than a Read data
-	/// element's whole-record <c>ResultEntity</c>, which the server refuses; then the second review round: a stored
-	/// subject kept on a non-switching update, the mode inferred from a stored template on a mode-less element,
-	/// the custom-alone refusal, and the shared entity/parameter seams). The version is 1.6.2.3 — 1.6.2.1 and
-	/// 1.6.2.2 were the earlier review rounds' cuts, each superseded on the same branch before it shipped; the
-	/// create/modify FLOOR stays at 1.6.2.1, the first archive carrying the mode, which this one satisfies. 1.6.2.0 is
-	/// BURNED — it was cut from a commit below ENG-91853, so an archive numbered above 1.6.1.9 would have lacked the
-	/// flow labels 1.6.1.4-1.6.1.9 ship (the "newer stops meaning contains" trap of bundled-packages.md), and its tag
-	/// still names that commit; the .2 minor step over 1.6.1.x records that a new element behaviour the clio
-	/// descriptions advertise is a capability. Each raise is what makes a stand still carrying an earlier archive
-	/// DETECTABLY behind — same-version re-cuts make equal version numbers mean nothing, which the convergence
-	/// check cannot see through.</para>
-	/// <para>On TOP of that (this cut, merged from <c>feature/ENG-96503-read-data-count-aggregation</c>): the Read
-	/// data element's <c>count</c> and <c>aggregation</c> modes — <c>readData.mode</c> takes <c>first</c> |
-	/// <c>count</c> | <c>aggregation</c>, the aggregation pair validated against the source object's column types,
-	/// the result flag moved to the output the runtime actually writes — AND a same-batch dependency-guard bypass
-	/// closed (AC 9a): the retarget/mode-change guards on Read data, Modify data, Add data and Pre-configured page
-	/// used to scan the schema LIVE at the moment each guard ran, so an earlier operation in the SAME
-	/// <c>modify-business-process</c> call could repoint or clear a dependent mapping and let a later operation in
-	/// that call dodge the guard — confirmed via a live CAADT/Playwright run that completed a "forbidden" mode
-	/// switch end to end. <c>IProcessDependencySnapshot</c> (request-scoped) now answers every one of those four
-	/// guards with the union of a frozen pre-batch capture and a fresh live re-scan, so neither a dependent cleared
-	/// nor one added mid-batch escapes detection. Every PATCH digit over 1.6.2.5 fixes something a review or a
-	/// live-test run found, and each is raised so a stand still carrying an earlier one is DETECTABLY behind.</para>
-	/// <para>1.6.5.14 (THIS cut, from <c>feature/ENG-95890-ENG-98448-layout-and-connector-geometry</c>): the
-	/// band layout and connector geometry (ENG-95890, ENG-98448), and on top of them the second review round's
-	/// four fixes. The one that decides whether this archive may ship at all is
-	/// <c>ModifyProcessRequest.ConfirmLayoutChange</c> becoming NULLABLE. This version changed which arm of a
-	/// split keeps the trunk and made end-event pinning conditional, so a diagram an earlier package drew now
-	/// lands in cells this engine would not choose - measured at 21 of 33 graphs by running 1.6.5.4's own
-	/// placement algorithm beside the current one. While the member was a <c>bool</c>, absence read as
-	/// "not confirmed" and every one of those edits was REFUSED; the member is new in this very clio PR, so no
-	/// released clio and no direct web-service consumer could send it. Absence now means a caller that predates
-	/// the gate and the edit applies, which is why the clio side must send the member on EVERY request rather
-	/// than only when true - see <c>ModifyBusinessProcessServiceTests</c>, which pins that.</para>
-	/// <para>1.6.2.8 (this cut): two more post-merge review findings on the same feature branch, both confirmed
-	/// against current code before fixing. <c>ProcessElementDependencyScanner.CaptureSnapshot</c> now also walks
-	/// <c>schema.ExecutionContexts</c> — a second schema-level parameter collection, distinct from
-	/// <c>schema.Parameters</c>, that <c>ProcessParameterService</c>'s parameter-delete guard already scanned; a
-	/// reference living only there was invisible to every retarget/mode-change guard above. And
-	/// <c>ReadDataConfigBinder.Describe</c> now omits <c>columns</c>/<c>sort</c> for <c>count</c>/<c>aggregation</c>
-	/// — a shipped Function-mode element can carry stale stored values from a designer-side mode switch (the
-	/// designer does not clear them the way this package's own <c>Apply</c> does), and reporting them produced a
-	/// block <c>build</c>/<c>modify</c> immediately refuses, breaking the round-trip.</para>
-	/// <para>1.6.2.9 (this cut): a High-severity post-merge finding on <c>PreconfiguredPageApplier.Apply</c> — it
-	/// mutated the page (and, further down, buttons/performer/data sources) BEFORE its stale-data-source
-	/// dependency guard ran, so a refusal from that guard left the page already switched to the retarget's
-	/// destination while the stale, now-orphaned parameter it named stayed in place. <c>ApplyPage</c> and
-	/// <c>ApplyDataSources</c> are now split into a read-only resolve phase and a mutation-only write phase; every
-	/// guard — the newly-hoisted "no buttons on a new Freedom element" check included — now runs before any write,
-	/// in the method's original relative write order, so a refusal leaves the element exactly as it was.</para>
-	/// <para>1.6.2.10 (this cut): the same atomicity fix, closed the rest of the way. <c>ApplyPerformer</c> called
-	/// the shared <c>IUserTaskPerformerApplier.ApplyToUserTask</c> — which writes the owner/role assignment —
-	/// BEFORE its own "showPage applies to a user performer only" gate, so a role/manager performer with an
-	/// explicit <c>showPage</c> wrote the assignment and only then refused; it now uses the shared mechanism's own
-	/// <c>ResolveForUserTask</c>/<c>ApplyResolvedToUserTask</c> split (the same one <c>OpenEditPageConfigBinder</c>
-	/// already uses), with the gate checked against the resolved-but-unwritten performer. <c>ApplyButtons</c> and
-	/// <c>ApplyRecommendation</c> were each already validate-before-write internally, but ran in the write phase
-	/// AFTER the page had already been written; both are now split into a resolve half (validation, no schema
-	/// mutation) and a write half, so every guard in the method runs before any of it commits.</para>
-	/// <para>1.6.2.11 (this cut): a self-regression the atomicity split introduced, found by the same review pass.
-	/// The original <c>ApplyDataSources</c> caught two data sources sharing a name in one request because each
-	/// iteration added its parameter to <c>element.Parameters</c> immediately, so a later duplicate hit the
-	/// existing name-conflict check; splitting resolution from writing removed that side effect, so
-	/// <c>ResolveDataSources</c> now runs its own intra-request duplicate check, mirroring the one
-	/// <c>ResolveButtons</c> already runs for completing buttons.</para>
-	/// <para>1.6.2.12 (this cut): the previous cut's new check used <c>StringComparer.Ordinal</c>, but the
-	/// runtime's parameter dictionary is case-insensitive while the generated parameter name is only
-	/// case-sensitive as TEXT, so <c>PDS</c> and <c>pds</c> in one request both passed the check and then
-	/// collided at write time the same way an exact duplicate does. Switched to <c>OrdinalIgnoreCase</c>,
-	/// matching the sibling existing-parameter conflict check right below it and <c>ResolveButtons</c>' own
-	/// duplicate check.</para>
-	/// <para>What THIS cut carries, over the 1.6.5.14 this file previously pinned: MULTI-INSTANCE on the
-	/// Sub-process element (ENG-99856) - running the called process once per item of a collection, through
-	/// <c>subProcess.multiInstanceOptions</c>. It REMOVES a refusal rather than adding one: the Sub-process
-	/// element shipped in ENG-92707 refused any multi-instance element outright, and the paragraph that said so
-	/// is gone with it. A converted element stops carrying the callee's parameters and carries two collections
-	/// and three iteration counters instead, with the callee's contract one level down in the input collection's
-	/// item properties - which is why a per-item value is addressed by a DOTTED name and a write into the output
-	/// collection is refused at any depth. Also in the cut, from the <c>main</c> merge: the ENG-95890/ENG-98448
-	/// branch-band layout and connector geometry.</para>
-	/// <para>The FOURTH digit moves here: the third already stood at 1.6.3 when this branch started, so this cut
-	/// continues that line rather than opening one. The paragraph below records why the third digit was moved by
-	/// the cut that opened it, which is the case that was the OPPOSITE of the rule stated above, and the reason is
-	/// the package repository's own
-	/// 2026-09-16 diary entry: the "first free number" rule produced three collisions in one day on the ENG-98559
-	/// line, because the number is computed at cut time and other branches move between the cut and its review.
-	/// Going above the maximum cannot collide. What it costs is the thing the rule above is protecting - a version
-	/// that looks newer than work it does not contain - so it is a trade, not a correction, and it is recorded
-	/// here rather than left to be rediscovered.</para>
-	/// <para>What the 1.4.0.x line carried, over the 1.3.1.1 performer/lookup delivery it replaced: server-side
-	/// VALIDATION of formula expressions — an <c>expression</c> mapping source and a conditional-flow condition
-	/// are now parsed, their parameter references resolved against the process, and their result type checked
-	/// against the declared target, instead of being stored unchecked. The MINOR digit moved at 1.4.0.0 because
-	/// that is a new capability; every PATCH digit over it fixes something a review or a manual case found, and
-	/// each is raised so a stand still carrying an earlier one is DETECTABLY behind — same-version re-cuts make
-	/// equal version numbers mean nothing, which the convergence check cannot see through.</para>
+	/// <para>What this cut carries over 1.6.6.104: the Generated report (<c>report</c>) and Process parameter
+	/// (<c>files</c>) variants of the Process file element's <c>fileProcessing</c> block (ENG-96506), built, modified
+	/// and described like the Object attachments variant, with the generic <c>userTask</c> route refused for both
+	/// task schemas. 1.6.6.105 is also the create/modify floor clio enforces. What earlier cuts carried is in this
+	/// file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT run under <c>-SkipTests</c>: the script built the package sources and ran their suite
-	/// on the producing commit before packing anything — 3088 passed, 0 failed, 0 skipped, measured on this cut
-	/// and not carried over from a previous one. That matters beyond hygiene, because <c>-SkipTests</c> is the
-	/// ONE path that can reach the coarse failure the two security counts below exist to catch. The script also
-	/// verified the archive inventory it produced (229 entries, 2 DLLs, both under <c>Files/Libs</c>, compile
-	/// marker present, no own assembly, nothing that executes on install). The byte-for-byte comparison of
-	/// every archive entry
-	/// against the commit's CHECKOUT rendering was NOT re-run here, and the clean-tree refusal does NOT cover
-	/// it: a clean TREE and a clean CHECKOUT are different states. `git add` normalises to LF in the INDEX while
-	/// the working tree keeps what was written, so LF files can be committed, leave the tree clean, pass the
-	/// gate, and still be packed as LF where a checkout of that same commit renders CRLF. The gate closes the
-	/// DIRTY-TREE failure and that one only — see the paragraph above for why it does not close the
-	/// commit-is-behind one either.
-	/// It earned its keep on the 1.3.1.1 cut — freshly written files carried LF
-	/// where a checkout on a <c>core.autocrlf=true</c> host produces CRLF, an archive corresponding to no commit
-	/// at all — so re-run the line-ending audit whenever the archive is cut from a tree with just-written files,
-	/// and do not read its absence here as a clean result.
+	/// This cut did NOT run under <c>-SkipTests</c>. It was produced by the manual route of
+	/// <c>docs/agent-instructions/bundled-packages.md</c> ("Without the script"): <c>git archive</c> of the producing
+	/// commit with <c>core.autocrlf=false</c> and <c>core.eol=lf</c>, the restamped <c>descriptor.json</c> (commit
+	/// <c>2388dd93</c>, CRLF as in the 1.6.6.104 archive) overlaid, packed with <c>clio compress --skip-pdb</c>. The
+	/// package suite ran on the producing commit on both configurations before packing - 4101 passed, 0 failed, on
+	/// <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a previous one. That matters
+	/// beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it on the
+	/// manual route) is the ONE path that can reach the coarse failure the two security counts below exist to
+	/// catch. The archive inventory was verified with <c>clio extract-pkg-zip</c>: 289 entries, 276 under
+	/// <c>Files/src/cs</c>, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile-marker schema the only schema,
+	/// nothing outside <c>descriptor.json</c>, <c>Files</c>, <c>Schemas</c> and <c>Resources</c>, and no own
+	/// assembly. Because the sources come from <c>git archive</c> of a commit rather than from a working tree, the
+	/// line-ending failure recorded in the remarks (LF packed where a checkout renders CRLF) cannot reach them; the
+	/// one overlaid file, <c>descriptor.json</c>, is pinned separately.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -285,7 +181,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E50361BDA6519A29EA780943A83F7257EB4058754EAAF6E6D63D48458F3FB914";
+		"0B30CDD1C99EE7BA045B1175305B921E61009A1769570BB66C19B4A1951AE132";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -313,11 +209,13 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.104";
+	private const string ExpectedArchiveVersion = "1.6.6.105";
 
 	/// <summary>
-	/// The commit of the PRODUCING repository the archive was cut from, written by
-	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here.
+	/// The commit of the PRODUCING repository the archive was cut from, normally written by
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. The 1.6.6.105 cut
+	/// took the manual route, so this value was set by hand from the commit it exported (the descriptor restamp is
+	/// the child commit <c>2388dd93</c>).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -325,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "111a1d65b89c82f46aeb75f60c69878de832b796";
+	private const string ExpectedProducingCommit = "5792f25d5c5094592445758b0962951519db6be5";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -351,7 +249,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792399862000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792421440000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1665,9 +1563,17 @@ public class BundledProcessBuilderPackageTests {
 			because: "setElement sends the block on this member; without it the server drops the update in silence");
 		DeclaresMemberOn(archive, "DescribeProcessElement", "fileProcessing").Should().BeTrue(
 			because: "DescribedElement.FileProcessing reads the block off this member");
-		foreach (string member in new[] { "source", "action", "actionStored", "attachments", "saveTo", "outputs", "issues" }) {
+		foreach (string member in new[] {
+				"source", "action", "actionStored", "attachments", "report", "files", "bindingLevels", "saveTo", "outputs",
+				"issues" }) {
 			DeclaresMemberOn(archive, "DescribeFileProcessingInfo", member).Should().BeTrue(
 				because: $"DescribedFileProcessing reads '{member}'");
+		}
+		foreach (string member in new[] {
+				"printable", "caption", "type", "object", "convertToPdf", "recordId", "separateReports", "fileNameSuffix",
+				"fileNameSuffixColumn" }) {
+			DeclaresMemberOn(archive, "DescribeFileProcessingReportInfo", member).Should().BeTrue(
+				because: $"DescribedFileProcessingReport reads '{member}'");
 		}
 		foreach (string member in new[] {
 				"object", "storage", "fileObject", "linkColumn", "recordId", "numberOfRecords", "sort" }) {

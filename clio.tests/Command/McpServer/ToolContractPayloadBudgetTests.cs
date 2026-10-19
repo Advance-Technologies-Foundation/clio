@@ -255,6 +255,17 @@ public sealed class ToolContractPayloadBudgetTests {
 	// changes nothing" (through the builder only add and remove both empty builds green). Re-measured by lowering the
 	// ceiling: create-business-process 34917, modify-business-process 35042, describe-business-process 34644 - 155, 30
 	// and 428 bytes of headroom.
+	//
+	// ENG-96506 (2026-10-19, the Generated report and Process parameter variants) named the three groups
+	// "attachments | report | files" in create's block clause, ReportFileProcessingUserTask and
+	// ProcessFileProcessingUserTask among modify's generic-route refusals, describe's three groups with report.recordId
+	// and the describe-only report.caption, report.convertToPdf and bindingLevels, the two variants in
+	// validate-process-graph's buildable list and list-user-tasks' exceptions, and moved the floor literal to 1.6.6.105
+	// (same length). Modify went 31 bytes over; it paid by SWAP, owner-approved trim T1 (Q20 = A, no ceiling raise):
+	// setFlowCondition dropped "; the character index comes only with the 'Formula value error:' PARSE family" (87
+	// bytes), a rule the expression paragraph keeps and process-formulas owns. Re-measured by lowering the ceiling:
+	// modify-business-process 35016, create-business-process 34973, describe-business-process 34769 - 56, 99 and 303
+	// bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -274,8 +285,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// "Note that " (10 bytes). The gate-review follow-ups (the activity-result sentence, the access-rights hazard, the
 	// fileProcessing entry in validate-process-graph's buildable list, describe's warn-and-ignore clause) carry no
 	// safety marker, so no short form keeps them and the bundle did not move. Re-measured by lowering this guard: 18993
-	// bytes on the wire - 7 bytes under it, so the next entry in a call shape, or the next marked sentence in any of the
-	// seven, needs a trim of its own.
+	// bytes on the wire at the time - 7 bytes under it. That figure went stale when a later commit retired a marked
+	// sentence: re-measured on 2026-10-19 (ENG-96506, whose additions carry no safety marker and leave the bundle
+	// where it was), the bundle is 18815 bytes on the wire - 185 bytes under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

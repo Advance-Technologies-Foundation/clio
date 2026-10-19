@@ -274,16 +274,20 @@ internal static class ProcessBlockKeyCheck {
 		"value processParameter sourceElement sourceElementParameter sourceColumn expression", "display");
 
 	private static readonly KeySet FileProcessingBlock = new KeySet("FileProcessingDescriptor", "fileProcessing",
-			"DescribeFileProcessingInfo", "source action attachments report files saveTo", "actionStored outputs issues")
+			"DescribeFileProcessingInfo", "source action attachments report files saveTo",
+			"actionStored bindingLevels outputs issues")
 		.With(new KeySet("FileProcessingAttachmentsDescriptor", "attachments", "DescribeFileProcessingAttachmentsInfo",
 				"object recordId numberOfRecords sort storage fileObject linkColumn")
 			.With(RecordId, FileProcessingValueSource)
 			.With(ReadDataSort))
-		.With(new KeySet("FileProcessingReportDescriptor", "report", null,
-				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type")
+		.With(new KeySet("FileProcessingReportDescriptor", "report", "DescribeFileProcessingReportInfo",
+				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type",
+				"caption convertToPdf")
 			.With($"{RecordId} fileNameSuffix", FileProcessingValueSource))
-		.With(new KeySet("FileProcessingFilesDescriptor", "files", null,
-			"processParameter sourceElement sourceElementParameter expression value"))
+		// 'files' is described in the shared value-source shape, so only its 'display' is a read-back; a described
+		// 'sourceColumn' is not one the write side can drop silently, and stays refused.
+		.With(new KeySet("FileProcessingFilesDescriptor", "files", "DescribeFileProcessingValueSource",
+			"processParameter sourceElement sourceElementParameter expression value", "display"))
 		.With(new KeySet("FileProcessingSaveToDescriptor", "saveTo", "DescribeFileProcessingSaveToInfo",
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));

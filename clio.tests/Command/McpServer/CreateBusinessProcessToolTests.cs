@@ -428,8 +428,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.103 (for isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.105 (for isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -457,7 +457,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias) and its fileProcessing block, and routes the block to process-files; its prompt says the group is the variant and that a generic userTask naming ObjectFileProcessingUserTask is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask CrtProcessBuilder 1.6.6.103 refuses.")]
+	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias), its fileProcessing block and the three groups that select its variant - attachments, report and files - and routes the block to process-files; its prompt says the group is the variant and that a generic userTask naming any of the three Process file tasks is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask the server refuses.")]
 	public void CreateBusinessProcessTool_ShouldOfferTheFileProcessingElementAndRouteToItsGuide() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)
@@ -472,10 +472,20 @@ public class CreateBusinessProcessToolTests {
 			because: "the element type list is where an agent learns which type tokens a build accepts");
 		toolDescription.Should().NotContain("processFile",
 			because: "the server accepts processFile on build but never emits it, and it reads like the Process-parameter variant, so the contract names only fileProcessing");
-		toolDescription.Should().Contain("fileProcessing? (fileProcessing elements only - the Process file element, whose ONE group is its variant: attachments (Object attachments); get-guidance name=process-files owns the block)",
-			because: "the block clause names the element, the group that selects the variant and the guide that owns the block");
-		prompt.Should().Contain("not a generic `userTask` naming `ObjectFileProcessingUserTask`, which carries no",
+		toolDescription.Should().Contain("fileProcessing? (fileProcessing elements only - the Process file element, whose ONE group is its variant: attachments (Object attachments) | report (Generated report) | files (Process parameter); get-guidance name=process-files owns the block)",
+			because: "the block clause names the element, the three groups that select the variant and the guide that owns the block");
+		prompt.Should().Contain("not a generic `userTask` naming one of the three Process file tasks, which carries no",
 			because: "the prompt must keep the agent off the generic route the server refuses");
+		prompt.Should().Contain("except the three Process file tasks (`ObjectFileProcessingUserTask`,",
+			because: "the list-user-tasks step must not hand the agent a Process file task name for a generic userTask");
+		prompt.Should().Contain("`ReportFileProcessingUserTask`, `ProcessFileProcessingUserTask`), which are built as a `fileProcessing` element;",
+			because: "the Generated report and Process parameter tasks are carved out as well");
+		prompt.Should().Contain("Object attachments; `report` for Generated report (an MS Word printable: `report.printable` takes",
+			because: "the report group selects the Generated report variant and takes list-printables' templateId");
+		prompt.Should().Contain("since this element cannot create one); `files` for Process parameter (a FileCollection, a File or an",
+			because: "the files group selects the Process parameter variant");
+		prompt.Should().Contain("element's file output; it only saves, so `saveTo` is required and `useInProcess` is refused).",
+			because: "the Process parameter variant's run time cannot use its files in the process");
 		prompt.Should().Contain("The ONE group the block carries IS the element's variant: `attachments` for",
 			because: "the group selects the variant, so an agent must send exactly one");
 		prompt.Should().Contain("Read `get-guidance name=process-files` before writing it",

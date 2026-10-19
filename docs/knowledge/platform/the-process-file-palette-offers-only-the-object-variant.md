@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ListUserTasksTool.cs
   - spec/eng-92719-file-processing-element/
 ticket: ENG-96505
-date: 2026-10-15
+date: 2026-10-19
 ---
 
 **What is true** — measured in the designer on the stand on 2026-10-01: the palette shows only the Object entry and
@@ -15,6 +15,10 @@ offers only `ObjectFileProcessingUserTask`. The "What is the source of the file?
 schemas (`the-process-file-source-is-three-user-task-schemas.md`) is shown only while
 `EnableReportFileProcessingUserTask` is on, and no server code reads that feature, so elements of all three schemas
 build, save and run whatever it says.
+
+Since CrtProcessBuilder 1.6.6.105 the builder writes all three with `type: "fileProcessing"` whatever the feature
+says (it refuses the generic `userTask` route for each on create); with the feature off, a Generated report element
+gets a notice that the designer cannot edit it, never a refusal.
 
 **Why it is this way** — the feature gates the UI only; the run time has no notion of it.
 

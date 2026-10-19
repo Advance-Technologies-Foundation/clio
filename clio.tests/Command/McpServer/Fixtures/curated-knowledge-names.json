@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.146",
-  "sequence": 1015146000,
+  "libraryVersion": "1.15.163",
+  "sequence": 1015163000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -125,6 +125,7 @@
     "creatio.process-element-catalog",
     "creatio.process-element-catalog-details",
     "creatio.process-files",
+    "creatio.process-files-report",
     "creatio.process-formulas",
     "creatio.process-formulas-details",
     "creatio.process-modeling",
@@ -247,6 +248,7 @@
     "process-element-catalog",
     "process-element-catalog-details",
     "process-files",
+    "process-files-report",
     "process-formulas",
     "process-formulas-details",
     "process-modeling",

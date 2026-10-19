@@ -462,7 +462,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back and the describe-only members to remove before resubmitting: CrtProcessBuilder 1.6.6.103 reports actionStored, outputs, issues and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
+	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back, its three groups, and the describe-only members to remove before resubmitting: the server reports actionStored, outputs, issues, bindingLevels, report.caption, report.convertToPdf and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
 	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
@@ -473,14 +473,24 @@ public sealed class DescribeProcessToolTests {
 		// Assert
 		toolText.Should().Contain("a fileProcessing element's fileProcessing block (the Process file element: its ONE group is its variant",
 			because: "the describe contract must say which block a Process file element reports and what selects its variant");
-		toolText.Should().Contain("the describe-only actionStored, outputs, issues and each value source's display are removed before resubmitting (clio warns and ignores them if sent back)",
+		toolText.Should().Contain("attachments (Object attachments), report (Generated report) or files (Process parameter)",
+			because: "the contract must name the three groups a described element can carry");
+		toolText.Should().Contain("with the record scope in attachments.recordId or report.recordId rather than the filter",
+			because: "both groups lift the record scope out of the stored filter");
+		toolText.Should().Contain("the describe-only actionStored, outputs, issues, report.caption, report.convertToPdf, bindingLevels and each value source's display are removed before resubmitting (clio warns and ignores them if sent back)",
 			because: "those members are read-back only, so a resubmitted block must not carry them");
 		toolText.Should().Contain("get-guidance name=process-files owns the block",
 			because: "the contract must route the block to the guide that owns it");
 		prompt.Should().Contain("A `fileProcessing` element (the designer's \"Process file\") carries its `fileProcessing` block",
 			because: "the prompt lists every configuration block the tool reports");
-		prompt.Should().Contain("(`actionStored`, `outputs`, `issues`, and each value source's `display`) are removed before resubmitting;",
+		prompt.Should().Contain("in those terms. Its describe-only members (`actionStored`, `outputs`, `issues`, `report.caption`,",
 			because: "the prompt must match the tool contract on the describe-only members");
+		prompt.Should().Contain("`report.convertToPdf`, `bindingLevels`, and each value source's `display`) are removed before",
+			because: "the two variants' describe-only members are named as well");
+		prompt.Should().Contain("`report` for Generated report - which printable, for which record, how its files",
+			because: "the prompt narrates the Generated report group");
+		prompt.Should().Contain("are named; `files` for Process parameter - which files it copies), plus `action` and `saveTo`.",
+			because: "the prompt narrates the Process parameter group");
 		prompt.Should().Contain("clio warns and ignores them if sent back.",
 			because: "the prompt states the same fallback as the contract, so neither surface claims a resubmitted read-back member is refused or applied");
 	}

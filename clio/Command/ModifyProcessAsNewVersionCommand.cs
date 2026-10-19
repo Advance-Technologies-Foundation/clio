@@ -84,7 +84,14 @@ namespace Clio.Command;
 // designer-built record and sending it back holds; 1.6.6.103 also refuses moving the source or the target to another
 // object while another element reads CreatedObjectFileIds, as the designer does. 1.6.6.100-1.6.6.102 were never
 // released.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.103",
+// Raised to 1.6.6.105 by ENG-96506: the Generated report and Process parameter variants of the fileProcessing
+// element - its `report` and `files` groups, and the refusal of the generic userTask route for
+// ReportFileProcessingUserTask and ProcessFileProcessingUserTask. A 1.6.6.103-1.6.6.104 server refuses both groups
+// loudly ("not supported yet"), but it still takes the generic route for the two tasks and builds an element with no
+// printable or no files that saves green and fails at run time, and it describes such an element as a plain userTask -
+// so this clio's contract, which names both groups and refuses that route, would describe behaviour the server does
+// not have. 1.6.6.105 is the first archive with both variants; 1.6.6.104 shipped story-1 follow-ups only.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.105",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
