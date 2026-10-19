@@ -136,8 +136,10 @@ public static class ModifyBusinessProcessPrompt {
 		 and `attachments.sort` are objects, so an EMPTY OBJECT `{"{}"}` clears one, and null never clears;
 		 `saveTo.linkColumn: ""` does NOT clear the link - it goes back to the column the designer derives, and is
 		 refused when none can be derived. The group is the element's variant and cannot change: a
-		 different group is refused as a source change (remove the element and add a new one; removing it drops
-		 the mappings that read its outputs, so confirm with the user first). Sending
+		 different group is refused as a source change (remove the element and add a new one; `removeElement`
+		 drops the element's flows and the mappings INTO it, but NOT the bindings that read its outputs — those
+		 are left dangling and the process saves but cannot start, so re-point or remove them in a SEPARATE,
+		 earlier call, and confirm with the user first). Sending
 		 `attachments.object` rewrites the storage pair, and a different object clears the stored filter, sort and
 		 record scope unless the same block sends their replacement — re-send `setFilter` after it. Without it a
 		 consistent stored pair is kept, an unpaired or invalid one is rewritten from its own object with a notice,
@@ -145,7 +147,8 @@ public static class ModifyBusinessProcessPrompt {
 		 `saveTo.object` change needs `saveTo.recordId` in the same update. Inside `report` the same merge holds:
 		 `report.recordId` and `report.fileNameSuffix` replace as a whole and an EMPTY OBJECT clears one,
 		 `report.fileNameSuffixColumn: ""` clears the column, and an omitted `separateReports` is written `true`
-		 whenever the printable is (re)chosen. A `report.printable` of ANOTHER object clears the stored filter, record
+		 only on create or when `report.printable` names a DIFFERENT printable - otherwise (the same printable
+		 re-sent, or none sent) the stored value is kept. A `report.printable` of ANOTHER object clears the stored filter, record
 		 scope and suffix column unless the same block sends their replacement; one of the SAME object keeps them and
 		 checks the stored scope again. `files` is ONE value source: sent, it replaces the binding as a whole;
 		 omitted, it is kept; it cannot be emptied, because an element whose `Files` are bound to nothing copies

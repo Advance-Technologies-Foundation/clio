@@ -868,18 +868,14 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
-	[Description("Deserializes the files source and bindingLevels of a Process parameter element by name, keeps an undeclared files member in its overflow bag, and forwards both blocks - report and files - verbatim under the describe command's own options, so neither group nor bindingLevels falls into the block-level bag where a caller cannot address it by name.")]
+	[Description("Deserializes the files source and bindingLevels of a Process parameter element by name, keeps an undeclared files member in its overflow bag, and forwards the block verbatim under the describe command's own options, so neither the files group nor bindingLevels falls into the block-level bag where a caller cannot address it by name.")]
 	public void Describe_ShouldReadAndForwardTheFilesGroup_WhenServerReportsIt() {
 		// Arrange
-		ServerProcessDescriber filesDescriber = CreateDescriber(ClientReportingFileProcessing(FilesBlock));
-		ServerProcessDescriber reportDescriber = CreateDescriber(ClientReportingFileProcessing(ReportBlock));
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingFileProcessing(FilesBlock));
 
 		// Act
-		ErrorOr<DescribeProcessResult> files = filesDescriber.Describe(new ProcessIdentity("UsrProc", null, null), null);
-		ErrorOr<DescribeProcessResult> report = reportDescriber.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		ErrorOr<DescribeProcessResult> files = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
 		JsonNode forwardedFiles = JsonNode.Parse(JsonSerializer.Serialize(files.Value,
-			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["fileProcessing"];
-		JsonNode forwardedReport = JsonNode.Parse(JsonSerializer.Serialize(report.Value,
 			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["fileProcessing"];
 
 		// Assert
@@ -891,10 +887,24 @@ public sealed class ServerProcessDescriberTests {
 			because: "an undeclared files member lands in the value source's overflow bag");
 		block.BindingLevels.Should().Be("both", because: "the describe-only binding levels read back by name");
 		block.AdditionalData.Should().BeNull(because: "files and bindingLevels are declared members, not overflow");
-		report.Value.Elements[0].FileProcessing.AdditionalData.Should().BeNull(
-			because: "the report group is a declared member, not overflow");
 		JsonNode.DeepEquals(forwardedFiles, JsonNode.Parse(FilesBlock)).Should().BeTrue(
 			because: $"the files block must reach the caller exactly as sent, but came out as {forwardedFiles?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Forwards a Generated report element's block verbatim under the describe command's own options, with the report group a declared member rather than block-level overflow, so a caller addresses report by name and an undeclared report member still reaches it.")]
+	public void Describe_ShouldForwardTheReportGroupVerbatim_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingFileProcessing(ReportBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> report = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwardedReport = JsonNode.Parse(JsonSerializer.Serialize(report.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["fileProcessing"];
+
+		// Assert
+		report.Value.Elements[0].FileProcessing.AdditionalData.Should().BeNull(
+			because: "the report group is a declared member, not overflow");
 		JsonNode.DeepEquals(forwardedReport, JsonNode.Parse(ReportBlock)).Should().BeTrue(
 			because: $"the report block must reach the caller exactly as sent, but came out as {forwardedReport?.ToJsonString()}");
 	}

@@ -695,7 +695,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract offers the fileProcessing block on addElement and setElement and routes it to process-files, and its prompt carries the setElement merge rule (ENG-92719 D12): inside attachments and saveTo an omitted member keeps its stored value, a value source replaces as a whole, and a different group is a refused source change. An agent that resends the whole described block on every edit, or expects an omitted member to clear, rewrites or loses configuration nobody asked to change.")]
+	[Description("The modify contract offers the fileProcessing block on addElement and setElement and routes it to process-files, and its prompt carries the setElement merge rule: inside attachments and saveTo an omitted member keeps its stored value, a value source replaces as a whole, and a different group is a refused source change. An agent that resends the whole described block on every edit, or expects an omitted member to clear, rewrites or loses configuration nobody asked to change.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferTheFileProcessingBlockAndItsMergeRule() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -719,8 +719,14 @@ public class ModifyBusinessProcessToolTests {
 			because: "the wire cannot tell an explicit null from an omitted member");
 		prompt.Should().Contain("different group is refused as a source change (remove the element and add a new one;",
 			because: "the variant is fixed once built");
-		prompt.Should().Contain("the mappings that read its outputs, so confirm with the user first)",
-			because: "replacing the element loses every mapping that reads its outputs, which the user must agree to");
+		prompt.Should().Contain("drops the element's flows and the mappings INTO it, but NOT the bindings that read its outputs",
+			because: "removeElement removes only the mappings that target the element, so the readers of its outputs survive");
+		prompt.Should().Contain("are left dangling and the process saves but cannot start, so re-point or remove them in a SEPARATE,",
+			because: "a dangling reader is saved without error and only the run refuses, so the agent must clear readers first");
+		prompt.Should().Contain("earlier call, and confirm with the user first)",
+			because: "replacing the element breaks every binding that reads its outputs, which the user must agree to");
+		prompt.Should().NotContain("the mappings that read its outputs, so confirm",
+			because: "the earlier rule claimed removing the element drops the mappings that read its outputs, which the package never does");
 		prompt.Should().Contain("never a generic `userTask` naming `ObjectFileProcessingUserTask`,",
 			because: "addElement must not take the generic route the server refuses");
 		prompt.Should().Contain("`ReportFileProcessingUserTask` or `ProcessFileProcessingUserTask`;",
@@ -752,7 +758,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify prompt states how a setElement merges the report and files groups: report.recordId and report.fileNameSuffix replace as a whole and an empty object clears one, an empty fileNameSuffixColumn clears the column, an omitted separateReports is written true on a (re)chosen printable, a printable of another object clears the filter, scope and suffix column while one of the same object keeps them, and files replaces as a whole and cannot be emptied. An agent that expects an omitted member to clear, or a printable swap to keep a filter written for another object, edits a report element into one that generates the wrong records.")]
+	[Description("The modify prompt states how a setElement merges the report and files groups: report.recordId and report.fileNameSuffix replace as a whole and an empty object clears one, an empty fileNameSuffixColumn clears the column, an omitted separateReports is written true only on create or with a different printable and kept otherwise, a printable of another object clears the filter, scope and suffix column while one of the same object keeps them, and files replaces as a whole and cannot be emptied. An agent that expects an omitted member to clear, or a printable swap to keep a filter written for another object, edits a report element into one that generates the wrong records.")]
 	public void ModifyBusinessProcessPrompt_ShouldStateTheReportAndFilesMergeRules() {
 		// Arrange
 		const string processName = "UsrSampleProcess";
@@ -767,6 +773,10 @@ public class ModifyBusinessProcessToolTests {
 			because: "the two value sources of the report group are cleared by an empty object, never by null");
 		prompt.Should().Contain("`report.fileNameSuffixColumn: \"\"` clears the column, and an omitted `separateReports` is written `true`",
 			because: "an empty suffix column clears it, and an MS Word printable forces separate reports on");
+		prompt.Should().Contain("only on create or when `report.printable` names a DIFFERENT printable - otherwise (the same printable",
+			because: "the package forces separateReports on only when the printable changes, not when the same one is re-sent");
+		prompt.Should().Contain("re-sent, or none sent) the stored value is kept.",
+			because: "an agent told every edit rewrites separateReports to true expects a stored false to be reset when it is kept");
 		prompt.Should().Contain("A `report.printable` of ANOTHER object clears the stored filter, record",
 			because: "a printable of another object invalidates the stored filter, scope and suffix column");
 		prompt.Should().Contain("scope and suffix column unless the same block sends their replacement; one of the SAME object keeps them and",

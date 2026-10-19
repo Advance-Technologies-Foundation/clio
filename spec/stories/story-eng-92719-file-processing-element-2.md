@@ -8,7 +8,7 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: in-progress (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.105, the clio draft opens; it was deferred
+**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.105, the clio PR is open; it was deferred
 until those two were recorded)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
@@ -286,8 +286,10 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   2026-10-19. No ceiling raise.
 - Tests passing (package, clio unit, e2e with Ignored count, knowledge): package: recorded on crt-process-builder#100;
   clio unit: the rebundle's bundle, key-set and budget tests 88/88 at the install, the full targeted run on the clio
-  PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` written and compiled, not yet run against a
-  stand; knowledge: pending (RP.8).
+  PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` ran against the .NET Framework sandbox on
+  2026-10-19 with 21 passed, 0 failed, 1 skipped on both net10.0 and net8.0 - the skip is the designer-fixture test,
+  whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox; the isolated agent run of TC-01..TC-12
+  passed; knowledge: pending (RP.8).
 - Stand records (ST-03..ST-07, DT-03, SC-4): all PASS on 2026-10-19, CrtProcessBuilder 1.6.6.105. ST-03 2 callee
   copies, one per iteration; ST-04 the M4 chain with `bindingLevels: both`, 2 copies; ST-05 two consumers, copies on
   both targets, sources unchanged; ST-06 1 InvoiceFile `Invoice. <Number>.docx` re-found and tagged; ST-07 1

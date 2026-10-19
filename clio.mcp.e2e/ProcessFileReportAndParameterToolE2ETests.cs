@@ -168,8 +168,9 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 			warnings.Should().Contain("the designer forces this setting on", because: "and says what the designer does with it");
 			JsonObject describedBlock = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "RF1"));
 			Flag(Group(describedBlock, "report"), "separateReports").Should().BeFalse(because: "the stored constant is read back as sent");
-			Strings(describedBlock["issues"]).Should().NotBeEmpty(
-				because: "describe names an MS Word element with separate reports off as a hazard");
+			Strings(describedBlock["issues"]).Should().Contain(
+				issue => issue.StartsWith("'report.separateReports' is false on an MS Word printable", StringComparison.Ordinal),
+				because: "describe names an MS Word element with separate reports off as a hazard, not some other issue");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -547,7 +548,7 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 	[TestCase(ReportTaskName, "report")]
 	[TestCase(ProcessTaskName, "files")]
-	[Description("Extends TC-I-12 to the two variants this cut registers: a generic userTask naming ReportFileProcessingUserTask or ProcessFileProcessingUserTask is refused on create and on modify's addElement, pointing to type fileProcessing with the variant's own group - that route carries no printable or files, record or target, so the element would save green and fail at run time.")]
+	[Description("Extends TC-I-12 to the Generated report and Process parameter variants: a generic userTask naming ReportFileProcessingUserTask or ProcessFileProcessingUserTask is refused on create and on modify's addElement, pointing to type fileProcessing with the variant's own group - that route carries no printable or files, record or target, so the element would save green and fail at run time.")]
 	[AllureTag(CreateToolName, ModifyToolName)]
 	[AllureName("create- and modify-business-process refuse the generic route for the Report and Process tasks")]
 	public async Task GenericUserTaskRoute_Should_BeRefused_ForTheReportAndProcessTasks(string taskName, string group) {

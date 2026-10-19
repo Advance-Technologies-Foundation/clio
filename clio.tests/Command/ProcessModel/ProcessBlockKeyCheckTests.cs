@@ -268,6 +268,28 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("A described files group that names a record column - the shape describe reports when Files is bound to a column of a record - is refused on a setElement resubmit with a pointer that says why and how to keep the stored binding: leave files out. Without it a caller resubmitting the describe output reads a bare unknown-key refusal for a key describe itself produced.")]
+	public void Check_Should_PointToKeepingTheStoredBinding_WhenADescribedFilesSourceColumnIsResubmitted() {
+		// Arrange
+		const string operations = """
+			[ { "op": "setElement", "elementName": "Files1", "elementUpdate": { "fileProcessing": {
+			    "files": { "sourceElement": "ReadInvoice", "sourceElementParameter": "ResultEntity",
+			      "sourceColumn": "Attachment", "display": "Invoice.Attachment" } } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().Contain("'elementUpdate.fileProcessing.files.sourceColumn' is not a key of the 'files' block",
+			because: "the write contract has no sourceColumn, and dropping it would bind another source than the described column");
+		result.Error.Should().Contain("describe reports 'files' this way when Files is bound to a column of a record",
+			because: "the refusal must say the key came from describe, so the caller does not hunt for a typo");
+		result.Error.Should().Contain("on setElement leave 'files' out to keep the stored binding, or bind another source",
+			because: "an omitted files group is kept as stored, which is the one way to resubmit such an element unchanged");
+	}
+
+	[Test]
 	[Description("An unknown key deep inside the element's own filter (a condition, an element-parameter reference) is refused too, because the server drops it the same way.")]
 	public void Check_Should_RefuseAnUnknownKeyInsideTheFilterTree() {
 		// Arrange

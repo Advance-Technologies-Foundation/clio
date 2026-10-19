@@ -284,10 +284,15 @@ internal static class ProcessBlockKeyCheck {
 				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type",
 				"caption convertToPdf")
 			.With($"{RecordId} fileNameSuffix", FileProcessingValueSource))
-		// 'files' is described in the shared value-source shape, so only its 'display' is a read-back; a described
-		// 'sourceColumn' is not one the write side can drop silently, and stays refused.
+		// 'files' is described in the shared value-source shape, so only its 'display' is a read-back. Describe DOES
+		// report a 'sourceColumn' there - FileProcessingBlockDescriber decodes a Files binding to a column of a record -
+		// but the write contract has no such member: dropped, the binding would name the record, not its column, so it
+		// stays refused, and the pointer tells the resubmitting caller how to keep the stored binding.
 		.With(new KeySet("FileProcessingFilesDescriptor", "files", "DescribeFileProcessingValueSource",
-			"processParameter sourceElement sourceElementParameter expression value", "display"))
+			"processParameter sourceElement sourceElementParameter expression value", "display",
+			PointerMap(("sourceColumn", "describe reports 'files' this way when Files is bound to a column of a "
+				+ "record, a binding the 'files' group cannot write; on setElement leave 'files' out to keep the "
+				+ "stored binding, or bind another source"))))
 		.With(new KeySet("FileProcessingSaveToDescriptor", "saveTo", "DescribeFileProcessingSaveToInfo",
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));

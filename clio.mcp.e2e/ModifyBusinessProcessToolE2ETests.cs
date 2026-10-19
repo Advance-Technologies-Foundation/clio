@@ -1079,7 +1079,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.103");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.105");
 		ShouldHaveBuilt(created, $"the arrange must actually create '{processName}', or the test measures nothing");
 
 		try {

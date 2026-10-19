@@ -163,10 +163,6 @@ public class ListUserTasksToolTests {
 			because: "the three tasks must be named among the exceptions");
 		fallback.Should().BeGreaterThan(dedicated,
 			because: "the older-package fallback to a generic userTask covers only the Send email and Approval tasks, and no Process file task may read as one of them");
-		description.Should().Contain("ReportFileProcessingUserTask",
-			because: "the Generated report variant now has its dedicated route, so the task is named among the exceptions");
-		description.Should().Contain("ProcessFileProcessingUserTask",
-			because: "the Process parameter variant now has its dedicated route, so the task is named among the exceptions");
 	}
 
 	[Test]

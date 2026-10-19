@@ -271,6 +271,8 @@ namespace Clio.Command;
 // printable or no files that saves green and fails at run time, and it describes such an element as a plain userTask -
 // so this clio's contract, which names both groups and refuses that route, would describe behaviour the server does
 // not have. 1.6.6.105 is the first archive with both variants; 1.6.6.104 shipped story-1 follow-ups only.
+// ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for this same reason and point
+// here instead of repeating it.
 [RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.105",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
