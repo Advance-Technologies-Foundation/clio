@@ -8,7 +8,7 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.105, the clio PR is open; it was deferred
+**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.106 (1.6.6.105 superseded by the final-review fixes), the clio PR is open; it was deferred
 until those two were recorded)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
@@ -278,9 +278,11 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   en-US resources equal; ru-RU differs as an install/translation artefact. TC-U-59 takes no parameter exclusion.
 - Package cut claimed (number, date, where claimed): 1.6.6.105, 2026-10-19, in ENG-92719 comment 550565 (edited in
   place, read back); producing commit `5792f25d`, restamp `2388dd93`, tag `crtprocessbuilder-1.6.6.105` verified on
-  the remote; package draft PR crt-process-builder#100.
+  the remote; package draft PR crt-process-builder#100. Superseded the same day by **1.6.6.106** (claimed in the same
+  comment after the final review): producing commit `b548c47f`, restamp `fde3d8b4`, tag `crtprocessbuilder-1.6.6.106`
+  verified on the remote, cut by `rebundle-process-builder.ps1` (1.6.6.105 took the manual route).
 - Bytes trimmed per Q20 = A, if the floor raise lengthened the literal (which text per contract, the reviewer's
-  approval): the floor literal kept its length (1.6.6.103 -> 1.6.6.105). The additions naming the report and files
+  approval): the floor literal kept its length (1.6.6.103 -> 1.6.6.105 -> 1.6.6.106). The additions naming the report and files
   groups put modify 31 B over the ceiling; trim T1 (modify setFlowCondition: "the character index comes only with the
   'Formula value error:' PARSE family", -87 B; process-formulas owns the rule) paid it, approved by the owner on
   2026-10-19. No ceiling raise.
@@ -289,7 +291,7 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` ran against the .NET Framework sandbox on
   2026-10-19 with 21 passed, 0 failed, 1 skipped on both net10.0 and net8.0 - the skip is the designer-fixture test,
   whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox; the isolated agent run of TC-01..TC-12
-  passed; knowledge: pending (RP.8).
+  passed; knowledge: clio-knowledge PR 297, its bundle tests green.
 - Stand records (ST-03..ST-07, DT-03, SC-4): all PASS on 2026-10-19, CrtProcessBuilder 1.6.6.105. ST-03 2 callee
   copies, one per iteration; ST-04 the M4 chain with `bindingLevels: both`, 2 copies; ST-05 two consumers, copies on
   both targets, sources unchanged; ST-06 1 InvoiceFile `Invoice. <Number>.docx` re-found and tagged; ST-07 1

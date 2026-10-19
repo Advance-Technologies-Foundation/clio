@@ -4875,7 +4875,7 @@ stories:
       Process half fails its stand proof. Visible change: the four shipped product report processes describe as
       fileprocessing. Done carried by story 3's clio PR. 2026-10-19: in-progress with its clio draft; M1 passed and M2
       as predicted (the single-file path ships), O-TP1 = B (TC-I-91 in this story's clio PR), cut 1.6.6.105, stand
-      proofs ST-03..ST-07, DT-03 and SC-4 passed on 1.6.6.105. Story 1 flipped to done in this PR (its package, clio
+      proofs ST-03..ST-07, DT-03 and SC-4 passed on 1.6.6.105; after the final review the cut is 1.6.6.106. Story 1 flipped to done in this PR (its package, clio
       and knowledge PRs merged).
 
   - id: story-eng-92719-file-processing-element-3

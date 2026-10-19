@@ -1612,7 +1612,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				"\"results\": [\"A\", \"B\"]", "\"results\": [\"C\"]")
 		});
 		// Before the try: when this fires nothing was built, and there is nothing to clean up.
-		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.105");
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.106");
 
 		try {
 			// Assert
@@ -1660,7 +1660,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName,
 				"\"condition\": \"1 > 0\"", "\"results\": [\"C\"]")
 		});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.105");
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.106");
 
 		try {
 			// Assert
