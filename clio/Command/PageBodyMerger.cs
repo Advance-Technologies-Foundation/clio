@@ -333,6 +333,33 @@ internal static class PageBodyMerger {
 	}
 
 	/// <summary>
+	/// Copies the incoming body's <c>SCHEMA_DEPS</c> and <c>SCHEMA_ARGS</c> pairs into an empty web scaffold.
+	/// </summary>
+	/// <remarks>
+	/// GH-1839: an append against an empty stored body merges into an empty scaffold whose deps and args are
+	/// empty, and the section merge never touches those two pairs. A complete body appended there would keep its
+	/// handlers but lose the <c>define()</c> dependencies and the <c>sdk</c> parameter they call, so the
+	/// handlers fail at runtime. Only non-empty incoming pairs are carried; a section-only fragment leaves the
+	/// scaffold as it is.
+	/// </remarks>
+	/// <param name="scaffoldBody">The empty web body the fragment is merged into.</param>
+	/// <param name="incomingBody">The append fragment.</param>
+	/// <returns>The scaffold with the fragment's deps and args, when it has them.</returns>
+	internal static string AdoptSchemaHeader(string scaffoldBody, string incomingBody) {
+		if (string.IsNullOrWhiteSpace(incomingBody)) {
+			return scaffoldBody;
+		}
+		string result = scaffoldBody;
+		foreach (string marker in new[] { "SCHEMA_DEPS", "SCHEMA_ARGS" }) {
+			string incomingSection = ReadRawSection(incomingBody, marker);
+			if (!string.IsNullOrWhiteSpace(incomingSection)) {
+				result = ReplaceSection(result, marker, incomingSection);
+			}
+		}
+		return result;
+	}
+
+	/// <summary>
 	/// Rejection for an append fragment that contributes nothing to any section (GH-1839).
 	/// </summary>
 	internal const string NothingToAppendMessage =

@@ -370,6 +370,39 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 	}
 
 	[Test]
+	[Description("A complete body appended onto an empty stored body keeps its define() dependencies and arguments (GH-1839).")]
+	public void TryUpdatePage_ShouldKeepSchemaDepsAndArgs_WhenCompleteBodyIsAppendedToEmptyServerBody() {
+		// Arrange — handlers that call sdk.* need both the dependency and the sdk parameter; the empty scaffold
+		// has neither, and the section merge does not touch those two pairs.
+		StubCurrentBody(string.Empty);
+		string incomingBody = WebBody("[]")
+			.Replace("/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/", "/**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/")
+			.Replace("/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/", "/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/")
+			.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await sdk.HandlerChainService.instance.process(request); return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		string savedPayload = null;
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Do<string>(payload => savedPayload = payload),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true}""");
+
+		// Act
+		bool result = _command.TryUpdatePage(
+			new PageUpdateOptions { SchemaName = SchemaName, Body = incomingBody, Mode = "append" },
+			out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: response.Error);
+		string savedBody = Newtonsoft.Json.Linq.JObject.Parse(savedPayload)["body"]!.ToString();
+		savedBody.Should().Contain("/**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/",
+			because: "the handlers depend on the module the complete body declares");
+		savedBody.Should().Contain("/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/",
+			because: "without the sdk parameter the appended handler throws a ReferenceError at runtime");
+		savedBody.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the handler itself is merged into the empty page");
+	}
+
+	[Test]
 	[Description("An append dry run reports the SAVE's caption gate, on the same body, as a warning rather than a refusal.")]
 	public void TryUpdatePage_ShouldReportTheSaveCaptionGateAsAWarning_WhenAppendDryRun() {
 		// Arrange — an inserted widget whose caption binds an unregistered, NON-Usr, non-DS-bound localizable

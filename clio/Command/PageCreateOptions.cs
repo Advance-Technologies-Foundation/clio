@@ -185,8 +185,9 @@ namespace Clio.Command {
 			if (!hasEntity || PageSchemaTypeExtensions.FromNumericValue(template.SchemaType) == PageSchemaType.Mobile) {
 				return string.Empty;
 			}
+			// Without a seeder the template shape is unknown, so bind nothing rather than guess a primary PDS.
 			dataSourceSeed = _dataSourceSeeder?.BuildSeed(template.UId, packageUId, options.EntitySchemaName)
-				?? PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(null, options.EntitySchemaName);
+				?? PageEntityDataSourceSeeder.Unbound(options.EntitySchemaName, "The template's model config was not read");
 			if (dataSourceSeed.ModelConfigDiff.Count == 0) {
 				return string.Empty;
 			}

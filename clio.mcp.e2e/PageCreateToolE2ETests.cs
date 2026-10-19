@@ -457,11 +457,15 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 				because: "a tabbed record page template has no primary data source, so create-page adds PDS");
 			getResponse.Success.Should().BeTrue(because: $"the created page must be readable. Error: {getResponse.Error}");
 			JsonNode modelConfig = await ReadModelConfigAsync(getResponse);
-			modelConfig["primaryDataSourceName"]?.GetValue<string>().Should().Be("PDS",
+			JsonNode? primaryDataSourceName = modelConfig["primaryDataSourceName"];
+			primaryDataSourceName.Should().NotBeNull(because: "the stored page must declare its primary data source");
+			primaryDataSourceName!.GetValue<string>().Should().Be("PDS",
 				because: "components bound to the primary data source show nothing without it");
-			modelConfig["dataSources"]?["PDS"]?["config"]?["entitySchemaName"]?.GetValue<string>()
-				.Should().Be("Contact", because: "PDS must be bound to the requested entity");
-			modelConfig["dataSources"]?["AttachmentListDS"].Should().NotBeNull(
+			JsonNode? pdsEntitySchemaName = modelConfig["dataSources"]?["PDS"]?["config"]?["entitySchemaName"];
+			pdsEntitySchemaName.Should().NotBeNull(because: "the stored PDS must carry an entity binding");
+			pdsEntitySchemaName!.GetValue<string>().Should().Be("Contact", because: "PDS must be bound to the requested entity");
+			modelConfig["dataSources"].Should().NotBeNull(because: "the stored page must keep its data sources");
+			modelConfig["dataSources"]!["AttachmentListDS"].Should().NotBeNull(
 				because: "the template's own data sources must survive the seeded merge");
 		} finally {
 			await DeleteSchemaAsync(settings, schemaName, environmentName);
@@ -516,7 +520,9 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 				because: "the projection reports the config-diff operations, not only viewConfigDiff");
 			(await File.ReadAllTextAsync(getResponse.Files.BodyFile)).Should().StartWith($"define(\"{schemaName}\"",
 				because: "the fragment is merged into the empty page body, not saved as the whole body");
-			(await ReadModelConfigAsync(getResponse))["primaryDataSourceName"]?.GetValue<string>().Should().Be("PDS",
+			JsonNode? appendedPrimaryDataSourceName = (await ReadModelConfigAsync(getResponse))["primaryDataSourceName"];
+			appendedPrimaryDataSourceName.Should().NotBeNull(because: "the appended modelConfigDiff operations reach the page");
+			appendedPrimaryDataSourceName!.GetValue<string>().Should().Be("PDS",
 				because: "the appended modelConfigDiff operations reach the page");
 		} finally {
 			await DeleteSchemaAsync(settings, schemaName, environmentName);

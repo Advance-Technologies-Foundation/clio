@@ -519,8 +519,9 @@ Three consequences worth knowing:
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.
 
-`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays append
-unconditionally and cannot lose an entry, so they have nothing to report. Handlers are **not**
+`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays are merged by
+appending and never lose an entry silently: a non-empty section the stored body has no marker pair
+for is rejected with an error (use `--mode replace`), so they have no loss to report. Handlers are **not**
 covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
 in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
 contributes one. Check the handlers section by hand when that shape is possible.

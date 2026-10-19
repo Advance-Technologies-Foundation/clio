@@ -1001,6 +1001,10 @@
 					// replaced the page with one line and no define() wrapper. Merge into the empty page instead.
 					currentBody = BuildEmptyReplacingBody(
 						schemaToSave["name"]?.ToString() ?? options.SchemaName, schemaType);
+					if (schemaType != PageSchemaType.Mobile) {
+						// A complete body keeps its define() deps and args (the sdk its handlers call).
+						currentBody = PageBodyMerger.AdoptSchemaHeader(currentBody, options.Body);
+					}
 				}
 				try {
 					bodyToWrite = PageBodyMerger.Merge(currentBody, options.Body, out projection);

@@ -32,4 +32,5 @@ resolve from `modelConfig.primaryDataSourceName` at runtime, so the entity reach
 `PDS` into a page-scoped primary source, which changes how the list loads. Assuming the stored body is
 the scaffold `get-page` shows: before GH-1839 `update-page --mode append` skipped the merge on an empty
 stored body and saved the fragment as the whole body, so a `modelConfigDiff`-only fragment replaced the
-page with one line and no `define(...)` wrapper while reporting `success`.
+page with one line and no `define(...)` wrapper while reporting `success`. The append now merges into the empty scaffold and carries the fragment's own `SCHEMA_DEPS` /
+`SCHEMA_ARGS` into it, so a complete body keeps the dependencies and `sdk` parameter its handlers call.

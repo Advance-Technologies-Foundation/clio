@@ -68,12 +68,18 @@ internal sealed class PageEntityDataSourceSeeder(
 		} catch (Exception ex) {
 			// Guessing the shape blind could turn the list template's viewElement PDS into a page-scoped primary
 			// source, so an unreadable template binds nothing and says so.
-			return new PageEntityDataSourceSeed(new JArray(), null, false,
-				$"Could not read the template's model config ({ex.Message}); no data source was bound to "
-				+ $"'{entitySchemaName}' - the entity is recorded in the page dependencies only. Bind it with update-page.");
+			return Unbound(entitySchemaName, $"Could not read the template's model config ({ex.Message})");
 		}
 		return BuildFromTemplateModelConfig(templateModelConfig, entitySchemaName);
 	}
+
+	/// <summary>
+	/// A seed that binds nothing, for a template whose shape is unknown; <paramref name="reason"/> starts the warning.
+	/// </summary>
+	internal static PageEntityDataSourceSeed Unbound(string entitySchemaName, string reason) =>
+		new(new JArray(), null, false,
+			$"{reason}; no data source was bound to '{entitySchemaName}' - the entity is recorded in the page "
+			+ "dependencies only. Bind it with update-page.");
 
 	/// <summary>
 	/// Picks the binding from the template's merged <c>modelConfig</c>; <see langword="null"/> means unknown.

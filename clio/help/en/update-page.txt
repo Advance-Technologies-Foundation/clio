@@ -327,7 +327,9 @@ DESCRIPTION
     keys the schema stores plus those of its designer hierarchy (the set the
     save accepts). The same projection is returned on a real append save.
     appendProjection speaks for viewConfigDiff only. The sibling *_DIFF arrays
-    append unconditionally and cannot lose an entry. Handlers are NOT covered:
+    are merged by appending and never lose an entry silently: a non-empty section
+    the stored body has no marker pair for is rejected with an error (use
+    --mode replace). Handlers are NOT covered:
     they dedupe by request, and the merge drops every current handler whose
     request appears in your fragment - so a current body carrying one request
     twice keeps neither and your fragment contributes one. Check handlers by

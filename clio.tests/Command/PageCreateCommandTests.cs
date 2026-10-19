@@ -357,9 +357,91 @@ public sealed class PageCreateCommandTests
 	}
 
 	[Test]
-	[Description("With entity-schema-name a web page is saved with a body that binds a primary data source PDS to the entity, the shape of stock record pages (GH-1839).")]
+	[Description("With entity-schema-name a web page asks the seeder for the template's binding and saves a body that binds the primary data source PDS to the entity (GH-1839).")]
 	public void TryCreatePage_Seeds_Primary_Data_Source_For_Entity() {
 		// Arrange
+		IPageEntityDataSourceSeeder seeder = Substitute.For<IPageEntityDataSourceSeeder>();
+		seeder.BuildSeed(TemplateUId, PackageUId, "UsrDemoEntity").Returns(
+			PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(
+				new System.Text.Json.Nodes.JsonObject { ["dataSources"] = new System.Text.Json.Nodes.JsonObject() },
+				"UsrDemoEntity"));
+
+		// Act
+		(bool result, PageCreateResponse response, string body) = CreateEntityBoundPage(seeder);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		seeder.Received(1).BuildSeed(TemplateUId, PackageUId, "UsrDemoEntity");
+		response.PrimaryDataSourceName.Should().Be("PDS", because: "a template without a primary data source gets PDS as primary");
+		response.DataSourceName.Should().Be("PDS", because: "PDS is the data source bound to the entity");
+		response.Note.Should().BeNull(because: "the template was read");
+		body.Should().StartWith("define(\"UsrDemo_FormPage\"", because: "the page is saved with a full diff-form body");
+		string modelConfigDiff = ReadModelConfigDiff(body);
+		modelConfigDiff.Should().Contain("\"primaryDataSourceName\": \"PDS\"",
+			because: "components bound to the primary data source need it to be named");
+		modelConfigDiff.Should().Contain("\"entitySchemaName\": \"UsrDemoEntity\"",
+			because: "PDS must be bound to the requested entity");
+	}
+
+	[Test]
+	[Description("A list-template seed binds PDS to the entity without making it primary (GH-1839).")]
+	public void TryCreatePage_Binds_List_Data_Source_Without_Making_It_Primary() {
+		// Arrange
+		IPageEntityDataSourceSeeder seeder = Substitute.For<IPageEntityDataSourceSeeder>();
+		seeder.BuildSeed(TemplateUId, PackageUId, "UsrDemoEntity").Returns(
+			PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(
+				(System.Text.Json.Nodes.JsonObject)System.Text.Json.Nodes.JsonNode.Parse(
+					"""{"dataSources":{"PDS":{"type":"crt.EntityDataSource","scope":"viewElement","config":{}}}}""")!,
+				"UsrDemoEntity"));
+
+		// Act
+		(bool result, PageCreateResponse response, string body) = CreateEntityBoundPage(seeder);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		response.DataSourceName.Should().Be("PDS", because: "the template's list source is the one bound to the entity");
+		response.PrimaryDataSourceName.Should().BeNull(because: "the list template's PDS is a viewElement source, not the primary one");
+		string modelConfigDiff = ReadModelConfigDiff(body);
+		modelConfigDiff.Should().Contain("\"entitySchemaName\": \"UsrDemoEntity\"",
+			because: "the list source must be bound to the requested entity");
+		modelConfigDiff.Should().NotContain("primaryDataSourceName",
+			because: "making the list source primary would change how the list page loads its data");
+	}
+
+	[Test]
+	[Description("A seed with a warning (unreadable template) saves an empty body and reports the warning as the note (GH-1839).")]
+	public void TryCreatePage_Saves_Empty_Body_And_Note_When_Seed_Has_Warning() {
+		// Arrange
+		IPageEntityDataSourceSeeder seeder = Substitute.For<IPageEntityDataSourceSeeder>();
+		PageEntityDataSourceSeed unbound = PageEntityDataSourceSeeder.Unbound("UsrDemoEntity", "Could not read the template's model config (designer down)");
+		seeder.BuildSeed(TemplateUId, PackageUId, "UsrDemoEntity").Returns(unbound);
+
+		// Act
+		(bool result, PageCreateResponse response, string body) = CreateEntityBoundPage(seeder);
+
+		// Assert
+		result.Should().BeTrue(because: "an unreadable template never fails page creation");
+		body.Should().BeEmpty(because: "nothing is bound when the template shape is unknown");
+		response.DataSourceName.Should().BeNull(because: "no data source was bound");
+		response.PrimaryDataSourceName.Should().BeNull(because: "no data source was bound");
+		response.Note.Should().Be(unbound.Warning, because: "the caller must learn why the entity was not bound");
+	}
+
+	[Test]
+	[Description("Without a seeder the template shape is unknown, so nothing is bound and the note says so (GH-1839).")]
+	public void TryCreatePage_Binds_Nothing_When_No_Seeder_Is_Registered() {
+		// Act
+		(bool result, PageCreateResponse response, string body) = CreateEntityBoundPage(seeder: null);
+
+		// Assert
+		result.Should().BeTrue(response.Error);
+		body.Should().BeEmpty(because: "a blind primary PDS would be wrong for the list template");
+		response.PrimaryDataSourceName.Should().BeNull(because: "no data source was bound");
+		response.Note.Should().Contain("no data source was bound to 'UsrDemoEntity'",
+			because: "the caller must learn the entity reached the dependencies only");
+	}
+
+	private (bool Result, PageCreateResponse Response, string Body) CreateEntityBoundPage(IPageEntityDataSourceSeeder seeder) {
 		Queue<string> selectResponses = new([
 			$$"""{"success": true, "rows": [{"UId": "{{PackageUId}}"}]}""",
 			"""{"success": true, "rows": []}""",
@@ -372,29 +454,21 @@ public sealed class PageCreateCommandTests
 		string savePayload = null;
 		_applicationClient.When(client => client.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>()))
 			.Do(call => savePayload = call.ArgAt<string>(1));
+		PageCreateCommand command = new(_applicationClient, _serviceUrlBuilder, _catalog, _logger,
+			Substitute.For<Clio.Command.EntitySchemaDesigner.ICaptionCultureResolver>(), dataSourceSeeder: seeder);
 		PageCreateOptions options = new() {
 			SchemaName = "UsrDemo_FormPage",
 			Template = TemplateName,
 			PackageName = "Custom",
 			EntitySchemaName = "UsrDemoEntity"
 		};
-
-		// Act
-		bool result = _command.TryCreatePage(options, out PageCreateResponse response);
-
-		// Assert
-		result.Should().BeTrue(response.Error);
-		response.PrimaryDataSourceName.Should().Be("PDS", because: "a template without a data source gets PDS as primary");
-		response.DataSourceName.Should().Be("PDS", because: "PDS is the data source bound to the entity");
-		string body = JObject.Parse(savePayload)["body"]!.ToString();
-		body.Should().StartWith("define(\"UsrDemo_FormPage\"", because: "the page is saved with a full diff-form body");
-		PageParsedSchemaBody parsed = new PageSchemaBodyParser().Parse(body);
-		JArray modelConfigDiff = (JArray)parsed.ModelConfigDiff;
-		modelConfigDiff.ToString().Should().Contain("\"primaryDataSourceName\": \"PDS\"",
-			because: "components bound to the primary data source need it to be named");
-		modelConfigDiff.ToString().Should().Contain("\"entitySchemaName\": \"UsrDemoEntity\"",
-			because: "PDS must be bound to the requested entity");
+		bool result = command.TryCreatePage(options, out PageCreateResponse response);
+		string body = savePayload is null ? null : JObject.Parse(savePayload)["body"]!.ToString();
+		return (result, response, body);
 	}
+
+	private static string ReadModelConfigDiff(string body) =>
+		((JArray)new PageSchemaBodyParser().Parse(body).ModelConfigDiff).ToString();
 
 	[Test]
 	[Description("A mobile page with entity-schema-name keeps the empty body and says that no data source was added (GH-1839).")]
