@@ -58,7 +58,7 @@ public static class DescribeProcessPrompt {
 		   in those terms. Its describe-only members (`actionStored`, `outputs`, `issues`, `report.caption`,
 		   `report.convertToPdf`, `bindingLevels`, and each value source's `display`) are removed before
 		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
-		   comes with an issue: `outerOnly` fails at run time, `none` copies nothing.
+		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process

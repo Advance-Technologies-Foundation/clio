@@ -493,5 +493,9 @@ public sealed class DescribeProcessToolTests {
 			because: "the prompt narrates the Process parameter group");
 		prompt.Should().Contain("clio warns and ignores them if sent back.",
 			because: "the prompt states the same fallback as the contract, so neither surface claims a resubmitted read-back member is refused or applied");
+		prompt.Should().Contain("`outerOnly` fails at run time, and with `none` the process cannot start.",
+			because: "a Process parameter element whose Files is bound to nothing is rejected by the platform's start-time validation, so the process never runs - it does not copy nothing and succeed");
+		prompt.Should().NotContain("`none` copies nothing",
+			because: "that was the earlier, unmeasured claim");
 	}
 }
