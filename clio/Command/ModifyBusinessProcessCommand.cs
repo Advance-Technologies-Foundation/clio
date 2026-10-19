@@ -214,7 +214,7 @@ namespace Clio.Command;
 // field to change"); but beside another field it drops the block in silence and answers success - the same
 // silent-discard shape - so that part of the edit is lost while nothing says so. And a generic userTask naming
 // ObjectFileProcessingUserTask, which this clio's contract now steers to the new type, builds there an element with
-// no file source that saves without error and fails at run time. The element first ships in 1.6.6.100. From 1.6.6.102
+// no file source that saves without error and fails at run time. The element first ships in 1.6.6.100. From 1.6.6.101
 // it is written in the classic designer's stored form (a [#Lookup.<object>.<id>#] Script record constant,
 // ConnectedObjectId typed Lookup) and describe decodes that formula back to {value, display}, so describing a
 // designer-built record and sending it back holds; 1.6.6.103 also refuses moving the source or the target to another

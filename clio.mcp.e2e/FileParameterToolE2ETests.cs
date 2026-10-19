@@ -41,8 +41,11 @@ public sealed class FileParameterToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
-	/// <summary>The cut that declares File and FileCollection; named in the skip message so a developer knows what to install.</summary>
-	private const string MinimumPackageVersion = "1.6.6.99";
+	/// <summary>
+	/// The create/modify floor this clio enforces (File and FileCollection arrived in 1.6.6.99; the floor rose to
+	/// 1.6.6.103 with the Process file element); named in the skip message so a developer knows what to install.
+	/// </summary>
+	private const string MinimumPackageVersion = "1.6.6.103";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "File process parameter";

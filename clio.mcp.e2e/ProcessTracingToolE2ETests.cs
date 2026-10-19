@@ -37,7 +37,9 @@ public sealed class ProcessTracingToolE2ETests {
 	private const string CreateToolName = CreateBusinessProcessTool.CreateBusinessProcessToolName;
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
-	private const string WrittenAgainst = "1.6.6.99";
+	// The create/modify floor this clio enforces (tracing arrived in 1.6.6.92); a lower value lets the gate pass and the
+	// clio floor refuse, which reads as an Ignore naming a stale version.
+	private const string WrittenAgainst = "1.6.6.103";
 
 	[Test]
 	[Description("Over the real MCP path: a process created with isTracing:true is traced - the build warns about what a traced run stores and when the switch turns itself off, and describe reports the tracing block - and a modify carrying ONLY setTracing enabled:false switches it off, after which describe omits the block (ENG-102111). The switch is a platform user property, not schema metadata, so only a describe on a live stand proves it landed. Needs CrtProcessBuilder 1.6.6.103 on the stand, the create and modify floor.")]
