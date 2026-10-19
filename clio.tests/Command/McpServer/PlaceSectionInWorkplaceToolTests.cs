@@ -136,6 +136,9 @@ public class PlaceSectionInWorkplaceToolTests {
 
 	[TestCase("sectionCode", "section-code")]
 	[TestCase("workplace", "workplace-name")]
+	[TestCase("workplaceType", "workplace-type")]
+	[TestCase("workplace_type", "workplace-type")]
+	[TestCase("type", "workplace-type")]
 	[Description("Rejects a legacy argument spelling with a rename hint instead of dropping it.")]
 	public void PlaceSectionInWorkplace_ShouldRejectALegacyAlias(string legacyName, string canonicalName) {
 		// Arrange
