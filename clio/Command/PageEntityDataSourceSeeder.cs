@@ -60,6 +60,9 @@ internal sealed class PageEntityDataSourceSeeder(
 		JsonObject templateModelConfig;
 		try {
 			IReadOnlyList<PageDesignerHierarchySchema> hierarchy = hierarchyClient.GetParentSchemas(templateUId, packageUId);
+			if (hierarchy.Count == 0) {
+				return Unbound(entitySchemaName, "The template hierarchy is empty");
+			}
 			List<PageSchemaBundlePart> parts = hierarchy
 				.Select(schema => new PageSchemaBundlePart(
 					schema, schema.Body != null ? bodyParser.Parse(schema.Body) : new PageParsedSchemaBody()))
@@ -86,6 +89,9 @@ internal sealed class PageEntityDataSourceSeeder(
 	/// </summary>
 	internal static PageEntityDataSourceSeed BuildFromTemplateModelConfig(
 		JsonObject? templateModelConfig, string entitySchemaName) {
+		if (templateModelConfig is null) {
+			return Unbound(entitySchemaName, "The template's model config is unknown");
+		}
 		JsonObject? dataSources = templateModelConfig?[DataSourcesKey] as JsonObject;
 		string? primary = (templateModelConfig?["primaryDataSourceName"] as JsonValue)?.TryGetValue(out string? name) == true
 			? name

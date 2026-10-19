@@ -385,7 +385,7 @@ A fragment whose marker pairs are all **empty** is rejected for the same reason:
 page unchanged and report `success`. So is a fragment section that the stored body has no marker pair
 for (for example `modelConfigDiff` against a body without `SCHEMA_MODEL_CONFIG_DIFF`): the write-back
 replaces marker pairs, so that content would vanish — read the body with `get-page` and save it with
-`--mode replace`. A page whose stored body is empty (every page `create-page` makes) is appended to as
+`--mode replace`. A page whose stored body is empty (a page `create-page` makes without an entity) is appended to as
 the empty page body with all marker pairs; the fragment is never saved as the whole body.
 
 `incomingOperationCount` and the other `appendProjection` counts speak for `viewConfigDiff` only, so

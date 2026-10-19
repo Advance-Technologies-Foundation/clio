@@ -516,7 +516,8 @@ public sealed class PageCreateToolE2ETests : McpContractFixtureBase {
 			emptyResponse.Error.Should().Contain("contributes no operation",
 				because: "the rejection must say why nothing would be written");
 			appendResponse.Success.Should().BeTrue(because: $"the modelConfigDiff fragment must be appended. Error: {appendResponse.Error}");
-			appendResponse.AppendProjection.IncomingModelConfigDiffOperationCount.Should().Be(2,
+			appendResponse.AppendProjection.Should().NotBeNull(because: "an append reports its projection");
+			appendResponse.AppendProjection!.IncomingModelConfigDiffOperationCount.Should().Be(2,
 				because: "the projection reports the config-diff operations, not only viewConfigDiff");
 			(await File.ReadAllTextAsync(getResponse.Files.BodyFile)).Should().StartWith($"define(\"{schemaName}\"",
 				because: "the fragment is merged into the empty page body, not saved as the whole body");

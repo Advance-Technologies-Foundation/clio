@@ -118,6 +118,40 @@ public sealed class PageEntityDataSourceSeederTests {
 	}
 
 	[Test]
+	[Description("An empty template hierarchy binds no data source and says so instead of adding a blind primary PDS.")]
+	public void BuildSeed_BindsNothingWithWarning_WhenHierarchyIsEmpty() {
+		// Arrange
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(new List<PageDesignerHierarchySchema>());
+		IPageBundleBuilder bundleBuilder = Substitute.For<IPageBundleBuilder>();
+		var seeder = new PageEntityDataSourceSeeder(hierarchyClient, Substitute.For<IPageSchemaBodyParser>(),
+			bundleBuilder);
+
+		// Act
+		PageEntityDataSourceSeed seed = seeder.BuildSeed("tpl-uid", "pkg-uid", Entity);
+
+		// Assert
+		seed.ModelConfigDiff.Should().BeEmpty(
+			because: "with no template to inspect, a blind primary PDS could contradict the template's real shape");
+		seed.DataSourceName.Should().BeNull(because: "nothing was bound");
+		seed.Warning.Should().Contain("hierarchy is empty", because: "the caller must learn the template was not inspected");
+		bundleBuilder.DidNotReceiveWithAnyArgs().Build(default!);
+	}
+
+	[Test]
+	[Description("An unknown (null) template model config binds no data source and says so.")]
+	public void BuildFromTemplateModelConfig_BindsNothingWithWarning_WhenModelConfigIsNull() {
+		// Act
+		PageEntityDataSourceSeed seed = PageEntityDataSourceSeeder.BuildFromTemplateModelConfig(null, Entity);
+
+		// Assert
+		seed.ModelConfigDiff.Should().BeEmpty(because: "null means the template shape is unknown");
+		seed.DataSourceName.Should().BeNull(because: "nothing was bound");
+		seed.Warning.Should().Contain(Entity, because: "the warning names the entity left unbound");
+	}
+
+	[Test]
 	[Description("BuildSeed reads the template's merged model config through the hierarchy and bundle builder.")]
 	public void BuildSeed_UsesTemplateBundleModelConfig() {
 		// Arrange

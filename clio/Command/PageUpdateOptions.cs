@@ -1008,7 +1008,7 @@
 			if (IsAppendMode(options)) {
 				string currentBody = schemaToSave["body"]?.ToString();
 				if (string.IsNullOrWhiteSpace(currentBody)) {
-					// GH-1839: a schema saved with an empty body (every page create-page makes) used to skip the
+					// GH-1839: a schema saved with an empty body (a page create-page makes without an entity) used to skip the
 					// merge and save the FRAGMENT verbatim as the whole body - a modelConfigDiff-only fragment
 					// replaced the page with one line and no define() wrapper. Merge into the empty page instead.
 					currentBody = BuildEmptyReplacingBody(
