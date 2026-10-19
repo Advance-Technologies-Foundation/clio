@@ -537,13 +537,7 @@ internal sealed class WorkplacePlacementService(
 			throw new InvalidOperationException("mode must be 'existing', 'new' or 'none'.");
 		}
 		if (mode == ModeNone) {
-			if (request.Roles is { Count: > 0 }) {
-				throw new InvalidOperationException("mode=none writes nothing, so roles cannot be granted; omit roles.");
-			}
-			if (!string.IsNullOrWhiteSpace(request.WorkplaceType)) {
-				throw new InvalidOperationException(
-					"mode=none writes nothing, so no workplace type is set or checked; omit workplace-type.");
-			}
+			ValidateReportOnly(request);
 			return;
 		}
 		if (string.IsNullOrWhiteSpace(request.WorkplaceName)) {
@@ -563,6 +557,17 @@ internal sealed class WorkplacePlacementService(
 			&& request.RemoveFromMyApplications) {
 			throw new InvalidOperationException(
 				$"The target is '{MyApplicationsWorkplaceName}' itself; pass remove-from-my-applications=false.");
+		}
+	}
+
+	/// <summary>mode=none writes nothing, so an argument that only a write would honour is refused.</summary>
+	private static void ValidateReportOnly(WorkplacePlacementRequest request) {
+		if (request.Roles is { Count: > 0 }) {
+			throw new InvalidOperationException("mode=none writes nothing, so roles cannot be granted; omit roles.");
+		}
+		if (!string.IsNullOrWhiteSpace(request.WorkplaceType)) {
+			throw new InvalidOperationException(
+				"mode=none writes nothing, so no workplace type is set or checked; omit workplace-type.");
 		}
 	}
 
