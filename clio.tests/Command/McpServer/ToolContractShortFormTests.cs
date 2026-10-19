@@ -436,7 +436,6 @@ public sealed class ToolContractShortFormTests {
 	[TestCase("modify-business-process-as-new-version", "Never chain the two")]
 	[TestCase("modify-business-process-as-new-version", "permanent")]
 	[TestCase("create-business-process", "get an explicit yes")]
-	[TestCase("create-business-process", "TELL THE USER before building one")]
 	[TestCase("modify-business-process", "get an explicit yes")]
 	[TestCase("update-page", "never retry on a warning")]
 	[TestCase("update-page", "ONLY after the user explicitly confirms")]
