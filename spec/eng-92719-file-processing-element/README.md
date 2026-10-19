@@ -1,7 +1,7 @@
 # ENG-92719 File processing element and ENG-95984 File process parameter type: analysis index
 
-[ENG-92719](https://creatio.atlassian.net/browse/ENG-92719) File processing element (Story) with its sub-tasks
-[ENG-96505](https://creatio.atlassian.net/browse/ENG-96505) Element readiness and object attachments mode and
+[ENG-92719](https://creatio.atlassian.net/browse/ENG-92719) File processing element (Story) with
+[ENG-96505](https://creatio.atlassian.net/browse/ENG-96505) Element readiness and object attachments mode (a related Task since 2026-10-14, formerly a Sub-task) and ENG-92719's Sub-task
 [ENG-96506](https://creatio.atlassian.net/browse/ENG-96506) Generated report + process parameter modes, and
 [ENG-95984](https://creatio.atlassian.net/browse/ENG-95984) File process parameter type (Task); epic
 [ENG-92704](https://creatio.atlassian.net/browse/ENG-92704) Create BP via AI Toolkit.
@@ -25,14 +25,14 @@ readiness and object attachments mode, then ENG-96506 Generated report + process
 Sub-task. A human merges every PR. With an AI agent writing the code, ENG-95984 File process parameter type takes
 about 7.5-15.5 h of agent time (7-15 h before the 2026-10-13 byte swap) and 4.5-10 h of the owner's time (3-5 working days), and ENG-92719 File processing element
 about 26.5-52.5 h of agent time (+0.5 h from the 2026-10-13 drift) and 15-33.5 h of the owner's time (about 7-10 working days after that); about 2-3 weeks
-from day 0 for both. Six owner questions are open (Q13-Q18): the owner agreed Q1-Q12 on 2026-10-07, Q19 on 2026-10-08 and Q20 on 2026-10-14 (Q7 had been answered by M3; Q11 as Variable, which reverses the first recommendation). None of the open ones is needed before ENG-95984 File process parameter type's package code. Q20 (added 2026-10-13: where the description bytes come from) is agreed as A: trim existing text per tool, reviewer-approved; CL-PT's description edit (CL-2) and CL-OA proceed with it. Of the 28 stand measurements (M27 added 2026-10-14), 11 are
+from day 0 for both. All 20 owner questions are answered: the owner agreed Q1-Q12 on 2026-10-07, Q19 on 2026-10-08, and Q13-Q18 (as recommended) and Q20 on 2026-10-14 (Q7 had been answered by M3; Q11 as Variable, which reverses the first recommendation). Q20 (added 2026-10-13: where the description bytes come from) is agreed as A: trim existing text per tool, reviewer-approved; CL-PT's description edit (CL-2) and CL-OA proceed with it. Of the 28 stand measurements (M27 added 2026-10-14), 11 are
 done, 2 partly, 1 skipped and 14 open. Every measurement that gates PK-PT or PK-OA code is done; the seven that
 still gate code gate PK-RP (M1, M2) or PK-SF (M7, M8, M21, M23, M25). The day-0 decisions come before any code.
 
 Written 2026-10-01; measured on the stand 2026-10-02. This analysis wrote no product code. The probes were built in
 package `Custom` and deleted with their fixtures the same day (open-questions C.7). The documents are on the local clio
-branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q12, Q19 and Q20
-are agreed; Q13-Q18 are open.** PK-PT: draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96 opened
+branch `feature/ENG-92719-process-file-spec` and attached to the four Jira issues. **Status: open. Q1-Q20 are
+agreed (Q13-Q18 on 2026-10-14).** PK-PT: draft PR https://creatio.ghe.com/engineering/crt-process-builder/pull/96 opened
 2026-10-14 (first commit b6dcd2c1, 3424 tests; 3426 at d6ca4d79, 3435 with the gate-3 fixes). Its cut is the number in
 the shared claim list (ENG-92719 comment 550565); 1.6.6.97 was installed once and burned, and 1.6.6.98 was installed and
 superseded the same day (decisions D30). **2026-10-14, stand results on the PT cut:** V0, V1, V3, V4, V5 and V7 pass (V4
@@ -65,7 +65,7 @@ constraints.
 |---|---|
 | **PT** | ENG-95984 File process parameter type (Task) |
 | **FE** | ENG-92719 File processing element (Story) |
-| **OA** | ENG-96505 Element readiness and object attachments mode (Sub-task of FE) |
+| **OA** | ENG-96505 Element readiness and object attachments mode (Task; converted from a Sub-task of FE on 2026-10-14, relates to FE) |
 | **RP** | ENG-96506 Generated report + process parameter modes (Sub-task of FE) |
 | **SF** | NEW Sub-task of FE, "SysFile attachment storage in the Process file element" (key assigned on creation) |
 | **MH** | not created: the conditional Sub-task of PT, "typeFromElement collection mirror leaves its items unbound", waited on measurement M3, and M3 refuted the defect on 2026-10-02 |
@@ -108,13 +108,13 @@ Q1-Q20 are defined in [decisions](eng-92719-file-processing-element-decisions.md
 | 3 | [serialization-capture](eng-92719-file-processing-element-serialization-capture.md) | **The oracle for every "matches a designer-built capture" criterion.** Every metadata key decoded, and the provenance rules measured over 400 stored parameter entries. Which shipped capture each variant is compared with. What is missing: no saved SysFile-mode element exists anywhere. The named exceptions of the comparison rule, and the capture procedure SC-0..SC-4 on the stand. |
 | 4 | [traps](eng-92719-file-processing-element-traps.md) | **T-1..T-68, 59 of them silent (T-8 among them, refuted by M3; T-54 since CrtProcessBuilder 1.6.6.69; T-68 added on 2026-10-02, root-caused and fixed in code by PK-PT on 2026-10-14, and run without the exception on the stand on 1.6.6.97 the same day; its e2e E2E-06 is owed).** Each trap has its builder rule, refusal or test. The banner lists the traps that rest on a source trace only, and the run that settles each one. |
 | 5 | [reuse](eng-92719-file-processing-element-reuse.md) | **What to reuse, mirror or write new.** What comes from core. About twenty constants and seven algorithms that must be mirrored from CrtProcessDesigner, because production code cannot reference `Terrasoft.Configuration`. The four CrtProcessBuilder pieces that must change before reuse. What is genuinely new. |
-| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D30 with options and consequences; 6 of them wait for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
+| 6 | [decisions](eng-92719-file-processing-element-decisions.md) | **The contract.** D1-D30 with options and consequences; none waits for the owner (D2, D3, D5, D22-D25 and D27 were agreed on 2026-10-07/08, D10, D11 and D14-D17 on 2026-10-14, D9 answered by M3). Part D holds the replacement acceptance criteria for FE, OA and RP (D-2..D-4); D-1 points to AC-1..AC-10 of the ENG-95984 File process parameter type plan §1.4; D-5 holds the proposed Sub-tasks. Appendix A is the refusal and notice catalogue; Appendix B is the review log. |
 | 7 | [ENG-95984 File process parameter type plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-plan.md) | **The parameter type.** Replacement AC-1..AC-10, and the binder rules P1/P2/P2-MI/P3/R-M1/R-M2 in one table. Work packages PB/CL/KB with `path:line`. The stand rows W0, V0, SC-0 and V1-V6 with their results of 2026-10-14, the defect V4 found, the estimate, the Definition of Done, and owner items O-1..O-10. |
 | 8 | [ENG-95984 File process parameter type test-plan](../eng-95984-file-parameter-type/eng-95984-file-parameter-type-test-plan.md) | **How the parameter type is tested.** Package (PU), clio (CU), e2e, knowledge (KU) and stand (V0-V8) cases, traced to AC-1..AC-10. The package mocking recipe. The cases that move with an open decision. |
 | 9 | [plan](eng-92719-file-processing-element-plan.md) | **The element.** What the tickets say that is not true (N1-N16), and what exists versus what is missing. The delivery shape and the work packages OA / RP / SF, with files and hours. Stand gates and post-cut proofs, the knowledge records owed, the estimate, and the Definition of Done per issue. |
 | 10 | [test-plan](eng-92719-file-processing-element-test-plan.md) | **How the element is tested.** The harness per repository, and the C# mocking recipes adapted from `C:/Projects/UnitTests`. TC-01..TC-92 traced to the AC, stand scenarios ST-01..ST-08, and designer checks DT-01..DT-04. The methods for M1-M26 and the read-only evidence queries. |
 | 11 | [pr-split](eng-92719-file-processing-element-pr-split.md) | **How the work becomes PRs.** The verdict per repository and its measured basis, and the PRs with exact titles, branches and merge order. Hard edges E1-E10. What must land together and what must not. Version and floor rules, contingencies X1-X8, Jira link corrections, and the review / merge / stand protocol. |
-| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q20 for the owner, each with a recommendation, and 28 stand measurements with recipes and status (M27 added 2026-10-14). What was measured on 2026-10-01 and 2026-10-02. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
+| 12 | [open-questions](eng-92719-file-processing-element-open-questions.md) | **What is still open.** Q1-Q20 for the owner, each with options and a recommendation, all agreed (Q13-Q18 on 2026-10-14), and 28 stand measurements with recipes and status (M27 added 2026-10-14). What was measured on 2026-10-01 and 2026-10-02. The 37 contradictions found during the research and how each was resolved; 7 are still open. |
 
 ### Where each part of the request is answered
 
@@ -416,12 +416,12 @@ changes, are in [open-questions](eng-92719-file-processing-element-open-question
 | Q10 | How a file collection is declared | `type: FileCollection`, read back as `FileCollection` **Agreed 2026-10-07.** | PK-PT |
 | Q11 | Default direction of a FileCollection | Variable (revised from Out after the 2026-10-07 recount) **Agreed 2026-10-07.** | PK-PT |
 | Q12 | Binder policy | P3 resets a stale parent with a notice; P2 and R-M2 apply only to file-consuming targets **Agreed 2026-10-07.** | PK-PT |
-| Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check | PK-OA |
-| Q14 | Naming bundle of the block | as proposed, including `numberOfRecords` defaulting to 50 (not "all" as in `readData`) | PK-OA |
-| Q15 | `ResultActionType` when `action` is omitted on create | inferred from `saveTo`, always written | PK-OA |
-| Q16 | Record scope and empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving and Word elements that have no selecting filter (to confirm knowing ENG-102537's "a NOTICE, never a refusal" precedent, open-questions Q16 note of 2026-10-13) | PK-OA |
-| Q17 | Storage policy details | the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override | PK-OA |
-| Q18 | FastReport printables | refused in this work | PK-RP |
+| Q13 | Element token and variant discriminator | `fileProcessing` (alias `processFile`); the group present is the variant; `source` is an optional check **Agreed 2026-10-14.** | PK-OA |
+| Q14 | Naming bundle of the block | as proposed, including `numberOfRecords` defaulting to 50 (not "all" as in `readData`) **Agreed 2026-10-14.** | PK-OA |
+| Q15 | `ResultActionType` when `action` is omitted on create | inferred from `saveTo`, always written **Agreed 2026-10-14.** | PK-OA |
+| Q16 | Record scope and empty-filter policy | `attachments.recordId` / `report.recordId`; refuse saving and Word elements that have no selecting filter, notice for Object + use in process **Agreed 2026-10-14**, ENG-102537's "a NOTICE, never a refusal" precedent weighed and not followed (open-questions Q16). | PK-OA |
+| Q17 | Storage policy details | the designer flag is not read for behaviour; no `linkColumn: "none"`; no SysFile override **Agreed 2026-10-14.** | PK-OA |
+| Q18 | FastReport printables | refused in this work **Agreed 2026-10-14.** | PK-RP |
 | Q19 | Name of the new guide | `process-files` **Agreed 2026-10-08.** | KB-PT |
 | Q20 | Where the description bytes for PT and OA come from (added 2026-10-13) | trim existing text per tool, reviewer-approved, measured by lowering the ceiling; not a ceiling raise, not the type lists moved to guidance **Agreed 2026-10-14.** | CL-PT's description edit (CL-2) and CL-OA; no package code |
 

@@ -4798,16 +4798,17 @@ stories:
       has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
       ENG-95984.
   # --- eng-92719-file-processing-element (ENG-92719 File processing element) - added 2026-10-14 ---
-  # The Story is delivered through its Sub-tasks: story 1 = ENG-96505 Element readiness and object attachments mode,
-  # story 2 = ENG-96506 Generated report + process parameter modes, story 3 = the new Sub-task "SysFile attachment
-  # storage in the Process file element". Stories 4 and 5 are the two side Sub-tasks "Refuse collection parameters as
+  # The Story is delivered through story 1 = ENG-96505 Element readiness and object attachments mode (a Task since
+  # 2026-10-14: converted from a Sub-task and linked to ENG-92719 with "relates to") and ENG-92719's Sub-tasks: story 2 =
+  # ENG-96506 Generated report + process parameter modes, story 3 = the new Sub-task "SysFile attachment storage in
+  # the Process file element". Stories 4 and 5 are the two side Sub-tasks "Refuse collection parameters as
   # filter values" and "Builder-made user tasks do not set SerializeToDB". The Sub-tasks of stories 3-5 are NOT created
   # in Jira as of 2026-10-14, so their jira field is empty ("") until each is created and its key is written here. One
   # crt-process-builder -> clio -> clio-knowledge triple per story.
   # Status rule of this block: ready-for-dev only when the story's Jira issue exists and nothing gates its code (no open
-  # owner answer, slot or stand measurement); deferred otherwise. So all five are deferred: stories 1-2 until the owner
-  # answers Q13-Q18 that their "Gating" tables name, stories 3-5 for their slots and measurements. A story moves to
-  # ready-for-dev in the commit that records the last answer it waits for.
+  # owner answer, slot or stand measurement); deferred otherwise. Story 1 moved to ready-for-dev when the owner agreed
+  # Q13-Q18, which its "Gating" table names, on 2026-10-14; story 2 stays deferred for M1 (+ M2) and O-TP1, stories
+  # 3-5 for their slots and measurements. A story moves to ready-for-dev in the commit that records the last answer it waits for.
   # Merge order: this BMAD set is the docs-only clio PR titled "ENG-92719 File processing element". It merges after the
   # ENG-95984 BMAD PR https://github.com/Advance-Technologies-Foundation/clio/pull/1811, which appends its rows at this
   # same place in this file (this PR merges master in after that PR merges), and before the Story's first package
@@ -4819,7 +4820,7 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
-    status: deferred
+    status: ready-for-dev
     jira: ENG-96505
     file: spec/stories/story-eng-92719-file-processing-element-1.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
@@ -4831,12 +4832,13 @@ stories:
       - story-eng-92719-file-processing-element-2
       - ENG-95985
     note: >-
-      ENG-96505 Element readiness and object attachments mode. OA-1..OA-12 replace the Jira acceptance criteria (agreed
+      ENG-96505 Element readiness and object attachments mode (a Task that relates to ENG-92719 since 2026-10-14,
+      converted from a Sub-task). OA-1..OA-12 replace the Jira acceptance criteria (agreed
       2026-10-07). The dependency on ENG-95984 File process parameter type is delivery order, not function (ADR D23:
       relates): the package PR merges only after ENG-95984's clio PR (it carries the ManagerMap arm for fileprocessing),
       and this story's clio PR only after ENG-95984's knowledge generation is PUBLISHED (the first
-      name=process-files). Owner questions Q13-Q17 are open and gate the package code AND the acceptance rows OA-1, OA-4
-      (Q13), OA-6 (Q17), OA-7 (Q14, Q16) and OA-9 (Q16), which are pasted into Jira only after the answers; the stand
+      name=process-files). Owner questions Q13-Q17 were agreed as recommended on 2026-10-14, so the package code and the
+      acceptance rows OA-1, OA-4 (Q13), OA-6 (Q17), OA-7 (Q14, Q16) and OA-9 (Q16) no longer wait on them; the stand
       gates M10, M11 (a)(b),
       M13, M14 and M17-Q7 were done on 2026-10-02; M26 gates only a guide sentence and a knowledge record. In the
       archive's commit the clio PR adds the fileProcessing key set (ENG-103085 Refuse element and block keys the
@@ -4865,8 +4867,8 @@ stories:
       ENG-96506 Generated report + process parameter modes. RP-1..RP-10 replace the Jira acceptance criteria (agreed
       2026-10-07). Functionally blocked by ENG-95984 File process parameter type (link L2: File and FileCollection,
       dotted paths, BindCollection) and by story 1 (link L3: the handler and the variant registry). Owner questions Q18
-      (FastReport, recommended refused), Q14 and Q16 are open and gate the package code AND the acceptance rows RP-1 and
-      RP-4, which are pasted into Jira only after the answers. Stand measurement M1 (+ M2) is recorded before the package
+      (FastReport refused), Q14 and Q16 were agreed as recommended on 2026-10-14, so the package code and the
+      acceptance rows RP-1 and RP-4 no longer wait on them. Stand measurement M1 (+ M2) is recorded before the package
       PR leaves draft and decides the single-file path. A floor raise that lengthens the version literal costs a byte
       in three descriptions; the budget test catches it at that cut and a reviewer-approved trim pays it (Q20 = A). Two
       variant registrations, one commit group each, so that contingency X2 can cherry-pick the Report half if the

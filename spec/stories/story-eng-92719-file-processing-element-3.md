@@ -195,8 +195,8 @@ here, because this story is the last of its main chain. ENG-92719 closes when al
       PR opened.
 - [ ] ENG-96505 Element readiness and object attachments mode (story 1), ENG-96506 Generated report + process parameter
       modes (story 2) and this Sub-task done, each when its own knowledge PR merged. Stories 4 and 5 do not gate it.
-- [ ] Jira: the Story's acceptance criteria replaced with FE-1..FE-6 (FE-1 after Q13 is answered, and amended if SF
-      narrowed: the PRD's open item "What FE-1 means if SF narrows"); the Sub-tasks' criteria replaced (stories 1-3);
+- [ ] Jira: the Story's acceptance criteria replaced with FE-1..FE-6 (FE-1 as agreed with Q13 on 2026-10-14, amended if SF
+      narrowed: the PRD's open item "What FE-1 means if SF narrows"); the criteria of the issues of stories 1-3 replaced;
       the D23 re-links L1-L5 done.
 - [ ] Each FE row traceable to a test or a guide section (the test plan's traceability table): FE-1 and FE-2 (the OA and
       RP e2e), FE-3 (`process-files`, the D17 refusal), FE-4 (ENG-95984 plus the value-source e2e), FE-5 (the three
