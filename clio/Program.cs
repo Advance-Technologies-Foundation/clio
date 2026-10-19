@@ -16,6 +16,7 @@ using Clio.Command.McpServer;
 using Clio.Command.PackageCommand;
 using Clio.Command.SqlScriptCommand;
 using Clio.Command.Branding;
+using Clio.Command.Completion;
 using Clio.Command.Theming;
 using Clio.Command.TIDE;
 using Clio.Command.Update;
@@ -284,6 +285,7 @@ internal class Program {
 		typeof(LinkWorkspaceWithTideRepositoryOptions),
 		typeof(CheckWebFarmNodeConfigurationsOptions),
 		typeof(CustomizeDataProtectionCommandOptions),
+		typeof(CompletionOptions),
 		typeof(GetAppHashCommandOptions),
 		typeof(MergeWorkspacesCommandOptions),
 		typeof(GenerateProcessModelCommandOptions),
@@ -790,6 +792,7 @@ internal class Program {
 			RegenerateIdentitySigningKeyOptions opts => Resolve<RegenerateIdentitySigningKeyCommand>(opts).Execute(opts),
 			CheckAuthCodeFlowOptions opts => Resolve<CheckAuthCodeFlowCommand>(opts).Execute(opts),
 			RegisterSsoProviderOptions opts => Resolve<RegisterSsoProviderCommand>(opts).Execute(opts),
+			CompletionOptions opts => Resolve<CompletionCommand>(opts).Execute(opts),
 			var _ => 1
 		};
 	};
@@ -1486,6 +1489,15 @@ internal class Program {
 	public static int Main(string[] args){
 		bool loggerStarted = false;
 		try {
+			// Tab completion runs before every Main-side argv rewrite: the --log extraction and the
+			// --debug/--ts strip below would silently delete tokens the shell passed as words-before,
+			// so `clio --debug <TAB>` would complete a different level than the user is typing.
+			// ExecuteCommands answers __complete before DI, the logger, and the update check, so this
+			// stays instant and writes nothing but the completion list to stdout.
+			if (args.Length > 0 && string.Equals(args[0], "__complete", StringComparison.OrdinalIgnoreCase)) {
+				return ExecuteCommands(args);
+			}
+
 			string logTarget = ExtractLogTarget(ref args);
 
 			string[] clearArgs = args.Where(x => x.ToLower() != "--debug" && x.ToLower() != "--ts").ToArray();
@@ -1653,6 +1665,12 @@ internal class Program {
 	/// <param name="additionalRegistrations">Optional registrations applied after the default Clio services.</param>
 	/// <returns>Exit code from the executed command, or a parse error code.</returns>
 	internal static int ExecuteCommands(string[] args, Action<IServiceCollection> additionalRegistrations){
+		// Tab-completion meta-command is answered before any side effects (update check, DI bootstrap,
+		// feature-toggle gate) so shells get instant, network-free completions on every platform.
+		if (Clio.Command.Completion.CommandLineCompletion.TryHandle(args, out int completionExitCode)) {
+			return completionExitCode;
+		}
+
 		CreatioEnvironment creatioEnv = new();
 		const string helpFolderName = "help";
 		string envPath = creatioEnv.GetAssemblyFolderPath();

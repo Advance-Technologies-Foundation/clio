@@ -323,6 +323,7 @@ internal sealed class CommandHelpCatalog {
 	private static readonly HashSet<string> GeneralCommands =
 		[
 			"assert",
+			"completion",
 			"config",
 			"healthcheck",
 			"register",

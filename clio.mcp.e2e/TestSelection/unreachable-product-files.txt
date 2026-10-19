@@ -56,6 +56,7 @@ clio/Command/CheckWindowsFeatureCommand.cs
 clio/Command/ClearLocalEnvironmentCommand.cs
 clio/Command/CloneEnvironmentCommand.cs
 clio/Command/CompileWorspaceCommand.cs
+clio/Command/Completion/CommandLineCompletion.cs
 clio/Command/ComponentRegistryRefreshCommand.cs
 clio/Command/CompressAppCommand.cs
 clio/Command/CompressPackageCommand.cs
