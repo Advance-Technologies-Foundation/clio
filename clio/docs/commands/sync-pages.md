@@ -283,8 +283,9 @@ Baseline maintenance after a successful save:
   write skips the check instead of reporting a false conflict.
 
 Pages with neither a `checksum` nor a baseline (no prior MCP `get-page`, legacy `meta.json`, or a
-different environment) are saved without the check — fully backward compatible. A pinned save that no
-local baseline corroborates still runs the check, and says so in that page's warnings.
+different environment) are saved without the check, and that page's warnings say the check did not run
+and why, unless the page sets `force: true`. A pinned save that no local baseline corroborates still runs
+the check, and says so in that page's warnings.
 
 ## Error Handling
 

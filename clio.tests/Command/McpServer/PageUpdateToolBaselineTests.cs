@@ -227,6 +227,80 @@ public sealed class PageUpdateToolBaselineTests
 	}
 
 	[Test]
+	[Description("update-page with no baseline, no checksum and no selector saves and warns in the response that the external-modification check did not run.")]
+	public void UpdatePage_ShouldSaveAndWarnThatDetectionDidNotRun_WhenNoBaselineExists() {
+		// Arrange — no meta.json on the mock file system.
+		StubChecksumByUId();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: "the warning never refuses the save");
+		response.Warnings.Should().Contain(w => w.Contains("External-modification detection did not run"),
+			because: "the caller must learn the save was unchecked");
+	}
+
+	[Test]
+	[Description("A failed update-page with an unreadable baseline, no checksum and no selector keeps the unreadable-baseline warning and carries no did-not-run warning.")]
+	public void UpdatePage_ShouldNotWarnThatDetectionDidNotRun_WhenTheSaveFails() {
+		// Arrange
+		_fileSystem.AddFile(MetaPath, new MockFileData("{ this is not json"));
+		StubChecksumByUId();
+		StubFailedSave();
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the server refused the save");
+		response.Warnings.Should().Contain(w => w.Contains("could not be read"),
+			because: "the other guard warnings stay on a failed save");
+		response.Warnings.Should().NotContain(w => w.Contains("External-modification detection did not run"),
+			because: "no write proceeded");
+	}
+
+	[Test]
+	[Description("An update-page whose save request gets no parsed reply keeps the did-not-run warning, because the write may have landed.")]
+	public void UpdatePage_ShouldKeepTheDidNotRunWarning_WhenTheSaveOutcomeIsUnknown() {
+		// Arrange
+		StubChecksumByUId();
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("<html>Gateway Timeout</html>");
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(CreateArgs()).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the reply could not be parsed");
+		response.Warnings.Should().Contain(w => w.Contains("External-modification detection did not run"),
+			because: "the write may have landed unchecked");
+	}
+
+	[Test]
+	[Description("A failed update-page with target-package-uid and no baseline carries no did-not-run warning.")]
+	public void UpdatePage_ShouldNotWarnThatDetectionDidNotRun_WhenASelectorSaveFails() {
+		// Arrange
+		StubChecksumByUId();
+		StubFailedSave();
+		PageUpdateArgs args = CreateArgs() with { TargetPackageUId = "99999999-8888-7777-6666-555555555555" };
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
+
+		// Assert
+		response.Success.Should().BeFalse(because: "the save did not land");
+		(response.Warnings ?? []).Should().NotContain(w => w.Contains("External-modification detection did not run"),
+			because: "no write proceeded");
+	}
+
+	private void StubFailedSave() =>
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": false, "errorInfo": {"message": "Save failed"}}""");
+
+	[Test]
 	[Description("update-page with force=true must overwrite despite a stale baseline and refresh it afterwards.")]
 	public void UpdatePage_ShouldOverwriteAndRefreshBaseline_WhenForceTrue() {
 		// Arrange
