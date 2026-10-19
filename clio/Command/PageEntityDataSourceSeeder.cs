@@ -92,8 +92,8 @@ internal sealed class PageEntityDataSourceSeeder(
 		if (templateModelConfig is null) {
 			return Unbound(entitySchemaName, "The template's model config is unknown");
 		}
-		JsonObject? dataSources = templateModelConfig?[DataSourcesKey] as JsonObject;
-		string? primary = (templateModelConfig?["primaryDataSourceName"] as JsonValue)?.TryGetValue(out string? name) == true
+		JsonObject? dataSources = templateModelConfig[DataSourcesKey] as JsonObject;
+		string? primary = (templateModelConfig["primaryDataSourceName"] as JsonValue)?.TryGetValue(out string? name) == true
 			? name
 			: null;
 		if (!string.IsNullOrWhiteSpace(primary) && dataSources?[primary] is JsonObject primarySource) {
