@@ -220,9 +220,9 @@ namespace Clio.Command;
 // designer-built record and sending it back holds; 1.6.6.103 also refuses moving the source or the target to another
 // object while another element reads CreatedObjectFileIds, as the designer does. 1.6.6.100-1.6.6.102 were never
 // released.
-// Raised to 1.6.6.108 by ENG-96506 for the Generated report and Process parameter variants of the fileProcessing
+// Raised to 1.6.6.109 by ENG-96506 for the Generated report and Process parameter variants of the fileProcessing
 // element; the rationale is recorded once, on CreateBusinessProcessOptions, and holds here unchanged.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.108",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.109",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

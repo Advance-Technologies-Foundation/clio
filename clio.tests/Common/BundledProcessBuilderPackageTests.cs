@@ -70,12 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>e63ed3a4</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.108</c>) on branch <c>feature/ENG-96506-process-file-report-and-parameter</c>, which
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>8a7c6099</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.109</c>) on branch <c>feature/ENG-96506-process-file-report-and-parameter</c>, which
 	/// was merged from <c>main</c> at <c>4a277295</c> (1.6.6.104), so the cut carries everything 1.6.6.104 shipped.
 	/// This cut was made by <c>rebundle-process-builder.ps1</c>, which captured the commit reference itself. The
 	/// first cut of this branch, 1.6.6.105, took the manual route because the script refuses a descriptor that is already
-	/// restamped and that restamp had been committed first; 1.6.6.106, 1.6.6.107 and this cut ran the script before the restamp commit.
+	/// restamped and that restamp had been committed first; 1.6.6.106 to 1.6.6.108 and this cut ran the script before the restamp commit.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -88,7 +88,7 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.104 (1.6.6.105, 1.6.6.106 and 1.6.6.107 were its earlier, superseded cuts): the Generated report (<c>report</c>) and Process parameter
+	/// <para>What this cut carries over 1.6.6.104 (1.6.6.105 to 1.6.6.108 were its earlier, superseded cuts): the Generated report (<c>report</c>) and Process parameter
 	/// (<c>files</c>) variants of the Process file element's <c>fileProcessing</c> block (ENG-96506), built, modified
 	/// and described like the Object attachments variant, with the generic <c>userTask</c> route refused for both
 	/// task schemas, plus the final-review fixes (clearFilter refused on a missing printable, the temporary-files
@@ -96,13 +96,14 @@ public class BundledProcessBuilderPackageTests {
 	/// unbound-Files notice), and the core-reuse fixes (only the designer's text types as the file-name column,
 	/// describe naming a printable of no object and a deleted file-name column as run-time failures, an exact
 	/// printable-type match, one meta-path decoder, the file filters' date trimming following ConsiderTimeInFilter, the
-	/// sort direction parsed as the run time parses it), and the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id).
-	/// 1.6.6.108 is also the create/modify floor clio enforces. What earlier cuts carried is in this
+	/// sort direction parsed as the run time parses it), and the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id, the generic mapping route refusing a nested
+	/// collection source, and describe naming each nested level's run-time outcome).
+	/// 1.6.6.109 is also the create/modify floor clio enforces. What earlier cuts carried is in this
 	/// file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT run under <c>-SkipTests</c>. It was produced by <c>rebundle-process-builder.ps1</c> from a
-	/// clean tree at the producing commit. The script ran the package suite itself (net472: 4219 passed, 0 failed),
-	/// and the suite had passed on that commit on both configurations before the cut - 4219 passed, 0 failed, on
+	/// clean tree at the producing commit. The script ran the package suite itself (net472: 4232 passed, 0 failed),
+	/// and the suite had passed on that commit on both configurations before the cut - 4232 passed, 0 failed, on
 	/// <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a previous one. That matters
 	/// beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it on the
 	/// manual route) is the ONE path that can reach the coarse failure the two security counts below exist to
@@ -182,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"1F89F1FE8967E004775F3472EADE3488B6587A0A232C9A0E008A57EAA6315B9C";
+		"28884A07C6F1FA0EC5B7A4C8B3CCD054906B93952FAF619568D8C34BB656842A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -210,12 +211,12 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.108";
+	private const string ExpectedArchiveVersion = "1.6.6.109";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
-	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.108 the
-	/// script captured it (the descriptor restamp is the child commit <c>4e08ab4f</c>).
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.109 the
+	/// script captured it (the descriptor restamp is the child commit <c>b6cf6f47</c>).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -223,7 +224,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "e63ed3a4544f7ccf448bc834e7ba77a81c646fbd";
+	private const string ExpectedProducingCommit = "8a7c6099b6f7db7b0f1d0018bd92c584f7ee5c35";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -249,7 +250,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792485434000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792489594000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
