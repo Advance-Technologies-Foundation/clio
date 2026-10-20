@@ -9,7 +9,7 @@ processing element, which it now "relates to"; epic ENG-92704 Create BP via AI T
 D20, D21, O5; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Status**: review (package #97, clio #1841 and knowledge #295 merged 2026-10-19, follow-ups #99 and #1846 the same
-day; open boxes: OA-2, OA-11, OA-12; tasks OA.12, OA.13 and "Knowledge records and status"; Definition of Done:
+day; open boxes: OA-2, OA-11, OA-12; tasks OA.0, OA.12, OA.13 and "Knowledge records and status"; Definition of Done:
 clio items 3, 7 and 8, Process items 2-7. Each open box names its reason)
 **Size**: L (about 15.5-27.5 h of AI-agent time and 5.5-13 h of the owner's time; about 4-6 working days of calendar;
 the package PR is estimated at 6-6.8k added lines, the largest of the cycle)
@@ -156,13 +156,13 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
 
 **Stand (before code)**
 
-- [x] **OA.0** M10, M11 (a)(b), M14 and M17-Q7 are done (2026-10-02); what remains is M26 (a designer-built probe;
+- [ ] **OA.0** M10, M11 (a)(b), M14 and M17-Q7 are done (2026-10-02); what remains is M26 (a designer-built probe;
   gates the guide sentence and the record, not code) and the fixture `UsrFpOaDesignerFixture` that OA.11 reads: process
   in package `Custom`, caption "FP OA designer fixture", built once by the user and never run; a Lookup parameter
   `PInvoice` -> Invoice; F1 = Process file, Object attachments, `Account address` (SysFile storage, nothing else set);
   F2 = Generated report, printable `Invoice`, filter Id = `PInvoice`, Save to object attachments -> Invoice's attachment
   object, record = `PInvoice`; Start -> F1 -> F2 -> End. Each write after the user's go-ahead.
-  Evidence: `eng-96505-stand-handoff.md`: M26 measured 2026-10-15 on 1.6.6.100 (ST-01 run trace: `ObjectFiles` holds the
+  Not verifiable from tracked files: the only record is the untracked working file `eng-96505-stand-handoff.md`: M26 measured 2026-10-15 on 1.6.6.100 (ST-01 run trace: `ObjectFiles` holds the
   source locators); `UsrFpOaDesignerFixture` built in the designer 2026-10-15 07:51 UTC (UId
   33c13bf7-ae2d-4982-ac12-ec8ebc9d4406). The fixture was later removed with the stand's Custom package (clio #1846).
 
@@ -538,7 +538,8 @@ an approval.
 - [x] Full unit suite green: `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit" < /dev/null` (four
       modules touched), quoted as `Validated:` in the PR description.
       Evidence: #1841 "Validation": `dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit"` at
-      `e4d471042`, 17325 passed, 0 failed, 25 skipped, plus a `Validated:` line.
+      `e4d471042`, 17325 passed, 0 failed, 25 skipped, quoted under Validation; the `Validated:` line itself quotes the
+      targeted run (13208), not the full suite.
 - [x] `ProcessFileElementToolE2ETests` and the must-stay-green fixtures run against the stand on the cut: Passed,
       Ignored = 0, recorded per fixture in the PR description.
       Evidence: #1841 "Validation": stand d_krestov_n, 1.6.6.103, 73/73 passed, 0 skipped, per fixture

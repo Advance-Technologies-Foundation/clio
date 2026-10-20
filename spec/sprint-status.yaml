@@ -4821,7 +4821,7 @@ stories:
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
     # review, not done: package, clio and knowledge PRs merged 2026-10-19, but the story file's open boxes remain
-    # (OA-2, OA-11, OA-12; tasks OA.12, OA.13, "Knowledge records and status"; DoD clio 3, 7, 8 and Process 2-7).
+    # (OA-2, OA-11, OA-12; tasks OA.0, OA.12, OA.13, "Knowledge records and status"; DoD clio 3, 7, 8 and Process 2-7).
     status: review
     jira: ENG-96505
     file: spec/stories/story-eng-92719-file-processing-element-1.md
@@ -4846,8 +4846,8 @@ stories:
       archive's commit the clio PR adds the fileProcessing key set (ENG-103085 Refuse element and block keys the
       process builder would drop silently) and the fileProcessing call-shape entry; the description bytes come from a
       reviewer-approved trim (Q20 = A). Status convention: in-progress when the clio draft opens, review when it leaves
-      draft, done carried by story 2's clio PR and never pushed after an approval; this story's clio PR carries the
-      done flip of story-eng-95984-file-parameter-type-1.
+      draft, and done only once its Definition of Done has no open box (16 are open, named in the story file);
+      story-eng-95984-file-parameter-type-1 stays at review for the same reason, and is not flipped here.
 
   - id: story-eng-92719-file-processing-element-2
     title: "Generated report and Process parameter variants of the Process file element"

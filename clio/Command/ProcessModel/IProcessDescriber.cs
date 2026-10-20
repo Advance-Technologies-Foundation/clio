@@ -2331,8 +2331,8 @@ public sealed class DescribedFileProcessing {
 	/// sort or filter column the attachment object lacks, hidden sort entries, an unset, bound or invalid action, a
 	/// record scope that does not read back; for a Generated report, a missing or FastReport printable and an MS Word
 	/// printable with <c>separateReports</c> <c>false</c>; for a Process parameter, <c>bindingLevels</c>
-	/// <c>outerOnly</c> or <c>none</c> and a <c>Files</c> binding that would not resubmit as stored. <c>null</c> when
-	/// there are none.
+	/// <c>outerOnly</c> or <c>none</c>, a <c>Files</c> binding that would not resubmit as stored, and a level bound to
+	/// a source nested inside another collection. <c>null</c> when there are none.
 	/// </summary>
 	[JsonPropertyName("issues")]
 	public List<string> Issues { get; set; }
