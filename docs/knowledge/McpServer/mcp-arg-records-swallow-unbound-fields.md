@@ -4,6 +4,8 @@ applies-to:
   - clio/Command/McpServer/Tools/SchemaSyncTool.cs
   - clio/Command/McpServer/Tools/GenerateSourceCodeTool.cs
   - clio/Command/McpServer/Tools/McpToolArgumentSupport.cs
+  - clio/Command/McpServer/Tools/EntitySchemaTool.cs
+  - clio/Command/McpServer/Tools/ColumnPayloadFieldContract.cs
 ticket: GH-1303
 date: 2026-09-03
 ---
@@ -37,3 +39,14 @@ Note the second-order trap: on a rejection, do not echo the offending operation 
 tells the caller to resubmit it verbatim — `SchemaSyncTool` tracks
 `BatchExecutionState.FailedOperationIsResubmittableVerbatim` to keep a field-shape rejection out of
 `resume-plan.operations`.
+
+The column payloads are the nested case of the same trap (ENG-102218): `ColumnModificationArgsBase` (behind
+`update-entity-schema` operations, `modify-entity-schema-column` and `sync-schemas` `update-operations`) and
+`CreateEntitySchemaColumnArgs` (behind `create-entity-schema` / `create-lookup` columns and `sync-schemas`
+`columns`) had no bag at all, so `requird: true` added a column that was not required. They now carry a bag
+that `ColumnPayloadFieldContract` rejects with the nearest known field. Two placement rules are easy to break:
+the check must run before `ColumnIdentityContract.RequireColumnIdentity`, or a lone `colum-name` is reported
+as "missing the target column" instead of by name; and in `sync-schemas` it must run in the shape-validation
+chain, before the convergence read, because `ReconcileUpdateOperations` drops an already-satisfied entry and
+the unknown field would go with it unreported. The suggestion service is constructor-injected, so the refusal
+runs before the DataForge lookup and the command and does not depend on the named environment existing.

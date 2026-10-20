@@ -412,7 +412,7 @@ public sealed class EntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		CreateEntitySchemaColumnArgs[] columns = [
 			new("UsrSortOrder", "Integer", Localizations("Sort order"))
 		];
@@ -535,7 +535,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
@@ -583,7 +583,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
@@ -628,7 +628,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
@@ -657,7 +657,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<UpdateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.UpdateEntitySchema(new UpdateEntitySchemaArgs(
@@ -699,7 +699,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -770,7 +770,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(
@@ -796,7 +796,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -833,7 +833,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -874,7 +874,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -909,7 +909,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -943,7 +943,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -976,7 +976,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
@@ -1005,7 +1005,7 @@ public sealed class EntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(resolvedCommand);
-		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = tool.ModifyEntitySchemaColumn(new ModifyEntitySchemaColumnArgs(
