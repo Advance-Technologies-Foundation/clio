@@ -32,10 +32,14 @@ namespace Clio.Mcp.E2E;
 /// storage), the record scope is compiled into a filter the real filter service writes, and describe reads all of
 /// it back from a real saved schema. Every unit suite constructs these in C#, so a renamed member would leave them
 /// green.</para>
-/// <para>Two cases read the designer-built fixture <c>UsrFpOaDesignerFixture</c> (plan section 5.1, OA.0 / OA.11):
-/// they are Ignored, with the build instructions, when the stand does not carry it. Every other test builds its own
-/// processes and removes them, callers before their callees, in <c>finally</c>. Strictly sequential: schema writes in
-/// a parallel burst take a .NET Framework stand's app pool down.</para>
+/// <para>Cases reading the designer-built fixture <c>UsrFpOaDesignerFixture</c> (plan section 5.1, OA.0 / OA.11)
+/// are Ignored, with the build instructions, when the stand does not carry it. The SysFile storage cases (ENG-103937)
+/// have their own floor, 1.6.6.111, and are Ignored below it: an object without an attachment object of its own keeps
+/// its files in SysFile, linked by <c>RecordId</c>, and the record scope on that plain-Guid column takes the designer's
+/// shape per record object - a lookup <c>In</c> filter for an object with a primary display column (City), a Guid
+/// compare for one without (Account address). Every other test builds its own processes and removes them, callers
+/// before their callees, in <c>finally</c>. Strictly sequential: schema writes in a parallel burst take a .NET
+/// Framework stand's app pool down.</para>
 /// </summary>
 [TestFixture]
 [AllureNUnit]
@@ -73,9 +77,6 @@ public sealed class ProcessFileElementToolE2ETests {
 	/// <summary>An object with no attachment object of its own, so its files live in SysFile storage (TC-17).</summary>
 	private const string SysFileRecordObject = "AccountAddress";
 
-	/// <summary>The fragment of the D15 refusal every SysFile path raises until Sub-task SF lifts it.</summary>
-	private const string SysFileRefusalFragment = "SysFile storage, which this version does not support yet";
-
 	/// <summary>The notice every record taken from the process gets (<c>FileProcessingRecordRules.MappedRecordNotice</c>).</summary>
 	private const string MappedRecordNotice = "may be empty at run time";
 
@@ -96,6 +97,12 @@ public sealed class ProcessFileElementToolE2ETests {
 
 	/// <summary>SysSchema - the template <c>L9</c> of a schema-lookup parameter.</summary>
 	private const string SysSchemaUId = "6c7394db-06ff-4050-91ef-8278e21dce15";
+
+	/// <summary>The SysFile floor: 1.6.6.111 writes SysFile storage; named in the skip message.</summary>
+	private const string SysFileMinimumPackageVersion = "1.6.6.111";
+
+	/// <summary>An object with no attachment object of its own and a primary display column (Name): a lookup scope.</summary>
+	private const string SysFileLookupRecordObject = "City";
 
 	#region Methods: Tests - create and describe
 
@@ -606,43 +613,10 @@ public sealed class ProcessFileElementToolE2ETests {
 		}
 	}
 
-	[TestCase("source")]
-	[TestCase("target")]
-	[Description("TC-I-17: an object with no attachment object of its own (AccountAddress, SysFile storage) is refused as the attachments.object source and as the saveTo.object target with the D15 text - SysFile storage, which this version does not support yet - and nothing is built.")]
-	[AllureTag(CreateToolName)]
-	[AllureName("create-business-process refuses SysFile storage on either side")]
-	public async Task CreateBusinessProcess_Should_RefuseSysFileStorage(string side) {
-		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartAsync();
-		List<string> created = [];
-		try {
-			string processName = NewProcessName("SysFile");
-			string block = side == "source"
-				? $$"""{ "attachments": { "object": "{{SysFileRecordObject}}" } }"""
-				: $$"""
-					{ "attachments": { "object": "Contact", "recordId": { "processParameter": "ContactRef" } },
-					  "saveTo": { "object": "{{SysFileRecordObject}}", "recordId": { "processParameter": "AnyId" } } }
-					""";
-
-			// Act
-			CallToolResult callResult = await CreateAsync(context, created, processName,
-				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement(block))));
-
-			// Assert
-			ShouldBeRefused(callResult, $"a SysFile {side} is not written until Sub-task SF");
-			string log = LogText(callResult);
-			log.Should().Contain(SysFileRefusalFragment, because: "the refusal is the D15 text");
-			log.Should().Contain(SysFileRecordObject, because: "the refusal names the object whose attachments need SysFile");
-			log.Should().NotContain(CreatedLine, because: "a refused build saves nothing");
-		} finally {
-			await DeleteProcessesAsync(context, created);
-		}
-	}
-
 	[Test]
-	[Description("Extends TC-I-17 on an existing element: setElement moving attachments.object to a SysFile object is refused with the D15 text; setElement sending another group (files) is refused as a source change - the designer changes the file source only by replacing the element; setFilter with filter.object = the RECORD object (Contact) is refused, because the filter is evaluated on the attachment object, pointing to attachments.recordId. None of them changes the element.")]
+	[Description("On an existing element: setElement sending another group (files) is refused as a source change - the designer changes the file source only by replacing the element; setFilter with filter.object = the RECORD object (Contact) is refused, because the filter is evaluated on the attachment object, pointing to attachments.recordId. Neither changes the element.")]
 	[AllureTag(ModifyToolName)]
-	[AllureName("modify-business-process refuses a SysFile source, a source change and a foreign filter root")]
+	[AllureName("modify-business-process refuses a source change and a foreign filter root")]
 	public async Task ModifyBusinessProcess_Should_RefuseASourceChange_AndAForeignFilterRoot() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context = await StartAsync();
@@ -655,10 +629,6 @@ public sealed class ProcessFileElementToolE2ETests {
 			string before = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")).ToJsonString();
 
 			// Act
-			CallToolResult toSysFile = await ModifyAsync(context, processName, $$"""
-				[ { "op": "setElement", "elementName": "OF1",
-				    "elementUpdate": { "fileProcessing": { "attachments": { "object": "{{SysFileRecordObject}}" } } } } ]
-				""");
 			CallToolResult otherGroup = await ModifyAsync(context, processName, """
 				[ { "op": "setElement", "elementName": "OF1",
 				    "elementUpdate": { "fileProcessing": { "files": { "processParameter": "ContactRef" } } } } ]
@@ -670,8 +640,6 @@ public sealed class ProcessFileElementToolE2ETests {
 				""");
 
 			// Assert
-			ShouldBeRefused(toSysFile, "a source moved to SysFile storage is not written until Sub-task SF");
-			LogText(toSysFile).Should().Contain(SysFileRefusalFragment, because: "the refusal is the D15 text");
 			ShouldBeRefused(otherGroup, "the stored variant is fixed");
 			string sourceChange = LogText(otherGroup);
 			sourceChange.Should().Contain("its source cannot change", because: "the refusal says the variant is fixed");
@@ -682,7 +650,7 @@ public sealed class ProcessFileElementToolE2ETests {
 			rootRefusal.Should().Contain("attachments.recordId",
 				because: "the refusal points to the record scope for reading one record's attachments");
 			FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")).ToJsonString()
-				.Should().Be(before, because: "three refused edits leave the element as it was");
+				.Should().Be(before, because: "two refused edits leave the element as it was");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -764,51 +732,6 @@ public sealed class ProcessFileElementToolE2ETests {
 	#region Methods: Tests - designer-built fixture (TC-I-46)
 
 	[Test]
-	[Description("TC-I-46 (1) on the designer-built fixture UsrFpOaDesignerFixture: F1, a designer-built Object attachments element on Account address (SysFile storage), is described read-only - build type fileprocessing, storage sysFile, file object SysFile, an issue saying it is described but not written - and setElement and setFilter on it are refused with the SysFile text (Sub-task SF). F1's node in the raw SysSchema.MetaData and its describe block are unchanged on re-read. Ignored, with the build instructions, when the stand does not carry the fixture.")]
-	[AllureTag(DescribeToolName)]
-	[AllureName("a designer-built SysFile Process file element is described and its changes refused")]
-	public async Task DesignerFixture_Should_DescribeTheSysFileElement_AndRefuseItsChanges() {
-		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartAsync();
-		await IgnoreUnlessDesignerFixtureExistsAsync(context);
-		JsonObject f1 = SingleElementOfTask(await DescribeGraphAsync(context, DesignerFixtureName), ObjectTaskName, "F1");
-		string f1Name = Text(f1, "name")!;
-		string f1UId = UId(f1);
-		JsonObject block = FileProcessingBlock(f1);
-		IReadOnlyList<string> rawBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
-
-		// Act
-		CallToolResult setElement = await ModifyAsync(context, DesignerFixtureName, $$"""
-			[ { "op": "setElement", "elementName": "{{f1Name}}",
-			    "elementUpdate": { "fileProcessing": { "attachments": { "numberOfRecords": 10 } } } } ]
-			""");
-		CallToolResult setFilter = await ModifyAsync(context, DesignerFixtureName, $$"""
-			[ { "op": "setFilter", "elementName": "{{f1Name}}",
-			    "filter": { "logicalOperation": "and",
-			      "conditions": [ { "column": "Name", "comparison": "contains", "value": "invoice" } ] } } ]
-			""");
-
-		// Assert
-		Text(f1, "buildType").Should().BeEquivalentTo(FileProcessingBuildType,
-			because: "a designer-built Object attachments element is claimed by the Process file handler");
-		JsonObject attachments = Group(block, "attachments");
-		Text(attachments, "storage").Should().Be("sysFile", because: "the stored pair decodes as SysFile storage");
-		Text(attachments, "fileObject").Should().Be("SysFile", because: "SysFile storage keeps the files in SysFile");
-		Text(attachments, "object").Should().Be(SysFileRecordObject,
-			because: "the record object is read back from the stored data object (the fixture reads Account address)");
-		Strings(block["issues"]).Should().Contain(issue => issue.Contains("SysFile storage", StringComparison.Ordinal),
-			because: "describe says the element is described but not written while SysFile is unsupported");
-		ShouldBeRefused(setElement, "setElement fileProcessing on a SysFile element is refused until Sub-task SF");
-		LogText(setElement).Should().Contain(SysFileRefusalFragment, because: "the refusal names SysFile storage (SF)");
-		ShouldBeRefused(setFilter, "setFilter on a SysFile element is refused until Sub-task SF");
-		LogText(setFilter).Should().Contain(SysFileRefusalFragment, because: "the refusal names SysFile storage (SF)");
-		(await ReadElementNodesAsync(context, DesignerFixtureName, f1UId)).Should().Equal(rawBefore,
-			because: "two refused edits leave F1's stored node byte-identical");
-		FileProcessingBlock(SingleElementOfTask(await DescribeGraphAsync(context, DesignerFixtureName), ObjectTaskName, "F1"))
-			.ToJsonString().Should().Be(block.ToJsonString(), because: "and F1 reads back exactly as it did");
-	}
-
-	[Test]
 	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none), F2's resource rows stay byte-identical; a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("an unrelated modify leaves designer-built Process file elements intact")]
@@ -865,6 +788,229 @@ public sealed class ProcessFileElementToolE2ETests {
 			await RemoveProbeParameterAsync(context, probeName);
 			await RemoveProbeParameterAsync(context, secondProbeName);
 		}
+	}
+
+	#endregion
+
+	#region Methods: Tests - SysFile storage (ENG-103937)
+
+	[TestCase("source")]
+	[TestCase("target")]
+	[Description("TC-I-17: an object with no attachment object of its own (AccountAddress) is written in SysFile storage as the attachments.object source and as the saveTo.object target, and describe reads it back as storage sysFile, file object SysFile, link column RecordId and the record object as sent, with no issue about the storage.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process writes SysFile storage on either side")]
+	public async Task CreateBusinessProcess_Should_WriteSysFileStorage(string side) {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysFile");
+			string block = side == "source"
+				? $$"""{ "attachments": { "object": "{{SysFileRecordObject}}" } }"""
+				: $$"""
+					{ "attachments": { "object": "Contact", "recordId": { "processParameter": "ContactRef" } },
+					  "saveTo": { "object": "{{SysFileRecordObject}}", "recordId": { "processParameter": "AnyId" } } }
+					""";
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement(block))));
+
+			// Assert
+			ShouldHaveBuilt(callResult, $"a SysFile {side} is written like any other");
+			JsonObject block1 = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1"));
+			ShouldBeSysFile(Group(block1, side == "source" ? "attachments" : "saveTo"), SysFileRecordObject,
+				$"the {side}");
+			Strings(block1["issues"]).Should().NotContain(issue => issue.Contains("SysFile", StringComparison.Ordinal),
+				because: "a SysFile side is no hazard for an object without its own attachment object");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[TestCase("AccountAddress", "Terrasoft.CompareFilter", "Terrasoft.InFilter")]
+	[TestCase("City", "Terrasoft.InFilter", "Terrasoft.CompareFilter")]
+	[Description("TC-I-81 (TC-77, M7): attachments.recordId on a SysFile source is stored in the designer's shape for its record object - a Guid compare for an object with no primary display column (Account address), a lookup In filter for one with a primary display column (City) - and describe lifts it back as the constant record id. Ignored when the stand has no record of the object.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process writes the SysFile record scope in the designer's shape")]
+	public async Task CreateBusinessProcess_Should_WriteTheSysFileRecordScope_InTheDesignersShape(string recordObject,
+			string storedClass, string absentClass) {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		string recordId = await ReadFirstRecordIdAsync(context, recordObject);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysScope");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{recordObject}}", "recordId": { "value": "{{recordId}}" } } }
+					"""))));
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a constant record of the SysFile source's record object is a legal scope");
+			JsonObject element = Element(await DescribeGraphAsync(context, processName), "OF1");
+			JsonObject attachments = Group(FileProcessingBlock(element), "attachments");
+			ShouldBeSysFile(attachments, recordObject, "the source");
+			Text(Group(attachments, "recordId"), "value").Should().BeEquivalentTo(recordId,
+				because: "the record scope is lifted out of the stored filter as the constant sent");
+			string node = string.Join("\n", await ReadElementNodesAsync(context, processName, UId(element)));
+			node.Should().Contain(storedClass, because: $"the designer writes this shape for {recordObject} (M7)");
+			node.Should().NotContain(absentClass, because: "and not the other one");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81 (D16) on a SysFile source: setFilter writes its conditions next to the stored record scope, and clearFilter writes the scope back alone - describe reads the scope (attachments.recordId) unchanged after both. Ignored when the stand has no Account address record.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("setFilter and clearFilter keep the record scope of a SysFile source")]
+	public async Task ModifyBusinessProcess_Should_KeepTheSysFileRecordScope_ThroughSetFilterAndClearFilter() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		string recordId = await ReadFirstRecordIdAsync(context, SysFileRecordObject);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysFilter");
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{SysFileRecordObject}}", "recordId": { "value": "{{recordId}}" } } }
+					"""))), "the SysFile element scoped to one Account address");
+
+			// Act
+			CallToolResult setFilter = await ModifyAsync(context, processName, """
+				[ { "op": "setFilter", "elementName": "OF1",
+				    "filter": { "logicalOperation": "and",
+				      "conditions": [ { "column": "Name", "comparison": "contains", "value": "invoice" } ] } } ]
+				""");
+			JsonObject afterSet = Element(await DescribeGraphAsync(context, processName), "OF1");
+			CallToolResult clearFilter = await ModifyAsync(context, processName,
+				"""[ { "op": "clearFilter", "elementName": "OF1" } ]""");
+			JsonObject afterClear = Element(await DescribeGraphAsync(context, processName), "OF1");
+
+			// Assert
+			ShouldHaveLanded(setFilter, "a filter on SysFile columns is written on a SysFile source");
+			Text(Group(Group(FileProcessingBlock(afterSet), "attachments"), "recordId"), "value")
+				.Should().BeEquivalentTo(recordId, because: "setFilter keeps the record scope the block wrote");
+			Objects(Group(afterSet, "filter")["conditions"]).Select(condition => Text(condition, "column"))
+				.Should().Contain("Name", because: "the conditions sent are stored next to the scope");
+			ShouldHaveLanded(clearFilter, "clearFilter on a SysFile source is accepted");
+			Text(Group(Group(FileProcessingBlock(afterClear), "attachments"), "recordId"), "value")
+				.Should().BeEquivalentTo(recordId, because: "clearFilter writes the record scope back alone");
+			afterClear["filter"].Should().BeNull(because: "clearFilter removes the conditions setFilter wrote, leaving only the scope");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81 (TC-79): a SysFile source moved to another SysFile record object (Account address to City) keeps SysFile as its file object but changes the record object, so the record scope written for an Account address is cleared with a notice naming both objects. Ignored when the stand has no Account address record.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("a SysFile source moved to another record object clears its record scope")]
+	public async Task ModifyBusinessProcess_Should_ClearTheScope_WhenTheSysFileRecordObjectChanges() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		string recordId = await ReadFirstRecordIdAsync(context, SysFileRecordObject);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysMove");
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{SysFileRecordObject}}", "recordId": { "value": "{{recordId}}" } } }
+					"""))), "the SysFile element scoped to one Account address");
+
+			// Act
+			CallToolResult moved = await ModifyAsync(context, processName, $$"""
+				[ { "op": "setElement", "elementName": "OF1",
+				    "elementUpdate": { "fileProcessing": { "attachments": { "object": "{{SysFileLookupRecordObject}}" } } } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(moved, "moving a SysFile source to another object is a retarget, not a refusal");
+			WarningText(moved).Should().Contain($"source changed from '{SysFileRecordObject}' to '{SysFileLookupRecordObject}'",
+				because: "the caller is told the filter written for the previous object was cleared");
+			JsonObject attachments = Group(FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")),
+				"attachments");
+			ShouldBeSysFile(attachments, SysFileLookupRecordObject, "the moved source");
+			attachments["recordId"].Should().BeNull(because: "a scope on an Account address record selects no City file");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81: a dedicated source moved to an object with no attachment object of its own (Contact to Account address) is a retarget to SysFile storage - the file object becomes SysFile, linked by RecordId, with the record object as sent, and the record scope written for a Contact is cleared with a notice naming both objects.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("a dedicated source moved to an object without its own attachment object becomes SysFile storage")]
+	public async Task ModifyBusinessProcess_Should_RetargetADedicatedSourceToSysFileStorage() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysRetarget");
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement("""
+					{ "attachments": { "object": "Contact", "recordId": { "processParameter": "ContactRef" } } }
+					"""))), "the dedicated element scoped to the process's contact");
+
+			// Act
+			CallToolResult moved = await ModifyAsync(context, processName, $$"""
+				[ { "op": "setElement", "elementName": "OF1",
+				    "elementUpdate": { "fileProcessing": { "attachments": { "object": "{{SysFileRecordObject}}" } } } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(moved, "moving a dedicated source to an object without its own attachment object is a retarget");
+			WarningText(moved).Should().Contain($"source changed from 'Contact' to '{SysFileRecordObject}'",
+				because: "the caller is told the filter written for the previous object was cleared");
+			JsonObject attachments = Group(FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")),
+				"attachments");
+			ShouldBeSysFile(attachments, SysFileRecordObject, "the retargeted source");
+			attachments["recordId"].Should().BeNull(because: "a scope on a Contact selects no Account address file");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-46 (1) on the designer-built fixture UsrFpOaDesignerFixture: F1, a designer-built Object attachments element on Account address, is described as SysFile storage - build type fileprocessing, storage sysFile, file object SysFile, the record object - with no issue about the storage. Read-only. Ignored, with the build instructions, when the stand does not carry the fixture.")]
+	[AllureTag(DescribeToolName)]
+	[AllureName("a designer-built SysFile Process file element is described with no storage issue")]
+	public async Task DesignerFixture_Should_DescribeTheSysFileElement_WithNoStorageIssue() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		await IgnoreUnlessDesignerFixtureExistsAsync(context);
+
+		// Act
+		JsonObject f1 = SingleElementOfTask(await DescribeGraphAsync(context, DesignerFixtureName), ObjectTaskName, "F1");
+
+		// Assert
+		Text(f1, "buildType").Should().BeEquivalentTo(FileProcessingBuildType,
+			because: "a designer-built Object attachments element is claimed by the Process file handler");
+		JsonObject block = FileProcessingBlock(f1);
+		ShouldBeSysFile(Group(block, "attachments"), SysFileRecordObject, "F1's source");
+		Strings(block["issues"]).Should().NotContain(issue => issue.Contains("SysFile", StringComparison.Ordinal),
+			because: "SysFile storage is written like any other, so a designer-built SysFile element carries no storage issue");
+	}
+
+	#endregion
+
+	#region Methods: SysFile helpers
+
+	/// <summary>Opens a session, or ignores the test when the stand is behind the SysFile cut.</summary>
+	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>
+		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile storage)", SysFileMinimumPackageVersion,
+			TimeSpan.FromMinutes(8));
+
+	/// <summary>A side of the block in SysFile storage: the record object as sent, SysFile and its RecordId link.</summary>
+	private static void ShouldBeSysFile(JsonObject side, string recordObject, string what) {
+		Text(side, "object").Should().Be(recordObject, because: $"{what}'s record object is stored as the data object");
+		Text(side, "storage").Should().Be("sysFile",
+			because: $"{recordObject} has no attachment object of its own, so {what} derives SysFile storage");
+		Text(side, "fileObject").Should().Be("SysFile", because: $"{what}'s files live in SysFile");
+		Text(side, "linkColumn").Should().Be("RecordId", because: "a SysFile row links to its record through RecordId");
 	}
 
 	#endregion

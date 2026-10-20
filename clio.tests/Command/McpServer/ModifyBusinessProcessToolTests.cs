@@ -735,7 +735,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as the bundled CrtProcessBuilder behaves: attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object only a consistent dedicated pair is kept - an unpaired or invalid one is rewritten with a notice and a SysFile pair refuses the whole update. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite or a refusal.")]
+	[Description("The modify prompt states how a fileProcessing setElement clears and what it does to a stored storage pair, as the bundled CrtProcessBuilder behaves: attachments.recordId and attachments.sort are objects cleared by an EMPTY OBJECT; saveTo.linkColumn \"\" re-derives the designer's column (or is refused when none can be derived) and never clears the link; without attachments.object a consistent pair - dedicated or SysFile - is kept and an unpaired or invalid one is rewritten with a notice. An agent told that an empty string clears the link column sends it expecting an unlinked copy and gets the designer's column, and one told the pair is always kept is surprised by a rewrite.")]
 	public void ModifyBusinessProcessPrompt_ShouldStateTheFileProcessingClearingAndPairRules() {
 		// Arrange
 		const string processName = "UsrSampleProcess";
@@ -750,10 +750,12 @@ public class ModifyBusinessProcessToolTests {
 			because: "the package resolves an empty linkColumn as 'not given' and derives the designer's column again");
 		prompt.Should().NotContain("an empty string or",
 			because: "the earlier rule said an empty string clears saveTo.linkColumn, which the package never does");
-		prompt.Should().Contain("consistent stored pair is kept, an unpaired or invalid one is rewritten from its own object with a notice,",
-			because: "the package keeps only a consistent stored pair and repairs any other with a notice");
-		prompt.Should().Contain("and a SysFile pair refuses the whole `fileProcessing` update",
-			because: "a stored SysFile source is re-resolved on every fileProcessing update and refused until SysFile storage is supported");
+		prompt.Should().Contain("consistent stored pair (dedicated or SysFile) is kept, and an unpaired or invalid one is rewritten from its own",
+			because: "the package keeps a consistent stored pair, SysFile included, and repairs any other with a notice");
+		prompt.Should().NotContain("a SysFile pair refuses",
+			because: "the earlier rule refused the whole fileProcessing update on a stored SysFile pair");
+		prompt.Should().NotContain("SysFile storage is not supported",
+			because: "the bundled CrtProcessBuilder writes SysFile storage as the Object source and as every variant's target");
 	}
 
 	[Test]

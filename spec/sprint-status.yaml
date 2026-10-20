@@ -4888,15 +4888,16 @@ stories:
       clio-knowledge #297 (1.15.163) and clio #1847 merged; reconciled box by box the same day (27 of 33 boxes met; the
       merge-order item reworded to the guide-first decision; the designer-fixture e2e run, Ignored = 0, carried to
       ENG-103937, story 3). Stays at review: open are RP-6 (outer-only and empty bindings are paired or reported, not
-      refused as written), task "Knowledge records and status" and DoD items on the make check-knowledge review, Jira (RP-1..RP-10 not pasted, links L2/L3 absent), review gate 2 and the status flips.
+      refused as written), task "Knowledge records and status" and DoD items on the make check-knowledge review, Jira (RP-1..RP-10 not pasted, links L2/L3 absent), review gate 2 and the status flips. 2026-10-20: story 3's clio
+      PR (ENG-103937) does NOT flip it, because those boxes are still open; the flip waits for them.
 
   - id: story-eng-92719-file-processing-element-3
     title: "SysFile attachment storage in the Process file element"
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: M
-    status: deferred
-    jira: ""
+    status: in-progress
+    jira: ENG-103937
     file: spec/stories/story-eng-92719-file-processing-element-3.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
     adr: spec/adr/adr-eng-92719-file-processing-element.md
@@ -4906,16 +4907,12 @@ stories:
     blocks:
       - story-eng-92719-file-processing-element-5
     note: >-
-      DEFERRED under this block's status rule: the Jira Sub-task of ENG-92719 File processing element is NOT created yet
-      (owner decision O1 / Q3, agreed 2026-10-07, creates it on day 0), and no code can start before the measurements
-      below; ready-for-dev once the Sub-task exists and the measurements its first code needs are recorded. Write its
-      key into jira, the story file and the PR titles when it exists. SF-1 is the SysFile row of the analysis decisions
-      D-5, proposed and confirmed when the Sub-task is created. The story file also holds the Story-level Definition of
-      Done of ENG-92719. The package code waits on stand measurements M7, M8, M21,
-      M23 (a)-(d) and M25 (three of them designer probes built by the user); a case whose measurement fails keeps story
-      1's refusal. No floor raise (an older server refuses SysFile loudly). Slot after story 2 (link L4); contingency X3
-      swaps the slots. Done carried by the next clio PR that touches this file (by link L5 the first clio PR of
-      ENG-95985 Send email attachments).
+      ENG-103937 Process file element: SysFile attachment storage. Measurements recorded on 2026-10-20 (M7 done, M8 and
+      M23 a-d PASS, M21 captured, M25 dropped by the owner): SysFile lifts as the Object source and as the target of
+      all three variants. Package cut 1.6.6.111 (draft PR 101); ST-08 and DT-04 ran on 1.6.6.110, SC-4 again on
+      1.6.6.111; this clio PR rebundles it with no floor raise. The knowledge PR (SF.4) is next. The story file also holds the Story-level Definition of Done
+      of ENG-92719. Done carried by the next clio PR that touches this file (by link L5 the first clio PR of ENG-95985
+      Send email attachments).
 
   - id: story-eng-92719-file-processing-element-4
     title: "Refuse collection parameters as filter values"

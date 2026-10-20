@@ -182,7 +182,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 |---|---|---|---|---|---|
 | TC-U-15 | TC-15 | pkg | 1 | resolver over the fake hierarchy (AccountFile, ContactFile, FileLead, the LeadFile ambiguity, DNSGuideFile, a view, a SysFile-family object, a tag object, no claimant, SysFile missing); `Decode` never throws | OA-6 |
 | TC-U-16 | TC-16 | pkg | 1 | the record object or its file object give the same pair; no `SourceDataEntitySchemaUId` for a legacy source; an orphan attachment object named directly is dedicated with no record object; a sent object rewrites the side's pair, an update without it keeps a consistent pair and re-resolves an inconsistent one with a notice | OA-6 |
-| TC-U-17, TC-I-17 | TC-17 | pkg, e2e | 1 | a SysFile-mode source or target refused with the D15 text; the switch tested on its own | OA-6 |
+| TC-U-17, TC-I-17 | TC-17 | pkg, e2e | 1 | a SysFile-mode source or target refused with the D15 text; the switch tested on its own (re-pointed by story 3 to its positive form: SysFile written on either side) | OA-6 |
 | TC-U-18, TC-I-18 | TC-18 | pkg, e2e | 1 | `attachments.recordId` per source; CurrentUserContact compiles to the macro; another formula refused | OA-7, FE-4 |
 | TC-U-19 | TC-19 | pkg | 1 | record-scope type check | OA-7 |
 | TC-U-20 | TC-20 | pkg | 1 | filter root, unconfigured element, scope set twice: refused | OA-7 |
@@ -289,7 +289,7 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 | TC-U-78 | TC-78 | pkg | 3 | sort on the SysFile root: a record-object column refused, a SysFile column accepted | SF-1 |
 | TC-U-79 | TC-79 | pkg | 3 | SysFile -> SysFile retarget clears the scope | SF-1 |
 | TC-U-80 | TC-80 | pkg | 3 | the M25 notice through the faked seam; never a refusal; ships only if M25 confirmed the read | SF-1 |
-| TC-I-81 | TC-81 | e2e | 3 | `ProcessFileSysFileStorageToolE2ETests`: Object on a SysFile entity; Report and Process into a SysFile target; story 1's refusal case re-pointed to its positive form | SF-1 |
+| TC-I-81 | TC-81 | e2e | 3 | the SysFile region of `ProcessFileElementToolE2ETests` and the SysFile targets of `ProcessFileReportAndParameterToolE2ETests`: Object on a SysFile entity; Report and Process into a SysFile target; story 1's refusal case re-pointed to its positive form | SF-1 |
 
 ### clio surface, knowledge and regressions
 
