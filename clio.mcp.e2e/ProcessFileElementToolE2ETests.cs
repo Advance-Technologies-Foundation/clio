@@ -101,6 +101,9 @@ public sealed class ProcessFileElementToolE2ETests {
 	/// <summary>The SysFile floor: 1.6.6.111 writes SysFile storage; named in the skip message.</summary>
 	private const string SysFileMinimumPackageVersion = "1.6.6.111";
 
+	/// <summary>The floor of the setFilter refusal of a SysFile record scope: 1.6.6.112 refuses it.</summary>
+	private const string SysFileScopeRefusalMinimumPackageVersion = "1.6.6.112";
+
 	/// <summary>An object with no attachment object of its own and a primary display column (Name): a lookup scope.</summary>
 	private const string SysFileLookupRecordObject = "City";
 
@@ -945,6 +948,41 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "the refusal names SysFile, the object the sort column is resolved on");
 			Group(FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")), "attachments")["sort"]
 				.Should().BeNull(because: "a refused setElement saves nothing");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81: on a SysFile source setFilter refuses a single RecordId equality in its top-level and, which is the record scope it cannot type (any Guid would compare and match no file), names attachments.recordId as the way to send it, and saves nothing - describe reads no filter. Ignored below CrtProcessBuilder 1.6.6.112 or when the stand has no Account address record.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("setFilter refuses a RecordId scope on a SysFile source")]
+	public async Task ModifyBusinessProcess_Should_RefuseARecordIdScopeInSetFilter_OnASysFileSource() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
+			"Process file element (SysFile record scope)", SysFileScopeRefusalMinimumPackageVersion, TimeSpan.FromMinutes(8));
+		string recordId = await ReadFirstRecordIdAsync(context, SysFileRecordObject);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysScopeRefusal");
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{SysFileRecordObject}}" }, "action": "useInProcess" }
+					"""))), "the unscoped SysFile element", SysFileScopeRefusalMinimumPackageVersion);
+
+			// Act
+			CallToolResult refused = await ModifyAsync(context, processName, $$"""
+				[ { "op": "setFilter", "elementName": "OF1",
+				    "filter": { "logicalOperation": "and",
+				      "conditions": [ { "column": "RecordId", "comparison": "equal", "value": "{{recordId}}" } ] } } ]
+				""", SysFileScopeRefusalMinimumPackageVersion);
+
+			// Assert
+			ShouldBeRefused(refused, "a RecordId equality on a SysFile source is the record scope, which setFilter does not type");
+			LogText(refused).Should().Contain("attachments.recordId",
+				because: "the refusal names the member that takes the record scope");
+			Element(await DescribeGraphAsync(context, processName), "OF1")["filter"].Should().BeNull(
+				because: "a refused setFilter saves nothing");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}

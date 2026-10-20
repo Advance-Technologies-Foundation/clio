@@ -124,12 +124,11 @@ Ids are the analysis plan's work packages (section 5.3).
 
 **clio** (base `master`)
 
-- [x] **SF.3** Rebundle with **no floor raise** (an older server refuses SysFile loudly); NEW
-  `clio.mcp.e2e/ProcessFileSysFileStorageToolE2ETests.cs` (`MinimumPackageVersion` = this cut; done as a region of
-  `ProcessFileElementToolE2ETests`, see below): an Object element on a
-  SysFile-stored object (create, describe, `saveTo` a SysFile target); Report and Process into a SysFile target;
-  `Assert.Ignore` when no record of the object exists; story 1's SysFile-refusal e2e re-pointed to its positive form (on
-  `UsrFpOaDesignerFixture` F1, `setElement` / `setFilter` are now accepted and read back). Knowledge records: DELETE
+- [x] **SF.3** Rebundle with **no floor raise** (an older server refuses SysFile loudly); the SysFile e2e (a region of
+  `ProcessFileElementToolE2ETests` plus the targets in `ProcessFileReportAndParameterToolE2ETests`, floor 1.6.6.111;
+  the setFilter `RecordId` refusal, floor 1.6.6.112): an Object element on a SysFile-stored object (create, describe,
+  `saveTo` a SysFile target); Report and Process into a SysFile target; `Assert.Ignore` when no record of the object
+  exists; story 1's SysFile-refusal e2e re-pointed to its positive form (the F1 case describes only, see below). Knowledge records: DELETE
   `docs/knowledge/ProcessModel/process-file-sysfile-storage-is-refused-until-sf.md`; UPDATE
   `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md`; NEW
   `platform/a-sysfile-attachment-read-needs-recordschemaname-and-type-file.md` (after M8) and the write-path record M23

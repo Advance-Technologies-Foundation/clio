@@ -33,10 +33,6 @@ object of their own, and objects that had one kept it, so their record pages kee
 **What breaks if you ignore it** — writing SysFile for an object that has `<X>File` stores files where its record
 page never shows them; writing a data UId on a dedicated source makes the runtime filter `AccountFile.RecordSchemaName`
 and throw. The bundled CrtProcessBuilder follows the rule without reading the flag (D15), treats an orphan named
-directly as dedicated (as a target it needs an explicit `linkColumn`), and since 1.6.6.111 (ENG-103937) writes
-SysFile as the Object attachments source and as the target of all three variants. The platform side was measured on
-a stand on 2026-10-20 with designer-built elements on 1.6.6.109 (M8, M23 a-d), and the builder's own elements ran on
-1.6.6.110, whose writing code 1.6.6.111 keeps (ST-08). It keeps a
-stored SysFile pair of an object that HAS its own `<X>File` and names it as a describe issue. A designer re-save
-writing a data UId onto a dedicated element (H-G3-1) was not reproduced in memory (M11, 2026-10-02) nor by the
-DT-04 re-saves of 2026-10-20.
+directly as dedicated (as a target it needs an explicit `linkColumn`), writes SysFile as the Object source and every
+variant's target, and keeps a stored SysFile pair of an object that HAS its own `<X>File`, naming it as a describe
+issue. A designer re-save writing a data UId onto a dedicated element (H-G3-1) was not reproduced (M11, DT-04).
