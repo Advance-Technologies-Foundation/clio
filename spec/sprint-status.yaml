@@ -4696,9 +4696,9 @@ stories:
   # set is the docs-only clio PR that merges before the package PR leaves draft. Stories 2-4 are the three follow-up
   # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14 under
   # ENG-95984 and moved the same day to the Task ENG-103304 File and collection process parameters: follow-ups, so
-  # that ENG-95984 can close). They stay deferred until ENG-96506 Generated report + process parameter modes has
-  # merged its package PR. ENG-96506 and ENG-95985 have no story id in this tracker yet (ENG-96506's arrives with the
-  # docs PR titled "ENG-92719 File processing element"), so the dependencies name their Jira keys.
+  # that ENG-95984 can close). They stay deferred until story-eng-92719-file-processing-element-2 has merged its
+  # package PR. ENG-95985 Send email attachments has no story id in this tracker yet, so the dependencies name its Jira
+  # key.
   - id: story-eng-95984-file-parameter-type-1
     title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
     feature: "eng-95984-file-parameter-type"
@@ -4712,7 +4712,7 @@ stories:
     test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
     depends_on: []
     blocks:
-      - ENG-96506
+      - story-eng-92719-file-processing-element-2
       - ENG-95985
       - story-eng-95984-file-parameter-type-2
       - story-eng-95984-file-parameter-type-3
@@ -4744,7 +4744,7 @@ stories:
     test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
     depends_on:
       - story-eng-95984-file-parameter-type-1
-      - ENG-96506
+      - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
@@ -4767,7 +4767,7 @@ stories:
     test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
     depends_on:
       - story-eng-95984-file-parameter-type-1
-      - ENG-96506
+      - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
@@ -4789,7 +4789,7 @@ stories:
     test_plan: spec/test-plans/tp-eng-95984-file-parameter-type.md
     depends_on:
       - story-eng-95984-file-parameter-type-1
-      - ENG-96506
+      - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
       DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
@@ -4807,8 +4807,8 @@ stories:
   # crt-process-builder -> clio -> clio-knowledge triple per story.
   # Status rule of this block: ready-for-dev only when the story's Jira issue exists and nothing gates its code (no open
   # owner answer, slot or stand measurement); deferred otherwise. Story 1 moved to ready-for-dev when the owner agreed
-  # Q13-Q18, which its "Gating" table names, on 2026-10-14; story 2 stays deferred for M1 (+ M2) and O-TP1, stories
-  # 3-5 for their slots and measurements. A story moves to ready-for-dev in the commit that records the last answer it waits for.
+  # Q13-Q18, which its "Gating" table names, on 2026-10-14; story 2 stayed deferred for M1 (+ M2) and O-TP1 until both
+  # were recorded on 2026-10-19, and stories 3-5 stay deferred for their slots and measurements. A story moves to ready-for-dev in the commit that records the last answer it waits for.
   # Merge order: this BMAD set is the docs-only clio PR titled "ENG-92719 File processing element". It merges after the
   # ENG-95984 BMAD PR https://github.com/Advance-Technologies-Foundation/clio/pull/1811, which appends its rows at this
   # same place in this file (this PR merges master in after that PR merges), and before the Story's first package
@@ -4820,7 +4820,9 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
-    status: ready-for-dev
+    # review, not done: package, clio and knowledge PRs merged 2026-10-19, but the story file's open boxes remain
+    # (OA-2, OA-11, OA-12; tasks OA.0, OA.12, OA.13, "Knowledge records and status"; DoD clio 3, 7, 8 and Process 2-7).
+    status: review
     jira: ENG-96505
     file: spec/stories/story-eng-92719-file-processing-element-1.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
@@ -4844,15 +4846,15 @@ stories:
       archive's commit the clio PR adds the fileProcessing key set (ENG-103085 Refuse element and block keys the
       process builder would drop silently) and the fileProcessing call-shape entry; the description bytes come from a
       reviewer-approved trim (Q20 = A). Status convention: in-progress when the clio draft opens, review when it leaves
-      draft, done carried by story 2's clio PR and never pushed after an approval; this story's clio PR carries the
-      done flip of story-eng-95984-file-parameter-type-1.
+      draft, and done only once its Definition of Done has no open box (16 are open, named in the story file);
+      story-eng-95984-file-parameter-type-1 stays at review for the same reason, and is not flipped here.
 
   - id: story-eng-92719-file-processing-element-2
     title: "Generated report and Process parameter variants of the Process file element"
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: M
-    status: deferred
+    status: review
     jira: ENG-96506
     file: spec/stories/story-eng-92719-file-processing-element-2.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md
@@ -4873,7 +4875,10 @@ stories:
       in three descriptions; the budget test catches it at that cut and a reviewer-approved trim pays it (Q20 = A). Two
       variant registrations, one commit group each, so that contingency X2 can cherry-pick the Report half if the
       Process half fails its stand proof. Visible change: the four shipped product report processes describe as
-      fileprocessing. Done carried by story 3's clio PR.
+      fileprocessing. Done carried by story 3's clio PR. 2026-10-19: in-progress with its clio draft; M1 passed and M2
+      as predicted (the single-file path ships), O-TP1 = B (TC-I-91 in this story's clio PR), cut 1.6.6.105, stand
+      proofs ST-03..ST-07, DT-03 and SC-4 passed on 1.6.6.105; after the final review, the core-reuse fixes and the PR 100 review fixes the cut is 1.6.6.109. Story 1 moved to review in this PR (its package, clio
+      and knowledge PRs merged; its Definition of Done still has open boxes, named in its story file).
 
   - id: story-eng-92719-file-processing-element-3
     title: "SysFile attachment storage in the Process file element"

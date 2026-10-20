@@ -817,6 +817,98 @@ public sealed class ServerProcessDescriberTests {
 			because: $"the block must reach the caller exactly as the server sent it, but came out as {forwarded?.ToJsonString()}");
 	}
 
+	// A Generated report element's block and a Process parameter element's block as the server describes them, with an
+	// undeclared key at each new nesting level.
+	private const string ReportBlock =
+		"{\"source\":\"report\",\"action\":\"saveToAttachments\",\"actionStored\":true,"
+		+ "\"report\":{\"printable\":\"6c1a3a39-0000-4000-8000-000000000001\",\"caption\":\"Invoice\","
+		+ "\"type\":\"MS Word\",\"object\":\"Invoice\",\"convertToPdf\":false,"
+		+ "\"recordId\":{\"processParameter\":\"PInvoice\",\"display\":\"Invoice\"},\"separateReports\":true,"
+		+ "\"fileNameSuffix\":{\"value\":\"copy\"},\"fileNameSuffixColumn\":\"Number\",\"futureReportFact\":7},"
+		+ "\"saveTo\":{\"object\":\"Invoice\",\"recordId\":{\"processParameter\":\"PInvoice\"}},"
+		+ "\"outputs\":[{\"parameter\":\"ReportFiles\",\"item\":\"File\"}]}";
+
+	private const string FilesBlock =
+		"{\"source\":\"files\",\"action\":\"saveToAttachments\",\"actionStored\":true,"
+		+ "\"files\":{\"sourceElement\":\"Report1\",\"sourceElementParameter\":\"ReportFiles\",\"futureFilesFact\":\"f\"},"
+		+ "\"bindingLevels\":\"both\","
+		+ "\"saveTo\":{\"object\":\"Contact\",\"recordId\":{\"processParameter\":\"PContact\"}},"
+		+ "\"outputs\":[{\"parameter\":\"ObjectFiles\",\"item\":\"ObjectFile\"}]}";
+
+	[Test]
+	[Description("Deserializes the report group of a Generated report element by name - printable, the describe-only caption and convertToPdf, the identity checks type and object, the record scope, separateReports, the file-name suffix and its column - and keeps an undeclared report member in the group's own overflow bag. The describe output is re-serialized from this model, so a member it does not declare reaches nobody.")]
+	public void Describe_ShouldReadTheReportGroup_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReportingFileProcessing(ReportBlock);
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedFileProcessing block = result.Value.Elements[0].FileProcessing;
+		block.Source.Should().Be("report", because: "the variant identity check reads back by name");
+		DescribedFileProcessingReport report = block.Report;
+		report.Should().NotBeNull(because: "a null here is the silent-drop signature of an undeclared group");
+		report.Printable.Should().Be("6c1a3a39-0000-4000-8000-000000000001", because: "the printable id reads back");
+		report.Caption.Should().Be("Invoice", because: "the describe-only caption reads back");
+		report.Type.Should().Be("MS Word", because: "the type identity check reads back");
+		report.Object.Should().Be("Invoice", because: "the report object identity check reads back");
+		report.ConvertToPdf.Should().BeFalse(because: "the describe-only PDF flag reads back");
+		report.RecordId.ProcessParameter.Should().Be("PInvoice", because: "the record scope is a value source");
+		report.RecordId.Display.Should().Be("Invoice", because: "its describe-only display reads back");
+		report.SeparateReports.Should().BeTrue(because: "the stored IsSeparateReports reads back");
+		report.FileNameSuffix.Value.Should().Be("copy", because: "a constant suffix reads back as value");
+		report.FileNameSuffixColumn.Should().Be("Number", because: "the suffix column reads back");
+		report.AdditionalData.Should().ContainKey("futureReportFact",
+			because: "an undeclared report member lands in the group's overflow bag instead of being discarded");
+		block.Files.Should().BeNull(because: "a Generated report element has no files source");
+		block.BindingLevels.Should().BeNull(because: "bindingLevels belongs to the Process parameter variant only");
+	}
+
+	[Test]
+	[Description("Deserializes the files source and bindingLevels of a Process parameter element by name, keeps an undeclared files member in its overflow bag, and forwards the block verbatim under the describe command's own options, so neither the files group nor bindingLevels falls into the block-level bag where a caller cannot address it by name.")]
+	public void Describe_ShouldReadAndForwardTheFilesGroup_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingFileProcessing(FilesBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> files = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwardedFiles = JsonNode.Parse(JsonSerializer.Serialize(files.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["fileProcessing"];
+
+		// Assert
+		DescribedFileProcessing block = files.Value.Elements[0].FileProcessing;
+		block.Source.Should().Be("files", because: "the variant identity check reads back by name");
+		block.Files.SourceElement.Should().Be("Report1", because: "the files source is a value source");
+		block.Files.SourceElementParameter.Should().Be("ReportFiles", because: "its element output reads back");
+		block.Files.AdditionalData.Should().ContainKey("futureFilesFact",
+			because: "an undeclared files member lands in the value source's overflow bag");
+		block.BindingLevels.Should().Be("both", because: "the describe-only binding levels read back by name");
+		block.AdditionalData.Should().BeNull(because: "files and bindingLevels are declared members, not overflow");
+		JsonNode.DeepEquals(forwardedFiles, JsonNode.Parse(FilesBlock)).Should().BeTrue(
+			because: $"the files block must reach the caller exactly as sent, but came out as {forwardedFiles?.ToJsonString()}");
+	}
+
+	[Test]
+	[Description("Forwards a Generated report element's block verbatim under the describe command's own options, with the report group a declared member rather than block-level overflow, so a caller addresses report by name and an undeclared report member still reaches it.")]
+	public void Describe_ShouldForwardTheReportGroupVerbatim_WhenServerReportsIt() {
+		// Arrange
+		ServerProcessDescriber describer = CreateDescriber(ClientReportingFileProcessing(ReportBlock));
+
+		// Act
+		ErrorOr<DescribeProcessResult> report = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+		JsonNode forwardedReport = JsonNode.Parse(JsonSerializer.Serialize(report.Value,
+			DescribeProcessCommand.OutputOptions))!["elements"]![0]!["fileProcessing"];
+
+		// Assert
+		report.Value.Elements[0].FileProcessing.AdditionalData.Should().BeNull(
+			because: "the report group is a declared member, not overflow");
+		JsonNode.DeepEquals(forwardedReport, JsonNode.Parse(ReportBlock)).Should().BeTrue(
+			because: $"the report block must reach the caller exactly as sent, but came out as {forwardedReport?.ToJsonString()}");
+	}
+
 	[Test]
 	[Description("Leaves the fileProcessing block unset (null) on an element of another kind or from a server that predates it, so it serializes away rather than surfacing as an empty block.")]
 	public void Describe_ShouldLeaveTheFileProcessingBlockNull_WhenServerOmitsIt() {

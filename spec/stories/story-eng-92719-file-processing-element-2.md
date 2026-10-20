@@ -8,8 +8,8 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: deferred (its Jira issue exists; Q14, Q16 and Q18 were agreed on 2026-10-14; it moves to ready-for-dev once
-M1 (+ M2) and O-TP1 that "Gating" names are recorded)
+**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.109 (1.6.6.105 to 1.6.6.108 superseded by the final-review, core-reuse and review fixes), the clio PR is open; it was deferred
+until those two were recorded)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -182,9 +182,10 @@ registrations, one commit group each, so that X2 can cherry-pick.
   `docs/knowledge/platform/a-process-file-report-runs-only-word-and-fastreport.md` (basis: source, not measured; it
   records the dispatch by `Type.Name`, that DevExpress throws and that FastReport's process path is unverified, not that
   FastReport runs), `platform/the-process-parameter-file-source-only-saves.md` (basis: source, not measured: the
-  `NotSupportedException` for "use in process"), `infra/the-dev-stand-has-only-five-word-printables.md` (measured
-  2026-10-01); `platform/use-in-process-report-files-are-deleted-with-their-process.md` only after M16;
-  `platform/a-nested-only-files-binding-reads-one-row.md` only after M1; DELETE story 1's temporary
+  `NotSupportedException` for "use in process"), `infra/the-creatio-sandbox-has-five-word-printables-and-no-fastreport.md` and
+  `platform/invoice-quotation-and-contract-printables-have-no-sysentityschema.md` (measured 2026-10-01); `platform/use-in-process-report-files-are-deleted-with-their-process.md` only after M16;
+  `platform/a-nested-only-files-binding-reads-one-row.md` only after M1 and
+  `platform/an-unset-single-file-fails-a-process-parameter-file-element.md` only after M2; DELETE story 1's temporary
   `ProcessModel/report-and-parameter-file-elements-stay-generic-until-eng-96506.md`; review the `make check-knowledge`
   report. Status flips, including story 1's `done`, which rides in this PR.
 
@@ -263,13 +264,47 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
 
 ## Dev Agent Record
 
-- Implementation started:
-- Owner answers to Q14, Q16, Q18: 2026-10-14, all as recommended; O-TP1 settled as:
-- M1 / M2 results (date, package version, verdict on the single-file path):
-- SC-0 record of PrintInvoiceReport's parameter set (date) and the exclusions TC-U-59 takes from it:
-- Package cut claimed (number, date, where claimed):
+- Implementation started: 2026-10-19 (package RP.1a in parallel with M1; owner decisions of the same day: O-TP1 = B,
+  RF1 = `TakesFiles` asks the variant registry and the UId constant is deleted).
+- Owner answers to Q14, Q16, Q18: 2026-10-14, all as recommended; O-TP1 settled as: B, TC-I-91 in this story's clio PR
+  (option A lapsed when ENG-95984 merged without E2E-14).
+- M1 / M2 results (date, package version, verdict on the single-file path): 2026-10-19, CrtProcessBuilder 1.6.6.104,
+  core 10.1.37 .NET Framework, on a hybrid designer-written probe. M1 PASS: a nested-only `Files.File <- [#FileParam#]`
+  copied exactly one file, so the single-file path ships (TC-U-64 "passed" arm, TC-I-91(c) positive, ST-03 runs, SC-4
+  keeps E10). M2 as predicted: an unset File stops the element with a NullReferenceException in
+  `FileFactory.CreateFileInstance` and copies nothing (guide wording only, no code).
+- SC-0 record of PrintInvoiceReport's parameter set (date) and the exclusions TC-U-59 takes from it: 2026-10-19,
+  read-only, CrtProcessBuilder 1.6.6.104: the stored metadata is byte-identical to PackageStore CrtInvoice 7.8.0;
+  en-US resources equal; ru-RU differs as an install/translation artefact. TC-U-59 takes no parameter exclusion.
+- Package cut claimed (number, date, where claimed): 1.6.6.105, 2026-10-19, in ENG-92719 comment 550565 (edited in
+  place, read back); producing commit `5792f25d`, restamp `2388dd93`, tag `crtprocessbuilder-1.6.6.105` verified on
+  the remote; package draft PR crt-process-builder#100. Superseded the same day by **1.6.6.106** (claimed in the same
+  comment after the final review): producing commit `b548c47f`, restamp `fde3d8b4`, tag `crtprocessbuilder-1.6.6.106`
+  verified on the remote, cut by `rebundle-process-builder.ps1` (1.6.6.105 took the manual route). Superseded on
+  2026-10-20 by **1.6.6.107** after the core-reuse analysis fixes: producing commit `f18020d3`, restamp `5c0b5795`, tag
+  `crtprocessbuilder-1.6.6.107` verified on the remote, cut by the script. Superseded the same day by **1.6.6.108** after
+  the PR 100 review fixes: producing commit `e63ed3a4`, restamp `4e08ab4f`, tag `crtprocessbuilder-1.6.6.108` verified on
+  the remote, cut by the script. Superseded the same day by **1.6.6.109**, which completes the nested-source review
+  finding (the generic mapping route, describe per level): producing commit `8a7c6099`, restamp `b6cf6f47`, tag
+  `crtprocessbuilder-1.6.6.109` verified on the remote, cut by the script.
 - Bytes trimmed per Q20 = A, if the floor raise lengthened the literal (which text per contract, the reviewer's
-  approval):
-- Tests passing (package, clio unit, e2e with Ignored count, knowledge):
-- Stand records (ST-03..ST-07, DT-03, SC-4):
-- Notes (X2 fired or not):
+  approval): the floor literal kept its length (1.6.6.103 -> 1.6.6.105 -> 1.6.6.106 -> 1.6.6.107 -> 1.6.6.108 -> 1.6.6.109). The additions naming the report and files
+  groups put modify 31 B over the ceiling; trim T1 (modify setFlowCondition: "the character index comes only with the
+  'Formula value error:' PARSE family", -87 B; process-formulas owns the rule) paid it, approved by the owner on
+  2026-10-19. No ceiling raise.
+- Tests passing (package, clio unit, e2e with Ignored count, knowledge): package: recorded on crt-process-builder#100;
+  clio unit: the rebundle's bundle, key-set and budget tests 88/88 at the install, the full targeted run on the clio
+  PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` ran against the .NET Framework sandbox on
+  2026-10-19 with 21 passed, 0 failed, 1 skipped on both net10.0 and net8.0 - the skip is the designer-fixture test,
+  whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox. Run first on CrtProcessBuilder
+  1.6.6.105, again on 1.6.6.106 after the final-review cut (2026-10-19) and on 1.6.6.107 after the core-reuse cut (2026-10-20, after the
+  install, with the reworded non-text-column fragment); the isolated agent run of TC-01..TC-12
+  passed on 1.6.6.105; knowledge: clio-knowledge PR 297, its bundle tests green.
+- Stand records (ST-03..ST-07, DT-03, SC-4): all PASS on 2026-10-19, CrtProcessBuilder 1.6.6.105. ST-03 2 callee
+  copies, one per iteration; ST-04 the M4 chain with `bindingLevels: both`, 2 copies; ST-05 two consumers, copies on
+  both targets, sources unchanged; ST-06 1 InvoiceFile `Invoice. <Number>.docx` re-found and tagged; ST-07 1
+  `SysProcessFile` row while parked, 0 after completion (closes M16 for the top-level case); DT-03 every runtime
+  value unchanged by a designer no-op save (display and bookkeeping normalizations only); SC-4 0 differences on all
+  five elements, negative control 30.
+- Notes (X2 fired or not): X2 did not fire. Left on the stand for cleanup on the owner's word: the probe and ST/SC
+  processes, their fixture records and the file rows they created.

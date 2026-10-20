@@ -821,16 +821,20 @@ public sealed class DescribedElement {
 	public DescribedScriptTask ScriptTask { get; set; }
 
 	/// <summary>
-	/// For a Process file element of a variant the server configures (Object attachments): its <c>fileProcessing</c>
-	/// block with EFFECTIVE values - an inherited template default counts. <c>null</c> for every other element, the
-	/// other two variants included (they describe as a generic user task), and on a server that predates the block.
+	/// For a Process file element - Object attachments (<c>attachments</c>), Generated report (<c>report</c>) or
+	/// Process parameter (<c>files</c>): its <c>fileProcessing</c> block with EFFECTIVE values - an inherited template
+	/// default counts. <c>null</c> for every other element and on a server that predates the block (before
+	/// CrtProcessBuilder 1.6.6.109 only Object attachments elements carry it; 1.6.6.105-1.6.6.108 were superseded cuts that
+	/// never shipped).
 	/// <para>The write members resubmit unchanged into a <c>create</c>/<c>modify</c> <c>fileProcessing</c> block, and
-	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>) are
-	/// accepted back when equal. The describe-only members - <c>actionStored</c>, <c>outputs</c>, <c>issues</c> and
-	/// every value source's <c>display</c> - are removed before resubmitting; clio warns and ignores them if sent
-	/// back. A member the server could not read is ABSENT, not a value to resubmit: a bound or invalid action reports
-	/// neither <c>action</c> nor <c>saveTo</c> (an entry of <c>issues</c> says why). The record scope is reported as
-	/// <c>attachments.recordId</c> and NOT repeated in <see cref="Filter"/>.</para>
+	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>,
+	/// <c>report.type</c>, <c>report.object</c>) are accepted back when equal. The describe-only members -
+	/// <c>actionStored</c>, <c>outputs</c>, <c>issues</c>, <c>bindingLevels</c>, <c>report.caption</c>,
+	/// <c>report.convertToPdf</c> and every value source's <c>display</c> - are removed before resubmitting; clio
+	/// warns and ignores them if sent back. A member the server could not read is ABSENT, not a value to resubmit: a
+	/// bound or invalid action reports neither <c>action</c> nor <c>saveTo</c> (an entry of <c>issues</c> says why).
+	/// The record scope is reported as <c>attachments.recordId</c> or <c>report.recordId</c> and NOT repeated in
+	/// <see cref="Filter"/>. See <see cref="DescribedFileProcessing"/>.</para>
 	/// </summary>
 	[JsonPropertyName("fileProcessing")]
 	public DescribedFileProcessing FileProcessing { get; set; }
@@ -2254,7 +2258,10 @@ public sealed class DescribedFormulaTarget {
 /// </summary>
 public sealed class DescribedFileProcessing {
 
-	/// <summary>Identity check: the variant, <c>attachments</c> for the Object attachments variant.</summary>
+	/// <summary>
+	/// Identity check: the variant - <c>attachments</c> (Object attachments), <c>report</c> (Generated report) or
+	/// <c>files</c> (Process parameter).
+	/// </summary>
 	[JsonPropertyName("source")]
 	public string Source { get; set; }
 
@@ -2281,6 +2288,28 @@ public sealed class DescribedFileProcessing {
 	public DescribedFileProcessingAttachments Attachments { get; set; }
 
 	/// <summary>
+	/// Which printable a Generated report element generates, for which record, and how its files are named;
+	/// <c>null</c> for the other variants.
+	/// </summary>
+	[JsonPropertyName("report")]
+	public DescribedFileProcessingReport Report { get; set; }
+
+	/// <summary>
+	/// The files a Process parameter element copies, as the block names their source; <c>null</c> for the other
+	/// variants, and when the binding does not decode to one source (an entry of <see cref="Issues"/> says why).
+	/// </summary>
+	[JsonPropertyName("files")]
+	public DescribedFileProcessingValueSource Files { get; set; }
+
+	/// <summary>
+	/// Describe-only: which levels of a Process parameter element's <c>Files</c> input are bound - <c>both</c>,
+	/// <c>itemOnly</c> (one file, or a formula), <c>outerOnly</c> (fails at run time) or <c>none</c> (the
+	/// process cannot start). <c>null</c> for the other variants.
+	/// </summary>
+	[JsonPropertyName("bindingLevels")]
+	public string BindingLevels { get; set; }
+
+	/// <summary>
 	/// Where the files are saved; <c>null</c> for an element that uses its files in the process, or whose action is
 	/// bound or invalid (<see cref="Action"/> is then <c>null</c> too).
 	/// </summary>
@@ -2288,8 +2317,11 @@ public sealed class DescribedFileProcessing {
 	public DescribedFileProcessingSaveTo SaveTo { get; set; }
 
 	/// <summary>
-	/// Describe-only: the output collections and their item, as a mapping names them (<c>ObjectFiles</c> /
-	/// <c>File</c>, <c>CreatedObjectFileIds</c> / <c>Id</c>).
+	/// Describe-only: the output collections and their item, as a mapping names them. Every variant has
+	/// <c>CreatedObjectFileIds</c> / <c>Id</c>; the file collection is <c>ObjectFiles</c> / <c>File</c> for Object
+	/// attachments, <c>ReportFiles</c> / <c>File</c> for Generated report, and <c>ObjectFiles</c> /
+	/// <c>ObjectFile</c> for Process parameter (the copies it saved) - the same collection name as Object
+	/// attachments, a different item name.
 	/// </summary>
 	[JsonPropertyName("outputs")]
 	public List<DescribedFileProcessingOutput> Outputs { get; set; }
@@ -2297,7 +2329,10 @@ public sealed class DescribedFileProcessing {
 	/// <summary>
 	/// Describe-only: hazards nothing else reports - an inconsistent storage pair, a target with no link column, a
 	/// sort or filter column the attachment object lacks, hidden sort entries, an unset, bound or invalid action, a
-	/// record scope that does not read back. <c>null</c> when there are none.
+	/// record scope that does not read back; for a Generated report, a missing or FastReport printable and an MS Word
+	/// printable with <c>separateReports</c> <c>false</c>; for a Process parameter, <c>bindingLevels</c>
+	/// <c>outerOnly</c> or <c>none</c>, a <c>Files</c> binding that would not resubmit as stored, and a level bound to
+	/// a source nested inside another collection. <c>null</c> when there are none.
 	/// </summary>
 	[JsonPropertyName("issues")]
 	public List<string> Issues { get; set; }
@@ -2352,6 +2387,57 @@ public sealed class DescribedFileProcessingAttachments {
 	/// </summary>
 	[JsonPropertyName("sort")]
 	public DescribedFileProcessingSort Sort { get; set; }
+
+	/// <summary>Anything the server reports inside this group that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>The <c>report</c> group of a described Generated report element. Mirrors <c>DescribeFileProcessingReportInfo</c>.</summary>
+public sealed class DescribedFileProcessingReport {
+
+	/// <summary>The printable's id (<c>ReportId</c>), as list-printables reports it (<c>templateId</c>).</summary>
+	[JsonPropertyName("printable")]
+	public string Printable { get; set; }
+
+	/// <summary>Describe-only: the printable's caption, in the reader's culture.</summary>
+	[JsonPropertyName("caption")]
+	public string Caption { get; set; }
+
+	/// <summary>Identity check: the printable's type (<c>MS Word</c>).</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary>Identity check: the object the report is generated for.</summary>
+	[JsonPropertyName("object")]
+	public string Object { get; set; }
+
+	/// <summary>
+	/// Describe-only: whether the printable asks for PDF, which only works with a converter package installed;
+	/// <c>null</c> when the printable does not resolve.
+	/// </summary>
+	[JsonPropertyName("convertToPdf")]
+	public bool? ConvertToPdf { get; set; }
+
+	/// <summary>
+	/// The record the report is generated for (<c>Id = value</c> on the report object), lifted out of the stored
+	/// filter; <c>null</c> when the filter carries no scope the block can name, which then stays in the element's
+	/// <c>filter</c>.
+	/// </summary>
+	[JsonPropertyName("recordId")]
+	public DescribedFileProcessingValueSource RecordId { get; set; }
+
+	/// <summary>The stored <c>IsSeparateReports</c>; <c>null</c> when it is not a constant.</summary>
+	[JsonPropertyName("separateReports")]
+	public bool? SeparateReports { get; set; }
+
+	/// <summary>The file-name suffix (<c>ReportName</c>); a constant reads back as <c>value</c>. <c>null</c> when none is stored.</summary>
+	[JsonPropertyName("fileNameSuffix")]
+	public DescribedFileProcessingValueSource FileNameSuffix { get; set; }
+
+	/// <summary>The report object's column whose value suffixes each file name; <c>null</c> when none.</summary>
+	[JsonPropertyName("fileNameSuffixColumn")]
+	public string FileNameSuffixColumn { get; set; }
 
 	/// <summary>Anything the server reports inside this group that this model does not declare.</summary>
 	[JsonExtensionData]
@@ -2415,7 +2501,10 @@ public sealed class DescribedFileProcessingSaveTo {
 /// </summary>
 public sealed class DescribedFileProcessingValueSource {
 
-	/// <summary>A constant: the record id.</summary>
+	/// <summary>
+	/// A constant: a record id for a record scope or a target record, the text of <c>report.fileNameSuffix</c>.
+	/// Never set for <c>files</c>, which refuses a constant.
+	/// </summary>
 	[JsonPropertyName("value")]
 	public string Value { get; set; }
 

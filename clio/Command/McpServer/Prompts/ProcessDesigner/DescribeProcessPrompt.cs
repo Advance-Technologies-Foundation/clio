@@ -53,9 +53,13 @@ public static class DescribeProcessPrompt {
 		   left to synchronize", not "the element carries every page parameter".
 		   A `fileProcessing` element (the designer's "Process file") carries its `fileProcessing` block: the ONE
 		   group present is its variant (`attachments` for Object attachments - which record's files it reads, how
-		   many and in what order), plus `action` and `saveTo`. Narrate it in those terms. Its describe-only members
-		   (`actionStored`, `outputs`, `issues`, and each value source's `display`) are removed before resubmitting;
-		   clio warns and ignores them if sent back. `get-guidance name=process-files` owns the block.
+		   many and in what order; `report` for Generated report - which printable, for which record, how its files
+		   are named; `files` for Process parameter - which files it copies), plus `action` and `saveTo`. Narrate it
+		   in those terms. Its describe-only members (`actionStored`, `outputs`, `issues`, `report.caption`,
+		   `report.convertToPdf`, `bindingLevels`, and each value source's `display`) are removed before
+		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
+		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
+		   `get-guidance name=process-files` owns the block.
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
 		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an

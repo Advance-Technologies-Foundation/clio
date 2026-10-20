@@ -274,16 +274,25 @@ internal static class ProcessBlockKeyCheck {
 		"value processParameter sourceElement sourceElementParameter sourceColumn expression", "display");
 
 	private static readonly KeySet FileProcessingBlock = new KeySet("FileProcessingDescriptor", "fileProcessing",
-			"DescribeFileProcessingInfo", "source action attachments report files saveTo", "actionStored outputs issues")
+			"DescribeFileProcessingInfo", "source action attachments report files saveTo",
+			"actionStored bindingLevels outputs issues")
 		.With(new KeySet("FileProcessingAttachmentsDescriptor", "attachments", "DescribeFileProcessingAttachmentsInfo",
 				"object recordId numberOfRecords sort storage fileObject linkColumn")
 			.With(RecordId, FileProcessingValueSource)
 			.With(ReadDataSort))
-		.With(new KeySet("FileProcessingReportDescriptor", "report", null,
-				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type")
+		.With(new KeySet("FileProcessingReportDescriptor", "report", "DescribeFileProcessingReportInfo",
+				"printable recordId separateReports fileNameSuffix fileNameSuffixColumn object type",
+				"caption convertToPdf")
 			.With($"{RecordId} fileNameSuffix", FileProcessingValueSource))
-		.With(new KeySet("FileProcessingFilesDescriptor", "files", null,
-			"processParameter sourceElement sourceElementParameter expression value"))
+		// 'files' is described in the shared value-source shape, so only its 'display' is a read-back. Describe DOES
+		// report a 'sourceColumn' there - FileProcessingBlockDescriber decodes a Files binding to a column of a record -
+		// but the write contract has no such member: dropped, the binding would name the record, not its column, so it
+		// stays refused, and the pointer tells the resubmitting caller how to keep the stored binding.
+		.With(new KeySet("FileProcessingFilesDescriptor", "files", "DescribeFileProcessingValueSource",
+			"processParameter sourceElement sourceElementParameter expression value", "display",
+			PointerMap(("sourceColumn", "describe reports 'files' this way when Files is bound to a column of a "
+				+ "record, a binding the 'files' group cannot write; on setElement leave 'files' out to keep the "
+				+ "stored binding, or bind another source"))))
 		.With(new KeySet("FileProcessingSaveToDescriptor", "saveTo", "DescribeFileProcessingSaveToInfo",
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));
