@@ -1421,7 +1421,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					&& messages.Any(m => m.Contains("2/", StringComparison.Ordinal)),
 				TimeSpan.FromSeconds(10),
 				context.CancellationTokenSource.Token);
-		} catch (OperationCanceledException) {
+		} catch (TimeoutException) {
+			// WaitForMessagesAsync reports an elapsed wait as TimeoutException, not as a cancellation.
 		}
 		_sharedCompositeBatch = new SharedCompositeBatch(
 			callResult,
