@@ -70,12 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>8a7c6099</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.109</c>) on branch <c>feature/ENG-96506-process-file-report-and-parameter</c>, which
-	/// was merged from <c>main</c> at <c>4a277295</c> (1.6.6.104), so the cut carries everything 1.6.6.104 shipped.
-	/// This cut was made by <c>rebundle-process-builder.ps1</c>, which captured the commit reference itself. The
-	/// first cut of this branch, 1.6.6.105, took the manual route because the script refuses a descriptor that is already
-	/// restamped and that restamp had been committed first; 1.6.6.106 to 1.6.6.108 and this cut ran the script before the restamp commit.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>512dd9d0</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.111</c>) on branch <c>feature/ENG-103937-process-file-sysfile-storage</c>, which
+	/// starts from <c>main</c> at <c>4617c369</c> (1.6.6.109), so the cut carries everything 1.6.6.109 shipped.
+	/// This cut took the manual route (export of the producing commit with the restamped descriptor overlaid):
+	/// the script refuses a descriptor that is already restamped, and that restamp (<c>5e4e1508</c>) had been
+	/// committed first.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -183,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"28884A07C6F1FA0EC5B7A4C8B3CCD054906B93952FAF619568D8C34BB656842A";
+		"B5A6656C25AB3C0D9CA33E989A5766D48119FD16A5B98820A4726F3A6B035CE2";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -211,7 +211,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.109";
+	private const string ExpectedArchiveVersion = "1.6.6.111";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -224,7 +224,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "8a7c6099b6f7db7b0f1d0018bd92c584f7ee5c35";
+	private const string ExpectedProducingCommit = "512dd9d0560ffccd243451e1a03ee1aa4133dec9";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -250,7 +250,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792489594000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792513370000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
