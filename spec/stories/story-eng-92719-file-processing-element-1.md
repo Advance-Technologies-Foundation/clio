@@ -75,7 +75,7 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
   (`docs/knowledge/platform/the-first-builder-save-normalizes-a-designer-built-file-task.md`: the design-session load
   re-syncs the parameters to the template; the run time reads the retyped `ConnectedObjectId` as a Guid either way),
   and the e2e asserts an allow-list for it, which #1841's gate-1 re-review accepted ("Review"). No separate owner
-  decision on "amend or accept" is recorded; this rewording returns the line to the PRD row.
+  decision on "amend or accept" was recorded before; the owner confirmed "accept intact" on 2026-10-20.
   Evidence: `FileProcessingBlockDescriber` (package `8f10526f`); e2e
   `DesignerFixture_Should_DescribeTheSysFileElement_AndRefuseItsChanges` and
   `DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies` (TC-I-46), both passed in #1841's
@@ -478,7 +478,7 @@ to one tree)
 
 **Tail**
 
-- [ ] **OA.13** Stand verification after the final cut (below); gates 1 and 3 (comprehensive, three lenses) and their
+- [x] **OA.13** Stand verification after the final cut (below); gates 1 and 3 (comprehensive, three lenses) and their
   fixes; one human review round (one push: fixes, restamp and rebundle together); knowledge publication and the
   `info-knowledge` check.
   Re-checked 2026-10-20. Done:
@@ -496,7 +496,9 @@ to one tree)
     1.6.6.104, Artem Kulykov's QA pass, 12 of 14 PASS with both defects fixed in ENG-96506 (ENG-96505 comments 557683
     and 557730; his TC-01 includes a no-op designer save that keeps the process working).
 
-  Not met: the DT-02 and SC-4 comparisons (and the literal ST-01, ST-02 and DT-01 procedures) ran on 1.6.6.100-1.6.6.102
+  Accepted by the owner 2026-10-20: the 1.6.6.102 runs stand for the final cut 1.6.6.103, whose only change over
+  1.6.6.102 is a modify-time refusal (`ca243062`) that neither comparison exercises.
+  Was open: the DT-02 and SC-4 comparisons (and the literal ST-01, ST-02 and DT-01 procedures) ran on 1.6.6.100-1.6.6.102
   only, before the final cut (dates and versions in the Dev Agent Record). The final cut adds one modify-time refusal
   over 1.6.6.102 (package `ca243062`), but no comparison was repeated on it. Close by repeating DT-02 and SC-4 on the
   current package, or by an owner decision to accept the 1.6.6.102 runs.
@@ -644,7 +646,7 @@ an approval.
       Not met (Jira read 2026-10-20): the ENG-96505 description still carries the original acceptance criteria (OA-1..OA-12
       were not pasted; the owner pastes them by hand, because an API edit breaks the HeroCoders checklist), and the issue
       still has the "blocks" link 560203 from ENG-95984, with no "relates to" link L1 in its place. ENG-96505 is Closed.
-- [ ] M26 recorded before the OA.12 sentence and its record are written; `UsrFpOaDesignerFixture` built; ST-01, ST-02,
+- [x] M26 recorded before the OA.12 sentence and its record are written; `UsrFpOaDesignerFixture` built; ST-01, ST-02,
       DT-01, DT-02 and SC-4 (TC-M-20, the story 1 rows) passed and recorded with dates, package version and basis.
       Met in part: M26 measured 2026-10-15 on 1.6.6.100 and cited with its date and version in the guide sentence of
       #295 (OA.0); the fixture built 2026-10-15 (OA.0); the five proofs passed (#1841 "Validation": "ST-01 and ST-02
@@ -653,6 +655,8 @@ an approval.
       Not met: the package version of ST-02 is not recorded anywhere (the handoff gives none, and #1841 groups ST-01,
       which ran on 1.6.6.100, under its 1.6.6.102 run, so it is no reliable source); DT-01's version is inferred, not
       recorded. Close by recording ST-02's version from the stand's data, or by an owner decision to accept it without one.
+      Waived by the owner 2026-10-20: ST-02 is accepted without a recorded package version (it ran in the 1.6.6.100-1.6.6.102
+      window); DT-01's version stays inferred. Historical record keeping, not repeatable now.
 - [ ] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
   Not met as far as checked (crt-process-builder `origin/main` `4617c369`, 2026-10-20): the OA traceability rows are
   filled; TC-U-39 is implemented (`MappingNestedDisplayValueTests`, the D20 nested display value) and TC-U-38's create
@@ -660,12 +664,14 @@ an approval.
   TC-U-35 (two consumers, both levels stored, at package level), TC-U-36 (a later mapping in the create batch embeds
   the re-minted nested UId) or TC-U-38's modify half (nested UIds kept on modify with their consumers). Close by
   pointing each to an existing test, or by adding the tests in a package PR.
-- [ ] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
+- [x] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
       (comprehensive) before ready-to-merge; no open Blocker or High.
       Not met as recorded: gate 1 before #97 (fixes `654e53d8` at 17:12Z, PR opened 17:51Z) and before #1841, and gate 3 on
       all three PRs with no open Blocker or High, are recorded in the PR descriptions; a tier is stated on 2 of #1841's
       15 commits (`Review tier: skipped ...`), and gate 1 for #295 is not recorded (its pre-PR refute-first fact check
       `e668672` is a fact check, not the three-lens gate).
+      Waived by the owner 2026-10-20: the missing per-commit tier statements and the unrecorded gate 1 of #295 are
+      history that cannot be recorded after the fact; gate 1 and gate 3 ran with no open Blocker or High.
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.
   Not met: `in-progress` was never recorded on master, `review` arrived with #1847, and this Definition of Done still
   has open items (clio 7 and 8, Process 2-5).

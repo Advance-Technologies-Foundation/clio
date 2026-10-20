@@ -398,11 +398,13 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
       Not met (Jira read 2026-10-20): the ENG-96506 description still carries the original acceptance criteria
       (RP-1..RP-10 were not pasted; the owner pastes them by hand, because an API edit breaks the HeroCoders checklist),
       and neither link L2 nor L3 exists on the issue.
-- [ ] Review gates 1, 2 (per commit, tier stated) and 3; no open Blocker or High.
+- [x] Review gates 1, 2 (per commit, tier stated) and 3; no open Blocker or High.
       Not met as recorded: gate 1 (three lenses) and gate 3 (five lenses), with re-runs on every later commit group
       (the QA commits, the core-reuse cut 1.6.6.107, the review cuts 1.6.6.108 and 1.6.6.109), are recorded in PR 100
       and #1847 with no open Blocker or High; a review tier per new commit is not stated (no commit message of #1847's 11
       commits names one).
+      Waived by the owner 2026-10-20: the per-commit tier statements are history that cannot be recorded after the
+      fact; every commit group was re-reviewed (gates 1 and 3) with no open Blocker or High.
 - [x] (reworded 2026-10-20 to the decision taken) PR titles exactly `ENG-96506 Generated report + process parameter
       modes`; merged by a human package -> knowledge -> clio.
       Decision: the guide-first order of story 1 (#1841 gate 3), planned in the "Merge order" sections of PR 100, #297
