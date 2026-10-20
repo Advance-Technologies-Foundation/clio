@@ -864,7 +864,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-81 (D16) on a SysFile source: setFilter writes its conditions next to the stored record scope, and clearFilter writes the scope back alone - describe reads the scope (attachments.recordId) unchanged after both. Ignored when the stand has no Account address record.")]
+	[Description("TC-I-81 (D16) on a SysFile source: setFilter writes its conditions next to the stored record scope, and clearFilter writes the scope back alone - describe reads the scope (attachments.recordId) unchanged after both, and the stored element keeps the scope as the designer's Guid compare (twice as many compare leaves with the Name condition as after clearFilter, never an In filter). Ignored when the stand has no Account address record.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("setFilter and clearFilter keep the record scope of a SysFile source")]
 	public async Task ModifyBusinessProcess_Should_KeepTheSysFileRecordScope_ThroughSetFilterAndClearFilter() {
@@ -896,8 +896,6 @@ public sealed class ProcessFileElementToolE2ETests {
 			ShouldHaveLanded(setFilter, "a filter on SysFile columns is written on a SysFile source");
 			Text(Group(Group(FileProcessingBlock(afterSet), "attachments"), "recordId"), "value")
 				.Should().BeEquivalentTo(recordId, because: "setFilter keeps the record scope the block wrote");
-			afterSetNode.Should().Contain("Terrasoft.CompareFilter",
-				because: "the kept scope of an Account address (no primary display column) stays the designer's Guid compare");
 			afterSetNode.Should().NotContain("Terrasoft.InFilter",
 				because: "setFilter does not retype the kept scope into a lookup");
 			Objects(Group(afterSet, "filter")["conditions"]).Select(condition => Text(condition, "column"))
@@ -906,8 +904,12 @@ public sealed class ProcessFileElementToolE2ETests {
 			Text(Group(Group(FileProcessingBlock(afterClear), "attachments"), "recordId"), "value")
 				.Should().BeEquivalentTo(recordId, because: "clearFilter writes the record scope back alone");
 			afterClear["filter"].Should().BeNull(because: "clearFilter removes the conditions setFilter wrote, leaving only the scope");
-			afterClearNode.Should().Contain("Terrasoft.CompareFilter",
+			int compareLeavesAfterClear = Occurrences(afterClearNode, "Terrasoft.CompareFilter");
+			compareLeavesAfterClear.Should().BePositive(
 				because: "clearFilter writes the scope back in the designer's Guid-compare shape");
+			Occurrences(afterSetNode, "Terrasoft.CompareFilter").Should().Be(2 * compareLeavesAfterClear,
+				because: "after setFilter the stored filter holds the kept scope and the Name condition, both compare "
+					+ "leaves written in the same forms, so the scope was neither dropped nor retyped");
 			afterClearNode.Should().NotContain("Terrasoft.InFilter",
 				because: "clearFilter does not retype the scope into a lookup");
 		} finally {
@@ -1046,6 +1048,16 @@ public sealed class ProcessFileElementToolE2ETests {
 	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>
 		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile storage)", SysFileMinimumPackageVersion,
 			TimeSpan.FromMinutes(8));
+
+	/// <summary>How many times <paramref name="token"/> occurs in <paramref name="text"/> (ordinal).</summary>
+	private static int Occurrences(string text, string token) {
+		int count = 0;
+		for (int index = text.IndexOf(token, StringComparison.Ordinal); index >= 0;
+				index = text.IndexOf(token, index + token.Length, StringComparison.Ordinal)) {
+			count++;
+		}
+		return count;
+	}
 
 	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
 	private static Task<CallToolResult> CreateSysFileAsync(ProcessDesignerArrangeContext context, List<string> created,
