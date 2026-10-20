@@ -70,11 +70,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>512dd9d0</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.111</c>) on branch <c>feature/ENG-103937-process-file-sysfile-storage</c>, which
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>7840df0f</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.112</c>) on branch <c>feature/ENG-103937-process-file-sysfile-storage</c>, which
 	/// starts from <c>main</c> at <c>4617c369</c> (1.6.6.109), so the cut carries everything 1.6.6.109 shipped.
 	/// This cut took the manual route (export of the producing commit with the restamped descriptor overlaid):
-	/// the script refuses a descriptor that is already restamped, and that restamp (<c>5e4e1508</c>) had been
+	/// the script refuses a descriptor that is already restamped, and that restamp (<c>7d9df4c0</c>) had been
 	/// committed first.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
@@ -88,17 +88,19 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.109 (1.6.6.110 was its earlier, superseded cut): SysFile attachment
+	/// <para>What this cut carries over 1.6.6.109 (1.6.6.110 and 1.6.6.111 were its earlier, superseded cuts): SysFile attachment
 	/// storage in the Process file element (ENG-103937) - an object with no attachment object of its own is written in
 	/// SysFile, linked by <c>RecordId</c>, as the Object attachments source and as the target of all three variants;
 	/// the record scope takes the designer's shape (a lookup <c>In</c> filter when the record object has a primary
 	/// display column, a Guid compare otherwise); a SysFile-to-SysFile retarget clears the scope; and a stored SysFile
-	/// side of an object that has its own attachment object is kept but named as a describe issue.
+	/// side of an object that has its own attachment object is kept but named as a describe issue; and the code-review
+	/// fixes (a target's identity check and retarget follow its file object, setFilter refuses the SysFile record scope
+	/// it cannot type, describe names an undecidable attachment object and an untyped <c>RecordId</c> condition).
 	/// 1.6.6.109 stays the create/modify floor clio enforces (no floor raise). What earlier cuts carried is in this
 	/// file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT skip the package suite: it passed on the producing sources on both configurations before the
-	/// cut - 4280 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
+	/// cut - 4315 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on the manual route this cut took) is the ONE path that can reach the coarse failure the two
 	/// security counts below exist to catch. The inventory was checked by hand the way the script checks it: 293
@@ -178,7 +180,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"B5A6656C25AB3C0D9CA33E989A5766D48119FD16A5B98820A4726F3A6B035CE2";
+		"7CAD8CC783B4E2EE4C81697334D321F0E535D51F0F5FAA1A78D528A2500A28D7";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -206,13 +208,13 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.111";
+	private const string ExpectedArchiveVersion = "1.6.6.112";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
-	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.111 it
-	/// was typed from the tag <c>crtprocessbuilder-1.6.6.111</c>, checked with <c>git ls-remote</c> (the manual route;
-	/// the descriptor restamp is the child commit <c>5e4e1508</c>).
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.112 it
+	/// was typed from the tag <c>crtprocessbuilder-1.6.6.112</c>, checked with <c>git ls-remote</c> (the manual route;
+	/// the descriptor restamp is the child commit <c>7d9df4c0</c>).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -220,7 +222,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "512dd9d0560ffccd243451e1a03ee1aa4133dec9";
+	private const string ExpectedProducingCommit = "7840df0fdf5005de35cc7c24802e5cf59d549fc0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -246,7 +248,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792513370000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792524289000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
