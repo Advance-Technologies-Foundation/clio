@@ -2,7 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command.McpServer.Progress;
 using Clio.Command.McpServer.Relay;
 using FluentAssertions;
@@ -30,10 +30,10 @@ public sealed class TerminalStageWatchTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Before the run has said anything, restarting the silence clock starts the first window again, so the handshake that preceded tools/call is not charged to it.")]
-	public void RestartSilenceClock_ShouldRestartTheFirstWindow_WhenNoStageEventHasArrived() {
+	public async Task RestartSilenceClock_ShouldRestartTheFirstWindow_WhenNoStageEventHasArrived() {
 		// Arrange
 		TerminalStageWatch sut = new(syntheticProgressToken: null);
-		Thread.Sleep(ElapsedBeforeRestart);
+		await Task.Delay(ElapsedBeforeRestart);
 		Stopwatch sinceJustBeforeRestart = Stopwatch.StartNew();
 
 		// Act
@@ -48,12 +48,12 @@ public sealed class TerminalStageWatchTests {
 	[Test]
 	[Category("Unit")]
 	[Description("Once the run has emitted a stage event, restarting the silence clock is ignored: only the run's own events may move it, so a later restart can never hide a run that has fallen silent.")]
-	public void RestartSilenceClock_ShouldKeepTheClock_WhenAStageEventHasArrived() {
+	public async Task RestartSilenceClock_ShouldKeepTheClock_WhenAStageEventHasArrived() {
 		// Arrange
 		TerminalStageWatch sut = new(syntheticProgressToken: null);
 		sut.Observe(ManifestNotification());
 		Stopwatch sinceJustAfterTheEvent = Stopwatch.StartNew();
-		Thread.Sleep(ElapsedBeforeRestart);
+		await Task.Delay(ElapsedBeforeRestart);
 
 		// Act
 		sut.RestartSilenceClock();
