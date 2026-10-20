@@ -29,6 +29,7 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 	private const string ToolName = PlaceSectionInWorkplaceTool.ToolName;
 	private const string GrantedRole = "System administrators";
 	private const string EmptyGuid = "00000000-0000-0000-0000-000000000000";
+	private const string SeededPortalTypeId = "111c7ff1-8224-45b0-a24e-fcc983fc0c70";
 	private string _environmentName = null!;
 	private McpE2ESettings _settings = null!;
 
@@ -136,6 +137,61 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 			because: "the placement binding saves and ships the moved row although the workplace is not in the package");
 	}
 
+	[Test]
+	[AllureTag(ToolName)]
+	[AllureName("place-section-in-workplace creates a Portal workplace and refuses to retype a General one")]
+	[Description("Creates an app, places its section in a new workplace with workplace-type=portal, verifies the live Type is Portal and the binding carries Type, LoaderId and SysApplicationClientType; then calls mode=existing with workplace-type=portal on a General workplace and verifies the call is refused before any write and the workplace keeps its General type.")]
+	public async Task PlaceSectionInWorkplace_Should_Create_Portal_Workplace_And_Refuse_To_Retype() {
+		// Arrange
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(10));
+		string suffix = Guid.NewGuid().ToString("N")[..8];
+		ApplicationContextResponseEnvelope app = await CreateAppAsync(context, suffix);
+		string portalName = "ClioE2E Portal " + suffix;
+		string generalName = "ClioE2E General " + suffix;
+		PlaceSectionInWorkplaceResponse general = await PlaceAsync(context, app, generalName, "new",
+			removeFromMyApplications: false);
+
+		string portalTypeId = await ResolvePortalTypeIdAsync(context);
+
+		// Act
+		PlaceSectionInWorkplaceResponse portal = await PlaceAsync(context, app, portalName, "new", "portal");
+		string generalTypeBefore = (await ODataAsync(context,
+			$"odata/SysWorkplace({general.Workplace?.Id})?$select=TypeId")).GetProperty("TypeId").GetString()!;
+		PlaceSectionInWorkplaceResponse retype = await PlaceAsync(context, app, generalName, "existing", "portal");
+		string bindingText = await ReadBindingAsync(context, app.PackageName!, portal.Workplace?.BindingName);
+		JsonElement livePortal = await ODataAsync(context,
+			$"odata/SysWorkplace({portal.Workplace?.Id})?$select=TypeId,LoaderId,SysApplicationClientTypeId");
+		JsonElement liveGeneral = await ODataAsync(context,
+			$"odata/SysWorkplace({general.Workplace?.Id})?$select=TypeId");
+
+		// Assert
+		AllureApi.Step("Assert the portal workplace was created with the Portal type", () => {
+			general.Success.Should().BeTrue(because: general.Error ?? "the General workplace is the test's precondition");
+			general.Workplace!.Type.Should().Be("general", because: "without workplace-type the platform default is kept");
+			portal.Success.Should().BeTrue(because: portal.Error ?? "a portal workplace can be created");
+			portal.Workplace!.Type.Should().Be("portal", because: "the result reports the type read back");
+			livePortal.GetProperty("TypeId").GetString().Should().Be(portalTypeId,
+				because: "the type is set on the live insert");
+			livePortal.GetProperty("LoaderId").GetString().Should().NotBe(EmptyGuid,
+				because: "the platform still fills LoaderId when Type is passed");
+		});
+		AllureApi.Step("Assert the portal workplace binding ships Type, LoaderId and the client type", () => {
+			Match columnsLine = Regex.Match(bindingText, @"columns \(\d+\): ([^""\r\n]*)");
+			columnsLine.Success.Should().BeTrue(because: "read-data-binding-db reports the bound columns");
+			string[] columns = columnsLine.Groups[1].Value.Split(',', StringSplitOptions.TrimEntries);
+			columns.Should().Contain(["LoaderId", "Type", "SysApplicationClientType"],
+				because: "an install creates the workplace from these columns only");
+			bindingText.Should().Contain(portalTypeId, because: "the binding ships the Portal type, not General");
+		});
+		AllureApi.Step("Assert a General workplace is not retyped", () => {
+			retype.Success.Should().BeFalse(because: "the existing workplace is not of the requested type");
+			retype.WritesStarted.Should().BeNull(because: "the type is checked before the first write");
+			retype.Error.Should().Contain("type general, not portal", because: "the error names the current type");
+			liveGeneral.GetProperty("TypeId").GetString().Should().Be(generalTypeBefore,
+				because: "the tool never changes the type of an existing workplace");
+		});
+	}
+
 	private async Task<string?> FindProductWorkplaceAsync(ArrangeContext context) {
 		JsonElement workplaces = await ODataAsync(context,
 			"odata/SysWorkplace?$select=Name&$filter=SysApplicationClientType/Name%20eq%20'Web'");
@@ -162,7 +218,8 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 	}
 
 	private async Task<PlaceSectionInWorkplaceResponse> PlaceAsync(ArrangeContext context,
-		ApplicationContextResponseEnvelope app, string? workplaceName, string mode) {
+		ApplicationContextResponseEnvelope app, string? workplaceName, string mode, string? workplaceType = null,
+		bool? removeFromMyApplications = null) {
 		CallToolResult callResult = await context.Session.CallDestructiveAsync(ToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = _environmentName,
@@ -170,7 +227,9 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 				["section-code"] = app.ApplicationCode,
 				["workplace-name"] = workplaceName,
 				["roles"] = mode == "none" ? null : new[] { GrantedRole },
-				["mode"] = mode
+				["mode"] = mode,
+				["workplace-type"] = workplaceType,
+				["remove-from-my-applications"] = removeFromMyApplications
 			},
 			context.CancellationTokenSource.Token);
 		callResult.IsError.Should().NotBeTrue(because: "the tool returns a structured result");
@@ -187,6 +246,22 @@ public sealed class PlaceSectionInWorkplaceToolSandboxE2ETests : McpContractFixt
 			},
 			context.CancellationTokenSource.Token);
 		return string.Join("\n", callResult.Content.OfType<TextContentBlock>().Select(block => block.Text));
+	}
+
+	/// <summary>
+	/// The Portal type the tool resolves: the platform-seeded id when the stand has it, otherwise the only
+	/// SysWorkplaceType row with Code 1.
+	/// </summary>
+	private async Task<string> ResolvePortalTypeIdAsync(ArrangeContext context) {
+		JsonElement types = await ODataAsync(context, "odata/SysWorkplaceType?$select=Id&$filter=Code%20eq%201");
+		List<string> ids = types.GetProperty("value").EnumerateArray()
+			.Select(row => row.GetProperty("Id").GetString() ?? string.Empty)
+			.ToList();
+		if (ids.Contains(SeededPortalTypeId, StringComparer.OrdinalIgnoreCase)) {
+			return SeededPortalTypeId;
+		}
+		ids.Should().ContainSingle(because: "the stand needs exactly one Portal workplace type for this test");
+		return ids[0];
 	}
 
 	private async Task<JsonElement> ODataAsync(ArrangeContext context, string servicePath) {

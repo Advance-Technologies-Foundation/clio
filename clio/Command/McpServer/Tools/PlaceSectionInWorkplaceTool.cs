@@ -25,7 +25,7 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 
 	private const string ValidFields =
 		"Valid: environment-name, package-name, section-code, workplace-name, client-type, roles, " +
-		"remove-from-my-applications, position, mode.";
+		"remove-from-my-applications, position, mode, workplace-type.";
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
@@ -42,7 +42,10 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 			["clientType"] = "client-type",
 			["client_type"] = "client-type",
 			["removeFromMyApplications"] = "remove-from-my-applications",
-			["remove_from_my_applications"] = "remove-from-my-applications"
+			["remove_from_my_applications"] = "remove-from-my-applications",
+			["workplaceType"] = "workplace-type",
+			["workplace_type"] = "workplace-type",
+			["type"] = "workplace-type"
 		};
 
 	/// <summary>Places the section, grants the roles, binds every row, and reads the result back.</summary>
@@ -65,10 +68,12 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 				 changed (created/moved/granted/already-...), binding names, warnings and section-workplaces (where
 				 the section is now). mode: existing (must exist), new (create; refused if the name is taken by a
 				 workplace package-name does not ship), none (write nothing, only report), omitted (reuse or
-				 create). Afterwards tell the user to log out and back in.
+				 create). workplace-type (general|portal|self-service) sets the type of a created workplace;
+				 a portal for external users needs portal. An existing workplace of another type is refused,
+				 never retyped. Afterwards tell the user to log out and back in.
 				 """)]
 	public PlaceSectionInWorkplaceResponse PlaceSectionInWorkplace(
-		[Description("Parameters: environment-name, section-code (required); workplace-name (required unless mode=none); mode (existing|new|none), package-name, client-type (web|mobile), roles, remove-from-my-applications, position (optional).")]
+		[Description("Parameters: environment-name, section-code (required); workplace-name (required unless mode=none); mode (existing|new|none), workplace-type (general|portal|self-service), package-name, client-type (web|mobile), roles, remove-from-my-applications, position (optional).")]
 		[Required] PlaceSectionInWorkplaceArgs args) {
 		string aliasError = McpToolArgumentSupport.BuildLegacyAliasError(args.ExtensionData, LegacyAliases, ".",
 			ValidFields);
@@ -96,7 +101,8 @@ public sealed class PlaceSectionInWorkplaceTool(ILogger logger, IToolCommandReso
 			args.Roles ?? [],
 			args.RemoveFromMyApplications ?? true,
 			args.Position,
-			args.Mode);
+			args.Mode,
+			args.WorkplaceType);
 		return ExecuteWithCleanLog(options, () => {
 			try {
 				IWorkplacePlacementService service = ResolveFromCallContainer<IWorkplacePlacementService>(options);
@@ -173,8 +179,12 @@ public sealed record PlaceSectionInWorkplaceArgs(
 	int? Position = null,
 
 	[property: JsonPropertyName("mode")]
-	[property: Description("existing (workplace must exist), new (create it; refused if a same-named one exists that package-name does not ship), none (leave the section where it is, only report), or omit to reuse-or-create")]
-	string Mode = null
+	[property: Description("existing (workplace must exist), new (create it; refused if a same-named one exists that package-name does not ship), none (leave the section where it is, only report; roles and workplace-type are refused), or omit to reuse-or-create")]
+	string Mode = null,
+
+	[property: JsonPropertyName("workplace-type")]
+	[property: Description("general, portal or self-service: the type a created workplace gets (omit for the platform default, General), and the type an existing workplace must already have; an existing workplace is never retyped")]
+	string WorkplaceType = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
