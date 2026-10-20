@@ -293,7 +293,8 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   PR's `Validated:` line; e2e: `ProcessFileReportAndParameterToolE2ETests` ran against the .NET Framework sandbox on
   2026-10-19 with 21 passed, 0 failed, 1 skipped on both net10.0 and net8.0 - the skip is the designer-fixture test,
   whose fixture process `UsrFpOaDesignerFixture` is not present on that sandbox. Run first on CrtProcessBuilder
-  1.6.6.105, again on 1.6.6.106 after the final-review cut and on 1.6.6.107 after the core-reuse cut; the isolated agent run of TC-01..TC-12
+  1.6.6.105, again on 1.6.6.106 after the final-review cut (2026-10-19) and on 1.6.6.107 after the core-reuse cut (2026-10-20, after the
+  install, with the reworded non-text-column fragment); the isolated agent run of TC-01..TC-12
   passed on 1.6.6.105; knowledge: clio-knowledge PR 297, its bundle tests green.
 - Stand records (ST-03..ST-07, DT-03, SC-4): all PASS on 2026-10-19, CrtProcessBuilder 1.6.6.105. ST-03 2 callee
   copies, one per iteration; ST-04 the M4 chain with `bindingLevels: both`, 2 copies; ST-05 two consumers, copies on
