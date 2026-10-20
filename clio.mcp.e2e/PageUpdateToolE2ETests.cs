@@ -1771,6 +1771,65 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-103711 (scenario B5): after a target-package-uid save clio states the actual outcome instead of the pre-save condition. With the get-page baseline intact the selector resolves to the page it describes and the dry run reports conflictCheck: applied and that the check WAS applied. With the baseline's schema UId rewritten to another schema the same selector resolves elsewhere, so the dry run reports conflictCheck: not-applied and a warning that the save was NOT checked, naming where the write went and asking to tell the user.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page states whether a target-package-uid save was checked for conflicts")]
+	[AllureDescription("Against the seeded page ClioMcp_BlankPageToSave: (1) get-page anchored at a temp directory; (2) a dry-run update-page with target-package-uid = page.designPackageUId must report conflictCheck: applied and say the check WAS applied; (3) the meta.json baseline's editableSchemaUId is rewritten to a random GUID, so it describes another schema; (4) the same dry run must succeed with conflictCheck: not-applied and warn that the save was NOT checked for conflicts, naming the resolved editable schema, without repeating the 'applied only if' condition. Non-destructive by construction: only dry runs reach the stand and only a local meta.json is rewritten, so this needs no AllowDestructiveMcpTests opt-in.")]
+	public async Task PageUpdateTool_Should_State_Whether_A_TargetPackageUid_Save_Was_Checked() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "ClioMcp_BlankPageToSave";
+		string sessionDir = Directory.CreateTempSubdirectory("clio-e2e-check-outcome-").FullName;
+		try {
+			PageGetResponse getResponse = await GetPageAsync(arrangeContext, savePage, environmentName, sessionDir);
+			getResponse.Success.Should().BeTrue(
+				because: $"get-page must succeed for the seeded page '{savePage}'. Error: {getResponse.Error}");
+			string designPackageUId = getResponse.Page.DesignPackageUId;
+			string editableSchemaUId = getResponse.Editable.EditableSchemaUId;
+			designPackageUId.Should().NotBeNullOrWhiteSpace(
+				because: "get-page must report the design package the target-package-uid names");
+			editableSchemaUId.Should().NotBeNullOrWhiteSpace(
+				because: "the seeded page owns its schema, which the selector resolves to");
+			string body = await File.ReadAllTextAsync(getResponse.Files.BodyFile);
+
+			// Act
+			PageUpdateResponse checkedSave = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, sessionDir,
+				targetPackageUId: designPackageUId, dryRun: true);
+			System.Text.Json.Nodes.JsonNode meta =
+				System.Text.Json.Nodes.JsonNode.Parse(await File.ReadAllTextAsync(getResponse.Files.MetaFile))!;
+			meta["baseline"]!.AsObject()["editableSchemaUId"] = Guid.NewGuid().ToString();
+			await File.WriteAllTextAsync(getResponse.Files.MetaFile, meta.ToJsonString());
+			PageUpdateResponse uncheckedSave = await UpdatePageAsync(
+				arrangeContext, savePage, body, environmentName, sessionDir,
+				targetPackageUId: designPackageUId, dryRun: true);
+
+			// Assert
+			checkedSave.Success.Should().BeTrue(
+				because: $"the baseline matches the server, so the dry run proceeds. Error: {checkedSave.Error}");
+			checkedSave.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckApplied,
+				because: "the selector resolved to the page the baseline describes, so it was compared");
+			(checkedSave.Warnings ?? []).Should().Contain(warning => warning.Contains("conflict check WAS applied"),
+				because: $"the caller must learn the save was protected. Warnings: {string.Join(" | ", checkedSave.Warnings ?? [])}");
+			uncheckedSave.Success.Should().BeTrue(
+				because: $"a baseline describing another schema is not a conflict. Error: {uncheckedSave.Error}");
+			uncheckedSave.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+				because: "the baseline describes another schema, so nothing was compared");
+			(uncheckedSave.Warnings ?? []).Should().Contain(warning => warning.Contains("was NOT checked for conflicts")
+					&& warning.Contains(editableSchemaUId, StringComparison.OrdinalIgnoreCase)
+					&& warning.Contains("Tell the user"),
+				because: $"the caller must be told as a fact that the save was unchecked and where it went. Warnings: {string.Join(" | ", uncheckedSave.Warnings ?? [])}");
+			(uncheckedSave.Warnings ?? []).Should().NotContain(warning => warning.Contains("applied only if"),
+				because: "the condition is resolved and must not reach the caller as a general note");
+		} finally {
+			TryDeleteDirectory(sessionDir);
+		}
+	}
+
+	[Test]
 	[Description("An update-page with no baseline, no checksum and no selector proceeds and warns that external-modification detection did not run, naming the missing baseline as the cause.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page warns that the conflict check did not run when no baseline exists")]

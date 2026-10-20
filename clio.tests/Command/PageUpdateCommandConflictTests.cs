@@ -690,4 +690,78 @@ public sealed class PageUpdateCommandConflictTests
 		response.Warnings.Should().BeNullOrEmpty(
 			because: "the title key is registered via resources, so the binding resolves and no warning is emitted");
 	}
+
+	[Test]
+	[Description("ENG-103711: a selector save that resolves elsewhere than the conditional baseline records where the write went and reports conflictCheck: not-applied, so the caller can tell the user the save was unchecked.")]
+	public void TryUpdatePage_ShouldReportTheCheckNotApplied_WhenTheSelectorResolvesElsewhere() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		const string redirectedSchemaUId = "22222222-0000-0000-0000-000000000000";
+		PageUpdateOptions options = CreateOptions();
+		options.TargetSchemaUId = redirectedSchemaUId;
+		options.ConditionalBaselineSchemaUId = SchemaUId;
+		options.ConditionalBaselineChecksum = "baseline-checksum";
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the redirected save is not refused. Error: {response.Error}");
+		response.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+			because: "the baseline describes another schema, so nothing was compared");
+		options.ConflictCheckApplied.Should().BeFalse(because: "the write was let through without a comparison");
+		options.ResolvedWriteTarget.Should().Be($"schema {redirectedSchemaUId}",
+			because: "the outcome warning must name where the unchecked write went");
+	}
+
+	[Test]
+	[Description("ENG-103711: a selector save that resolves to the baseline schema reports conflictCheck: applied, also when the comparison refuses the save.")]
+	public void TryUpdatePage_ShouldReportTheCheckApplied_WhenTheSelectorResolvesToTheBaselineSchema() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions();
+		options.TargetPackageUId = "test-pkg-uid";
+		options.ConditionalBaselineSchemaUId = SchemaUId;
+		options.ConditionalBaselineChecksum = "baseline-checksum";
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Conflict.Should().BeTrue(because: "the promoted baseline is stale");
+		response.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckApplied,
+			because: "the resolved target was compared with the baseline");
+		options.ResolvedWriteTarget.Should().BeNull(because: "the write resolved to the page the baseline describes");
+	}
+
+	[Test]
+	[Description("ENG-103711: a forced save reports conflictCheck: not-applied, because the check is skipped by request.")]
+	public void TryUpdatePage_ShouldReportTheCheckNotApplied_WhenForced() {
+		// Arrange
+		StubChecksumRow("server-checksum");
+		PageUpdateOptions options = CreateOptions(expectedChecksum: "baseline-checksum", force: true);
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Success.Should().BeTrue(because: "force overwrites despite the stale pin");
+		response.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+			because: "a forced save is not compared with any baseline");
+	}
+
+	[Test]
+	[Description("ENG-103711: a save that fails before its target is resolved carries no conflictCheck, so nothing is claimed about a check that never ran.")]
+	public void TryUpdatePage_ShouldOmitTheConflictCheck_WhenTheSaveFailsBeforeResolution() {
+		// Arrange
+		PageUpdateOptions options = CreateOptions();
+		options.SchemaName = null;
+
+		// Act
+		_command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a schema name is required");
+		response.ConflictCheck.Should().BeNull(because: "the target was never resolved");
+	}
 }

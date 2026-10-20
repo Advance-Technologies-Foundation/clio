@@ -233,7 +233,14 @@ DESCRIPTION
 	redirect: the baseline is not used and meta.json is not refreshed. A
 	caller-supplied checksum is still compared with the resolved target; a mismatch
 	remains a conflict. With no applicable baseline, no explicit checksum and no
-	--force, the write proceeds unchecked and the warning says why.
+	--force, the write proceeds unchecked and the warning says why. After the
+	save, the warning states whether the check was applied or the save was NOT
+	checked and where the write went.
+
+	The response field conflictCheck is "applied" when the resolved target was
+	compared with a baseline and "not-applied" when the write was let through
+	without that comparison. It is omitted when the save failed before its target
+	was resolved.
 
 	WRITE MODES:
     --mode replace (default) saves the body verbatim. --mode append loads the

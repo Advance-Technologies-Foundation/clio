@@ -149,6 +149,10 @@ public sealed class PageSyncToolBaselineTests
 			because: "the per-page error must guide the agent to reload and rebase");
 		response.Pages[1].Success.Should().BeTrue(because: "a conflict on one page must not abort the rest of the batch");
 		response.Pages[1].Conflict.Should().BeFalse(because: "the second page has no baseline and therefore no conflict");
+		response.Pages[0].ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckApplied,
+			because: "the refused page was compared with its baseline (ENG-103711)");
+		response.Pages[1].ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+			because: "a page without a baseline was saved without a comparison, and the per-page result must say so");
 	}
 
 	[Test]
@@ -169,6 +173,8 @@ public sealed class PageSyncToolBaselineTests
 
 		// Assert
 		response.Pages[0].Success.Should().BeTrue(because: "per-page force=true deliberately bypasses the conflict check");
+		response.Pages[0].ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+			because: "a forced save is not compared with any baseline (ENG-103711)");
 		PageMetaFileModel meta = JsonSerializer.Deserialize<PageMetaFileModel>(fileSystem.GetFile(MetaPath).TextContents);
 		meta.Baseline.Checksum.Should().Be("fresh-after-save",
 			because: "after a forced overwrite the baseline must track the new server state");

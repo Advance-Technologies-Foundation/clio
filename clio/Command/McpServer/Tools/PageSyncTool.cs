@@ -69,7 +69,7 @@ public sealed class PageSyncTool(
 	             PageBodyAstLinter.DesignerSafetySummary +
 	             "For each page: validates body client-side (optional), saves to Creatio, " +
 	             "and verifies the update (optional). Continues processing remaining pages on failure. " +
-		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. " +
+		             "CONFLICT DETECTION: pass the per-page `checksum` — the `editable.checksum` from the get-page that page's edit is based on — on every save that follows a get-page; it becomes the authoritative baseline for that page. Without it the check falls back to the baseline get-page stored in .clio-pages/{schema}/meta.json for the same environment, which is keyed by directory and schema name and can therefore describe a different body than the one you read. A page whose schema was modified outside this session fails with per-page `conflict: true` + `conflict-details` (other pages in the batch are unaffected). On a conflict: do NOT retry with the same body — re-run get-page for that schema, re-apply your change on top of the fresh body, then retry. Re-sending a conflict response's `actualChecksum` as `checksum` is NOT a resolution - it discards the external change exactly like force=true. Inform the user about the external changes and set the per-page `force: true` ONLY after they explicitly confirm overwriting them. A saved page with `conflict-check: not-applied` had no conflict protection — tell the user. " +
 		             "When verify=true, the read-back body is written to .clio-pages/{schema-name}/body.js, anchored at the workspace root (or the `output-directory` argument); see get-page for the anchoring rules. " +
 	             "Client-side validation, when enabled, also enforces VendorPrefix.Name format " +
 	             "(SCHEMA_CONVERTERS and SCHEMA_VALIDATORS keys; SCHEMA_HANDLERS entry `request` values). " +
@@ -767,7 +767,8 @@ public sealed class PageSyncTool(
 						validationResult, opOptions.EnvironmentName, page.SchemaName),
 					Error = updateResponse.Error,
 					Conflict = updateResponse.Conflict,
-					ConflictDetails = updateResponse.ConflictDetails
+					ConflictDetails = updateResponse.ConflictDetails,
+					ConflictCheck = updateResponse.ConflictCheck
 				};
 			}
 			validationResult = AppendCommandWarnings(validationResult, updateResponse.Warnings);
@@ -797,6 +798,7 @@ public sealed class PageSyncTool(
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
 				ResourcesRegistered = updateResponse.ResourcesRegistered,
+				ConflictCheck = updateResponse.ConflictCheck,
 				// The body as SAVED - after the before-save preprocessing - which is what update-page digests too.
 				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate,
 					checksum: updateResponse.NewChecksum)
@@ -923,7 +925,8 @@ public sealed class PageSyncTool(
 				Success = false,
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
-				Error = $"Page saved but verification failed: {getResponse.Error}"
+				Error = $"Page saved but verification failed: {getResponse.Error}",
+				ConflictCheck = updateResponse.ConflictCheck
 			};
 		}
 		// The network read-back is already in hand, so the publication below holds the schema gate over
@@ -942,6 +945,7 @@ public sealed class PageSyncTool(
 			BodyLength = updateResponse.BodyLength,
 			Validation = validationResult,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
+			ConflictCheck = updateResponse.ConflictCheck,
 			Page = getResponse.Page,
 			VerifiedBodyFile = verifiedBodyFile,
 			Digest = PageWriteDigest.TryBuild(savedBody ?? page.Body, appendMode: false, opOptions.Validate,
@@ -1429,6 +1433,15 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("conflict")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public bool Conflict { get; init; }
+
+	/// <summary>
+	/// Whether this page's save was checked for changes made outside the current session: <c>applied</c> or
+	/// <c>not-applied</c>. Same meaning as <c>update-page</c>'s <c>conflictCheck</c>; omitted when the save
+	/// failed before its target was resolved.
+	/// </summary>
+	[JsonPropertyName("conflict-check")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string ConflictCheck { get; init; }
 
 	/// <summary>Conflict details when <see cref="Conflict"/> is <c>true</c>.</summary>
 	[JsonPropertyName("conflict-details")]

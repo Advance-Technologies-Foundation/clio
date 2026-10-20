@@ -979,6 +979,34 @@ public sealed class PageUpdateResponse {
 		SchemaName ??= schemaName;
 		return this;
 	}
+
+	/// <summary>Value of <see cref="ConflictCheck"/> when the resolved target was compared with a baseline.</summary>
+	public const string ConflictCheckApplied = "applied";
+
+	/// <summary>Value of <see cref="ConflictCheck"/> when the write was let through without that comparison.</summary>
+	public const string ConflictCheckNotApplied = "not-applied";
+
+	/// <summary>
+	/// Records whether the external-modification check compared the resolved target with a baseline.
+	/// </summary>
+	/// <param name="applied"><c>null</c> when the save failed before the target was resolved; the field then stays unset.</param>
+	public void MarkConflictCheck(bool? applied) {
+		if (applied.HasValue) {
+			ConflictCheck = applied.Value ? ConflictCheckApplied : ConflictCheckNotApplied;
+		}
+	}
+
+	/// <summary>
+	/// Gets or sets whether this save was checked for changes made outside the current session:
+	/// <see cref="ConflictCheckApplied"/> or <see cref="ConflictCheckNotApplied"/>. Omitted when the save
+	/// failed before its target was resolved. <c>not-applied</c> on a successful save means the write may
+	/// have overwritten someone else's change; the <c>warnings</c> name the cause (ENG-103711).
+	/// </summary>
+	[DataMember(Name = "conflictCheck")]
+	[JsonProperty("conflictCheck", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("conflictCheck")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public string ConflictCheck { get; set; }
 	/// <summary>
 	/// Gets or sets a value indicating whether the request succeeded.
 	/// </summary>

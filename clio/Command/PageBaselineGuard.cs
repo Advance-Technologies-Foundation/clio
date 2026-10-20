@@ -199,6 +199,7 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 			? null
 			: options.ExpectedChecksum.Trim();
 		options.DetectionDidNotRunWarning = null;
+		options.ConditionalBaselineWarning = null;
 		bool callerPinnedChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 		// A selector means nothing can be armed HERE: the target is resolved only after this method returns.
 		// The baseline is keyed by schema name alone and `get-page` has no redirect option, so both the
@@ -490,22 +491,66 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 
 	/// <summary>
 	/// Returns the <see cref="TryArm"/> warning that applies to a save with the given outcome. A save that
-	/// failed before its request was sent, or that the server refused, drops the did-not-run warning, because
-	/// no write proceeded. A save whose outcome is unknown keeps it, and every other guard warning is kept.
+	/// failed before its request was sent, or that the server refused, drops the did-not-run warning and the
+	/// conditional-baseline warning, because no write proceeded. Otherwise the conditional-baseline warning is
+	/// replaced with what actually happened: the check was applied, or the save was NOT checked and where the
+	/// write went (ENG-103711). Every other guard warning is kept.
 	/// </summary>
 	/// <param name="warning">The warning returned by <see cref="TryArm"/>.</param>
 	/// <param name="options">The options passed to <see cref="TryArm"/> and to the save.</param>
 	/// <param name="saveSucceeded">Whether the save, or the dry run, succeeded.</param>
 	public static string ForSaveOutcome(string warning, PageUpdateOptions options, bool saveSucceeded) {
-		string didNotRun = options.DetectionDidNotRunWarning;
-		if (saveSucceeded || options.SaveOutcomeUnknown || warning is null || string.IsNullOrEmpty(didNotRun)) {
+		bool noWriteProceeded = !saveSucceeded && !options.SaveOutcomeUnknown;
+		string kept = noWriteProceeded
+			? ReplaceRecordedWarning(warning, options.DetectionDidNotRunWarning, null)
+			: warning;
+		return ReplaceRecordedWarning(kept, options.ConditionalBaselineWarning,
+			noWriteProceeded ? null : DescribeConditionalBaselineOutcome(options));
+	}
+
+	/// <summary>
+	/// States, after the target was resolved, whether a save that carried a conditional baseline was checked.
+	/// Returns the pre-save condition unchanged when the target was never resolved, so nothing is claimed
+	/// that clio does not know.
+	/// </summary>
+	private static string DescribeConditionalBaselineOutcome(PageUpdateOptions options) {
+		if (options.ConflictCheckApplied is null) {
+			return options.ConditionalBaselineWarning;
+		}
+		string baselineTarget = !string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
+			? $"schema {options.ConditionalBaselineSchemaUId}"
+			: $"design package {options.ConditionalBaselineDesignPackageUId}";
+		if (options.ConditionalBaselineApplied && options.ConflictCheckApplied == true) {
+			return $"The conflict check WAS applied to this save of '{options.SchemaName}': the write resolved to "
+				+ $"{baselineTarget}, the page the .clio-pages baseline from get-page describes.";
+		}
+		string cause = options.ConditionalBaselineApplied
+			? $"the write resolved to {baselineTarget}, the page the .clio-pages baseline describes, but no "
+				+ "checksum was available to compare with"
+			: $"target-package-uid / target-schema-uid sent the write to {options.ResolvedWriteTarget}, while the "
+				+ $".clio-pages baseline from get-page describes {baselineTarget}";
+		return $"This save of '{options.SchemaName}' was NOT checked for conflicts: {cause}. Changes someone else "
+			+ "made to that page since get-page may have been overwritten. Tell the user that this save had no "
+			+ "conflict protection.";
+	}
+
+	/// <summary>
+	/// Replaces <paramref name="recorded"/> inside the joined <paramref name="warning"/> with
+	/// <paramref name="replacement"/>, or removes it with the space that joined it when the replacement is
+	/// <c>null</c>.
+	/// </summary>
+	private static string ReplaceRecordedWarning(string warning, string recorded, string replacement) {
+		if (warning is null || string.IsNullOrEmpty(recorded)) {
 			return warning;
 		}
-		int start = warning.IndexOf(didNotRun, StringComparison.Ordinal);
+		int start = warning.IndexOf(recorded, StringComparison.Ordinal);
 		if (start < 0) {
 			return warning;
 		}
-		int end = start + didNotRun.Length;
+		if (replacement is not null) {
+			return warning.Remove(start, recorded.Length).Insert(start, replacement);
+		}
+		int end = start + recorded.Length;
 		if (start > 0 && warning[start - 1] == ' ') {
 			start--;
 		} else if (end < warning.Length && warning[end] == ' ') {
@@ -615,11 +660,18 @@ public sealed class PageBaselineGuard : IPageBaselineGuard {
 		}
 		options.ConditionalBaselineChecksum = baseline.Checksum;
 		options.ConditionalBaselineSchemaAbsent = !baseline.EditableSchemaExists;
-		AddWarning(warnings,
-			$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
-			+ $"the .clio-pages baseline is applied only if the write resolves to {matchingTarget}; if it "
-			+ "resolves elsewhere, the write proceeds unchecked, because get-page always reads the "
-			+ "automatically resolved schema and has no redirect of its own.");
+		// A forced save skips the check by request, so it gets no trace about whether the check applies.
+		if (!options.Force) {
+			// This is the pre-save condition only. ForSaveOutcome replaces it with what actually happened, because
+			// an agent passed the condition on as a general note and never told the user the save was unchecked
+			// (ENG-103711).
+			options.ConditionalBaselineWarning =
+				$"target-package-uid / target-schema-uid were supplied for '{options.SchemaName}', so "
+				+ $"the .clio-pages baseline is applied only if the write resolves to {matchingTarget}; if it "
+				+ "resolves elsewhere, the write proceeds unchecked, because get-page always reads the "
+				+ "automatically resolved schema and has no redirect of its own.";
+			warnings.Add(options.ConditionalBaselineWarning);
+		}
 		return (metaFilePath, false, JoinWarnings(warnings));
 	}
 
