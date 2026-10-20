@@ -90,9 +90,10 @@ a change that keeps one of the seven whole, or brings their floor back under Fit
 `GetToolContracts_ShouldReturnEverySevenProcessDesignerContractShort_WhenTheCallShapesOutgrowFitsBudget`,
 so the trade is re-decided rather than drifting.
 
-Both budgets are nearly spent (October 2026): the full `modify-business-process` contract is about 2 bytes
-under the per-contract ceiling in `ToolContractPayloadBudgetTests`, and the seven-contract reply about 225
-bytes under 19 000 on the wire. The next sentence on that tool pays by a swap, as the ceiling's comment
+Both budgets are nearly spent. Measured on master after ENG-96506 (2026-10-20, PR #1847 "Statements"): the
+full `modify-business-process` contract is 35 016 bytes, 56 under the 35 072-byte per-contract ceiling in
+`ToolContractPayloadBudgetTests`, and the seven-contract reply 18 815 bytes, 185 under 19 000 on the wire.
+The next sentence on that tool pays by a swap, as the ceiling's comment
 records for earlier tickets, and the order to cut in is: provenance first (version floors, history, which
 archive a rule arrived in), then text a process guide already owns (per-element reference, the detail of a
 refusal message). Never cut a sentence carrying a `SafetyDuty` marker, a refusal the caller has to act on, or

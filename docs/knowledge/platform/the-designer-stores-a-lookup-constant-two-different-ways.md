@@ -1,5 +1,5 @@
 ---
-description: the designer stores a lookup constant on an ELEMENT PARAMETER as ConstValue + bare Guid, and only in a CHANGE-DATA COLUMN MAPPING as a [#Lookup...#] macro — so the macro found in a designer-authored schema must not be carried across to an element parameter
+description: the designer stores a lookup constant on an ELEMENT PARAMETER as ConstValue + bare Guid, and as a [#Lookup...#] macro in a CHANGE-DATA COLUMN MAPPING and on the Process file element's record ConnectedObjectId — so the macro found in a designer-authored schema must not be carried across to any other element parameter
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
@@ -29,6 +29,13 @@ common one - an agent that "verifies" the rule against a random designer schema 
 For the three elements where a human actually picks a category, it is overwhelmingly `ConstValue`:
 `ActivityUserTask` 272 of 287 (5 `Script`, 10 with no value), `OpenEditPageUserTask` 120/120,
 `UserQuestionUserTask` 71/71.
+
+**The Process file record takes the macro, measured.** The Process file element's record, `ConnectedObjectId`
+(a Guid on the template): the designer's page retypes it Lookup, and a record picked for it is stored as `Script` +
+`[#Lookup.{record object UId}.{record id}#]` with the display macro - measured on a stand on 2026-10-17 against a
+designer-built twin (ENG-96505; "The designer's stored form" in crt-process-builder's
+`docs/process-file-element-capture.md`). CrtProcessBuilder writes it that way from 1.6.6.101. It is that one
+parameter's form, not precedent for another element parameter.
 
 Where the `[#Lookup...#]` macro DOES sit on an `ActivityCategory` parameter, it is not a designer
 choice. On `CallUserTask`, `EmailUserTask` and `EmailTemplateUserTask` it always carries that

@@ -12,21 +12,22 @@ ticket: ENG-96132
 date: 2026-08-28
 ---
 
-**What is true** - the five process-designer stand fixtures carry
-`[Category(McpE2ECategories.ProcessDesigner)]`. The exclusion that keeps them out of the default
+**What is true** - the process-designer stand fixtures carry
+`[Category(McpE2ECategories.ProcessDesigner)]` (five when the exclusion was introduced; 22 fixture files
+on master on 2026-10-20). The exclusion that keeps them out of the default
 run lives in the TeamCity job `Team_Atf_ClioMcpE2eTests`: since 2026-09-16 the step
 `Run_MCP_e2e_tests` runs `--filter "%McpE2eTestFilter%"` and the parameter's default is
 `TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual` (before that, the same string was
 the step's literal argument). The repository holds only a mirror of it - `baseFilter` in
 `clio.mcp.e2e/TestSelection/mcp-e2e-selection.json`, pinned by `McpE2eSelectionCoverageTests` - and
 the mirror is what pull-request runs send back to TeamCity. Nothing in the repository can keep the
-constant's VALUE in step with the job-config default: the compiler keeps five fixtures in step with
+constant's VALUE in step with the job-config default: the compiler keeps the fixtures in step with
 each other, and the guard keeps the mirror in step with itself.
 
 **Why it is this way** - these fixtures need a sandbox that serves ProcessDesignService
 (`CrtProcessBuilder` installed), which the default CI stand does not provide. Without the
-exclusion the plan discovers the whole suite (28 tests when the exclusion was introduced, 59
-today) as `Assert.Ignore` on every run, and a permanently ignored block on every build is noise
+exclusion the plan discovers the whole suite (28 tests when the exclusion was
+introduced) as `Assert.Ignore` on every run, and a permanently ignored block on every build is noise
 that trains people to stop reading the test report. The filter lives in TeamCity job args because
 that is where the plan's lane composition is owned.
 
