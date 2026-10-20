@@ -12,8 +12,7 @@ D17, D18, D19; D25 and D26 for this cut
 merged as 1.15.163; clio #1847 merged, `ea3aaf580`; 1.6.6.105 to 1.6.6.108 were superseded by the final-review,
 core-reuse and review fixes). Reconciled box by box on 2026-10-20: every box met is ticked with its evidence; the merge
 order item is reworded to the guide-first decision; the e2e "Ignored = 0" clause is carried to ENG-103937 (story 3).
-Still open, each with its reason: RP-6 (outer-only and empty bindings are paired or reported, not refused as
-written); task "Knowledge records and status"; Definition of Done: the knowledge-record item,
+Still open, each with its reason: task "Knowledge records and status"; Definition of Done: the knowledge-record item,
 Process items on Jira, review gate 2 and the status flips. Not `done` until they close
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
@@ -95,19 +94,19 @@ Evidence sources used below: package PR 100 (https://creatio.ghe.com/engineering
   Evidence: PR 100 `8b29c32f` (Process parameter); M1 PASS on 2026-10-19, so the single File binds `Files.File` only
   (`FileProcessingProcessTests`, TC-64); ST-03 and ST-04 (`bindingLevels: both`); e2e
   `ModifyBusinessProcess_Should_ApplyTheFilesMappingRules_ToAProcessParameterElement` (TC-I-91); TC-03 and TC-04 PASS.
-- [ ] **RP-6** - the Process-parameter variant requires `saveTo`; `useInProcess`, `value`, an outer-only or empty
-  binding, a source with no FileLocator item and a mapping FROM `Files` are refused; `ObjectFiles` (item `ObjectFile`)
+- [x] **RP-6** - the Process-parameter variant requires `saveTo`; `useInProcess`, `value`, a source with no FileLocator
+  item, a nested collection source and a mapping FROM `Files` are refused; an outer-only mapping onto `Files` is paired
+  with its item with a notice, and a stored outer-only or unbound `Files` is a describe issue (reworded to the owner
+  decision of 2026-10-20 that amends ADR D18 / F-P1); `ObjectFiles` (item `ObjectFile`)
   and `CreatedObjectFileIds` are listed as outputs.
   Met: PR 100 `8b29c32f` and the review fix R-M3 (a nested collection source refused); e2e
   `CreateBusinessProcess_Should_RefuseAnUnusableProcessParameterElement` (TC-I-66: `value`, `useInProcess`, no `saveTo`,
   a `files` group that names no source, no file item, not a file), `ModifyBusinessProcess_Should_RefuseAMappingFromTheFilesInput`,
   and the TC-I-73 describe of the outputs `ObjectFiles` / `ObjectFile` and `CreatedObjectFileIds` / `Id`.
-  Not met as written (ADR D18 and F-P1 say "refused"): an outer-only mapping onto `Files` is not refused but paired with
-  its item, with a notice (ENG-95984's P2; e2e TC-I-91 (a): "Files <- Docs2 pairs Files.File with Docs2.File, with a
-  notice"), and a stored outer-only or unbound `Files` is reported as a describe issue (`bindingLevels`; an unbound one
-  stops the process from starting, measured, record `platform/an-unbound-files-input-stops-the-process-from-starting.md`).
-  No recorded decision replaces D18's refusal. Close by an owner decision that accepts pairing and the describe issue in
-  place of the refusal (then reword and tick), or by a package change that refuses.
+  Reworded and ticked 2026-10-20: the owner accepted pairing plus the describe issue in place of D18's refusal (ADR D18
+  "Amended 2026-10-20", F-P1a). Evidence for the paired path: e2e TC-I-91 (a) "Files <- Docs2 pairs Files.File with
+  Docs2.File, with a notice"; for the stored states: describe `bindingLevels` and the record
+  `platform/an-unbound-files-input-stops-the-process-from-starting.md`.
 - [x] **RP-7** - describe round-trips both variants (`report.*`, `files`, `bindingLevels`); the four shipped product
   processes describe as `buildType: fileprocessing`, read-only.
   Evidence: PR 100 "Shared" (describe covers `report.*` with `caption`, `convertToPdf`, and `files` with
