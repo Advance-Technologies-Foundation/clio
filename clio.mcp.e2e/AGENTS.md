@@ -64,6 +64,16 @@ can observe (pinned in `TestSelection/unreachable-product-files.txt`), or only f
 positively `McpE2E.NoEnvironment`. A fixture with no `McpE2E.*` tier still counts as needing
 TeamCity.
 
+The `McpE2E.ProcessDesigner` category runs on a lane of its own, `Team_Atf_ClioMcpE2eProcessDesigner`,
+whose stand installs CrtProcessBuilder from the build under test; the existing lane excludes it. The
+same rules select for that lane (`pdMode` / `pdFilter`, see `_processDesignerLane` in the manifest): it
+runs the selected fixtures that carry a ProcessDesigner test, and the whole category on a full run by a
+rule, on a manual dispatch, for a change to the `install-process-builder` command, and for a change to
+`clio/CrtProcessBuilder/**`, which runs nothing on the existing lane. A test that
+needs the package carries `[Category(McpE2ECategories.ProcessDesigner)]`, and a skip because the package
+is missing or too old goes through `ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired`, so
+that lane (`McpE2E__RequireProcessBuilder=true`) fails it instead of ignoring it.
+
 What a fixture must satisfy so that it is selected when the code it tests changes
 (`clio.tests/McpE2eSelectionCoverageTests.cs` fails the unit lane otherwise):
 

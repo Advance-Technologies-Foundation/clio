@@ -1195,11 +1195,13 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// reports each of them as "environment too old", so the test could never go red for the thing it exists
 		// to catch.
 		string payload = JsonSerializer.Serialize(callResult);
+		// The process-designer lane, which installs the bundled package itself, fails it instead
+		// (McpE2E:RequireProcessBuilder): there the package is the one this branch ships.
 		bool elementTypeRejected = callResult.IsError is true
 			&& payload.Contains("is not supported yet")
 			&& payload.Contains("changeAccessRights");
 		if (elementTypeRejected) {
-			Assert.Ignore(
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
 				+ "the accessRights block never reaches the read-back guard. This is expected until the "
 				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "

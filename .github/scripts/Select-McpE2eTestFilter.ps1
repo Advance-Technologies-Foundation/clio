@@ -12,6 +12,11 @@
 #             default (baseFilter) applies unchanged.
 #   decisions - one line per changed file: the rule that classified it and the fixtures it
 #             selected, so the choice is auditable from the workflow log.
+#   pdMode, pdFilter, pdFixtures - the same three for the process-designer lane
+#             (Team_Atf_ClioMcpE2eProcessDesigner), which runs only the McpE2E.ProcessDesigner category on a
+#             stand that carries CrtProcessBuilder. pdMode is "full" whenever mode would be full by a rule, or a
+#             file under processDesignerLane.exclusivePaths or fullRunPaths changed; otherwise the selected
+#             fixtures that carry a test in the category, or "none". pdFilter is never empty unless pdMode is "none".
 #
 # The rules live in clio.mcp.e2e/TestSelection/mcp-e2e-selection.json (read its _comment).
 # With -Inventory the script prints what it sees instead of a selection:
@@ -20,7 +25,8 @@
 #   uncoveredEntryPoints: [MCP resource/prompt files no fixture names],
 #   unreachableProductFiles: [files no fixture can observe], lexerResidue: [files that survived blanking],
 #   noEnvironmentOnly: { <fixture>: true when none of its tests survives the TeamCity subset filter },
-#   survivesTeamCity: { <fixture>: true when at least one visible test survives that filter } }.
+#   survivesTeamCity: { <fixture>: true when at least one visible test survives that filter },
+#   survivesProcessDesignerLane: { <fixture>: true when at least one visible test runs on the process-designer lane } }.
 # clio.tests/McpE2eSelectionCoverageTests.cs compares that inventory with reflection over the compiled
 # e2e assembly, so this script is the single owner of the textual rules and the guard only checks that
 # the text-based view and the compiled view agree.
@@ -97,6 +103,19 @@ $fixtureNoEnvironmentOnly = @{}  # fixture class name -> $true when none of its 
 # must not flip the verdict. A constant argument resolves only through McpE2ECategories; any other
 # constant stays unknown, which reads as "not NoEnvironment" - the safe direction.
 $baseFilterExcluded = @([regex]::Matches([string]$manifest.baseFilter, 'TestCategory!=([^&|()\s]+)') | ForEach-Object { $_.Groups[1].Value })
+# The process-designer lane runs one category and keeps its own exclusions; the workflow queues it from
+# pdMode/pdFilter, so a manifest without the block is a configuration error rather than "no such lane".
+if ($null -eq $manifest.PSObject.Properties['processDesignerLane']) {
+    throw 'Selection manifest has no processDesignerLane block; .github/workflows/teamcity-mcp-e2e.yml queues that lane from this script.'
+}
+$pdCategory = [string]$manifest.processDesignerLane.category
+$pdBaseFilter = [string]$manifest.processDesignerLane.baseFilter
+if ([string]::IsNullOrWhiteSpace($pdCategory) -or -not $pdBaseFilter.StartsWith("TestCategory=$pdCategory")) {
+    throw "processDesignerLane.baseFilter must start with TestCategory=$pdCategory, but it is '$pdBaseFilter'."
+}
+$pdExcluded = @([regex]::Matches($pdBaseFilter, 'TestCategory!=([^&|()\s]+)') | ForEach-Object { $_.Groups[1].Value })
+$pdExclusivePaths = @($manifest.processDesignerLane.exclusivePaths)
+$pdFullRunPaths = @($manifest.processDesignerLane.fullRunPaths)
 $categoryConstants = @{}
 $categoryConstantsPath = Join-Path $fixtureRoot 'Support/Configuration/McpE2ECategories.cs'
 if (Test-Path -LiteralPath $categoryConstantsPath) {
@@ -181,7 +200,25 @@ function Test-SurvivesTeamCityFilter([string] $ClassAttributes, [string] $Body, 
     return $false
 }
 
+# True when at least one visible test of the fixture runs on the process-designer lane: its class and
+# method categories together contain the lane's category and none of the lane's exclusions. A class-level
+# category with no visible test (all inherited) counts, because the inherited tests carry it too; without
+# the category in this file the fixture is not the lane's, whatever a base class in another file says.
+function Test-RunsOnProcessDesignerLane([string] $ClassAttributes, [string] $Body, [string] $Category, [string[]] $Excluded) {
+    $classCategories = @(Get-Categories $ClassAttributes)
+    if (@($classCategories | Where-Object { $Excluded -contains $_ }).Count -gt 0) { return $false }
+    $methods = Get-TestMethodCategories $Body
+    $classCarriesCategory = $classCategories -contains $Category
+    if ($methods.Count -eq 0) { return $classCarriesCategory }
+    foreach ($categories in $methods) {
+        $inCategory = $classCarriesCategory -or (@($categories) -contains $Category)
+        if ($inCategory -and @(@($categories) | Where-Object { $Excluded -contains $_ }).Count -eq 0) { return $true }
+    }
+    return $false
+}
+
 $fixtureSurvivesTeamCity = @{}  # fixture class name -> $true when a test survives the pull-request TeamCity filter
+$fixtureRunsOnProcessDesignerLane = @{}  # fixture class name -> $true when a test runs on the process-designer lane
 $teamCityExcluded = @($baseFilterExcluded)
 if (-not $IncludeNoEnvironment) { $teamCityExcluded += [string]$manifest.noEnvironmentCategory }
 
@@ -204,6 +241,7 @@ foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) 
     })
     $verdicts = @{}
     $survives = @{}
+    $processDesigner = @{}
     for ($i = 0; $i -lt $declarations.Count; $i++) {
         $segmentEnd = if ($i + 1 -lt $declarations.Count) { $segmentStarts[$i + 1] } else { $code.Length }
         $classAttributes = $code.Substring($segmentStarts[$i], $declarations[$i].Index - $segmentStarts[$i])
@@ -211,13 +249,15 @@ foreach ($file in Get-ChildItem -LiteralPath $fixtureRoot -Filter '*.cs' -File) 
         $name = $declarations[$i].Groups[1].Value
         # A partial class declared twice in one file is NoEnvironment-only only if every part is.
         $verdicts[$name] = (Test-NoEnvironmentOnly $classAttributes $body) -and ($verdicts[$name] -ne $false)
-        # ...and it runs on TeamCity if any part does.
+        # ...and it runs on TeamCity if any part does - on either lane.
         $survives[$name] = (Test-SurvivesTeamCityFilter $classAttributes $body $teamCityExcluded) -or ($survives[$name] -eq $true)
+        $processDesigner[$name] = (Test-RunsOnProcessDesignerLane $classAttributes $body $pdCategory $pdExcluded) -or ($processDesigner[$name] -eq $true)
     }
     foreach ($class in $classes) {
         $fixtureSources[$class] = $text
         $fixtureNoEnvironmentOnly[$class] = [bool]$verdicts[$class]
         $fixtureSurvivesTeamCity[$class] = [bool]$survives[$class]
+        $fixtureRunsOnProcessDesignerLane[$class] = [bool]$processDesigner[$class]
     }
 }
 
@@ -1195,6 +1235,8 @@ if ($Inventory) {
     foreach ($key in ($fixtureNoEnvironmentOnly.Keys | Sort-Object)) { $noEnvironmentOut[$key] = $fixtureNoEnvironmentOnly[$key] }
     $survivesOut = [ordered]@{}
     foreach ($key in ($fixtureSurvivesTeamCity.Keys | Sort-Object)) { $survivesOut[$key] = $fixtureSurvivesTeamCity[$key] }
+    $processDesignerOut = [ordered]@{}
+    foreach ($key in ($fixtureRunsOnProcessDesignerLane.Keys | Sort-Object)) { $processDesignerOut[$key] = $fixtureRunsOnProcessDesignerLane[$key] }
     # Every product file the graph says no fixture can observe. Pinned in the repository, because
     # skipping the build for such a file is only safe while a human agrees the file is really
     # outside the MCP surface - a silent addition here is a test that stopped running.
@@ -1236,6 +1278,7 @@ if ($Inventory) {
     }
     [pscustomobject]@{
         fixtures = $fixturesOut; reachability = $reachOut; noEnvironmentOnly = $noEnvironmentOut; survivesTeamCity = $survivesOut
+        survivesProcessDesignerLane = $processDesignerOut
         uncoveredTools = @($uncovered | Sort-Object)
         uncoveredEntryPoints = @($uncoveredEntryPoints)
         unreachableProductFiles = @($unreachable)
@@ -1249,6 +1292,8 @@ $mode = 'subset'
 $fixtures = New-Object System.Collections.Generic.HashSet[string]
 $decisions = New-Object System.Collections.Generic.List[string]
 $relevantCount = 0
+$processDesignerOnlyCount = 0
+$processDesignerFullRunCount = 0
 
 function Add-Decision([string] $File, [string] $Rule, [string[]] $Selected) {
     $suffix = if ($Selected.Count -gt 0) { ' -> ' + (($Selected | Sort-Object) -join ', ') } else { '' }
@@ -1258,6 +1303,19 @@ function Add-Decision([string] $File, [string] $Rule, [string[]] $Selected) {
 foreach ($file in $ChangedFiles) {
     if (Test-GlobMatch $file $manifest.ignoredPaths) { Add-Decision $file 'ignored (documentation or unrelated project)' @(); continue }
     if (-not (Test-GlobMatch $file $manifest.relevantPaths)) { Add-Decision $file 'ignored (outside relevantPaths)' @(); continue }
+    # Rule 2a: what only a stand carrying CrtProcessBuilder can observe - the bundled archive. The existing lane
+    # never installs it, so classifying the file there would only ever buy that lane a pointless full run.
+    if (Test-GlobMatch $file $pdExclusivePaths) {
+        $processDesignerOnlyCount++
+        Add-Decision $file 'process-designer lane only: the whole category runs there (processDesignerLane.exclusivePaths)' @()
+        continue
+    }
+    # Rule 2b: the code of the install the process-designer lane performs before its tests. No fixture names
+    # it, so only a full run there exercises it; the rules below still classify it for the existing lane.
+    if (Test-GlobMatch $file $pdFullRunPaths) {
+        $processDesignerFullRunCount++
+        Add-Decision $file 'process-designer lane: the whole category runs there (processDesignerLane.fullRunPaths)' @()
+    }
     $relevantCount++
 
     if (@($manifest.registrationFiles) -contains $file) {
@@ -1349,8 +1407,14 @@ foreach ($file in $ChangedFiles) {
     $mode = 'full'; Add-Decision $file 'full run (no rule)' @()
 }
 
+# A full run forced by a RULE - shared infrastructure, an uncovered tool, an unknown file - is a full run of the
+# process-designer lane as well. One that only grows out of a large subset (maxSubsetFixtures, below) is not:
+# that lane counts its own fixtures.
+$ruleFullRun = $mode -eq 'full'
+
 if ($mode -eq 'subset' -and $fixtures.Count -eq 0) {
-    if ($relevantCount -eq 0) { $decisions.Add('nothing the diff touches is relevant to this suite -> nothing to run') }
+    if ($relevantCount -eq 0 -and $processDesignerOnlyCount -gt 0) { $decisions.Add('every relevant file belongs to the process-designer lane alone -> nothing to run on the existing lane') }
+    elseif ($relevantCount -eq 0) { $decisions.Add('nothing the diff touches is relevant to this suite -> nothing to run') }
     else { $decisions.Add('no fixture in this suite can observe the changed code -> nothing to run') }
     $mode = 'none'
 }
@@ -1397,13 +1461,58 @@ else {
     $sortedFixtures = @()
 }
 
-# Defence in depth: everything in the filter comes from identifiers and the manifest, and the value
-# ends up on a dotnet command line on the TeamCity agent. Refuse anything outside the filter grammar.
-if ($filter -notmatch '^[A-Za-z0-9_.~=!&|()]*$') { throw "Filter contains characters outside the allowed set: $filter" }
+# --- the process-designer lane -------------------------------------------------------------------
+# Same per-file classification, read for the one category that lane runs. Only an explicit "yes" selects a
+# fixture here: a name the inventory never saw carries no category this script could read.
+$pdFixtures = @()
+if ($processDesignerOnlyCount -gt 0 -or $processDesignerFullRunCount -gt 0 -or $ruleFullRun) {
+    $pdMode = 'full'
+    $reason = if ($processDesignerOnlyCount -gt 0 -or $processDesignerFullRunCount -gt 0) { 'a file under processDesignerLane.exclusivePaths or fullRunPaths changed' } else { 'the existing lane runs in full by a rule' }
+    $decisions.Add("process-designer lane: $reason -> the whole $pdCategory category")
+}
+else {
+    $pdFixtures = @($fixtures | Where-Object { $fixtureRunsOnProcessDesignerLane[$_] -eq $true } | Sort-Object)
+    if ($pdFixtures.Count -eq 0) {
+        $pdMode = 'none'
+        $why = if ($fixtures.Count -eq 0) { 'no fixture is selected' } else { "no selected fixture carries a $pdCategory test" }
+        $decisions.Add("process-designer lane: $why -> nothing to run there")
+    }
+    elseif ($pdFixtures.Count -gt [int]$manifest.maxSubsetFixtures) {
+        $pdMode = 'full'
+        $decisions.Add("process-designer lane: subset of $($pdFixtures.Count) fixtures exceeds maxSubsetFixtures=$($manifest.maxSubsetFixtures) -> the whole $pdCategory category")
+        $pdFixtures = @()
+    }
+    else {
+        $pdMode = 'subset'
+        $decisions.Add("process-designer lane: $($pdFixtures -join ', ')")
+    }
+}
+
+# Unlike the existing lane, a full run sends the base filter rather than an empty one, so what a pull request
+# runs here is decided by this repository and not by whatever the TeamCity default says at the time.
+if ($pdMode -eq 'none') {
+    $pdFilter = ''
+}
+elseif ($pdMode -eq 'subset') {
+    $pdNames = @($pdFixtures | ForEach-Object { "FullyQualifiedName~$($manifest.fixtureNamespace).$_" })
+    $pdFilter = '(' + ($pdNames -join '|') + ')&' + $pdBaseFilter
+}
+else {
+    $pdFilter = $pdBaseFilter
+}
+
+# Defence in depth: everything in the filters comes from identifiers and the manifest, and the values
+# end up on a dotnet command line on the TeamCity agent. Refuse anything outside the filter grammar.
+foreach ($candidate in @($filter, $pdFilter)) {
+    if ($candidate -notmatch '^[A-Za-z0-9_.~=!&|()]*$') { throw "Filter contains characters outside the allowed set: $candidate" }
+}
 
 [pscustomobject]@{
-    mode      = $mode
-    filter    = $filter
-    fixtures  = $sortedFixtures
-    decisions = @($decisions)
+    mode       = $mode
+    filter     = $filter
+    fixtures   = $sortedFixtures
+    pdMode     = $pdMode
+    pdFilter   = $pdFilter
+    pdFixtures = $pdFixtures
+    decisions  = @($decisions)
 } | ConvertTo-Json -Depth 4

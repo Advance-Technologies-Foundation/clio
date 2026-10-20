@@ -1238,7 +1238,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		if (result.IsError is true
 				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
 					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
-			Assert.Ignore(
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
 				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
 				+ "meaningful.");
@@ -1284,11 +1284,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
 	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
-	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
+	// coverage: the rebundle is the follow-up that makes these two tests meaningful. The process-designer lane,
+	// which installs the bundled package itself, fails it instead (McpE2E:RequireProcessBuilder).
 	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
 		string payload = JsonSerializer.Serialize(built);
 		if (built.IsError is true && !payload.Contains("created (UId:")) {
-			Assert.Ignore(
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
 				+ "the accessRights block never reaches the read-back guard. This is expected until the "
 				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "

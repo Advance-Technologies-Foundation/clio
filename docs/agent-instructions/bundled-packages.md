@@ -337,6 +337,16 @@ is merged, and costs one command. The alternative — requiring a true merge com
 resulting SHA on the default branch — also works, but it makes a review control depend on a merge-button
 choice someone else makes later.
 
+### The rebundle is tested on the process-designer lane before it merges
+
+A pull request that changes `clio/CrtProcessBuilder/**` queues the TeamCity configuration
+`Team_Atf_ClioMcpE2eProcessDesigner` (`.github/workflows/teamcity-mcp-e2e.yml`, ENG-97005). It installs the
+archive from that branch's own build output and runs the whole `McpE2E.ProcessDesigner` category, which makes it
+the only automated check of the bytes against a live Creatio: the unit lane proves the pins match the archive, not
+that the archive works. Do not merge a rebundle before its status `CLIO MCP e2e process designer (ATF)` is green.
+Read a red one the way `docs/knowledge/Tests/the-atf-mcp-e2e-check-goes-green-on-its-own.md` says: take a second
+reading before blaming the archive, and never lower a `[RequiresPackage]` floor to turn it green.
+
 ### One call — `rebundle-process-builder.ps1`
 
 The whole procedure, from the repository root:
