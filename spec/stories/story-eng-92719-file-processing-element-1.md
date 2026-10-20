@@ -657,13 +657,16 @@ an approval.
       recorded. Close by recording ST-02's version from the stand's data, or by an owner decision to accept it without one.
       Waived by the owner 2026-10-20: ST-02 is accepted without a recorded package version (it ran in the 1.6.6.100-1.6.6.102
       window); DT-01's version stays inferred. Historical record keeping, not repeatable now.
-- [ ] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
+- [x] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
   Not met as far as checked (crt-process-builder `origin/main` `4617c369`, 2026-10-20): the OA traceability rows are
   filled; TC-U-39 is implemented (`MappingNestedDisplayValueTests`, the D20 nested display value) and TC-U-38's create
   half (`FileProcessingElementHandlerTests.RemintNestedItems_*`), and TC-I-35 in the e2e; no package test was found for
   TC-U-35 (two consumers, both levels stored, at package level), TC-U-36 (a later mapping in the create batch embeds
   the re-minted nested UId) or TC-U-38's modify half (nested UIds kept on modify with their consumers). Close by
   pointing each to an existing test, or by adding the tests in a package PR.
+  Carried by the owner's decision of 2026-10-20 to ENG-103934 (Process file element: describe misreports an item-only
+  Files.File binding on the Process parameter variant), item 5, which ships with the next CrtProcessBuilder cut: TC-U-35,
+  TC-U-36 and TC-U-38's modify half need a package change, so they cannot land in this docs PR.
 - [x] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
       (comprehensive) before ready-to-merge; no open Blocker or High.
       Not met as recorded: gate 1 before #97 (fixes `654e53d8` at 17:12Z, PR opened 17:51Z) and before #1841, and gate 3 on
