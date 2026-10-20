@@ -4696,9 +4696,10 @@ stories:
   # set is the docs-only clio PR that merges before the package PR leaves draft. Stories 2-4 are the three follow-up
   # Sub-tasks created on day 0; their Jira keys are ENG-103162, ENG-103163 and ENG-103164 (created 2026-10-14 under
   # ENG-95984 and moved the same day to the Task ENG-103304 File and collection process parameters: follow-ups, so
-  # that ENG-95984 can close). They stay deferred until story-eng-92719-file-processing-element-2 has merged its
-  # package PR. ENG-95985 Send email attachments has no story id in this tracker yet, so the dependencies name its Jira
-  # key.
+  # that ENG-95984 can close). They were deferred until story-eng-92719-file-processing-element-2 merged its package
+  # PR; that happened on 2026-10-20 (crt-process-builder PR 100, CrtProcessBuilder 1.6.6.109), so the slot is open and
+  # they no longer wait on story 2. They stay deferred only until their criteria are refined with the owner.
+  # ENG-95985 Send email attachments has no story id in this tracker yet, so the dependencies name its Jira key.
   - id: story-eng-95984-file-parameter-type-1
     title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
     feature: "eng-95984-file-parameter-type"
@@ -4747,8 +4748,9 @@ stories:
       - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
-      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      DEFERRED until the criteria are refined with the owner; then ready-for-dev. The other gate, ENG-96506 Generated
+      report + process parameter modes merging its package PR (the slot of every ENG-95984 follow-up), is met: PR 100
+      merged on 2026-10-20 as CrtProcessBuilder 1.6.6.109. Follow-up of ENG-95984
       File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D2, rejected option C: generic itemProperties on a declared
       Collection, after which FileCollection is sugar for a Collection with one File item. Needs its own floor raise,
       because an older server silently drops the member and saves a shapeless collection. Does not gate the closure of
@@ -4770,8 +4772,9 @@ stories:
       - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
-      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      DEFERRED until the criteria are refined with the owner; then ready-for-dev. The other gate, ENG-96506 Generated
+      report + process parameter modes merging its package PR (the slot of every ENG-95984 follow-up), is met: PR 100
+      merged on 2026-10-20 as CrtProcessBuilder 1.6.6.109. Follow-up of ENG-95984
       File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D6, rejected option b. Gated on a recorded scan of the output
       types shipped user tasks expose, so that no mirror accepted today is refused unannounced. Does not gate the
       closure of ENG-95984.
@@ -4792,8 +4795,9 @@ stories:
       - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
-      DEFERRED until ENG-96506 Generated report + process parameter modes has merged its package PR (the slot of every
-      ENG-95984 follow-up) and the criteria are refined with the owner; then ready-for-dev. Follow-up of ENG-95984
+      DEFERRED until the criteria are refined with the owner; then ready-for-dev. The other gate, ENG-96506 Generated
+      report + process parameter modes merging its package PR (the slot of every ENG-95984 follow-up), is met: PR 100
+      merged on 2026-10-20 as CrtProcessBuilder 1.6.6.109. Follow-up of ENG-95984
       File process parameter type (a Sub-task of ENG-103304 since 2026-10-14) from ADR D8. Needs a new typed member on clio's DescribedParameter, which
       has no overflow bag; until then process-parameter bindings replay as expressions. Does not gate the closure of
       ENG-95984.
@@ -4820,8 +4824,9 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: L
-    # review, not done: package, clio and knowledge PRs merged 2026-10-19, but the story file's open boxes remain
-    # (OA-2, OA-11, OA-12; tasks OA.0, OA.12, OA.13, "Knowledge records and status"; DoD clio 3, 7, 8 and Process 2-7).
+    # review, not done: package, clio and knowledge PRs merged 2026-10-19. Reconciled 2026-10-20 (40 of 49 boxes met;
+    # five boxes reworded); still open: task "Knowledge records and status", OA.13, DoD clio 7 and 8, Process 2 (Jira),
+    # 3 (ST-02 version), 4 (test-plan cases), 5 (gate 2) and 6 (status), each with its reason in the story file.
     status: review
     jira: ENG-96505
     file: spec/stories/story-eng-92719-file-processing-element-1.md
@@ -4846,8 +4851,9 @@ stories:
       archive's commit the clio PR adds the fileProcessing key set (ENG-103085 Refuse element and block keys the
       process builder would drop silently) and the fileProcessing call-shape entry; the description bytes come from a
       reviewer-approved trim (Q20 = A). Status convention: in-progress when the clio draft opens, review when it leaves
-      draft, and done only once its Definition of Done has no open box (16 are open, named in the story file);
-      story-eng-95984-file-parameter-type-1 stays at review for the same reason, and is not flipped here.
+      draft, and done only once its Definition of Done has no open box (9 are open after the 2026-10-20
+      reconciliation, named in the story file); story-eng-95984-file-parameter-type-1 stays at review for the same
+      reason, and is not flipped here.
 
   - id: story-eng-92719-file-processing-element-2
     title: "Generated report and Process parameter variants of the Process file element"
@@ -4878,7 +4884,11 @@ stories:
       fileprocessing. Done carried by story 3's clio PR. 2026-10-19: in-progress with its clio draft; M1 passed and M2
       as predicted (the single-file path ships), O-TP1 = B (TC-I-91 in this story's clio PR), cut 1.6.6.105, stand
       proofs ST-03..ST-07, DT-03 and SC-4 passed on 1.6.6.105; after the final review, the core-reuse fixes and the PR 100 review fixes the cut is 1.6.6.109. Story 1 moved to review in this PR (its package, clio
-      and knowledge PRs merged; its Definition of Done still has open boxes, named in its story file).
+      and knowledge PRs merged; its Definition of Done still has open boxes, named in its story file). 2026-10-20: PR 100,
+      clio-knowledge #297 (1.15.163) and clio #1847 merged; reconciled box by box the same day (27 of 33 boxes met; the
+      merge-order item reworded to the guide-first decision; the designer-fixture e2e run, Ignored = 0, carried to
+      ENG-103937, story 3). Stays at review: open are RP-6 (outer-only and empty bindings are paired or reported, not
+      refused as written), task "Knowledge records and status" and DoD items on the make check-knowledge review, Jira (RP-1..RP-10 not pasted, links L2/L3 absent), review gate 2 and the status flips.
 
   - id: story-eng-92719-file-processing-element-3
     title: "SysFile attachment storage in the Process file element"
