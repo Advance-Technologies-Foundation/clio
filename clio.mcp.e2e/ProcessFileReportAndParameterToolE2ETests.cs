@@ -700,7 +700,8 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 			// Act
 			CallToolResult callResult = await CreateAsync(context, created, processName,
-				LinearDescriptor(processName, SysFileTargetParametersJson, ("PF1", FileElement("PF1", block))));
+				LinearDescriptor(processName, SysFileTargetParametersJson, ("PF1", FileElement("PF1", block))),
+				SysFileMinimumPackageVersion);
 
 			// Assert
 			ShouldHaveBuilt(callResult, $"a SysFile target of the {variant} variant is written like any other");
@@ -823,14 +824,15 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	/// CrtProcessBuilder is behind.
 	/// </summary>
 	private static async Task<CallToolResult> CreateAsync(ProcessDesignerArrangeContext context,
-			List<string> created, string processName, string descriptor) {
+			List<string> created, string processName, string descriptor,
+			string writtenAgainstVersion = MinimumPackageVersion) {
 		created.Add(processName);
 		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = descriptor
 			});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), writtenAgainstVersion);
 		return result;
 	}
 

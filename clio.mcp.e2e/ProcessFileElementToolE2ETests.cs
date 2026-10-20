@@ -813,7 +813,7 @@ public sealed class ProcessFileElementToolE2ETests {
 					""";
 
 			// Act
-			CallToolResult callResult = await CreateAsync(context, created, processName,
+			CallToolResult callResult = await CreateSysFileAsync(context, created, processName,
 				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement(block))));
 
 			// Assert
@@ -843,7 +843,7 @@ public sealed class ProcessFileElementToolE2ETests {
 			string processName = NewProcessName("SysScope");
 
 			// Act
-			CallToolResult callResult = await CreateAsync(context, created, processName,
+			CallToolResult callResult = await CreateSysFileAsync(context, created, processName,
 				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
 					{ "attachments": { "object": "{{recordObject}}", "recordId": { "value": "{{recordId}}" } } }
 					"""))));
@@ -874,32 +874,75 @@ public sealed class ProcessFileElementToolE2ETests {
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("SysFilter");
-			await ArrangeProcessAsync(context, created, processName,
+			await ArrangeSysFileProcessAsync(context, created, processName,
 				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
 					{ "attachments": { "object": "{{SysFileRecordObject}}", "recordId": { "value": "{{recordId}}" } } }
 					"""))), "the SysFile element scoped to one Account address");
 
 			// Act
-			CallToolResult setFilter = await ModifyAsync(context, processName, """
+			CallToolResult setFilter = await ModifySysFileAsync(context, processName, """
 				[ { "op": "setFilter", "elementName": "OF1",
 				    "filter": { "logicalOperation": "and",
 				      "conditions": [ { "column": "Name", "comparison": "contains", "value": "invoice" } ] } } ]
 				""");
 			JsonObject afterSet = Element(await DescribeGraphAsync(context, processName), "OF1");
-			CallToolResult clearFilter = await ModifyAsync(context, processName,
+			string afterSetNode = string.Join("\n", await ReadElementNodesAsync(context, processName, UId(afterSet)));
+			CallToolResult clearFilter = await ModifySysFileAsync(context, processName,
 				"""[ { "op": "clearFilter", "elementName": "OF1" } ]""");
 			JsonObject afterClear = Element(await DescribeGraphAsync(context, processName), "OF1");
+			string afterClearNode = string.Join("\n", await ReadElementNodesAsync(context, processName, UId(afterClear)));
 
 			// Assert
 			ShouldHaveLanded(setFilter, "a filter on SysFile columns is written on a SysFile source");
 			Text(Group(Group(FileProcessingBlock(afterSet), "attachments"), "recordId"), "value")
 				.Should().BeEquivalentTo(recordId, because: "setFilter keeps the record scope the block wrote");
+			afterSetNode.Should().Contain("Terrasoft.CompareFilter",
+				because: "the kept scope of an Account address (no primary display column) stays the designer's Guid compare");
+			afterSetNode.Should().NotContain("Terrasoft.InFilter",
+				because: "setFilter does not retype the kept scope into a lookup");
 			Objects(Group(afterSet, "filter")["conditions"]).Select(condition => Text(condition, "column"))
 				.Should().Contain("Name", because: "the conditions sent are stored next to the scope");
 			ShouldHaveLanded(clearFilter, "clearFilter on a SysFile source is accepted");
 			Text(Group(Group(FileProcessingBlock(afterClear), "attachments"), "recordId"), "value")
 				.Should().BeEquivalentTo(recordId, because: "clearFilter writes the record scope back alone");
 			afterClear["filter"].Should().BeNull(because: "clearFilter removes the conditions setFilter wrote, leaving only the scope");
+			afterClearNode.Should().Contain("Terrasoft.CompareFilter",
+				because: "clearFilter writes the scope back in the designer's Guid-compare shape");
+			afterClearNode.Should().NotContain("Terrasoft.InFilter",
+				because: "clearFilter does not retype the scope into a lookup");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81 (TC-78): on a SysFile source the attachment object is SysFile, so a sort on a column of the record object (Account address's GPSE, which the designer's column list offers) is refused naming SysFile, and nothing is saved. Ignored when the stand has no Account address record.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("a SysFile source refuses a sort on a record-object column")]
+	public async Task ModifyBusinessProcess_Should_RefuseARecordObjectSortColumn_OnASysFileSource() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		string recordId = await ReadFirstRecordIdAsync(context, SysFileRecordObject);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysSort");
+			await ArrangeSysFileProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{SysFileRecordObject}}", "recordId": { "value": "{{recordId}}" } } }
+					"""))), "the SysFile element scoped to one Account address");
+
+			// Act
+			CallToolResult sorted = await ModifySysFileAsync(context, processName, """
+				[ { "op": "setElement", "elementName": "OF1",
+				    "elementUpdate": { "fileProcessing": { "attachments": { "sort": { "column": "GPSE", "direction": "asc" } } } } } ]
+				""");
+
+			// Assert
+			ShouldBeRefused(sorted, "GPSE is a column of Account address, not of SysFile, the source's attachment object");
+			LogText(sorted).Should().Contain("not found on entity 'SysFile'",
+				because: "the refusal names SysFile, the object the sort column is resolved on");
+			Group(FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1")), "attachments")["sort"]
+				.Should().BeNull(because: "a refused setElement saves nothing");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -916,13 +959,13 @@ public sealed class ProcessFileElementToolE2ETests {
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("SysMove");
-			await ArrangeProcessAsync(context, created, processName,
+			await ArrangeSysFileProcessAsync(context, created, processName,
 				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
 					{ "attachments": { "object": "{{SysFileRecordObject}}", "recordId": { "value": "{{recordId}}" } } }
 					"""))), "the SysFile element scoped to one Account address");
 
 			// Act
-			CallToolResult moved = await ModifyAsync(context, processName, $$"""
+			CallToolResult moved = await ModifySysFileAsync(context, processName, $$"""
 				[ { "op": "setElement", "elementName": "OF1",
 				    "elementUpdate": { "fileProcessing": { "attachments": { "object": "{{SysFileLookupRecordObject}}" } } } } ]
 				""");
@@ -950,13 +993,13 @@ public sealed class ProcessFileElementToolE2ETests {
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("SysRetarget");
-			await ArrangeProcessAsync(context, created, processName,
+			await ArrangeSysFileProcessAsync(context, created, processName,
 				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement("""
 					{ "attachments": { "object": "Contact", "recordId": { "processParameter": "ContactRef" } } }
 					"""))), "the dedicated element scoped to the process's contact");
 
 			// Act
-			CallToolResult moved = await ModifyAsync(context, processName, $$"""
+			CallToolResult moved = await ModifySysFileAsync(context, processName, $$"""
 				[ { "op": "setElement", "elementName": "OF1",
 				    "elementUpdate": { "fileProcessing": { "attachments": { "object": "{{SysFileRecordObject}}" } } } } ]
 				""");
@@ -1003,6 +1046,21 @@ public sealed class ProcessFileElementToolE2ETests {
 	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>
 		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile storage)", SysFileMinimumPackageVersion,
 			TimeSpan.FromMinutes(8));
+
+	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
+	private static Task<CallToolResult> CreateSysFileAsync(ProcessDesignerArrangeContext context, List<string> created,
+			string processName, string descriptor) =>
+		CreateAsync(context, created, processName, descriptor, SysFileMinimumPackageVersion);
+
+	/// <summary><see cref="ArrangeProcessAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
+	private static Task ArrangeSysFileProcessAsync(ProcessDesignerArrangeContext context, List<string> created,
+			string processName, string descriptor, string what) =>
+		ArrangeProcessAsync(context, created, processName, descriptor, what, SysFileMinimumPackageVersion);
+
+	/// <summary><see cref="ModifyAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
+	private static Task<CallToolResult> ModifySysFileAsync(ProcessDesignerArrangeContext context, string processName,
+			string operations) =>
+		ModifyAsync(context, processName, operations, SysFileMinimumPackageVersion);
 
 	/// <summary>A side of the block in SysFile storage: the record object as sent, SysFile and its RecordId link.</summary>
 	private static void ShouldBeSysFile(JsonObject side, string recordObject, string what) {
@@ -1115,34 +1173,35 @@ public sealed class ProcessFileElementToolE2ETests {
 	/// Ignores the test when clio refused the call because the stand's CrtProcessBuilder is behind.
 	/// </summary>
 	private static async Task<CallToolResult> CreateAsync(ProcessDesignerArrangeContext context,
-			List<string> created, string processName, string descriptor) {
+			List<string> created, string processName, string descriptor,
+			string writtenAgainstVersion = MinimumPackageVersion) {
 		created.Add(processName);
 		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = descriptor
 			});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), writtenAgainstVersion);
 		return result;
 	}
 
 	/// <summary>Builds a process for an ARRANGE step and fails the test on the spot unless it was created.</summary>
 	private static async Task ArrangeProcessAsync(ProcessDesignerArrangeContext context, List<string> created,
-			string processName, string descriptor, string what) {
-		CallToolResult result = await CreateAsync(context, created, processName, descriptor);
+			string processName, string descriptor, string what, string writtenAgainstVersion = MinimumPackageVersion) {
+		CallToolResult result = await CreateAsync(context, created, processName, descriptor, writtenAgainstVersion);
 		ShouldHaveBuilt(result, $"{what} is an arrange step, so every assertion below is about the wrong failure "
 			+ "if it was not built");
 	}
 
 	private static async Task<CallToolResult> ModifyAsync(ProcessDesignerArrangeContext context, string processName,
-			string operations) {
+			string operations, string writtenAgainstVersion = MinimumPackageVersion) {
 		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["process-name"] = processName,
 				["operations"] = operations
 			});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), writtenAgainstVersion);
 		return result;
 	}
 

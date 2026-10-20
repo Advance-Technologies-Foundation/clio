@@ -288,7 +288,7 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 | TC-U-77 | TC-77 | pkg | 3 | the SysFile scope in the shape M7 captured; `Split` accepts both shapes; a foreign reference is an issue | SF-1 |
 | TC-U-78 | TC-78 | pkg | 3 | sort on the SysFile root: a record-object column refused, a SysFile column accepted | SF-1 |
 | TC-U-79 | TC-79 | pkg | 3 | SysFile -> SysFile retarget clears the scope | SF-1 |
-| TC-U-80 | TC-80 | pkg | 3 | the M25 notice through the faked seam; never a refusal; ships only if M25 confirmed the read | SF-1 |
+| ~~TC-U-80~~ | TC-80 | pkg | 3 | DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed). Was: the M25 notice through the faked seam; never a refusal | SF-1 |
 | TC-I-81 | TC-81 | e2e | 3 | the SysFile region of `ProcessFileElementToolE2ETests` and the SysFile targets of `ProcessFileReportAndParameterToolE2ETests`: Object on a SysFile entity; Report and Process into a SysFile target; story 1's refusal case re-pointed to its positive form | SF-1 |
 
 ### clio surface, knowledge and regressions
@@ -403,7 +403,7 @@ folder, plus the stored resources; never from describe, and never compared by ey
 | TC-M-42 | M22 | yes | verification | = TC-M-11..TC-M-14 |
 | TC-M-43 | M23 (a)-(d) | yes | story 3: SysFile targets, per case | open |
 | TC-M-44 | M24 | yes | the `attachments.sort` guide sentence | done 2026-10-02: nulled by the binder, refused later with a misleading text |
-| TC-M-45 | M25 | yes | story 3: the designer-flag notice only | partly (client read) |
+| ~~TC-M-45~~ | M25 | no | DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed). Was: story 3, the designer-flag notice only | - |
 | TC-M-46 | M26 | yes | story 1: the guide sentence and the knowledge record on `ObjectFiles` after a save; no code | open |
 
 M3, M3b (MI-0), M6 and M27 belong to ENG-95984's test plan; M5 is skipped (refused anyway).
@@ -487,7 +487,7 @@ Per story, before its package PR leaves draft and before its clio PR is handed t
   before TC-U-59's exclusions are fixed; the same for Story 2 cases; TC-M-03 (only if TC-M-21 passed),
   TC-M-04..TC-M-07, TC-M-13, TC-M-15..TC-M-17, TC-M-20 (story 2 rows); TC-I-61 recorded read-only; or contingency X2
   executed and the owner informed.
-- **Story 3**: TC-M-27, TC-M-28, TC-M-41, TC-M-43, TC-M-45 recorded before the dependent code; the Story 3 cases;
+- **Story 3**: TC-M-27, TC-M-28, TC-M-41, TC-M-43 recorded before the dependent code (TC-M-45 dropped with M25); the Story 3 cases;
   TC-M-08, TC-M-14, TC-M-15..TC-M-17, TC-M-20 (story 3 rows).
 - **Stories 4 and 5**: their rows refined and implemented when their Sub-tasks are created.
 - No case reworded to pass: a difference outside the TC-41 rule is fixed, or recorded with the owner as a new tolerated

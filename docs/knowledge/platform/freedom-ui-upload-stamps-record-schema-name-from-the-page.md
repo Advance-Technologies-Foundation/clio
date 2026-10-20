@@ -2,7 +2,6 @@
 description: a Freedom UI attachment upload into SysFile stores RecordSchemaName only when the client sends AdditionalParams.RecordSchemaName; the Process file Object element reads SysFile by RecordSchemaName + Type File, so a file uploaded without it is never found - a create-app form page sends it even though the page body names no recordEntitySchemaName
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
-  - clio.mcp.e2e/ProcessFileElementToolE2ETests.cs
 ticket: ENG-103937
 date: 2026-10-20
 ---

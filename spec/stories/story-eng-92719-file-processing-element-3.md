@@ -8,8 +8,8 @@ share of FE-1, FE-5)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D15 (SysFile
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, this clio
-draft is open; the knowledge PR is next)
+**Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, the clio
+and knowledge drafts are open; the code-review findings of 2026-10-20 are being fixed)
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -133,7 +133,8 @@ Ids are the analysis plan's work packages (section 5.3).
   `docs/knowledge/ProcessModel/process-file-sysfile-storage-is-refused-until-sf.md`; UPDATE
   `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md`; NEW
   `platform/a-sysfile-attachment-read-needs-recordschemaname-and-type-file.md` (after M8) and the write-path record M23
-  produces. No description change. Status flips: this story's `in-progress`; story 2's `done` does NOT ride in this
+  produces (not written: M23 found nothing the code does not say - the copy into SysFile stamps `RecordSchemaName`
+  in the shipped `FileProcessing` code, and the M8 record already covers the read side). No description change. Status flips: this story's `in-progress`; story 2's `done` does NOT ride in this
   PR, because story 2's Definition of Done still has its Jira item open (RP-1..RP-10 not pasted as ENG-96506's
   acceptance criteria), so it stays `review`.
   Carried over from story 2 on 2026-10-20 (the SysFile work is tracked in Jira as ENG-103937 Process file element:
@@ -145,7 +146,8 @@ Ids are the analysis plan's work packages (section 5.3).
   DT-04) instead. Done differently from the plan: the SysFile cases are a region of `ProcessFileElementToolE2ETests`
   (not a new file: `Select-McpE2eTestFilter.ps1` keeps one source file per fixture class, so a partial fixture split
   across files loses its tool references and drops out of pull-request selection), the Report and Process targets are
-  in `ProcessFileReportAndParameterToolE2ETests`, the F1 case is describe-only (the fixture is never written), and the
+  in `ProcessFileReportAndParameterToolE2ETests`, the F1 case is describe-only (F1 is never written: a builder write would replace the designer's serialization the
+  other fixture cases compare against - an open owner decision, see the code review of 2026-10-20), and the
   knowledge records are `platform/sysfile-record-scope-shape-depends-on-the-primary-display-column.md` (M7) and
   `platform/freedom-ui-upload-stamps-record-schema-name-from-the-page.md` (M8).
 
@@ -215,7 +217,8 @@ after an approval.
       lifted only for the cases that passed (all of them).
 - [x] Package tests green on both configurations; the capture doc checked against M21; restamped last; tag verified on
       the remote.
-- [ ] clio: rebundle with no floor raise; the SysFile e2e (see "Testing") Passed with Ignored = 0; story 1's
+- [ ] clio: rebundle with no floor raise; the SysFile e2e (see "Testing") Passed with Ignored = 0 (today 1 Ignored:
+      the designer-fixture case, `UsrFpOaDesignerFixture` absent); story 1's
       refusal e2e re-pointed; the temporary refusal record deleted and the storage record updated; full unit suite
       green; the PR-description statements of story 1.
 - [ ] clio-knowledge: the storage section rewritten; the knowledge suites green; published, and `info-knowledge` shows
