@@ -319,10 +319,10 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 	}
 
 	[Test]
-	[Description("An append against an empty stored body writes the fragment verbatim and reports no projection.")]
-	public void TryUpdatePage_ShouldReportNoProjection_WhenAppendDryRunRunsAgainstAnEmptyServerBody() {
-		// Arrange — the merger is never invoked when the stored body is blank, so there is no merge to
-		// project. Pinning it because the contract text is read as 'append implies a projection'.
+	[Description("An append against an empty stored body merges into the empty page scaffold instead of writing the fragment verbatim (GH-1839).")]
+	public void TryUpdatePage_ShouldMergeIntoEmptyScaffold_WhenAppendRunsAgainstAnEmptyServerBody() {
+		// Arrange — every page create-page makes is stored with an empty body. The old path skipped the merge
+		// and saved the fragment as the whole body, so a modelConfigDiff-only fragment lost the define() wrapper.
 		StubCurrentBody(string.Empty);
 		PageUpdateOptions options = AppendDryRun(
 			"""[{"operation":"insert","name":"UsrName","parentName":"Main","propertyName":"items","values":{"type":"crt.Input"}}]""");
@@ -331,11 +331,75 @@ public sealed class PageUpdateCommandDryRunProjectionTests {
 		bool result = _command.TryUpdatePage(options, out PageUpdateResponse response);
 
 		// Assert
-		result.Should().BeTrue(because: "an append onto an empty body is a verbatim write, not a failure");
+		result.Should().BeTrue(because: "an append onto an empty body is a merge into the empty page, not a failure");
 		response.DryRun.Should().BeTrue(because: "the caller asked for validation only");
-		response.AppendProjection.Should().BeNull(
-			because: "no merge ran, and a zeroed projection would read as coverage of a merge that never happened — the documented contract is absence");
+		response.AppendProjection.Should().NotBeNull(
+			because: "the merge now runs against the empty scaffold, so it is projected like any other append");
+		response.AppendProjection.AddedOperationCount.Should().Be(1,
+			because: "the one incoming insert is added to an empty viewConfigDiff");
 		AssertNothingWasSaved();
+	}
+
+	[Test]
+	[Description("A real append of a modelConfigDiff-only fragment onto an empty stored body saves a full page body, not the bare fragment (GH-1839).")]
+	public void TryUpdatePage_ShouldSaveFullBody_WhenModelConfigDiffFragmentIsAppendedToEmptyServerBody() {
+		// Arrange
+		StubCurrentBody(string.Empty);
+		const string fragment =
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[{\"operation\":\"merge\",\"path\":[],\"values\":{\"primaryDataSourceName\":\"PDS\"}}]/**SCHEMA_MODEL_CONFIG_DIFF*/";
+		string savedPayload = null;
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Do<string>(payload => savedPayload = payload),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true}""");
+
+		// Act
+		bool result = _command.TryUpdatePage(
+			new PageUpdateOptions { SchemaName = SchemaName, Body = fragment, Mode = "append" },
+			out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: response.Error);
+		string savedBody = Newtonsoft.Json.Linq.JObject.Parse(savedPayload)["body"]!.ToString();
+		savedBody.Should().StartWith("define(\"" + SchemaName + "\"",
+			because: "the fragment is merged into the empty page scaffold, so the define() wrapper survives");
+		savedBody.Should().Contain("primaryDataSourceName",
+			because: "the fragment's modelConfigDiff operation is carried into the saved body");
+		response.AppendProjection.IncomingModelConfigDiffOperationCount.Should().Be(1,
+			because: "the projection reports the modelConfigDiff operations the fragment appended");
+	}
+
+	[Test]
+	[Description("A complete body appended onto an empty stored body keeps its define() dependencies and arguments (GH-1839).")]
+	public void TryUpdatePage_ShouldKeepSchemaDepsAndArgs_WhenCompleteBodyIsAppendedToEmptyServerBody() {
+		// Arrange — handlers that call sdk.* need both the dependency and the sdk parameter; the empty scaffold
+		// has neither, and the section merge does not touch those two pairs.
+		StubCurrentBody(string.Empty);
+		string incomingBody = WebBody("[]")
+			.Replace("/**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/", "/**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/")
+			.Replace("/**SCHEMA_ARGS*/()/**SCHEMA_ARGS*/", "/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/")
+			.Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+				"/**SCHEMA_HANDLERS*/[{request: \"crt.HandleViewModelInitRequest\", handler: async (request, next) => { await sdk.HandlerChainService.instance.process(request); return next?.handle(request); }}]/**SCHEMA_HANDLERS*/");
+		string savedPayload = null;
+		_applicationClient.ExecutePostRequest(
+				SaveSchemaUrl, Arg.Do<string>(payload => savedPayload = payload),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("""{"success": true}""");
+
+		// Act
+		bool result = _command.TryUpdatePage(
+			new PageUpdateOptions { SchemaName = SchemaName, Body = incomingBody, Mode = "append" },
+			out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(because: response.Error);
+		string savedBody = Newtonsoft.Json.Linq.JObject.Parse(savedPayload)["body"]!.ToString();
+		savedBody.Should().Contain("/**SCHEMA_DEPS*/[\"@creatio-devkit/common\"]/**SCHEMA_DEPS*/",
+			because: "the handlers depend on the module the complete body declares");
+		savedBody.Should().Contain("/**SCHEMA_ARGS*/(sdk)/**SCHEMA_ARGS*/",
+			because: "without the sdk parameter the appended handler throws a ReferenceError at runtime");
+		savedBody.Should().Contain("crt.HandleViewModelInitRequest",
+			because: "the handler itself is merged into the empty page");
 	}
 
 	[Test]

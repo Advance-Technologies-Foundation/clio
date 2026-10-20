@@ -110,6 +110,8 @@ public sealed class ToolContractGetToolTests {
 			because: "the agent must know the tool cannot remove a placement or grant");
 		contract.OutputContract.Fields.Select(field => field.Name).Should().Contain(["writes-started", "written"],
 			because: "a failure after the first write must be distinguishable from one that changed nothing");
+		contract.InputSchema.Properties.Single(field => field.Name == "workplace-type").Description
+			.Should().Contain("never changed", because: "the agent must know an existing workplace is not retyped");
 	}
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);

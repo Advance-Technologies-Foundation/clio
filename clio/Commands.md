@@ -409,6 +409,13 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 - [`find-entity-schema`](docs/commands/find-entity-schema.md) - Find entity schemas in a Creatio environment by name, pattern, or UId
 <a id="get-entity-schema-properties"></a>
 - [`get-entity-schema-properties`](docs/commands/get-entity-schema-properties.md) - Get properties from a remote Creatio entity schema (`--required-only` filters required columns; omit `--package` for the merged all-packages view, including custom columns from other packages)
+<a id="get-entity-connections"></a>
+<a id="entity-connections-get"></a>
+- [`get-entity-connections`](docs/commands/get-entity-connections.md) - Read an object's Connections (ordered lookup columns shown by the Freedom UI Connections component), `entity-connections-get`
+<a id="update-entity-connections"></a>
+<a id="entity-connections-set"></a>
+<a id="set-entity-connections"></a>
+- [`update-entity-connections`](docs/commands/update-entity-connections.md) - Set an object's Connections to a full ordered list of lookup columns (writes the EntityConnections add-on), `entity-connections-set`, `set-entity-connections`
 <a id="set-entity-schema-properties"></a>
 - [`set-entity-schema-properties`](docs/commands/set-entity-schema-properties.md) - Set schema-level properties (the database-view flag, primary-display column, and schema caption per culture via `--title` / `--title-localizations`) on a remote Creatio entity schema
 <a id="get-process-signature"></a>

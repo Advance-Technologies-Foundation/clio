@@ -29,7 +29,7 @@ namespace Clio.Command {
 		[Option("description", Required = false, HelpText = "Optional schema description")]
 		public string Description { get; set; }
 
-		[Option("entity-schema-name", Required = false, HelpText = "Optional entity schema name to record in the new page dependencies")]
+		[Option("entity-schema-name", Required = false, HelpText = "Optional entity schema the page is bound to: a web page gets a primary data source (PDS) for it, and the schema is recorded in the page dependencies")]
 		public string EntitySchemaName { get; set; }
 
 		[Option("caption-culture", Required = false, HelpText = "Override the culture used for the generated page caption (e.g. en-US, uk-UA). Precedence: this override > the connected user's profile culture > en-US. Supplying it skips the profile-culture lookup.")]
@@ -53,6 +53,7 @@ namespace Clio.Command {
 		private readonly ILogger _logger;
 		private readonly ICaptionCultureResolver _captionCultureResolver;
 		private readonly IPageDesignerHierarchyClient _hierarchyClient;
+		private readonly IPageEntityDataSourceSeeder _dataSourceSeeder;
 
 		public PageCreateCommand(
 			IApplicationClient applicationClient,
@@ -60,13 +61,15 @@ namespace Clio.Command {
 			ISchemaTemplateCatalog templateCatalog,
 			ILogger logger,
 			ICaptionCultureResolver captionCultureResolver,
-			IPageDesignerHierarchyClient hierarchyClient = null) {
+			IPageDesignerHierarchyClient hierarchyClient = null,
+			IPageEntityDataSourceSeeder dataSourceSeeder = null) {
 			_applicationClient = applicationClient;
 			_serviceUrlBuilder = serviceUrlBuilder;
 			_templateCatalog = templateCatalog;
 			_logger = logger;
 			_captionCultureResolver = captionCultureResolver;
 			_hierarchyClient = hierarchyClient;
+			_dataSourceSeeder = dataSourceSeeder;
 		}
 
 		public virtual bool TryCreatePage(PageCreateOptions options, out PageCreateResponse response) {
@@ -142,6 +145,8 @@ namespace Clio.Command {
 					LogFailure(response.Error);
 					return false;
 				}
+				string body = BuildEntityBoundBody(options, template, packageUId, hasEntity,
+					out PageEntityDataSourceSeed dataSourceSeed);
 				LogStep(ref stepNumber, totalSteps, $"Saving schema via ClientUnitSchemaDesignerService (uId={newSchemaUId})");
 				string captionCulture = _captionCultureResolver.Resolve(options, options.CaptionCulture);
 				// ENG-91044: the page caption is stored under the effective culture, so reject text whose
@@ -151,26 +156,15 @@ namespace Clio.Command {
 				JObject payload = BuildSaveSchemaPayload(
 					newSchemaUId, options.SchemaName, caption, options.Description,
 					template, packageUId, options.PackageName, entitySchemaUId, templateLocalizableStrings,
-					captionCulture, optionalProperties);
+					captionCulture, optionalProperties, body);
 				if (!TrySaveSchema(payload, out string saveError)) {
 					response = new PageCreateResponse { Success = false, Error = saveError };
 					LogFailure(response.Error);
 					return false;
 				}
 				_logger.WriteInfo($"Page '{options.SchemaName}' created successfully (schemaUId={newSchemaUId}).");
-				response = new PageCreateResponse {
-					Success = true,
-					SchemaName = options.SchemaName,
-					SchemaUId = newSchemaUId,
-					PackageName = options.PackageName,
-					PackageUId = packageUId,
-					TemplateName = template.Name,
-					TemplateUId = template.UId,
-					SchemaType = template.SchemaType,
-					Caption = caption,
-					EntitySchemaName = options.EntitySchemaName,
-					EntitySchemaUId = entitySchemaUId
-				};
+				response = BuildSuccessResponse(options, template, packageUId, newSchemaUId, caption,
+					entitySchemaUId, dataSourceSeed);
 				WarnIfNotDesignPackage(response, newSchemaUId, packageUId);
 				return true;
 			} catch (Exception ex) {
@@ -178,6 +172,59 @@ namespace Clio.Command {
 				LogFailure(response.Error);
 				return false;
 			}
+		}
+
+		/// <summary>
+		/// GH-1839: builds the new page body that binds the entity to a data source; the entity used to reach only
+		/// <c>dependsOn</c>, so the page had no primary data source and every field, crt.Connections and the
+		/// template's #DataSourceEntityName()# macro showed nothing. Mobile pages are not seeded.
+		/// </summary>
+		private string BuildEntityBoundBody(PageCreateOptions options, PageTemplateInfo template, string packageUId,
+			bool hasEntity, out PageEntityDataSourceSeed dataSourceSeed) {
+			dataSourceSeed = null;
+			if (!hasEntity || PageSchemaTypeExtensions.FromNumericValue(template.SchemaType) == PageSchemaType.Mobile) {
+				return string.Empty;
+			}
+			// Without a seeder the template shape is unknown, so bind nothing rather than guess a primary PDS.
+			dataSourceSeed = _dataSourceSeeder?.BuildSeed(template.UId, packageUId, options.EntitySchemaName)
+				?? PageEntityDataSourceSeeder.Unbound(options.EntitySchemaName, "The template's model config was not read");
+			if (dataSourceSeed.ModelConfigDiff.Count == 0) {
+				return string.Empty;
+			}
+			_logger.WriteInfo($"         data source: {dataSourceSeed.DataSourceName} -> {options.EntitySchemaName}"
+				+ (dataSourceSeed.IsPrimary ? " (primary)" : string.Empty));
+			return PageUpdateCommand.BuildEmptyReplacingBody(options.SchemaName, PageSchemaType.Web)
+				.Replace("/**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/",
+					"/**SCHEMA_MODEL_CONFIG_DIFF*/"
+					+ dataSourceSeed.ModelConfigDiff.ToString(Formatting.Indented)
+					+ "/**SCHEMA_MODEL_CONFIG_DIFF*/", StringComparison.Ordinal);
+		}
+
+		private static PageCreateResponse BuildSuccessResponse(PageCreateOptions options, PageTemplateInfo template,
+			string packageUId, string newSchemaUId, string caption, string entitySchemaUId,
+			PageEntityDataSourceSeed dataSourceSeed) {
+			PageCreateResponse response = new() {
+				Success = true,
+				SchemaName = options.SchemaName,
+				SchemaUId = newSchemaUId,
+				PackageName = options.PackageName,
+				PackageUId = packageUId,
+				TemplateName = template.Name,
+				TemplateUId = template.UId,
+				SchemaType = template.SchemaType,
+				Caption = caption,
+				EntitySchemaName = options.EntitySchemaName,
+				EntitySchemaUId = entitySchemaUId,
+				DataSourceName = dataSourceSeed?.DataSourceName,
+				PrimaryDataSourceName = dataSourceSeed is { IsPrimary: true } ? dataSourceSeed.DataSourceName : null,
+				Note = dataSourceSeed?.Warning
+			};
+			if (!string.IsNullOrWhiteSpace(options.EntitySchemaName) && dataSourceSeed is null) {
+				// Mobile: the seeder is not consulted.
+				response.Note = "Mobile page: the entity is recorded in the page dependencies only; no data source "
+					+ "was added. Bind it with update-page.";
+			}
+			return response;
 		}
 
 		/// <summary>
@@ -201,7 +248,7 @@ namespace Clio.Command {
 				response.WillCreateReplacingInDesignPackage = true;
 				string note = $"Chosen package '{response.PackageName}' is not the app's design package "
 					+ $"(uId={designPackageUId}). A subsequent update-page WITHOUT target-schema-uid would create a "
-					+ $"replacing schema in the design package and leave this schema empty"
+					+ $"replacing schema in the design package and write the body there instead of into this schema"
 					+ (PageSchemaTypeExtensions.FromNumericValue(response.SchemaType) == PageSchemaType.Mobile
 						? " (an empty mobile page crashes the Creatio Mobile app)" : "")
 					+ $". Pass target-schema-uid={newSchemaUId} on update-page to write into this schema.";
@@ -264,7 +311,8 @@ namespace Clio.Command {
 		private static JObject BuildSaveSchemaPayload(
 			string newSchemaUId, string schemaName, string caption, string description,
 			PageTemplateInfo template, string packageUId, string packageName, string entitySchemaUId,
-			JArray templateLocalizableStrings, string cultureName = null, JArray optionalProperties = null) {
+			JArray templateLocalizableStrings, string cultureName = null, JArray optionalProperties = null,
+			string body = "") {
 			// Anchor the page caption/description to the effective culture (override > profile > en-US).
 			// A null cultureName preserves the legacy en-US default; CurrentCulture is never read.
 			string effectiveCulture = string.IsNullOrWhiteSpace(cultureName) ? "en-US" : cultureName;
@@ -280,7 +328,7 @@ namespace Clio.Command {
 					["uId"] = packageUId,
 					["name"] = packageName
 				},
-				["body"] = string.Empty,
+				["body"] = body ?? string.Empty,
 				["extendParent"] = false,
 				["caption"] = new JArray { localizableCaption },
 				["description"] = string.IsNullOrWhiteSpace(description) ? new JArray() : new JArray(new JObject {

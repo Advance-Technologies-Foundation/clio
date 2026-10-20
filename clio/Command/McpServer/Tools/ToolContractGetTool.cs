@@ -5140,17 +5140,19 @@ internal static class ToolContractCatalog {
 		const string clientTypeField = "client-type";
 		const string rolesField = "roles";
 		const string removeField = "remove-from-my-applications";
+		const string workplaceTypeField = "workplace-type";
 		return new ToolContractDefinition(
 			PlaceSectionInWorkplaceTool.ToolName,
 			"Places an app section in a navigation workplace and grants roles access, in one call, replacing the manual " +
 			"SysWorkplace / SysModuleInWorkplace / SysAdminUnitInWorkplace recipe. " +
 			"Confirm the target workplace and the roles with the user before calling: a grant decides who sees the data behind the section. " +
-			"The workplace is matched by workplace-name and client-type (preferring one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's Type and LoaderId read back. " +
-			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added. " +
+			"The workplace is matched by workplace-name and client-type (preferring one of the requested workplace-type, then one that already holds the section, else the oldest; several matches are reported in warnings) or created with the platform's LoaderId and Type read back. " +
+			"workplace-type (general, portal, self-service) sets the Type of a created workplace and is carried in its binding; a Portal workplace is what external (portal) users reach. An existing workplace of another type is refused before any write, never retyped. " +
+			"With remove-from-my-applications (default true) the section's existing `My applications` row is moved, so the app appears in one place; otherwise a second placement is added; a move into a non-General (for example portal) workplace is reported in warnings, since internal users then no longer reach the app from `My applications` (pass false to keep it there). " +
 			"A move is refused before any write when no role would see the target workplace (pass roles), or when another package ships the moved row (pass that package as package-name). " +
 			"An existing workplace another package ships is used but not bound into package-name (a warning names its owner), and a position change for it is refused. " +
 			"Every row is written live and bound into package-name (SysWorkplace_<Workplace>, SysModuleInWorkplace_<SectionCode>, SysAdminUnitInWorkplace_<Workplace>, or the binding that already ships the row), so it transfers with the package. " +
-			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report), or omitted (reuse or create). " +
+			"mode chooses the workplace: existing (must exist), new (create; refused when the name is taken, since same-named workplaces compete for bindings), none (leave the section where it is and only report; roles and workplace-type are refused), or omitted (reuse or create). " +
 			"section-workplaces always reports where the section is after the call. " +
 			"Inputs are resolved before the first write, so an input error changes nothing; a failure after the first write returns writes-started=true and the written rows. Re-running converges and never duplicates; the tool never deletes a row. " +
 			"Afterwards tell the user to log out and back in; a refresh is not enough. For the model behind it, call get-guidance with name `workplaces`.",
@@ -5160,6 +5162,7 @@ internal static class ToolContractCatalog {
 					Field(EnvironmentNameFieldName, StringType, RegisteredEnvironmentNameDescription),
 					Field(sectionCodeField, StringType, "The section's SysModule.Code (a create-app app's code), not its caption. A code shared by several sections is resolved by the one already placed in a workplace."),
 					Field(workplaceNameField, StringType, "Workplace to create or reuse; required unless mode is none."),
+					Field(workplaceTypeField, StringType, "general, portal or self-service. On create: the workplace's Type (omitted: the platform default, General). On an existing workplace: the type it must already have; a different type is refused before any write, never changed. Omitted: no check."),
 					Field("mode", StringType, "existing: the workplace must exist. new: create it, refused when a same-named workplace exists that package-name does not already ship. none: write nothing and only report section-workplaces. Omitted: reuse it when it exists, create it otherwise."),
 					Field(PackageNameFieldName, StringType, "Package that ships every row; use the app's own package. Omitted: the environment's current package, as get-target-package resolves it. Must be editable."),
 					Field(clientTypeField, StringType, "web (default) or mobile."),
@@ -5172,7 +5175,7 @@ internal static class ToolContractCatalog {
 				[SuccessFalseSignal],
 				Field(SuccessFieldName, BooleanType, ToolSucceededDescription),
 				Field(PackageNameFieldName, StringType, "Package that ships every row."),
-				Field("workplace", ObjectType, "id, name, client-type, position, created (false: reused), binding-name (absent when another package ships the workplace)."),
+				Field("workplace", ObjectType, "id, name, client-type, type (general, portal, self-service, or another type's name), position, created (false: reused), binding-name (absent when another package ships the workplace)."),
 				Field("section", ObjectType, "section-id, code, placement-id, action (moved, created or already-present), binding-name."),
 				Field(rolesField, ArrayType, "Per role: role-id, name, grant-id, action (granted or already-granted), binding-name."),
 				Field("warnings", ArrayType, "Non-fatal findings to relay: a duplicate workplace name, an adopted workplace, a workplace another package ships (used, not bound), My applications not identified (added, not moved), a workplace with no grant."),
@@ -5186,7 +5189,8 @@ internal static class ToolContractCatalog {
 				EnvironmentNameParameterAlias(),
 				PackageNameParameterAlias(),
 				Alias(ParameterScope, sectionCodeField, "app-code", RejectedStatus, $"Use '{sectionCodeField}' instead of 'app-code'."),
-				Alias(ParameterScope, workplaceNameField, "workplace", RejectedStatus, $"Use '{workplaceNameField}' instead of 'workplace'.")
+				Alias(ParameterScope, workplaceNameField, "workplace", RejectedStatus, $"Use '{workplaceNameField}' instead of 'workplace'."),
+				Alias(ParameterScope, workplaceTypeField, "type", RejectedStatus, $"Use '{workplaceTypeField}' instead of 'type'.")
 			],
 			[
 				Default(clientTypeField, "web", "Most workplaces are web workplaces."),
@@ -5199,6 +5203,15 @@ internal static class ToolContractCatalog {
 					[sectionCodeField] = ExampleOrdersSectionCode,
 					[workplaceNameField] = "Orders",
 					[rolesField] = new[] { "Sales managers" }
+				}),
+				Example("Put a section in a new portal workplace for external users", new Dictionary<string, object?> {
+					[EnvironmentNameFieldName] = ExampleEnvironmentName,
+					[PackageNameFieldName] = ExamplePackageName,
+					[sectionCodeField] = ExampleOrdersSectionCode,
+					[workplaceNameField] = "Customer portal",
+					[workplaceTypeField] = "portal",
+					[rolesField] = new[] { "All external users" },
+					[removeField] = false
 				})
 			],
 			Flow([ApplicationCreateTool.ApplicationCreateToolName, PlaceSectionInWorkplaceTool.ToolName],
@@ -6077,7 +6090,7 @@ internal static class ToolContractCatalog {
 				Field(CamelCaseSchemaNameFieldName, StringType, "Page schema name."),
 				Field("bodyLength", NumberType, "Saved body length."),
 				Field("dryRun", BooleanType, "Whether the call ran in validation mode."),
-				Field("appendProjection", ObjectType, "What the append merge did - or, on a dry run, WOULD do - to the page's viewConfigDiff. Present for `mode: append` whenever a merge ran; absent for `replace` (writes verbatim) and absent when the stored body is empty (nothing to merge into). Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount` (compare this against the count you expect), `addedOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix - do not read any one of them as the whole story: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives - the likeliest one to hit, reported here as data and deliberately NOT warned about because the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: the sibling `*_DIFF` arrays append unconditionally and cannot lose an entry, but handlers are NOT covered - they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
+				Field("appendProjection", ObjectType, "What the append merge did - or, on a dry run, WOULD do - to the page's viewConfigDiff. Present for `mode: append`, absent for `replace`. Counts: `currentOperationCount`, `incomingOperationCount`, `projectedOperationCount`, `addedOperationCount`; config diffs: `incomingModelConfigDiffOperationCount`, `incomingViewModelConfigDiffOperationCount`. THREE DISTINCT LOSS CHANNELS, each with its own fix: `droppedOperations`/`droppedOperationCount` = entries from the SERVER body the merge does not carry over (the further-duplicate exception described in `mode`), which also raise a `warnings` entry each; `collapsedIncomingOperations`/`collapsedIncomingOperationCount` = entries from YOUR OWN fragment that a later entry in the same fragment supersedes, so only the last spelling of an identity survives - reported as data, NOT warned about, since the fragment is yours to read; `viewConfigDiffApplied` = false means the current web body has no SCHEMA_VIEW_CONFIG_DIFF marker pair, so EVERY count above describes an array the write discards - use `mode: replace`. `replacedOperations`/`replacedOperationCount` is NOT a loss: the operation survives carrying your values. Named lists are capped in length; every count is exact. Speaks for `viewConfigDiff` ONLY: sibling `*_DIFF` sections never lose an entry silently: a non-empty one the stored body has no marker pair for is rejected (use `mode: replace`), as is an all-empty fragment. Handlers are NOT covered - they dedupe by `request` and the merge drops every current handler whose `request` your fragment carries, so a current body holding one `request` twice keeps neither. Inspect the handlers section yourself when that shape is possible."),
 				Field("resourcesRegistered", NumberType, "Number of registered resources."),
 				Field("digest", ObjectType, "Real save: written `components`, `otherSections`, post-save `checksum`; confirm the save from it."),
 				Field(WarningsFieldName, ArrayType, "Advisory non-fatal warnings; omitted when there are none. When `success` is true the save already succeeded - never retry on a warning. A rejected save (`success: false`, see `error`) can carry warnings too, and nothing was written. On a dry run, the viewModelConfigDiff/modelConfigDiff merges the runtime throws on are listed here as warnings that say the merge \"breaks the page\": the real save of the same body is rejected, so fix them first. Covers an operation the differ will silently drop because another operation for the same component name cancels it (see `mode`), an `insert` this body replaced with a `merge`/`move`/`remove`, an existing operation an `append` could not preserve because the fragment superseded an identity the page carried twice (re-read with get-page), an `append` whose merged viewConfigDiff cannot be written back at all because the current body has no marker pair (see `appendProjection.viewConfigDiffApplied`), a viewModelConfigDiff/modelConfigDiff `merge` whose `path` does not exist in the config the parent schemas and earlier merges produce (saved, but the differ skips it, so it has no effect: merge into an existing parent instead), page-body lint findings, and the best-effort Designer Presence push."),

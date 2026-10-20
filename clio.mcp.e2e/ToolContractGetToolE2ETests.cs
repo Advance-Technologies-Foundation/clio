@@ -1538,7 +1538,7 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 	[Description("Verifies the live registry-derived contracts of the page/addon long-tail tools advertise no connection field as required and state the environment-name OR uri/login/password alternative instead (issue #965).")]
 	[AllureTag(ToolContractGetTool.ToolName)]
 	[AllureName("get-tool-contract stops demanding every connection field at once")]
-	[AllureDescription("Starts the real clio MCP server without a Creatio environment, requests the contracts of list-page-templates, create-page, get-related-page-addon and create-related-page-addon, and verifies each one advertises only its genuine inputs as required while carrying the connection any-of.")]
+	[AllureDescription("Starts the real clio MCP server without a Creatio environment, requests the contracts of list-page-templates, create-page, get-related-page-addon, create-related-page-addon, get-entity-connections and update-entity-connections, and verifies each one advertises only its genuine inputs as required while carrying the connection any-of.")]
 	public async Task ToolContractGet_ShouldNotRequireConnectionFields_ForPageAndAddonTools() {
 		// Arrange
 		await using var context = Arrange(TimeSpan.FromMinutes(3));
@@ -1547,7 +1547,9 @@ public sealed class ToolContractGetToolE2ETests : McpContractFixtureBase {
 			[PageTemplatesListTool.ToolName] = [],
 			[PageCreateTool.ToolName] = ["schema-name", "template", "package-name"],
 			[GetRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name"],
-			[CreateRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name", "pages"]
+			[CreateRelatedPageAddonTool.ToolName] = ["entity-schema-name", "package-name", "pages"],
+			[GetEntityConnectionsTool.ToolName] = ["entity-schema-name", "package-name"],
+			[UpdateEntityConnectionsTool.ToolName] = ["entity-schema-name", "package-name", "connections"]
 		};
 
 		// Act

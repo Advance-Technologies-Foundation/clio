@@ -61,14 +61,14 @@ public class PlaceSectionInWorkplaceToolTests {
 
 		// Act
 		PlaceSectionInWorkplaceResponse response = tool.PlaceSectionInWorkplace(new PlaceSectionInWorkplaceArgs(
-			EnvironmentName, "UsrOrders", "Orders", "UsrOrdersApp", "mobile", ["Sales managers"], false, 3, "new"));
+			EnvironmentName, "UsrOrders", "Orders", "UsrOrdersApp", "mobile", ["Sales managers"], false, 3, "new", "portal"));
 
 		// Assert
 		response.Success.Should().BeTrue(because: response.Error ?? "the service succeeded");
 		response.Workplace.Name.Should().Be("Orders", because: "the service result is returned as is");
 		response.NextStep.Should().Contain("log out", because: "navigation lists are cached per session");
 		captured.Should().Be(new WorkplacePlacementRequest(EnvironmentName, "UsrOrdersApp", "UsrOrders", "Orders",
-			"mobile", captured.Roles, false, 3, "new"), because: "every scalar argument is forwarded unchanged");
+			"mobile", captured.Roles, false, 3, "new", "portal"), because: "every scalar argument is forwarded unchanged");
 		captured.Roles.Should().Equal(["Sales managers"], because: "the roles are forwarded");
 	}
 
@@ -91,6 +91,7 @@ public class PlaceSectionInWorkplaceToolTests {
 		captured.PackageName.Should().BeNull(because: "the service resolves the current package like get-target-package");
 		captured.Position.Should().BeNull(because: "the platform keeps its position unless one is given");
 		captured.Mode.Should().BeNull(because: "an omitted mode means reuse-or-create");
+		captured.WorkplaceType.Should().BeNull(because: "an omitted type keeps the platform default and checks nothing");
 	}
 
 	[TestCase(null, "UsrOrders", "Orders", "environment-name")]
@@ -135,6 +136,9 @@ public class PlaceSectionInWorkplaceToolTests {
 
 	[TestCase("sectionCode", "section-code")]
 	[TestCase("workplace", "workplace-name")]
+	[TestCase("workplaceType", "workplace-type")]
+	[TestCase("workplace_type", "workplace-type")]
+	[TestCase("type", "workplace-type")]
 	[Description("Rejects a legacy argument spelling with a rename hint instead of dropping it.")]
 	public void PlaceSectionInWorkplace_ShouldRejectALegacyAlias(string legacyName, string canonicalName) {
 		// Arrange
@@ -203,7 +207,7 @@ public class PlaceSectionInWorkplaceToolTests {
 
 	private static WorkplacePlacementResult SampleResult() =>
 		new("UsrOrdersApp",
-			new WorkplacePlacementWorkplace(Guid.NewGuid(), "Orders", "Web", 4, true, "SysWorkplace_Orders"),
+			new WorkplacePlacementWorkplace(Guid.NewGuid(), "Orders", "Web", "general", 4, true, "SysWorkplace_Orders"),
 			new WorkplacePlacementSection(Guid.NewGuid(), "UsrOrders", Guid.NewGuid(), "moved",
 				"SysModuleInWorkplace_UsrOrders"),
 			[],

@@ -381,6 +381,17 @@ rejected. It used to be accepted: a bare JSON array is valid JavaScript, so it c
 gate, then every section read as empty, the merge became a no-op, and the call reported `success`
 with `incomingOperationCount: 0` — silently discarding the whole fragment while looking clean.
 
+A fragment whose marker pairs are all **empty** is rejected for the same reason: it would save the
+page unchanged and report `success`. So is a fragment section that the stored body has no marker pair
+for (for example `modelConfigDiff` against a body without `SCHEMA_MODEL_CONFIG_DIFF`): the write-back
+replaces marker pairs, so that content would vanish — read the body with `get-page` and save it with
+`--mode replace`. A page whose stored body is empty (a page `create-page` makes without an entity) is appended to as
+the empty page body with all marker pairs; the fragment is never saved as the whole body.
+
+`incomingOperationCount` and the other `appendProjection` counts speak for `viewConfigDiff` only, so
+a fragment carrying only config diffs reads `incomingOperationCount: 0` even though it is written.
+`incomingModelConfigDiffOperationCount` and `incomingViewModelConfigDiffOperationCount` report those.
+
 A `viewConfigDiff` entry is replaced only when **both** `operation` and `name` match one of
 yours — and, for a `remove` or a `set`, whether it targets `properties`. Incoming wins, and the replacement
 keeps the existing entry's position. Every other existing operation is preserved verbatim and in
@@ -515,8 +526,9 @@ Three consequences worth knowing:
 The same `appendProjection` is returned on a real append save, for the caller who skipped the dry
 run.
 
-`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays append
-unconditionally and cannot lose an entry, so they have nothing to report. Handlers are **not**
+`appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays are merged by
+appending and never lose an entry silently: a non-empty section the stored body has no marker pair
+for is rejected with an error (use `--mode replace`), so they have no loss to report. Handlers are **not**
 covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
 in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
 contributes one. Check the handlers section by hand when that shape is possible.
