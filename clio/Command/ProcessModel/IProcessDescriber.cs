@@ -824,7 +824,8 @@ public sealed class DescribedElement {
 	/// For a Process file element - Object attachments (<c>attachments</c>), Generated report (<c>report</c>) or
 	/// Process parameter (<c>files</c>): its <c>fileProcessing</c> block with EFFECTIVE values - an inherited template
 	/// default counts. <c>null</c> for every other element and on a server that predates the block (before
-	/// CrtProcessBuilder 1.6.6.105 only Object attachments elements carry it).
+	/// CrtProcessBuilder 1.6.6.108 only Object attachments elements carry it; 1.6.6.105-1.6.6.107 were superseded cuts that
+	/// never shipped).
 	/// <para>The write members resubmit unchanged into a <c>create</c>/<c>modify</c> <c>fileProcessing</c> block, and
 	/// the identity checks (<c>source</c>, <c>storage</c>, <c>fileObject</c>, <c>attachments.linkColumn</c>,
 	/// <c>report.type</c>, <c>report.object</c>) are accepted back when equal. The describe-only members -

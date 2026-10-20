@@ -22,7 +22,7 @@ namespace Clio.Mcp.E2E;
 /// <summary>
 /// End-to-end coverage for the Generated report and Process parameter variants of the "Process file" element
 /// (ENG-96506, story 2 of ENG-92719) over the real MCP path. NOT in CI - run manually against a stand carrying
-/// CrtProcessBuilder 1.6.6.107 or later.
+/// CrtProcessBuilder 1.6.6.108 or later.
 /// <para>What only this level can show: a printable is resolved against the stand's real <c>SysModuleReport</c> rows
 /// (an MS Word printable of an object, three of them through their section's object), the report scope is compiled
 /// by the real filter service, the <c>files</c> source is bound at both levels by the real mapping service, and
@@ -46,8 +46,8 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	/// <summary>The create/modify floor: 1.6.6.105 registered the Generated report and Process parameter variants and
-	/// 1.6.6.106 and 1.6.6.107 carry their final-review and core-reuse fixes; named in the skip message.</summary>
-	private const string MinimumPackageVersion = "1.6.6.107";
+	/// 1.6.6.106 to 1.6.6.108 carry their final-review, core-reuse and review fixes; named in the skip message.</summary>
+	private const string MinimumPackageVersion = "1.6.6.108";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element (Generated report, Process parameter)";

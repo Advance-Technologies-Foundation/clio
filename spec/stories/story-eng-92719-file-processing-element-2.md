@@ -8,7 +8,7 @@ ENG-92704 Create BP via AI Toolkit)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D13, D14, D16,
 D17, D18, D19; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.107 (1.6.6.105 and 1.6.6.106 superseded by the final-review and core-reuse fixes), the clio PR is open; it was deferred
+**Status**: review (2026-10-19: M1 (+ M2) and O-TP1 recorded, cut 1.6.6.108 (1.6.6.105, 1.6.6.106 and 1.6.6.107 superseded by the final-review, core-reuse and review fixes), the clio PR is open; it was deferred
 until those two were recorded)
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
@@ -282,9 +282,11 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   comment after the final review): producing commit `b548c47f`, restamp `fde3d8b4`, tag `crtprocessbuilder-1.6.6.106`
   verified on the remote, cut by `rebundle-process-builder.ps1` (1.6.6.105 took the manual route). Superseded on
   2026-10-20 by **1.6.6.107** after the core-reuse analysis fixes: producing commit `f18020d3`, restamp `5c0b5795`, tag
-  `crtprocessbuilder-1.6.6.107` verified on the remote, cut by the script.
+  `crtprocessbuilder-1.6.6.107` verified on the remote, cut by the script. Superseded the same day by **1.6.6.108** after
+  the PR 100 review fixes: producing commit `e63ed3a4`, restamp `4e08ab4f`, tag `crtprocessbuilder-1.6.6.108` verified on
+  the remote, cut by the script.
 - Bytes trimmed per Q20 = A, if the floor raise lengthened the literal (which text per contract, the reviewer's
-  approval): the floor literal kept its length (1.6.6.103 -> 1.6.6.105 -> 1.6.6.106 -> 1.6.6.107). The additions naming the report and files
+  approval): the floor literal kept its length (1.6.6.103 -> 1.6.6.105 -> 1.6.6.106 -> 1.6.6.107 -> 1.6.6.108). The additions naming the report and files
   groups put modify 31 B over the ceiling; trim T1 (modify setFlowCondition: "the character index comes only with the
   'Formula value error:' PARSE family", -87 B; process-formulas owns the rule) paid it, approved by the owner on
   2026-10-19. No ceiling raise.
