@@ -59,7 +59,6 @@ internal static class ColumnPayloadFieldContract {
 			.GetProperties(BindingFlags.Public | BindingFlags.Instance)
 			.Select(property => property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name)
 			.Where(name => !string.IsNullOrEmpty(name))
-			.Select(name => name!)
 			.Distinct(StringComparer.Ordinal)
 			.ToArray());
 }
