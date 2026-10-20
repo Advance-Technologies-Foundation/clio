@@ -47,8 +47,11 @@ about the floor's refusal set being a subset of convergence's is true only in th
 equal. Agent-facing text must therefore not promise "the convergence message naming both versions" as the refusal a
 caller will see — in that state it names one.
 
-That state has ended: the branch cut further archives and the bundled version is well ahead of the floor again, so
-the nesting is back and the general rule above applies. Do NOT restate the bundled version here — this record said
-"1.4.0.3 is also the version clio bundles" and was 23 patches stale within a day. The bundled version has exactly
-one home, `ExpectedArchiveVersion` in `clio.tests/Common/BundledProcessBuilderPackageTests.cs`; what belongs in a
-record is the CONDITION (floor equals bundled) and what it does, not the numbers that happen to satisfy it today.
+That state recurs, so never assume either one. A rebundle that raises the floors to the cut it ships puts it back:
+ENG-96505 and ENG-96506 both did, and it held on master on 2026-10-20. A later cut that leaves the floors where they
+are ends it, and the nesting and the general rule above return. Compare the `[RequiresPackage]` literal with
+`ExpectedArchiveVersion` before writing about the refusal a caller will see. Do NOT restate the bundled version here —
+this record said "1.4.0.3 is also the version clio bundles" and was 23 patches stale within a day. The bundled version
+has exactly one home, `ExpectedArchiveVersion` in `clio.tests/Common/BundledProcessBuilderPackageTests.cs`; what
+belongs in a record is the CONDITION (floor equals bundled) and what it does, not the numbers that happen to satisfy
+it today.

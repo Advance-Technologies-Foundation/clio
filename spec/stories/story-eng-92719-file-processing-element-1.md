@@ -9,8 +9,12 @@ processing element, which it now "relates to"; epic ENG-92704 Create BP via AI T
 D20, D21, O5; D25 and D26 for this cut
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Status**: review (package #97, clio #1841 and knowledge #295 merged 2026-10-19, follow-ups #99 and #1846 the same
-day; open boxes: OA-2, OA-11, OA-12; tasks OA.0, OA.12, OA.13 and "Knowledge records and status"; Definition of Done:
-clio items 3, 7 and 8, Process items 2-7. Each open box names its reason)
+day). Reconciled box by box on 2026-10-20: OA-2, OA-11, OA-12, OA.12 and the Process item on PR titles and merge order
+are reworded to the decision or PRD row actually taken, each citing where it is recorded, and ticked; OA.0 and the clio
+analyzer item are ticked on evidence. Later the same day: OA.13 and Process items 3-5 closed by owner decisions; the
+M26 record written, the `make check-knowledge` review of #1841 recorded, and clio items 7 and 8 ticked. Still open,
+each with its reason: task "Knowledge records and status" (its status flips only); Definition of Done: Process items
+2 (Jira) and 6 (status flips). Not `done` until they close
 **Size**: L (about 15.5-27.5 h of AI-agent time and 5.5-13 h of the owner's time; about 4-6 working days of calendar;
 the package PR is estimated at 6-6.8k added lines, the largest of the cycle)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -60,18 +64,27 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
   `Create_ShouldWriteSchemaUIdManagerItemAndSerializeToDbFromTheTaskSchema`; clio e2e
   `CreateBusinessProcess_Should_BuildAProcessFileElement_InDedicatedStorage` (size `69;55`), 73/73 on 1.6.6.103 (clio
   #1841).
-- [ ] **OA-2** - describe returns a `fileProcessing` block in the write vocabulary with effective values, identity
-  checks and describe-only members; feeding the write members back rebuilds the element. Designer-built and
-  builder-built Object elements read back and survive a modify. Report and Process-parameter elements are described and
-  preserved as generic user tasks; a modify of a process that holds one leaves it byte-identical. A designer-built
-  SysFile element is described (`storage: sysFile`, issues listed) and `setElement` / `setFilter` on it are refused,
-  naming SF.
-  Not met as written: describe, the round trip and the SysFile refusal are in (`FileProcessingBlockDescriber`; e2e
-  `DesignerFixture_Should_DescribeTheSysFileElement_AndRefuseItsChanges`), but the first unrelated builder save of an
-  element in the designer's form changes its node once
-  (`docs/knowledge/platform/the-first-builder-save-normalizes-a-designer-built-file-task.md`; e2e
-  `DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies` asserts an allow-list), so byte
-  identity holds only from the second save. The PRD row says "intact": amend this line or accept.
+- [x] **OA-2** (reworded 2026-10-20 back to the PRD's OA-2 row) - describe returns a `fileProcessing` block in the write
+  vocabulary with effective values, identity checks and describe-only members; feeding the write members back rebuilds
+  the element. Designer-built and builder-built Object elements read back and survive a modify. Report and
+  Process-parameter elements are described and preserved as generic user tasks in this cut; a modify of a process that
+  holds one leaves it intact, as the PRD's OA-2 row says: the first unrelated builder save applies the platform's
+  one-time re-sync of the element's parameters to the user-task template (an allow-list of changes, no runtime value
+  changed), and every later save is byte-identical. A designer-built SysFile element is described (`storage: sysFile`,
+  issues listed) and `setElement` / `setFilter` on it are refused, naming SF.
+  Basis of the rewording: the PRD's OA-2 row, which this list only shortens, says "leaves it intact", not
+  "byte-identical"; the first-save change is a measured platform fact
+  (`docs/knowledge/platform/the-first-builder-save-normalizes-a-designer-built-file-task.md`: the design-session load
+  re-syncs the parameters to the template; the run time reads the retyped `ConnectedObjectId` as a Guid either way),
+  and the e2e asserts an allow-list for it, which #1841's gate-1 re-review accepted ("Review"). No separate owner
+  decision on "amend or accept" was recorded before; the owner confirmed "accept intact" on 2026-10-20.
+  Evidence: `FileProcessingBlockDescriber` (package `8f10526f`); e2e
+  `DesignerFixture_Should_DescribeTheSysFileElement_AndRefuseItsChanges` and
+  `DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies` (TC-I-46), both passed in #1841's
+  73/73 run on 1.6.6.103 (0 skipped). That run used a fixture an earlier builder save had already normalized, so on
+  1.6.6.103 it proves the byte identity of later saves; the first-save allow-list was checked offline against the
+  fixture's designer-original nodes (#1841 "Review"; a fresh-fixture run is a gate-3 advisory). The "generic user
+  tasks" half held for this cut; story 2 (ENG-96506) registered the Report and Process-parameter variants.
 - [x] **OA-3** - `ObjectFiles` / `ObjectFiles.File` and `CreatedObjectFileIds.Id` can be mapped by more than one
   downstream element in one request (a FileCollection and a multi-instance sub-process).
   Evidence: clio e2e `ModifyBusinessProcess_Should_BindObjectFiles_IntoTwoConsumers` (TC-I-35) and
@@ -119,18 +132,35 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
   that oracle.
   Evidence: package `FileProcessingParityTests.ObjectElement_ShouldEqualSkillFilesValidationProcess_OnTheReadSide` and
   its save-side twin; `PredatedByFileCopyProcessPP` names the three excluded parameters.
-- [ ] **OA-11** - `process-files` gains the element and Object sections, with the endpoint sentence "most shipped uses
-  end in a record's attachments; when a following element needs the files, map the element's output collection" and
-  never "rarely an endpoint".
-  Not met as written: `process-files` (clio-knowledge #295, published as 1.15.159) has the element and Object sections
-  and never says "rarely an endpoint", but its endpoint sentence reads "Shipped product processes end in a record's
-  attachments (Generated report); when a following element needs the files, map its output collection (Recipes)." The
-  gate-3 refute-first fact check reworded it (`80a206c`, `4aa62d3`): amend the criterion or restore the sentence.
-- [ ] **OA-12** - unit tests, e2e, stand verification, descriptions, prompts and guidance in the same change, merged
-  package, then clio, then knowledge.
-  Not met as written: the change shipped as #97, #1841 and #295, but they merged in the order package, knowledge, clio
-  (2026-10-19 08:35:49Z, 08:36:09Z, 08:37:01Z), changed on purpose in the PR descriptions so that the guide is published
-  before the descriptions point at it; stand verification on the final cut is open (see OA.13).
+- [x] **OA-11** (reworded 2026-10-20 to the decision taken) - `process-files` gains the element and Object sections,
+  with an endpoint sentence that states the shipped pattern (the shipped product processes end in a record's
+  attachments; when a following element needs the files, map its output collection) and never "rarely an endpoint".
+  Decision: analysis decision D-3 (`spec/eng-92719-file-processing-element/eng-92719-file-processing-element-decisions.md`,
+  the D-3 change table and review item R3-3) replaced the Jira wording "rarely an endpoint", because the corpus shows
+  the 4 product processes (5 elements) all end in a record's attachments; TC-88 pins the replacement and the absence of
+  "rarely an endpoint". The owner's reply 557730 on ENG-96505 (2026-10-19) declined Artem Kulykov's request (QA comment
+  557683) to add "rarely an endpoint", citing D-3 and TC-88. The shipped wording is not D-3's literal sentence: the
+  gate-3 refute-first fact check of #295 narrowed "Most shipped uses" to "Shipped product processes ... (Generated
+  report)" (clio-knowledge `80a206c`; final wording `4aa62d3`), because the Object and Process-parameter variants occur
+  only in test packages; D-3 and the PRD row still carry the "Most shipped uses" wording, and 557730 and #297's
+  description quote that wording as if the guide kept it. That narrowing is the author's fact-check correction, not a
+  separate owner decision.
+  Evidence: clio-knowledge #295 (published as 1.15.159): `guidance/mcp/guides/processes/files.md` reads "Shipped
+  product processes end in a record's attachments (Generated report); when a following element needs the files, map
+  its output collection (Recipes)."; pinned by
+  `ProcessFileGuidanceTests.Section_ShouldStateTheEndpointConsumersAndTheReFind`, which also asserts that no process
+  article contains "rarely an endpoint" (TC-U-88). The sentence is unchanged on clio-knowledge master 1.15.163.
+- [x] **OA-12** (reworded 2026-10-20 to the decision taken) - unit tests, e2e, stand verification, descriptions,
+  prompts and guidance in the same change, merged package, then knowledge, then clio.
+  Decision: the gate-3 review of #1841 changed the merge order so that the guide is published before the clio
+  descriptions point agents at `process-files` (#1841 "Gate 3": "the merge order changed so the guidance goes first";
+  the merge-order lines of #1841 and #295: an older clio or package refuses `type: fileProcessing` loudly, so the
+  guidance can go first).
+  Evidence: one coordinated change, #97 (package, 3989 tests), #295 (guidance) and #1841 (clio unit tests, e2e,
+  descriptions, prompts), merged by d-krestov in that order on 2026-10-19 (08:35:49Z, 08:36:09Z, 08:37:01Z). Stand
+  verification before the merge: ST-01, ST-02, DT-01, DT-02 and SC-4 passed on 1.6.6.100-1.6.6.102 (#1841
+  "Validation"; dates and versions in the Dev Agent Record below) and the e2e passed 73/73 on the cut 1.6.6.103. The
+  repeat on the final cut is OA.13's item, not this criterion's.
 
 ---
 
@@ -156,15 +186,20 @@ recommended); it is pasted into Jira (plan FE.0b) as written.
 
 **Stand (before code)**
 
-- [ ] **OA.0** M10, M11 (a)(b), M14 and M17-Q7 are done (2026-10-02); what remains is M26 (a designer-built probe;
+- [x] **OA.0** M10, M11 (a)(b), M14 and M17-Q7 are done (2026-10-02); what remains is M26 (a designer-built probe;
   gates the guide sentence and the record, not code) and the fixture `UsrFpOaDesignerFixture` that OA.11 reads: process
   in package `Custom`, caption "FP OA designer fixture", built once by the user and never run; a Lookup parameter
   `PInvoice` -> Invoice; F1 = Process file, Object attachments, `Account address` (SysFile storage, nothing else set);
   F2 = Generated report, printable `Invoice`, filter Id = `PInvoice`, Save to object attachments -> Invoice's attachment
   object, record = `PInvoice`; Start -> F1 -> F2 -> End. Each write after the user's go-ahead.
-  Not verifiable from tracked files: the only record is the untracked working file `eng-96505-stand-handoff.md`: M26 measured 2026-10-15 on 1.6.6.100 (ST-01 run trace: `ObjectFiles` holds the
-  source locators); `UsrFpOaDesignerFixture` built in the designer 2026-10-15 07:51 UTC (UId
-  33c13bf7-ae2d-4982-ac12-ec8ebc9d4406). The fixture was later removed with the stand's Custom package (clio #1846).
+  Evidence: M26 measured 2026-10-15 on CrtProcessBuilder 1.6.6.100, recorded in clio-knowledge #295 "Evidence"
+  ("after saving, `ObjectFiles` points at the source files"; the ST-01 run trace: `ObjectFiles` holds the source
+  locators, the copies only `CreatedObjectFileIds`). `UsrFpOaDesignerFixture` built in the designer on 2026-10-15
+  07:51 UTC (UId 33c13bf7-ae2d-4982-ac12-ec8ebc9d4406, the owner's stand handoff); the tracked record
+  `docs/knowledge/platform/the-first-builder-save-normalizes-a-designer-built-file-task.md` measures on it, and both
+  designer-fixture e2e cases ran green in #1841's 73/73 (0 skipped) on 1.6.6.103. The fixture was later removed with
+  the stand's Custom package (#1846) and has not been rebuilt; rebuilding it is carried to ENG-103937 (story 3), whose
+  SF.3 re-points the fixture's F1 case.
 
 **CrtProcessBuilder** (base `main`; draft on ENG-95984's branch until it merges)
 
@@ -404,22 +439,30 @@ to one tree)
   `ProcessModel/described-filter-types-have-no-json-overflow-bag.md`; review the `make check-knowledge` report.
   Status flips in `spec/sprint-status.yaml` (see "Status convention"), including the `done` flip of
   `story-eng-95984-file-parameter-type-1`, which rides in this PR.
-  Not met: the nine records and the update of `described-filter-types-have-no-json-overflow-bag.md` are on master
-  (`56e6aebee`, `5768b62cb`), but M26 was measured 2026-10-15 and
-  `platform/after-saving-object-files-points-at-the-source-files.md` was never written; the `make check-knowledge`
-  review is not recorded; the status flips were not made (master kept this story at `ready-for-dev` and
-  `story-eng-95984-file-parameter-type-1` at `review`).
+  Re-checked 2026-10-20. Done: the nine records and the update of
+  `described-filter-types-have-no-json-overflow-bag.md` are on master (`56e6aebee`, `5768b62cb`), and story 2's clio PR
+  #1847 deleted the temporary `report-and-parameter-file-elements-stay-generic-until-eng-96506.md` as planned. The M26
+  record `platform/after-saving-object-files-points-at-the-source-files.md` was written on 2026-10-20 in the docs PR
+  #1857 (basis: the stored outputs measured on 1.6.6.100 in the ST-01 run's element trace, the mechanism source; the
+  multi-instance consumer half of M26 was never run, and the record says so). The `make check-knowledge` review of
+  #1841 is recorded: 103 records listed for `24bfa471b^1..24bfa471b`, 96 kept, 6 updated in #1857, 1 already deleted
+  by #1847 (log in the Dev Agent Record; every record in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
+  Open: the status flips did not follow the convention: `in-progress` was never recorded, `review` arrived only with
+  #1847, and the `done` flip of `story-eng-95984-file-parameter-type-1` was not made (it stays at `review`).
 
 **clio-knowledge** (base `master`, own worktree under `.worktrees/<task>/`)
 
-- [ ] **OA.12** `guidance/mcp/guides/processes/files.md` (`process-files`) sections: the element and "the group is the
+- [x] **OA.12** (reworded 2026-10-20 to the decision taken: the endpoint sentence as in OA-11, and the saved copies
+  re-selected with Read data, not Modify data) `guidance/mcp/guides/processes/files.md` (`process-files`) sections: the element and "the group is the
   variant"; `attachments` (`recordId`; `numberOfRecords` defaults to 50 and does NOT read all; the sort shape with the
   M24 result); the member-wise merge; identity checks vs describe-only ("remove the describe-only members before
   resubmitting", naming `actionStored`, `outputs`, `issues` and each value source's `display`); dedicated storage
   and "SysFile storage is refused in this version"; the action per variant (the
   sentence "after saving, `ObjectFiles` points at the source files" only after M26, as "measured <date>"); the endpoint
-  sentence of the PRD's OA-11, never "rarely an endpoint"; consumers (Send email attachments and Creatio.ai not
-  buildable through this tool yet); the Modify data re-find pattern with its hazards. `element-catalog.md`: the
+  sentence of OA-11 as reworded above, never "rarely an endpoint"; consumers (Send email attachments and Creatio.ai not
+  buildable through this tool yet); the re-find pattern for the saved copies (Read data on the target's attachment
+  object) with its hazards. `element-catalog.md`: the
   buildable row and the generic-route sentence worded for this cut (only the Object schema is refused; Report and
   Process-parameter elements are "not buildable yet; do not build them as a generic userTask"); "FOUR user tasks have
   their own dedicated build type" becomes FIVE together with the three knowledge tests that pin FOUR
@@ -430,20 +473,40 @@ to one tree)
   gate; consent wording within 80 characters of every `install-process-builder`; no Jira key or PR link. NEW pin test
   `automation/Clio.Knowledge.Bundle.Tests/ProcessFileGuidanceTests.cs`; libraryVersion above master and every branch
   claim at merge.
-  Not met as written: clio-knowledge #295 (published as 1.15.159, 2026-10-19) carries the sections, FOUR -> FIVE with
-  its three tests and the card, `ProcessFileGuidanceTests`, and libraryVersion 1.15.159 over master's 1.15.156. The
-  gate-3 fact check changed two items, though: the endpoint sentence is reworded (see OA-11), and the re-find pattern
-  uses Read data, not Modify data (`80a206c`, `4aa62d3`). Amend the task text or accept.
+  Decision: the gate-3 refute-first fact check of #295 (two agents barred from the author's records) corrected two
+  items, recorded in #295 "Evidence" and in clio-knowledge `80a206c`: the endpoint sentence (see OA-11, decision D-3),
+  and the re-find, because Modify data has no output to read the copies with, so they are re-selected with Read data.
+  Evidence: clio-knowledge #295 (published as 1.15.159, 2026-10-19) carries the sections, FOUR -> FIVE with its three
+  tests and the card, `ProcessFileGuidanceTests` (the endpoint and re-find pins in
+  `Section_ShouldStateTheEndpointConsumersAndTheReFind`), and libraryVersion 1.15.159 over master's 1.15.156; the
+  M26 sentence follows the 2026-10-15 measurement (#295 "Evidence").
 
 **Tail**
 
-- [ ] **OA.13** Stand verification after the final cut (below); gates 1 and 3 (comprehensive, three lenses) and their
+- [x] **OA.13** Stand verification after the final cut (below); gates 1 and 3 (comprehensive, three lenses) and their
   fixes; one human review round (one push: fixes, restamp and rebundle together); knowledge publication and the
   `info-knowledge` check.
-  Not met: on the final cut 1.6.6.103 only the e2e (73/73, #1841) and TC-01..TC-10 (`eng-96505-test-run-report.md`) ran.
-  `eng-96505-stand-handoff.md` records ST-01 and DT-01 on 1.6.6.100, DT-02 and SC-4 on 1.6.6.102, and ST-02 on
-  2026-10-17 with no version (#97 lists ST-01 and ST-02 under its 1.6.6.102 run). Gates 1 and 3 and the publication are
-  recorded (#97, #1841, #295, release 1.15.159); the one-push human review round and the `info-knowledge` check are not.
+  Re-checked 2026-10-20. Done:
+  - gates 1 and 3 and their fixes: recorded in #97, #1841 ("Review", "Gate 3") and #295 ("Evidence");
+  - one human review round with at most one push per PR: on #1841 Anton Chernov commented at 07:56Z, one push followed
+    (`0efe302d5`: two e2e gate constants and comment text, from the review's two notes), and Artem Kulykov approved at
+    08:10Z; #97 and #295 got no push after their
+    reviews (#97's last commit is the restamp `55517e20`, made before the reviews);
+  - knowledge publication: release 1.15.159 (#295, 2026-10-19); the `info-knowledge` check, run on 2026-10-20 from a
+    build of clio master `ea3aaf580`: library 1.15.163, revision `6fa3f91` (the #297 merge, which contains #295's
+    merge `8452003`);
+  - on the final cut 1.6.6.103: the e2e 73/73 with 0 skipped (#1841) and TC-01..TC-10 as business tasks in isolated
+    agent sessions, all PASS (the owner's report `eng-96505-test-run-report.md`; TC-01 is the ST-01 shape, a run
+    copying an account's files to a contact; TC-04 the ST-02 shape, a sub-process per file); on the follow-up cut
+    1.6.6.104, Artem Kulykov's QA pass, 12 of 14 PASS with both defects fixed in ENG-96506 (ENG-96505 comments 557683
+    and 557730; his TC-01 includes a no-op designer save that keeps the process working).
+
+  Accepted by the owner 2026-10-20: the 1.6.6.102 runs stand for the final cut 1.6.6.103, whose only change over
+  1.6.6.102 is a modify-time refusal (`ca243062`) that neither comparison exercises.
+  Was open: the DT-02 and SC-4 comparisons (and the literal ST-01, ST-02 and DT-01 procedures) ran on 1.6.6.100-1.6.6.102
+  only, before the final cut (dates and versions in the Dev Agent Record). The final cut adds one modify-time refusal
+  over 1.6.6.102 (package `ca243062`), but no comparison was repeated on it. Close by repeating DT-02 and SC-4 on the
+  current package, or by an owner decision to accept the 1.6.6.102 runs.
 
 ---
 
@@ -524,11 +587,14 @@ an approval.
       `name=process-files`.
       Evidence: OA.10 (a)-(d); the call-shape drift tests and the 19,000 B guard ran in the full unit run of #1841
       (17325 passed).
-- [ ] `list-user-tasks` corrected; `DescribedFileProcessing` with a bag on every nested type and `///` summaries; the
+- [x] `list-user-tasks` corrected; `DescribedFileProcessing` with a bag on every nested type and `///` summaries; the
       capability probe; the four prompt sentences pinned; no new `CLIO*` analyzer warning in any touched file.
-      Not verifiable: list-user-tasks, `DescribedFileProcessing`, the probe and the four prompt pins are in (OA.10 (e),
-      (f)), but no analyzer run over the touched files is recorded, and the `CLIO*` ids are `warning` in
-      `clio/.editorconfig`, so a green build does not prove "no new `CLIO*` analyzer warning".
+      Evidence: list-user-tasks, `DescribedFileProcessing`, the probe and the four prompt pins as in OA.10 (e), (f).
+      Analyzer run, 2026-10-20: a clean `dotnet build clio/clio.csproj -c Debug -f net10.0 --no-incremental` of clio
+      master `ea3aaf580` (which contains #1841, #1846 and #1847; `Clio.Analyzers` is referenced by `clio/clio.csproj`
+      only) reports `CLIO*` warnings in one file, `clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs` (two
+      CLIO001), which none of the three PRs touches; none of the `clio/` source files #1841 changed has a `CLIO*`
+      warning.
 - [x] Every new or changed test in `clio.tests` and `clio.mcp.e2e`: explicit Arrange / Act / Assert, a `because` on every
       assertion, `[Description]` on every test, runnable on macOS, Linux and Windows; clio unit tests carry
       `[Category("Unit")]`.
@@ -546,10 +612,13 @@ an approval.
       (ProcessFileElement 25, ListUserTasks 2, ValidateProcessGraph 14, DescribeProcess 6, SubProcessMultiInstance 10,
       RecordColumnSource 3, FileParameter 13). On the follow-up cut 1.6.6.104 (#1846) the two designer-fixture cases
       skipped because the fixture had been removed from the stand.
-- [ ] Knowledge records added, updated or deferred as in the task list; `make check-knowledge` report reviewed.
-  Not met: see "Knowledge records and status" (the M26 record is missing; the `make check-knowledge` review is not
-  recorded).
-- [ ] The PR description states: "MCP reviewed" (tools create-business-process, modify-business-process,
+- [x] Knowledge records added, updated or deferred as in the task list; `make check-knowledge` report reviewed.
+  Evidence: the nine records and the `described-filter-types-have-no-json-overflow-bag.md` update on master; the
+  deferred M26 record `platform/after-saving-object-files-points-at-the-source-files.md` added in #1857 on 2026-10-20;
+  the report over #1841's diff (103 records) reviewed on 2026-10-20 against master `ea3aaf580` and package tag
+  `crtprocessbuilder-1.6.6.109`: 96 kept, 6 updated in #1857, 1 already deleted by #1847 as planned (Dev Agent Record;
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
+- [x] The PR description states: "MCP reviewed" (tools create-business-process, modify-business-process,
       modify-process-as-new-version, describe-business-process, list-user-tasks, validate-process-graph; prompts
       ListUserTasksPrompt, CreateBusinessProcessPrompt, ModifyBusinessProcessPrompt, DescribeProcessPrompt; resources and
       `clio/tpl`: no update required); "docs reviewed, no update required" (`clio/help/en`, `clio/docs/commands`,
@@ -557,10 +626,14 @@ an approval.
       Ring-consumed contract changed" (inspected `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`,
       `clio-ring/ClioRing.Desktop/actions.json`), with the Purpose leads confirmed unchanged in `get-tool-contract`
       `detail=index-entries`; the re-measured budget figures of both guards; no telemetry vocabulary change.
-      Not met: #1841 states "MCP reviewed and updated", "Docs reviewed, no update required" and "ClioRing compatibility
-      reviewed, no Ring-consumed contract changed" with the three inspected paths, but not the listed tools and prompts,
-      the Purpose leads confirmed in `get-tool-contract` `detail=index-entries`, the re-measured figures of the two
-      guards (only "under 35072 B" and "under 19000 B") or "no telemetry vocabulary change".
+      Evidence: #1841 states "Docs reviewed, no update required" and "ClioRing compatibility reviewed, no Ring-consumed
+      contract changed" with the three inspected paths; the rest is in the section "MCP review (completed 2026-10-20)"
+      appended to #1841's description on 2026-10-20: the touched tools, prompts and resources; the served purposes
+      (`get-tool-contract` `detail=index-entries`) byte-identical at `85a3953e2` and `24bfa471b`, with
+      `GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt` and
+      `GetToolContracts_ShouldGiveEveryToolADistinctPurpose_WhenCompactIndexIsBuilt` passing; the budgets re-measured at
+      `24bfa471b` (modify 35042 B, 30 B headroom; create 34917 B, 155 B; describe 34644 B, 428 B; wire bundle 18815 of
+      19000 B); and no telemetry vocabulary change.
 
 **clio-knowledge**
 - [x] `process-files` sections and `element-catalog.md` for this cut; FOUR -> FIVE with its three tests and the card;
@@ -572,8 +645,9 @@ an approval.
       FIVE pinned by `ProcessDigestTests.TheCardsDedicatedTypes_ShouldEqualTheCatalogsFive` and
       `ProcessPreconfiguredPageCatalogGuidanceTests`; the digest card lists `fileProcessing`; 455 bundle tests passed;
       refute-first fact checks by two agents barred from the author's records; libraryVersion 1.15.159 over master's
-      1.15.156; release `clio-knowledge 1.15.159` published 2026-10-19 08:37Z. The `info-knowledge` output itself is not
-      recorded; TC-11..TC-14 ran on 1.15.159 (`eng-96505-test-run-report-104.md`).
+      1.15.156; release `clio-knowledge 1.15.159` published 2026-10-19 08:37Z; TC-11..TC-14 ran on 1.15.159
+      (`eng-96505-test-run-report-104.md`). `info-knowledge`, run 2026-10-20 from a build of clio master `ea3aaf580`,
+      shows library 1.15.163 at revision `6fa3f91`, which contains #295's merge `8452003`.
 
 **Process**
 - [x] This BMAD set merged before the package PR opened (E7).
@@ -581,38 +655,103 @@ an approval.
 - [ ] Jira: OA-1..OA-12 pasted as this issue's acceptance criteria, the rows encoding Q13-Q17 as agreed on
       2026-10-14; link L1 (ENG-95984 relates to this issue)
       in place of the "blocks" link 560203.
-      Not verifiable: Jira was not read in this audit; `eng-96505-stand-handoff.md` (2026-10-17) left pasting
-      OA-1..OA-12 and the link L1 to the owner.
-- [ ] M26 recorded before the OA.12 sentence and its record are written; `UsrFpOaDesignerFixture` built; ST-01, ST-02,
+      Not met (Jira read 2026-10-20): the ENG-96505 description still carries the original acceptance criteria (OA-1..OA-12
+      were not pasted; the owner pastes them by hand, because an API edit breaks the HeroCoders checklist), and the issue
+      still has the "blocks" link 560203 from ENG-95984, with no "relates to" link L1 in its place. ENG-96505 is Closed.
+- [x] M26 recorded before the OA.12 sentence and its record are written; `UsrFpOaDesignerFixture` built; ST-01, ST-02,
       DT-01, DT-02 and SC-4 (TC-M-20, the story 1 rows) passed and recorded with dates, package version and basis.
-      Not met: M26 was measured 2026-10-15, before the guide sentence (#295 cites it), and `UsrFpOaDesignerFixture` was
-      built 2026-10-15, but the M26 record was never written, and the ST-01, ST-02, DT-01, DT-02 and SC-4 results live
-      only in the working file `eng-96505-stand-handoff.md`, not in this story's record or the TC-M-20 row. They ran on
-      1.6.6.100-1.6.6.102 (ST-02 with no version), not on the final cut.
-- [ ] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
-  Not verifiable: the OA traceability rows are filled in the test plan, but implementation was not audited case by case.
-  The package tests cite TC-01..TC-34, TC-37 and TC-40..TC-46 by number, not TC-35, TC-36, TC-38 or TC-39; the e2e cites
-  every story-1 TC-I case except TC-I-87, which is the must-stay-green run.
-- [ ] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
+      Met in part: M26 measured 2026-10-15 on 1.6.6.100 and cited with its date and version in the guide sentence of
+      #295 (OA.0); the fixture built 2026-10-15 (OA.0); the five proofs passed (#1841 "Validation": "ST-01 and ST-02
+      run-time checks passed", SC-4 0 differences, DT-02 one cosmetic difference normalized by N16) and are now recorded
+      under "Stand records" in the Dev Agent Record below (written 2026-10-20 from the owner's stand handoff).
+      Not met: the package version of ST-02 is not recorded anywhere (the handoff gives none, and #1841 groups ST-01,
+      which ran on 1.6.6.100, under its 1.6.6.102 run, so it is no reliable source); DT-01's version is inferred, not
+      recorded. Close by recording ST-02's version from the stand's data, or by an owner decision to accept it without one.
+      Waived by the owner 2026-10-20: ST-02 is accepted without a recorded package version (it ran in the 1.6.6.100-1.6.6.102
+      window); DT-01's version stays inferred. Historical record keeping, not repeatable now.
+- [x] Every test-plan case whose Story column names 1 implemented; the AC traceability rows of OA filled.
+  Not met as far as checked (crt-process-builder `origin/main` `4617c369`, 2026-10-20): the OA traceability rows are
+  filled; TC-U-39 is implemented (`MappingNestedDisplayValueTests`, the D20 nested display value) and TC-U-38's create
+  half (`FileProcessingElementHandlerTests.RemintNestedItems_*`), and TC-I-35 in the e2e; no package test was found for
+  TC-U-35 (two consumers, both levels stored, at package level), TC-U-36 (a later mapping in the create batch embeds
+  the re-minted nested UId) or TC-U-38's modify half (nested UIds kept on modify with their consumers). Close by
+  pointing each to an existing test, or by adding the tests in a package PR.
+  Carried by the owner's decision of 2026-10-20 to ENG-103934 (Process file element: describe misreports an item-only
+  Files.File binding on the Process parameter variant), item 5, which ships with the next CrtProcessBuilder cut: TC-U-35,
+  TC-U-36 and TC-U-38's modify half need a package change, so they cannot land in this docs PR.
+- [x] Review gate 1 (comprehensive) before each PR opens; gate 2 on every new commit with the tier stated; gate 3
       (comprehensive) before ready-to-merge; no open Blocker or High.
-      Not verifiable: gate 1 before #97 (fixes `654e53d8` at 17:12Z, PR opened 17:51Z) and before #1841, and gate 3 on
-      all three PRs with no open Blocker or High, are recorded in the PR descriptions; gate 2 with its tier per new
-      commit, and gate 1 for #295, are not.
+      Not met as recorded: gate 1 before #97 (fixes `654e53d8` at 17:12Z, PR opened 17:51Z) and before #1841, and gate 3 on
+      all three PRs with no open Blocker or High, are recorded in the PR descriptions; a tier is stated on 2 of #1841's
+      15 commits (`Review tier: skipped ...`), and gate 1 for #295 is not recorded (its pre-PR refute-first fact check
+      `e668672` is a fact check, not the three-lens gate).
+      Waived by the owner 2026-10-20: the missing per-commit tier statements and the unrecorded gate 1 of #295 are
+      history that cannot be recorded after the fact; gate 1 and gate 3 ran with no open Blocker or High.
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.
-  Not met: master never moved this story to `in-progress` or `review` (it stayed `ready-for-dev` until this branch), and
-  this Definition of Done still has open items.
-- [ ] PR titles exactly `ENG-96505 Element readiness and object attachments mode` in all three repositories; merged by a
-      human in the order package (tag verified on the remote), clio, knowledge; no clio release cut between the clio
-      and knowledge merges.
-      Not met as written: the titles are exact in all three repositories (#97, #1841, #295) and d-krestov merged each
-      one, but in the order package, knowledge, clio, as the PR descriptions planned (see OA-12).
+  Not met: `in-progress` was never recorded on master, `review` arrived with #1847, and this Definition of Done still
+  has an open item (Process 2, Jira).
+- [x] (reworded 2026-10-20 to the decision taken) PR titles exactly `ENG-96505 Element readiness and object attachments
+      mode` in all three repositories; merged by a human in the order package (tag verified on the remote), knowledge,
+      clio; no clio release cut between the package and clio merges.
+      Decision: the guide-first merge order of #1841's gate 3, as in OA-12.
+      Evidence: the titles are exact in #97, #1841 and #295; d-krestov merged #97 at 08:35:49Z, #295 at 08:36:09Z and
+      #1841 at 08:37:01Z on 2026-10-19, so no release could fall between them; `crtprocessbuilder-1.6.6.103` ->
+      `ca243062` on the remote (`git ls-remote`, 2026-10-20).
 
 ## Dev Agent Record
 
-- Implementation started:
+Filled in on 2026-10-20 from the merged PRs and the owner's stand handoff (`eng-96505-stand-handoff.md`, a working file
+outside the repository).
+
+- Implementation started: 2026-10-14 (package code; draft #97 opened 2026-10-14 17:51Z).
 - Owner answers to Q13-Q17 (date, answer, any change to this story): 2026-10-14, all as recommended; no change to this story.
-- Package cut claimed (number, date, where claimed):
+- Package cut claimed (number, date, where claimed): 1.6.6.103, 2026-10-19, in ENG-92719 comment 550565 (#1841
+  "Rebundle"); 1.6.6.100-1.6.6.102 are burned, each installed on the dev stand before a byte-changing fix. Follow-up cut
+  1.6.6.104 (#99, #1846), floors kept at 1.6.6.103.
 - Bytes trimmed per Q20 = A (which text per tool, and the reviewer's approval), description and wire figures re-measured:
-- Tests passing (package, clio unit, e2e with Ignored count, knowledge):
-- Stand records (ST-01, ST-02, DT-01, DT-02, SC-4, M26):
-- Notes:
+  the six trims listed in #1841 "Rebundle" (create: four; modify: one; modify-as-new-version: one), approved by the
+  owner on 2026-10-19 (`7b0fc971e`); re-measured at `24bfa471b` in #1841's "MCP review (completed 2026-10-20)":
+  modify 35042 B, create 34917 B, describe 34644 B of 35072 B; wire bundle 18815 of 19000 B (clio item 8).
+- Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3989/3989 on `-c dev-nf` and `-c dev-n8`
+  (#97); clio unit 17325 passed, 0 failed, 25 skipped (#1841); e2e 73/73, 0 skipped, on 1.6.6.103 (#1841); knowledge
+  455 passed (#295).
+- Stand records (ST-01, ST-02, DT-01, DT-02, SC-4, M26), all on the .NET Framework dev stand, basis measured:
+  - ST-01 PASS, 2026-10-15, CrtProcessBuilder 1.6.6.100, run `8c951966`: 2 new ContactFile rows (Type File, linked to the
+    target), the source AccountFile rows unchanged, `CreatedObjectFileIds` = the copies' Ids (process trace).
+  - M26, the same run: after SaveToFiles `ObjectFiles` holds the SOURCE locators (AccountFile rows); the copies are only in
+    `CreatedObjectFileIds`.
+  - ST-02 PASS, 2026-10-17, run `b6f78e28`: Object "use in process" into a multi-instance sub-process, the callee ran 2
+    times, all Completed. The package version is not recorded in the handoff; #1841 lists ST-02 under its 1.6.6.102 run.
+  - DT-01 PASS, 2026-10-17; version not recorded, inferred as 1.6.6.100 (the builder still wrote `ConnectedObjectId` as
+    Guid, which 1.6.6.101 changed):
+    the designer draws the builder-built element like a hand-made one; a no-op save changed only `ConnectedObjectId`
+    Guid -> Lookup, and `SourceDataEntitySchemaUId` did not become AccountFile (H-G3-1 not confirmed).
+  - DT-02, 2026-10-17: on 1.6.6.100, 3 runtime-neutral differences against the hand-built twin, which led to the owner's
+    decision that the builder writes the designer's form (1.6.6.101/1.6.6.102); on 1.6.6.102, 1 difference (the
+    `AccountLogo` key of `serializedFilterEditData`), normalized by the N16 rule, so equal under TC-41.
+  - SC-4, 2026-10-17, on 1.6.6.102: `UsrFpSc4OaBuilder` against the designer capture `UsrFpSc1OaCapture` (E1, E2): 0
+    differences.
+- Knowledge review (`make check-knowledge` over #1841's diff `24bfa471b^1..24bfa471b`, 2026-10-20): 103 records
+  listed, each read against master `ea3aaf580` and, for claims about the package, tag `crtprocessbuilder-1.6.6.109`.
+  96 kept, 6 updated in #1857, 1 already deleted by #1847 (the temporary
+  `report-and-parameter-file-elements-stay-generic-until-eng-96506.md`, as planned). Updated, each for a claim false
+  on master:
+  - `Common/requirespackage-version-floor-survives-convergence-degraded-modes.md`: "that state has ended"; #1841 raised
+    the floors to the cut it bundled (1.6.6.103), and #1847 did again (1.6.6.109).
+  - `Common/a-presence-only-requirespackage-still-takes-a-convergence-refusal.md`: its table gave three floors as
+    1.6.6.14 (master: 1.6.6.109); the cells now point at the attribute.
+  - `McpServer/a-named-contract-lookup-is-fitted-so-full-content-needs-detail-full.md`: headroom of 2 B and 225 B;
+    master: modify 35 016 of 35 072 B, wire bundle 18 815 of 19 000 B.
+  - `ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`: "one release before any CrtProcessBuilder emits
+    them"; 1.6.6.103 builds both tokens and describe emits only `fileprocessing`.
+  - `platform/the-designer-stores-a-lookup-constant-two-different-ways.md`: "only in a change-data column mapping"; the
+    Process file `ConnectedObjectId` is stored as `Script` + `[#Lookup#]` (measured 2026-10-17), the form #1841's
+    archive writes.
+  - `infra/mcp-e2e-processdesigner-category-is-consumed-only-by-teamcity-job-args.md`: "the five fixtures" and "59
+    today"; 22 fixture files carry the category on master, #1841's `ProcessFileElementToolE2ETests` among them.
+  Kept: the rest, each with a one-line reason in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`; the Process file, floor
+  and describe claims were re-read in source (the SysFile refusal, nested items re-minted on create only, the
+  designer's stored form, the record name read with the caller's rights, the meta-path check, the bag recount 28/9).
+- Notes: `UsrFpOaDesignerFixture` was built 2026-10-15 and later removed with the stand's Custom package, so the two
+  designer-fixture e2e cases skipped on 1.6.6.104 (#1846); rebuilding it is carried to ENG-103937 (story 3, SF.3).

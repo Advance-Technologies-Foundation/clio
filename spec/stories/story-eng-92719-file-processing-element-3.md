@@ -128,6 +128,12 @@ Ids are the analysis plan's work packages (section 5.3).
   `platform/attachment-storage-is-chosen-per-entity-by-the-designer.md`; NEW
   `platform/a-sysfile-attachment-read-needs-recordschemaname-and-type-file.md` (after M8) and the write-path record M23
   produces. No description change. Status flips, including story 2's `done`, which rides in this PR.
+  Carried over from story 2 on 2026-10-20 (the SysFile work is tracked in Jira as ENG-103937 Process file element:
+  SysFile attachment storage, per the ENG-96506 delivery comment 558569; its key is not yet written into this file's
+  header or the tracker): rebuild `UsrFpOaDesignerFixture`
+  in the designer as story 1's OA.0 describes (it was removed from the stand with its Custom package and not rebuilt),
+  and run story 2's `DesignerFixture_Should_DescribeTheReportElement_AsFileProcessing` (TC-I-46, extended) together
+  with story 1's two designer-fixture cases, Passed with Ignored = 0.
 
 **clio-knowledge**
 
