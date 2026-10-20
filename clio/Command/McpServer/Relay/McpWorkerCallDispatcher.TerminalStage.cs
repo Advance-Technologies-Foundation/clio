@@ -162,7 +162,7 @@ public sealed partial class McpWorkerCallDispatcher {
 		try {
 			using CancellationTokenSource handshakeSource =
 				CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-			handshakeSource.CancelAfter(_stageEventSilenceBound);
+			handshakeSource.CancelAfter(_terminalStageHandshakeBound);
 			childTransport = await _transportOwner
 				.ConnectAsync(lease.StandardInput, lease.StandardOutput, handshakeSource.Token)
 				.ConfigureAwait(false);
@@ -175,7 +175,7 @@ public sealed partial class McpWorkerCallDispatcher {
 			KillQuietly(lease, toolName);
 			_logger.WriteWarning(
 				$"MCP worker for '{toolName}' (pid {lease.ProcessId}) did not complete its handshake within "
-				+ $"{FormatSeconds(_stageEventSilenceBound)} s and was killed before the operation started.");
+				+ $"{FormatSeconds(_terminalStageHandshakeBound)} s and was killed before the operation started.");
 			return (null, RelayFailureResult(toolName,
 				"the worker did not complete its MCP handshake, so the operation never started",
 				detail: null, standardError.Tail()));
@@ -249,6 +249,10 @@ public sealed partial class McpWorkerCallDispatcher {
 				childParameters = WithSyntheticProgressToken(childParameters, syntheticToken);
 			}
 			callSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+			// The silence bound measures the RUN, and the run starts here. The handshake before this line is
+			// bounded on its own above; charging it to the first silence window as well would let a slow
+			// initialize on a loaded host expire a run that has not yet had the chance to say anything.
+			watch.RestartSilenceClock();
 			call = session.CallToolAsync(childParameters, callSource.Token);
 			TerminalStageWaitOutcome waited =
 				await AwaitTerminalStageAsync(call, watch, cancellationToken).ConfigureAwait(false);
