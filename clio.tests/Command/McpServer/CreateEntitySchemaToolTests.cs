@@ -45,7 +45,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -116,7 +116,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -150,7 +150,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -203,7 +203,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -242,7 +242,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -277,6 +277,7 @@ public class CreateEntitySchemaToolTests {
 		services.AddSingleton(creator);
 		services.AddSingleton<ILogger>(ConsoleLogger.Instance);
 		services.AddSingleton(commandResolver);
+		services.AddSingleton<IOptionSuggestionService, OptionSuggestionService>();
 		services.AddTransient<CreateEntitySchemaCommand>();
 		services.AddTransient<CreateEntitySchemaTool>();
 		using ServiceProvider provider = services.BuildServiceProvider();
@@ -311,7 +312,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -341,7 +342,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -375,7 +376,7 @@ public class CreateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<CreateEntitySchemaCommand>(Arg.Any<CreateEntitySchemaOptions>())
 			.Returns(resolvedCommand);
-		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateEntitySchemaTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateEntitySchema(new CreateEntitySchemaArgs(
@@ -459,7 +460,7 @@ public class CreateEntitySchemaToolTests {
 			target: new CreateEntitySchemaTool(
 				new FakeCreateEntitySchemaCommand(),
 				ConsoleLogger.Instance,
-				Substitute.For<IToolCommandResolver>()),
+				Substitute.For<IToolCommandResolver>(), new OptionSuggestionService()),
 			new McpServerToolCreateOptions { SerializerOptions = BindingsModule.CreateMcpSerializerOptions() });
 
 		// Act
@@ -680,7 +681,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
@@ -727,7 +728,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
@@ -774,7 +775,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act — `column-name` only, no `name`: the spelling get-tool-contract advertises as canonical.
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
@@ -817,7 +818,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
@@ -855,7 +856,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(
@@ -914,7 +915,7 @@ public class CreateEntitySchemaToolTests {
 			.Returns(resolvedCommand);
 		commandResolver.Resolve<ILookupRegistrationService>(Arg.Any<EnvironmentOptions>())
 			.Returns(registrationService);
-		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver);
+		CreateLookupTool tool = new(defaultCommand, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 
 		// Act
 		CommandExecutionResult result = await tool.CreateLookup(new CreateLookupArgs(

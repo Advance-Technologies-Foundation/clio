@@ -833,6 +833,91 @@ public sealed class EntitySchemaToolE2ETests : McpContractFixtureBase {
 
 	[Category("McpE2E.Sandbox")]
 	[Test]
+	[Description("Rejects an update-entity-schema batch whose second operation has an unknown field, names the operation index, the field and the nearest known field, and saves no column of the batch (ENG-102218 TC-01/TC-03).")]
+	[AllureTag(UpdateToolName)]
+	[AllureTag(ReadSchemaToolName)]
+	[AllureName("Update entity schema rejects an unknown operation field without a partial save")]
+	[AllureDescription("Sends a valid add followed by an add carrying the misspelled field 'requird' through the real MCP server, verifies the call fails naming operation index 1, 'requird' and the suggestion 'required', then reads the schema back and verifies neither column exists.")]
+	public async Task UpdateEntitySchema_Should_Reject_Unknown_Operation_Field_Without_Partial_Save() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
+		const string validColumnName = "UsrUnknownFieldOk";
+		const string invalidColumnName = "UsrUnknownFieldBad";
+
+		// Act
+		CallToolResult callResult = await CallUpdateEntitySchemaAsync(
+			arrangeContext.Session,
+			arrangeContext.EnvironmentName,
+			arrangeContext.PackageName,
+			arrangeContext.SchemaName,
+			arrangeContext.CancellationTokenSource.Token,
+			[
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = validColumnName,
+					["type"] = "Text",
+					["title-localizations"] = BuildLocalizations("Unknown field ok")
+				},
+				new Dictionary<string, object?> {
+					["action"] = "add",
+					["column-name"] = invalidColumnName,
+					["type"] = "Text",
+					["title-localizations"] = BuildLocalizations("Unknown field bad"),
+					["requird"] = true
+				}
+			]);
+		CommandExecutionEnvelope updateResult = McpCommandExecutionParser.Extract(callResult);
+		EntitySchemaPropertiesInfo schemaProperties = await ActGetSchemaPropertiesAsync(arrangeContext);
+
+		// Assert
+		updateResult.ExitCode.Should().Be(1,
+			because: "an operation with an unknown field must fail the whole call instead of being saved without the field");
+		updateResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("Operation payload at index 1 has unknown field 'requird'. Did you mean 'required'?",
+					StringComparison.Ordinal),
+			because: "the error must name the operation index, the unknown field and the nearest known field");
+		(schemaProperties.Columns ?? []).Should().NotContain(
+			column => column.Name == validColumnName || column.Name == invalidColumnName,
+			because: "no operation of a rejected batch may be applied, including the valid one before it");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
+	[Description("Rejects a modify-entity-schema-column call that sends only the misspelled 'colum-name' and names that field instead of reporting a missing column (ENG-102218 TC-02).")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("Modify entity schema column names a misspelled column-name field")]
+	[AllureDescription("Calls modify-entity-schema-column through the real MCP server with 'colum-name' instead of 'column-name' and verifies the rejection names the unknown field and suggests 'column-name'.")]
+	public async Task ModifyEntitySchemaColumn_Should_Name_Misspelled_ColumnName_Field() {
+		// Arrange
+		await using EntitySchemaArrangeContext arrangeContext = await ArrangeSharedSchemaAsync();
+
+		// Act
+		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(
+			ModifyToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["package-name"] = arrangeContext.PackageName,
+					["schema-name"] = arrangeContext.SchemaName,
+					["action"] = "add",
+					["colum-name"] = "UsrMisspelledColumnName",
+					["type"] = "Text"
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		CommandExecutionEnvelope modifyResult = McpCommandExecutionParser.Extract(callResult);
+
+		// Assert
+		modifyResult.ExitCode.Should().Be(1, because: "an unknown field must fail the call");
+		modifyResult.Output.Should().Contain(message =>
+				message.Value != null
+				&& message.Value.Contains("unknown field 'colum-name'. Did you mean 'column-name'?", StringComparison.Ordinal),
+			because: "the misspelled field must be named, not only reported as a missing target column");
+	}
+
+	[Category("McpE2E.Sandbox")]
+	[Test]
 	[Description("Rejects a Sequence default whose masked value carries an unsupported suffix after '{0}', verified end to end through the real MCP server (ENG-93375).")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(ModifyToolName)]

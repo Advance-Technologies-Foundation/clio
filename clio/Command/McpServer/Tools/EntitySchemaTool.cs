@@ -48,6 +48,7 @@ public sealed class CreateEntitySchemaTool(
 	CreateEntitySchemaCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver,
+	IOptionSuggestionService suggestionService,
 	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<CreateEntitySchemaOptions>(command, logger, commandResolver) {
 
@@ -95,6 +96,11 @@ public sealed class CreateEntitySchemaTool(
 		if (MissingCreateArguments(args) is { Count: > 0 } missing) {
 			return CommandExecutionResult.FromValidationError(ToolMiniContract.ForCreateEntitySchema(missing));
 		}
+		// Checked before the DataForge lookup and the command, so a rejected payload contacts no environment.
+		string? unknownFieldError = FindUnknownColumnFieldError(args.Columns, suggestionService);
+		if (unknownFieldError is not null) {
+			return new CommandExecutionResult(1, [new ErrorMessage(unknownFieldError)], null, null);
+		}
 		ApplicationDataForgeResult? dataForge = enrichmentService is not null
 			? enrichmentService.Enrich(
 				args.EnvironmentName,
@@ -111,6 +117,15 @@ public sealed class CreateEntitySchemaTool(
 	}
 
 	internal const string TitleLocalizationsArgument = "title-localizations";
+
+	/// <summary>
+	/// Returns the refusal for the first column that carries an unknown field, or <see langword="null"/>.
+	/// Shared by <c>create-entity-schema</c> and <c>create-lookup</c>, whose columns bind to the same record.
+	/// </summary>
+	internal static string? FindUnknownColumnFieldError(IEnumerable<CreateEntitySchemaColumnArgs>? columns,
+		IOptionSuggestionService suggestionService) =>
+		ColumnPayloadFieldContract.FindUnknownFieldError(columns, column => column.ExtensionData,
+			index => $"Column payload at index {index}", suggestionService);
 
 	/// <summary>
 	/// The required arguments of <c>create-entity-schema</c> the call lacks. The title counts as supplied when
@@ -266,6 +281,7 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	private readonly ILogger _logger;
 	private readonly IToolCommandResolver _commandResolver;
 	private readonly ISchemaEnrichmentService? _enrichmentService;
+	private readonly IOptionSuggestionService _suggestionService;
 
 	internal const string CreateLookupToolName = "create-lookup";
 	private const string BaseLookupParentSchemaName = "BaseLookup";
@@ -274,10 +290,12 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 		CreateEntitySchemaCommand command,
 		ILogger logger,
 		IToolCommandResolver commandResolver,
+		IOptionSuggestionService suggestionService,
 		ISchemaEnrichmentService? enrichmentService = null)
 		: base(command, logger, commandResolver) {
 		_logger = logger;
 		_commandResolver = commandResolver;
+		_suggestionService = suggestionService;
 		_enrichmentService = enrichmentService;
 	}
 
@@ -309,6 +327,10 @@ public sealed class CreateLookupTool : BaseTool<CreateEntitySchemaOptions> {
 	public async Task<CommandExecutionResult> CreateLookup(
 		[Description("Parameters: environment-name, package-name, schema-name, title-localizations (all required); columns (optional)")] [Required] CreateLookupArgs args
 	) {
+		string? unknownFieldError = CreateEntitySchemaTool.FindUnknownColumnFieldError(args.Columns, _suggestionService);
+		if (unknownFieldError is not null) {
+			return new CommandExecutionResult(1, [new ErrorMessage(unknownFieldError)], null, null);
+		}
 		IReadOnlyList<string> lookupHints = new[] { args.SchemaName }
 			.Concat((IEnumerable<string>?)args.TitleLocalizations?.Values ?? [])
 			.Where(term => !string.IsNullOrWhiteSpace(term))
@@ -377,6 +399,7 @@ public sealed class UpdateEntitySchemaTool(
 	UpdateEntitySchemaCommand command,
 	ILogger logger,
 	IToolCommandResolver commandResolver,
+	IOptionSuggestionService suggestionService,
 	ISchemaEnrichmentService? enrichmentService = null)
 	: BaseTool<UpdateEntitySchemaOptions>(command, logger, commandResolver) {
 
@@ -418,6 +441,14 @@ public sealed class UpdateEntitySchemaTool(
 			// Without this, Enumerable.Select later throws the opaque "Value cannot be null. (Parameter
 			// 'source')", which tells the caller nothing about what is missing. See issue #1320.
 			return new CommandExecutionResult(1, [new ErrorMessage(MissingOperationsError)], null, null);
+		}
+		// Checked over the whole batch before the DataForge lookup and the command, so an unknown field in a later
+		// operation leaves every operation unapplied, and a lone `colum-name` is named instead of reported missing.
+		string? unknownFieldError = ColumnPayloadFieldContract.FindUnknownFieldError(
+			args.Operations, operation => operation.ExtensionData, index => $"Operation payload at index {index}",
+			suggestionService);
+		if (unknownFieldError is not null) {
+			return new CommandExecutionResult(1, [new ErrorMessage(unknownFieldError)], null, null);
 		}
 		try {
 			if (enrichmentService is not null) {
@@ -720,7 +751,7 @@ public sealed class GetEntitySchemaColumnPropertiesTool(
 /// MCP tool surface for remote entity schema column mutations.
 /// </summary>
 public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand command, ILogger logger,
-	IToolCommandResolver commandResolver) : BaseTool<ModifyEntitySchemaColumnOptions>(command, logger, commandResolver) {
+	IToolCommandResolver commandResolver, IOptionSuggestionService suggestionService) : BaseTool<ModifyEntitySchemaColumnOptions>(command, logger, commandResolver) {
 
 	internal const string ModifyEntitySchemaColumnToolName = "modify-entity-schema-column";
 
@@ -757,6 +788,12 @@ public sealed class ModifyEntitySchemaColumnTool(ModifyEntitySchemaColumnCommand
 		+ "Entity business rules are separate — call get-guidance with name business-rules.")]
 	public CommandExecutionResult ModifyEntitySchemaColumn(
 		[Description("Parameters: environment-name, package-name, schema-name, action, column-name (all required; column-name accepts the alias 'name'); type, title-localizations, description-localizations, reference-schema-name, and many flags (optional)")] [Required] ModifyEntitySchemaColumnArgs args) {
+		// Checked before the column identity, so a lone `colum-name` is named instead of reported missing.
+		string? unknownFieldError = ColumnPayloadFieldContract.FindUnknownFieldError(
+			[args], payload => payload.ExtensionData, _ => ModifyEntitySchemaColumnToolName, suggestionService);
+		if (unknownFieldError is not null) {
+			return new CommandExecutionResult(1, [new ErrorMessage(unknownFieldError)], null, null);
+		}
 		try {
 			// Enforced here because `column-name` is deliberately optional in the emitted schema so its
 			// `name` alias stays usable by strict clients (see ColumnModificationArgsBase.ColumnName).
@@ -1110,6 +1147,13 @@ public sealed record CreateEntitySchemaColumnArgs(
 	/// <returns>The canonical name, or the <c>column-name</c> alias when the canonical field is absent.</returns>
 	public string? ResolveName() =>
 		!string.IsNullOrWhiteSpace(Name) ? Name : ColumnNameAlias;
+
+	/// <summary>
+	/// Captures fields that match no known field, so the tool can reject them by name instead of dropping them
+	/// (see <see cref="ColumnPayloadFieldContract"/>).
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>
@@ -1332,6 +1376,13 @@ public abstract record ColumnModificationArgsBase(
 	[property: JsonPropertyName("usage-type")]
 	[property: Description("Column usage type: General (default), Advanced, or None. Case-insensitive; applies to any column type. On modify, the stored value is left unchanged when omitted.")]
 	public string? UsageType { get; init; }
+
+	/// <summary>
+	/// Captures fields that match no known field, so the tool can reject them by name instead of dropping them
+	/// (see <see cref="ColumnPayloadFieldContract"/>).
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
 }
 
 /// <summary>

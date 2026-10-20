@@ -25,6 +25,7 @@ namespace Clio.Command.McpServer.Tools;
 public sealed class SchemaSyncTool(
 	IToolCommandResolver commandResolver,
 	ILogger logger,
+	IOptionSuggestionService suggestionService,
 	ISchemaConvergenceService convergenceService,
 	ISchemaEnrichmentService? enrichmentService = null,
 	IRetryDelay? retryDelay = null,
@@ -260,6 +261,7 @@ public sealed class SchemaSyncTool(
 		// null, so a later call must not run once an earlier one has produced the failure.
 		bool shapeRejected =
 			TryValidateOperationFields(op, index, out SchemaSyncOperationResult? fieldValidationFailure)
+			|| TryValidateColumnPayloadFields(op, index, out fieldValidationFailure)
 			|| TryValidateSchemaName(op, index, out fieldValidationFailure)
 			|| TryValidateStorageKind(op, index, out fieldValidationFailure);
 		if (shapeRejected || TryValidateSeedRows(op, index, out fieldValidationFailure)) {
@@ -550,6 +552,33 @@ public sealed class SchemaSyncTool(
 				+ "\"seed-rows\": [{\"values\": {\"Name\": \"Positive\"}}].";
 		}
 		return string.Empty;
+	}
+
+	/// <summary>
+	/// Rejects an operation whose <c>columns</c> or <c>update-operations</c> entries carry a field the column
+	/// records cannot bind. It runs before the convergence read, because reconciliation can drop an
+	/// already-satisfied entry, and the unknown field would then vanish unreported.
+	/// </summary>
+	private bool TryValidateColumnPayloadFields(
+		SchemaSyncOperation op,
+		int operationIndex,
+		[NotNullWhen(true)] out SchemaSyncOperationResult? validationFailure) {
+		validationFailure = null;
+		string? error = ColumnPayloadFieldContract.FindUnknownFieldError(
+				op.Columns, column => column.ExtensionData, index => $"columns[{index}]", suggestionService)
+			?? ColumnPayloadFieldContract.FindUnknownFieldError(
+				op.UpdateOperations, operation => operation.ExtensionData, index => $"update-operations[{index}]",
+				suggestionService);
+		if (error is null) {
+			return false;
+		}
+		validationFailure = new SchemaSyncOperationResult {
+			Type = GetReportedOperationType(op),
+			SchemaName = op.SchemaName,
+			Success = false,
+			Error = $"sync-schemas operations[{operationIndex}] is invalid: {error} Nothing was applied for this operation."
+		};
+		return true;
 	}
 
 	/// <summary>

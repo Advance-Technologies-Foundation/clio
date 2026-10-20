@@ -351,11 +351,19 @@ public class UpdateEntitySchemaCommand : Command<UpdateEntitySchemaOptions>
 			if (KnownOperationFields.Contains(name, StringComparer.OrdinalIgnoreCase)) {
 				continue;
 			}
-			string suggestion = _suggestionService.SuggestName(name, KnownOperationFields);
-			string hint = suggestion is null ? string.Empty : $" Did you mean '{suggestion}'?";
 			throw new InvalidOperationException(
-				$"{label} has unknown field '{SanitizeForMessage(name)}'.{hint}");
+				FormatUnknownFieldError(label, name, _suggestionService.SuggestName(name, KnownOperationFields)));
 		}
+	}
+
+	/// <summary>
+	/// Builds the unknown-field refusal shared by the CLI and the MCP column tools, so both surfaces word it the
+	/// same way. The field is echoed sanitized; an empty <paramref name="suggestion"/> counts as none, because
+	/// rendering it would print <c>Did you mean ''?</c>.
+	/// </summary>
+	internal static string FormatUnknownFieldError(string label, string field, string suggestion) {
+		string hint = string.IsNullOrEmpty(suggestion) ? string.Empty : $" Did you mean '{suggestion}'?";
+		return $"{label} has unknown field '{SanitizeForMessage(field)}'.{hint}";
 	}
 
 	// JsonDocument.Parse accepts an escaped lone surrogate such as "\uD800" in a field name; decoding it then throws
