@@ -243,6 +243,44 @@ public sealed class WorkerTerminalStageProtocolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A worker that does not finish its MCP handshake within the handshake bound is killed and answered with a relay failure saying the operation never started — decided by the handshake bound, not by the far larger silence bound.")]
+	public async Task DispatchAsync_ShouldKillAsNeverStarted_WhenTheHandshakeOutlastsTheHandshakeBound() {
+		// Arrange — a short handshake bound beside a generous silence bound, and a child whose initialize
+		// answer arrives between the two: only the handshake bound can end this call.
+		TimeSpan handshakeBound = TimeSpan.FromSeconds(1);
+		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.AnswersAfterTerminalStage,
+			initializeDelay: TimeSpan.FromSeconds(5));
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSut(handshakeBound: handshakeBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		AssertKilledBeforeTheOperationStarted(result, worker, handshakeBound);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("With no handshake bound stated, the production default applies: the handshake is bounded by the stage-event silence bound, so a worker stuck in initialize is killed as never started at that bound rather than at the ordinary budget or not at all.")]
+	public async Task DispatchAsync_ShouldBoundTheHandshakeByTheSilenceBound_WhenNoHandshakeBoundIsStated() {
+		// Arrange — two seconds, so the warning's rounded figure tells this bound apart from a zero bound
+		// (which the formatter rounds up to one) and from the 30 s ordinary budget.
+		TimeSpan silenceBound = TimeSpan.FromSeconds(2);
+		using StageStreamingWorkerChild worker = ArrangeWorker(ChildBehaviour.AnswersAfterTerminalStage,
+			silenceBound, initializeDelay: TimeSpan.FromSeconds(10));
+		RecordingClientSession client = new();
+		McpWorkerCallDispatcher sut = CreateSutWithTheDefaultHandshakeBound(silenceBound);
+
+		// Act
+		CallToolResult result = await DispatchAsync(sut, client, CallerProgressToken);
+
+		// Assert
+		AssertKilledBeforeTheOperationStarted(result, worker, silenceBound);
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("On silence-timer expiry the indeterminate error is composed and reported BEFORE the child is killed, so the last stage it reached is captured — killing first would close the pipes and answer with a relay failure that names no stage at all.")]
 	public async Task DispatchAsync_ShouldReportBeforeKilling_WhenTheSilenceBoundExpires() {
 		// Arrange — expiry IS the subject here; see the sibling test above for why the bound is paired.
@@ -593,15 +631,62 @@ public sealed class WorkerTerminalStageProtocolTests {
 			? JsonNode.Parse(structured.GetRawText())
 			: null;
 
-	private McpWorkerCallDispatcher CreateSut(TimeSpan? ordinaryBudget = null, TimeSpan? silenceBound = null) {
+	private McpWorkerCallDispatcher CreateSut(TimeSpan? ordinaryBudget = null, TimeSpan? silenceBound = null,
+		TimeSpan? handshakeBound = null) =>
+		CreateDispatcher(ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound,
+			handshakeBound ?? SilenceBound);
+
+	/// <summary>
+	/// Builds the dispatcher WITHOUT stating a handshake bound, so the production fallback decides it.
+	/// </summary>
+	/// <param name="silenceBound">The stage-event silence bound the fallback is expected to reuse.</param>
+	/// <returns>The dispatcher under test.</returns>
+	private McpWorkerCallDispatcher CreateSutWithTheDefaultHandshakeBound(TimeSpan silenceBound) =>
+		CreateDispatcher(TimeSpan.FromSeconds(30), silenceBound, terminalStageHandshakeBound: null);
+
+	private McpWorkerCallDispatcher CreateDispatcher(TimeSpan ordinaryBudget, TimeSpan silenceBound,
+		TimeSpan? terminalStageHandshakeBound) {
 		StickyWorkerRegistry stickyWorkers = new(_logger);
 		SharedResourceReservation reservations = new();
 		return new McpWorkerCallDispatcher(_supervisor, new WorkerChildTransportOwner(),
 			new WorkerMcpRelay(_logger), _settingsRepository, stickyWorkers,
 			new StickyWorkerPoll(_supervisor, stickyWorkers, _logger), reservations,
 			Substitute.For<Clio.Command.McpServer.Tools.IToolCommandResolver>(), _logger,
-			ordinaryBudget ?? TimeSpan.FromSeconds(30), silenceBound ?? SilenceBound, ExitGrace,
-			terminalStageHandshakeBound: SilenceBound);
+			ordinaryBudget, silenceBound, ExitGrace,
+			terminalStageHandshakeBound: terminalStageHandshakeBound);
+	}
+
+	/// <summary>
+	/// Asserts the handshake-timeout outcome: the worker was killed once, before the operation was ever
+	/// requested, and the caller got a relay failure rather than an indeterminate deploy result.
+	/// </summary>
+	/// <param name="result">The dispatcher's answer.</param>
+	/// <param name="worker">The scripted child.</param>
+	/// <param name="expectedHandshakeBound">The bound the warning must name.</param>
+	private void AssertKilledBeforeTheOperationStarted(
+		CallToolResult result, StageStreamingWorkerChild worker, TimeSpan expectedHandshakeBound) {
+		JsonNode payload = ReadStructured(result);
+		result.IsError.Should().BeTrue(
+			because: "a worker that never finished its handshake ran nothing, and must never be reported as an answer");
+		payload?["error-class"]?.GetValue<string>().Should().Be(McpWorkerCallDispatcher.RelayFailureErrorClass,
+			because: "a transport failure before the operation started is a relay failure, never a domain answer (AC-3)");
+		payload?["error"]?.GetValue<string>().Should().Contain("never started",
+			because: "the operator needs to know nothing was installed, which is the opposite of the indeterminate case");
+		payload?["outcome"].Should().BeNull(
+			because: "the indeterminate outcome means 'possibly half-installed', which a run that never started cannot be");
+		payload?["answered-by"]?.GetValue<string>().Should().NotBe("worker",
+			because: "the worker never answered anything; the parent composed this result");
+		_supervisor.Received(1).KillContained(Arg.Any<IWorkerLease>());
+		worker.CallCount.Should().Be(0,
+			because: "the kill must come before tools/call is sent, or the operation could have started");
+		_spawnCount.Should().Be(1,
+			because: "a worker that failed to start is not retried automatically");
+		string expectedSeconds =
+			Math.Round(expectedHandshakeBound.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+		OrderedEvents().Should().Contain(entry =>
+				entry.StartsWith("warning:", StringComparison.Ordinal)
+				&& entry.Contains($"handshake within {expectedSeconds} s", StringComparison.Ordinal),
+			because: "the warning must name the bound that actually ended the handshake");
 	}
 
 	private static async Task<CallToolResult> DispatchAsync(
