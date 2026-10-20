@@ -754,7 +754,9 @@ public sealed class ProcessFileElementToolE2ETests {
 		IReadOnlyList<string> f1NodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
 		try {
 			// Act
-			CallToolResult callResult = await ModifyAsync(context, DesignerFixtureName, $$"""
+			// The designer's hand-laid diagram is re-drawn by the first builder save; the allow-list above takes that
+			// relayout, so this test confirms it rather than being refused by the layout-change guard.
+			CallToolResult callResult = await ModifyConfirmingLayoutChangeAsync(context, DesignerFixtureName, $$"""
 				[ { "op": "addParameter", "parameter": { "name": "{{probeName}}", "type": "Text" } } ]
 				""");
 			IReadOnlyList<string> nodesAfterFirst = await ReadElementNodesAsync(context, DesignerFixtureName, f2UId);
@@ -1095,6 +1097,23 @@ public sealed class ProcessFileElementToolE2ETests {
 			count++;
 		}
 		return count;
+	}
+
+	/// <summary>
+	/// <see cref="ModifyAsync"/> with <c>confirm-layout-change</c> set: for a case that edits a designer-laid diagram
+	/// on purpose and asserts the relayout, which the layout-change guard otherwise refuses unapplied.
+	/// </summary>
+	private static async Task<CallToolResult> ModifyConfirmingLayoutChangeAsync(ProcessDesignerArrangeContext context,
+			string processName, string operations) {
+		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = operations,
+				["confirm-layout-change"] = true
+			});
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		return result;
 	}
 
 	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
