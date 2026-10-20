@@ -1349,4 +1349,128 @@ public sealed class PageBaselineGuardTests {
 		// Assert
 		options.DetectionDidNotRunWarning.Should().BeNull(because: "the second save is checked");
 	}
+
+	private const string RedirectPackageUId = "99999999-8888-7777-6666-555555555555";
+
+	private PageUpdateOptions ArmConditionalSelectorSave(out string warning) {
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = RedirectPackageUId;
+		(_, _, warning) = _guard.TryArm(options, OutputDirectory);
+		return options;
+	}
+
+	[Test]
+	[Description("ENG-103711: TryArm records the conditional-baseline warning it adds for an unpinned selector save, so ForSaveOutcome can replace exactly that text once the target is resolved.")]
+	public void TryArm_ShouldRecordTheConditionalBaselineWarning_WhenAnUnpinnedSelectorSaveCarriesTheBaseline() {
+		// Arrange / Act
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+
+		// Assert
+		options.ConditionalBaselineWarning.Should().Contain("applied only if the write resolves to",
+			because: "before the target is resolved only the condition is known");
+		warning.Should().Contain(options.ConditionalBaselineWarning,
+			because: "the recorded text is the one on the returned warning");
+	}
+
+	[Test]
+	[Description("ENG-103711: a forced selector save gets no conditional-baseline warning, because the check is skipped by request, like on every other forced path.")]
+	public void TryArm_ShouldNotAddTheConditionalBaselineWarning_WhenTheSelectorSaveIsForced() {
+		// Arrange
+		AddMetaWithBaseline("dev", "disk-checksum");
+		PageUpdateOptions options = CreateOptions("dev");
+		options.TargetPackageUId = RedirectPackageUId;
+		options.Force = true;
+
+		// Act
+		(_, _, string warning) = _guard.TryArm(options, OutputDirectory);
+
+		// Assert
+		options.ConditionalBaselineWarning.Should().BeNull(because: "a forced save is unchecked by request");
+		warning.Should().BeNull(because: "nothing else was worth reporting for this save");
+		options.ConditionalBaselineSchemaUId.Should().Be(SchemaUId,
+			because: "the baseline is still carried so a forced save onto the same schema refreshes it");
+	}
+
+	[Test]
+	[Description("ENG-103711: when the selector resolves to the schema the baseline describes, the conditional text is replaced with the statement that the conflict check was applied.")]
+	public void ForSaveOutcome_ShouldSayTheCheckWasApplied_WhenTheTargetResolvedToTheBaselineSchema() {
+		// Arrange
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+		options.ConditionalBaselineApplied = true;
+		options.ConflictCheckApplied = true;
+
+		// Act
+		string outcome = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: true);
+
+		// Assert
+		outcome.Should().Contain("conflict check WAS applied", because: "the response must state what happened");
+		outcome.Should().Contain(SchemaUId, because: "the outcome names the page the write resolved to");
+		outcome.Should().NotContain("applied only if", because: "the condition is resolved and must not be repeated");
+	}
+
+	[Test]
+	[Description("ENG-103711: when the selector sends the write elsewhere, the conditional text is replaced with a statement that the save was NOT checked, where the write went, and that the user must be told.")]
+	public void ForSaveOutcome_ShouldSayTheSaveWasNotChecked_WhenTheTargetResolvedElsewhere() {
+		// Arrange
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+		options.ConflictCheckApplied = false;
+		options.ResolvedWriteTarget = $"schema 22222222-0000-0000-0000-000000000000 in package {RedirectPackageUId}";
+
+		// Act
+		string outcome = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: true);
+
+		// Assert
+		outcome.Should().Contain("was NOT checked for conflicts", because: "the unchecked outcome must be stated as a fact");
+		outcome.Should().Contain(options.ResolvedWriteTarget, because: "the caller must learn where the write went");
+		outcome.Should().Contain(SchemaUId, because: "the caller must learn which page the baseline protected");
+		outcome.Should().Contain("Tell the user", because: "B5 showed an agent does not pass on a general note");
+		outcome.Should().NotContain("applied only if", because: "the condition is resolved and must not be repeated");
+	}
+
+	[Test]
+	[Description("ENG-103711: a promoted baseline that had nothing to compare is reported as unchecked, not as applied.")]
+	public void ForSaveOutcome_ShouldSayTheSaveWasNotChecked_WhenTheMatchedBaselineHadNothingToCompare() {
+		// Arrange
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+		options.ConditionalBaselineApplied = true;
+		options.ConflictCheckApplied = false;
+
+		// Act
+		string outcome = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: true);
+
+		// Assert
+		outcome.Should().Contain("was NOT checked for conflicts",
+			because: "a matched target does not prove a comparison ran");
+		outcome.Should().Contain("no checksum was available", because: "the outcome names the cause");
+	}
+
+	[Test]
+	[Description("ENG-103711: a selector save refused before anything was written drops the conditional-baseline text, because no write proceeded.")]
+	public void ForSaveOutcome_ShouldDropTheConditionalBaselineWarning_WhenNoWriteProceeded() {
+		// Arrange
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+		options.ConditionalBaselineApplied = true;
+		options.ConflictCheckApplied = true;
+
+		// Act
+		string outcome = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
+
+		// Assert
+		outcome.Should().BeNull(because: "the conditional text was the only warning and nothing was written");
+	}
+
+	[Test]
+	[Description("ENG-103711: when the target was never resolved, the pre-save condition is kept unchanged, so the response claims nothing clio does not know.")]
+	public void ForSaveOutcome_ShouldKeepTheCondition_WhenTheTargetWasNeverResolved() {
+		// Arrange
+		PageUpdateOptions options = ArmConditionalSelectorSave(out string warning);
+		options.SaveOutcomeUnknown = true;
+
+		// Act
+		string outcome = PageBaselineGuard.ForSaveOutcome(warning, options, saveSucceeded: false);
+
+		// Assert
+		outcome.Should().Be(warning, because: "without a resolved target neither outcome can be stated");
+	}
 }
