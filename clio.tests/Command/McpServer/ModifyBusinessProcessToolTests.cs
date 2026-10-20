@@ -685,7 +685,7 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.106, for setTracing,",
+		description.Should().Contain("this clio requires 1.6.6.107, for setTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
@@ -721,9 +721,9 @@ public class ModifyBusinessProcessToolTests {
 			because: "the variant is fixed once built");
 		prompt.Should().Contain("drops the element's flows and the mappings INTO it, but NOT the bindings that read its outputs",
 			because: "removeElement removes only the mappings that target the element, so the readers of its outputs survive");
-		prompt.Should().Contain("are left dangling and the process saves but cannot start, so re-point or remove them in a SEPARATE,",
+		prompt.Should().Contain("are left dangling and the process saves but cannot start, so re-point or remove them BEFORE the",
 			because: "a dangling reader is saved without error and only the run refuses, so the agent must clear readers first");
-		prompt.Should().Contain("earlier call, and confirm with the user first)",
+		prompt.Should().Contain("`removeElement` (an earlier operation of the same batch is enough), and confirm with the user first)",
 			because: "replacing the element breaks every binding that reads its outputs, which the user must agree to");
 		prompt.Should().NotContain("the mappings that read its outputs, so confirm",
 			because: "the earlier rule claimed removing the element drops the mappings that read its outputs, which the package never does");

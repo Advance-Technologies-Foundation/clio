@@ -138,8 +138,8 @@ public static class ModifyBusinessProcessPrompt {
 		 refused when none can be derived. The group is the element's variant and cannot change: a
 		 different group is refused as a source change (remove the element and add a new one; `removeElement`
 		 drops the element's flows and the mappings INTO it, but NOT the bindings that read its outputs — those
-		 are left dangling and the process saves but cannot start, so re-point or remove them in a SEPARATE,
-		 earlier call, and confirm with the user first). Sending
+		 are left dangling and the process saves but cannot start, so re-point or remove them BEFORE the
+		 `removeElement` (an earlier operation of the same batch is enough), and confirm with the user first). Sending
 		 `attachments.object` rewrites the storage pair, and a different object clears the stored filter, sort and
 		 record scope unless the same block sends their replacement — re-send `setFilter` after it. Without it a
 		 consistent stored pair is kept, an unpaired or invalid one is rewritten from its own object with a notice,

@@ -1079,7 +1079,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.106");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.107");
 		ShouldHaveBuilt(created, $"the arrange must actually create '{processName}', or the test measures nothing");
 
 		try {
@@ -3331,7 +3331,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.88");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.107");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3377,7 +3377,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.90");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.107");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3464,7 +3464,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.90");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.107");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3507,7 +3507,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskWithIntegerParameterDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.90");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.107");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {

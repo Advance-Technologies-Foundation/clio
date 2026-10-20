@@ -377,7 +377,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// The tool TEXT, not the serialized result: serializing escapes the apostrophes the message quotes with.
 		string text = ToolText(callResult);
 		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
-		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.88");
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.107");
 
 		try {
 			// Assert
@@ -419,7 +419,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		});
 		string text = ToolText(callResult);
 		// Before the try: when this fires nothing was built, and the cleanup's describe would be refused too.
-		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.90");
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.107");
 
 		try {
 			// Assert
@@ -454,7 +454,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				"{\"name\":\"Read1\",\"type\":\"readData\"}")
 		});
 		string text = ToolText(callResult);
-		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.90");
+		IgnoreWhenProcessBuilderIsBehind(text, "1.6.6.107");
 
 		try {
 			// Assert
@@ -1612,7 +1612,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				"\"results\": [\"A\", \"B\"]", "\"results\": [\"C\"]")
 		});
 		// Before the try: when this fires nothing was built, and there is nothing to clean up.
-		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.106");
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.107");
 
 		try {
 			// Assert
@@ -1660,7 +1660,7 @@ public sealed class CreateBusinessProcessToolE2ETests {
 			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName,
 				"\"condition\": \"1 > 0\"", "\"results\": [\"C\"]")
 		});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.106");
+		IgnoreWhenProcessBuilderIsBehind(ToolText(callResult), "1.6.6.107");
 
 		try {
 			// Assert
