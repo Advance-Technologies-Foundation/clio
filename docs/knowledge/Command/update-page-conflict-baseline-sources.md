@@ -7,7 +7,7 @@ applies-to:
   - clio/Command/McpServer/Tools/PageUpdateTool.cs
   - clio/Command/McpServer/Tools/PageSyncTool.cs
   - clio/Command/LocalizePageCommand.cs
-ticket: GH-1320, GH-1464, GH-1538, ENG-90576, GH-1741, ENG-103500
+ticket: GH-1320, GH-1464, GH-1538, ENG-90576, GH-1741, ENG-103500, ENG-103711
 date: 2026-10-07
 ---
 
@@ -19,8 +19,10 @@ checksum alone governs the comparison — neither identity field is armed from d
 save (`target-package-uid` / `target-schema-uid`) the disk baseline is READ but arms nothing: its
 identity travels as `ConditionalBaselineSchemaUId` (or, when it recorded no editable schema, as
 `ConditionalBaselineDesignPackageUId`) and the comparison is decided only after
-the target is resolved, and a caller pin is retained for comparison with that resolved target; the
-response warns that the disk baseline did not apply directly. That
+the target is resolved, and a caller pin is retained for comparison with that resolved target. Before
+the save the response carries a conditional warning that the disk baseline applies only if the write
+resolves to its schema; after the save that warning is replaced with the outcome (see below), and a
+forced selector save carries none. That
 on-disk baseline is keyed by **(anchor directory, schema name)** only — not by schema UId — and the
 anchor is resolved from the process cwd unless `output-directory` overrides it. It is rewritten both
 by `get-page` and, post-save, by `RefreshOrDrop`.
@@ -93,11 +95,18 @@ the text said the selector had redirected the write in every case, so a report t
 target-package-uid turns the check off" looked like a real lost-update defect. Reading that wording as
 proof of a redirect sends the next investigation after the wrong cause.
 
-**A failed save drops only the recorded did-not-run text.** `TryArm` records the did-not-run warning it
-added on `PageUpdateOptions.DetectionDidNotRunWarning`, and `PageBaselineGuard.ForSaveOutcome` removes
-exactly that text from the joined warning when the save failed before its request was sent or the
-server refused it. `PageUpdateOptions.SaveOutcomeUnknown` marks a request that got no readable reply;
-the write may have landed there, so the warning stays. Every other guard warning stays on any outcome.
+**`ForSaveOutcome` rewrites exactly two recorded texts; every other guard warning stays on any outcome.**
+`TryArm` records the did-not-run warning on `PageUpdateOptions.DetectionDidNotRunWarning` and the
+selector-path conditional warning on `PageUpdateOptions.ConditionalBaselineWarning`. When no write
+proceeded (the save failed before its request was sent, or the server refused it),
+`PageBaselineGuard.ForSaveOutcome` removes both texts from the joined warning.
+`PageUpdateOptions.SaveOutcomeUnknown` marks a request that got no readable reply; the write may have
+landed there, so it counts as proceeded. When the write proceeded, the did-not-run text stays and the
+conditional text is REPLACED with a statement driven by `ConflictCheckApplied` and
+`ResolvedWriteTarget`: the check was applied, or the save was NOT checked and where the write went
+(left unchanged only when the target was never resolved). The condition is replaced rather than kept
+because an agent passed the "applies only if" wording on as a general note and never told the user the
+save had no conflict protection (ENG-103711).
 
 **`localize-page` writes the page too, but arms no check.** It re-reads the schema immediately before
 its save and changes only resource values, so it never calls `TryArm`. After a save it calls

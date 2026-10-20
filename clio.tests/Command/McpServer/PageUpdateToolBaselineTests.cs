@@ -654,4 +654,48 @@ public sealed class PageUpdateToolBaselineTests
 		response.ConflictDetails.ExpectedChecksum.Should().Be("baseline-checksum",
 			because: "the echo tells the caller which baseline produced the verdict, exactly as the ChecksumMismatch branch does");
 	}
+
+	[Test]
+	[Description("ENG-103711 (scenario B5): update-page with a baseline and a target-schema-uid that sends the write to another schema reports, after the save, that the save was NOT checked and where it went, instead of the pre-save condition, and sets conflictCheck: not-applied.")]
+	public void UpdatePage_ShouldSayTheSaveWasNotChecked_WhenTheSelectorSendsTheWriteElsewhere() {
+		// Arrange
+		const string redirectedSchemaUId = "22222222-0000-0000-0000-000000000000";
+		AddMetaWithBaseline("sandbox", "baseline-checksum");
+		StubChecksumByUId();
+		PageUpdateArgs args = CreateArgs() with { TargetSchemaUId = redirectedSchemaUId };
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the redirected save is not refused. Error: {response.Error}");
+		response.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckNotApplied,
+			because: "the baseline describes another schema, so nothing was compared");
+		response.Warnings.Should().Contain(w => w.Contains("was NOT checked for conflicts")
+				&& w.Contains(redirectedSchemaUId) && w.Contains("Tell the user"),
+			because: "the caller must be told as a fact that the save was unchecked and where it went");
+		response.Warnings.Should().NotContain(w => w.Contains("applied only if"),
+			because: "the condition is resolved after the save and must not be passed on as a general note");
+	}
+
+	[Test]
+	[Description("ENG-103711: update-page with a baseline and a target-package-uid that names the package already owning the schema reports that the conflict check WAS applied and sets conflictCheck: applied.")]
+	public void UpdatePage_ShouldSayTheCheckWasApplied_WhenTheSelectorResolvesToTheBaselineSchema() {
+		// Arrange
+		AddMetaWithBaseline("sandbox", "server-checksum");
+		StubChecksumByUId(ChecksumRow("server-checksum"), ChecksumRow("fresh-after-save"));
+		PageUpdateArgs args = CreateArgs() with { TargetPackageUId = "test-pkg-uid" };
+
+		// Act
+		PageUpdateResponse response = _tool.UpdatePage(args).Result;
+
+		// Assert
+		response.Success.Should().BeTrue(because: $"the baseline matches the server. Error: {response.Error}");
+		response.ConflictCheck.Should().Be(PageUpdateResponse.ConflictCheckApplied,
+			because: "the resolved target was compared with the baseline");
+		response.Warnings.Should().Contain(w => w.Contains("conflict check WAS applied"),
+			because: "the caller must learn the save was protected");
+		response.Warnings.Should().NotContain(w => w.Contains("applied only if"),
+			because: "the condition is resolved after the save");
+	}
 }

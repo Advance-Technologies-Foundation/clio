@@ -279,6 +279,14 @@ Pass `--force` to deliberately overwrite the external changes instead.
 After a successful save with a baseline in play, the response carries `newChecksum`,
 `newModifiedOn`, and `savedSchemaUId` so the caller can refresh its stored baseline.
 
+Every save that got as far as resolving its target also carries `conflictCheck`: `applied` when
+the target was compared with a baseline (a refused save included), `not-applied` when the write was
+let through without that comparison — no applicable baseline, `--force`, a selector that sent the
+write to another schema, or a schema with no checksum on the server. A successful save with
+`not-applied` may have overwritten someone else's change; for a missing baseline and for a selector,
+`warnings` name the cause. The field is
+omitted when the save failed before its target was resolved.
+
 Successful saves may also return `warnings`. When `success` is true every entry is
 informational only — the schema save already succeeded, so never retry on a warning. A
 rejected save (`success: false`) can carry `warnings` too; nothing was written. On a
@@ -355,8 +363,11 @@ Two scope limits worth knowing before you rely on the pin:
   UId and checksum into a baseline keyed by schema name corrupted the baseline of the
   automatically resolved schema and produced a false `schema-uid-mismatch` on the next ordinary
   save. An explicit `checksum` is kept and compared with the resolved target in every case; a
-  mismatch is refused as a conflict. The response carries a warning that says the baseline
-  applies only if the target resolves to the page it describes. When nothing on disk can be
+  mismatch is refused as a conflict. Once the target is resolved, an unpinned, unforced save
+  reports what happened: either the conflict check was applied, or the save was NOT checked
+  for conflicts, naming the schema the write went to and the one the baseline describes, and
+  asking the caller to tell the user. A save refused before anything was written carries
+  neither. When nothing on disk can be
   matched to the target and the save is not forced, the warning says the check did not run and
   why: no baseline was found for this page, environment and anchor (then the same save without
   the selector is unchecked too), or the baseline recorded no editable schema and the selector

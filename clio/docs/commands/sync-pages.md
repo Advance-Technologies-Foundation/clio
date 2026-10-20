@@ -287,6 +287,11 @@ different environment) are saved without the check, and that page's warnings say
 and why, unless the page sets `force: true`. A pinned save that no local baseline corroborates still runs
 the check, and says so in that page's warnings.
 
+Each page result carries `conflict-check`: `applied` when the page was compared with a baseline (a
+conflicted page included), `not-applied` when it was saved without that comparison (no baseline,
+`force: true`, or no checksum on the server). It is omitted when the page failed before its target was
+resolved.
+
 ## Error Handling
 
 Pages are independent, so **processing continues** even if one page fails. The overall
