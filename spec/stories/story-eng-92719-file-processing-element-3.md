@@ -9,7 +9,7 @@ share of FE-1, FE-5)
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, the clio
-and knowledge drafts are open; the code-review findings of 2026-10-20 are being fixed)
+and knowledge drafts are open; the code-review findings of 2026-10-20 are fixed in cut 1.6.6.112)
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -153,10 +153,14 @@ Ids are the analysis plan's work packages (section 5.3).
 
 **clio-knowledge**
 
-- [ ] **SF.4** `process-files` storage section rewritten: the SysFile hazards (record-object sort columns,
+- [x] **SF.4** `process-files` storage section rewritten: the SysFile hazards (record-object sort columns,
   `RecordSchemaName`, "the user checks the record's Freedom UI attachment list"); the refusal sentences removed behind a
   version gate ("from clio <version>", the real number at merge); the guidance rules of story 1 apply; libraryVersion
-  above master at merge.
+  above master at merge. Done differently (owner, 2026-10-20): the article had no room, so the Process parameter group
+  moved into its own article `process-files-parameter`; the boundary is the package version ("1.6.6.109 or older
+  refuses SysFile", with the `install-process-builder` remedy), since no clio release number exists yet; the storage
+  rule by name (`<X>File`, `FileLead`, an unpaired attachment object named directly) added; source-only fact-checked;
+  libraryVersion 1.15.168 (clio-knowledge #300).
 
 **Tail**
 
@@ -255,11 +259,14 @@ here, because this story is the last of its main chain. ENG-92719 closes when al
   with a primary display column (UsrFpDoc), Guid compare without one (AccountAddress); M8 PASS (a `create-app` page's
   upload stores `RecordSchemaName` and Type File; an Object element copied it); M21 captured; M23 (a) PASS 3 rows,
   (b) PASS 1 copy, (c) PASS the `.docx`, (d) PASS 2 rows, all stamped and visible in the Freedom UI list; M25 dropped.
-- Package cut claimed: 1.6.6.110 (2026-10-20, superseded by the owner's describe-issue decision) and 1.6.6.111
-  (2026-10-20), both in ENG-92719 comment 550565; producing commit `512dd9d0`, restamp `5e4e1508`, tag
-  `crtprocessbuilder-1.6.6.111`; package PR https://creatio.ghe.com/engineering/crt-process-builder/pull/101 (draft).
-- Tests passing: package 4280/4280 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
-  the 1.6.6.110 bundle and the bundled-package guards 89/89 on 1.6.6.111; e2e: see the clio PR.
+- Package cut claimed: 1.6.6.110 (2026-10-20, superseded by the owner's describe-issue decision), 1.6.6.111
+  (2026-10-20, superseded by the code-review fixes) and 1.6.6.112 (2026-10-20), all in ENG-92719 comment 550565;
+  producing commit `7840df0f`, restamp `7d9df4c0`, tag `crtprocessbuilder-1.6.6.112`; package PR
+  https://creatio.ghe.com/engineering/crt-process-builder/pull/101 (draft).
+- Tests passing: package 4315/4315 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
+  the 1.6.6.112 bundle; e2e on 1.6.6.112 (net10.0): ProcessFileElementToolE2ETests and
+  ProcessFileReportAndParameterToolE2ETests 52 passed, 3 Ignored (the designer fixtures are absent); knowledge
+  539/539.
 - Stand records (on 1.6.6.110; SC-4 repeated on 1.6.6.111, identical): ST-08 (a) 3 SysFile rows on an Account address,
   `RecordSchemaName = AccountAddress`; (b) 3 ContactFile copies through the Process variant; (c) the Freedom UI upload
   copied; the Contact's Freedom UI list shows all four. SC-4 equal except the accepted differences. DT-04 (twin and
