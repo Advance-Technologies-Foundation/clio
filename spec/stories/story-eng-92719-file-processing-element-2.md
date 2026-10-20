@@ -12,8 +12,9 @@ D17, D18, D19; D25 and D26 for this cut
 merged as 1.15.163; clio #1847 merged, `ea3aaf580`; 1.6.6.105 to 1.6.6.108 were superseded by the final-review,
 core-reuse and review fixes). Reconciled box by box on 2026-10-20: every box met is ticked with its evidence; the merge
 order item is reworded to the guide-first decision; the e2e "Ignored = 0" clause is carried to ENG-103937 (story 3).
-Still open, each with its reason: task "Knowledge records and status"; Definition of Done: the knowledge-record item,
-Process items on Jira, review gate 2 and the status flips. Not `done` until they close
+Later the same day: review gate 2 closed by an owner waiver, and the knowledge-record item ticked after the
+`make check-knowledge` review of #1847. Still open, each with its reason: task "Knowledge records and status" (story
+1's `done` flip only); Definition of Done: the Process items on Jira and the status flips. Not `done` until they close
 **Size**: M (about 7-15 h of AI-agent time and 3.5-9 h of the owner's time; about 3-4 working days of calendar; the
 package PR is estimated at 2.5-4k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -277,16 +278,17 @@ registrations, one commit group each, so that X2 can cherry-pick.
   `platform/an-unset-single-file-fails-a-process-parameter-file-element.md` only after M2; DELETE story 1's temporary
   `ProcessModel/report-and-parameter-file-elements-stay-generic-until-eng-96506.md`; review the `make check-knowledge`
   report. Status flips, including story 1's `done`, which rides in this PR.
-  Not met (re-checked 2026-10-20): every record is on master with its basis
+  Re-checked 2026-10-20. Done: every record is on master with its basis
   (`a-process-file-report-runs-only-word-and-fastreport.md`, `the-process-parameter-file-source-only-saves.md`,
   `infra/the-creatio-sandbox-has-five-word-printables-and-no-fastreport.md`,
   `invoice-quotation-and-contract-printables-have-no-sysentityschema.md`, and, after M16, M1 and M2,
   `use-in-process-report-files-are-deleted-with-their-process.md`, `a-nested-only-files-binding-reads-one-row.md`,
   `an-unset-single-file-fails-a-process-parameter-file-element.md`), and the temporary
-  `report-and-parameter-file-elements-stay-generic-until-eng-96506.md` is deleted (#1847). Open: (1) no
-  `make check-knowledge` review of #1847 is recorded (run over #1847's diff on 2026-10-20, the script lists 109 records
-  whose `applies-to` it touches; none has been reviewed); (2) story 1's `done` flip did not ride in #1847, because story
-  1's Definition of Done still has open items.
+  `report-and-parameter-file-elements-stay-generic-until-eng-96506.md` is deleted (#1847). The `make check-knowledge`
+  review of #1847 is recorded: 109 records listed for `ea3aaf580^1..ea3aaf580`, 104 kept, 5 updated in the docs PR
+  #1857, none deleted (log in the Dev Agent Record; every record in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
+  Open: story 1's `done` flip did not ride in #1847, because story 1's Definition of Done still has open items.
 
 **clio-knowledge**
 
@@ -364,10 +366,13 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
       0-printables ignore)": the one ignored test, `DesignerFixture_Should_DescribeTheReportElement_AsFileProcessing`,
       needs `UsrFpOaDesignerFixture`, which was removed from the stand and not rebuilt; story 3's SF.3 must rebuild that
       fixture anyway (it re-points the fixture's F1 case to its positive form), and runs this test green then.
-- [ ] Knowledge records added, deleted or deferred as in the task list, each with its basis; `make check-knowledge`
+- [x] Knowledge records added, deleted or deferred as in the task list, each with its basis; `make check-knowledge`
       report reviewed.
-      Not met: the records are in place (see "Knowledge records and status"), but no `make check-knowledge` review of
-      #1847 is recorded.
+      Evidence: the seven records the task names on master with their basis, and an eighth,
+      `an-unbound-files-input-stops-the-process-from-starting.md`; the temporary record deleted (see "Knowledge records
+      and status"); the report over #1847's diff (109 records) reviewed on 2026-10-20 against master `ea3aaf580` and
+      package tag `crtprocessbuilder-1.6.6.109`: 104 kept, 5 updated in #1857, none deleted (Dev Agent Record;
+      `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
 - [x] The same PR-description statements as story 1 (MCP reviewed, docs reviewed, ClioRing compatibility, the budget
       figures, `Validated:`).
       Evidence: #1847 "Statements": MCP reviewed; docs reviewed (`help/en`, `docs/commands`, `Commands.md`,
@@ -463,5 +468,24 @@ knowledge PR merges, carried in story 3's clio PR and never pushed after an appr
   `SysProcessFile` row while parked, 0 after completion (closes M16 for the top-level case); DT-03 every runtime
   value unchanged by a designer no-op save (display and bookkeeping normalizations only); SC-4 0 differences on all
   five elements, negative control 30.
+- Knowledge review (`make check-knowledge` over #1847's diff `ea3aaf580^1..ea3aaf580`, 2026-10-20): 109 records
+  listed, each read against master `ea3aaf580` and, for claims about the package, tag `crtprocessbuilder-1.6.6.109`.
+  104 kept, 5 updated in #1857, none deleted. Updated, each for a claim false on master:
+  - `Common/requirespackage-version-floor-survives-convergence-degraded-modes.md`: "that state has ended"; #1847 raised
+    the floors to the cut it bundles (1.6.6.109), as #1841 had (1.6.6.103).
+  - `Common/a-presence-only-requirespackage-still-takes-a-convergence-refusal.md`: its table gave three floors as
+    1.6.6.14 (master: 1.6.6.109); the cells now point at the attribute.
+  - `McpServer/a-named-contract-lookup-is-fitted-so-full-content-needs-detail-full.md`: headroom of 2 B and 225 B;
+    after #1847's trim T1: modify 35 016 of 35 072 B, wire bundle 18 815 of 19 000 B.
+  - `platform/the-designer-stores-a-lookup-constant-two-different-ways.md`: "only in a change-data column mapping"; the
+    Process file `ConnectedObjectId` is stored as `Script` + `[#Lookup#]` (measured 2026-10-17), the form the archive
+    writes since 1.6.6.101.
+  - `infra/mcp-e2e-processdesigner-category-is-consumed-only-by-teamcity-job-args.md`: "the five fixtures" and "59
+    today"; 22 fixture files carry the category on master, #1847's `ProcessFileReportAndParameterToolE2ETests` among
+    them.
+  Kept: the rest, each with a one-line reason in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`; the eight records #1847
+  wrote and the one it updated were re-read against 1.6.6.109 (the Process parameter binder's save-only rules, the single-File `Files.File`
+  binding, the feature reader's notice), and so were the Process file, floor and describe claims of the older ones.
 - Notes (X2 fired or not): X2 did not fire. Left on the stand for cleanup on the owner's word: the probe and ST/SC
   processes, their fixture records and the file rows they created.

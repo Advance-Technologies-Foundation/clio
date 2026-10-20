@@ -11,8 +11,10 @@ D20, D21, O5; D25 and D26 for this cut
 **Status**: review (package #97, clio #1841 and knowledge #295 merged 2026-10-19, follow-ups #99 and #1846 the same
 day). Reconciled box by box on 2026-10-20: OA-2, OA-11, OA-12, OA.12 and the Process item on PR titles and merge order
 are reworded to the decision or PRD row actually taken, each citing where it is recorded, and ticked; OA.0 and the clio
-analyzer item are ticked on evidence. Still open, each with its reason: task "Knowledge records and status" and OA.13;
-Definition of Done: clio items 7 and 8, Process items 2-6. Not `done` until they close
+analyzer item are ticked on evidence. Later the same day: OA.13 and Process items 3-5 closed by owner decisions; the
+M26 record written, the `make check-knowledge` review of #1841 recorded, and clio items 7 and 8 ticked. Still open,
+each with its reason: task "Knowledge records and status" (its status flips only); Definition of Done: Process items
+2 (Jira) and 6 (status flips). Not `done` until they close
 **Size**: L (about 15.5-27.5 h of AI-agent time and 5.5-13 h of the owner's time; about 4-6 working days of calendar;
 the package PR is estimated at 6-6.8k added lines, the largest of the cycle)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -437,14 +439,17 @@ to one tree)
   `ProcessModel/described-filter-types-have-no-json-overflow-bag.md`; review the `make check-knowledge` report.
   Status flips in `spec/sprint-status.yaml` (see "Status convention"), including the `done` flip of
   `story-eng-95984-file-parameter-type-1`, which rides in this PR.
-  Not met (re-checked 2026-10-20): the nine records and the update of
+  Re-checked 2026-10-20. Done: the nine records and the update of
   `described-filter-types-have-no-json-overflow-bag.md` are on master (`56e6aebee`, `5768b62cb`), and story 2's clio PR
-  #1847 deleted the temporary `report-and-parameter-file-elements-stay-generic-until-eng-96506.md` as planned. Open:
-  (1) M26 was measured 2026-10-15 but `platform/after-saving-object-files-points-at-the-source-files.md` was never
-  written; (2) no `make check-knowledge` review of #1841 is recorded (run over #1841's diff on 2026-10-20, the script
-  lists 103 records whose `applies-to` it touches; none has been reviewed); (3) the status flips did not follow the
-  convention: `in-progress` was never recorded, `review` arrived only with #1847, and the `done` flip of
-  `story-eng-95984-file-parameter-type-1` was not made (it stays at `review`).
+  #1847 deleted the temporary `report-and-parameter-file-elements-stay-generic-until-eng-96506.md` as planned. The M26
+  record `platform/after-saving-object-files-points-at-the-source-files.md` was written on 2026-10-20 in the docs PR
+  #1857 (basis: the stored outputs measured on 1.6.6.100 in the ST-01 run's element trace, the mechanism source; the
+  multi-instance consumer half of M26 was never run, and the record says so). The `make check-knowledge` review of
+  #1841 is recorded: 103 records listed for `24bfa471b^1..24bfa471b`, 96 kept, 6 updated in #1857, 1 already deleted
+  by #1847 (log in the Dev Agent Record; every record in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
+  Open: the status flips did not follow the convention: `in-progress` was never recorded, `review` arrived only with
+  #1847, and the `done` flip of `story-eng-95984-file-parameter-type-1` was not made (it stays at `review`).
 
 **clio-knowledge** (base `master`, own worktree under `.worktrees/<task>/`)
 
@@ -607,10 +612,13 @@ an approval.
       (ProcessFileElement 25, ListUserTasks 2, ValidateProcessGraph 14, DescribeProcess 6, SubProcessMultiInstance 10,
       RecordColumnSource 3, FileParameter 13). On the follow-up cut 1.6.6.104 (#1846) the two designer-fixture cases
       skipped because the fixture had been removed from the stand.
-- [ ] Knowledge records added, updated or deferred as in the task list; `make check-knowledge` report reviewed.
-  Not met: see "Knowledge records and status" (the M26 record is missing; no `make check-knowledge` review of #1841's
-  103 touched records is recorded).
-- [ ] The PR description states: "MCP reviewed" (tools create-business-process, modify-business-process,
+- [x] Knowledge records added, updated or deferred as in the task list; `make check-knowledge` report reviewed.
+  Evidence: the nine records and the `described-filter-types-have-no-json-overflow-bag.md` update on master; the
+  deferred M26 record `platform/after-saving-object-files-points-at-the-source-files.md` added in #1857 on 2026-10-20;
+  the report over #1841's diff (103 records) reviewed on 2026-10-20 against master `ea3aaf580` and package tag
+  `crtprocessbuilder-1.6.6.109`: 96 kept, 6 updated in #1857, 1 already deleted by #1847 as planned (Dev Agent Record;
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`).
+- [x] The PR description states: "MCP reviewed" (tools create-business-process, modify-business-process,
       modify-process-as-new-version, describe-business-process, list-user-tasks, validate-process-graph; prompts
       ListUserTasksPrompt, CreateBusinessProcessPrompt, ModifyBusinessProcessPrompt, DescribeProcessPrompt; resources and
       `clio/tpl`: no update required); "docs reviewed, no update required" (`clio/help/en`, `clio/docs/commands`,
@@ -618,10 +626,14 @@ an approval.
       Ring-consumed contract changed" (inspected `clio-ring/ClioRing.Ipc`, `clio-ring/ClioRing`,
       `clio-ring/ClioRing.Desktop/actions.json`), with the Purpose leads confirmed unchanged in `get-tool-contract`
       `detail=index-entries`; the re-measured budget figures of both guards; no telemetry vocabulary change.
-      Not met: #1841 states "MCP reviewed and updated", "Docs reviewed, no update required" and "ClioRing compatibility
-      reviewed, no Ring-consumed contract changed" with the three inspected paths, but not the listed tools and prompts,
-      the Purpose leads confirmed in `get-tool-contract` `detail=index-entries`, the re-measured figures of the two
-      guards (only "under 35072 B" and "under 19000 B") or "no telemetry vocabulary change".
+      Evidence: #1841 states "Docs reviewed, no update required" and "ClioRing compatibility reviewed, no Ring-consumed
+      contract changed" with the three inspected paths; the rest is in the section "MCP review (completed 2026-10-20)"
+      appended to #1841's description on 2026-10-20: the touched tools, prompts and resources; the served purposes
+      (`get-tool-contract` `detail=index-entries`) byte-identical at `85a3953e2` and `24bfa471b`, with
+      `GetToolContracts_ShouldAdvertiseTheRepairedPurpose_WhenCompactIndexIsBuilt` and
+      `GetToolContracts_ShouldGiveEveryToolADistinctPurpose_WhenCompactIndexIsBuilt` passing; the budgets re-measured at
+      `24bfa471b` (modify 35042 B, 30 B headroom; create 34917 B, 155 B; describe 34644 B, 428 B; wire bundle 18815 of
+      19000 B); and no telemetry vocabulary change.
 
 **clio-knowledge**
 - [x] `process-files` sections and `element-catalog.md` for this cut; FOUR -> FIVE with its three tests and the card;
@@ -677,7 +689,7 @@ an approval.
       history that cannot be recorded after the fact; gate 1 and gate 3 ran with no open Blocker or High.
 - [ ] Status flips as in "Status convention"; this Definition of Done has no unchecked item before `done`.
   Not met: `in-progress` was never recorded on master, `review` arrived with #1847, and this Definition of Done still
-  has open items (clio 7 and 8, Process 2-5).
+  has an open item (Process 2, Jira).
 - [x] (reworded 2026-10-20 to the decision taken) PR titles exactly `ENG-96505 Element readiness and object attachments
       mode` in all three repositories; merged by a human in the order package (tag verified on the remote), knowledge,
       clio; no clio release cut between the package and clio merges.
@@ -698,8 +710,8 @@ outside the repository).
   1.6.6.104 (#99, #1846), floors kept at 1.6.6.103.
 - Bytes trimmed per Q20 = A (which text per tool, and the reviewer's approval), description and wire figures re-measured:
   the six trims listed in #1841 "Rebundle" (create: four; modify: one; modify-as-new-version: one), approved by the
-  owner on 2026-10-19 (`7b0fc971e`); #1841 records the result only as "under 35072 B" and "under 19000 B" (see the
-  open clio item 8).
+  owner on 2026-10-19 (`7b0fc971e`); re-measured at `24bfa471b` in #1841's "MCP review (completed 2026-10-20)":
+  modify 35042 B, create 34917 B, describe 34644 B of 35072 B; wire bundle 18815 of 19000 B (clio item 8).
 - Tests passing (package, clio unit, e2e with Ignored count, knowledge): package 3989/3989 on `-c dev-nf` and `-c dev-n8`
   (#97); clio unit 17325 passed, 0 failed, 25 skipped (#1841); e2e 73/73, 0 skipped, on 1.6.6.103 (#1841); knowledge
   455 passed (#295).
@@ -719,5 +731,27 @@ outside the repository).
     `AccountLogo` key of `serializedFilterEditData`), normalized by the N16 rule, so equal under TC-41.
   - SC-4, 2026-10-17, on 1.6.6.102: `UsrFpSc4OaBuilder` against the designer capture `UsrFpSc1OaCapture` (E1, E2): 0
     differences.
+- Knowledge review (`make check-knowledge` over #1841's diff `24bfa471b^1..24bfa471b`, 2026-10-20): 103 records
+  listed, each read against master `ea3aaf580` and, for claims about the package, tag `crtprocessbuilder-1.6.6.109`.
+  96 kept, 6 updated in #1857, 1 already deleted by #1847 (the temporary
+  `report-and-parameter-file-elements-stay-generic-until-eng-96506.md`, as planned). Updated, each for a claim false
+  on master:
+  - `Common/requirespackage-version-floor-survives-convergence-degraded-modes.md`: "that state has ended"; #1841 raised
+    the floors to the cut it bundled (1.6.6.103), and #1847 did again (1.6.6.109).
+  - `Common/a-presence-only-requirespackage-still-takes-a-convergence-refusal.md`: its table gave three floors as
+    1.6.6.14 (master: 1.6.6.109); the cells now point at the attribute.
+  - `McpServer/a-named-contract-lookup-is-fitted-so-full-content-needs-detail-full.md`: headroom of 2 B and 225 B;
+    master: modify 35 016 of 35 072 B, wire bundle 18 815 of 19 000 B.
+  - `ProcessModel/subprocess-build-token-needs-a-managermap-arm.md`: "one release before any CrtProcessBuilder emits
+    them"; 1.6.6.103 builds both tokens and describe emits only `fileprocessing`.
+  - `platform/the-designer-stores-a-lookup-constant-two-different-ways.md`: "only in a change-data column mapping"; the
+    Process file `ConnectedObjectId` is stored as `Script` + `[#Lookup#]` (measured 2026-10-17), the form #1841's
+    archive writes.
+  - `infra/mcp-e2e-processdesigner-category-is-consumed-only-by-teamcity-job-args.md`: "the five fixtures" and "59
+    today"; 22 fixture files carry the category on master, #1841's `ProcessFileElementToolE2ETests` among them.
+  Kept: the rest, each with a one-line reason in
+  `spec/eng-92719-file-processing-element/eng-92719-file-processing-element-knowledge-review.md`; the Process file, floor
+  and describe claims were re-read in source (the SysFile refusal, nested items re-minted on create only, the
+  designer's stored form, the record name read with the caller's rights, the meta-path check, the bag recount 28/9).
 - Notes: `UsrFpOaDesignerFixture` was built 2026-10-15 and later removed with the stand's Custom package, so the two
   designer-fixture e2e cases skipped on 1.6.6.104 (#1846); rebuilding it is carried to ENG-103937 (story 3, SF.3).
