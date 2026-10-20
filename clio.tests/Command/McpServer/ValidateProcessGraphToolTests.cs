@@ -669,7 +669,7 @@ public sealed class ValidateProcessGraphToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The tool description is the ONE buildable-slice list (ValidateProcessGraphPrompt defers to it by name), so it names the fileProcessing element (the Object attachments variant). Without it an agent planning a Process file element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
+	[Description("The tool description is the ONE buildable-slice list (ValidateProcessGraphPrompt defers to it by name), so it names the fileProcessing element and its three variants (Object attachments, Generated report, Process parameter). Without it an agent planning a Process file element reads the canonical list, finds it missing and tells the user the builder cannot create it.")]
 	public void ValidateTool_ShouldNameTheFileProcessingElementAsBuildable_WhenDescriptionIsRead() {
 		// Arrange
 		MethodInfo method = typeof(ValidateProcessGraphTool).GetMethod(nameof(ValidateProcessGraphTool.Validate));
@@ -678,8 +678,8 @@ public sealed class ValidateProcessGraphToolTests {
 		string description = method!.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
 
 		// Assert
-		description.Should().Contain("changeAccessRights/subProcess/fileProcessing (Object attachments) elements plus",
-			because: "the canonical buildable list must carry every element type create-business-process builds, the Process file element included");
+		description.Should().Contain("changeAccessRights/subProcess/fileProcessing (Object attachments, Generated report, Process parameter) elements plus",
+			because: "the canonical buildable list must carry every element type create-business-process builds, the Process file element and all three of its variants included");
 	}
 
 	[Test]

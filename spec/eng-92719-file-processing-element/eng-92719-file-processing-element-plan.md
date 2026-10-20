@@ -452,7 +452,7 @@ only after the named measurement, and say "measured <date>".
 | clio | `docs/knowledge/platform/a-process-file-report-runs-only-word-and-fastreport.md` | dispatch by `Type.Name`; DevExpress throws; Word always one file per record; PDF only with a converter package; the file-name rule | CL-RP | - |
 | clio | `docs/knowledge/platform/the-process-parameter-file-source-only-saves.md` | `NotSupportedException` for use-in-process; its output item is `ObjectFile` while its input key is `File` | CL-RP | - |
 | clio | `docs/knowledge/platform/a-nested-only-files-binding-reads-one-row.md` | the single-file path (`ProcessInstanceParametersDataReader.cs:444-453`) | CL-RP | after M1 |
-| clio | `docs/knowledge/infra/the-dev-stand-has-only-five-word-printables.md` | 5 MS Word printables, none for Account/Contact, `ConvertInPDF = false`, no FastReport — why the report e2e skips on 0 rows | CL-RP | - |
+| clio | `docs/knowledge/infra/the-creatio-sandbox-has-five-word-printables-and-no-fastreport.md` + `docs/knowledge/platform/invoice-quotation-and-contract-printables-have-no-sysentityschema.md` | 5 MS Word printables, none for Account/Contact, `ConvertInPDF = false`, no FastReport — why the report e2e skips on 0 rows | CL-RP | - |
 | clio | `docs/knowledge/platform/a-sysfile-attachment-read-needs-recordschemaname-and-type-file.md` and the write-path record M23 produces | SysFile read/write facts | CL-SF | after M8 / M23 |
 | crt-process-builder | `.codex/workspace-diary.md` entry per PR (append-only, the package's CLAUDE.md rule); `docs/process-file-element-capture.md`; `docs/process-builder-architecture.md` rows | - | PK-OA, PK-RP, PK-SF | - |
 

@@ -264,7 +264,20 @@ namespace Clio.Command;
 // designer-built record and sending it back holds; 1.6.6.103 also refuses moving the source or the target to another
 // object while another element reads CreatedObjectFileIds, as the designer does. 1.6.6.100-1.6.6.102 were never
 // released.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.103",
+// Raised to 1.6.6.109 by ENG-96506: the Generated report and Process parameter variants of the fileProcessing
+// element - its `report` and `files` groups, and the refusal of the generic userTask route for
+// ReportFileProcessingUserTask and ProcessFileProcessingUserTask. A 1.6.6.103-1.6.6.104 server refuses both groups
+// loudly ("not supported yet"), but it still takes the generic route for the two tasks and builds an element with no
+// printable or no files that saves green and fails at run time, and it describes such an element as a plain userTask -
+// so this clio's contract, which names both groups and refuses that route, would describe behaviour the server does
+// not have. 1.6.6.105 was the first archive with both variants; 1.6.6.106 added the final-review fixes this contract
+// also describes (clearFilter refused on a missing printable, the temporary-files notice for Variable parameters,
+// the new describe issues), and 1.6.6.107 the core-reuse fixes (only the designer's text types as the file-name
+// column, describe naming two run-time failures) and 1.6.6.109 the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id),
+// so 1.6.6.109 is the floor. 1.6.6.104 shipped story-1 follow-ups only.
+// ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for this same reason and point
+// here instead of repeating it.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.109",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

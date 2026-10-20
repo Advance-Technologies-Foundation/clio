@@ -198,6 +198,98 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("A Generated report and a Process parameter element with valid report and files groups pass clean, so clio does not refuse the two variants' write members before the server reads them.")]
+	public void Check_Should_AcceptValidReportAndFilesGroups() {
+		// Arrange
+		string elements = """
+			{ "name": "Report1", "type": "fileProcessing",
+			  "fileProcessing": { "source": "report", "action": "saveToAttachments",
+			    "report": { "printable": "6c1a3a39-0000-4000-8000-000000000001", "type": "MS Word", "object": "Invoice",
+			      "recordId": { "processParameter": "PInvoice" }, "separateReports": true,
+			      "fileNameSuffix": { "value": "copy" } },
+			    "saveTo": { "object": "Invoice", "recordId": { "processParameter": "PInvoice" } } } },
+			{ "name": "Files1", "type": "fileProcessing",
+			  "fileProcessing": { "source": "files", "action": "saveToAttachments",
+			    "files": { "sourceElement": "Report1", "sourceElementParameter": "ReportFiles" },
+			    "saveTo": { "object": "Contact", "recordId": { "processParameter": "PContact" } } } }
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(elements);
+
+		// Assert
+		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every report and files key is one FileProcessingReportDescriptor or FileProcessingFilesDescriptor declares");
+	}
+
+	[Test]
+	[Description("Described Generated report and Process parameter elements fed back keep building: report.caption, report.convertToPdf, bindingLevels and the display of files are named in the read-back warning, never refused.")]
+	public void Check_Should_WarnButNotRefuse_ReportAndFilesDescribeOnlyFields() {
+		// Arrange
+		string elements = """
+			{ "name": "Report1", "type": "fileProcessing",
+			  "fileProcessing": { "source": "report", "action": "useInProcess", "actionStored": true,
+			    "report": { "printable": "p1", "caption": "Invoice", "convertToPdf": false, "type": "MS Word",
+			      "object": "Invoice", "recordId": { "processParameter": "PInvoice", "display": "Invoice" },
+			      "separateReports": true } } },
+			{ "name": "Files1", "type": "fileProcessing",
+			  "fileProcessing": { "source": "files", "bindingLevels": "both",
+			    "files": { "processParameter": "Docs", "display": "Documents" },
+			    "saveTo": { "object": "Contact", "recordId": { "value": "c1", "display": "John Best" } } } }
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(elements);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the two variants' describe-only members are derived and harmless to ignore");
+		result.Warnings.Should().ContainSingle(
+				because: "the ignored fields of both elements are reported in one warning, and their seven stay below the cap that would shorten it")
+			.Which.Should().NotContain("more)", because: "every ignored field is listed, none folded into a count")
+			.And.Contain("fileProcessing.actionStored", because: "the block's describe-only flag is named")
+			.And.Contain("fileProcessing.report.caption", because: "the printable's caption is describe-only")
+			.And.Contain("fileProcessing.report.convertToPdf", because: "the printable's PDF flag is describe-only")
+			.And.Contain("fileProcessing.report.recordId.display", because: "display is tolerated on the report's value sources")
+			.And.Contain("fileProcessing.bindingLevels", because: "the bound levels of Files are describe-only")
+			.And.Contain("fileProcessing.files.display", because: "the files source carries describe's display too");
+	}
+
+	[Test]
+	[Description("A sourceColumn on the files group is refused, not tolerated as a read-back: the write side has no such member, and dropping it would copy the files of another source than the caller named.")]
+	public void Check_Should_RefuseASourceColumnOnTheFilesGroup() {
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(
+			"{\"name\":\"Files1\",\"type\":\"fileProcessing\",\"fileProcessing\":{\"files\":{\"sourceElement\":\"R\","
+			+ "\"sourceElementParameter\":\"ResultEntity\",\"sourceColumn\":\"File\"}}}");
+
+		// Assert
+		result.Error.Should().Contain("'fileProcessing.files.sourceColumn'",
+			because: "files takes no sourceColumn, and the refusal names the exact key path");
+	}
+
+	[Test]
+	[Description("A described files group that names a record column - the shape describe reports when Files is bound to a column of a record - is refused on a setElement resubmit with a pointer that says why and how to keep the stored binding: leave files out. Without it a caller resubmitting the describe output reads a bare unknown-key refusal for a key describe itself produced.")]
+	public void Check_Should_PointToKeepingTheStoredBinding_WhenADescribedFilesSourceColumnIsResubmitted() {
+		// Arrange
+		const string operations = """
+			[ { "op": "setElement", "elementName": "Files1", "elementUpdate": { "fileProcessing": {
+			    "files": { "sourceElement": "ReadInvoice", "sourceElementParameter": "ResultEntity",
+			      "sourceColumn": "Attachment", "display": "Invoice.Attachment" } } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().Contain("'elementUpdate.fileProcessing.files.sourceColumn' is not a key of the 'files' block",
+			because: "the write contract has no sourceColumn, and dropping it would bind another source than the described column");
+		result.Error.Should().Contain("describe reports 'files' this way when Files is bound to a column of a record",
+			because: "the refusal must say the key came from describe, so the caller does not hunt for a typo");
+		result.Error.Should().Contain("on setElement leave 'files' out to keep the stored binding, or bind another source",
+			because: "an omitted files group is kept as stored, which is the one way to resubmit such an element unchanged");
+	}
+
+	[Test]
 	[Description("An unknown key deep inside the element's own filter (a condition, an element-parameter reference) is refused too, because the server drops it the same way.")]
 	public void Check_Should_RefuseAnUnknownKeyInsideTheFilterTree() {
 		// Arrange
