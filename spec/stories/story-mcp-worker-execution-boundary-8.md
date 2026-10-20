@@ -148,6 +148,9 @@ dispatcher file: terminal detection on `eventType == "run-completed"` at the run
 300 s stage-event silence bound restarted by every stage event
 (`CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS`), a 30 s post-terminal exit grace via `lease.HasExited` +
 `KillContained`, synthetic-token injection with relay-side suppression, and the two result builders.
+Amended 2026-10-20 (ENG-95262, PR #1848): the worker handshake has its own bound, defaulting to the
+silence bound, and the first silence window starts when tools/call is issued, so the worst case before
+the first stage event is handshake bound plus silence bound (ADR §3.3).
 `WaitWithinBudgetAsync` is deliberately not used — its `BudgetExpired` semantics are the generic-kill
 model this stage replaces. Bounds are `Stopwatch`-based so an NTP step cannot move them. The two names
 were added to the cohort LAST.

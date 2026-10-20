@@ -629,6 +629,15 @@ looking for a cancellation outcome will not find one, and must not invent one he
 | **Stage-event silence** | configurable, default **300 s** with no stage event of any kind | treat as a lost child (below) |
 | Post-terminal exit grace | **30 s** between the terminal stage and child exit | kill the child; the operation itself already terminated, so this is safe |
 
+**Amended 2026-10-20 (ENG-95262, PR #1848): the handshake has its own bound, and the first silence window
+starts at tools/call.** The worker's MCP handshake is bounded separately; that bound defaults to the
+stage-event silence bound (`CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS`, default 300 s), and a worker that misses
+it is killed and answered with a relay failure saying the operation never started — never an indeterminate
+result. The silence clock is restarted when tools/call is issued, as long as no stage event has arrived yet,
+so a slow handshake on a loaded host can no longer expire a run before it could emit anything. The
+consequence: the longest wait before the first stage event is the handshake bound plus the silence bound
+(up to 600 s with the defaults), not the silence bound alone. Every wait stays bounded.
+
 The silence timer, not an operation timer, is what bounds `terminal-stage`. It is the one bound that cannot
 truncate a legitimately long deploy: a healthy deploy streams stages continuously, and a child that has gone
 30 s past its own terminal stage has nothing left to lose.

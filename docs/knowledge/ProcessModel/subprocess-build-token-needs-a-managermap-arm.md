@@ -18,10 +18,11 @@ The file records this exact trap for the earlier tokens in its own comment above
 `sendemail`, `approval`, `openeditpage`, `readdata`, `changedata`, `adddata`, `changeaccessrights`,
 `preconfiguredpage` and `performtask` all had to be listed explicitly for the same reason.
 
-ENG-95984 added `"fileprocessing"` and `"processfile"` (the Process file element's build token and its
-alias) one release BEFORE any CrtProcessBuilder emits them (ENG-96505 Element readiness and object attachments
-mode ships the token): a clio older than the package that first emits a token cannot be fixed after the fact, so
-the arm has to be in the clio release that precedes it. The three data-ids (`ObjectFileProcessingUserTask`,
+ENG-95984 added `"fileprocessing"` and `"processfile"` (the Process file element's build token and its alias) one
+release BEFORE any CrtProcessBuilder built them: a clio older than the package that first emits a token cannot be
+fixed after the fact, so the arm has to be in the clio release that precedes it. CrtProcessBuilder 1.6.6.103
+(ENG-96505, the first archive clio bundles with the element) builds both, and describe emits only `fileprocessing`,
+never the alias (`ElementTypes.ProcessFile`, package source). The three data-ids (`ObjectFileProcessingUserTask`,
 `ProcessFileProcessingUserTask`, `ReportFileProcessingUserTask`) end in the suffix and need no entry.
 
 **Why it is this way** — two vocabularies meet here. The canvas emits camelCase data-ids; create,

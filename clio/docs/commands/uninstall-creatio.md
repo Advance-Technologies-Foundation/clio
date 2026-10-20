@@ -297,6 +297,11 @@ destroying the entire instance
         itself stopped talking. Override with CLIO_MCP_WORKER_STAGE_SILENCE_SECONDS
         (seconds, 0 < n <= 3600); lowering it below a few of those 30 s refreshes puts
         healthy long stages back at risk.
+        The first window starts when the tool call is sent to the worker, not when the
+        worker starts: its handshake has its own bound (the same value, same override),
+        so the longest wait before the first stage event is handshake plus silence -
+        up to 600 s with the defaults. A worker that never finishes the handshake is
+        terminated and answered as never started, not as INDETERMINATE.
       - post-terminal exit grace: 30 s between "run-completed" and the worker exiting.
         A worker that hangs afterwards is terminated and the tool result is the
         terminal outcome, not an error.

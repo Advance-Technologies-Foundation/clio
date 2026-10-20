@@ -473,7 +473,14 @@ element's `ObjectFiles` or `ReportFiles`, or a dotted item of one) binds BOTH le
 `ObjectFile` or the declared name). A single FileLocator source binds `Files.File` only, **pending M1**; if M1 fails the
 single-file path is refused and the guide says to wrap one file in a FileCollection. `expression` is written onto
 `Files.File` as given (only its meta-path tokens are checked) with a notice. Refused: a source with no FileLocator item
-(R-M2), an outer-only binding, no binding, a mapping FROM `Files`, `useInProcess` (D14). `saveTo` is required.
+(R-M2), a mapping FROM `Files`, `useInProcess` (D14), and a nested collection as the source (R-M3). `saveTo` is required.
+**Amended 2026-10-20 (owner decision, RP-6):** an outer-only mapping onto `Files` is NOT refused. It is paired with the
+source collection's FileLocator item and a notice is returned (ENG-95984's P2), so the element stores both levels,
+exactly as the designer does. The `files` block never writes an outer-only or empty binding. A STORED outer-only or
+unbound `Files` (hand-made or older elements) is reported by describe through `bindingLevels` and an `issues` entry; an
+unbound `Files` stops the platform from starting the process (measured, knowledge record
+`platform/an-unbound-files-input-stops-the-process-from-starting.md`). Reason: the agent gets a working element in one
+call, the stored shape matches the designer and survives a designer re-save, and every bad state stays visible.
 
 **Rejected.** Outer-only from a single file: the runtime reads `{File: null}` rows. Accepting `value`: no constant form
 exists.
@@ -758,7 +765,8 @@ sentence. F-T and F-M (the parameter type and the binder) are ENG-95984's.
 | F-R1 | refuse | printable missing, empty, unknown, unreadable (with the Report setup hint and the `templateId` bridge), ambiguous, DevExpress, FastReport, no object | D17 | RP |
 | F-R2 | refuse | a bad `fileNameSuffixColumn`; suffix and column together | D17 | RP |
 | F-R3 | notice | `ConvertInPDF`; several records into one target; feature off; temporary report files into an Out parameter; Word `separateReports: false` accepted | D14, D17 | RP |
-| F-P1 | refuse | a `files` source with no FileLocator item; outer-only; none; a mapping FROM `Files`; a `value` | D18 | RP |
+| F-P1 | refuse | a `files` source with no FileLocator item; a nested collection source; a mapping FROM `Files`; a `value` | D18 | RP |
+| F-P1a | notice / issue | an outer-only mapping onto `Files` is paired with its item (notice); a stored outer-only or unbound `Files` is a describe issue (amended 2026-10-20) | D18 | RP |
 | F-P2 | notice | `files.expression` written as given onto `Files.File` | D18 | RP |
 
 ## Implementation outline
