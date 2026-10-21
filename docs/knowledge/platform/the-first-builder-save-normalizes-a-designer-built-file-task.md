@@ -3,8 +3,8 @@ description: a Process file element stored in the designer's form - built in the
 applies-to:
   - clio.mcp.e2e/ProcessFileElementToolE2ETests.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
-ticket: ENG-96505
-date: 2026-10-17
+ticket: ENG-103937
+date: 2026-10-21
 ---
 
 **What is true** — measured 2026-10-15 on the .NET Framework stand with CrtProcessBuilder 1.6.6.100: a process built
@@ -24,12 +24,20 @@ target with a record object, and a `setElement` that switches the element to use
 `ConnectedObjectId` as Lookup; create clears `L9` on the schema lookups it writes - `setElement` never clears it.
 So a BUILDER-created element changes the same way, once, on its next unrelated builder save.
 
+The same first save also drops resource rows (measured 2026-10-21, CrtProcessBuilder 1.6.6.113, a fresh designer
+build): the designer writes each element's template parameter captions (`BaseElements.<El>.Parameters.<P>.Caption`)
+in every culture - F2 had 379 rows in 28 cultures - and after the builder's first save only the stand's active
+cultures (`SysCulture.Active`: en-US, ar-SA, he-IL, ru-RU) remain, 67 rows, with no value changed and none added; F1
+the same. The mechanism is not traced (the package has no culture code; the save is the platform's `SaveSchema`).
+
 **Why it is this way** — the designer types `ConnectedObjectId` as a lookup only to render a record picker; the
 template declares Guid, and the run time reads it as a Guid either way (`GetGuidValue`). The package calls the
 platform's own design-session load and does not touch these parameters on an unrelated edit.
 
 **What breaks if you ignore it** — a byte-identity check across the first unrelated builder save of an element in the
 designer's form - designer-built or builder-created - fails on a fresh process and passes on every re-run, which
-reads as a flaky test or as a builder defect. Compare the first save with this allow-list and assert byte-identity
-from the second save on. A designer no-op re-save writes `ConnectedObjectId` back as Lookup (measured on the stand,
+reads as a flaky test or as a builder defect. Compare the first save with this allow-list - for resource rows, the
+before-rows of the active cultures only - and assert byte-identity from the second save on. The resource check was
+added after the fixture of 2026-10-15 had been builder-saved once, so it first met a fresh designer build on
+2026-10-20 and failed there; it is not a regression. A designer no-op re-save writes `ConnectedObjectId` back as Lookup (measured on the stand,
 DT-01), so the two sides oscillate on that one field.

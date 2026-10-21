@@ -735,7 +735,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	#region Methods: Tests - designer-built fixture (TC-I-46)
 
 	[Test]
-	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none), F2's resource rows stay byte-identical; a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
+	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none), F2's resource rows in the environment's active cultures stay byte-identical and none is added (the designer writes the template's parameter captions in every culture, and the first builder save keeps only the active cultures' rows); a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("an unrelated modify leaves designer-built Process file elements intact")]
 	public async Task DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies() {
@@ -751,6 +751,7 @@ public sealed class ProcessFileElementToolE2ETests {
 		string secondProbeName = $"UsrFpE2eProbe{Guid.NewGuid():N}"[..21];
 		IReadOnlyList<string> nodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f2UId);
 		IReadOnlyList<string> resourcesBefore = await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name);
+		IReadOnlySet<string> activeCultures = await ReadActiveCultureNamesAsync(context);
 		IReadOnlyList<string> f1NodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
 		try {
 			// Act
@@ -780,8 +781,12 @@ public sealed class ProcessFileElementToolE2ETests {
 			f1NodesAfterFirst.Select(WithoutLayout).Should()
 				.Equal(ExpectedAfterFirstSave(f1NodesBefore, f1NodesAfterFirst),
 					because: "and F1, the designer-built Object attachments element, likewise");
-			resourcesAfterFirst.Should().Equal(resourcesBefore,
-				because: "F2's resource rows stay byte-identical; the rows the first save removed and added: {0}",
+			// The designer writes the template's parameter captions in every culture; the first builder save keeps only
+			// the active cultures' rows (measured 2026-10-21: 379 rows in 28 cultures -> 67 in the 4 active ones, no value
+			// changed). One-way: the active cultures' rows stay byte-identical and nothing is added.
+			resourcesAfterFirst.Should().Equal(InActiveCultures(resourcesBefore, activeCultures),
+				because: "F2's resource rows in the active cultures stay byte-identical and the first save adds none; the "
+					+ "rows it removed and added: {0}",
 				RowDifference(resourcesBefore, resourcesAfterFirst));
 			ParameterNames(await DescribeGraphAsync(context, DesignerFixtureName)).Should().Contain(secondProbeName,
 				because: "the positive control of the second save: it WAS saved, so byte-identity after it is evidence");
@@ -1117,6 +1122,29 @@ public sealed class ProcessFileElementToolE2ETests {
 		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
 		return result;
 	}
+
+	/// <summary>The names of the environment's active cultures (<c>SysCulture.Active</c>), e.g. <c>en-US</c>.</summary>
+	private static async Task<IReadOnlySet<string>> ReadActiveCultureNamesAsync(ProcessDesignerArrangeContext context) {
+		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysCulture",
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Active", "Active")
+			],
+			[]), "the environment's cultures");
+		HashSet<string> active = rows.EnumerateArray()
+			.Where(row => row.TryGetProperty("Active", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
+			.Select(row => TextOf(row, "Name"))
+			.ToHashSet(StringComparer.Ordinal);
+		active.Should().NotBeEmpty(because: "an environment has at least one active culture, or the read saw nothing");
+		return active;
+	}
+
+	/// <summary>The resource rows (<c>key | culture | value</c>) of the given cultures only, in their order.</summary>
+	private static IReadOnlyList<string> InActiveCultures(IReadOnlyList<string> rows, IReadOnlySet<string> cultures) =>
+		rows.Where(row => {
+			string[] parts = row.Split(" | ");
+			return parts.Length > 1 && cultures.Contains(parts[1]);
+		}).ToList();
 
 	/// <summary>
 	/// The rows <paramref name="after"/> lost and gained against <paramref name="before"/>, in full: an assertion's own
