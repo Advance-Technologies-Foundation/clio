@@ -780,7 +780,9 @@ public sealed class ProcessFileElementToolE2ETests {
 			f1NodesAfterFirst.Select(WithoutLayout).Should()
 				.Equal(ExpectedAfterFirstSave(f1NodesBefore, f1NodesAfterFirst),
 					because: "and F1, the designer-built Object attachments element, likewise");
-			resourcesAfterFirst.Should().Equal(resourcesBefore, because: "F2's resource rows stay byte-identical");
+			resourcesAfterFirst.Should().Equal(resourcesBefore,
+				because: "F2's resource rows stay byte-identical; the rows the first save removed and added: {0}",
+				RowDifference(resourcesBefore, resourcesAfterFirst));
 			ParameterNames(await DescribeGraphAsync(context, DesignerFixtureName)).Should().Contain(secondProbeName,
 				because: "the positive control of the second save: it WAS saved, so byte-identity after it is evidence");
 			(await ReadElementNodesAsync(context, DesignerFixtureName, f2UId)).Should().Equal(nodesAfterFirst,
@@ -1114,6 +1116,16 @@ public sealed class ProcessFileElementToolE2ETests {
 			});
 		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
 		return result;
+	}
+
+	/// <summary>
+	/// The rows <paramref name="after"/> lost and gained against <paramref name="before"/>, in full: an assertion's own
+	/// listing stops after 32 items, which hides the difference in a long resource list.
+	/// </summary>
+	private static string RowDifference(IReadOnlyList<string> before, IReadOnlyList<string> after) {
+		string removed = string.Join("; ", before.Except(after, StringComparer.Ordinal));
+		string added = string.Join("; ", after.Except(before, StringComparer.Ordinal));
+		return $"{before.Count} rows before, {after.Count} after. REMOVED: [{removed}] ADDED: [{added}]";
 	}
 
 	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
