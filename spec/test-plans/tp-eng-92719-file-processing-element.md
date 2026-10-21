@@ -182,7 +182,7 @@ the full sentence. Every refusal case also asserts that the schema is unchanged.
 |---|---|---|---|---|---|
 | TC-U-15 | TC-15 | pkg | 1 | resolver over the fake hierarchy (AccountFile, ContactFile, FileLead, the LeadFile ambiguity, DNSGuideFile, a view, a SysFile-family object, a tag object, no claimant, SysFile missing); `Decode` never throws | OA-6 |
 | TC-U-16 | TC-16 | pkg | 1 | the record object or its file object give the same pair; no `SourceDataEntitySchemaUId` for a legacy source; an orphan attachment object named directly is dedicated with no record object; a sent object rewrites the side's pair, an update without it keeps a consistent pair and re-resolves an inconsistent one with a notice | OA-6 |
-| TC-U-17, TC-I-17 | TC-17 | pkg, e2e | 1 | a SysFile-mode source or target refused with the D15 text; the switch tested on its own | OA-6 |
+| TC-U-17, TC-I-17 | TC-17 | pkg, e2e | 1 | a SysFile-mode source or target refused with the D15 text; the switch tested on its own (re-pointed by story 3 to its positive form: SysFile written on either side) | OA-6 |
 | TC-U-18, TC-I-18 | TC-18 | pkg, e2e | 1 | `attachments.recordId` per source; CurrentUserContact compiles to the macro; another formula refused | OA-7, FE-4 |
 | TC-U-19 | TC-19 | pkg | 1 | record-scope type check | OA-7 |
 | TC-U-20 | TC-20 | pkg | 1 | filter root, unconfigured element, scope set twice: refused | OA-7 |
@@ -288,8 +288,8 @@ Each builds and describes the pattern; the matching stand scenario runs it.
 | TC-U-77 | TC-77 | pkg | 3 | the SysFile scope in the shape M7 captured; `Split` accepts both shapes; a foreign reference is an issue | SF-1 |
 | TC-U-78 | TC-78 | pkg | 3 | sort on the SysFile root: a record-object column refused, a SysFile column accepted | SF-1 |
 | TC-U-79 | TC-79 | pkg | 3 | SysFile -> SysFile retarget clears the scope | SF-1 |
-| TC-U-80 | TC-80 | pkg | 3 | the M25 notice through the faked seam; never a refusal; ships only if M25 confirmed the read | SF-1 |
-| TC-I-81 | TC-81 | e2e | 3 | `ProcessFileSysFileStorageToolE2ETests`: Object on a SysFile entity; Report and Process into a SysFile target; story 1's refusal case re-pointed to its positive form | SF-1 |
+| ~~TC-U-80~~ | TC-80 | pkg | 3 | DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed). Was: the M25 notice through the faked seam; never a refusal | SF-1 |
+| TC-I-81 | TC-81 | e2e | 3 | the SysFile region of `ProcessFileElementToolE2ETests` and the SysFile targets of `ProcessFileReportAndParameterToolE2ETests`: Object on a SysFile entity; Report and Process into a SysFile target; story 1's refusal case re-pointed to its positive form | SF-1 |
 
 ### clio surface, knowledge and regressions
 
@@ -385,8 +385,8 @@ folder, plus the stored resources; never from describe, and never compared by ey
 | TC-M-21 | M1 | yes | story 2: the single-file path | open |
 | TC-M-22 | M2 | yes | story 2: the guide wording for an unset single File | open |
 | TC-M-24 | M4 | yes | verification (repeated as TC-M-04) | open; the builder-written repeat V7 passed on 1.6.6.98 (2026-10-14) |
-| TC-M-27 | M7 | no | story 3: the SysFile scope shape | open |
-| TC-M-28 | M8 | yes | story 3: SysFile sources | open |
+| TC-M-27 | M7 | no | story 3: the SysFile scope shape | done 2026-10-20 (lookup In with a primary display column, Guid compare without) |
+| TC-M-28 | M8 | yes | story 3: SysFile sources | PASS 2026-10-20 |
 | TC-M-29 | M9 | yes | no code (refusal severity) | open |
 | TC-M-30 | M10 | no | story 1: refusals R3-R5 | done 2026-10-02: matches |
 | TC-M-31 | M11 (a)(b), (c) optional | (c) yes | story 1: issue severity, guide warning | done 2026-10-02 in memory: not reproduced; (c) optional |
@@ -399,11 +399,11 @@ folder, plus the stored resources; never from describe, and never compared by ey
 | TC-M-38 | M18 | yes | no code (culture note), after story 2's cut | open |
 | TC-M-39 | M19 | yes | story 4's urgency | done 2026-10-02: accepted at build, fails at run |
 | TC-M-40 | M20 | yes | the floor premise | done 2026-10-02: dropped silently |
-| TC-M-41 | M21 | yes | story 3: the SysFile capture | open (TC-M-19 holds its capture half) |
+| TC-M-41 | M21 | yes | story 3: the SysFile capture | captured 2026-10-20 (`UsrFpSc1SfCapture`; TC-M-19 holds its capture half) |
 | TC-M-42 | M22 | yes | verification | = TC-M-11..TC-M-14 |
-| TC-M-43 | M23 (a)-(d) | yes | story 3: SysFile targets, per case | open |
+| TC-M-43 | M23 (a)-(d) | yes | story 3: SysFile targets, per case | PASS 2026-10-20, (a)-(d) |
 | TC-M-44 | M24 | yes | the `attachments.sort` guide sentence | done 2026-10-02: nulled by the binder, refused later with a misleading text |
-| TC-M-45 | M25 | yes | story 3: the designer-flag notice only | partly (client read) |
+| ~~TC-M-45~~ | M25 | no | DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed). Was: story 3, the designer-flag notice only | - |
 | TC-M-46 | M26 | yes | story 1: the guide sentence and the knowledge record on `ObjectFiles` after a save; no code | open |
 
 M3, M3b (MI-0), M6 and M27 belong to ENG-95984's test plan; M5 is skipped (refused anyway).
@@ -434,7 +434,7 @@ column records the alternative that was not taken.
 | Q18 (FastReport; agreed 2026-10-14) | RP-1 | TC-U-51 | accepted with a notice: TC-U-51 asserts the notice instead of the refusal, and RP-1 is rewritten |
 | O-TP1 (where TC-91 runs) | none | TC-I-91 | option A: the cases move to ENG-95984's clio PR on the generic route, which story 2 later refuses and rewrites |
 | M1 / M2 | RP-5 (already written both ways) | TC-U-64, TC-M-03, TC-M-20 (E10) | M1 fails: TC-U-64 asserts the refusal, TC-M-03 is dropped, E10 leaves SC-4 |
-| M7, M8, M21, M23, M25 | SF-1 (proposed), FE-1 (the PRD's open item "What FE-1 means if SF narrows") | TC-U-76..TC-U-80, TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |
+| M7, M8, M21, M23, M25 | SF-1 (proposed), FE-1 (the PRD's open item "What FE-1 means if SF narrows") | TC-U-76..TC-U-79 (TC-U-80 dropped with M25), TC-I-81, TC-M-08, TC-M-14 | a failing case keeps story 1's refusal: its positive case is dropped and its refusal case stays |
 | M26 | OA-11 (the guide sentence) | TC-U-88 | not confirmed: the sentence and the record are not written, and TC-U-88 asserts their absence |
 | SC-0 (TC-M-18) | RP-8 | TC-U-59 | PrintInvoiceReport on the stand lacks a parameter: TC-U-59 excludes it and names it (the PRD's predated-parameter class) |
 | Contingency X2 (RP's Process half fails ST-04) | RP-5, RP-6 and the Process half of RP-7, RP-8 | TC-U-62..TC-U-69, TC-I-91, TC-I-73, TC-M-03..TC-M-05 | the Process-parameter cases move to a new Sub-task "Process parameter source of the Process file element" |
@@ -474,7 +474,7 @@ name (Q19), the description bytes by trim (Q20).
 | RP-8 | TC-U-59, 69 | - | - | - | TC-M-13, 18, 20 |
 | RP-9 | - | - | TC-U-88 | TC-I-74 | - |
 | RP-10 | - | TC-U-82, 84, 89, 90, 92, 93 | TC-U-88 | TC-I-87 | TC-M-15..17 |
-| SF-1 | TC-U-05, 76..80 | TC-U-84 | TC-U-88 | TC-I-81 | TC-M-08, 14, 20, 27, 28, 41, 43, 45 |
+| SF-1 | TC-U-05, 76..79 (80 dropped) | TC-U-84 | TC-U-88 | TC-I-81 | TC-M-08, 14, 20, 27, 28, 41, 43 (45 dropped) |
 
 ## Exit criteria
 
@@ -487,7 +487,7 @@ Per story, before its package PR leaves draft and before its clio PR is handed t
   before TC-U-59's exclusions are fixed; the same for Story 2 cases; TC-M-03 (only if TC-M-21 passed),
   TC-M-04..TC-M-07, TC-M-13, TC-M-15..TC-M-17, TC-M-20 (story 2 rows); TC-I-61 recorded read-only; or contingency X2
   executed and the owner informed.
-- **Story 3**: TC-M-27, TC-M-28, TC-M-41, TC-M-43, TC-M-45 recorded before the dependent code; the Story 3 cases;
+- **Story 3**: TC-M-27, TC-M-28, TC-M-41, TC-M-43 recorded before the dependent code (TC-M-45 dropped with M25); the Story 3 cases;
   TC-M-08, TC-M-14, TC-M-15..TC-M-17, TC-M-20 (story 3 rows).
 - **Stories 4 and 5**: their rows refined and implemented when their Sub-tasks are created.
 - No case reworded to pass: a difference outside the TC-41 rule is fixed, or recorded with the owner as a new tolerated

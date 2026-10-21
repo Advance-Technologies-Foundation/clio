@@ -142,9 +142,8 @@ public static class ModifyBusinessProcessPrompt {
 		 `removeElement` (an earlier operation of the same batch is enough), and confirm with the user first). Sending
 		 `attachments.object` rewrites the storage pair, and a different object clears the stored filter, sort and
 		 record scope unless the same block sends their replacement — re-send `setFilter` after it. Without it a
-		 consistent stored pair is kept, an unpaired or invalid one is rewritten from its own object with a notice,
-		 and a SysFile pair refuses the whole `fileProcessing` update (SysFile storage is not supported yet). A
-		 `saveTo.object` change needs `saveTo.recordId` in the same update. Inside `report` the same merge holds:
+		 consistent stored pair (dedicated or SysFile) is kept, and an unpaired or invalid one is rewritten from its own
+		 object with a notice. A `saveTo.object` change needs `saveTo.recordId` in the same update. Inside `report` the same merge holds:
 		 `report.recordId` and `report.fileNameSuffix` replace as a whole and an EMPTY OBJECT clears one,
 		 `report.fileNameSuffixColumn: ""` clears the column, and an omitted `separateReports` is written `true`
 		 only on create or when `report.printable` names a DIFFERENT printable - otherwise (the same printable

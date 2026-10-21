@@ -70,12 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>8a7c6099</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.109</c>) on branch <c>feature/ENG-96506-process-file-report-and-parameter</c>, which
-	/// was merged from <c>main</c> at <c>4a277295</c> (1.6.6.104), so the cut carries everything 1.6.6.104 shipped.
-	/// This cut was made by <c>rebundle-process-builder.ps1</c>, which captured the commit reference itself. The
-	/// first cut of this branch, 1.6.6.105, took the manual route because the script refuses a descriptor that is already
-	/// restamped and that restamp had been committed first; 1.6.6.106 to 1.6.6.108 and this cut ran the script before the restamp commit.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>8e795a44</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.114</c>) on branch <c>feature/ENG-103937-process-file-sysfile-storage</c>, which
+	/// starts from <c>main</c> at <c>4617c369</c> (1.6.6.109), so the cut carries everything 1.6.6.109 shipped.
+	/// This cut took the manual route (export of the producing commit with the restamped descriptor overlaid):
+	/// the script refuses a descriptor that is already restamped, and that restamp (<c>4bb6dd25</c>) had been
+	/// committed first.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -88,27 +88,28 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.104 (1.6.6.105 to 1.6.6.108 were its earlier, superseded cuts): the Generated report (<c>report</c>) and Process parameter
-	/// (<c>files</c>) variants of the Process file element's <c>fileProcessing</c> block (ENG-96506), built, modified
-	/// and described like the Object attachments variant, with the generic <c>userTask</c> route refused for both
-	/// task schemas, plus the final-review fixes (clearFilter refused on a missing printable, the temporary-files
-	/// notice for Variable parameters, describe issues for a stored non-save action and a doubly stored suffix, the
-	/// unbound-Files notice), and the core-reuse fixes (only the designer's text types as the file-name column,
-	/// describe naming a printable of no object and a deleted file-name column as run-time failures, an exact
-	/// printable-type match, one meta-path decoder, the file filters' date trimming following ConsiderTimeInFilter, the
-	/// sort direction parsed as the run time parses it), and the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id, the generic mapping route refusing a nested
-	/// collection source, and describe naming each nested level's run-time outcome).
-	/// 1.6.6.109 is also the create/modify floor clio enforces. What earlier cuts carried is in this
+	/// <para>What this cut carries over 1.6.6.109 (1.6.6.110 to 1.6.6.113 were its earlier, superseded cuts): SysFile attachment
+	/// storage in the Process file element (ENG-103937) - an object with no attachment object of its own is written in
+	/// SysFile, linked by <c>RecordId</c>, as the Object attachments source and as the target of all three variants;
+	/// the record scope takes the designer's shape (a lookup <c>In</c> filter when the record object has a primary
+	/// display column, a Guid compare otherwise); a SysFile-to-SysFile retarget clears the scope; and a stored SysFile
+	/// side of an object that has its own attachment object is kept but named as a describe issue; and the code-review
+	/// fixes (a target's identity check and retarget follow its file object, setFilter refuses the SysFile record scope
+	/// it cannot type, describe names an undecidable attachment object and an untyped <c>RecordId</c> condition), and the
+	/// gate-3 fixes (a link column alone may not move a target, a guarded repair, an unreadable SysFile record object
+	/// refused, a mapped filter value's <c>Id</c> written only on a lookup column, as the designer writes it), and the
+	/// stand-run fixes (a notice and describe issue for a SysFile source whose filter reads every record's files, the
+	/// empty-record notice naming only the target's kind, disabled filter items selecting nothing).
+	/// 1.6.6.109 stays the create/modify floor clio enforces (no floor raise). What earlier cuts carried is in this
 	/// file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT run under <c>-SkipTests</c>. It was produced by <c>rebundle-process-builder.ps1</c> from a
-	/// clean tree at the producing commit. The script ran the package suite itself (net472: 4232 passed, 0 failed),
-	/// and the suite had passed on that commit on both configurations before the cut - 4232 passed, 0 failed, on
-	/// <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a previous one. That matters
-	/// beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply not running it on the
-	/// manual route) is the ONE path that can reach the coarse failure the two security counts below exist to
-	/// catch. The script's inventory check passed: 293 entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the
-	/// compile marker present, no own assembly, and nothing that executes on install.
+	/// This cut did NOT skip the package suite: it passed on the producing sources on both configurations before the
+	/// cut - 4410 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
+	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
+	/// not running it on the manual route this cut took) is the ONE path that can reach the coarse failure the two
+	/// security counts below exist to catch. The inventory was checked by hand the way the script checks it: 293
+	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
+	/// that executes on install.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -183,7 +184,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"28884A07C6F1FA0EC5B7A4C8B3CCD054906B93952FAF619568D8C34BB656842A";
+		"038ECB74A1226C7E0FF6AB2592C48A3466C539B7BAF516202858EDC5A7A218ED";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -211,12 +212,13 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.109";
+	private const string ExpectedArchiveVersion = "1.6.6.114";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
-	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.109 the
-	/// script captured it (the descriptor restamp is the child commit <c>b6cf6f47</c>).
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.114 it
+	/// was typed from the tag <c>crtprocessbuilder-1.6.6.114</c>, checked with <c>git ls-remote</c> (the manual route;
+	/// the descriptor restamp is the child commit <c>4bb6dd25</c>).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -224,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "8a7c6099b6f7db7b0f1d0018bd92c584f7ee5c35";
+	private const string ExpectedProducingCommit = "8e795a44b2411095915fc519c0d19b0b312b0efe";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -250,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792489594000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792567151000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

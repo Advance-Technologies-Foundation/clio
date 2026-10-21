@@ -8,7 +8,7 @@ ticket: ENG-96505
 date: 2026-10-15
 ---
 
-**What is true** — read in source, not measured (the stand records the inheritance with M23):
+**What is true** — read in source, not measured (M23 on 2026-10-20 saved with the link column set, so it did not run this path):
 `Terrasoft.File/File.cs:174-180` (`CopyAttributes`), `:182-187`, `:254-262`, `Terrasoft.File/Metadata/EntityFileMetadataStorage.cs:29-39`,
 `:115-125`, `:159-164` (core 10.1.37); `FileProcessing.cs:152-179`, `:193-201` (CrtProcessDesigner 7.8.0). The
 Object attachments copy sets the target's link column only when `ConnectedObjectColumnUId` resolves on the target

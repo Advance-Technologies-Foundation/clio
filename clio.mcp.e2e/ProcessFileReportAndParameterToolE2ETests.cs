@@ -49,6 +49,9 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	/// 1.6.6.106 to 1.6.6.109 carry their final-review, core-reuse and review fixes; named in the skip message.</summary>
 	private const string MinimumPackageVersion = "1.6.6.109";
 
+	/// <summary>The SysFile target floor: 1.6.6.111 writes SysFile storage; named in the skip message.</summary>
+	private const string SysFileMinimumPackageVersion = "1.6.6.111";
+
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element (Generated report, Process parameter)";
 
@@ -669,7 +672,65 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 	#endregion
 
+	#region Methods: Tests - SysFile targets (ENG-103937)
+
+	[TestCase("report")]
+	[TestCase("files")]
+	[Description("TC-I-81: the Generated report and the Process parameter variants save into SysFile storage - saveTo.object an object with no attachment object of its own (AccountAddress) is written, and describe reads the target back as storage sysFile, file object SysFile, link column RecordId and the record object, with no issue about the storage. Below CrtProcessBuilder 1.6.6.111 the case is Ignored; the report case is Ignored when the stand has no MS Word printable of Invoice.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process saves report and process-parameter files into SysFile storage")]
+	public async Task CreateBusinessProcess_Should_SaveIntoSysFileStorage(string variant) {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysTarget");
+			const string saveTo =
+				"\"saveTo\": { \"object\": \"AccountAddress\", \"recordId\": { \"processParameter\": \"AddressRef\" } }";
+			string block;
+			if (variant == "report") {
+				ListPrintableRow printable = await ReadPrintableAsync(context, InvoiceObject, caption: null);
+				block = $$"""
+					{ "report": { "printable": "{{printable.TemplateId}}", "recordId": { "processParameter": "InvoiceRef" } },
+					  {{saveTo}} }
+					""";
+			} else {
+				block = $$"""{ "files": { "processParameter": "Docs" }, {{saveTo}} }""";
+			}
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName,
+				LinearDescriptor(processName, SysFileTargetParametersJson, ("PF1", FileElement("PF1", block))),
+				SysFileMinimumPackageVersion);
+
+			// Assert
+			ShouldHaveBuilt(callResult, $"a SysFile target of the {variant} variant is written like any other");
+			JsonObject fileBlock = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "PF1"));
+			JsonObject target = Group(fileBlock, "saveTo");
+			Text(target, "object").Should().Be("AccountAddress", because: "the target's record object is stored as sent");
+			Text(target, "storage").Should().Be("sysFile",
+				because: "Account address has no attachment object of its own, so the target derives SysFile storage");
+			Text(target, "fileObject").Should().Be("SysFile", because: "the saved files are kept in SysFile");
+			Text(target, "linkColumn").Should().Be("RecordId", because: "a SysFile row links to its record through RecordId");
+			Strings(fileBlock["issues"]).Should().NotContain(issue => issue.Contains("SysFile", StringComparison.Ordinal),
+				because: "a SysFile target is no hazard for an object without its own attachment object");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	#endregion
+
 	#region Methods: Descriptors
+
+	// The SysFile target cases: an Invoice to report on, a FileCollection to save, an Account address to save to.
+	private const string SysFileTargetParametersJson = """
+		[
+		  { "name": "InvoiceRef", "type": "Lookup", "referenceSchema": "Invoice", "direction": "In" },
+		  { "name": "Docs", "type": "FileCollection" },
+		  { "name": "AddressRef", "type": "Lookup", "referenceSchema": "AccountAddress", "direction": "In" }
+		]
+		""";
 
 	// The record references the cases read: an Invoice, a Contact and an Account by Lookup.
 	private const string RecordRefParametersJson = """
@@ -749,6 +810,11 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	private static Task<ProcessDesignerArrangeContext> StartAsync() =>
 		ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion, TimeSpan.FromMinutes(8));
 
+	/// <summary>Opens a session, or ignores the test when the stand is behind the SysFile cut (1.6.6.111).</summary>
+	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>
+		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile targets)", SysFileMinimumPackageVersion,
+			TimeSpan.FromMinutes(8));
+
 	/// <summary>A process code unique to this run, in the <c>UsrClioBpFr&lt;Case&gt;E2e</c> family.</summary>
 	private static string NewProcessName(string caseName) => $"UsrClioBpFr{caseName}E2e{Guid.NewGuid():N}";
 
@@ -758,14 +824,15 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	/// CrtProcessBuilder is behind.
 	/// </summary>
 	private static async Task<CallToolResult> CreateAsync(ProcessDesignerArrangeContext context,
-			List<string> created, string processName, string descriptor) {
+			List<string> created, string processName, string descriptor,
+			string writtenAgainstVersion = MinimumPackageVersion) {
 		created.Add(processName);
 		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = descriptor
 			});
-		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), writtenAgainstVersion);
 		return result;
 	}
 

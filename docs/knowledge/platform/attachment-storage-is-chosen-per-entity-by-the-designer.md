@@ -5,8 +5,8 @@ applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
   - spec/eng-92719-file-processing-element/
-ticket: ENG-96505
-date: 2026-10-15
+ticket: ENG-103937
+date: 2026-10-20
 ---
 
 **What is true** — measured in the designer, in memory, on 2026-10-01 (UO-2, UO-3, UO-4) and 2026-10-02 (M10); the
@@ -32,6 +32,7 @@ object of their own, and objects that had one kept it, so their record pages kee
 
 **What breaks if you ignore it** — writing SysFile for an object that has `<X>File` stores files where its record
 page never shows them; writing a data UId on a dedicated source makes the runtime filter `AccountFile.RecordSchemaName`
-and throw. The ENG-96505 package cut follows the rule without reading the flag (D15), treats an orphan named directly
-as dedicated (as a target it needs an explicit `linkColumn`), and refuses SysFile until Sub-task SF. A designer
-re-save writing a data UId onto a dedicated element (H-G3-1) was not reproduced in memory (M11, 2026-10-02).
+and throw. The bundled CrtProcessBuilder follows the rule without reading the flag (D15), treats an orphan named
+directly as dedicated (as a target it needs an explicit `linkColumn`), writes SysFile as the Object source and every
+variant's target, and keeps a stored SysFile pair of an object that HAS its own `<X>File`, naming it as a describe
+issue. A designer re-save writing a data UId onto a dedicated element (H-G3-1) was not reproduced (M11, DT-04).

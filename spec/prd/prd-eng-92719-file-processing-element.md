@@ -121,7 +121,8 @@ What the Jira acceptance criteria say against what is true (the full table is th
   `report.recordId`) and the Process-parameter variant (`files`, bound at both levels through ENG-95984's
   `BindCollection`; a single File only if stand measurement M1 passes). The four shipped product report processes start
   describing as `buildType: fileprocessing`.
-- **SF (story 3)**: SysFile storage for all three variants, after stand measurements M7, M8, M21, M23 and M25.
+- **SF (story 3)**: SysFile storage for all three variants, after stand measurements M7, M8, M21, M23 and M25 (M25 and
+  its notice DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed)).
 - **Side Sub-tasks**, off the critical path, not file-specific: "Refuse collection parameters as filter values"
   (story 4) and "Builder-made user tasks do not set SerializeToDB" (story 5).
 - **Per cut, in clio**: the rebundle; the floor raise (OA, RP; none for SF); the descriptions; the `fileProcessing` key
@@ -234,7 +235,7 @@ criteria of ENG-95984, FE, OA and RP only).
 
 | # | Acceptance criterion (proposed) |
 |---|---|
-| SF-1 | Objects without their own attachment object can be read from and saved to (SysFile storage) by all three variants, after stand measurements M7, M8, M21, M23 and M25; the record scope uses the shape the designer writes; record-object sort columns are refused; a SysFile-mode element built where the designer's storage flag reads off gets a notice; serialization matches a designer capture taken on the stand (M21) under the comparison rule; guidance states the SysFile hazards. A case whose measurement fails keeps its refusal (a PRD addition, taken from D15's fallback: "if M23 fails, SF ships SysFile sources only, if M8 passed, and keeps the target refusal") |
+| SF-1 | Objects without their own attachment object can be read from and saved to (SysFile storage) by all three variants, after stand measurements M7, M8, M21, M23 and M25; the record scope uses the shape the designer writes; record-object sort columns are refused; ~~a SysFile-mode element built where the designer's storage flag reads off gets a notice~~ (DROPPED by the owner on 2026-10-20 (M25: the designer flag is on by default since 2023-02-01 and never changed)); serialization matches a designer capture taken on the stand (M21) under the comparison rule; guidance states the SysFile hazards. A case whose measurement fails keeps its refusal (a PRD addition, taken from D15's fallback: "if M23 fails, SF ships SysFile sources only, if M8 passed, and keeps the target refusal") |
 
 The two side Sub-tasks have no agreed criteria yet (D-5: "to be refined"). Stories 4 and 5 carry proposed criteria,
 confirmed when their Sub-tasks are created.
