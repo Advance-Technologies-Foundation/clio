@@ -735,22 +735,29 @@ public sealed class ProcessFileElementToolE2ETests {
 	#region Methods: Tests - designer-built fixture (TC-I-46)
 
 	[Test]
-	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none), F2's resource rows in the environment's active cultures stay byte-identical and none is added (the designer writes the template's parameter captions in every culture, and the first builder save keeps only the active cultures' rows); a SECOND unrelated save leaves both nodes byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. Ignored, with the build instructions, when the stand does not carry the fixture.")]
+	[Description("TC-I-46 (2) on the designer-built fixture UsrFpOaDesignerFixture: an unrelated addParameter (a Text parameter with a unique name) re-saves the WHOLE designer-built process, so F1 (Object attachments) and F2 (Generated report) are at stake - read from the raw SysSchema.MetaData row and the SysLocalizableValue rows (keys BaseElements.<F1|F2>.*), never from describe. The FIRST builder save of a designer-built element may differ only by the platform's design-session normalization and the builder's relayout (the allow-list, one-way: the position BL3; ConnectedObjectId retyped from Lookup to Guid, its user-task template; a template L9 = SysSchema added on an *EntitySchemaUId parameter that had none; and the template parameter captions BaseElements.<El>.Parameters.<P>[.<Item>].Caption removed in the cultures that are not active on the environment - the designer writes them in every culture, the platform save keeps only the active ones). Every other resource row - every active-culture row and every other key - stays byte-identical and none is added; a SECOND unrelated save leaves both nodes and both elements' resource rows byte-identical to the first, which is the guard that the builder does not drift. Probe parameters are removed afterwards. It spends the fixture's first save, so it runs on net10.0 only (Ignored on other frameworks, so a multi-framework run cannot race on the same fixture); Ignored, with the build instructions, when the stand does not carry the fixture.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("an unrelated modify leaves designer-built Process file elements intact")]
 	public async Task DesignerFixture_Should_ChangeOnlyByTheFirstSaveNormalization_OnUnrelatedModifies() {
 		// Arrange
+#if !NET10_0
+		Assert.Ignore("This case spends the designer fixture's first builder save, so it runs on net10.0 only: a run on "
+			+ "several frameworks would race on the same fixture.");
+#endif
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		await IgnoreUnlessDesignerFixtureExistsAsync(context);
 		JsonObject graph = await DescribeGraphAsync(context, DesignerFixtureName);
 		JsonObject f2 = SingleElementOfTask(graph, ReportTaskName, "F2");
 		string f2Name = Text(f2, "name")!;
 		string f2UId = UId(f2);
-		string f1UId = UId(SingleElementOfTask(graph, ObjectTaskName, "F1"));
+		JsonObject f1 = SingleElementOfTask(graph, ObjectTaskName, "F1");
+		string f1Name = Text(f1, "name")!;
+		string f1UId = UId(f1);
 		string probeName = $"UsrFpE2eProbe{Guid.NewGuid():N}"[..21];
 		string secondProbeName = $"UsrFpE2eProbe{Guid.NewGuid():N}"[..21];
 		IReadOnlyList<string> nodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f2UId);
 		IReadOnlyList<string> resourcesBefore = await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name);
+		IReadOnlyList<string> f1ResourcesBefore = await ReadElementResourceRowsAsync(context, DesignerFixtureName, f1Name);
 		IReadOnlySet<string> activeCultures = await ReadActiveCultureNamesAsync(context);
 		IReadOnlyList<string> f1NodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
 		try {
@@ -764,6 +771,8 @@ public sealed class ProcessFileElementToolE2ETests {
 			IReadOnlyList<string> f1NodesAfterFirst = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
 			IReadOnlyList<string> resourcesAfterFirst =
 				await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name);
+			IReadOnlyList<string> f1ResourcesAfterFirst =
+				await ReadElementResourceRowsAsync(context, DesignerFixtureName, f1Name);
 			CallToolResult secondResult = await ModifyAsync(context, DesignerFixtureName, $$"""
 				[ { "op": "addParameter", "parameter": { "name": "{{secondProbeName}}", "type": "Text" } } ]
 				""");
@@ -775,19 +784,23 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "the positive control: the process WAS saved, so an intact F2 is evidence and not a no-op");
 			resourcesBefore.Should().NotBeEmpty(
 				because: "the read must be shown able to see F2's rows (its caption at least), or 'unchanged' proves nothing");
+			f1ResourcesBefore.Should().NotBeEmpty(because: "and F1's rows likewise");
 			nodesAfterFirst.Select(WithoutLayout).Should()
 				.Equal(ExpectedAfterFirstSave(nodesBefore, nodesAfterFirst),
 					because: "the first save of the whole process may change F2 only by the platform's design-session normalization and the relayout");
 			f1NodesAfterFirst.Select(WithoutLayout).Should()
 				.Equal(ExpectedAfterFirstSave(f1NodesBefore, f1NodesAfterFirst),
 					because: "and F1, the designer-built Object attachments element, likewise");
-			// The designer writes the template's parameter captions in every culture; the first builder save keeps only
-			// the active cultures' rows (measured 2026-10-21: 379 rows in 28 cultures -> 67 in the 4 active ones, no value
-			// changed). One-way: the active cultures' rows stay byte-identical and nothing is added.
-			resourcesAfterFirst.Should().Equal(InActiveCultures(resourcesBefore, activeCultures),
-				because: "F2's resource rows in the active cultures stay byte-identical and the first save adds none; the "
-					+ "rows it removed and added: {0}",
+			// The designer writes the template's parameter captions in every culture; the platform save keeps only the
+			// active cultures' rows (measured 2026-10-21: F2 379 rows in 28 cultures -> 67 in the 4 active ones, no value
+			// changed, F1 the same). The tolerance is exactly those rows: everything else stays byte-identical.
+			resourcesAfterFirst.Should().Equal(WithoutInactiveTemplateCaptions(resourcesBefore, activeCultures),
+				because: "the first save may only drop F2's template parameter captions in the inactive cultures (the "
+					+ "platform save keeps the active ones); the rows it removed and added: {0}",
 				RowDifference(resourcesBefore, resourcesAfterFirst));
+			f1ResourcesAfterFirst.Should().Equal(WithoutInactiveTemplateCaptions(f1ResourcesBefore, activeCultures),
+				because: "and F1's likewise; the rows it removed and added: {0}",
+				RowDifference(f1ResourcesBefore, f1ResourcesAfterFirst));
 			ParameterNames(await DescribeGraphAsync(context, DesignerFixtureName)).Should().Contain(secondProbeName,
 				because: "the positive control of the second save: it WAS saved, so byte-identity after it is evidence");
 			(await ReadElementNodesAsync(context, DesignerFixtureName, f2UId)).Should().Equal(nodesAfterFirst,
@@ -796,6 +809,8 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "and F1's stored node byte-identical: the builder does not drift");
 			(await ReadElementResourceRowsAsync(context, DesignerFixtureName, f2Name)).Should().Equal(resourcesAfterFirst,
 				because: "and F2's resource rows byte-identical");
+			(await ReadElementResourceRowsAsync(context, DesignerFixtureName, f1Name)).Should().Equal(f1ResourcesAfterFirst,
+				because: "and F1's resource rows byte-identical");
 		} finally {
 			await RemoveProbeParameterAsync(context, probeName);
 			await RemoveProbeParameterAsync(context, secondProbeName);
@@ -1139,11 +1154,23 @@ public sealed class ProcessFileElementToolE2ETests {
 		return active;
 	}
 
-	/// <summary>The resource rows (<c>key | culture | value</c>) of the given cultures only, in their order.</summary>
-	private static IReadOnlyList<string> InActiveCultures(IReadOnlyList<string> rows, IReadOnlySet<string> cultures) =>
+	/// <summary>
+	/// The resource rows (<c>key | culture | value</c>) without the template parameter captions
+	/// (<c>BaseElements.&lt;El&gt;.Parameters.&lt;P&gt;[.&lt;Item&gt;].Caption</c>) of the cultures that are not active, in
+	/// their order: what the first builder save of a designer-built element keeps.
+	/// </summary>
+	private static IReadOnlyList<string> WithoutInactiveTemplateCaptions(IReadOnlyList<string> rows,
+			IReadOnlySet<string> activeCultures) =>
 		rows.Where(row => {
 			string[] parts = row.Split(" | ");
-			return parts.Length > 1 && cultures.Contains(parts[1]);
+			if (parts.Length < 2 || activeCultures.Contains(parts[1])) {
+				return true;
+			}
+			string key = parts[0];
+			bool templateCaption = key.StartsWith("BaseElements.", StringComparison.Ordinal)
+				&& key.Contains(".Parameters.", StringComparison.Ordinal)
+				&& key.EndsWith(".Caption", StringComparison.Ordinal);
+			return !templateCaption;
 		}).ToList();
 
 	/// <summary>
