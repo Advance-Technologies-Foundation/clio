@@ -158,7 +158,7 @@ Ids are the analysis plan's work packages (section 5.3).
   moved into its own article `process-files-parameter`; the boundary is the package version ("1.6.6.109 or older
   refuses SysFile", with the `install-process-builder` remedy), since no clio release number exists yet; the storage
   rule by name (`<X>File`, `FileLead`, an unpaired attachment object named directly) added; source-only fact-checked;
-  libraryVersion 1.15.168 (clio-knowledge #300).
+  libraryVersion 1.15.169 (clio-knowledge #300; 1.15.168 was taken on master by #299).
 
 **Tail**
 
