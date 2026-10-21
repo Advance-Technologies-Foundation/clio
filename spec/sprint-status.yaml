@@ -4896,7 +4896,7 @@ stories:
     feature: "eng-92719-file-processing-element"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: M
-    status: in-progress
+    status: review
     jira: ENG-103937
     file: spec/stories/story-eng-92719-file-processing-element-3.md
     prd: spec/prd/prd-eng-92719-file-processing-element.md

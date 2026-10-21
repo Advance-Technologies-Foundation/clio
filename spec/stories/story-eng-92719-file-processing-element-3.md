@@ -8,8 +8,7 @@ share of FE-1, FE-5)
 **ADR**: [adr-eng-92719-file-processing-element.md](../adr/adr-eng-92719-file-processing-element.md) - D15 (SysFile
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
-**Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, the clio
-and knowledge drafts are open; the code-review, gate-3 and manual-run findings are fixed in cut 1.6.6.114)
+**Status**: review (the package, clio and knowledge PRs left draft on 2026-10-21 at cut 1.6.6.114; merged by a human package -> clio -> knowledge)
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
