@@ -199,7 +199,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				    "label": "Amount confirmed" },
 				  { "op": "addFlow", "source": "EndA", "target": "EndB", "label": "Carried on" }
 				]
-				"""
+				""",
+			// The addFlow puts EndB below EndA, so the layout-change guard would refuse the whole batch unapplied
+			// and ask for a confirmation. The diagram is not what this test is about, so the re-draw is confirmed.
+			["confirm-layout-change"] = true
 		});
 
 		// Assert
