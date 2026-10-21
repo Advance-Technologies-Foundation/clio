@@ -50,7 +50,8 @@
   ],
   "baseFilter": "TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
   "_processDesignerLane": [
-    "The second TeamCity lane, Team_Atf_ClioMcpE2eProcessDesigner. It deploys its own stand, installs",
+    "The second TeamCity lane, TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner (project \"CLIO MCP Test\").",
+    "It deploys its own stand, installs",
     "CrtProcessBuilder from the clio build under test (install-process-builder in its Prepare step) and runs only",
     "the category below, in parallel with Team_Atf_ClioMcpE2eTests, whose baseFilter excludes that category.",
     "Its selection is derived from the same per-file rules: a full run of the existing lane by a rule is a full",

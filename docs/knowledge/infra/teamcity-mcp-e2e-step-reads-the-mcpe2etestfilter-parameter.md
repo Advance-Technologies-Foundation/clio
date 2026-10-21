@@ -1,5 +1,5 @@
 ---
-description: the TeamCity step "Run MCP e2e tests (.NET)" of Team_Atf_ClioMcpE2eTests and of Team_Atf_ClioMcpE2eProcessDesigner runs --filter "%McpE2eTestFilter%"; each parameter default is that lane's full filter and pull-request runs override it with the selection Select-McpE2eTestFilter.ps1 made for that lane, so a subset-green posts the same commit status as a full-green
+description: the TeamCity step "Run MCP e2e tests (.NET)" of Team_Atf_ClioMcpE2eTests and of TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner runs --filter "%McpE2eTestFilter%"; each parameter default is that lane's full filter and pull-request runs override it with the selection Select-McpE2eTestFilter.ps1 made for that lane, so a subset-green posts the same commit status as a full-green
 applies-to:
   - .github/workflows/teamcity-mcp-e2e.yml
   - .github/scripts/queue-teamcity-build.ps1
@@ -17,9 +17,10 @@ carries a literal filter. Its arguments are
 had before. Nothing in this repository defines that default; the job config does.
 `clio.mcp.e2e/TestSelection/mcp-e2e-selection.json` mirrors it as `baseFilter`, and
 `McpE2eSelectionCoverageTests.Manifest_ShouldKeepTheTeamCityBaseFilter` pins the mirror, not the
-original. The process-designer lane `Team_Atf_ClioMcpE2eProcessDesigner` (ENG-97005) has the same step
-and parameter, defaulting to `TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual`; its
-mirror is `processDesignerLane.baseFilter`, pinned by
+original. The process-designer lane `TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner`
+(ENG-97005, TeamCity project "CLIO MCP Test") has the same step and parameter, defaulting to
+`TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual`; its mirror is
+`processDesignerLane.baseFilter`, pinned by
 `Manifest_ShouldSplitTheProcessDesignerCategoryBetweenTheTwoLanes`.
 
 Pull-request builds queued by `.github/workflows/teamcity-mcp-e2e.yml` send the property
@@ -29,7 +30,7 @@ plus the base filter (`filter`). The process-designer lane gets the selected fix
 ProcessDesigner test plus its own base filter, or that base filter alone on a full run (`pdFilter`).
 VCS-triggered master builds and `workflow_dispatch` runs send nothing and get the defaults. The build
 comment says `selection: full` or `selection: subset`; the commit statuses `CLIO MCP e2e tests (ATF)`
-and `CLIO MCP e2e process designer (ATF)` do not.
+and `CLIO MCP e2e process designer (CLIO MCP Test)` do not.
 
 **Why it is this way** — the full suite is ≈ 41 minutes of test time on a ≈ 48-minute build, and
 most of it cannot be affected by a one-tool pull request. One parameterized plan was chosen over

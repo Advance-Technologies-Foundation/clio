@@ -27,10 +27,13 @@
 #   3. Repo setting Actions -> "Require approval for all external contributors"
 #      (authoritative fork control; the in-file `if:` guard below is only
 #      defense-in-depth). To be confirmed by a repo admin.
-#   4. ENG-97005: TeamCity configuration Team_Atf_ClioMcpE2eProcessDesigner (see below)
-#      with the same Commit Status Publisher, and the TEAMCITY_TOKEN account able to run
-#      it. Has to exist BEFORE the pd-attempt-* jobs reach master, or every pull request
-#      that selects the lane gets a red gate.
+#   4. ENG-97005: TeamCity configuration
+#      TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner (project "CLIO MCP Test",
+#      see below) - created 2026-10-21. Still to do there before the pd-attempt-* jobs
+#      reach master: Run build for the TEAMCITY_TOKEN account in that project (it is not
+#      Team_Atf), and a Commit Status Publisher on a GitHub connection that project can
+#      use. Without the first every pull request that selects the lane gets a red gate;
+#      without the second the lane runs and reports nothing to the pull request.
 #
 # Fixture selection (see the `select` job): the build runs only the fixtures the pull request
 # can affect, chosen by .github/scripts/Select-McpE2eTestFilter.ps1 from the rules in
@@ -41,12 +44,14 @@
 #
 # ENG-97005 - THE PROCESS-DESIGNER LANE. The McpE2E.ProcessDesigner category needs a stand that
 # carries CrtProcessBuilder, and Team_Atf_ClioMcpE2eTests never installs it (its default filter
-# excludes the category). A second configuration, Team_Atf_ClioMcpE2eProcessDesigner, deploys its own
-# stand, installs the archive bundled in the clio build under test (install-process-builder in its
-# Prepare step) and runs only that category, in parallel with the existing lane and under its own
-# commit status, "CLIO MCP e2e process designer (ATF)". The `select` job derives that lane's
-# selection from the same rules (pd_mode / pd_filter), the pd-attempt-* chain queues it exactly the
-# way attempt-* queues the existing lane, and the gate checks both. A rebundle
+# excludes the category). A second configuration,
+# TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner in the TeamCity project "CLIO MCP Test",
+# deploys its own stand, installs the archive bundled in the clio build under test
+# (install-process-builder in its Prepare step) and runs only that category, in parallel with the
+# existing lane and under its own commit status, "CLIO MCP e2e process designer (CLIO MCP Test)".
+# The `select` job derives that lane's selection from the same rules (pd_mode / pd_filter), the
+# pd-attempt-* chain queues it exactly the way attempt-* queues the existing lane, and the gate
+# checks both. A rebundle
 # (clio/CrtProcessBuilder/**) runs the whole category there and nothing on the existing lane, which
 # cannot observe the archive; a change to the install-process-builder command runs the whole category
 # there as well. A manual dispatch queues both lanes in full.
@@ -410,7 +415,7 @@ jobs:
         env:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
-          BUILD_TYPE: Team_Atf_ClioMcpE2eProcessDesigner
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
           BUILD_LABEL: MCP e2e process designer
           # The existing lane's switches plus this lane's own: install the bundled CrtProcessBuilder in Prepare,
           # and fail rather than ignore a test that finds the package missing or too old. Both are the
@@ -451,7 +456,7 @@ jobs:
         env:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
-          BUILD_TYPE: Team_Atf_ClioMcpE2eProcessDesigner
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
           BUILD_LABEL: MCP e2e process designer
           TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio","InstallProcessBuilder":"true","env.McpE2E__RequireProcessBuilder":"true"}'
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
@@ -491,7 +496,7 @@ jobs:
         env:
           TC_URL: https://teamcity-rnd.bpmonline.com
           TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
-          BUILD_TYPE: Team_Atf_ClioMcpE2eProcessDesigner
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
           BUILD_LABEL: MCP e2e process designer
           TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio","InstallProcessBuilder":"true","env.McpE2E__RequireProcessBuilder":"true"}'
           HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
@@ -534,7 +539,7 @@ jobs:
           fi
           if [ "$PD_MODE" = "none" ]; then
             echo "Process-designer lane: no selected fixture carries a McpE2E.ProcessDesigner test. No build was"
-            echo "queued and no 'CLIO MCP e2e process designer (ATF)' status will appear."
+            echo "queued and no 'CLIO MCP e2e process designer (CLIO MCP Test)' status will appear."
           fi
           echo "The 'Select MCP e2e fixtures' job logs the rule that classified each changed file."
       - name: Require that one attempt queued the build
@@ -588,7 +593,7 @@ jobs:
           echo "pd-attempt-3: result=$RESULT_3 queued=${QUEUED_3:-unset} runner=${RUNNER_3:-unknown}"
           if [ "${QUEUED_1:-}" = "true" ] || [ "${QUEUED_2:-}" = "true" ] || [ "${QUEUED_3:-}" = "true" ]; then
             echo "A TeamCity process-designer build is queued. Its result is published onto the PR head commit"
-            echo "by TeamCity's Commit Status Publisher as 'CLIO MCP e2e process designer (ATF)'."
+            echo "by TeamCity's Commit Status Publisher as 'CLIO MCP e2e process designer (CLIO MCP Test)'."
             exit 0
           fi
           echo "::error::No attempt could reach TeamCity, so no process-designer e2e build was queued."

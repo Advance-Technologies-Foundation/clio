@@ -30,8 +30,8 @@ internal static class McpE2ECategories {
 	/// <remarks>
 	/// Both TeamCity lanes filter on it: <c>Team_Atf_ClioMcpE2eTests</c> EXCLUDES it (the default of its
 	/// <c>McpE2eTestFilter</c>, mirrored as <c>baseFilter</c> in <c>TestSelection/mcp-e2e-selection.json</c>),
-	/// and <c>Team_Atf_ClioMcpE2eProcessDesigner</c>, the lane that installs CrtProcessBuilder, runs ONLY it
-	/// (<c>processDesignerLane.baseFilter</c>). See
+	/// and <c>TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner</c>, the lane that installs
+	/// CrtProcessBuilder, runs ONLY it (<c>processDesignerLane.baseFilter</c>). See
 	/// <c>docs/knowledge/infra/mcp-e2e-processdesigner-category-splits-the-suite-between-two-teamcity-lanes.md</c>:
 	/// renaming this value needs both TeamCity defaults changed in the same change. To run the category
 	/// deliberately, use a stand with CrtProcessBuilder and

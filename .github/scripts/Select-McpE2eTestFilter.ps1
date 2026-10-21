@@ -13,8 +13,9 @@
 #   decisions - one line per changed file: the rule that classified it and the fixtures it
 #             selected, so the choice is auditable from the workflow log.
 #   pdMode, pdFilter, pdFixtures - the same three for the process-designer lane
-#             (Team_Atf_ClioMcpE2eProcessDesigner), which runs only the McpE2E.ProcessDesigner category on a
-#             stand that carries CrtProcessBuilder. pdMode is "full" whenever mode would be full by a rule, or a
+#             (TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner), which runs only the
+#             McpE2E.ProcessDesigner category on a stand that carries CrtProcessBuilder.
+#             pdMode is "full" whenever mode would be full by a rule, or a
 #             file under processDesignerLane.exclusivePaths or fullRunPaths changed; otherwise the selected
 #             fixtures that carry a test in the category, or "none". pdFilter is never empty unless pdMode is "none".
 #

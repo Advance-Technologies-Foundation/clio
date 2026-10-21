@@ -1,5 +1,5 @@
 ---
-description: Team_Atf_ClioMcpE2eProcessDesigner installs CrtProcessBuilder with install-process-builder from the clio.dll it just built from the branch under test, in a Prepare step that exists only in TeamCity, and sets McpE2E__RequireProcessBuilder=true so a missing or outdated package fails the run instead of ignoring the whole category on a green build
+description: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner installs CrtProcessBuilder with install-process-builder from the clio.dll it just built from the branch under test, in a Prepare step that exists only in TeamCity, and sets McpE2E__RequireProcessBuilder=true so a missing or outdated package fails the run instead of ignoring the whole category on a green build
 applies-to:
   - .github/workflows/teamcity-mcp-e2e.yml
   - clio.mcp.e2e/Support/Mcp/ProcessDesignerE2ESupport.cs

@@ -225,7 +225,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		category.Should().Be(Clio.Mcp.E2E.Support.Configuration.McpE2ECategories.ProcessDesigner,
 			because: "the fixtures carry the compiled constant, and a manifest that spells the category differently selects none of them");
 		string.Join('&', laneClauses).Should().Be("TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
-			because: "this is the default of the McpE2eTestFilter parameter of Team_Atf_ClioMcpE2eProcessDesigner; changing one side without the other changes what that lane's master builds run");
+			because: "this is the default of the McpE2eTestFilter parameter of TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner; changing one side without the other changes what that lane's master builds run");
 		existingClauses.Should().Contain($"TestCategory!={category}",
 			because: "the existing lane's stand has no CrtProcessBuilder, so it must exclude the category the process-designer lane runs");
 		laneClauses.Should().Contain(existingClauses.Where(clause => clause != $"TestCategory!={category}"),
@@ -233,13 +233,13 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("Each queue chain of the trigger workflow sends its own lane's selection to its own configuration - attempt-* queue Team_Atf_ClioMcpE2eTests with filter and mode, pd-attempt-* queue Team_Atf_ClioMcpE2eProcessDesigner with pd_filter and pd_mode - and the gate waits for all six jobs.")]
+	[Description("Each queue chain of the trigger workflow sends its own lane's selection to its own configuration - attempt-* queue Team_Atf_ClioMcpE2eTests with filter and mode, pd-attempt-* queue TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner with pd_filter and pd_mode - and the gate waits for all six jobs.")]
 	public void TriggerWorkflow_ShouldQueueEachLaneWithItsOwnSelection() {
 		// Arrange
 		Dictionary<object, object> jobs = ReadWorkflowJobs(TriggerWorkflowPath);
 		(string Prefix, string BuildType, string Filter, string Mode)[] lanes = [
 			("attempt-", "Team_Atf_ClioMcpE2eTests", "${{ needs.select.outputs.filter }}", "${{ needs.select.outputs.mode }}"),
-			("pd-attempt-", "Team_Atf_ClioMcpE2eProcessDesigner", "${{ needs.select.outputs.pd_filter }}", "${{ needs.select.outputs.pd_mode }}")
+			("pd-attempt-", "TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner", "${{ needs.select.outputs.pd_filter }}", "${{ needs.select.outputs.pd_mode }}")
 		];
 
 		// Act

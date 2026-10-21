@@ -1,5 +1,5 @@
 ---
-description: the NUnit category "McpE2E.ProcessDesigner" splits clio.mcp.e2e between two TeamCity lanes - Team_Atf_ClioMcpE2eTests excludes it and Team_Atf_ClioMcpE2eProcessDesigner runs only it, each through the default of its McpE2eTestFilter parameter - so renaming the constant breaks both lanes silently unless both TeamCity defaults change with it
+description: the NUnit category "McpE2E.ProcessDesigner" splits clio.mcp.e2e between two TeamCity lanes - Team_Atf_ClioMcpE2eTests excludes it and TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner runs only it, each through the default of its McpE2eTestFilter parameter - so renaming the constant breaks both lanes silently unless both TeamCity defaults change with it
 applies-to:
   - clio.mcp.e2e/Support/Configuration/McpE2ECategories.cs
   - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
@@ -14,7 +14,7 @@ date: 2026-10-20
 tests of `TriggerSmokeToolE2ETests` on 2026-10-20. Two TeamCity configurations read the category, each
 through the default of its own `McpE2eTestFilter` parameter: `Team_Atf_ClioMcpE2eTests` excludes it
 (`TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual`, its stand has no CrtProcessBuilder),
-and `Team_Atf_ClioMcpE2eProcessDesigner` runs only it
+and `TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner` runs only it
 (`TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual`). The repository mirrors both defaults
 in `mcp-e2e-selection.json` (`baseFilter`, `processDesignerLane.baseFilter`), pull-request runs send the
 mirrors, and `McpE2eSelectionCoverageTests` pins the mirrors to the compiled constant and to each other.
