@@ -4909,8 +4909,8 @@ stories:
     note: >-
       ENG-103937 Process file element: SysFile attachment storage. Measurements recorded on 2026-10-20 (M7 done, M8 and
       M23 a-d PASS, M21 captured, M25 dropped by the owner): SysFile lifts as the Object source and as the target of
-      all three variants. Package cut 1.6.6.112 (draft PR 101, the code-review fixes); ST-08 and DT-04 ran on
-      1.6.6.110, SC-4 again on 1.6.6.111, the Process file e2e on 1.6.6.112; this clio PR rebundles it with no floor
+      all three variants. Package cut 1.6.6.113 (draft PR 101, the code-review and gate-3 fixes); ST-08 and DT-04 ran on
+      1.6.6.110, SC-4 again on 1.6.6.111, the Process file e2e on 1.6.6.113 (56/56); this clio PR rebundles it with no floor
       raise. The knowledge PR (SF.4, #300) is a draft and splits off process-files-parameter. The story file also holds the Story-level Definition of Done
       of ENG-92719. Done carried by the next clio PR that touches this file (by link L5 the first clio PR of ENG-95985
       Send email attachments).

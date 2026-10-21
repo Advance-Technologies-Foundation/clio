@@ -9,7 +9,7 @@ share of FE-1, FE-5)
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, the clio
-and knowledge drafts are open; the code-review findings of 2026-10-20 are fixed in cut 1.6.6.112)
+and knowledge drafts are open; the code-review and gate-3 findings are fixed in cut 1.6.6.113)
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -259,13 +259,16 @@ here, because this story is the last of its main chain. ENG-92719 closes when al
   upload stores `RecordSchemaName` and Type File; an Object element copied it); M21 captured; M23 (a) PASS 3 rows,
   (b) PASS 1 copy, (c) PASS the `.docx`, (d) PASS 2 rows, all stamped and visible in the Freedom UI list; M25 dropped.
 - Package cut claimed: 1.6.6.110 (2026-10-20, superseded by the owner's describe-issue decision), 1.6.6.111
-  (2026-10-20, superseded by the code-review fixes) and 1.6.6.112 (2026-10-20), all in ENG-92719 comment 550565;
-  producing commit `7840df0f`, restamp `7d9df4c0`, tag `crtprocessbuilder-1.6.6.112`; package PR
+  (2026-10-20, superseded by the code-review fixes), 1.6.6.112 (2026-10-20, superseded by the gate-3 fixes) and
+  1.6.6.113 (2026-10-21), all in ENG-92719 comment 550565; producing commit `a1f8f937`, restamp `c05eea92`, tag
+  `crtprocessbuilder-1.6.6.113`; package PR
   https://creatio.ghe.com/engineering/crt-process-builder/pull/101 (draft).
-- Tests passing: package 4315/4315 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
-  the 1.6.6.112 bundle; e2e on 1.6.6.112 (net10.0): ProcessFileElementToolE2ETests and
-  ProcessFileReportAndParameterToolE2ETests 52 passed, 3 Ignored (the designer fixtures are absent); knowledge
-  539/539.
+- Tests passing: package 4343/4343 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
+  the 1.6.6.112 bundle, bundled-package guards 89/89 on 1.6.6.113; e2e on 1.6.6.113 (net10.0, the designer fixture
+  rebuilt on 2026-10-20): ProcessFileElementToolE2ETests and ProcessFileReportAndParameterToolE2ETests 56 passed,
+  Ignored 0; knowledge 539/539. Open: the designer-fixture first-save case failed once on F2's resource rows right
+  after the rebuild (diff not captured); it passes now only because the fixture is builder-saved, so the first-save
+  condition needs one more run on a freshly designer-built fixture.
 - Stand records (on 1.6.6.110; SC-4 repeated on 1.6.6.111, identical): ST-08 (a) 3 SysFile rows on an Account address,
   `RecordSchemaName = AccountAddress`; (b) 3 ContactFile copies through the Process variant; (c) the Freedom UI upload
   copied; the Contact's Freedom UI list shows all four. SC-4 equal except the accepted differences. DT-04 (twin and
