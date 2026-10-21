@@ -104,6 +104,9 @@ public sealed class ProcessFileElementToolE2ETests {
 	/// <summary>The floor of the setFilter refusal of a SysFile record scope: 1.6.6.112 refuses it.</summary>
 	private const string SysFileScopeRefusalMinimumPackageVersion = "1.6.6.112";
 
+	/// <summary>The floor of the notice for a SysFile filter with no record: 1.6.6.114 raises it.</summary>
+	private const string SysFileUnscopedNoticeMinimumPackageVersion = "1.6.6.114";
+
 	/// <summary>An object with no attachment object of its own and a primary display column (Name): a lookup scope.</summary>
 	private const string SysFileLookupRecordObject = "City";
 
@@ -1007,6 +1010,42 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "the refusal names the member that takes the record scope");
 			Element(await DescribeGraphAsync(context, processName), "OF1")["filter"].Should().BeNull(
 				because: "a refused setFilter saves nothing");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("TC-I-81: a filter on a SysFile source with no record (no attachments.recordId and no RecordId condition) reads the files of EVERY record of the object, so setFilter saves it but warns, naming attachments.recordId; describe reports the same as an issue. Ignored below CrtProcessBuilder 1.6.6.114.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("a SysFile filter with no record is saved with a warning")]
+	public async Task ModifyBusinessProcess_Should_WarnOfASysFileFilterWithNoRecord() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
+			"Process file element (SysFile filter with no record)", SysFileUnscopedNoticeMinimumPackageVersion,
+			TimeSpan.FromMinutes(8));
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("SysUnscoped");
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement($$"""
+					{ "attachments": { "object": "{{SysFileRecordObject}}" }, "action": "useInProcess" }
+					"""))), "the unscoped SysFile element", SysFileUnscopedNoticeMinimumPackageVersion);
+
+			// Act
+			CallToolResult filtered = await ModifyAsync(context, processName, """
+				[ { "op": "setFilter", "elementName": "OF1",
+				    "filter": { "logicalOperation": "and",
+				      "conditions": [ { "column": "Name", "comparison": "contains", "value": "invoice" } ] } } ]
+				""", SysFileUnscopedNoticeMinimumPackageVersion);
+			JsonObject block = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "OF1"));
+
+			// Assert
+			ShouldHaveLanded(filtered, "a filter on a SysFile column is a legal filter, only an unscoped one");
+			WarningText(filtered).Should().Contain("with no record ('attachments.recordId')",
+				because: "the caller is told the filter selects among the files of every record of the object");
+			Strings(block["issues"]).Should().Contain(issue => issue.Contains("EVERY", StringComparison.Ordinal),
+				because: "describe names the same hazard on the stored element");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}

@@ -9,7 +9,7 @@ share of FE-1, FE-5)
 half), D16 (SysFile scope and sort), D12 (SysFile retarget), D20, D26 (no floor raise)
 **Test plan**: [tp-eng-92719-file-processing-element.md](../test-plans/tp-eng-92719-file-processing-element.md)
 **Status**: in-progress (the measurements are recorded, the package draft is cut and proven on the stand, the clio
-and knowledge drafts are open; the code-review and gate-3 findings are fixed in cut 1.6.6.113)
+and knowledge drafts are open; the code-review, gate-3 and manual-run findings are fixed in cut 1.6.6.114)
 **Size**: M (about 3-8 h of AI-agent time and 4-8 h of the owner's time, most of it the designer probes; about 2-4
 working days of calendar; the package PR is estimated at 1.2-2k added lines)
 **Repo**: crt-process-builder, then clio, then clio-knowledge (one PR each, titled
@@ -260,11 +260,17 @@ here, because this story is the last of its main chain. ENG-92719 closes when al
   upload stores `RecordSchemaName` and Type File; an Object element copied it); M21 captured; M23 (a) PASS 3 rows,
   (b) PASS 1 copy, (c) PASS the `.docx`, (d) PASS 2 rows, all stamped and visible in the Freedom UI list; M25 dropped.
 - Package cut claimed: 1.6.6.110 (2026-10-20, superseded by the owner's describe-issue decision), 1.6.6.111
-  (2026-10-20, superseded by the code-review fixes), 1.6.6.112 (2026-10-20, superseded by the gate-3 fixes) and
-  1.6.6.113 (2026-10-21), all in ENG-92719 comment 550565; producing commit `a1f8f937`, restamp `c05eea92`, tag
-  `crtprocessbuilder-1.6.6.113`; package PR
+  (2026-10-20, superseded by the code-review fixes), 1.6.6.112 (2026-10-20, superseded by the gate-3 fixes),
+  1.6.6.113 (2026-10-21, superseded by the manual-run fixes) and 1.6.6.114 (2026-10-21), all in ENG-92719 comment
+  550565; producing commit `8e795a44`, restamp `4bb6dd25`, tag `crtprocessbuilder-1.6.6.114`; package PR
   https://creatio.ghe.com/engineering/crt-process-builder/pull/101 (draft).
-- Tests passing: package 4343/4343 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
+- Manual test cases TC-01..TC-10 (Jira, business tasks) run on 1.6.6.113 by an isolated agent with no shared memory
+  (2026-10-21): 7 PASS, TC-04 and TC-08 PARTIAL (TC-04's expected file name was over-specified - fixed in Jira; TC-08:
+  the agent did not relay the "filter cleared" notice), TC-10 FAIL (an unscoped SysFile filter was built silently ->
+  1.6.6.114 warns, and describe names it). The empty-record notice now names only the target's kind (agents had told
+  users a Contact target goes to SysFile). Results and the call analysis: the shared notes folder `tc103937/`.
+- Tests passing (1.6.6.114): package 4410/4410 on `-c dev-nf` and `-c dev-n8`; Process file e2e 57/57 on net10.0
+  (the 56 of 1.6.6.113 plus the unscoped-SysFile notice case). Earlier: package 4343/4343 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
   the 1.6.6.112 bundle, bundled-package guards 89/89 on 1.6.6.113; e2e on 1.6.6.113 (net10.0, the designer fixture
   rebuilt on 2026-10-20): ProcessFileElementToolE2ETests and ProcessFileReportAndParameterToolE2ETests 56 passed,
   Ignored 0; knowledge 539/539. The designer-fixture first-save case: on a fresh designer build the first builder
