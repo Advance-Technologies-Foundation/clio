@@ -220,8 +220,9 @@ after an approval.
       lifted only for the cases that passed (all of them).
 - [x] Package tests green on both configurations; the capture doc checked against M21; restamped last; tag verified on
       the remote.
-- [ ] clio: rebundle with no floor raise; the SysFile e2e (see "Testing") Passed with Ignored = 0 (today 1 Ignored:
-      the designer-fixture case, `UsrFpOaDesignerFixture` absent); story 1's
+- [ ] clio: rebundle with no floor raise; the SysFile e2e (see "Testing") Passed with Ignored = 0 on net10.0 (met
+      2026-10-21; on net8.0 the designer-fixture first-save case is Ignored by design - it spends the fixture's one
+      first save, so it runs on one framework only); story 1's
       refusal e2e re-pointed; the temporary refusal record deleted and the storage record updated; full unit suite
       green; the PR-description statements of story 1.
 - [ ] clio-knowledge: the storage section rewritten; the knowledge suites green; published, and `info-knowledge` shows
@@ -266,9 +267,10 @@ here, because this story is the last of its main chain. ENG-92719 closes when al
 - Tests passing: package 4343/4343 on `-c dev-nf` and `-c dev-n8`; clio unit (Command, McpServer, Common) 15310/0 on
   the 1.6.6.112 bundle, bundled-package guards 89/89 on 1.6.6.113; e2e on 1.6.6.113 (net10.0, the designer fixture
   rebuilt on 2026-10-20): ProcessFileElementToolE2ETests and ProcessFileReportAndParameterToolE2ETests 56 passed,
-  Ignored 0; knowledge 539/539. Open: the designer-fixture first-save case failed once on F2's resource rows right
-  after the rebuild (diff not captured); it passes now only because the fixture is builder-saved, so the first-save
-  condition needs one more run on a freshly designer-built fixture.
+  Ignored 0; knowledge 539/539. The designer-fixture first-save case: on a fresh designer build the first builder
+  save dropped the template parameter captions of the inactive cultures (F2 379 -> 67 rows, F1 371 -> 59, the 4 active
+  cultures kept, no value changed); the owner chose to tolerate exactly those rows (2026-10-21), and the case then
+  passed on net10.0 on a fresh designer build (`654dba7be`). It is net10.0-only by design (Ignored on net8.0).
 - Stand records (on 1.6.6.110; SC-4 repeated on 1.6.6.111, identical): ST-08 (a) 3 SysFile rows on an Account address,
   `RecordSchemaName = AccountAddress`; (b) 3 ContactFile copies through the Process variant; (c) the Freedom UI upload
   copied; the Contact's Freedom UI list shows all four. SC-4 equal except the accepted differences. DT-04 (twin and
