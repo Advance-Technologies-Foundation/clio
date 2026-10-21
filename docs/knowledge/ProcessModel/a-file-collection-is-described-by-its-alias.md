@@ -17,8 +17,11 @@ bindings are stored by UId, so the original keeps working, and a replayed mappin
 item name is refused with the item list.
 
 **Why it is this way** — `FileCollection` is the token the write side accepts, so describe then create
-round-trips. The platform name `CompositeObjectList` has no shape: the only generic way back is
-`typeFromElement`, and a file collection declared by type has no source element to mirror.
+round-trips even for a caller that sends back only name, type and direction (the e2e round trip does).
+Once the write side reads `itemProperties` (the declared item shape, at the create floor that added it), the
+platform name would round-trip too, but only for a caller that also sends the items back. The write side
+accepts `type: FileCollection` beside its own one-file `itemProperties`, because describe emits both; any
+other shape beside the alias is refused.
 
 **What breaks if you ignore it** — the predictable "simplification" is to report the platform type
 name. A caller that replays it gets a bare `Collection` with no items: it saves green, binds nothing

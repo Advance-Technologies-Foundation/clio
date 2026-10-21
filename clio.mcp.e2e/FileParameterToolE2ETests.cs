@@ -521,7 +521,145 @@ public sealed class FileParameterToolE2ETests {
 
 	#endregion
 
+	#region Methods: Tests - declared item shape
+
+	[Test]
+	[Description("create-business-process declares a Collection with itemProperties - a Contact lookup, a date-time, a long text and a nested Collection with one text item - and a Collection with one File item; describe reads them back: the first as CompositeObjectList, Out by default, with exactly those items in order, each Variable, untagged, the lookup's object and the nested item kept; the second as FileCollection, since FileCollection is that same shape. An older CrtProcessBuilder would drop the items silently, so this read-back is the evidence that the shape survives.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process declares a Collection item shape and describe reads it back")]
+	public async Task CreateBusinessProcess_Should_DeclareACollectionItemShape_AndReadItBack() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("Shape");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName,
+				BuildPlainDescriptor(processName, ItemShapeParametersJson));
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a declared item shape is part of an ordinary create call");
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+			JsonObject rows = ProcessParameter(graph, "Rows");
+			Text(rows, "type").Should().Be("CompositeObjectList", because: "a record collection keeps the platform type");
+			Text(rows, "direction").Should().Be("Out", because: "a Collection keeps its Out default with or without items");
+			Text(rows, "tag").Should().BeNull(because: "a declared collection carries no provenance tag");
+			ItemShape(rows).Should().Equal(
+				["Contact:Lookup:Variable", "CreatedOn:DateTime:Variable", "Message:LongText:Variable",
+					"Parts:CompositeObjectList:Variable[Text:ShortText:Variable]"],
+				because: "the declared items come back in order, with their types and the Variable default");
+			Text(Item(rows, "Contact"), "referenceSchema").Should().Be("Contact",
+				because: "a lookup item keeps the object it references");
+			Objects(rows["itemProperties"]).Should().OnlyContain(item => Text(item, "tag") == null,
+				because: "declared items have no column identity");
+			ShouldBeAFileCollection(ProcessParameter(graph, "Docs"), "Variable");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("The describe output of declared collections, sent back AS IT IS - every member describe reports, uid, source and isRequired included - rebuilds the same shapes in a second process: names, types, directions, nested items and the lookup's object. The describe-only members are ignored by the write side.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process rebuilds a described item shape unchanged")]
+	public async Task CreateBusinessProcess_Should_RebuildTheDescribedItemShape_Unchanged() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string firstName = NewProcessName("ShapeTripA");
+			string secondName = NewProcessName("ShapeTripB");
+			await ArrangeProcessAsync(context, created, firstName,
+				BuildPlainDescriptor(firstName, ItemShapeParametersJson), "the process the shapes are read from");
+			JsonArray described = (JsonArray)(await DescribeGraphAsync(context, firstName))["parameters"]!.DeepClone();
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, secondName,
+				BuildPlainDescriptor(secondName, described.ToJsonString()));
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a described collection replays as it is");
+			JsonObject second = await DescribeGraphAsync(context, secondName);
+			foreach (string name in new[] { "Rows", "Docs" }) {
+				JsonObject before = Named(Objects(described), name, "process parameter", new JsonObject());
+				JsonObject after = ProcessParameter(second, name);
+				Text(after, "type").Should().Be(Text(before, "type"), because: $"'{name}' rebuilds with its type");
+				Text(after, "direction").Should().Be(Text(before, "direction"), because: $"'{name}' keeps its direction");
+				ItemShape(after).Should().Equal(ItemShape(before), because: $"'{name}' rebuilds the same items");
+			}
+			Text(Item(ProcessParameter(second, "Rows"), "Contact"), "referenceSchema").Should().Be("Contact",
+				because: "the lookup item's object survives the round trip");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("modify-business-process refuses an item shape the platform cannot hold, naming the item: an item of type Binary, a collection nested a third level deep, and setParameter itemProperties (a collection is not reshaped in place). None of the refused edits lands: describe shows no new parameter and the existing collection keeps its items.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a Binary item, a third collection level and an in-place reshape")]
+	public async Task ModifyBusinessProcess_Should_RefuseAnUnholdableItemShape() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("ShapeRefuse");
+			await ArrangeProcessAsync(context, created, processName, BuildPlainDescriptor(processName, """
+				[ { "name": "Rows", "type": "Collection", "itemProperties": [ { "name": "Name", "type": "Text" } ] } ]
+				"""), "the process the refused edits are sent to");
+
+			// Act
+			CallToolResult binary = await ModifyAsync(context, processName, """
+				[ { "op": "addParameter", "parameter": { "name": "Blobs", "type": "Collection",
+				    "itemProperties": [ { "name": "Content", "type": "Binary" } ] } } ]
+				""");
+			CallToolResult deep = await ModifyAsync(context, processName, """
+				[ { "op": "addParameter", "parameter": { "name": "Deep", "type": "Collection",
+				    "itemProperties": [ { "name": "Parts", "type": "Collection",
+				      "itemProperties": [ { "name": "Inner", "type": "Collection" } ] } ] } } ]
+				""");
+			CallToolResult reshape = await ModifyAsync(context, processName, """
+				[ { "op": "setParameter", "parameterName": "Rows",
+				    "parameterUpdate": { "itemProperties": [ { "name": "Other", "type": "Integer" } ] } } ]
+				""");
+
+			// Assert
+			ShouldBeRefused(binary, "a process parameter cannot hold bytes at any level");
+			LogText(binary).Should().Contain("Item 'Blobs.Content'", because: "the refusal names the item by its path");
+			LogText(binary).Should().Contain("not supported", because: "and keeps the type refusal's words");
+			ShouldBeRefused(deep, "two collection levels are the supported depth");
+			LogText(deep).Should().Contain("Item 'Deep.Parts.Inner'", because: "the refusal names the item by its path");
+			ShouldBeRefused(reshape, "setParameter does not reshape a collection");
+			LogText(reshape).Should().Contain("Remove the parameter and add it again",
+				because: "the refusal names the route that works");
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+			ParameterNames(graph).Should().Equal(["Rows"], because: "none of the refused additions landed");
+			ItemShape(ProcessParameter(graph, "Rows")).Should().Equal(["Name:ShortText:Variable"],
+				because: "the refused reshape left the collection's items as they were");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	#endregion
+
 	#region Methods: Descriptors
+
+	// The declared shapes the item-shape cases start from: a record collection with a lookup, a date-time, a long
+	// text and a nested collection; and a Collection with one File item, which is the FileCollection shape.
+	private const string ItemShapeParametersJson = """
+		[
+		  { "name": "Rows", "type": "Collection", "itemProperties": [
+		      { "name": "Contact", "type": "Lookup", "referenceSchema": "Contact" },
+		      { "name": "CreatedOn", "type": "Date-time" },
+		      { "name": "Message", "type": "Long text" },
+		      { "name": "Parts", "type": "Collection", "itemProperties": [ { "name": "Text", "type": "Text" } ] }
+		  ] },
+		  { "name": "Docs", "type": "Collection", "direction": "Variable",
+		    "itemProperties": [ { "name": "File", "type": "File" } ] }
+		]
+		""";
 
 	// The three parameters every declaration case starts from: one File, a FileCollection left to its default
 	// direction, and a FileCollection with an explicit In.
@@ -810,6 +948,19 @@ public sealed class FileParameterToolE2ETests {
 
 	/// <summary>What the round trip compares of one described parameter.</summary>
 	private sealed record ParameterShape(string? Name, string? Type, string? Direction, string Items);
+
+	/// <summary>
+	/// The items of a described collection as <c>name:type:direction</c>, in order, with a nested collection's own
+	/// items in brackets after it - the whole declared shape in one comparable list.
+	/// </summary>
+	private static IReadOnlyList<string> ItemShape(JsonObject collection) =>
+		Objects(collection["itemProperties"])
+			.Select(item => {
+				IReadOnlyList<string> nested = ItemShape(item);
+				string shape = $"{Text(item, "name")}:{Text(item, "type")}:{Text(item, "direction")}";
+				return nested.Count == 0 ? shape : $"{shape}[{string.Join(",", nested)}]";
+			})
+			.ToList();
 
 	#endregion
 

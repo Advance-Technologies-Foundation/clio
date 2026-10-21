@@ -271,6 +271,16 @@ public sealed class ToolContractPayloadBudgetTests {
 	// bytes), a rule the expression paragraph keeps and process-formulas owns. Re-measured by lowering the ceiling:
 	// modify-business-process 35016, create-business-process 34973, describe-business-process 34769 - 56, 99 and 303
 	// bytes of headroom.
+	//
+	// ENG-103162 (2026-10-21, the declared item shape) rewrote the same clause in create's parameters[] and modify's
+	// addParameter: "; mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type
+	// Collection is an opaque list with no shape" became "or itemProperties [{name, type, direction?, caption?,
+	// referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested
+	// Collection level)" (+51 bytes each, no apostrophe so no ' escape). Modify went to 35067, 5 bytes of headroom,
+	// and paid by SWAP: setParameter's re-mirror clause dropped ", both sides must be collections, and a shapeless
+	// source is refused here too" (76 bytes), two refusals the server words loudly and process-parameters states.
+	// Re-measured by lowering the ceiling: create-business-process 35024, modify-business-process 34991,
+	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

@@ -457,6 +457,25 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The create contract's parameters[] clause offers itemProperties to declare the columns of a Collection, with its per-item keys, the Variable item default and the one nested level. It is the only place an agent learns that a collection no output can be mirrored from can still be shaped, and the guidance gates on this exact wording, so a trim that drops it sends agents back to a shapeless collection.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheDeclaredItemShape_InTheParametersClause() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolDescription.Should().Contain("or itemProperties [{name, type, direction?, caption?, referenceSchema?, "
+				+ "itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested "
+				+ "Collection level)",
+			because: "the declared item shape, its keys and its two limits are stated where the parameters are");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The create contract names the fileProcessing element type (not its never-emitted processFile alias), its fileProcessing block and the three groups that select its variant - attachments, report and files - and routes the block to process-files; its prompt says the group is the variant and that a generic userTask naming any of the three Process file tasks is refused. No other test pins the token, so a later description trim would drop it unseen and an agent would build the generic userTask the server refuses.")]
 	public void CreateBusinessProcessTool_ShouldOfferTheFileProcessingElementAndRouteToItsGuide() {
 		// Arrange

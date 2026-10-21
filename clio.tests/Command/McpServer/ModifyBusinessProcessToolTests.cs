@@ -671,6 +671,24 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The modify contract's addParameter offers itemProperties to declare the columns of a Collection, with its per-item keys, the Variable item default and the one nested level - the same clause as create, so the two tools cannot teach different shapes.")]
+	public void ModifyBusinessProcess_Description_ShouldOfferTheDeclaredItemShape_InAddParameter() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		description.Should().Contain("or itemProperties [{name, type, direction?, caption?, referenceSchema?, "
+				+ "itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested "
+				+ "Collection level)",
+			because: "the declared item shape, its keys and its two limits are stated where addParameter is");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The modify contract and its prompt offer setTracing with its one argument and send the caller to process-tracing (ENG-102111): a traced run stores every parameter value, so the always-loaded text must name the switch AND where its costs are explained, or an agent switches it on without telling the user.")]
 	public void ModifyBusinessProcess_Description_ShouldOfferSetTracingAndRouteToItsGuide() {
 		// Arrange
