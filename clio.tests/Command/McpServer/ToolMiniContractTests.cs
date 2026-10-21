@@ -184,7 +184,7 @@ public sealed class ToolMiniContractTests {
 		// Arrange
 		IToolCommandResolver resolver = Substitute.For<IToolCommandResolver>();
 		ISchemaEnrichmentService enrichment = Substitute.For<ISchemaEnrichmentService>();
-		CreateEntitySchemaTool tool = new(null!, ConsoleLogger.Instance, resolver, enrichment);
+		CreateEntitySchemaTool tool = new(null!, ConsoleLogger.Instance, resolver, new OptionSuggestionService(), enrichment);
 
 		// Act
 		CommandExecutionResult empty = await tool.CreateEntitySchema(

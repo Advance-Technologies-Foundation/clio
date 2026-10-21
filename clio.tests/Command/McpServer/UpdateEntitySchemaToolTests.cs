@@ -50,7 +50,7 @@ public class UpdateEntitySchemaToolTests {
 		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(expectedDataForge);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService(), enrichmentService);
 		UpdateEntitySchemaArgs args = BuildArgs("UsrVehicle", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrColor", Type: "ShortText",
 				TitleLocalizations: Title("Color")),
@@ -76,7 +76,7 @@ public class UpdateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
 				TitleLocalizations: Title("Status"))
@@ -104,7 +104,7 @@ public class UpdateEntitySchemaToolTests {
 		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Throws(new System.Exception("DataForge unavailable"));
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService(), enrichmentService);
 		UpdateEntitySchemaArgs args = BuildArgs("UsrVehicle", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrPlate", Type: "ShortText",
 				TitleLocalizations: Title("Plate"))
@@ -133,7 +133,7 @@ public class UpdateEntitySchemaToolTests {
 		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(new ApplicationDataForgeResult(Used: true, Health: null, Status: null, Coverage: null, Warnings: [], ContextSummary: null));
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService(), enrichmentService);
 		UpdateEntitySchemaArgs args = BuildArgs("UsrFleet", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrMake", Type: "ShortText",
 				TitleLocalizations: Title("Make")),
@@ -168,7 +168,7 @@ public class UpdateEntitySchemaToolTests {
 		enrichmentService.Enrich(Arg.Any<string>(), Arg.Any<IReadOnlyList<string>>(),
 				Arg.Any<IReadOnlyList<string>>())
 			.Returns(new ApplicationDataForgeResult(Used: true, Health: null, Status: null, Coverage: null, Warnings: [], ContextSummary: null));
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, enrichmentService);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService(), enrichmentService);
 		UpdateEntitySchemaArgs args = BuildArgs("UsrFleet", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrDriver", Type: "Lookup",
 				ReferenceSchemaName: "Contact", TitleLocalizations: Title("Driver")),
@@ -199,7 +199,7 @@ public class UpdateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
 				TitleLocalizations: Title("Status"))
@@ -224,7 +224,7 @@ public class UpdateEntitySchemaToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>())
 			.Returns(command);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		UpdateEntitySchemaArgs args = BuildArgs("UsrOrder", new[] {
 			new UpdateEntitySchemaOperationArgs("add", "UsrStatus", Type: "ShortText",
 				TitleLocalizations: Title("Status"))
@@ -248,7 +248,7 @@ public class UpdateEntitySchemaToolTests {
 		FakeUpdateEntitySchemaCommand command = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		UpdateEntitySchemaArgs args = BuildArgs("labLanguage", operations: null);
 
 		// Act
@@ -274,7 +274,7 @@ public class UpdateEntitySchemaToolTests {
 		FakeUpdateEntitySchemaCommand command = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<UpdateEntitySchemaCommand>(Arg.Any<EnvironmentOptions>()).Returns(command);
-		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		UpdateEntitySchemaTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		UpdateEntitySchemaArgs args = BuildArgs("labLanguage", []);
 
 		// Act

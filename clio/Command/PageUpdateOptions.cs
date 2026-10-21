@@ -171,6 +171,26 @@
 		internal string? DetectionDidNotRunWarning { get; set; }
 
 		/// <summary>
+		/// Gets or sets the conditional-baseline warning that <see cref="IPageBaselineGuard.TryArm"/> added for an
+		/// unpinned selector save, or <c>null</c> when it added none. <see cref="PageBaselineGuard.ForSaveOutcome"/>
+		/// replaces exactly that text with what actually happened once the target is resolved.
+		/// </summary>
+		internal string? ConditionalBaselineWarning { get; set; }
+
+		/// <summary>
+		/// Gets or sets where a save carrying a conditional baseline actually resolved, as a noun phrase, or
+		/// <c>null</c> when no conditional baseline was carried or the target was never resolved.
+		/// </summary>
+		internal string? ResolvedWriteTarget { get; set; }
+
+		/// <summary>
+		/// Gets or sets whether the external-modification check compared the resolved target with a baseline:
+		/// <c>true</c> when it did, <c>false</c> when the write was let through without a comparison, and
+		/// <c>null</c> when the save failed before the target was resolved.
+		/// </summary>
+		internal bool? ConflictCheckApplied { get; set; }
+
+		/// <summary>
 		/// Gets or sets a value indicating whether the save request was sent and no parsed reply came back, so
 		/// the write may have landed.
 		/// </summary>
@@ -265,7 +285,10 @@
 		/// <param name="response">Structured command response.</param>
 		/// <returns><c>true</c> when the page was updated successfully; otherwise <c>false</c>.</returns>
 		public bool TryUpdatePage(PageUpdateOptions options, out PageUpdateResponse response) {
+			options.ConflictCheckApplied = null;
+			options.ResolvedWriteTarget = null;
 			bool succeeded = TryUpdatePageCore(options, out response);
+			response?.MarkConflictCheck(options.ConflictCheckApplied);
 			// GH-1150: stamped HERE rather than at each failure site, because the failure sites upstream of the
 			// dry-run branch outnumber the ones inside it - body-file load, required-field, common-input,
 			// context resolution, external-modification and input validation all return before the mode is ever
@@ -840,6 +863,12 @@
 				SchemaUIdsMatch(options.ConditionalBaselineSchemaUId, context.EditableSchemaUId)
 				|| SchemaUIdsMatch(options.ConditionalBaselineDesignPackageUId, context.DesignPackageUId);
 			if (!targetIsTheBaselinePage) {
+				// Recorded so the response can name where an unchecked write went (ENG-103711): without it the
+				// caller only had the pre-save condition and could not tell that the save was unchecked.
+				if (!string.IsNullOrWhiteSpace(options.ConditionalBaselineSchemaUId)
+					|| !string.IsNullOrWhiteSpace(options.ConditionalBaselineDesignPackageUId)) {
+					options.ResolvedWriteTarget = DescribeResolvedTarget(context);
+				}
 				return;
 			}
 			// The write landed on the very schema the on-disk baseline describes, so that baseline is the
@@ -857,6 +886,18 @@
 			options.ExpectedSchemaAbsent = options.ConditionalBaselineSchemaAbsent;
 		}
 
+		private static string DescribeResolvedTarget(EditableSchemaContext context) {
+			bool hasPackage = !string.IsNullOrWhiteSpace(context.DesignPackageUId);
+			if (context.IsCreateReplacing) {
+				return hasPackage
+					? $"a new replacing schema in package {context.DesignPackageUId}"
+					: "a new replacing schema";
+			}
+			return hasPackage
+				? $"schema {context.EditableSchemaUId} in package {context.DesignPackageUId}"
+				: $"schema {context.EditableSchemaUId}";
+		}
+
 		/// <summary>
 		/// Compares the caller-supplied baseline (expected checksum / schema UId / absence marker)
 		/// against the resolved editable schema state and blocks the save with a structured conflict
@@ -870,9 +911,11 @@
 				out PageUpdateResponse response) {
 			response = null;
 			PromoteConditionalBaselineWhenTargetMatches(options, context);
+			options.ConflictCheckApplied = false;
 			if (options.Force) return true;
 			bool hasChecksum = !string.IsNullOrWhiteSpace(options.ExpectedChecksum);
 			if (!hasChecksum && !options.ExpectedSchemaAbsent) return true;
+			options.ConflictCheckApplied = true;
 			if (options.ExpectedSchemaAbsent) {
 				if (context.IsCreateReplacing) return true;
 				response = CreateConflictResponse(options, new PageConflictDetails {
@@ -919,6 +962,7 @@
 				// Fail open: a present row with a NULL/blank Checksum (e.g. an unpublished schema) means
 				// "checksum unavailable", not proof of an external edit. Reporting a conflict here is
 				// misleading and loops the agent — skip the check, consistent with the fail-toward-no-check contract.
+				options.ConflictCheckApplied = false;
 				return true;
 			}
 			if (!string.Equals(actualChecksum, options.ExpectedChecksum, StringComparison.Ordinal)) {

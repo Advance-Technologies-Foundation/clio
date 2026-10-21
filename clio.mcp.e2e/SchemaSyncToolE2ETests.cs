@@ -933,6 +933,54 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("Rejects an update-entity operation whose update-operations entry carries a misspelled column field, naming the entry, the field and the nearest known field before any environment is contacted (ENG-102218 TC-05).")]
+	[AllureTag(ToolName)]
+	[AllureName("sync-schemas rejects an unknown field inside update-operations")]
+	[AllureDescription("Starts the real MCP server and submits an update-entity whose single update-operations entry sends 'requird' instead of 'required'. Verifies the operation is refused with the entry index, the unknown field and the suggestion 'required', and that the refusal does not depend on the environment.")]
+	public async Task SchemaSyncTool_Should_Reject_Unknown_Field_In_UpdateOperations_With_Suggestion() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireEnvironment: false);
+		string invalidEnvironmentName = $"missing-sync-schemas-env-{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = invalidEnvironmentName,
+					["package-name"] = "UsrPkg",
+					["operations"] = new object?[] {
+						new Dictionary<string, object?> {
+							["type"] = "update-entity",
+							["schema-name"] = "UsrTodo",
+							["update-operations"] = new object?[] {
+								new Dictionary<string, object?> {
+									["action"] = "add",
+									["column-name"] = "UsrDue",
+									["type"] = "Text",
+									["title-localizations"] = BuildLocalizations("Due"),
+									["requird"] = true
+								}
+							}
+						}
+					}
+				}
+			},
+			context.CancellationTokenSource.Token);
+		JsonElement response = ExtractSchemaSyncResponse(callResult);
+		JsonElement result = response.GetProperty("results").EnumerateArray().Single();
+		string error = result.GetProperty("error").GetString()!;
+
+		// Assert
+		response.GetProperty("success").GetBoolean().Should().BeFalse(
+			because: "an update operation carrying a field the tool cannot bind must never be reported as applied");
+		error.Should().Contain("update-operations[0] has unknown field 'requird'. Did you mean 'required'?",
+			because: "the caller must see which entry and which field could not be bound, and the nearest known field");
+		error.Should().NotContain(invalidEnvironmentName,
+			because: "the field-shape check must run before environment resolution");
+	}
+
+	[Test]
 	[Description("Rejects an operation with a blank schema-name in MCP terms, never leaking the find-entity-schema CLI switches (issue #1303 C2).")]
 	[AllureTag(ToolName)]
 	[AllureName("sync-schemas rejects a blank schema-name without leaking CLI switch names")]
@@ -1373,7 +1421,8 @@ public sealed class SchemaSyncToolE2ETests : McpContractFixtureBase {
 					&& messages.Any(m => m.Contains("2/", StringComparison.Ordinal)),
 				TimeSpan.FromSeconds(10),
 				context.CancellationTokenSource.Token);
-		} catch (OperationCanceledException) {
+		} catch (TimeoutException) {
+			// WaitForMessagesAsync reports an elapsed wait as TimeoutException, not as a cancellation.
 		}
 		_sharedCompositeBatch = new SharedCompositeBatch(
 			callResult,

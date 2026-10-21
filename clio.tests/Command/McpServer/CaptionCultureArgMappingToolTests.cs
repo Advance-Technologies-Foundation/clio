@@ -54,7 +54,7 @@ public sealed class CaptionCultureArgMappingToolTests {
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
 		commandResolver.Resolve<ModifyEntitySchemaColumnCommand>(Arg.Any<ModifyEntitySchemaColumnOptions>())
 			.Returns(command);
-		ModifyEntitySchemaColumnTool tool = new(command, ConsoleLogger.Instance, commandResolver);
+		ModifyEntitySchemaColumnTool tool = new(command, ConsoleLogger.Instance, commandResolver, new OptionSuggestionService());
 		ModifyEntitySchemaColumnArgs args = new("dev", "Custom", "UsrAlpha", "modify", "UsrField") {
 			CaptionCulture = CaptionCultureValue
 		};
