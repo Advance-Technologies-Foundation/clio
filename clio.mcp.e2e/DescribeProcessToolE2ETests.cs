@@ -22,6 +22,11 @@ namespace Clio.Mcp.E2E;
 /// NOT in CI — run manually. The advertised-tool test is hermetic; the read test is gated on a
 /// reachable environment with a known process (configured caption).
 /// </summary>
+/// <remarks>
+/// The two version-family tests build the family they read - a process, one saved version, that version made
+/// actual - so they depend on nothing a product ships. Every member stays on the stand: a version has no delete,
+/// which is why the names are Guid-suffixed and why this belongs on a disposable sandbox.
+/// </remarks>
 [TestFixture]
 [AllureNUnit]
 [AllureFeature(DescribeProcessTool.ToolName)]
@@ -30,12 +35,6 @@ namespace Clio.Mcp.E2E;
 public sealed class DescribeProcessToolE2ETests {
 
 	private const string ToolName = DescribeProcessTool.ToolName;
-
-	/// <summary>Root of a version family that ships with the product; nothing here seeds it.</summary>
-	private const string VersionedFamilyRootCode = "InvoiceVisaProcess";
-
-	/// <summary>The saved version of that family, which is the one the runtime executes.</summary>
-	private const string VersionedFamilyActiveCode = "InvoiceVisaProcessInvoice1";
 
 	[Test]
 	[Description("Starts the real clio MCP server and verifies describe-business-process is discoverable via the get-tool-contract compact index (hermetic).")]
@@ -121,19 +120,20 @@ public sealed class DescribeProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, describing the stock InvoiceVisaProcess family by name reports the root as NOT the active version and names the version that runs.")]
+	[Description("Over the real MCP path, describing the ROOT of a version family by name reports the root as NOT the active version and names the version that runs. The test builds the family itself, so it needs no process a product ships.")]
 	[AllureTag(ToolName)]
-	[AllureName("describe-business-process names the active version of a real family")]
-	[AllureDescription("Proves against a live stand that resolving a versioned process by name returns the family ROOT and says so: isActiveVersion is false, and the response names the version the runtime actually executes. Requires the stock Invoice package; the family ships with the product and is not seeded by this test.")]
+	[AllureName("describe-business-process names the active version of a family it builds")]
+	[AllureDescription("Proves against a live stand that resolving a versioned process by name returns the family ROOT and says so: isActiveVersion is false, and the response names the version the runtime actually executes. The family is built by the test: a process, one version saved with modify-business-process-as-new-version, and that version made actual with set-active-business-process-version.")]
 	public async Task DescribeProcess_Should_NameTheActiveVersion_WhenDescribingTheFamilyRootByName() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		VersionFamily family = await BuildFamilyWithActiveVersionAsync(context);
 
 		// Act
-		CallToolResult callResult = await AllureApi.Step($"Describe {VersionedFamilyRootCode} through MCP", () =>
+		CallToolResult callResult = await AllureApi.Step($"Describe {family.RootName} through MCP", () =>
 			CallToolAsync(context, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["process-name"] = VersionedFamilyRootCode
+				["process-name"] = family.RootName
 			}));
 
 		// Assert
@@ -141,15 +141,15 @@ public sealed class DescribeProcessToolE2ETests {
 		JsonObject graph = ReadDescribedGraph(callResult);
 		AllureApi.Step("Assert the read graph is not the one that runs", () => {
 			graph["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
-				because: $"'{VersionedFamilyRootCode}' resolves to the family root, and on this stock family the runtime executes version 1 instead");
-			graph["activeVersionName"]!.GetValue<string>().Should().Be(VersionedFamilyActiveCode,
+				because: $"'{family.RootName}' resolves to the family root, and the test made version 1 the one the runtime executes");
+			graph["activeVersionName"]!.GetValue<string>().Should().Be(family.ActiveName,
 				because: "the caller has to be handed the name of the running version, or it cannot correct itself");
 			graph["versionRootSchemaUId"]!.GetValue<string>().Should().Be(graph["schemaUId"]!.GetValue<string>(),
 				because: "the root of a family is its own family key, which is how the members were found");
 		});
 		AllureApi.Step("Assert the family is reported with both members", () => {
 			graph["versions"]!.AsArray().Should().HaveCount(2,
-				because: "the stock family ships with a root and one saved version");
+				because: "the family is the root and the one version the test saved");
 			graph["activeVersionSchemaUId"]!.GetValue<string>().Should()
 				.NotBe(graph["schemaUId"]!.GetValue<string>(),
 					because: "a version is a SEPARATE schema, so the running one cannot be the schema just read");
@@ -181,14 +181,15 @@ public sealed class DescribeProcessToolE2ETests {
 	public async Task DescribeProcess_Should_ReportActiveVersion_WhenReDescribedByTheReportedUId() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		VersionFamily family = await BuildFamilyWithActiveVersionAsync(context);
 		JsonObject root = ReadDescribedGraph(await CallToolAsync(context, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
-			["process-name"] = VersionedFamilyRootCode
+			["process-name"] = family.RootName
 		}));
 		string activeVersionUId = root["activeVersionSchemaUId"]!.GetValue<string>();
 
-		// Act — the UId comes from the previous answer, never from a constant, so this holds on any stand
-		// carrying the family regardless of the schema UIds it was installed with.
+		// Act — the UId comes from the previous answer, never from a constant: the platform allocates it when
+		// the version is saved.
 		CallToolResult callResult = await AllureApi.Step($"Re-describe {activeVersionUId} through MCP", () =>
 			CallToolAsync(context, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
@@ -201,7 +202,7 @@ public sealed class DescribeProcessToolE2ETests {
 		AllureApi.Step("Assert the re-described graph is the running version", () => {
 			active["isActiveVersion"]!.GetValue<bool>().Should().BeTrue(
 				because: "following the reported pointer must land on the version the runtime executes");
-			active["name"]!.GetValue<string>().Should().Be(VersionedFamilyActiveCode,
+			active["name"]!.GetValue<string>().Should().Be(family.ActiveName,
 				because: "the pointer named this schema, and describing by its UId must return that same schema");
 			active["versionRootSchemaUId"]!.GetValue<string>().Should().Be(root["schemaUId"]!.GetValue<string>(),
 				because: "a version reports the root it descends from, which is how a caller reaches its siblings");
@@ -261,6 +262,61 @@ public sealed class DescribeProcessToolE2ETests {
 
 	private static IEnumerable<int?> VersionNumbers(JsonObject graph) =>
 		graph["versions"]!.AsArray().Select(member => (int?)member!["version"]?.GetValue<int>());
+
+	// The family the version tests read: a process, one version of it saved in Custom, and that version made actual,
+	// so the root is no longer the member that runs. The version's name is read from the response that created it:
+	// the platform composes it, and the contract does not promise how.
+	private static async Task<VersionFamily> BuildFamilyWithActiveVersionAsync(ArrangeContext context) {
+		string rootName = $"UsrClioBpFamilyE2e{Guid.NewGuid():N}";
+		await CallToolExpectingSuccessAsync(context, CreateBusinessProcessTool.CreateBusinessProcessToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = BuildFamilyRootDescriptor(rootName)
+			}, "the family root has to exist before a version of it can be saved");
+		CallToolResult saved = await CallToolExpectingSuccessAsync(context,
+			ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = rootName,
+				["package-name"] = "Custom"
+			}, "the family needs a saved version beside its root");
+		string activeName = ProcessDesignerE2EArrange.CreatedVersionName(saved);
+		await CallToolExpectingSuccessAsync(context, SetActiveProcessVersionTool.SetActiveProcessVersionToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["version-name"] = activeName
+			}, "the saved version has to become the actual one, or the root is still the member that runs");
+		return new VersionFamily(rootName, activeName);
+	}
+
+	// The exit code, not IsError: the transport reports isError null for a tool that ran and failed, so an arrange
+	// checked only for a transport error passes on a stand where nothing was built.
+	private static async Task<CallToolResult> CallToolExpectingSuccessAsync(ArrangeContext context, string toolName,
+			Dictionary<string, object?> args, string because) {
+		CallToolResult result = await context.Session.CallToolAsync(toolName,
+			new Dictionary<string, object?> { ["args"] = args }, context.CancellationTokenSource.Token);
+		ProcessDesignerE2ESupport.ShouldHaveLanded(result, because);
+		return result;
+	}
+
+	private static string BuildFamilyRootDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Version Family E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "performTask" },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	private sealed record VersionFamily(string RootName, string ActiveName);
 
 	// The fixtures above assert on the whole graph, so they ask for it: without a mode a graph whose reply would
 	// pass 18,000 bytes comes back as the summary (ENG-103023). The mode tests pass their own mode.

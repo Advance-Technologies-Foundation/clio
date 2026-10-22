@@ -23,8 +23,11 @@ namespace Clio.Mcp.E2E;
 [NonParallelizable]
 public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase {
 
-	/// <summary>Stock process of the product; the same one DescribeProcessToolE2ETests reads.</summary>
-	private const string StockProcessCode = "InvoiceVisaProcess";
+	/// <summary>
+	/// The process name the ambiguous-identity tests send. They are refused before any lookup, so it names no process
+	/// on purpose: a regression that let such a call through fails on "not found" instead of editing a real process.
+	/// </summary>
+	private const string UnresolvedProcessCode = "UsrClioE2eNeverResolved";
 
 	[Test]
 	[AllureTag(ValidateProcessGraphTool.ToolName)]
@@ -95,11 +98,12 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 	[Test]
 	[AllureTag(DescribeProcessTool.ToolName)]
 	[AllureName("describe-business-process accepts processName and warns")]
-	[AllureDescription("Describes the stock InvoiceVisaProcess through the processName alias and verifies the real graph comes back with a warning naming process-name.")]
+	[AllureDescription("Describes the process the configured stand carries (McpE2E:Sandbox:ProcessCode) through the processName alias and verifies the real graph comes back with a warning naming process-name.")]
 	[Description("describe-business-process with processName returns the structured process graph and a warning naming the canonical process-name.")]
 	public async Task DescribeProcess_Should_Accept_ProcessName_Alias() {
 		// Arrange
 		string environmentName = await ResolveEnvironmentAsync();
+		string processCode = ResolveKnownProcessCode();
 		await using var arrange = Arrange(TimeSpan.FromMinutes(5));
 
 		// Act
@@ -108,9 +112,9 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 			new Dictionary<string, object?> {
 				["args"] = new Dictionary<string, object?> {
 					["environment-name"] = environmentName,
-					["processName"] = StockProcessCode,
-					// The stock process is over the 18,000-byte reply threshold, so without a mode it comes back as a
-					// summary, which carries no buildType (ENG-103023).
+					["processName"] = processCode,
+					// Without a mode a process over the 18,000-byte reply threshold comes back as a summary, which
+					// carries no buildType (ENG-103023).
 					["mode"] = "full"
 				}
 			},
@@ -121,7 +125,7 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 		callResult.IsError.Should().NotBeTrue(because: "an accepted alias is a normal result");
 		text.Should().Contain("Argument 'processName' was accepted as 'process-name'",
 			because: "the response names the canonical argument");
-		text.Should().Contain(StockProcessCode, because: "the real process was read");
+		text.Should().Contain(processCode, because: "the real process was read");
 		text.Should().Contain("buildType", because: "the structured graph, not an error, came back");
 	}
 
@@ -206,7 +210,7 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 			"modify-business-process",
 			new Dictionary<string, object?> {
 				["environment-name"] = environmentName,
-				["process-name"] = StockProcessCode,
+				["process-name"] = UnresolvedProcessCode,
 				["processName"] = "UsrClioE2eOther",
 				["operations"] = "[{\"op\":\"addParameter\",\"parameter\":{\"name\":\"UsrE2e\",\"type\":\"Integer\"}}]"
 			},
@@ -233,7 +237,7 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 			"modify-business-process-as-new-version",
 			new Dictionary<string, object?> {
 				["environment-name"] = environmentName,
-				["process-name"] = StockProcessCode,
+				["process-name"] = UnresolvedProcessCode,
 				["processName"] = "UsrClioE2eOther"
 			},
 			arrange.CancellationTokenSource.Token);
@@ -267,6 +271,17 @@ public sealed class ProcessToolArgumentAliasesE2ETests : McpContractFixtureBase 
 		// Assert
 		text.Should().Contain("it is empty", because: "there is no process to build");
 		text.Should().Contain("Minimal valid arguments:", because: "the caller gets a buildable example");
+	}
+
+	// The process the configured stand is known to carry - the one DescribeProcessToolE2ETests reads - rather than one
+	// a product ships, which a Studio stand does not have.
+	private static string ResolveKnownProcessCode() {
+		string? processCode = TestConfiguration.Load().Sandbox.ProcessCode;
+		if (string.IsNullOrWhiteSpace(processCode)) {
+			Assert.Ignore("Configure McpE2E:Sandbox:ProcessCode (a process that exists on the stand) to run the "
+				+ "describe-business-process alias test.");
+		}
+		return processCode!;
 	}
 
 	private static async Task<string> ResolveEnvironmentAsync() {

@@ -134,10 +134,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// drops the LAST conditional flow off an element that still has other outgoing flows.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpSetFlowE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildThreeBranchTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildThreeBranchTaskDescriptor(processName));
 
 		// Act — make the plain branch conditional, and clear the condition off one that already is.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -153,8 +150,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "re-kinding a flow in both directions must complete without a transport error");
+		ShouldHaveLanded(callResult, "re-kinding a flow in both directions must be applied, not refused");
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
@@ -183,10 +179,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// 84.9% of the conditional flows in the shipped product carry a label.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpFlowLabelE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildLabelledThreeBranchTaskDescriptor(processName));
 
 		// Act — one batch covering all four: EndA is re-kinded with NO label mentioned (the trap), EndB is
 		// re-kinded WITH a new label, EndC's label is cleared, and Start1->Decide is relabelled while its kind
@@ -206,12 +199,14 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				    "label": "Amount confirmed" },
 				  { "op": "addFlow", "source": "EndA", "target": "EndB", "label": "Carried on" }
 				]
-				"""
+				""",
+			// The addFlow puts EndB below EndA, so the layout-change guard would refuse the whole batch unapplied
+			// and ask for a confirmation. The diagram is not what this test is about, so the re-draw is confirmed.
+			["confirm-layout-change"] = true
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "writing, keeping and clearing labels in one batch must complete without a transport error");
+		ShouldHaveLanded(callResult, "writing, keeping and clearing labels in one batch must be applied, not refused");
 
 		DescribeProcessResult described = ParseDescribeResult(await CallToolAsync(context, DescribeToolName,
 			new Dictionary<string, object?> {
@@ -263,10 +258,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange — a labelled three-branch process, the shape a describe-then-echo workflow produces.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpRemoveFlowFieldE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildLabelledThreeBranchTaskDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildLabelledThreeBranchTaskDescriptor(processName));
 
 		// Act — the echo an agent naturally produces from a described flow: the whole object, kind included.
 		// A second operation follows it so the batch's atomicity is observable.
@@ -446,59 +438,62 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, setElement switches an existing custom-message sendEmail element to TEMPLATE mode (ENG-95986) and back: after the template lands describe reports messageSource 'template', the template id and display name and no body (the stale custom body and the constant subject are cleared); a body then switches it back to custom and clears the template. Neither modify emits the template-landed warning on a package that supports the mode. Depends on the stock template 'Case closure notification' being present.")]
+	[Description("Over the real MCP path, setElement switches an existing custom-message sendEmail element to TEMPLATE mode (ENG-95986) and back: after the template lands describe reports messageSource 'template', the template id and display name and no body (the stale custom body and the constant subject are cleared); a body then switches it back to custom and clears the template. Neither modify emits the template-landed warning on a package that supports the mode. The test writes the template itself and removes it afterwards, so it needs no stock template.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process switches a sendEmail element to template mode and back")]
 	public async Task ModifyBusinessProcess_Should_SwitchSendEmailToTemplateModeAndBack() {
-		// Arrange — a custom-message element with a subject and a recipient.
+		// Arrange — a custom-message element with a subject and a recipient, and a template without a macro-source
+		// object, so no templateEntity is needed.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpEmailTplSwitchE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildSendEmailWithRecipientDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildSendEmailWithRecipientDescriptor(processName));
+		E2EEmailTemplate template = await EmailTemplateE2EArrange.CreateAsync(context.Session,
+			context.EnvironmentName!, objectSchemaName: null, context.CancellationTokenSource.Token);
+		try {
+			// Act 1 — switch to the template.
+			CallToolResult toTemplate = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = $$"""
+					[ { "op": "setElement", "elementName": "SendEmail1",
+					    "elementUpdate": { "email": { "template": "{{template.Name}}" } } } ]
+					"""
+			});
 
-		// Act 1 — switch to a template (one without a macro-source object, so no templateEntity is needed).
-		CallToolResult toTemplate = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
-				[ { "op": "setElement", "elementName": "SendEmail1",
-				    "elementUpdate": { "email": { "template": "Case closure notification" } } } ]
-				"""
-		});
+			// Assert 1
+			ShouldHaveLanded(toTemplate, "switching an element to an existing email template is supported");
+			JsonSerializer.Serialize(toTemplate).Should().NotContain(EmailBlockExpectation.TemplateWarningMarker,
+				because: "the template-landed check must stay silent when the deployed package stored the template");
+			DescribedEmail afterTemplate = await ReadEmailAsync(context, processName);
+			afterTemplate.MessageSource.Should().Be("template", because: "BodyTemplateType '0' decodes to the template mode");
+			afterTemplate.Template.Should().NotBeNullOrWhiteSpace(because: "the resolved template id is stored on EmailTemplateId");
+			afterTemplate.TemplateDisplay.Should().Be(template.Name,
+				because: "the template NAME is stored as the lookup's display value");
+			afterTemplate.HasBody.Should().BeFalse(because: "a template element reports no body, and the custom body was cleared on the switch");
+			afterTemplate.Subject.Should().BeNull(because: "a constant subject not re-supplied is cleared on the switch so the template's own subject is sent");
+			afterTemplate.To.Should().NotBeNull().And.HaveCount(1, because: "recipients are untouched by the mode switch");
+			AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch to template mode");
 
-		// Assert 1
-		toTemplate.IsError.Should().NotBeTrue(because: "switching an element to an existing email template is supported");
-		JsonSerializer.Serialize(toTemplate).Should().NotContain(EmailBlockExpectation.TemplateWarningMarker,
-			because: "the template-landed check must stay silent when the deployed package stored the template");
-		DescribedEmail afterTemplate = await ReadEmailAsync(context, processName);
-		afterTemplate.MessageSource.Should().Be("template", because: "BodyTemplateType '0' decodes to the template mode");
-		afterTemplate.Template.Should().NotBeNullOrWhiteSpace(because: "the resolved template id is stored on EmailTemplateId");
-		afterTemplate.TemplateDisplay.Should().Be("Case closure notification",
-			because: "the template NAME is stored as the lookup's display value");
-		afterTemplate.HasBody.Should().BeFalse(because: "a template element reports no body, and the custom body was cleared on the switch");
-		afterTemplate.Subject.Should().BeNull(because: "a constant subject not re-supplied is cleared on the switch so the template's own subject is sent");
-		afterTemplate.To.Should().NotBeNull().And.HaveCount(1, because: "recipients are untouched by the mode switch");
-		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch to template mode");
+			// Act 2 — a body switches it back to a custom message.
+			CallToolResult toCustom = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["process-name"] = processName,
+				["operations"] = """
+					[ { "op": "setElement", "elementName": "SendEmail1",
+					    "elementUpdate": { "email": { "body": "<p>ClioTemplateSwitchProbe</p>" } } } ]
+					"""
+			});
 
-		// Act 2 — a body switches it back to a custom message.
-		CallToolResult toCustom = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = """
-				[ { "op": "setElement", "elementName": "SendEmail1",
-				    "elementUpdate": { "email": { "body": "<p>ClioTemplateSwitchProbe</p>" } } } ]
-				"""
-		});
-
-		// Assert 2
-		toCustom.IsError.Should().NotBeTrue(because: "switching back to a custom message with a body is supported");
-		DescribedEmail afterCustom = await ReadEmailAsync(context, processName);
-		afterCustom.MessageSource.Should().Be("custom", because: "a body selects the custom message");
-		afterCustom.Template.Should().BeNull(because: "the template and its macro source are cleared on the switch, as the designer's card does");
-		afterCustom.HasBody.Should().BeTrue(because: "the body sent with the switch is stored");
-		AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch back to a custom message");
+			// Assert 2
+			ShouldHaveLanded(toCustom, "switching back to a custom message with a body is supported");
+			DescribedEmail afterCustom = await ReadEmailAsync(context, processName);
+			afterCustom.MessageSource.Should().Be("custom", because: "a body selects the custom message");
+			afterCustom.Template.Should().BeNull(because: "the template and its macro source are cleared on the switch, as the designer's card does");
+			afterCustom.HasBody.Should().BeTrue(because: "the body sent with the switch is stored");
+			AssertOptionsUnchanged(await ReadSendEmailElementAsync(context, processName), "the switch back to a custom message");
+		} finally {
+			await EmailTemplateE2EArrange.DeleteAsync(context.Session, context.EnvironmentName!, template);
+		}
 	}
 
 	// AC-7 of ENG-95986: sender, recipients, importance, ignoreErrors and useBackgroundMode behave identically in both
@@ -1819,13 +1814,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process sets a flow condition that reads back")]
 	public async Task ModifyBusinessProcess_Should_SetFlowCondition_ThatReadsBack() {
-		// Arrange - a linear start -> task -> end process, whose task->end flow is a plain sequence flow.
+		// Arrange - a linear start -> script task -> end process, whose task->end flow is a plain sequence flow.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpFlowCondE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildFormulaBranchDescriptor(processName));
 
 		// Act
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -1835,9 +1827,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		});
 
 		// Assert
-		callResult.IsError.Should().NotBeTrue(
-			because: "setting a condition on an existing flow is a supported edit; no gateway is needed, the platform "
-				+ "synthesizes one for a conditional flow whose source is an activity");
+		ShouldHaveLanded(callResult, "setting a condition on an existing flow is a supported edit; no gateway is "
+			+ "needed, the platform synthesizes one for a conditional flow whose source is an activity");
 		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
 		branch.Kind.Should().Be("conditional",
 			because: "the flow must be re-kinded to a real conditional flow, not merely carry the condition text");
@@ -1858,15 +1849,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// is the field itself.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpBranchFlagE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptor(processName)
-		});
-		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = BuildSetFlowConditionOperations("1 == 1")
-		});
+		await CreateProcessAsync(context, processName, BuildFormulaBranchDescriptor(processName));
+		await ModifyExpectingSuccessAsync(context, processName, BuildSetFlowConditionOperations("1 == 1"));
 
 		// Act
 		CallToolResult describeResult = await CallToolAsync(context, DescribeProcessTool.ToolName,
@@ -1937,10 +1921,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpBadCondE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildFormulaBranchDescriptor(processName));
 
 		// Act - references an identifier that does not exist in this process.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -1971,20 +1952,17 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a condition whose parameter reference does not resolve is refused with a SENTENCE rather than with a serialised error object. This is the one class where the platform's own text is materially worse than the validator CrtProcessBuilder 1.4.0.41 deleted: the flow-schema generator throws ProcessParameterValidateException carrying ProcessParameterErrorInfo.ToString(), which is Json.Serialize, so the caller was handed 'Internal error: \"{ErrorType:2,ErrorData:{ParameterUId:\"…\"}}\"' and no remedy. PlatformValidationMessage rewrites that one blob server-side; the rewrite is FORMATTING of the platform's verdict, so nothing here decides validity. Only a real server can prove it: the blob is produced inside the platform's generator, which no unit test reaches.")]
+	[Description("Over the real MCP path, a condition whose parameter reference does not resolve is refused with a SENTENCE rather than with a serialised error object. Left to the platform, the flow-schema generator throws ProcessParameterValidateException carrying ProcessParameterErrorInfo.ToString(), which is Json.Serialize, so the caller was handed 'Internal error: \"{ErrorType:2,ErrorData:{ParameterUId:\"…\"}}\"' and no remedy. CrtProcessBuilder now checks every [#[Parameter:{uid}]#] token before the save (MetaPathTokenReference) and refuses one that names no parameter of the process, quoting the UId and listing the parameters the process does declare, so the platform's blob is not reached on this path. Only a real server proves the whole route: the token is checked inside the package's modify handler, which no clio unit test reaches.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process explains an unresolvable parameter reference in a condition")]
 	public async Task ModifyBusinessProcess_Should_ExplainAnUnresolvableParameterReference_InACondition() {
 		// Arrange
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpRefBlobE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptor(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildFormulaBranchDescriptor(processName));
 
 		// Act - a well-formed parameter metapath whose UId is on no parameter of this process. The SHAPE has to
-		// be valid, or the fault is a parse error and the generator's error-info path is never reached.
+		// be valid, or the fault is a parse error and the reference check is never reached.
 		const string missingParameterUId = "11111111-1111-1111-1111-111111111111";
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
@@ -1996,15 +1974,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// Assert
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain(missingParameterUId,
-			because: "the UId is the only thing that says WHICH reference is wrong, so the rewrite must keep it");
-		callResultJson.Should().Contain("is not in this process",
-			because: "the caller has to be told what is wrong; that is the whole reason the rewrite exists");
+			because: "the UId is the only thing that says WHICH reference is wrong, so the refusal must quote it");
+		callResultJson.Should().Contain("which is not a parameter of this process",
+			because: "the caller has to be told what is wrong, in a sentence rather than in the platform's "
+				+ "serialised error object");
 		callResultJson.Should().NotContain("ErrorType",
-			because: "the serialised ProcessParameterErrorInfo must be REPLACED, not annotated - leaving it "
-				+ "beside the sentence would report the same fault twice and reads as a defect in clio");
+			because: "the reference check refuses before the platform's generator runs, so its serialised "
+				+ "ProcessParameterErrorInfo must not reach the caller at all");
 		DescribedFlow branch = await ReadFlowAsync(context, processName, "task1", "EndEvent1");
 		branch.Kind.Should().Be("sequence",
-			because: "a refused edit is atomic - a message change must not have made the refusal non-atomic");
+			because: "a refused edit is atomic: the flow must be left exactly as it was");
 	}
 
 	// Reads the process back and returns one flow, so a condition assertion can be made against typed fields
@@ -2170,7 +2149,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	// unconditional flow out of a deciding gateway would be normalised to the default branch instead.
 	// An ORDINARY element as the branch source, which is where both re-kind directions are legal. One plain
 	// flow and two conditional ones: re-kinding the plain one leaves no unconditional sibling behind, and
-	// re-kinding EndC leaves EndB conditional, so neither operation trips a rule.
+	// re-kinding EndC leaves EndB conditional, so neither operation trips a rule. The element is a SCRIPT TASK
+	// for the reason BuildFormulaBranchDescriptor gives: the connectors of a perform task refuse a formula.
 	private static string BuildThreeBranchTaskDescriptor(string processName) =>
 		$$"""
 		{
@@ -2179,7 +2159,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "packageName": "Custom",
 		  "elements": [
 		    { "name": "Start1", "type": "startEvent" },
-		    { "name": "Decide", "type": "performTask" },
+		    { "name": "Decide", "type": "scriptTask", "caption": "Decide",
+		      "scriptTask": { "body": "return true;" } },
 		    { "name": "EndA", "type": "endEvent" },
 		    { "name": "EndB", "type": "endEvent" },
 		    { "name": "EndC", "type": "endEvent" }
@@ -2204,7 +2185,8 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "packageName": "Custom",
 		  "elements": [
 		    { "name": "Start1", "type": "startEvent" },
-		    { "name": "Decide", "type": "performTask" },
+		    { "name": "Decide", "type": "scriptTask", "caption": "Decide",
+		      "scriptTask": { "body": "return true;" } },
 		    { "name": "EndA", "type": "endEvent" },
 		    { "name": "EndB", "type": "endEvent" },
 		    { "name": "EndC", "type": "endEvent" }
@@ -2254,6 +2236,55 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		  "flows": [
 		    { "source": "StartEvent1", "target": "task1" },
 		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// The linear process the flow-condition tests branch on. Its middle element is a SCRIPT TASK, not the perform
+	// task of BuildDescriptor. A perform task offers activity results, so CrtProcessBuilder refuses a formula on
+	// the connectors leaving it and asks for 'results' instead: the designer edits such a connector as a result
+	// selection and shows no formula field (ProcessGraphBuilder.EnsureAFormulaBelongsOnThisConnector). A script
+	// task offers no results, so a condition is the right dialect there. It keeps the name task1 that the
+	// condition operations and the read-backs address.
+	private static string BuildFormulaBranchDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Flow Condition E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "scriptTask", "caption": "Script task",
+		      "scriptTask": { "body": "return true;" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ]
+		}
+		""";
+
+	// BuildFormulaBranchDescriptor plus an Integer parameter that nothing references until a test writes a
+	// condition reading it, so a refused removal of it can only be the condition's doing.
+	private static string BuildFormulaBranchDescriptorWithParameter(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio BP Flow Condition Guard E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "StartEvent1", "type": "startEvent" },
+		    { "name": "task1", "type": "scriptTask", "caption": "Script task",
+		      "scriptTask": { "body": "return true;" } },
+		    { "name": "EndEvent1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "StartEvent1", "target": "task1" },
+		    { "source": "task1", "target": "EndEvent1" }
+		  ],
+		  "parameters": [
+		    { "name": "Linked", "type": "Integer", "direction": "In" }
 		  ]
 		}
 		""";
@@ -2417,10 +2448,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		// the meta-path form describe reports.
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpCondGuardE2e{Guid.NewGuid():N}";
-		await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["descriptor"] = BuildDescriptorWithMappedParameter(processName)
-		});
+		await CreateProcessAsync(context, processName, BuildFormulaBranchDescriptorWithParameter(processName));
 		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["mode"] = "full",
@@ -2429,17 +2457,12 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		DescribeProcessResult described = ParseDescribeResult(describeResult);
 		string guardedUId = described.Parameters.Single(parameter => parameter.Name == "Linked").UId;
 
-		CallToolResult conditionResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["operations"] = $$"""
-				[ { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1",
-				    "condition": "[#[Parameter:{{{guardedUId}}}]#] > 0" } ]
-				"""
-		});
-		JsonSerializer.Serialize(conditionResult).Should().NotContain("\"isError\":true",
-			because: "the condition has to be STORED for the guard to have anything to find - a failure here "
-				+ "would make the assertion below pass for the wrong reason");
+		// The condition has to be STORED for the guard to have anything to find, so it is asserted on the success
+		// line: isError stays null on a refusal, and a refused condition left this test measuring nothing.
+		await ModifyExpectingSuccessAsync(context, processName, $$"""
+			[ { "op": "setFlowCondition", "source": "task1", "target": "EndEvent1",
+			    "condition": "[#[Parameter:{{{guardedUId}}}]#] > 0" } ]
+			""");
 
 		// Act - remove the parameter the condition references.
 		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
