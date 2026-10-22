@@ -92,6 +92,9 @@ internal static class EmailTemplateE2EArrange {
 					$"Could not delete the email template '{template.Name}': {ItemErrors(result)}");
 			}
 		} catch (Exception exception) {
+			// A cleanup failure is reported, not the test's verdict, so a parse failure's payload dump would only
+			// land in the published TestResults artifact of a passing run.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			await TestContext.Error.WriteLineAsync(
 				$"Could not delete the email template '{template.Name}'; it stays on the stand: {exception.Message}");
 		}
