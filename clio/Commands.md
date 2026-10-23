@@ -788,6 +788,8 @@ See [external access login](docs/external-access-login.md).
 
 <a id="assert"></a>
 - [`assert`](docs/commands/assert.md) - Validates infrastructure and filesystem resources
+<a id="completion"></a>
+- [`completion`](docs/commands/completion.md) - Print the shell tab-completion script for a shell
 <a id="component-registry-refresh"></a>
 <a id="component-registry"></a>
 - [`component-registry-refresh`](docs/commands/component-registry-refresh.md) - Refresh the local Freedom UI component registry cache from the academy.creatio.com CDN, `component-registry`
