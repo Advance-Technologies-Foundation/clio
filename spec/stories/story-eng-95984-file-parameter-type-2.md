@@ -8,7 +8,8 @@ under ENG-95984 File process parameter type and moved there the same day, so tha
 **Status**: review (criteria refined with the owner on 2026-10-21, see "Owner decisions"; cut CrtProcessBuilder
 1.6.6.117 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
 **Size**: M (inference from D2's costing of option C: about 150 LOC and 12 tests in the package, plus nested-type
-rules, a clio surface and guidance; re-sized when refined)
+rules, a clio surface and guidance). Actual: package +1.0k lines with 13 test groups (IS-01..IS-13), clio +0.5k,
+knowledge +0.1k; one cut, 1.6.6.117)
 **Repo**: crt-process-builder, clio, clio-knowledge (its own PR triple)
 **Depends on**: story 1 (ENG-95984 File process parameter type) merged; **earliest slot: after ENG-96506 Generated
 report + process parameter modes** (its package PR merged)
@@ -38,7 +39,7 @@ records can be declared with its columns. `FileCollection` then becomes sugar fo
 |---|---|---|
 | O-1 | Item types and depth | The designer's nested-item menu, which is the top-level type menu (`ProcessSchemaPropertiesPage._fillAddButtonMenuCollection`): the scalars, Lookup with `referenceSchema`, File, and Collection / FileCollection as an item of a top-level collection. Two collection levels at most: the items of a nested collection are not collections (the 7.8.0 corpus has 116 process-level collections with items, 617 items, at most two levels). Binary / Blob and a third level are refused, naming the item path |
 | O-2 | Direction default of `type: Collection` with items | Unchanged Out; an item defaults to Variable, as the designer's nested Add writes it (614 of 617 shipped items) |
-| O-3 | Write shape | `itemProperties: [{name, type, direction?, caption?, referenceSchema?, itemProperties?}]`; the members describe adds (`uid`, `source`, `isRequired`, `isResult`, `tag`, ...) are ignored, so a described collection replays as it is. A described binding (a value whose `source` is not None / ConstValue) is passed over, since bindings replay through mappings; a constant item value, a mirror on an item, `itemProperties` beside `typeFromElement` or on a non-collection are refused. `type: FileCollection` beside its OWN one-file shape is accepted (describe emits both); any other shape beside the alias is refused |
+| O-3 | Write shape | `itemProperties: [{name, type, direction?, caption?, description?, referenceSchema?, itemProperties?}]`; the members describe adds (`uid`, `source`, `isRequired`, `isResult`, `tag`, ...) are ignored, so an unbound described collection replays as it is. A described binding (a value whose `source` is not None / ConstValue) is passed over, since bindings replay through mappings; a constant item value, a mirror on an item, `itemProperties` beside `typeFromElement` or on a non-collection are refused. `type: FileCollection` beside its OWN one-file shape is accepted (describe emits both); any other shape beside the alias is refused |
 | O-4 | `setParameter` with `itemProperties` | Out of scope, refused loudly ("remove the parameter and add it again") instead of being dropped as an unknown member |
 
 ## Acceptance criteria (refined 2026-10-21; the test plan cites these numbers)
@@ -58,9 +59,8 @@ records can be declared with its columns. `FileCollection` then becomes sugar fo
 ## Test sketch
 
 Package unit cases in the shape of the ENG-95984 test plan's FileCollection cases (build, describe, rebuild); one clio
-unit case for the DTO pass-through of `itemProperties` on write; one MCP e2e create plus read-back case. Test ids are
-added to [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md) when the criteria are
-refined.
+unit case for the DTO pass-through of `itemProperties` on write; one MCP e2e create plus read-back case. The test
+ids are in [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md), section "Story 2".
 
 ## Definition of Done
 

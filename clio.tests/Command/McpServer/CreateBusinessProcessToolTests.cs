@@ -429,7 +429,7 @@ public class CreateBusinessProcessToolTests {
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
 		toolDescription.Should().Contain("this clio requires 1.6.6.117 (for itemProperties, isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups)");
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -468,7 +468,7 @@ public class CreateBusinessProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		toolDescription.Should().Contain("or itemProperties [{name, type, direction?, caption?, referenceSchema?, "
+		toolDescription.Should().Contain("or itemProperties [{name, type, direction?, caption?, description?, referenceSchema?, "
 				+ "itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested "
 				+ "Collection level)",
 			because: "the declared item shape, its keys and its two limits are stated where the parameters are");

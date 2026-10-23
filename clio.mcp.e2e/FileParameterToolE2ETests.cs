@@ -560,7 +560,7 @@ public sealed class FileParameterToolE2ETests {
 	}
 
 	[Test]
-	[Description("The describe output of declared collections, sent back AS IT IS - every member describe reports, uid, source and isRequired included - rebuilds the same shapes in a second process: names, types, directions, nested items and the lookup's object. The describe-only members are ignored by the write side.")]
+	[Description("The describe output of declared, unbound collections, sent back AS IT IS - every member describe reports, uid, source and isRequired included - rebuilds the same shapes in a second process: names, types, directions, nested items and the lookup's object. The describe-only members are ignored by the write side.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process rebuilds a described item shape unchanged")]
 	public async Task CreateBusinessProcess_Should_RebuildTheDescribedItemShape_Unchanged() {

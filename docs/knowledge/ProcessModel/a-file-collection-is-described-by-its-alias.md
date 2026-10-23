@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/ProcessModel/IProcessDescriber.cs
   - clio.tests/Command/ProcessModel/ServerProcessDescriberTests.cs
 ticket: ENG-95984
-date: 2026-10-14
+date: 2026-10-23
 ---
 
 **What is true** — from CrtProcessBuilder 1.6.6.99, describe reports `type: FileCollection` for a
@@ -18,8 +18,8 @@ item name is refused with the item list.
 
 **Why it is this way** — `FileCollection` is the token the write side accepts, so describe then create
 round-trips even for a caller that sends back only name, type and direction (the e2e round trip does).
-Once the write side reads `itemProperties` (the declared item shape, at the create floor that added it), the
-platform name would round-trip too, but only for a caller that also sends the items back. The write side
+Since CrtProcessBuilder 1.6.6.117 (clio's create floor) the write side reads `itemProperties` (the declared item
+shape), so the platform name would round-trip too, but only for a caller that also sends the items back. The write side
 accepts `type: FileCollection` beside its own one-file `itemProperties`, because describe emits both; any
 other shape beside the alias is refused.
 

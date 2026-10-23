@@ -566,7 +566,7 @@ public sealed class ToolContractShortFormTests {
 	[TestCase("BuildProcessRequest", "isTracing")]
 	[TestCase("ProcessElementDescriptor", "scriptTask")]
 	[TestCase("ProcessFlowDescriptor", "results")]
-	[TestCase("ProcessParameterDescriptor", "typeFromElementParameter")]
+	[TestCase("ProcessParameterDescriptor", "itemProperties")]
 	[TestCase("ProcessMappingDescriptor", "sourceColumn")]
 	[Category("Unit")]
 	[Description("Each create-business-process call shape list - descriptor, element fields with blocks, flow, parameter, mapping - names exactly the members of its contract type in the bundled CrtProcessBuilder, so a new descriptor field or element block without a shape fails here (ENG-102797).")]

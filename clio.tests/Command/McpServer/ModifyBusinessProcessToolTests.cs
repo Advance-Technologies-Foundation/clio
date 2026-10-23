@@ -681,7 +681,7 @@ public class ModifyBusinessProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		description.Should().Contain("or itemProperties [{name, type, direction?, caption?, referenceSchema?, "
+		description.Should().Contain("or itemProperties [{name, type, direction?, caption?, description?, referenceSchema?, "
 				+ "itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested "
 				+ "Collection level)",
 			because: "the declared item shape, its keys and its two limits are stated where addParameter is");
@@ -704,7 +704,7 @@ public class ModifyBusinessProcessToolTests {
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
 		description.Should().Contain("this clio requires 1.6.6.117, for itemProperties, setTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups)");
+			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
 		prompt.Should().Contain("`get-guidance name=process-tracing`, tell the user",

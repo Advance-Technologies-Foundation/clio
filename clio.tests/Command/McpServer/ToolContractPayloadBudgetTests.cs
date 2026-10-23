@@ -285,6 +285,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom. The cut
 	// 1.6.6.117 then moved the floor literal (same length) and named itemProperties in create's and modify's floor
 	// reasons (+16 bytes each): create 35040, modify 35007, describe 34883 - 32, 65 and 189 bytes of headroom.
+	// Gate-3 fixes named the item's description? in both clauses (+14 bytes each) and made describe's replay rule an
+	// instruction that also drops a mirror's itemProperties (+35 bytes): create 35054, modify 35021, describe 34918 -
+	// 18, 51 and 154 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

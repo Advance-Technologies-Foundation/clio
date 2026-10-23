@@ -2150,8 +2150,8 @@ public sealed class DescribedParameter {
 	/// <para>Feed a collection back by how it was made, read from the parameter's OWN <see cref="Tag"/>. A tagged one
 	/// was MIRRORED: re-create it through <c>addParameter</c>'s <c>typeFromElement</c> naming its source. An untagged
 	/// one was DECLARED and has no source to mirror: send it back as described, <c>type</c> + <c>itemProperties</c>,
-	/// which the write side reads as the declared shape while ignoring the describe-only members (once clio's create
-	/// floor is a <c>CrtProcessBuilder</c> that reads <c>itemProperties</c>; an older one drops it). A bound one's
+	/// which the write side reads as the declared shape while ignoring the describe-only members (from
+	/// <c>CrtProcessBuilder</c> 1.6.6.117, this clio's create floor; an older one drops <c>itemProperties</c>). A bound one's
 	/// <c>value</c> is its binding: drop it and replay the binding through a mapping. A process parameter described as
 	/// <c>FileCollection</c> is declared by that type, and the rebuild names its one item <c>File</c> whatever the
 	/// described item was called.</para>

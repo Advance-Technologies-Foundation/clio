@@ -70,11 +70,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>49949f53</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.116</c>) on branch <c>feature/ENG-103937-review-followups</c>, which starts from
-	/// <c>main</c> at <c>c5f96107</c> (1.6.6.114), so the cut carries everything 1.6.6.114 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>805f8a18</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.117</c>) on branch <c>feature/ENG-103162-collection-item-shape</c>, which starts from
+	/// <c>main</c> at <c>54591cc8</c> (1.6.6.116), so the cut carries everything 1.6.6.116 shipped.
 	/// This cut took the script route: <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and
-	/// packed it, and the restamp (<c>c7195556</c>) was committed afterwards.
+	/// packed it, and the restamp (<c>31d1ccfc</c>) was committed afterwards.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -91,7 +91,7 @@ public class BundledProcessBuilderPackageTests {
 	/// (ENG-103162) - <c>itemProperties</c> on <c>parameters[]</c> and <c>addParameter</c> builds exactly the declared items
 	/// (the designer's nested type menu, at most two collection levels, Binary and a third level refused naming the item
 	/// path), <c>FileCollection</c> is built by the same code as a Collection with one item <c>File: File</c>, a described
-	/// collection replays as it is, and <c>setParameter</c> refuses <c>itemProperties</c>. 1.6.6.117 is the create/modify
+	/// collection replays as it is when it is unbound, and <c>setParameter</c> refuses <c>itemProperties</c>. 1.6.6.117 is the create/modify
 	/// floor clio enforces (raised from 1.6.6.109, because an older server drops the member silently). What earlier cuts
 	/// carried is in this file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
@@ -208,9 +208,9 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
-	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.116 the
-	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.116</c> points at it; the descriptor restamp is the child
-	/// commit <c>c7195556</c>).
+	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.117 the
+	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.117</c> points at it; the descriptor restamp is the child
+	/// commit <c>31d1ccfc</c>).
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
