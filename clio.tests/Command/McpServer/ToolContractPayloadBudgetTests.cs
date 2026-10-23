@@ -282,7 +282,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Re-measured by lowering the ceiling: create-business-process 35024, modify-business-process 34991,
 	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom. Gate-1 fixes then moved the create and
 	// modify clause inside its parentheses (byte-neutral) and rewrote describe's replay rule by the parameter's own
-	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom.
+	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom. The cut
+	// 1.6.6.117 then moved the floor literal (same length) and named itemProperties in create's and modify's floor
+	// reasons (+16 bytes each): create 35040, modify 35007, describe 34883 - 32, 65 and 189 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

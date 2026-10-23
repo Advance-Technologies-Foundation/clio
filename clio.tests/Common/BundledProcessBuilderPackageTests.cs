@@ -87,26 +87,16 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.109 (1.6.6.110 to 1.6.6.113 and 1.6.6.115 were superseded cuts; 1.6.6.114 shipped this work before the review follow-up): SysFile attachment
-	/// storage in the Process file element (ENG-103937) - an object with no attachment object of its own is written in
-	/// SysFile, linked by <c>RecordId</c>, as the Object attachments source and as the target of all three variants;
-	/// the record scope takes the designer's shape (a lookup <c>In</c> filter when the record object has a primary
-	/// display column, a Guid compare otherwise); a SysFile-to-SysFile retarget clears the scope; and a stored SysFile
-	/// side of an object that has its own attachment object is kept but named as a describe issue; and the code-review
-	/// fixes (a target's identity check and retarget follow its file object, setFilter refuses the SysFile record scope
-	/// it cannot type, describe names an undecidable attachment object and an untyped <c>RecordId</c> condition), and the
-	/// gate-3 fixes (a link column alone may not move a target, a guarded repair, an unreadable SysFile record object
-	/// refused, a mapped filter value's <c>Id</c> written only on a lookup column, as the designer writes it), and the
-	/// stand-run fixes (a notice and describe issue for a SysFile source whose filter reads every record's files, the
-	/// empty-record notice naming only the target's kind, disabled filter items selecting nothing), and the review
-	/// follow-up (setFilter and the record scope read <c>eq</c> and <c>equals</c> as equality, like <c>equal</c>; a
-	/// link column alone that changes an orphan target's record object is refused naming the stored attachment object;
-	/// caller-supplied text in filter refusals is sanitized).
-	/// 1.6.6.109 stays the create/modify floor clio enforces (no floor raise). What earlier cuts carried is in this
-	/// file's git history rather than here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.116: the declared item shape of a Collection process parameter
+	/// (ENG-103162) - <c>itemProperties</c> on <c>parameters[]</c> and <c>addParameter</c> builds exactly the declared items
+	/// (the designer's nested type menu, at most two collection levels, Binary and a third level refused naming the item
+	/// path), <c>FileCollection</c> is built by the same code as a Collection with one item <c>File: File</c>, a described
+	/// collection replays as it is, and <c>setParameter</c> refuses <c>itemProperties</c>. 1.6.6.117 is the create/modify
+	/// floor clio enforces (raised from 1.6.6.109, because an older server drops the member silently). What earlier cuts
+	/// carried is in this file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT skip the package suite: it passed on the producing sources on both configurations before the
-	/// cut - 4440 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
+	/// cut - 4473 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on the manual route) is the ONE path that can reach the coarse failure the two
 	/// security counts below exist to catch. The script checked the inventory: 293
@@ -186,7 +176,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"F4FD29708CA6141FC5CDD840CED07E8C6F9CCBB2355ACF37EBD82A3952A3E4BC";
+		"E2D239AB182B1A10FA3825A668250943F765BD9144000D964BF2A6E3B9924FEB";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -214,7 +204,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.116";
+	private const string ExpectedArchiveVersion = "1.6.6.117";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -228,7 +218,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "49949f53af55fe39484443475b870e81871559aa";
+	private const string ExpectedProducingCommit = "805f8a189ebc8f1f87804ca4a7be3ca6a13b62d0";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -254,7 +244,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792580732000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792739488000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

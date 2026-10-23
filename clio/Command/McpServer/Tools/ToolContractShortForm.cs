@@ -94,7 +94,7 @@ internal static class ToolContractShortForm {
 	/// <summary>The parameter fields: every member of the bundled server's parameter descriptor.</summary>
 	internal static readonly IReadOnlyList<string> CreateParameterShape = [
 		"name", "type", "direction?", "caption?", "description?", "referenceSchema?", "typeFromElement?",
-		"typeFromElementParameter?", "value?"
+		"typeFromElementParameter?", "value?", "itemProperties?"
 	];
 
 	/// <summary>

@@ -5,7 +5,8 @@
 under ENG-95984 File process parameter type and moved there the same day, so that ENG-95984 can close)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) (non-goals)
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D2, rejected option C
-**Status**: in-progress (criteria refined with the owner on 2026-10-21; see "Owner decisions")
+**Status**: review (criteria refined with the owner on 2026-10-21, see "Owner decisions"; cut CrtProcessBuilder
+1.6.6.117 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
 **Size**: M (inference from D2's costing of option C: about 150 LOC and 12 tests in the package, plus nested-type
 rules, a clio surface and guidance; re-sized when refined)
 **Repo**: crt-process-builder, clio, clio-knowledge (its own PR triple)
