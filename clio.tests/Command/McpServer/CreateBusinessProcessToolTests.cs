@@ -457,7 +457,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The create contract's parameters[] clause offers itemProperties to declare the columns of a Collection, with its per-item keys, the Variable item default and the one nested level. It is the only place an agent learns that a collection no output can be mirrored from can still be shaped, and the guidance gates on this exact wording, so a trim that drops it sends agents back to a shapeless collection.")]
+	[Description("The create contract's parameters[] clause offers itemProperties to declare the columns of a Collection, with its per-item keys, the Variable item default and the one nested level. It is where the always-loaded contract tells an agent that a collection no output can be mirrored from can still be shaped, and the guidance gates on this exact wording, so a trim that drops it sends agents back to a shapeless collection.")]
 	public void CreateBusinessProcessTool_ShouldOfferTheDeclaredItemShape_InTheParametersClause() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)

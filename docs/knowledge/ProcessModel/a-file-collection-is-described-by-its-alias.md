@@ -24,6 +24,7 @@ accepts `type: FileCollection` beside its own one-file `itemProperties`, because
 other shape beside the alias is refused.
 
 **What breaks if you ignore it** — the predictable "simplification" is to report the platform type
-name. A caller that replays it gets a bare `Collection` with no items: it saves green, binds nothing
+name. A caller that replays only name, type and direction (or that runs against a server before the
+`itemProperties` floor) gets a bare `Collection` with no items: it saves green, binds nothing
 per item, and every file consumer behind it reads `null` (see
 `../platform/a-collection-row-is-rebuilt-from-the-target-items.md`).

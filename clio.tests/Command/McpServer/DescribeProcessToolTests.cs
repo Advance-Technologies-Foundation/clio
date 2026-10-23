@@ -421,8 +421,10 @@ public sealed class DescribeProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		toolText.Should().Contain("never by re-typing the shape - except a parameter described as FileCollection (or FileLocator, one file): declare it by type FileCollection (or File); a rebuild names its item File.",
-			because: "the always-loaded rebuild rule must not send an agent down a path a FileCollection cannot take");
+		toolText.Should().Contain("Feed a described collection back by how it was made: one with its own tag through addParameter's typeFromElement (naming its source); an untagged one as described, type + itemProperties (a bound one's value replays as a mapping, not a value); a parameter described as FileCollection (or FileLocator, one file) by type FileCollection (or File), and a rebuild names its item File.",
+			because: "the always-loaded rebuild rule must send a mirrored, a declared and a FileCollection parameter each down the path the write side takes");
+		toolText.Should().NotContain("never by re-typing the shape",
+			because: "a declared collection is rebuilt by re-sending its shape, so the old rule would leave it unrebuildable");
 	}
 
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>

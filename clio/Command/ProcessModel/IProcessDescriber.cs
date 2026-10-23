@@ -2147,12 +2147,14 @@ public sealed class DescribedParameter {
 	/// column to name and no tag at all: measured, 0 of the 407 item properties in the shipped corpus carry one.
 	/// Reading a tag as a required field is how a consumer written against the first case silently rejects every
 	/// instance of the second.</para>
-	/// <para>Feed a MIRRORED collection (tagged items) back through <c>addParameter</c>'s <c>typeFromElement</c>
-	/// naming its source. A DECLARED one (untagged items) has no source to mirror: send it back as described,
-	/// <c>type</c> + <c>itemProperties</c>, which the write side reads as the declared shape and whose describe-only
-	/// members it ignores (on a <c>CrtProcessBuilder</c> at this clio's create floor; an older one drops
-	/// <c>itemProperties</c>). A process parameter described as <c>FileCollection</c> is declared by that type, and
-	/// the rebuild names its one item <c>File</c> whatever the described item was called.</para>
+	/// <para>Feed a collection back by how it was made, read from the parameter's OWN <see cref="Tag"/>. A tagged one
+	/// was MIRRORED: re-create it through <c>addParameter</c>'s <c>typeFromElement</c> naming its source. An untagged
+	/// one was DECLARED and has no source to mirror: send it back as described, <c>type</c> + <c>itemProperties</c>,
+	/// which the write side reads as the declared shape while ignoring the describe-only members (once clio's create
+	/// floor is a <c>CrtProcessBuilder</c> that reads <c>itemProperties</c>; an older one drops it). A bound one's
+	/// <c>value</c> is its binding: drop it and replay the binding through a mapping. A process parameter described as
+	/// <c>FileCollection</c> is declared by that type, and the rebuild names its one item <c>File</c> whatever the
+	/// described item was called.</para>
 	/// </summary>
 	[JsonPropertyName("itemProperties")]
 	public List<DescribedParameter> ItemProperties { get; set; }

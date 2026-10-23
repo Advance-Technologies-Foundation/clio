@@ -280,7 +280,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// and paid by SWAP: setParameter's re-mirror clause dropped ", both sides must be collections, and a shapeless
 	// source is refused here too" (76 bytes), two refusals the server words loudly and process-parameters states.
 	// Re-measured by lowering the ceiling: create-business-process 35024, modify-business-process 34991,
-	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom.
+	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom. Gate-1 fixes then moved the create and
+	// modify clause inside its parentheses (byte-neutral) and rewrote describe's replay rule by the parameter's own
+	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

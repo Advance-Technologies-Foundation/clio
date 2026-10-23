@@ -138,7 +138,7 @@ public class ModifyBusinessProcessTool(
 		 + "copy an element parameter's exact type — mirroring a COLLECTION output (e.g. a "
 		 + "readData element's ResultCompositeObjectList) also copies its per-column itemProperties, "
 		 + "stamps tag '<element>.<parameter>' and binds the parameter to that output in the same step, exactly as the "
-		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag), or itemProperties [{name, type, direction?, caption?, referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested Collection level), "
+		 + "designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag; or itemProperties [{name, type, direction?, caption?, referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested Collection level)), "
 		 + "addMapping (with a 'mapping' whose keys are FLAT, not "
 		 + "nested under a 'target' object: a target of either 'targetProcessParameter' or 'elementName' + "
 		 + "'elementParameter', and one source of {sourceElement, sourceElementParameter (+ sourceColumn)} "

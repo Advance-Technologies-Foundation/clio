@@ -40,17 +40,19 @@ records can be declared with its columns. `FileCollection` then becomes sugar fo
 | O-3 | Write shape | `itemProperties: [{name, type, direction?, caption?, referenceSchema?, itemProperties?}]`; the members describe adds (`uid`, `source`, `isRequired`, `isResult`, `tag`, ...) are ignored, so a described collection replays as it is. A described binding (a value whose `source` is not None / ConstValue) is passed over, since bindings replay through mappings; a constant item value, a mirror on an item, `itemProperties` beside `typeFromElement` or on a non-collection are refused. `type: FileCollection` beside its OWN one-file shape is accepted (describe emits both); any other shape beside the alias is refused |
 | O-4 | `setParameter` with `itemProperties` | Out of scope, refused loudly ("remove the parameter and add it again") instead of being dropped as an unknown member |
 
-## Acceptance sketch
+## Acceptance criteria (refined 2026-10-21; the test plan cites these numbers)
 
-- [ ] A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
-      `ContainerUId` of the process), and describe reads them back so the output rebuilds the same shape.
-- [ ] `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
-      (FileLocator, Variable), so the alias and the general form cannot drift.
-- [ ] An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported depth
-      are refused with a message that names the item.
-- [ ] An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape survives a
-      describe read-back on the cut.
-- [ ] The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
+- [ ] **AC-1** A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
+      `ContainerUId` of the process).
+- [ ] **AC-2** `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
+      (FileLocator, Variable) at the same direction, so the alias and the general form cannot drift.
+- [ ] **AC-3** Describe reads the shape back, and its output rebuilds the same shape (an unbound declared collection
+      as described; a described FileCollection by its alias).
+- [ ] **AC-4** An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported
+      depth are refused with a message that names the item.
+- [ ] **AC-5** An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape
+      survives a describe read-back on the cut.
+- [ ] **AC-6** The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
 
 ## Test sketch
 
@@ -61,6 +63,7 @@ refined.
 
 ## Definition of Done
 
-- [ ] Criteria refined with the owner and the status moved to ready-for-dev in `spec/sprint-status.yaml`.
+- [x] Criteria refined with the owner (2026-10-21); the status moved straight to in-progress in
+      `spec/sprint-status.yaml`, since implementation started the same day.
 - [ ] The repository rules of story 1 apply unchanged (package fixture categories, AAA, `because:`, `[Description]`,
       floor = the final cut, MCP and docs review statements, review gates, only a human merges).

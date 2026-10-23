@@ -297,7 +297,7 @@ public class CreateBusinessProcessTool(
 		 + "typeFromElement + typeFromElementParameter to copy an element parameter's exact type — mirroring a COLLECTION "
 		 + "output (e.g. a readData element's ResultCompositeObjectList) also copies its per-column itemProperties, "
 		 + "stamps tag '<element>.<parameter>' and binds the parameter to that output in the same step, exactly as "
-		 + "the designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag), or itemProperties [{name, type, direction?, caption?, referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested Collection level), "
+		 + "the designer's 'create parameter from element' does; a collection output is REFUSED as a mirror source when it carries NO itemProperties, or when an item carries no column UId in its tag; or itemProperties [{name, type, direction?, caption?, referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested Collection level)), "
 		 + "and mappings[] (bind a target to a source; an entry's keys are FLAT, not nested under a 'target' "
 		 + "object — the target is either 'elementName' + "
 		 + "'elementParameter' (an element input) or 'targetProcessParameter' (a process parameter: a BINDING, read "
