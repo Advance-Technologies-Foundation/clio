@@ -428,7 +428,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.117 (for itemProperties, isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.118 (for itemProperties, isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");

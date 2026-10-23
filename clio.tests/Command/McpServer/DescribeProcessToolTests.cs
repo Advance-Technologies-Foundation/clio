@@ -421,7 +421,7 @@ public sealed class DescribeProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		toolText.Should().Contain("Feed a described collection back by how it was made: one with its own tag through addParameter's typeFromElement (naming its source, without its itemProperties); an untagged one as described, type + itemProperties (drop a bound one's value and replay its binding as a mapping); a parameter described as FileCollection (or FileLocator, one file) by type FileCollection (or File), and a rebuild names its item File.",
+		toolText.Should().Contain("Feed a described collection back by how it was made: one with its own tag through addParameter's typeFromElement (naming its source, without its itemProperties); an untagged one as described, type + itemProperties (drop a bound one's value and replay its binding as a mapping); a parameter described as FileCollection (or FileLocator, one file) by type FileCollection (or File) with its itemProperties, which keep its item (sent without them, the item is renamed File).",
 			because: "the always-loaded rebuild rule must send a mirrored, a declared and a FileCollection parameter each down the path the write side takes");
 		toolText.Should().NotContain("never by re-typing the shape",
 			because: "a declared collection is rebuilt by re-sending its shape, so the old rule would leave it unrebuildable");

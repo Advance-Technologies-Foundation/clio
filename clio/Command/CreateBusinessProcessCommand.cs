@@ -275,14 +275,15 @@ namespace Clio.Command;
 // the new describe issues), and 1.6.6.107 the core-reuse fixes (only the designer's text types as the file-name
 // column, describe naming two run-time failures) and 1.6.6.109 the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id),
 // so 1.6.6.109 was the floor. 1.6.6.104 shipped story-1 follow-ups only.
-// Raised to 1.6.6.117 by ENG-103162: parameters[] and addParameter take itemProperties, the declared item shape of a
+// Raised to 1.6.6.118 by ENG-103162: parameters[] and addParameter take itemProperties, the declared item shape of a
 // Collection. The request contract has no extension-data bag, so a 1.6.6.109-1.6.6.116 server drops the member as an
 // unknown key and saves a SHAPELESS collection with success: true - nothing refuses it, and a later mapping to one of
 // the declared items fails instead. This clio's contract names the member, so the floor is the first archive that
-// reads it (1.6.6.110-1.6.6.116 carried the SysFile storage work and its follow-ups, which this floor also covers).
+// reads it (1.6.6.110-1.6.6.116 carried the SysFile storage work and its follow-ups, which this floor also covers; 1.6.6.117
+// was a superseded cut of this work, and 1.6.6.118 adds that a described FileCollection keeps its item).
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for this same reason and point
 // here instead of repeating it.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.117",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.118",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

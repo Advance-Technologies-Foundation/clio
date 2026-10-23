@@ -15,7 +15,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for ENG-101880 over the real MCP path: run-process runs EXACTLY the version whose code it
-/// is given. NOT in CI - run manually against a reachable environment carrying CrtProcessBuilder 1.6.6.117 or later.
+/// is given. NOT in CI - run manually against a reachable environment carrying CrtProcessBuilder 1.6.6.118 or later.
 /// <para>Each version computes a different marker from the same input, so the value that comes back proves which
 /// version ran - before the fix, the code of a new version silently ran the active one and answered its value.
 /// Formula elements need no compile, so the stand is not reloaded. Every run creates two permanent schemas: the
@@ -29,7 +29,7 @@ namespace Clio.Mcp.E2E;
 public sealed class RunProcessVersionE2ETests {
 
 	/// <summary>The floor of modify-business-process-as-new-version, which the arrange step calls - higher than the formula element's 1.6.3.16; named in the skip message.</summary>
-	private const string MinimumPackageVersion = "1.6.6.117";
+	private const string MinimumPackageVersion = "1.6.6.118";
 
 	private const int Seed = 7;
 

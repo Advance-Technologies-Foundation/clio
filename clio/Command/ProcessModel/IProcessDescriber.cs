@@ -2151,10 +2151,10 @@ public sealed class DescribedParameter {
 	/// was MIRRORED: re-create it through <c>addParameter</c>'s <c>typeFromElement</c> naming its source. An untagged
 	/// one was DECLARED and has no source to mirror: send it back as described, <c>type</c> + <c>itemProperties</c>,
 	/// which the write side reads as the declared shape while ignoring the describe-only members (from
-	/// <c>CrtProcessBuilder</c> 1.6.6.117, this clio's create floor; an older one drops <c>itemProperties</c>). A bound one's
+	/// <c>CrtProcessBuilder</c> 1.6.6.118, this clio's create floor; an older one drops <c>itemProperties</c>). A bound one's
 	/// <c>value</c> is its binding: drop it and replay the binding through a mapping. A process parameter described as
-	/// <c>FileCollection</c> is declared by that type, and the rebuild names its one item <c>File</c> whatever the
-	/// described item was called.</para>
+	/// <c>FileCollection</c> is declared by that type with its <c>itemProperties</c>, which keep the described item; sent
+	/// by the type alone, the rebuild names its one item <c>File</c>.</para>
 	/// </summary>
 	[JsonPropertyName("itemProperties")]
 	public List<DescribedParameter> ItemProperties { get; set; }
