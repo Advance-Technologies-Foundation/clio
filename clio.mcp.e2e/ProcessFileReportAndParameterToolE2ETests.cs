@@ -357,7 +357,7 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 			// Act
 			CallToolResult callResult = await CreateAsync(context, created, processName,
-				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement("OF1", UseInProcessObjectBlockJson)),
+				LinearDescriptor(processName, ContactAndAccountRefParametersJson, ("OF1", FileElement("OF1", UseInProcessObjectBlockJson)),
 					("PF1", FileElement("PF1", filesBlock))));
 
 			// Assert
@@ -401,7 +401,7 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 			// Act
 			CallToolResult callResult = await CreateAsync(context, created, processName,
-				LinearDescriptor(processName, RecordRefParametersJson, ("OF1", FileElement("OF1", UseInProcessObjectBlockJson)),
+				LinearDescriptor(processName, ContactAndAccountRefParametersJson, ("OF1", FileElement("OF1", UseInProcessObjectBlockJson)),
 					("PF1", FileElement("PF1", toContact)), ("PF2", FileElement("PF2", toAccount))));
 
 			// Assert
@@ -688,19 +688,22 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 			const string saveTo =
 				"\"saveTo\": { \"object\": \"AccountAddress\", \"recordId\": { \"processParameter\": \"AddressRef\" } }";
 			string block;
+			string parametersJson;
 			if (variant == "report") {
 				ListPrintableRow printable = await ReadPrintableAsync(context, InvoiceObject, caption: null);
 				block = $$"""
 					{ "report": { "printable": "{{printable.TemplateId}}", "recordId": { "processParameter": "InvoiceRef" } },
 					  {{saveTo}} }
 					""";
+				parametersJson = SysFileReportTargetParametersJson;
 			} else {
 				block = $$"""{ "files": { "processParameter": "Docs" }, {{saveTo}} }""";
+				parametersJson = SysFileFilesTargetParametersJson;
 			}
 
 			// Act
 			CallToolResult callResult = await CreateAsync(context, created, processName,
-				LinearDescriptor(processName, SysFileTargetParametersJson, ("PF1", FileElement("PF1", block))),
+				LinearDescriptor(processName, parametersJson, ("PF1", FileElement("PF1", block))),
 				SysFileMinimumPackageVersion);
 
 			// Assert
@@ -723,19 +726,39 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 
 	#region Methods: Descriptors
 
-	// The SysFile target cases: an Invoice to report on, a FileCollection to save, an Account address to save to.
-	private const string SysFileTargetParametersJson = """
+	// The SysFile target case of the report variant: an Invoice to report on and an Account address to save to.
+	private const string SysFileReportTargetParametersJson = """
 		[
 		  { "name": "InvoiceRef", "type": "Lookup", "referenceSchema": "Invoice", "direction": "In" },
+		  { "name": "AddressRef", "type": "Lookup", "referenceSchema": "AccountAddress", "direction": "In" }
+		]
+		""";
+
+	// The SysFile target case of the files variant: a FileCollection to save and an Account address to save to. It
+	// declares no Invoice reference, which a stand without the Invoice object cannot declare (see
+	// ContactAndAccountRefParametersJson).
+	private const string SysFileFilesTargetParametersJson = """
+		[
 		  { "name": "Docs", "type": "FileCollection" },
 		  { "name": "AddressRef", "type": "Lookup", "referenceSchema": "AccountAddress", "direction": "In" }
 		]
 		""";
 
-	// The record references the cases read: an Invoice, a Contact and an Account by Lookup.
+	// The record references the report cases read: an Invoice, a Contact and an Account by Lookup.
 	private const string RecordRefParametersJson = """
 		[
 		  { "name": "InvoiceRef", "type": "Lookup", "referenceSchema": "Invoice", "direction": "In" },
+		  { "name": "ContactRef", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
+		  { "name": "AccountRef", "type": "Lookup", "referenceSchema": "Account", "direction": "In" }
+		]
+		""";
+
+	// The record references of the cases that read no Invoice: a Contact and an Account by Lookup. Kept apart from
+	// RecordRefParametersJson because a Lookup to Invoice cannot even be declared where the Invoice object does not
+	// exist - a Studio stand refuses the whole build with 'Item with name "Invoice" not found' before anything under
+	// test runs.
+	private const string ContactAndAccountRefParametersJson = """
+		[
 		  { "name": "ContactRef", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
 		  { "name": "AccountRef", "type": "Lookup", "referenceSchema": "Account", "direction": "In" }
 		]

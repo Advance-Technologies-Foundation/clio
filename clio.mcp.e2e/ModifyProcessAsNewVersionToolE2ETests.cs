@@ -225,53 +225,59 @@ public sealed class ModifyProcessAsNewVersionToolE2ETests {
 	#region Methods: Private
 
 	[Test]
-	[Description("Over the real MCP path, a setElement carrying email.template in the operations array lands on the NEW VERSION (ENG-95986): the version's sendEmail element describes as messageSource 'template' with the template id and display name and no body. This route runs no read-back guard, so this describe is the only evidence clio can produce that the template member is not silently discarded on the way to a version. Depends on the stock template 'Case closure notification'.")]
+	[Description("Over the real MCP path, a setElement carrying email.template in the operations array lands on the NEW VERSION (ENG-95986): the version's sendEmail element describes as messageSource 'template' with the template id and display name and no body. This route runs no read-back guard, so this describe is the only evidence clio can produce that the template member is not silently discarded on the way to a version. The test writes the template itself and removes it afterwards, so it needs no stock template.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process-as-new-version carries a template-mode sendEmail into the new version")]
 	public async Task ModifyProcessAsNewVersion_Should_CarryATemplateModeEmailIntoTheNewVersion() {
-		// Arrange - a custom-message sendEmail element on the source process
+		// Arrange - a custom-message sendEmail element on the source process, and a template without a macro-source
+		// object, so no templateEntity is needed
 		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
 		string processName = $"UsrClioBpVersionEmailTplE2e{Guid.NewGuid():N}";
 		await CallToolExpectingSuccessAsync(context, CreateToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildSendEmailDescriptor(processName)
 		});
-
-		// Act - switch the element to a template ON THE VERSION (one without a macro-source object, so no templateEntity)
-		CallToolResult callResult = await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
-			["environment-name"] = context.EnvironmentName,
-			["process-name"] = processName,
-			["package-name"] = "Custom",
-			["operations"] = """
-				[ { "op": "setElement", "elementName": "SendEmail1",
-				    "elementUpdate": { "email": { "template": "Case closure notification" } } } ]
-				"""
-		});
-
-		// Assert
-		JsonSerializer.Serialize(callResult).Should().Contain($"{processName}Custom1",
-			because: "the version must have been saved under the platform-composed name before its content can be checked");
-		CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
-			new Dictionary<string, object?> {
+		E2EEmailTemplate template = await EmailTemplateE2EArrange.CreateAsync(context.Session,
+			context.EnvironmentName!, objectSchemaName: null, context.CancellationTokenSource.Token);
+		try {
+			// Act - switch the element to the template ON THE VERSION
+			CallToolResult callResult = await CallToolExpectingSuccessAsync(context, ToolName, new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
-				["mode"] = "full",
-				["process-name"] = $"{processName}Custom1"
+				["process-name"] = processName,
+				["package-name"] = "Custom",
+				["operations"] = $$"""
+					[ { "op": "setElement", "elementName": "SendEmail1",
+					    "elementUpdate": { "email": { "template": "{{template.Name}}" } } } ]
+					"""
 			});
-		JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);
-		JsonObject sendEmail = describedVersion["elements"]!.AsArray()
-			.Select(element => element!.AsObject())
-			.Single(element => element["name"]!.GetValue<string>() == "SendEmail1");
-		JsonObject email = sendEmail["email"]!.AsObject();
-		email["messageSource"]!.GetValue<string>().Should().Be("template",
-			because: "the template member must reach the version's element - this route has no read-back warning to catch a drop");
-		email["template"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(
-			because: "the resolved template id is stored on the version's EmailTemplateId");
-		email["templateDisplay"]!.GetValue<string>().Should().Be("Case closure notification",
-			because: "the template NAME is stored as the lookup's display value");
-		(email["hasBody"]?.GetValue<bool>() ?? false).Should().BeFalse(
-			because: "the custom body is cleared on the switch and a template element reports no body");
-		describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
-			because: "creating a version must never change what the environment executes");
+
+			// Assert
+			JsonSerializer.Serialize(callResult).Should().Contain($"{processName}Custom1",
+				because: "the version must have been saved under the platform-composed name before its content can be checked");
+			CallToolResult describeResult = await CallToolAsync(context, DescribeToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["mode"] = "full",
+					["process-name"] = $"{processName}Custom1"
+				});
+			JsonObject describedVersion = DescribedProcessGraph.Read(describeResult);
+			JsonObject sendEmail = describedVersion["elements"]!.AsArray()
+				.Select(element => element!.AsObject())
+				.Single(element => element["name"]!.GetValue<string>() == "SendEmail1");
+			JsonObject email = sendEmail["email"]!.AsObject();
+			email["messageSource"]!.GetValue<string>().Should().Be("template",
+				because: "the template member must reach the version's element - this route has no read-back warning to catch a drop");
+			email["template"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace(
+				because: "the resolved template id is stored on the version's EmailTemplateId");
+			email["templateDisplay"]!.GetValue<string>().Should().Be(template.Name,
+				because: "the template NAME is stored as the lookup's display value");
+			(email["hasBody"]?.GetValue<bool>() ?? false).Should().BeFalse(
+				because: "the custom body is cleared on the switch and a template element reports no body");
+			describedVersion["isActiveVersion"]!.GetValue<bool>().Should().BeFalse(
+				because: "creating a version must never change what the environment executes");
+		} finally {
+			await EmailTemplateE2EArrange.DeleteAsync(context.Session, context.EnvironmentName!, template);
+		}
 	}
 
 	// A source process with a custom-message sendEmail element, so the version edit has a mode to switch FROM.
