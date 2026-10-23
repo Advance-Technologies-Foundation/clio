@@ -283,7 +283,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom. Gate-1 fixes then moved the create and
 	// modify clause inside its parentheses (byte-neutral) and rewrote describe's replay rule by the parameter's own
 	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom. The cut
-	// 1.6.6.117 (then 1.6.6.118) moved the floor literal (same length) and named itemProperties in create's and modify's floor
+	// 1.6.6.117 (then 1.6.6.118 and 1.6.6.119) moved the floor literal (same length) and named itemProperties in create's and modify's floor
 	// reasons (+16 bytes each): create 35040, modify 35007, describe 34883 - 32, 65 and 189 bytes of headroom.
 	// Gate-3 fixes named the item's description? in both clauses (+14 bytes each) and made describe's replay rule an
 	// instruction that also drops a mirror's itemProperties (+35 bytes): create 35054, modify 35021, describe 34918 -

@@ -6,10 +6,10 @@ under ENG-95984 File process parameter type and moved there the same day, so tha
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) (non-goals)
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D2, rejected option C
 **Status**: review (criteria refined with the owner on 2026-10-21, see "Owner decisions"; cut CrtProcessBuilder
-1.6.6.118 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
+1.6.6.119 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
 **Size**: M (inference from D2's costing of option C: about 150 LOC and 12 tests in the package, plus nested-type
 rules, a clio surface and guidance). Actual: package +1.0k lines with 13 test groups (IS-01..IS-13), clio +0.5k,
-knowledge +0.1k; one cut, 1.6.6.118)
+knowledge +0.1k; cuts 1.6.6.117 and 1.6.6.118 superseded, final cut 1.6.6.119)
 **Repo**: crt-process-builder, clio, clio-knowledge (its own PR triple)
 **Depends on**: story 1 (ENG-95984 File process parameter type) merged; **earliest slot: after ENG-96506 Generated
 report + process parameter modes** (its package PR merged)

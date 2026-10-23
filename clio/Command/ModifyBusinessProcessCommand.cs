@@ -222,8 +222,8 @@ namespace Clio.Command;
 // released.
 // Raised to 1.6.6.109 by ENG-96506 for the Generated report and Process parameter variants of the fileProcessing
 // element; the rationale is recorded once, on CreateBusinessProcessOptions, and holds here unchanged.
-// Raised to 1.6.6.118 by ENG-103162 for itemProperties on addParameter; the rationale is on CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.118",
+// Raised to 1.6.6.119 by ENG-103162 for itemProperties on addParameter; the rationale is on CreateBusinessProcessOptions.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.119",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
