@@ -70,11 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>ce7b0fc6</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.120</c>) on branch <c>feature/ENG-104198-sysfile-describe-texts</c>, which starts from
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>00880899</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.121</c>) on branch <c>feature/ENG-104198-sysfile-describe-texts</c>, which starts from
 	/// <c>main</c> at <c>4f4e1443</c> (1.6.6.119), so the cut carries everything 1.6.6.119 shipped.
 	/// This cut took the script route: <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and
-	/// packed it, and the restamp (<c>9c74eb62</c>) was committed afterwards.
+	/// packed it, and the restamp (<c>1751b27e</c>) was committed afterwards. 1.6.6.120 (producing <c>ce7b0fc6</c>) was
+	/// superseded on the branch by the final review's fixes.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -93,12 +94,14 @@ public class BundledProcessBuilderPackageTests {
 	/// remedies hold on create and on modify; a sort or filter column that is not a <c>SysFile</c> column is refused
 	/// naming the file table and its columns; a record scope bound to a parameter on an object with a primary display
 	/// column is stored as the designer's lookup compare (a constant there stays a lookup In filter), and the In filter
-	/// older cuts stored is still read; describe reports the platform's BLOB type as <c>Blob</c>. The create/modify floor
+	/// older cuts stored is still read; describe reports the platform's BLOB type as <c>Blob</c>; refusals reachable on create name both routes, the
+	/// listed <c>SysFile</c> columns leave out the content and internal columns, and the <c>RecordId</c> caption matches
+	/// the designer. The create/modify floor
 	/// stays at 1.6.6.119: clio advertises nothing new, and the convergence check refuses an older package anyway. What
 	/// earlier cuts carried is in this file's git history rather than here: it described archives that are no longer
 	/// shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4517 passed,
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4528 passed,
 	/// 0 failed, on <c>dev-nf</c> (<c>dev-n8</c> was not run: the producing worktree had no .NET Core reference set) -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
@@ -180,7 +183,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"37E299E56D792DDFED77BC810EAF375A0A87E0A2F6D149C16E8B456B6DC050B6";
+		"C3DEC6AE9D2F20E04EBEFB562D9A9B09FF52C35286E3425F0065C1E9E8ED0C20";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -208,7 +211,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.120";
+	private const string ExpectedArchiveVersion = "1.6.6.121";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -222,7 +225,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "ce7b0fc6da3765d14ce46ce82f80445843d1ba2f";
+	private const string ExpectedProducingCommit = "00880899b5ea88de6b8014afa0ee34f295401091";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -248,7 +251,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792862787000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792870061000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
