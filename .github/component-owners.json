@@ -30,11 +30,8 @@
         "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
         "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
         "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
-        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
-        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs",
         "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
-        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
-        "clio/Command/McpServer/Tools/LocalizePageTool.cs"
+        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs"
       ]
     },
     {
@@ -50,6 +47,57 @@
       "paths": [
         "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
         "clio/Command/SchemaHandlerValidationService.cs"
+      ]
+    },
+    {
+      "id": "classic-migration",
+      "option": "Classic to Freedom UI migration (get-classic-page-sources, get-classic-list-columns, Classic section and page analysis)",
+      "label": "component:classic-migration",
+      "color": "c5def5",
+      "description": "Classic UI analysis tools for Classic to Freedom UI migration",
+      "owners": [
+        "kbondarenko-tech"
+      ],
+      "paths": [
+        "clio/Command/Classic*",
+        "clio/Command/GetClassic*",
+        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs"
+      ]
+    },
+    {
+      "id": "localization",
+      "option": "Localization (localize-page, section and entity captions localization, get-user-culture, culture catalog)",
+      "label": "component:localization",
+      "color": "c5def5",
+      "description": "App, page and entity localization, cultures",
+      "owners": [
+        "kbondarenko-tech"
+      ],
+      "paths": [
+        "clio/Command/Localization/",
+        "clio/Command/LocalizePageCommand.cs",
+        "clio/Command/GetUserCultureCommand.cs",
+        "clio/Command/ApplicationSectionLocalization.cs",
+        "clio/Command/SectionLocalizationPlanner.cs",
+        "clio/Command/McpServer/Tools/LocalizePageTool.cs",
+        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
+        "clio/Command/McpServer/Tools/EntitySchemaLocalizationContract.cs"
+      ]
+    },
+    {
+      "id": "mobile",
+      "option": "Mobile Freedom UI pages (create, design and validate mobile pages, mobile component registry)",
+      "label": "component:mobile",
+      "color": "c5def5",
+      "description": "Mobile Freedom UI pages: design, validation, component registry",
+      "owners": [
+        "OleksandrTyshchyk",
+        "dkorotin1"
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/MobileComponentRegistry/",
+        "clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs"
       ]
     },
     {
@@ -380,7 +428,6 @@
         "clio/Command/McpServer/Tools/GetBrowserSessionTool.cs",
         "clio/Command/McpServer/Tools/GetIdentityServiceConfigTool.cs",
         "clio/Command/McpServer/Tools/GetRecordRightsTool.cs",
-        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
         "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
         "clio/Command/McpServer/Tools/ManageAccessTool.cs",
         "clio/Command/McpServer/Tools/ManageLicenseTool.cs",
