@@ -21,16 +21,19 @@ date: 2026-10-24
 
 `SysFile.RecordId` is a plain Guid with no reference object; the filter editor retypes it as a LOOKUP of the record
 object only when that object has a `primaryDisplayColumn` (`ObjectFileProcessingUserTaskPropertiesPage`
-`_initFilterManagerConfig`). The lookup picker is multi-select, so a constant becomes an InFilter; a parameter is a
-single value, so it stays a CompareFilter even when retyped. The runtime form carries no `referenceSchemaName`; only
-the edit form names the object. The first measurement (M7, 2026-10-20, ENG-103937) covered three of the four cells and
-missed the parameter on a display-column object, so CrtProcessBuilder up to 1.6.6.119 wrote an InFilter there; the
-ENG-104198 package writes the designer's CompareFilter and still reads the InFilter that older builds stored.
+`_initFilterManagerConfig`). The rule is about this RETYPED `SysFile.RecordId` only: on a real lookup column the
+designer keeps an InFilter (with an `Id` in the value) for a parameter too - measured on `ContactFile.Contact` with a
+mapped Contact parameter (M21 E4, ENG-103937) - so do not generalise it to lookups. Why the retyped column differs is
+not established. The runtime form carries no `referenceSchemaName`; only the edit form names the object. The first
+measurement (M7, 2026-10-20, ENG-103937) covered three of the four cells and missed the parameter on a display-column
+object, so CrtProcessBuilder builds before ENG-104198 wrote an InFilter there; the ENG-104198 package writes the
+designer's CompareFilter and still reads the InFilter that older builds stored.
 
 **Why it is this way** - the designer's lookup picker needs a display column to render a record, so without one it
-falls back to a Guid text input; and a parameter right side is one value, never a list.
+falls back to a Guid text input.
 
 **What breaks if you ignore it** - a comparison, guide or test that expects one shape per object fails on the
 parameter cell; a reader of the runtime form alone cannot tell which object a lookup scope names; a writer that emits
-an InFilter for a parameter produces a shape the designer never does, and a reader that accepts only the new
-CompareFilter stops recognising scopes saved by older builds.
+an InFilter for a parameter on the retyped `RecordId` produces a shape the designer does not, a "fix" that turns real
+lookup parameter scopes into compares breaks the M21 E4 parity, and a reader that accepts only the new CompareFilter
+stops recognising scopes saved by older builds.
