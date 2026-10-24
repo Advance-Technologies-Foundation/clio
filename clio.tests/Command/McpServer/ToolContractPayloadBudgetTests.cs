@@ -271,6 +271,24 @@ public sealed class ToolContractPayloadBudgetTests {
 	// bytes), a rule the expression paragraph keeps and process-formulas owns. Re-measured by lowering the ceiling:
 	// modify-business-process 35016, create-business-process 34973, describe-business-process 34769 - 56, 99 and 303
 	// bytes of headroom.
+	//
+	// ENG-103162 (2026-10-21, the declared item shape) rewrote the same clause in create's parameters[] and modify's
+	// addParameter: "; mirror an output the platform shaped, or declare a bare Collection on purpose; a bare type
+	// Collection is an opaque list with no shape" became "or itemProperties [{name, type, direction?, caption?,
+	// referenceSchema?, itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested
+	// Collection level)" (+51 bytes each, no apostrophe so no ' escape). Modify went to 35067, 5 bytes of headroom,
+	// and paid by SWAP: setParameter's re-mirror clause dropped ", both sides must be collections, and a shapeless
+	// source is refused here too" (76 bytes), two refusals the server words loudly and process-parameters states.
+	// Re-measured by lowering the ceiling: create-business-process 35024, modify-business-process 34991,
+	// describe-business-process 34769 - 48, 81 and 303 bytes of headroom. Gate-1 fixes then moved the create and
+	// modify clause inside its parentheses (byte-neutral) and rewrote describe's replay rule by the parameter's own
+	// tag (+114 bytes): create 35024, modify 34991, describe 34883 - 48, 81 and 189 bytes of headroom. The cut
+	// 1.6.6.117 (then 1.6.6.118 and 1.6.6.119) moved the floor literal (same length) and named itemProperties in create's and modify's floor
+	// reasons (+16 bytes each): create 35040, modify 35007, describe 34883 - 32, 65 and 189 bytes of headroom.
+	// Gate-3 fixes named the item's description? in both clauses (+14 bytes each) and made describe's replay rule an
+	// instruction that also drops a mirror's itemProperties (+35 bytes): create 35054, modify 35021, describe 34918 -
+	// 18, 51 and 154 bytes of headroom. The 1.6.6.118 re-cut said that a FileCollection re-sent with its itemProperties keeps
+	// its item (describe +56 bytes): create 35054, modify 35021, describe 34974 - 18, 51 and 98 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

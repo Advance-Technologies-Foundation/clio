@@ -25,7 +25,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the "Process file" element, Object attachments variant (ENG-96505, story 1 of ENG-92719)
-/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.109 or later.
+/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.119 or later.
 /// <para>What only this level can show is the wire and the platform: the <c>fileProcessing</c> block travels as JSON
 /// members a WCF contract drops in silence when they are misspelled, the attachment storage is derived from the
 /// stand's REAL entity schemas (<c>AccountFile</c>, <c>ContactFile</c>, and an object with none, which is SysFile
@@ -53,11 +53,11 @@ public sealed class ProcessFileElementToolE2ETests {
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	/// <summary>
-	/// The create/modify floor (1.6.6.109): the Object attachments variant shipped in 1.6.6.103, and 1.6.6.105 registered
+	/// The create/modify floor (1.6.6.119): the Object attachments variant shipped in 1.6.6.103, and 1.6.6.105 registered
 	/// the other two, so the fixture's F2 describes as a Generated report element and the generic route is refused
 	/// for all three tasks. Named in the skip message.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.109";
+	private const string MinimumPackageVersion = "1.6.6.119";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element";

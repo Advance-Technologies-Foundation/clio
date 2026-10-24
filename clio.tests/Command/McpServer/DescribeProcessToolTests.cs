@@ -412,8 +412,8 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract's rebuild rule names its FileCollection exception (ENG-95984, gate-1 review): a parameter described as FileCollection carries no tag and has no source element to mirror, so 'feed it back through typeFromElement' cannot be followed for it; it is declared by type, and the rebuild names its item File.")]
-	public void DescribeProcess_ShouldNameTheFileCollectionException_ToTheRebuildRule() {
+	[Description("The describe contract's rebuild rule sends a described collection back by how it was made, read from the parameter's own tag: a mirrored one through typeFromElement without its itemProperties, a declared one as described with a bound value dropped and replayed as a mapping, and a FileCollection by its alias - and the old rule that forbade re-sending a shape is gone, since it would leave a declared collection unrebuildable.")]
+	public void DescribeProcess_ShouldStateTheRebuildRuleByHowTheCollectionWasMade() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
 
@@ -421,8 +421,10 @@ public sealed class DescribeProcessToolTests {
 		// (nothing to act on - the contract is the attribute itself)
 
 		// Assert
-		toolText.Should().Contain("never by re-typing the shape - except a parameter described as FileCollection (or FileLocator, one file): declare it by type FileCollection (or File); a rebuild names its item File.",
-			because: "the always-loaded rebuild rule must not send an agent down a path a FileCollection cannot take");
+		toolText.Should().Contain("Feed a described collection back by how it was made: one with its own tag through addParameter's typeFromElement (naming its source, without its itemProperties); an untagged one as described, type + itemProperties (drop a bound one's value and replay its binding as a mapping); a parameter described as FileCollection (or FileLocator, one file) by type FileCollection (or File) with its itemProperties, which keep its item (sent without them, the item is renamed File).",
+			because: "the always-loaded rebuild rule must send a mirrored, a declared and a FileCollection parameter each down the path the write side takes");
+		toolText.Should().NotContain("never by re-typing the shape",
+			because: "a declared collection is rebuilt by re-sending its shape, so the old rule would leave it unrebuildable");
 	}
 
 	/// <summary>Reads the describe tool's own [Description] - the agent-facing contract under test.</summary>

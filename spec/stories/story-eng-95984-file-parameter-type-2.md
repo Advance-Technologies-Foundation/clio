@@ -5,9 +5,11 @@
 under ENG-95984 File process parameter type and moved there the same day, so that ENG-95984 can close)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) (non-goals)
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D2, rejected option C
-**Status**: deferred (moves to ready-for-dev when its slot opens and its criteria are refined)
+**Status**: review (criteria refined with the owner on 2026-10-21, see "Owner decisions"; cut CrtProcessBuilder
+1.6.6.119 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
 **Size**: M (inference from D2's costing of option C: about 150 LOC and 12 tests in the package, plus nested-type
-rules, a clio surface and guidance; re-sized when refined)
+rules, a clio surface and guidance). Actual: package +1.0k lines with 13 test groups (IS-01..IS-13), clio +0.5k,
+knowledge +0.1k; cuts 1.6.6.117 and 1.6.6.118 superseded, final cut 1.6.6.119)
 **Repo**: crt-process-builder, clio, clio-knowledge (its own PR triple)
 **Depends on**: story 1 (ENG-95984 File process parameter type) merged; **earliest slot: after ENG-96506 Generated
 report + process parameter modes** (its package PR merged)
@@ -31,27 +33,38 @@ records can be declared with its columns. `FileCollection` then becomes sugar fo
   about +100 B in each of the create and modify descriptions, whose budget was measured full on 2026-10-13.
 - Owner decision of 2026-10-07 (D2): option A in ENG-95984, option C as this follow-up.
 
-## Acceptance sketch (to be refined)
+## Owner decisions (2026-10-21)
 
-- [ ] A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
-      `ContainerUId` of the process), and describe reads them back so the output rebuilds the same shape.
-- [ ] `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
-      (FileLocator, Variable), so the alias and the general form cannot drift.
-- [ ] An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported depth
-      are refused with a message that names the item.
-- [ ] An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape survives a
-      describe read-back on the cut.
-- [ ] The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
+| # | Question | Decision |
+|---|---|---|
+| O-1 | Item types and depth | The designer's nested-item menu, which is the top-level type menu (`ProcessSchemaPropertiesPage._fillAddButtonMenuCollection`): the scalars, Lookup with `referenceSchema`, File, and Collection / FileCollection as an item of a top-level collection. Two collection levels at most: the items of a nested collection are not collections (the 7.8.0 corpus has 116 process-level collections with items, 617 items, at most two levels). Binary / Blob and a third level are refused, naming the item path |
+| O-2 | Direction default of `type: Collection` with items | Unchanged Out; an item defaults to Variable, as the designer's nested Add writes it (614 of 617 shipped items) |
+| O-3 | Write shape | `itemProperties: [{name, type, direction?, caption?, description?, referenceSchema?, itemProperties?}]`; the members describe adds (`uid`, `source`, `isRequired`, `isResult`, `tag`, ...) are ignored, so an unbound described collection replays as it is. A described binding (a value whose `source` is not None / ConstValue) is passed over, since bindings replay through mappings; a constant item value, a mirror on an item, `itemProperties` beside `typeFromElement` or on a non-collection are refused. `type: FileCollection` beside its OWN one-file shape is accepted (describe emits both); any other shape beside the alias is refused |
+| O-4 | `setParameter` with `itemProperties` | Out of scope, refused loudly ("remove the parameter and add it again") instead of being dropped as an unknown member |
+
+## Acceptance criteria (refined 2026-10-21; the test plan cites these numbers)
+
+- [ ] **AC-1** A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
+      `ContainerUId` of the process).
+- [ ] **AC-2** `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
+      (FileLocator, Variable) at the same direction, so the alias and the general form cannot drift.
+- [ ] **AC-3** Describe reads the shape back, and its output rebuilds the same shape (an unbound declared collection
+      as described; a described FileCollection by its alias).
+- [ ] **AC-4** An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported
+      depth are refused with a message that names the item.
+- [ ] **AC-5** An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape
+      survives a describe read-back on the cut.
+- [ ] **AC-6** The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
 
 ## Test sketch
 
 Package unit cases in the shape of the ENG-95984 test plan's FileCollection cases (build, describe, rebuild); one clio
-unit case for the DTO pass-through of `itemProperties` on write; one MCP e2e create plus read-back case. Test ids are
-added to [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md) when the criteria are
-refined.
+unit case for the DTO pass-through of `itemProperties` on write; one MCP e2e create plus read-back case. The test
+ids are in [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file-parameter-type.md), section "Story 2".
 
 ## Definition of Done
 
-- [ ] Criteria refined with the owner and the status moved to ready-for-dev in `spec/sprint-status.yaml`.
+- [x] Criteria refined with the owner (2026-10-21); the status moved straight to in-progress in
+      `spec/sprint-status.yaml`, since implementation started the same day.
 - [ ] The repository rules of story 1 apply unchanged (package fixture categories, AAA, `because:`, `[Description]`,
       floor = the final cut, MCP and docs review statements, review gates, only a human merges).

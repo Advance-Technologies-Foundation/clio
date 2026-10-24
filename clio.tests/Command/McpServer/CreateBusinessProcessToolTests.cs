@@ -428,8 +428,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.109 (for isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.119 (for itemProperties, isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
@@ -453,6 +453,25 @@ public class CreateBusinessProcessToolTests {
 			because: "a File has no constant form, and the contract must say so before the server refuses it");
 		toolDescription.Should().Contain("a Collection defaults to direction Out, a FileCollection to Variable, unless you set one",
 			because: "a FileCollection does not follow a Collection's Out default, and an agent expecting Out gets a Variable parameter with no notice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract's parameters[] clause offers itemProperties to declare the columns of a Collection, with its per-item keys, the Variable item default and the one nested level. It is where the always-loaded contract tells an agent that a collection no output can be mirrored from can still be shaped, and the guidance gates on this exact wording, so a trim that drops it sends agents back to a shapeless collection.")]
+	public void CreateBusinessProcessTool_ShouldOfferTheDeclaredItemShape_InTheParametersClause() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		// (nothing to act on - the contract is the attribute itself)
+
+		// Assert
+		toolDescription.Should().Contain("or itemProperties [{name, type, direction?, caption?, description?, referenceSchema?, "
+				+ "itemProperties?}] to declare the columns of a Collection (each Variable unless set; one nested "
+				+ "Collection level)",
+			because: "the declared item shape, its keys and its two limits are stated where the parameters are");
 	}
 
 	[Test]

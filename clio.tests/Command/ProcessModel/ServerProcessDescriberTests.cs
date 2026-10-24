@@ -526,6 +526,39 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a DECLARED item shape - untagged items, a lookup item's referenceSchema, and a nested collection with its own item - into the DescribedParameter DTO and keeps all of it on re-serialization, the second level included, omitting the absent tags. This is the output a caller re-sends as type + itemProperties to rebuild the shape, so a member lost here would rebuild a different shape green.")]
+	public void Describe_ShouldReadADeclaredItemShape_WithItsNestedLevel() {
+		// Arrange — a record collection declared with its columns, one of them a collection of its own
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"Rows\",\"uid\":\"r1\",\"type\":\"CompositeObjectList\",\"direction\":\"Out\",\"source\":\"None\","
+			+ "\"itemProperties\":[{\"name\":\"Contact\",\"uid\":\"r2\",\"type\":\"Lookup\",\"direction\":\"Variable\",\"referenceSchema\":\"Contact\"},"
+			+ "{\"name\":\"Parts\",\"uid\":\"r3\",\"type\":\"CompositeObjectList\",\"direction\":\"Variable\","
+			+ "\"itemProperties\":[{\"name\":\"Text\",\"uid\":\"r4\",\"type\":\"ShortText\",\"direction\":\"Variable\"}]}]}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedParameter rows = result.Value.Parameters[0];
+		rows.ItemProperties.Select(item => item.Name).Should().Equal(["Contact", "Parts"],
+			because: "the declared items are deserialized in order");
+		rows.ItemProperties[0].ReferenceSchema.Should().Be("Contact", because: "a lookup item keeps its object");
+		rows.ItemProperties[1].ItemProperties.Should().ContainSingle(
+			because: "a nested collection's own item is part of the shape");
+		JsonNode output = JsonNode.Parse(JsonSerializer.Serialize(result.Value, DescribeProcessCommand.OutputOptions));
+		JsonNode item = output["parameters"]![0]!["itemProperties"]!;
+		item[0]!["referenceSchema"]!.GetValue<string>().Should().Be("Contact",
+			because: "the lookup item's object must survive re-serialization, or a rebuild makes a lookup to nothing");
+		item[1]!["itemProperties"]![0]!["type"]!.GetValue<string>().Should().Be("ShortText",
+			because: "the second level must survive re-serialization too");
+		item[0]!.AsObject().ContainsKey("tag").Should().BeFalse(
+			because: "a declared item has no column identity, and the absent tag is omitted, not null");
+	}
+
+	[Test]
 	[Description("Deserializes the decoded source of a value that IS another element's output - sourceElement / sourceElementParameter without sourceColumn - on a collection and on its item (the dotted item path), and omits the absent sourceColumn on re-serialization (ENG-95984, CU-02).")]
 	public void Describe_ShouldReadElementOutputSource_WhenValueIsAnotherElementsOutput() {
 		// Arrange — an element input bound to another element's collection output, its item to that output's item

@@ -131,6 +131,30 @@ public sealed class CreateBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("Passes a declared Collection item shape through to the server untouched: parameters[].itemProperties, a lookup item's referenceSchema and a nested collection's own itemProperties reach the posted request exactly as sent. clio has no write DTO for parameters, so this pins that nothing on the way drops or reshapes the member the server builds the items from.")]
+	public void BuildProcess_ShouldPassTheDeclaredItemShapeThrough_Unchanged() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		string posted = null;
+		client.ExecutePostRequest(BuildUrl, Arg.Do<string>(body => posted = body)).Returns(
+			"{\"BuildProcessResult\":{\"success\":true,\"schemaName\":\"UsrSampleProcess\",\"schemaUId\":\"5c58c4c4-134b-4744-9c67-96d9c69c9d55\"}}");
+		CreateBusinessProcessService service = CreateService(client, out _);
+		const string itemProperties = "[{\"name\":\"Contact\",\"type\":\"Lookup\",\"referenceSchema\":\"Contact\"},"
+			+ "{\"name\":\"Parts\",\"type\":\"Collection\",\"itemProperties\":[{\"name\":\"Text\",\"type\":\"Text\"}]}]";
+		string descriptor = "{\"name\":\"UsrSampleProcess\",\"packageName\":\"Custom\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"Rows\",\"type\":\"Collection\",\"itemProperties\":" + itemProperties + "}]}";
+
+		// Act
+		service.BuildProcess(Env, new CreateBusinessProcessRequest(descriptor));
+
+		// Assert
+		posted.Should().NotBeNull(because: "the build is posted");
+		JsonNode sent = JsonNode.Parse(posted)!["request"]!["parameters"]![0]!["itemProperties"];
+		JsonNode.DeepEquals(sent, JsonNode.Parse(itemProperties)).Should().BeTrue(
+			because: "the item shape the server builds from must arrive as sent; what was posted: {0}", posted);
+	}
+
+	[Test]
 	[Description("Posts the descriptor wrapped under 'request' to the resolved BuildProcess route (with the package override applied) and returns the created schema identity on success.")]
 	public void BuildProcess_ShouldPostWrappedRequestToBuildRoute_AndReturnResult_OnSuccess() {
 		// Arrange

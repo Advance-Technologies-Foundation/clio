@@ -274,10 +274,17 @@ namespace Clio.Command;
 // also describes (clearFilter refused on a missing printable, the temporary-files notice for Variable parameters,
 // the new describe issues), and 1.6.6.107 the core-reuse fixes (only the designer's text types as the file-name
 // column, describe naming two run-time failures) and 1.6.6.109 the review fixes (a collection nested in another collection refused as the Files source, the current-contact macro refused on a report object's Id),
-// so 1.6.6.109 is the floor. 1.6.6.104 shipped story-1 follow-ups only.
+// so 1.6.6.109 was the floor. 1.6.6.104 shipped story-1 follow-ups only.
+// Raised to 1.6.6.119 by ENG-103162: parameters[] and addParameter take itemProperties, the declared item shape of a
+// Collection. The request contract has no extension-data bag, so a 1.6.6.109-1.6.6.116 server drops the member as an
+// unknown key and saves a SHAPELESS collection with success: true - nothing refuses it, and a later mapping to one of
+// the declared items fails instead. This clio's contract names the member, so the floor is the first archive that
+// reads it (1.6.6.110-1.6.6.116 carried the SysFile storage work and its follow-ups, which this floor also covers; 1.6.6.117
+// and 1.6.6.118 were superseded cuts of this work; 1.6.6.118 added that a described FileCollection keeps its item, and
+// 1.6.6.119 that setParameter takes a re-sent Float on a parameter an older cut stored as the base Float as a no-op).
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for this same reason and point
 // here instead of repeating it.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.109",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.119",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

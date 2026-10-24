@@ -457,8 +457,43 @@ scope (Q12), M3 (no mirror defect), M6 (R-M1 stays a refusal).
 
 ## Follow-up stories
 
-Stories 2-4 (the three follow-up Sub-tasks) get their own rows in this plan when their criteria are refined; each
-story file carries a test sketch until then.
+Stories 3-4 get their own rows in this plan when their criteria are refined; each story file carries a test sketch
+until then.
+
+### Story 2: declared item shape (refined 2026-10-21)
+
+The owner decisions O-1..O-4 are in [story 2](../stories/story-eng-95984-file-parameter-type-2.md). Package cases live
+in `PBT/FileProcessParameterTests.ItemShape.cs` (a partial of the PU fixture, so the AC-8 comparison helpers are
+shared). The AC column cites story 2's numbered criteria (AC-1 items, AC-2 alias parity, AC-3 read-back, AC-4
+refusals, AC-5 floor and e2e, AC-6 guide); "the AC-8 comparison rule" in IS-03/IS-04 is story 1's serialization rule,
+reused.
+
+| ID | Level | Test | Assert | AC |
+|---|---|---|---|---|
+| IS-01 | package | `AddProcessParameter_ShouldCreateExactlyTheDeclaredItems` | exact items in order: name, type, direction (Variable unless set), caption, lookup object; no Tag, unbound, schema container, A3/A4 stamps, process-level meta path; collection keeps Out | AC-1 |
+| IS-02 | package | `FileCollection_ShouldStoreTheSameMetadata_AsACollectionDeclaringOneFileItem` (default, Out, In) | the written metadata of both forms is identical under the AC-8 rule | AC-2 |
+| IS-03 | package | `WriteMetaData_ShouldStoreTheDesignersShape_ForADeclaredRecordCollection` | equal to the designer's `Copilot_GetLeadFeedMessages.FeedMessages` (lookup, date-time, long text) under the AC-8 comparison rule, Contact compared by role | AC-1 |
+| IS-04 | package | `WriteMetaData_ShouldStoreTheDesignersShape_ForANestedCollection` | equal to `ActionGeminiSearch.Candidates` (two levels) under the AC-8 comparison rule with PT-b | AC-1 |
+| IS-05 | package | `DeclaredCollection_ShouldRoundTrip_ThroughTheDescribeOutput` | build, describe, WCF JSON into the write descriptor, rebuild: equal apart from UIds; one-File Collection reads back as FileCollection | AC-3 |
+| IS-06 | package | `AddProcessParameter_ShouldIgnoreTheDescribeOnlyMembers_OfAnItem` | uId / tag / Script source + token value of a described item, and a value beside source None (the designer's unset Boolean `false`), are not applied | AC-3 |
+| IS-07 | package | `AddProcessParameter_ShouldRefuseAByteItem_NamingTheItem` (Binary, Blob) | refused naming `Rows.Parts.Content`, the type refusal's words kept; nothing added | AC-4 |
+| IS-08 | package | `AddProcessParameter_ShouldRefuseACollectionBeyondTheSupportedDepth` | a third level (Collection, FileCollection) refused naming the item | AC-4 |
+| IS-09 | package | `AddProcessParameter_ShouldRefuseAnUndeclarableShape` (16 cases) | beside a mirror, another shape on FileCollection, on a scalar (a Lookup made by referenceSchema named Lookup), on a dotted parameter name, items on a scalar item, duplicate / dotted / blank / non-identifier item name, mirror / constant / referenceSchema on an item, an unknown item object, unknown item direction | AC-4 |
+| IS-10 | package | `AddProcessParameter_ShouldDeclareAShapelessCollection_WhenTheItemListIsEmpty` | `[]` = no items | AC-1 |
+| IS-11 | package | `SetProcessParameter_ShouldRefuseItemProperties` (a shape, and an empty list) | refused loudly (O-4), nothing changed | AC-4 |
+| IS-12 | package | `ApplyMapping_ShouldBindADeclaredItem_ByItsPath` | `targetProcessParameter: Rows.Message` binds the item | AC-1 |
+| IS-13 | package | `AddProcessParameter_ShouldAcceptAFileCollectionsOwnShape_AsDescribed` | a described FileCollection (designer item name) replays; the rebuild names the item File | AC-3 |
+| IS-CU-1 | clio | `ServerProcessDescriberTests.Describe_ShouldReadADeclaredItemShape_WithItsNestedLevel` | untagged items, lookup object and the nested level survive DTO + re-serialization | AC-3 |
+| IS-CU-2 | clio | `CreateBusinessProcessServiceTests.BuildProcess_ShouldPassTheDeclaredItemShapeThrough_Unchanged` | `parameters[].itemProperties` reaches the posted request as sent | AC-1 |
+| IS-CU-3 | clio | `CreateBusinessProcessToolTests` / `ModifyBusinessProcessToolTests` `..._ShouldOfferTheDeclaredItemShape_...`; `DescribeProcessToolTests` replay-rule pin | the itemProperties clause in both write descriptions (the guide's gate wording); describe's replay rule by the parameter's own tag | AC-6 |
+| IS-CU-5 | clio | `ToolContractShortFormTests.CreateCallShape_Should_NameExactlyTheMembersOfTheBundledServerContract` | at the cut: `itemProperties?` joins `CreateParameterShape` with the rebundled archive (it compares against the archive's DataMembers, so it cannot move before); the anti-vacuity probe names `itemProperties` | AC-5 |
+| IS-CU-6 | clio | `ProcessDesignerRequiresPackageAttributeTests` (create, modify, modify-as-new-version) and the floor sentences pinned in the three tool tests | 1.6.6.119 on all three, the floor history names itemProperties | AC-5 |
+| IS-CU-7 | clio | `BundledProcessBuilderPackageTests` | the four pins of the 1.6.6.119 archive (SHA-256, version, producing commit db0aa086, stamp); provenance text names that cut | AC-5 |
+| IS-CU-4 | clio | `ToolContractPayloadBudgetTests` | create and modify under 35,072 B after the reviewed trim | AC-6 |
+| IS-E2E-1 | e2e | `FileParameterToolE2ETests.CreateBusinessProcess_Should_DeclareACollectionItemShape_AndReadItBack` | describe on the cut reads the declared items back (the "older server drops it" guard) | AC-1, AC-5 |
+| IS-E2E-2 | e2e | `CreateBusinessProcess_Should_RebuildTheDescribedItemShape_Unchanged` | the describe output sent back as it is rebuilds the same shapes | AC-3, AC-5 |
+| IS-E2E-3 | e2e | `ModifyBusinessProcess_Should_RefuseAnUnholdableItemShape` | Binary item, third level, setParameter itemProperties refused; nothing lands | AC-4 |
+| IS-KU-1 | knowledge | `CollectionParameterGuidanceTests` re-pinned | the general form, its limits and the replay rule for a declared collection | AC-6 |
 
 ## Exit criteria
 
