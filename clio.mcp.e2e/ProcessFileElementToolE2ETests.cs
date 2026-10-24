@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
@@ -37,8 +37,8 @@ namespace Clio.Mcp.E2E;
 /// have their own floor, 1.6.6.111, and are Ignored below it: an object without an attachment object of its own keeps
 /// its files in SysFile, linked by <c>RecordId</c>, and the record scope on that plain-Guid column takes the designer's
 /// shape per record object and right side - for an object with a primary display column (City) a lookup <c>In</c>
-/// filter for a constant and a lookup compare for a parameter, and a Guid compare for one without (Account address). Every other test builds its own processes and removes them, callers
-/// before their callees, in <c>finally</c>. Strictly sequential: schema writes in a parallel burst take a .NET
+/// filter for a constant and a lookup compare for a parameter, and a Guid compare for one without (Account address).
+/// Every other test builds its own processes and removes them, callers before their callees, in <c>finally</c>. Strictly sequential: schema writes in a parallel burst take a .NET
 /// Framework stand's app pool down.</para>
 /// </summary>
 [TestFixture]
@@ -106,6 +106,10 @@ public sealed class ProcessFileElementToolE2ETests {
 
 	/// <summary>The floor of the notice for a SysFile filter with no record: 1.6.6.114 raises it.</summary>
 	private const string SysFileUnscopedNoticeMinimumPackageVersion = "1.6.6.114";
+
+	/// <summary>The first CrtProcessBuilder whose describe reports an unscoped SysFile source and whose SysFile refusals name
+	/// the record object and the file table.</summary>
+	private const string SysFileDescribeTextsMinimumPackageVersion = "1.6.6.120";
 
 	/// <summary>The first CrtProcessBuilder that stores a parameter record scope on a display-column object as the designer's lookup compare.</summary>
 	private const string SysFileParameterScopeMinimumPackageVersion = "1.6.6.120";
@@ -834,7 +838,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	[AllureName("create-business-process writes SysFile storage on either side")]
 	public async Task CreateBusinessProcess_Should_WriteSysFileStorage(string side) {
 		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync(SysFileDescribeTextsMinimumPackageVersion);
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("SysFile");
@@ -966,7 +970,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	[AllureName("a SysFile source refuses a sort on a record-object column")]
 	public async Task ModifyBusinessProcess_Should_RefuseARecordObjectSortColumn_OnASysFileSource() {
 		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync(SysFileDescribeTextsMinimumPackageVersion);
 		string recordId = await ReadFirstRecordIdAsync(context, SysFileRecordObject);
 		List<string> created = [];
 		try {
@@ -1141,7 +1145,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	[AllureName("a designer-built SysFile Process file element is described with no storage issue")]
 	public async Task DesignerFixture_Should_DescribeTheSysFileElement_WithNoStorageIssue() {
 		// Arrange
-		await using ProcessDesignerArrangeContext context = await StartSysFileAsync();
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync(SysFileDescribeTextsMinimumPackageVersion);
 		await IgnoreUnlessDesignerFixtureExistsAsync(context);
 
 		// Act
@@ -1157,18 +1161,14 @@ public sealed class ProcessFileElementToolE2ETests {
 				because: "SysFile storage is written like any other, so a designer-built SysFile element carries no storage issue");
 	}
 
-	#endregion
-
 	[Test]
-	[Description("TC-I-82: attachments.recordId bound to a process parameter on a SysFile source whose record object has a primary display column (City) is stored as the designer stores it - a lookup compare filter on RecordId with one right expression, never a lookup In filter - and describe lifts it back as that process parameter. Ignored below the package that writes this shape or when the stand has no City record.")]
+	[Description("TC-I-81 (L2): attachments.recordId bound to a process parameter on a SysFile source whose record object has a primary display column (City) is stored as the designer stores it - a lookup compare filter on RecordId with one right expression, never a lookup In filter - and describe lifts it back as that process parameter. Ignored below the package that writes this shape or when the stand has no City record.")]
 	[AllureTag(CreateToolName)]
 	[AllureTag(DescribeToolName)]
 	[AllureName("create-business-process writes a parameter record scope as the designer's lookup compare")]
 	public async Task CreateBusinessProcess_Should_WriteAParameterRecordScope_AsTheDesignersLookupCompare() {
 		// Arrange
-		await using ProcessDesignerArrangeContext context = await ProcessDesignerE2EArrange.StartAsync(
-			"Process file element (SysFile parameter scope)", SysFileParameterScopeMinimumPackageVersion,
-			TimeSpan.FromMinutes(8));
+		await using ProcessDesignerArrangeContext context = await StartSysFileAsync(SysFileParameterScopeMinimumPackageVersion);
 		List<string> created = [];
 		try {
 			string processName = NewProcessName("SysParam");
@@ -1199,15 +1199,21 @@ public sealed class ProcessFileElementToolE2ETests {
 		}
 	}
 
+	#endregion
+
 	#region Methods: SysFile helpers
+
 	/// <summary>Whether an issue is the describe issue for a SysFile source with no record scope and no filter.</summary>
 	private static bool IsUnscopedSysFileSourceIssue(string issue) =>
 		issue.Contains("from SysFile with no record", StringComparison.Ordinal);
 
-
 	/// <summary>Opens a session, or ignores the test when the stand is behind the SysFile cut.</summary>
 	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>
-		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile storage)", SysFileMinimumPackageVersion,
+		StartSysFileAsync(SysFileMinimumPackageVersion);
+
+	/// <summary>Opens a session, or ignores the test when the stand is behind <paramref name="minimumPackageVersion"/>.</summary>
+	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync(string minimumPackageVersion) =>
+		ProcessDesignerE2EArrange.StartAsync("Process file element (SysFile storage)", minimumPackageVersion,
 			TimeSpan.FromMinutes(8));
 
 	/// <summary>How many times <paramref name="token"/> occurs in <paramref name="text"/> (ordinal).</summary>
