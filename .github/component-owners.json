@@ -31,7 +31,8 @@
         "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
         "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
         "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
-        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs"
+        "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
+        "clio/Command/McpServer/Tools/ComponentInfoToFileTool.cs"
       ]
     },
     {
@@ -147,7 +148,8 @@
         "clio/Command/McpServer/Tools/ApplicationTool.cs",
         "clio/Command/McpServer/Tools/ApplicationDeleteTool.cs",
         "clio/Command/McpServer/Tools/FindAppTool.cs",
-        "clio/Command/McpServer/Tools/InstallApplicationTool.cs"
+        "clio/Command/McpServer/Tools/InstallApplicationTool.cs",
+        "clio/Command/McpServer/Tools/PlaceSectionInWorkplaceTool.cs"
       ]
     },
     {
@@ -166,7 +168,9 @@
         "clio/Common/EntitySchema/",
         "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
         "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs",
-        "clio/Command/McpServer/Tools/SchemaSyncTool.cs"
+        "clio/Command/McpServer/Tools/SchemaSyncTool.cs",
+        "clio/Command/McpServer/Tools/EntityConnectionsTools.cs",
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasToFileTool.cs"
       ]
     },
     {
@@ -205,7 +209,8 @@
         "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
         "clio/Command/McpServer/Tools/DataForge*",
         "clio/Query/",
-        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs"
+        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs",
+        "clio/Command/McpServer/Tools/ExecuteEsqToFileTool.cs"
       ]
     },
     {
@@ -272,7 +277,8 @@
         "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
         "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
         "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
-        "clio/Command/McpServer/Tools/ProcessDesigner/"
+        "clio/Command/McpServer/Tools/ProcessDesigner/",
+        "clio/Command/McpServer/Tools/TriggerSmokeTool.cs"
       ]
     },
     {
@@ -352,7 +358,8 @@
         "clio/Command/McpServer/Tools/PackageFileTool.cs",
         "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
         "clio/Command/McpServer/Tools/RemovePackageDependencyTool.cs",
-        "clio/Command/McpServer/Tools/WatchCompilationTool.cs"
+        "clio/Command/McpServer/Tools/WatchCompilationTool.cs",
+        "clio/Command/McpServer/Tools/CreatePackageTool.cs"
       ]
     },
     {
@@ -436,7 +443,11 @@
         "clio/Command/McpServer/Tools/ResolveOAuthSystemUserTool.cs",
         "clio/Command/McpServer/Tools/SetRecordRightsTool.cs",
         "clio/Command/McpServer/Tools/UninstallIdentityTool.cs",
-        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs"
+        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs",
+        "clio/Command/McpServer/Tools/ApplyDefaultRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/GetObjectRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetDefaultRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetObjectRightsTool.cs"
       ]
     },
     {
@@ -460,7 +471,8 @@
         "clio/Command/McpServer/Tools/RequestInfoTool.cs",
         "clio/Command/McpServer/Tools/SendTelemetryTool.cs",
         "clio/Command/McpServer/Tools/SkillManagementTool.cs",
-        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs"
+        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs",
+        "clio/Command/McpServer/Tools/RequestInfoToFileTool.cs"
       ]
     },
     {
