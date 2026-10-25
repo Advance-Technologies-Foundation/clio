@@ -98,7 +98,8 @@
       ],
       "paths": [
         "clio/Command/McpServer/Tools/MobileComponentRegistry/",
-        "clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs"
+        "clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs",
+        "clio/Command/McpServer/Tools/MobilePageValidation.cs"
       ]
     },
     {
@@ -113,7 +114,6 @@
       ],
       "paths": [
         "clio/Command/McpServer/Tools/MobilePageConverter/",
-        "clio/Command/McpServer/Tools/MobilePageValidation.cs",
         "clio/Command/McpServer/Data/WebToMobilePageConversionRules.json"
       ]
     },
