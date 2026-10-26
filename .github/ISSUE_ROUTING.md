@@ -126,6 +126,13 @@ Rules that protect manual work:
   pattern with `*` (within one path segment). Agents pick the component label from it through
   `component-for.js`, so list every MCP tool file of the component; the most specific entry wins
   (an exact file beats a directory). A test fails if any MCP tool file matches two components equally.
+- `responsibilityMatrix` links the component to the functions of the Responsibility Matrix module
+  named in the top-level `responsibilityMatrixModule` (work.creatio.com): one `{ function, id }`
+  per function, with the function name as it reads there and its record Id. Find a function by its
+  name; the map deliberately holds no links to that internal site. It is reference data for people and
+  agents filing a case or an issue; routing does not read it. Not every component needs a function
+  there; a component without this field has none. When a function is added, renamed or removed on
+  work.creatio.com, update the field here.
 - Run `make test-issue-routing` (or `node --test .github/scripts/issue-routing/issue-routing.test.js`).
 
 The baseline owners (2026-09) come from one year of `master` history: commits to each group's MCP

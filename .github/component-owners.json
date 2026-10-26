@@ -8,6 +8,10 @@
     "color": "d4c5f9",
     "description": "No component was selected or it could not be routed to an owner"
   },
+  "responsibilityMatrixModule": {
+    "name": "AI App Dev Toolkit / AI-driven development (Coding Agents)",
+    "id": "b7f98281-4312-4c4e-b1df-823e88c6ee69"
+  },
   "components": [
     {
       "id": "pages",
@@ -20,6 +24,16 @@
         "Alexandr-Kravchuk",
         "d-krestov"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "App creation (section, objects, pages)",
+          "id": "40548773-8352-4429-9041-6d8f1b643487"
+        },
+        {
+          "function": "Component creation (UI/Custom Components)",
+          "id": "54bbbfc0-d96d-41ca-9dcd-ebf497b015f3"
+        }
+      ],
       "paths": [
         "clio/Command/Page*",
         "clio/Command/McpServer/Tools/Page*",
@@ -30,11 +44,9 @@
         "clio/Command/McpServer/Tools/CreateUiProjectTool.cs",
         "clio/Command/McpServer/Tools/CreatioArtifactMergeTool.cs",
         "clio/Command/McpServer/Tools/ExportComponentRegistryTool.cs",
-        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
-        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs",
         "clio/Command/McpServer/Tools/GetClientUnitSchemaTool.cs",
         "clio/Command/McpServer/Tools/GetRelatedPageAddonTool.cs",
-        "clio/Command/McpServer/Tools/LocalizePageTool.cs"
+        "clio/Command/McpServer/Tools/ComponentInfoToFileTool.cs"
       ]
     },
     {
@@ -47,9 +59,94 @@
         "ylypnytskyi-eng",
         "a-trofimchuk"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "Advanced business logic (Converters, Validators, Handlers)",
+          "id": "5bf67ccd-1df3-4cb7-ae58-f5aab5df9c2c"
+        }
+      ],
       "paths": [
         "clio/Command/McpServer/Tools/PageBodyAstLinter.cs",
         "clio/Command/SchemaHandlerValidationService.cs"
+      ]
+    },
+    {
+      "id": "classic-migration",
+      "option": "Classic to Freedom UI migration (get-classic-page-sources, get-classic-list-columns, Classic section and page analysis)",
+      "label": "component:classic-migration",
+      "color": "c5def5",
+      "description": "Classic UI analysis tools for Classic to Freedom UI migration",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "Classic to Freedom UI migration",
+          "id": "e0c25a01-885d-4c07-a17c-de29c52817fe"
+        }
+      ],
+      "paths": [
+        "clio/Command/Classic*",
+        "clio/Command/GetClassic*",
+        "clio/Command/McpServer/Tools/GetClassicListColumnsTool.cs",
+        "clio/Command/McpServer/Tools/GetClassicPageSourcesTool.cs"
+      ]
+    },
+    {
+      "id": "localization",
+      "option": "Localization (localize-page, section and entity captions localization, get-user-culture, culture catalog)",
+      "label": "component:localization",
+      "color": "c5def5",
+      "description": "App, page and entity localization, cultures",
+      "owners": [
+        "kbondarenko-tech",
+        "Alexandr-Kravchuk"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "App localization",
+          "id": "33c0a8cd-931c-4085-9b11-9d18120ff233"
+        }
+      ],
+      "paths": [
+        "clio/Command/Localization/",
+        "clio/Command/LocalizePageCommand.cs",
+        "clio/Command/GetUserCultureCommand.cs",
+        "clio/Command/ApplicationSectionLocalization.cs",
+        "clio/Command/SectionLocalizationPlanner.cs",
+        "clio/Command/EntitySchemaDesigner/CaptionCultureResolver.cs",
+        "clio/Command/EntitySchemaDesigner/CaptionCultureScriptGuard.cs",
+        "clio/Command/EntitySchemaDesigner/CultureResolution.cs",
+        "clio/Command/EntitySchemaDesigner/CurrentUserCultureCache.cs",
+        "clio/Command/EntitySchemaDesigner/CurrentUserCultureResolver.cs",
+        "clio/Command/EntitySchemaDesigner/CurrentUserCultureResolverFactory.cs",
+        "clio/Command/EntitySchemaDesigner/EntitySchemaCaptionCultureResolver.cs",
+        "clio/Command/McpServer/Tools/LocalizePageTool.cs",
+        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
+        "clio/Command/McpServer/Tools/EntitySchemaLocalizationContract.cs"
+      ]
+    },
+    {
+      "id": "mobile",
+      "option": "Mobile Freedom UI pages (create, design and validate mobile pages, mobile component registry)",
+      "label": "component:mobile",
+      "color": "c5def5",
+      "description": "Mobile Freedom UI pages: design, validation, component registry",
+      "owners": [
+        "OleksandrTyshchyk",
+        "dkorotin1"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "Mobile pages",
+          "id": "e5c6b1c6-6f02-4e30-bb0a-5f701df4580b"
+        }
+      ],
+      "paths": [
+        "clio/Command/McpServer/Tools/MobileComponentRegistry/",
+        "clio/Command/McpServer/Tools/MobileDiffApplyValidator.cs",
+        "clio/Command/McpServer/Tools/MobilePageValidation.cs"
       ]
     },
     {
@@ -62,9 +159,14 @@
         "OleksandrTyshchyk",
         "dkorotin1"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "Mobile page conversion",
+          "id": "eb73f732-f92a-4242-b519-51e74f41155f"
+        }
+      ],
       "paths": [
         "clio/Command/McpServer/Tools/MobilePageConverter/",
-        "clio/Command/McpServer/Tools/MobilePageValidation.cs",
         "clio/Command/McpServer/Data/WebToMobilePageConversionRules.json"
       ]
     },
@@ -77,6 +179,12 @@
       "owners": [
         "d-baranovskyi-creatio",
         "Alexandr-Kravchuk"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "Business rules",
+          "id": "cb067d1f-e7fc-447c-8d32-f073b9921073"
+        }
       ],
       "paths": [
         "clio/Command/BusinessRules/",
@@ -94,12 +202,19 @@
         "Alexandr-Kravchuk",
         "b-horodyskyi"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "App creation (section, objects, pages)",
+          "id": "40548773-8352-4429-9041-6d8f1b643487"
+        }
+      ],
       "paths": [
         "clio/Command/ApplicationCommand/",
         "clio/Command/McpServer/Tools/ApplicationTool.cs",
         "clio/Command/McpServer/Tools/ApplicationDeleteTool.cs",
         "clio/Command/McpServer/Tools/FindAppTool.cs",
-        "clio/Command/McpServer/Tools/InstallApplicationTool.cs"
+        "clio/Command/McpServer/Tools/InstallApplicationTool.cs",
+        "clio/Command/McpServer/Tools/PlaceSectionInWorkplaceTool.cs"
       ]
     },
     {
@@ -112,13 +227,21 @@
         "kbondarenko-tech",
         "Alexandr-Kravchuk"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "App creation (section, objects, pages)",
+          "id": "40548773-8352-4429-9041-6d8f1b643487"
+        }
+      ],
       "paths": [
         "clio/Command/EntitySchemaDesigner/",
         "clio/Command/*EntitySchema*Command.cs",
         "clio/Common/EntitySchema/",
         "clio/Command/McpServer/Tools/EntitySchemaTool.cs",
         "clio/Command/McpServer/Tools/ListEntityClientSchemasTool.cs",
-        "clio/Command/McpServer/Tools/SchemaSyncTool.cs"
+        "clio/Command/McpServer/Tools/SchemaSyncTool.cs",
+        "clio/Command/McpServer/Tools/EntityConnectionsTools.cs",
+        "clio/Command/McpServer/Tools/ListEntityClientSchemasToFileTool.cs"
       ]
     },
     {
@@ -157,7 +280,8 @@
         "clio/Command/McpServer/Tools/ExecuteSqlScriptTool.cs",
         "clio/Command/McpServer/Tools/DataForge*",
         "clio/Query/",
-        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs"
+        "clio/Command/McpServer/Tools/DataServiceBatchTool.cs",
+        "clio/Command/McpServer/Tools/ExecuteEsqToFileTool.cs"
       ]
     },
     {
@@ -169,6 +293,12 @@
       "owners": [
         "kbondarenko-tech",
         "Alexandr-Kravchuk"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "Data bindings",
+          "id": "96860e24-715c-4758-9819-a872b7916c07"
+        }
       ],
       "paths": [
         "clio/Command/McpServer/Tools/DataBinding*"
@@ -183,6 +313,12 @@
       "owners": [
         "ylypnytskyi-eng",
         "a-trofimchuk"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "System settings",
+          "id": "575f6344-dd66-4250-aabc-804d38f306ab"
+        }
       ],
       "paths": [
         "clio/Command/McpServer/Tools/*SysSetting*"
@@ -199,6 +335,12 @@
         "Alexandr-Kravchuk",
         "kirillkrylov"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "Working with data (OData)",
+          "id": "b704a8ca-4c4f-4c82-93e8-edd2a42f9052"
+        }
+      ],
       "paths": [
         "clio/Command/McpServer/Tools/OData*"
       ]
@@ -214,6 +356,28 @@
         "b-horodyskyi",
         "m-strukov"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "Business processes",
+          "id": "6a011352-54b6-4ae0-8603-18f5822dd12e"
+        },
+        {
+          "function": "Business process generation. Change access rights",
+          "id": "7b2d743e-215f-470e-87a6-5d0c8153dcd7"
+        },
+        {
+          "function": "Business process generation. Open edit page, preconfigured page, approval",
+          "id": "b308b394-b70b-4100-91cd-e4ab86678c6d"
+        },
+        {
+          "function": "Business process generation. Send email",
+          "id": "97ea5803-d86b-43a8-9602-64e5f5d0f5cf"
+        },
+        {
+          "function": "Business process generation. Working with data",
+          "id": "1007dfca-0315-4c55-a3a8-9b9d77af53c8"
+        }
+      ],
       "paths": [
         "clio/Command/ProcessModel/",
         "clio/CrtProcessBuilder/",
@@ -224,7 +388,8 @@
         "clio/Command/McpServer/Tools/ListUserTasksTool.cs",
         "clio/Command/McpServer/Tools/ProcessPageFactsTool.cs",
         "clio/Command/McpServer/Tools/RegisterProcessElementTool.cs",
-        "clio/Command/McpServer/Tools/ProcessDesigner/"
+        "clio/Command/McpServer/Tools/ProcessDesigner/",
+        "clio/Command/McpServer/Tools/TriggerSmokeTool.cs"
       ]
     },
     {
@@ -237,6 +402,12 @@
         "dnagayko",
         "m-strukov",
         "r-krupin"
+      ],
+      "responsibilityMatrix": [
+        {
+          "function": "Branding agent",
+          "id": "a22b81fb-bca6-41bc-bca3-de775f9b3357"
+        }
       ],
       "paths": [
         "clio/Command/Theming/",
@@ -272,6 +443,12 @@
       "owners": [
         "bfedoronchuk"
       ],
+      "responsibilityMatrix": [
+        {
+          "function": "Dashboards, Home pages, Desktops",
+          "id": "3e87dab9-c3e7-40a0-9266-be21f7c7e749"
+        }
+      ],
       "paths": [
         "clio/Command/InstallDashboardsMigratorCommand.cs",
         "clio/Command/McpServer/Tools/InstallDashboardsMigratorTool.cs",
@@ -304,7 +481,8 @@
         "clio/Command/McpServer/Tools/PackageFileTool.cs",
         "clio/Command/McpServer/Tools/PackageHotfixTool.cs",
         "clio/Command/McpServer/Tools/RemovePackageDependencyTool.cs",
-        "clio/Command/McpServer/Tools/WatchCompilationTool.cs"
+        "clio/Command/McpServer/Tools/WatchCompilationTool.cs",
+        "clio/Command/McpServer/Tools/CreatePackageTool.cs"
       ]
     },
     {
@@ -380,7 +558,6 @@
         "clio/Command/McpServer/Tools/GetBrowserSessionTool.cs",
         "clio/Command/McpServer/Tools/GetIdentityServiceConfigTool.cs",
         "clio/Command/McpServer/Tools/GetRecordRightsTool.cs",
-        "clio/Command/McpServer/Tools/GetUserCultureTool.cs",
         "clio/Command/McpServer/Tools/IdentityAssertionTool.cs",
         "clio/Command/McpServer/Tools/ManageAccessTool.cs",
         "clio/Command/McpServer/Tools/ManageLicenseTool.cs",
@@ -389,7 +566,11 @@
         "clio/Command/McpServer/Tools/ResolveOAuthSystemUserTool.cs",
         "clio/Command/McpServer/Tools/SetRecordRightsTool.cs",
         "clio/Command/McpServer/Tools/UninstallIdentityTool.cs",
-        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs"
+        "clio/Command/McpServer/Tools/VerifyOAuthAppTool.cs",
+        "clio/Command/McpServer/Tools/ApplyDefaultRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/GetObjectRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetDefaultRecordRightsTool.cs",
+        "clio/Command/McpServer/Tools/SetObjectRightsTool.cs"
       ]
     },
     {
@@ -413,7 +594,8 @@
         "clio/Command/McpServer/Tools/RequestInfoTool.cs",
         "clio/Command/McpServer/Tools/SendTelemetryTool.cs",
         "clio/Command/McpServer/Tools/SkillManagementTool.cs",
-        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs"
+        "clio/Command/McpServer/Tools/WithdrawTelemetryConsentTool.cs",
+        "clio/Command/McpServer/Tools/RequestInfoToFileTool.cs"
       ]
     },
     {
