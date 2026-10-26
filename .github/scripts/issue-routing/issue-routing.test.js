@@ -359,16 +359,10 @@ test('Responsibility Matrix links in the committed map have the documented shape
   }
   for (const c of raw.components) {
     if (!('responsibilityMatrix' in c)) continue;
-    const links = c.responsibilityMatrix;
-    if (!Array.isArray(links) || links.length === 0) {
-      problems.push(`${c.id}: responsibilityMatrix must be a non-empty array`);
-      continue;
-    }
-    for (const link of links) {
-      const keys = Object.keys(link ?? {}).sort().join(',');
-      if (keys !== 'function,id' || typeof link.function !== 'string' || !link.function.trim() || !guid.test(link.id)) {
-        problems.push(`${c.id}: each link must be { function, id } with a non-empty function and a record Id`);
-      }
+    const link = c.responsibilityMatrix;
+    const keys = Array.isArray(link) ? '' : Object.keys(link ?? {}).sort().join(',');
+    if (keys !== 'function,id' || typeof link.function !== 'string' || !link.function.trim() || !guid.test(link.id)) {
+      problems.push(`${c.id}: responsibilityMatrix must be one { function, id } with a non-empty function and a record Id`);
     }
   }
   // Assert
