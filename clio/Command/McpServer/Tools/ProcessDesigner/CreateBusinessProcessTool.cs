@@ -292,7 +292,7 @@ public class CreateBusinessProcessTool(
 		 + "a CrtProcessBuilder that carries the flow label: one PREDATING it ignores the field and stores "
 		 + "nothing, which is why clio "
 		 + "reads the flows back after the build and warns when a label you sent did not land), parameters[] ({name, type (a supported scalar, Lookup, Collection, File or FileCollection — other types rejected; a Collection defaults to direction Out, a FileCollection to Variable, unless you set one), "
-		 + "referenceSchema? (object name, e.g. City — makes it a Lookup; refused on a DECLARED Collection and ignored on a mirror), direction, caption, description?, "
+		 + "referenceSchema? (object name, e.g. City — makes it a Lookup, which needs it; refused on a DECLARED Collection and ignored on a mirror), direction, caption, description?, "
 		 + "value? (a literal constant default — not a formula; refused on a Collection or File)}; or "
 		 + "typeFromElement + typeFromElementParameter to copy an element parameter's exact type — mirroring a COLLECTION "
 		 + "output (e.g. a readData element's ResultCompositeObjectList) also copies its per-column itemProperties, "

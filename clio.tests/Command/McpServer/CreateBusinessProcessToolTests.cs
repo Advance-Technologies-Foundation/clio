@@ -169,7 +169,7 @@ public class CreateBusinessProcessToolTests {
 			+ "\"logActivity\":{\"enabled\":false},"
 			+ "\"completion\":{\"mode\":\"onSave\"}}}],"
 			+ "\"flows\":[],"
-			+ "\"parameters\":[{\"name\":\"AccountIdParameter\",\"type\":\"Lookup\",\"direction\":\"In\"}]}";
+			+ "\"parameters\":[{\"name\":\"AccountIdParameter\",\"type\":\"Lookup\",\"referenceSchema\":\"Account\",\"direction\":\"In\"}]}";
 		FakeCreateBusinessProcessCommand defaultCommand = new();
 		FakeCreateBusinessProcessCommand resolvedCommand = new();
 		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
