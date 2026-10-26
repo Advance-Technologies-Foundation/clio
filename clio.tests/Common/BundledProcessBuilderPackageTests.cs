@@ -70,13 +70,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>db0aa086</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.119</c>) on branch <c>feature/ENG-103162-collection-item-shape</c>, which starts from
-	/// <c>main</c> at <c>54591cc8</c> (1.6.6.116), so the cut carries everything 1.6.6.116 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>74bd4c62</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.122</c>) on branch <c>feature/ENG-104198-sysfile-describe-texts</c>, which starts from
+	/// <c>main</c> at <c>4f4e1443</c> (1.6.6.119), so the cut carries everything 1.6.6.119 shipped.
 	/// This cut took the script route: <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and
-	/// packed it, and the restamp (<c>b6105d45</c>) was committed afterwards. 1.6.6.117 (producing <c>805f8a18</c>) was
-	/// superseded on the branch by the gate-3 fixes below, and 1.6.6.118 (producing <c>f277b79e</c>) by the review's Float
-	/// no-op on <c>setParameter</c>.
+	/// packed it, and the restamp (<c>1d604efd</c>) was committed afterwards. 1.6.6.120 (producing <c>ce7b0fc6</c>) and
+	/// 1.6.6.121 (producing <c>00880899</c>) were
+	/// superseded on the branch by the two final reviews' fixes.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -89,18 +89,22 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.116: the declared item shape of a Collection process parameter
-	/// (ENG-103162) - <c>itemProperties</c> on <c>parameters[]</c> and <c>addParameter</c> builds exactly the declared items
-	/// (the designer's nested type menu, at most two collection levels, Binary and a third level refused naming the item
-	/// path), <c>FileCollection</c> is built by the same code as a Collection with one item <c>File: File</c>, a described
-	/// collection replays as it is when it is unbound (a described FileCollection keeping its own item), <c>Float</c>
-	/// resolves to the designer's <c>Float2</c>, <c>setParameter</c> refuses <c>itemProperties</c> and takes a re-sent <c>Float</c> on a parameter an older cut stored
-	/// as the base <c>Float</c> as a no-op. 1.6.6.119 is the create/modify
-	/// floor clio enforces (raised from 1.6.6.109, because an older server drops the member silently). What earlier cuts
-	/// carried is in this file's git history rather than here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.119 (ENG-104198, the Process file element on SysFile storage): describe
+	/// reports an element with no record scope and no filter, which reads the files of every record of its object; the
+	/// empty-filter refusal and the use-in-process notice name the record object instead of <c>SysFile</c>, and their
+	/// remedies hold on create and on modify; a sort or filter column that is not a <c>SysFile</c> column is refused
+	/// naming the file table and its columns; a record scope bound to a parameter on an object with a primary display
+	/// column is stored as the designer's lookup compare (a constant there stays a lookup In filter), and the In filter
+	/// older cuts stored is still read; describe reports the platform's BLOB type as <c>Blob</c>; refusals reachable on create name both routes, the
+	/// listed <c>SysFile</c> columns leave out the content and internal columns, the <c>RecordId</c> caption matches the
+	/// designer, and the saving refusal asks a source flagged for rewrite for that rewrite, as describe does. The create/modify floor
+	/// stays at 1.6.6.119: clio advertises nothing new, and the convergence check refuses an older package anyway. What
+	/// earlier cuts carried is in this file's git history rather than here: it described archives that are no longer
+	/// shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources on both configurations before the
-	/// cut - 4480 passed, 0 failed, on <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4533 passed,
+	/// 0 failed, on <c>dev-nf</c> (<c>dev-n8</c> was not run: the producing worktree had no .NET Core reference set) -
+	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on the manual route) is the ONE path that can reach the coarse failure the two
 	/// security counts below exist to catch. The script checked the inventory: 293
@@ -180,7 +184,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"27AC4A880B490869A48115DD9739EF9A8314199330669C0F6EDCB406EA0CBC25";
+		"1DCCBD0EE6CD58964E01A9E04BF66129C6600C158E6ADFEABE94120F1B51018D";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -208,7 +212,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.119";
+	private const string ExpectedArchiveVersion = "1.6.6.122";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -222,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "db0aa086275bacbbeb67fa441b9087fa64a67b26";
+	private const string ExpectedProducingCommit = "74bd4c623ec102cda1212df3dc138bfcd5b9c23e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -248,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792758166000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1792873193000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
