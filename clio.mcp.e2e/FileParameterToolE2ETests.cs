@@ -48,6 +48,12 @@ public sealed class FileParameterToolE2ETests {
 	/// </summary>
 	private const string MinimumPackageVersion = "1.6.6.119";
 
+	/// <summary>
+	/// The cut that judges P2-MI at the end of the request and refuses a declared Lookup without its object
+	/// (ENG-103934); a stand behind it ignores the tests that read either.
+	/// </summary>
+	private const string EndOfRequestNoticesMinimumPackageVersion = "1.6.6.123";
+
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "File process parameter";
 
@@ -260,6 +266,72 @@ public sealed class FileParameterToolE2ETests {
 				"P1 binds the input collection to Docs: each row of a collection comes from the collection it is bound to");
 			ShouldBeBoundTo(Item(input, "F"), UId(Item(docs, "File")),
 				"the item keeps the mapping it was given: the dotted processParameter Docs.File crossed the wire");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("P2-MI is judged when the request ends: a create that maps the multi-instance InputRecordCollection from Docs FIRST and its file item F from the File Doc in a LATER mapping of the same request raises no 'will be empty' notice, and describe shows both bound.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process judges P2-MI on the request's final state")]
+	public async Task CreateBusinessProcess_Should_NotWarn_WhenTheFileItemIsMappedLaterInTheSameRequest() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartEndOfRequestAsync();
+		List<string> created = [];
+		try {
+			string calleeName = NewProcessName("LaterCallee");
+			string callerName = NewProcessName("LaterCaller");
+			await ArrangeProcessAsync(context, created, calleeName, BuildPlainDescriptor(calleeName, FileCalleeJson),
+				"the called process with a File parameter");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, callerName,
+				BuildMultiInstanceCallerDescriptor(callerName, calleeName,
+					"""[ { "name": "Doc", "type": "File" }, { "name": "Docs", "type": "FileCollection", "direction": "In" } ]""",
+					"""
+					[ { "elementName": "SubProcess1", "elementParameter": "InputRecordCollection", "processParameter": "Docs" },
+					  { "elementName": "SubProcess1", "elementParameter": "InputRecordCollection.F", "processParameter": "Doc" } ]
+					"""));
+
+			// Assert
+			ShouldHaveBuilt(callResult, "an input collection and its file item mapped in one request is an ordinary build");
+			WarningText(callResult).Should().NotContain("will be empty on every iteration",
+				because: "the item the notice would name is mapped by the time the request ends");
+			JsonObject graph = await DescribeGraphAsync(context, callerName);
+			JsonObject input = ElementParameter(Element(graph, "SubProcess1"), "InputRecordCollection");
+			ShouldBeBoundTo(input, UId(ProcessParameter(graph, "Docs")), "the first mapping binds the iterated collection");
+			ShouldBeBoundTo(Item(input, "F"), UId(ProcessParameter(graph, "Doc")), "the later mapping binds the file item");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("A declared Lookup needs its object: addParameter of type Lookup with no referenceSchema is refused - it would be saved as a lookup to no object - and the refusal points at Guid for a bare record id; nothing is added.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process refuses a Lookup parameter without its referenceSchema")]
+	public async Task ModifyBusinessProcess_Should_RefuseALookup_WithoutReferenceSchema() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartEndOfRequestAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("BareLookup");
+			await ArrangeProcessAsync(context, created, processName, BuildPlainDescriptor(processName, "[]"),
+				"the process the bare Lookup is offered to");
+
+			// Act
+			CallToolResult callResult = await ModifyAsync(context, processName, """
+				[ { "op": "addParameter", "parameter": { "name": "Owner", "type": "Lookup" } } ]
+				""");
+
+			// Assert
+			ShouldBeRefused(callResult, "a Lookup with no object can be satisfied by no value");
+			string log = LogText(callResult);
+			log.Should().Contain("needs a 'referenceSchema'", because: "the refusal names the missing member");
+			log.Should().Contain("'Guid'", because: "and points at the type that carries a bare record id");
+			ParameterNames(await DescribeGraphAsync(context, processName)).Should().NotContain("Owner",
+				because: "a refused addParameter adds nothing");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -782,6 +854,10 @@ public sealed class FileParameterToolE2ETests {
 	/// <summary>Opens a session, or ignores the test when the stand is missing, unreachable or behind the cut.</summary>
 	private static Task<ProcessDesignerArrangeContext> StartAsync() =>
 		ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion, TimeSpan.FromMinutes(5));
+
+	/// <summary>Opens a session, or ignores the test when the stand is behind the end-of-request notices cut.</summary>
+	private static Task<ProcessDesignerArrangeContext> StartEndOfRequestAsync() =>
+		ProcessDesignerE2EArrange.StartAsync(Subject, EndOfRequestNoticesMinimumPackageVersion, TimeSpan.FromMinutes(5));
 
 	/// <summary>A process code unique to this run, in the <c>UsrClioBpFile&lt;Case&gt;E2e</c> family.</summary>
 	private static string NewProcessName(string caseName) => $"UsrClioBpFile{caseName}E2e{Guid.NewGuid():N}";

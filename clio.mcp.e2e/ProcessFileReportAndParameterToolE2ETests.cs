@@ -52,6 +52,12 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	/// <summary>The SysFile target floor: 1.6.6.111 writes SysFile storage; named in the skip message.</summary>
 	private const string SysFileMinimumPackageVersion = "1.6.6.111";
 
+	/// <summary>
+	/// The cut whose notices judge a Process file element a request only READS, and whose describe calls an item-only
+	/// Files.File a run-time failure (ENG-103934); a stand behind it ignores the tests that read either.
+	/// </summary>
+	private const string EndOfRequestNoticesMinimumPackageVersion = "1.6.6.123";
+
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element (Generated report, Process parameter)";
 
@@ -335,6 +341,79 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 			ShouldBeBoundTo(filesInput, UId(reportFiles), "Files takes its rows from RF1.ReportFiles");
 			ShouldBeBoundTo(Item(filesInput, "File"), UId(Item(reportFiles, "File")),
 				"and Files.File reads each row's file, ReportFiles.File");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("QA case over the wire: a modify that adds an Out FileCollection and maps it from a use-in-process report's ReportFiles - the report itself not touched - carries the notice that those generated files are temporary.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process warns that ReportFiles handed out of the process later are temporary")]
+	public async Task ModifyBusinessProcess_Should_SayTheReportFilesAreTemporary_WhenALaterMappingHandsThemOut() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartEndOfRequestAsync();
+		ListPrintableRow printable = await ReadPrintableAsync(context, InvoiceObject, caption: null);
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("RepLater");
+			string reportBlock = $$"""
+				{ "report": { "printable": "{{printable.TemplateId}}", "recordId": { "processParameter": "InvoiceRef" } } }
+				""";
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, RecordRefParametersJson, ("RF1", FileElement("RF1", reportBlock))),
+				"the process with a report that uses its files in the process");
+
+			// Act
+			CallToolResult callResult = await ModifyAsync(context, processName, """
+				[ { "op": "addParameter", "parameter": { "name": "Docs", "type": "FileCollection", "direction": "Out" } },
+				  { "op": "addMapping", "mapping": { "targetProcessParameter": "Docs",
+				    "sourceElement": "RF1", "sourceElementParameter": "ReportFiles" } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(callResult, "handing a report's files to a process output is an ordinary edit");
+			WarningText(callResult).Should().Contain("these generated files are temporary",
+				because: "the files the process now hands out are deleted when the instance that generated them ends");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("Describe of a Process parameter element whose Files.File alone is bound to the item of a FileCollection (written as files.expression) reports bindingLevels itemOnly with an issue that the element fails at run time, and never that it reads one file: measured, outside its collection's rows the item reads empty.")]
+	[AllureTag(DescribeToolName)]
+	[AllureName("describe-business-process reports an item-only Files.File as failing at run time")]
+	public async Task DescribeBusinessProcess_Should_ReportAnItemOnlyFilesFile_AsFailingAtRunTime() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartEndOfRequestAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("ItemOnly");
+			string parameters = """
+				[ { "name": "ContactRef", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
+				  { "name": "Docs", "type": "FileCollection" } ]
+				""";
+			await ArrangeProcessAsync(context, created, processName,
+				LinearDescriptor(processName, parameters,
+					("PF1", FileElement("PF1", FilesBlock("""{ "processParameter": "Docs" }""")))),
+				"the Process parameter element bound to Docs on both levels");
+			string itemUId = UId(Item(ProcessParameter(await DescribeGraphAsync(context, processName), "Docs"), "File"));
+			CallToolResult rebind = await ModifyAsync(context, processName, $$"""
+				[ { "op": "setElement", "elementName": "PF1", "elementUpdate": { "fileProcessing":
+				    { "files": { "expression": "[#[IsOwnerSchema:false].[IsSchema:false].{{ParameterSegment(itemUId)}}#]" } } } } ]
+				""");
+			ShouldHaveLanded(rebind, "PRECONDITION: an expression goes onto Files.File as given");
+
+			// Act
+			JsonObject block = FileProcessingBlock(Element(await DescribeGraphAsync(context, processName), "PF1"));
+
+			// Assert
+			Text(block, "bindingLevels").Should().Be("itemOnly", because: "only Files.File is bound");
+			Strings(block["issues"]).Should().Contain(issue => issue.Contains("fails at run time", StringComparison.Ordinal),
+				because: "the item reads empty outside its collection's rows and the element fails on the null file");
+			Strings(block["issues"]).Should().NotContain(issue => issue.Contains("one file", StringComparison.Ordinal),
+				because: "the element copies no file at all, so the issue must not say it copies one");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -832,6 +911,10 @@ public sealed class ProcessFileReportAndParameterToolE2ETests {
 	/// <summary>Opens a session, or ignores the test when the stand is missing, unreachable or behind the cut.</summary>
 	private static Task<ProcessDesignerArrangeContext> StartAsync() =>
 		ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion, TimeSpan.FromMinutes(8));
+
+	/// <summary>Opens a session, or ignores the test when the stand is behind the end-of-request notices cut.</summary>
+	private static Task<ProcessDesignerArrangeContext> StartEndOfRequestAsync() =>
+		ProcessDesignerE2EArrange.StartAsync(Subject, EndOfRequestNoticesMinimumPackageVersion, TimeSpan.FromMinutes(8));
 
 	/// <summary>Opens a session, or ignores the test when the stand is behind the SysFile cut (1.6.6.111).</summary>
 	private static Task<ProcessDesignerArrangeContext> StartSysFileAsync() =>

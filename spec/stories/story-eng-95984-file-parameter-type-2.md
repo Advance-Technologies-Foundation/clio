@@ -5,8 +5,9 @@
 under ENG-95984 File process parameter type and moved there the same day, so that ENG-95984 can close)
 **Spec**: [spec-eng-95984-file-parameter-type.md](../prd/spec-eng-95984-file-parameter-type.md) (non-goals)
 **ADR**: [adr-eng-95984-file-parameter-type.md](../adr/adr-eng-95984-file-parameter-type.md) - D2, rejected option C
-**Status**: review (criteria refined with the owner on 2026-10-21, see "Owner decisions"; cut CrtProcessBuilder
-1.6.6.119 on 2026-10-23, e2e `FileParameterToolE2ETests` 16/16 on the stand)
+**Status**: done (merged 2026-10-24: crt-process-builder #104 as `ca8370e9`, clio #1863 as `244df884e`,
+clio-knowledge #301 as `5ce6eb32` and released as 1.15.170; cut CrtProcessBuilder 1.6.6.119, e2e
+`FileParameterToolE2ETests` 16/16 on the stand; criteria refined with the owner on 2026-10-21, see "Owner decisions")
 **Size**: M (inference from D2's costing of option C: about 150 LOC and 12 tests in the package, plus nested-type
 rules, a clio surface and guidance). Actual: package +1.0k lines with 13 test groups (IS-01..IS-13), clio +0.5k,
 knowledge +0.1k; cuts 1.6.6.117 and 1.6.6.118 superseded, final cut 1.6.6.119)
@@ -44,17 +45,17 @@ records can be declared with its columns. `FileCollection` then becomes sugar fo
 
 ## Acceptance criteria (refined 2026-10-21; the test plan cites these numbers)
 
-- [ ] **AC-1** A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
+- [x] **AC-1** A declared Collection with `itemProperties` creates exactly those items (name, type, direction; no Tag;
       `ContainerUId` of the process).
-- [ ] **AC-2** `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
+- [x] **AC-2** `type: FileCollection` produces metadata identical to a Collection declared with one item `File: File`
       (FileLocator, Variable) at the same direction, so the alias and the general form cannot drift.
-- [ ] **AC-3** Describe reads the shape back, and its output rebuilds the same shape (an unbound declared collection
+- [x] **AC-3** Describe reads the shape back, and its output rebuilds the same shape (an unbound declared collection
       as described; a described FileCollection by its alias).
-- [ ] **AC-4** An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported
+- [x] **AC-4** An item type a process parameter cannot hold (Binary, BLOB) and a nested collection beyond the supported
       depth are refused with a message that names the item.
-- [ ] **AC-5** An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape
+- [x] **AC-5** An older server cannot silently drop the shape: the clio floor moves, and the e2e proves the shape
       survives a describe read-back on the cut.
-- [ ] **AC-6** The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
+- [x] **AC-6** The `parameters` guide states the general form; the description bytes are paid by a reviewed swap.
 
 ## Test sketch
 
@@ -66,5 +67,5 @@ ids are in [tp-eng-95984-file-parameter-type.md](../test-plans/tp-eng-95984-file
 
 - [x] Criteria refined with the owner (2026-10-21); the status moved straight to in-progress in
       `spec/sprint-status.yaml`, since implementation started the same day.
-- [ ] The repository rules of story 1 apply unchanged (package fixture categories, AAA, `because:`, `[Description]`,
+- [x] The repository rules of story 1 apply unchanged (package fixture categories, AAA, `because:`, `[Description]`,
       floor = the final cut, MCP and docs review statements, review gates, only a human merges).
