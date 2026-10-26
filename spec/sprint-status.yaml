@@ -4737,7 +4737,7 @@ stories:
     feature: "eng-95984-file-parameter-type"
     repo: "crt-process-builder + clio + clio-knowledge"
     size: M
-    status: review
+    status: done
     jira: ENG-103162
     file: spec/stories/story-eng-95984-file-parameter-type-2.md
     prd: spec/prd/spec-eng-95984-file-parameter-type.md
@@ -4748,8 +4748,9 @@ stories:
       - story-eng-92719-file-processing-element-2
     blocks: []
     note: >-
-      IN REVIEW from 2026-10-23: cut CrtProcessBuilder 1.6.6.119 (floor of create, modify and modify-as-new-version),
-      e2e FileParameterToolE2ETests 16/16 on the stand. The criteria were refined with the owner on 2026-10-21 (story
+      DONE 2026-10-24: crt-process-builder #104 (ca8370e9), clio #1863 (244df884e) and clio-knowledge #301 (5ce6eb32,
+      released as 1.15.170) merged; cut CrtProcessBuilder 1.6.6.119 (floor of create, modify and
+      modify-as-new-version), e2e FileParameterToolE2ETests 16/16 on the stand. The criteria were refined with the owner on 2026-10-21 (story
       file, "Owner decisions").
       It was deferred until then. The other gate, ENG-96506 Generated
       report + process parameter modes merging its package PR (the slot of every ENG-95984 follow-up), is met: PR 100
