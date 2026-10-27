@@ -103,6 +103,61 @@ public class ObjectRightsToolTests {
 		args.ExtensionData.Should().BeNullOrEmpty(because: "every key is a known argument");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Binds the move and remove arguments of set-object-rights from kebab-case JSON and maps them one to one onto the command options.")]
+	public void SetObjectRightsArgs_ShouldBindAndMapLayoutArguments_WhenDeserializedWithMcpOptions() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		SetObjectRightsArgs args = JsonSerializer.Deserialize<SetObjectRightsArgs>(
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrRepairJob","grantee":"11111111-1111-1111-1111-111111111111","position":2,"above":"a29a3ba5-4b0d-de11-9a51-005056c00008","remove-row":true}""",
+			options)!;
+		Clio.Command.ObjectRights.SetObjectRightsOptions mapped = SetObjectRightsTool.BuildOptions(args);
+
+		// Assert
+		args.ExtensionData.Should().BeNullOrEmpty(because: "position, above and remove-row are known arguments");
+		mapped.Position.Should().Be(2, because: "position maps to --position");
+		mapped.Above.Should().Be("a29a3ba5-4b0d-de11-9a51-005056c00008", because: "above maps to --above");
+		mapped.RemoveRow.Should().BeTrue(because: "remove-row maps to --remove-row");
+		SetObjectRightsTool.ValidArguments.Should().Contain("position, above, remove-row",
+			because: "an unknown-argument refusal lists every valid argument");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("below is not an argument of set-object-rights (a move down is position, or above the next row), so it lands in the overflow bag that refuses the call.")]
+	public void SetObjectRightsArgs_ShouldTreatBelowAsUnknown_WhenDeserializedWithMcpOptions() {
+		// Arrange
+		JsonSerializerOptions options = Clio.BindingsModule.CreateMcpSerializerOptions();
+
+		// Act
+		SetObjectRightsArgs args = JsonSerializer.Deserialize<SetObjectRightsArgs>(
+			"""{"environment-name":"sandbox","entity-schema-name":"UsrRepairJob","grantee":"11111111-1111-1111-1111-111111111111","below":"a29a3ba5-4b0d-de11-9a51-005056c00008"}""",
+			options)!;
+
+		// Assert
+		args.ExtensionData.Should().ContainKey("below", because: "an argument the tool does not have is refused, never dropped");
+		SetObjectRightsTool.ValidArguments.Should().NotContain("below", because: "the refusal must not list it as valid");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A set-object-rights call with no layout argument maps to no move and no removal: an omitted key never turns into a row change.")]
+	public void SetObjectRightsTool_ShouldMapNoLayoutChange_WhenLayoutArgumentsAreOmitted() {
+		// Arrange
+		SetObjectRightsArgs args = new("sandbox", "UsrFoo", "720b771c-e7a7-4f31-9cfb-52cd21c3739f", "read");
+
+		// Act
+		Clio.Command.ObjectRights.SetObjectRightsOptions options = SetObjectRightsTool.BuildOptions(args);
+
+		// Assert
+		options.Position.Should().BeNull(because: "no position was sent");
+		options.Above.Should().BeNull(because: "no above was sent");
+		options.RemoveRow.Should().BeFalse(because: "a removal is never implied");
+	}
+
 	[TestCase("""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f"}""",
 		null, TestName = "SetObjectRightsArgs_ShouldBindNullOperations_WhenTheKeyIsMissing")]
 	[TestCase("""{"environment-name":"dev","entity-schema-name":"UsrFoo","grantee":"720b771c-e7a7-4f31-9cfb-52cd21c3739f","Operations":"read"}""",
@@ -173,7 +228,7 @@ public class ObjectRightsToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("An MCP set-object-rights call fits the worker budget (120 s): one attempt of at most 25 s per request, a shared 100 s limit — five sequential requests at most — and a confirmed write unless it is a preview.")]
+	[Description("An MCP set-object-rights call fits the worker budget (120 s): one attempt of at most 25 s per request, a shared 100 s limit — six sequential requests at most, the save sent only while two timeouts are left — and a confirmed write unless it is a preview.")]
 	public void SetObjectRightsTool_ShouldBoundEveryRequestByTheCallBudget_WhenBuildingOptions() {
 		// Arrange
 		SetObjectRightsArgs args = new("sandbox", "UsrFoo", "720b771c-e7a7-4f31-9cfb-52cd21c3739f", "read", Revoke: true);

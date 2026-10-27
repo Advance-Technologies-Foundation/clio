@@ -401,6 +401,8 @@ public class GetObjectRightsCommand : Command<GetObjectRightsOptions> {
 			foreach (RoleOperationRights row in above) {
 				_logger.WriteInfo($"      {Describe(row)}");
 			}
+			_logger.WriteInfo("    To let the grantee's row decide first, move it with set-object-rights --above <role id> or "
+				+ "--position (preview first).");
 		}
 	}
 

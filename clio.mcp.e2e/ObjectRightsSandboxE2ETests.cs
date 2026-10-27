@@ -221,6 +221,97 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		enabledAgain.Output.Should().Contain("(no change)", because: "the switch is already on");
 	}
 
+	[Test]
+	[Description("On a real stand: a preview of a move writes nothing and names the narrowing; a move above All employees lands and reads back first; a position past the last row is refused; a removal of the All external users row is previewed as a revoke of external access and then deletes the row; removing the last granting row is refused.")]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureTag(GetObjectRightsTool.ToolName)]
+	[AllureName("object-rights rows move and are removed on a real Creatio stand")]
+	[AllureDescription("Creates a disposable object, gives it rows for All employees, System administrators and All external users, previews and applies a move of the administrators' row above All employees, proves the out-of-range refusal, previews and applies the removal of the external row, and proves a removal that would leave no granting row is refused. The fixture package is deleted in teardown.")]
+	public async Task ObjectRights_Should_Move_And_Remove_Rows_On_A_Real_Stand() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
+			+ "concurrent test on the shared stand fail. Run this scenario by hand against a leased sandbox.");
+		// Arrange
+		const string administrators = "83a43ebc-f36b-1410-298d-001e8c82bcad";
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string schemaName = $"UsrOrLayout{Guid.NewGuid().ToString("N").Substring(0, 10)}";
+		CommandExecutionActResult created = await ActCommandAsync(arrangeContext, CreateEntitySchemaToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = schemaName,
+				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Object rights layout e2e" },
+				["columns"] = new[] { new Dictionary<string, object?> { ["column-name"] = "UsrName", ["type"] = "Text" } }
+			});
+		AssertCommandExitCode(created, 0, "the disposable object must exist before its rows are changed");
+		Dictionary<string, object?> Call(string grantee, params (string Key, object Value)[] arguments) {
+			Dictionary<string, object?> args = new() {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity-schema-name"] = schemaName,
+				["grantee"] = grantee
+			};
+			foreach ((string key, object value) in arguments) {
+				args[key] = value;
+			}
+			return args;
+		}
+		Dictionary<string, object?> Read() => new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["entity-schema-name"] = schemaName
+		};
+		foreach (Dictionary<string, object?> grant in new[] {
+			Call(AllEmployees, ("operations", "read,create,edit,delete"), ("enable-operation-permissions", true)),
+			Call(administrators, ("operations", "read,create,edit")),
+			Call(ExternalUsers, ("operations", "read"))
+		}) {
+			ObjectRightsToolResponse granted = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, grant);
+			granted.Success.Should().BeTrue(because: $"the rows the scenario starts from must exist. Error: {granted.Error}");
+		}
+
+		// Act — preview, then apply, a move of the administrators' row above All employees
+		ObjectRightsToolResponse preview = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(administrators, ("above", AllEmployees), ("preview", true)));
+		ObjectRightsToolResponse unchanged = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read());
+		ObjectRightsToolResponse moved = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(administrators, ("above", AllEmployees)));
+		ObjectRightsToolResponse afterMove = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read());
+		ObjectRightsToolResponse outOfRange = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(administrators, ("position", 3)));
+
+		// Assert — the preview wrote nothing, the move landed, the out-of-range position was refused
+		preview.Output.Should().Contain("access NARROWS", because: "administrators lose delete once their row decides first");
+		unchanged.Output.Should().Contain($"[1] System administrators ({administrators})",
+			because: "a preview writes nothing");
+		moved.Success.Should().BeTrue(because: $"the move is valid and its read-back matches. Error: {moved.Error}");
+		afterMove.Output.Should().Contain($"[0] System administrators ({administrators}): read/create/edit",
+			because: "the administrators' row now has the highest priority");
+		afterMove.Output.Should().Contain($"[1] All employees ({AllEmployees}): read/create/edit/delete",
+			because: "the other rows keep their relative order");
+		outOfRange.Success.Should().BeFalse(because: "three rows have positions 0..2");
+		outOfRange.Error.Should().Contain("0..2", because: "the refusal names the valid range");
+
+		// Act — preview, then apply, the removal of the external row; then try to remove the last granting row
+		ObjectRightsToolResponse removalPreview = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(ExternalUsers, ("remove-row", true), ("preview", true)));
+		ObjectRightsToolResponse removed = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(ExternalUsers, ("remove-row", true)));
+		ObjectRightsToolResponse afterRemoval = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read());
+		ObjectRightsToolResponse administratorsRemoved = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(administrators, ("remove-row", true)));
+		administratorsRemoved.Success.Should().BeTrue(
+			because: $"the last-row refusal below needs All employees as the only granting row. Error: {administratorsRemoved.Error}");
+		ObjectRightsToolResponse lastRow = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(AllEmployees, ("remove-row", true)));
+
+		// Assert — portal users lose read, the row is gone, and the last granting row cannot be removed
+		removalPreview.Output.Should().Contain("a revoke of external access",
+			because: "removing the All external users row takes read away from portal users");
+		removed.Success.Should().BeTrue(because: $"the removal is valid. Error: {removed.Error}");
+		afterRemoval.Output.Should().NotContain($"({ExternalUsers})", because: "the service deleted the row left out");
+		lastRow.Success.Should().BeFalse(because: "no row would grant any operation on an administered object");
+		lastRow.Error.Should().Contain("would leave no row", because: "the refusal says why");
+	}
+
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,
 		string toolName, Dictionary<string, object?> args) {
 		CallToolResult callResult = await arrangeContext.Session.CallToolAsync(

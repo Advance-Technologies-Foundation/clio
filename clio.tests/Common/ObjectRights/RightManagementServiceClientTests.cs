@@ -828,6 +828,144 @@ public class RightManagementServiceClientTests {
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}
 
+	[Test]
+	[Description("FindExternalUnits classifies every unit in one SysAdminUnit query and returns those with ConnectionType 1.")]
+	public void FindExternalUnits_ShouldReturnExternalUnitsInOneQuery_WhenUnitsAreGiven() {
+		// Arrange
+		Post(SelectUrl).Returns("{\"success\":true,\"rows\":[{\"Id\":\"" + Grantee + "\",\"ConnectionType\":1},"
+			+ "{\"Id\":\"" + Employees + "\",\"ConnectionType\":0}]}");
+
+		// Act
+		IReadOnlySet<Guid> external = _client.FindExternalUnits(new[] { Grantee, Employees }, new CreatioRequestOptions());
+
+		// Assert
+		external.Should().BeEquivalentTo(new[] { Grantee }, because: "only All external users is for portal users");
+		_applicationClient.Received(1).ExecutePostRequest(SelectUrl,
+			Arg.Is<string>(body => body.Contains("ConnectionType") && body.Contains(Grantee.ToString())
+				&& body.Contains(Employees.ToString())),
+			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("FindExternalUnits fails when the answer leaves a unit out: a unit with no answer must not be taken for internal.")]
+	public void FindExternalUnits_ShouldThrow_WhenAnswerLeavesAUnitOut() {
+		// Arrange
+		Post(SelectUrl).Returns("{\"success\":true,\"rows\":[{\"Id\":\"" + Employees + "\",\"ConnectionType\":0}]}");
+
+		// Act
+		Action act = () => _client.FindExternalUnits(new[] { Grantee, Employees }, new CreatioRequestOptions());
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "whether the left-out unit is external is unknown")
+			.WithMessage($"*{Grantee}*", because: "the error names the unit the answer left out");
+	}
+
+	[Test]
+	[Description("FindExternalUnits with no units sends no request.")]
+	public void FindExternalUnits_ShouldSendNoRequest_WhenNoUnitsAreGiven() {
+		// Act
+		IReadOnlySet<Guid> external = _client.FindExternalUnits(Array.Empty<Guid>(), new CreatioRequestOptions());
+
+		// Assert
+		external.Should().BeEmpty(because: "there is nothing to classify");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SelectUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("SaveRowLayout sends the planned rows as the complete list, in planned order: each keeps its read node and id with only its position replaced, and a row left out of the plan is not sent, so the service deletes it.")]
+	public void SaveRowLayout_ShouldSendReorderedListWithReadIds_WhenRowsMoveAndOneIsRemoved() {
+		// Arrange
+		Guid managers = Guid.Parse("33333333-3333-3333-3333-333333333333");
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Employees, 0, true, true, true, true),
+			FlagRow(managers, 1, true, true, true, false),
+			FlagRow(Grantee, 2, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[1] with { Position = 0 },
+			read.Roles[0] with { Position = 1 }
+		});
+
+		// Act
+		string error = _client.SaveRowLayout(read.Snapshot, after, new CreatioRequestOptions()).Error;
+
+		// Assert
+		error.Should().BeNull(because: "the service acknowledged the save");
+		JsonElement[] rows = SavedRows();
+		rows.Select(row => row.GetProperty("id").GetString()).Should().Equal(new[] { "r1", "r0" },
+			because: "each row is the read node, in the planned order");
+		rows.Select(row => row.GetProperty("position").GetInt32()).Should().Equal(new[] { 0, 1 },
+			because: "only the position is replaced");
+		rows.Should().NotContain(row => IsRowOf(row, Grantee),
+			because: "the service replaces the stored list, so a row left out is deleted");
+		rows[0].GetProperty("canDelete").GetBoolean().Should().BeFalse(because: "a move never changes operations");
+		SavedObject().GetProperty("entitySchemaRecordDefRights").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "the record rules are untouched");
+		SavedObject().GetProperty("entitySchemaColumnsRights").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "the column rights are untouched");
+		SavedObject().GetProperty("entityOperationGrantees").ValueKind.Should().Be(JsonValueKind.Null,
+			because: "the operation grantees are untouched");
+	}
+
+	[Test]
+	[Description("SaveRowLayout keeps another role's two rows in their read order: planned rows are matched in read order.")]
+	public void SaveRowLayout_ShouldKeepRelativeOrder_WhenRoleHasSeveralRows() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Employees, 0, true, false, false, false),
+			FlagRow(Employees, 1, true, false, false, false),
+			FlagRow(Grantee, 2, true, true, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] {
+			read.Roles[2] with { Position = 0 },
+			read.Roles[0] with { Position = 1 },
+			read.Roles[1] with { Position = 2 }
+		});
+
+		// Act
+		_client.SaveRowLayout(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		SavedRows().Select(row => row.GetProperty("id").GetString()).Should().Equal(new[] { "r2", "r0", "r1" },
+			because: "the two identical rows keep their relative order");
+	}
+
+	[Test]
+	[Description("SaveRowLayout refuses a planned row with operations no read row has, and sends nothing: a layout save never changes operations.")]
+	public void SaveRowLayout_ShouldSendNothing_WhenPlannedRowIsNotARowRead() {
+		// Arrange
+		GetReturns(ObjectWithRows(true, FlagRow(Employees, 0, true, true, true, true)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] { read.Roles[0] with { CanDelete = false } });
+
+		// Act
+		ObjectRightsSaveResult result = _client.SaveRowLayout(read.Snapshot, after, new CreatioRequestOptions());
+
+		// Assert
+		result.Succeeded.Should().BeFalse(because: "the plan does not match the rows read");
+		_savedPayload.Should().BeNull(because: "nothing is sent");
+	}
+
+	[Test]
+	[Description("SaveRowLayout does not change the snapshot it was given.")]
+	public void SaveRowLayout_ShouldNotMutateSnapshot_WhenLayoutIsSaved() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Employees, 0, true, true, true, true),
+			FlagRow(Grantee, 1, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] { read.Roles[1] with { Position = 0 }, read.Roles[0] with { Position = 1 } });
+
+		// Act
+		_client.SaveRowLayout(read.Snapshot, after, new CreatioRequestOptions());
+		_client.SaveRowLayout(read.Snapshot, new ObjectRightsState(true, new[] { read.Roles[0] }), new CreatioRequestOptions());
+
+		// Assert
+		SavedRows().Select(row => row.GetProperty("id").GetString()).Should().Equal(new[] { "r0" },
+			because: "the second save starts from the object as read, not from the first save's payload");
+	}
+
 	// ---- The call's deadline ----
 
 	// A deadline whose elapsed time advances by the given steps, one per request (each request reads it once).

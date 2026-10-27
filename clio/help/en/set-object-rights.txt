@@ -2,10 +2,11 @@ COMMAND TYPE
     Object rights
 
 NAME
-    set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, or turn an object's operation permissions on or off
+    set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, move or remove that role's row, or turn an object's operation permissions on or off
 
 SYNOPSIS
     set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--confirm | --preview] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> (--position <n> | --above <SysAdminUnitId> | --remove-row) [--confirm | --preview] [OPTIONS]
     set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--confirm | --preview] [OPTIONS]
 
 DESCRIPTION
@@ -24,7 +25,20 @@ DESCRIPTION
     operations denies them. A new row goes at the lowest priority (one past the highest position), as
     in the designer, and the result names the rows above the grantee's row. A revoke clears the named
     operations on the role's row and KEEPS the row: for a user whose highest matching row it is, they
-    are then denied. No row is ever removed or moved.
+    are then denied. A grant or revoke never removes or moves a row.
+
+    A role's row is moved or removed only by a call of its own, with --grantee and exactly one of
+    --position, --above or --remove-row (no --operations, --revoke or switch flag). A row
+    placed below All employees is shadowed for every internal user, so a grant to a narrower internal
+    role takes effect only once its row is moved above All employees (--above <All employees id>). A
+    removal lets the role's members fall through to the next matching row, which can WIDEN their access
+    - unlike a revoke, which keeps the row as a deny. Like the designer, the rows left keep their
+    relative order and are renumbered 0..n-1. The preview and the result list the rows before and after
+    and every role whose operations change, for a member who is in no other role with a row: an
+    internal role is decided by the higher of its own row and All employees, an external (portal) role
+    by the higher of its own row and All external users. External roles are named as such, and a
+    narrowing for them is stated as a revoke of external access. While operation permissions are OFF,
+    a move or a removal changes nobody's access until they are turned on.
 
     Every change that alters who can reach the object must be named in the arguments, or the call is
     refused and nothing is written:
@@ -39,6 +53,8 @@ DESCRIPTION
         becomes available to ALL internal users, and the rows apply again when the switch is turned back
         on;
       - a revoke never turns operation permissions off: a revoke that would leave no row granting any
+        operation is refused;
+      - a removal that would leave an object using operation permissions with no row granting any
         operation is refused.
 
     To cover an object's lookups, read them with get-object-rights --include-connected, decide per
@@ -47,8 +63,10 @@ DESCRIPTION
 
     It is a read-modify-write over the native RightManagementService: the object is read, the change
     is planned, the rows the plan changes or adds are saved (every other row is sent exactly as read),
-    and the object is read back and compared with the plan, row by row. It does NOT change column or
-    record permissions.
+    and the object is read back and compared with the plan, row by row. A move or a removal saves the
+    whole row list in its new order - the service replaces the stored list, so a row left out is
+    deleted - and any difference in the read-back fails the call. It does NOT change column or record
+    permissions.
 
     DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
     --confirm is passed; in an interactive run it shows the planned change and asks for a y/n
@@ -75,7 +93,19 @@ OPTIONS
 
     --revoke
         Revoke the operations named in --operations instead of granting them. The role's row is kept,
-        with those operations cleared.
+        with those operations cleared, as a deny: a revoke never removes the row (--remove-row does).
+
+    --position
+        Move the grantee's row to this position, 0 the highest priority. A position past the last row
+        is refused, naming the valid range. A call of its own, with --grantee.
+
+    --above
+        Move the grantee's row directly above the row of this role (SysAdminUnit id). That role must
+        have exactly one row on the object. A call of its own, with --grantee.
+
+    --remove-row
+        Remove the grantee's row. Its members are then decided by the next matching row; the result
+        names that row and the operations it gives. A call of its own, with --grantee.
 
     --enable-operation-permissions
         Turn the object's operation permissions ON. With --grantee and --operations it lets the grant
@@ -95,7 +125,8 @@ OPTIONS
 
     --preview
         Write nothing: show the planned change — which rows start or keep deciding, where the grantee's
-        row sits, what turns on or off — or why the call would be refused.
+        row sits, what turns on or off; for a move or a removal, the rows before and after and every
+        role whose access changes — or why the call would be refused.
 
     -e, --environment
         Name of the registered environment to change.
@@ -109,15 +140,20 @@ EXIT CODES
         --operations on a grant or revoke, unknown operation, an --operations value that names no
         operation, --preview with --confirm, --enable-operation-permissions with --revoke,
         --disable-operation-permissions with --grantee, --operations, --revoke or
-        --enable-operation-permissions, a call that names no change), confirmation was missing in a
+        --enable-operation-permissions, a call that names no change, more than one of --position,
+        --above and --remove-row, one of them with --operations, --revoke or a switch flag, a
+        negative --position, --above not a GUID or naming the grantee), confirmation was missing in a
         non-interactive run, the object was not found or could not be read, the title lookup failed,
         the grantee does not exist,
         the change was refused (a grant that would turn operation permissions on without
         --enable-operation-permissions, a revoke that would leave no granting row, an enable alone over
         rows that grant nothing, a revoke on an object that does not use operation permissions, a
-        grantee with more than one row), the save failed and the read-back does not show the plan, a successful save could not be read back (reported as saved but NOT verified),
+        grantee with more than one row, a move or a removal for a grantee with no row, a move above a
+        role with no row or several, a position past the last row, a removal that would leave no
+        granting row), the external roles among the rows could not be looked up, the save failed and the read-back does not show the plan, a successful save could not be read back (reported as saved but NOT verified),
         or the object read back does not show a row this call writes (the grantee's row, or the All
-        employees row an enable stores) where it was planned, or the planned switch state.
+        employees row an enable stores) where it was planned, or the planned switch state, or - after a
+        move or a removal - any row that differs from the plan.
 
 EXAMPLES
     Show what a grant would change, without writing anything:
@@ -134,6 +170,15 @@ EXAMPLES
 
     Revoke delete from a role (its row stays, now without delete):
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations delete --revoke --confirm -e production
+
+    Preview moving a role's row above All employees, so it decides first for the role's members:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --above a29a3ba5-4b0d-de11-9a51-005056c00008 --preview -e production
+
+    Move a role's row to the highest priority:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --position 0 --confirm -e production
+
+    Remove a role's row (its members fall through to the next matching row):
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --remove-row --confirm -e production
 
     Turn an object's operation permissions off (available to all internal users), keeping every row as it is:
         clio set-object-rights --entity-schema-name UsrOrder --disable-operation-permissions --confirm -e production
@@ -160,14 +205,19 @@ NOTES
     committed save could add a new row a second time (it is sent without an id).
 
     After the save the object is read back and compared with the plan, row by row (grantee, position,
-    operations). A missing or different row that this call writes fails it; a row of another role that
-    differs from the plan, or that the plan did not write, is reported as a warning. If the read-back
+    operations). A missing or different row that this call writes fails it; after a grant, a revoke or
+    a switch change, a row of another role that differs from the plan, or that the plan did not write,
+    is reported as a warning. After a move or a removal, which saves the whole row list, any row that
+    differs fails the call. If the read-back
     itself fails, the call fails too: the change is reported as saved but NOT verified, with a request
     to check the object with get-object-rights before retrying.
 
     A grantee with more than one row on the object is refused: which of them decides depends on the
     other rows, so the command changes none of them. Remove the duplicates in the Object permissions
-    designer, then re-run.
+    designer, then re-run. The same holds for a move or a removal of such a grantee's row.
+
+    A move that leaves the rows in the same order changes nothing and exits 0, even when the stored
+    positions have gaps.
 
     Read-modify-write is last-writer-wins: a change another client saves between the read and the save
     is overwritten. The read-back reports any difference from the plan.

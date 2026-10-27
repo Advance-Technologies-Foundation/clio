@@ -71,6 +71,32 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 			because: "the call must fail on the missing environment rather than on a missing grantee or operations");
 	}
 
+	[TestCase("position", 0)]
+	[TestCase("above", "a29a3ba5-4b0d-de11-9a51-005056c00008")]
+	[TestCase("remove-row", true)]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureName("set-object-rights binds the move and remove arguments")]
+	[AllureDescription("position, above and remove-row bind through the real MCP server with a grantee and no operations, and the call fails on the missing environment, not on an unknown or missing argument.")]
+	[Description("Binds each move or remove argument through the real MCP server: a call with a grantee and one of them, and no operations, reaches the environment check.")]
+	public async Task Tool_Should_Bind_Layout_Argument(string argument, object value) {
+		// Arrange
+		string invalidEnvironmentName = $"missing-{ToolName}-layout-env-{Guid.NewGuid():N}";
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = invalidEnvironmentName,
+			["entity-schema-name"] = "Contact",
+			["grantee"] = "720b771c-e7a7-4f31-9cfb-52cd21c3739f",
+			[argument] = value
+		};
+
+		// Act
+		(CallToolResult callResult, ObjectRightsToolResponse response) = await CallAsync(args);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(because: "the argument is part of the tool contract and binds like any other");
+		response.Error.Should().Contain(invalidEnvironmentName,
+			because: "the call must fail on the missing environment rather than on an unknown argument or missing operations");
+	}
+
 	[TestCase("confirm", true)]
 	[TestCase("confirmation-code", "0123456789abcdef")]
 	[TestCase("include-connected", true)]

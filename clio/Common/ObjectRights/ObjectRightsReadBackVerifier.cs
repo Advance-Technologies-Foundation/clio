@@ -18,7 +18,8 @@ public sealed record ObjectRightsReadBackComparison(IReadOnlyList<string> Critic
 /// The switch, the grantee's rows and every row the call writes are what the call claims: a difference there is
 /// critical. When the call turns operation permissions on, the All employees row it stores counts as written even when
 /// the read only synthesized it. When it turns them off, every row it keeps counts as written; on an object with no
-/// stored rows the read synthesizes that row again, so it is not a difference.
+/// stored rows the read synthesizes that row again, so it is not a difference. A move or a removal saves the whole
+/// row list (<see cref="ObjectRightsPlan.RewritesAllRows"/>), so after one every difference is critical.
 /// </para>
 /// </summary>
 public interface IObjectRightsReadBackVerifier {
@@ -48,7 +49,7 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 				+ ObjectRightsSupport.FormatSwitch(planned));
 		}
 		ObjectRightsRowDifference diff = planned.DiffRows(actual);
-		List<RoleOperationRights> extra = diff.Extra.Where(row => !IsSynthesizedAfterDisable(plan, actual, row)).ToList();
+		List<RoleOperationRights> extra = diff.Extra.Where(row => !IsSynthesizedForNoStoredRows(plan, actual, row)).ToList();
 		foreach (RoleOperationRights missing in diff.Missing) {
 			RoleOperationRights read = extra.FirstOrDefault(row =>
 				row.GranteeId == missing.GranteeId && row.Position == missing.Position);
@@ -58,21 +59,23 @@ public sealed class ObjectRightsReadBackVerifier : IObjectRightsReadBackVerifier
 			string text = read is null
 				? $"{ObjectRightsSupport.FormatRow(missing)} is missing"
 				: $"{ObjectRightsSupport.FormatRow(read)}, the plan wrote {ObjectRightsSupport.FormatOperations(missing)}";
-			bool claimed = missing.GranteeId == grantee || written.Any(row => row.SameRowAs(missing));
+			bool claimed = plan.RewritesAllRows || missing.GranteeId == grantee || written.Any(row => row.SameRowAs(missing));
 			(claimed ? critical : differences).Add(text);
 		}
 		foreach (RoleOperationRights row in extra) {
-			(row.GranteeId == grantee ? critical : differences).Add($"{ObjectRightsSupport.FormatRow(row)} is not in the plan");
+			(plan.RewritesAllRows || row.GranteeId == grantee ? critical : differences)
+				.Add($"{ObjectRightsSupport.FormatRow(row)} is not in the plan");
 		}
 		return new ObjectRightsReadBackComparison(critical, differences);
 	}
 
-	// A disable keeps every stored row; when there were none, the read of the object — now off — synthesizes an All
-	// employees row with every operation at position 0. That row is the service's rendering of "no stored rows", not a
-	// row anyone wrote.
-	private static bool IsSynthesizedAfterDisable(ObjectRightsPlan plan, ObjectRightsState actual,
+	// A disable keeps every stored row, and a removal on an object that is off can take its last one; when none is left,
+	// the read of the object — off — synthesizes an All employees row with every operation at position 0. That row is
+	// the service's rendering of "no stored rows", not a row anyone wrote.
+	private static bool IsSynthesizedForNoStoredRows(ObjectRightsPlan plan, ObjectRightsState actual,
 		RoleOperationRights row) =>
-		plan.DisablesOperationPermissions && plan.After.Roles.Count == 0 && !actual.AdministratedByOperations
+		(plan.DisablesOperationPermissions || plan.RewritesAllRows) && plan.After.Roles.Count == 0
+		&& !actual.AdministratedByOperations
 		&& actual.Roles.Count == 1 && row.GranteeId == SysAdminUnitIds.AllEmployees && row.Position == 0
 		&& row.CanRead && row.CanCreate && row.CanEdit && row.CanDelete;
 
