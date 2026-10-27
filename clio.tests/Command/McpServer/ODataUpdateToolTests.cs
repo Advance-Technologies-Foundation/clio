@@ -684,6 +684,57 @@ public sealed class ODataUpdateToolTests {
 			.Contain("[redacted-path]")
 			.And.NotContain("/home/depot",
 				because: "server-side absolute paths must not reach the MCP caller's transcript");
+		response.Diagnostic.RetryAdvice.Should().NotBe(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "only a timeout earns the re-send advice; a broken connection keeps the generic read-first advice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1851: a PATCH cancelled by the client-side timeout names the timeout and says a re-send is safe, instead of 'A task was canceled'.")]
+	public void Update_Should_Report_Timeout_When_Patch_Is_Cancelled() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		// The production shape: creatio.client reads the PATCH task through Task.Result, so its CancelAfter
+		// timeout arrives as an AggregateException around a TaskCanceledException.
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Throws(new AggregateException(new System.Threading.Tasks.TaskCanceledException("A task was canceled.")));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a PATCH without an answer is not a confirmed update");
+		response.Error.Should().Be(ODataUpdateTool.PatchTimedOutError,
+			because: "the caller must learn that the client stopped waiting, not read an opaque cancellation");
+		response.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the PATCH was sent before the timeout");
+		response.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "a client-side cancellation does not stop Creatio from committing the PATCH");
+		response.Diagnostic.RetryAdvice.Should().Be(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "a PATCH of literal values is idempotent, so the caller can re-send instead of reading first");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1851: the tool description and get-tool-contract state the same PATCH timeout as the error the tool returns.")]
+	public void Update_Timeout_Should_Match_The_Documented_Timeout() {
+		// Arrange
+		const string statedTimeout = "within 30 s";
+
+		// Act
+		string description = typeof(ODataUpdateTool).GetMethod(nameof(ODataUpdateTool.Update))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		string contract = ToolContractCatalog.GetContracts([ODataUpdateTool.ToolName]).Tools!.Single().Description;
+
+		// Assert
+		ODataUpdateTool.PatchTimedOutError.Should().Contain(statedTimeout,
+			because: "the error is built from the timeout the PATCH is sent with");
+		description.Should().Contain(statedTimeout,
+			because: "the tool description is a literal and must not drift from the timeout the PATCH applies");
+		contract.Should().Contain(statedTimeout,
+			because: "get-tool-contract is a literal and must not drift from the timeout the PATCH applies");
 	}
 
 	[Test]

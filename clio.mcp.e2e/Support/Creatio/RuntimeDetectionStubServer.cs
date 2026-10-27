@@ -160,6 +160,13 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteMetadata = "metadata";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that serves the same CSDL as
+	/// <see cref="ODataPreWriteMetadata"/> but never answers the PATCH, so odata-update's client-side PATCH timeout
+	/// fires (issue #1851). The PATCH is still recorded, which proves the write was sent before the timeout.
+	/// </summary>
+	public const string ODataPreWriteStallPatch = "stallpatch";
+
+	/// <summary>
 	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers BOTH
 	/// pre-write reads (<c>$metadata</c> and the keyed <c>$select</c> probe) with a non-JSON body, so the
 	/// payload can be neither confirmed nor refuted. A PATCH is still acked, so a tool that wrote anyway
@@ -602,7 +609,8 @@ http.createServer((request, response) => {
         && url.includes("$select=");
       const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
       const isCollectionPost = request.method === "POST" && url.endsWith("/odata/" + config.ODataEntity);
-      if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}") {
+      if (isMetadata && (config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}"
+          || config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}")) {
         response.writeHead(200, { "Content-Type": "application/xml" });
         response.end(metadataCsdl(config.ODataEntity));
         return;
@@ -673,6 +681,10 @@ http.createServer((request, response) => {
           }
         }
         sendJson(response, 200, record);
+        return;
+      }
+      if (isPatch && config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}") {
+        // No answer at all: the request stays open until the client gives up or the stub is killed.
         return;
       }
       if (isPatch) {
