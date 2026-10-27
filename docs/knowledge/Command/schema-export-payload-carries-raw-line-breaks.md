@@ -1,29 +1,27 @@
 ---
-description: the platform schema exporter returns MetaData as a JSON string with raw CR/LF inside, which RFC 8259 forbids; export-schema re-encodes schema-data.json, and every reader of a payload must stay on Newtonsoft
+description: the platform schema exporter inserts Environment.NewLine before every \n escape of its JSON and the importer removes it again; export-schema removes it before writing schema-data.json, so the file is strict JSON
 applies-to:
   - clio/Command/SchemaTransfer/SchemaBundleStore.cs
 ticket: ENG-104664
 date: 2026-10-27
 ---
 
-**What is true** — the platform schema exporter (reached through cliogate `ExportSchema`) returns a payload
-whose `MetaData` member is a JSON string with raw carriage-return and line-feed characters inside it.
-`SchemaBundleStore.Write` copies the payload token by token through Newtonsoft before it writes
-`schema-data.json`, so the file is valid JSON with `\r\n` escapes. The copy uses `DateParseHandling.None` and
-`FloatParseHandling.Decimal`, so date strings and fraction digits reach the file as the platform wrote them.
-The result is checked with `System.Text.Json`; a payload that fails the copy or the check is written as received,
-with a warning. The platform returns such a payload for a schema that was imported and not yet compiled: its
-`MetaData` is then in a text format with a backslash before a raw line break, which even Newtonsoft refuses.
-The projections (`metadata.json` and the others) and `Read` still parse with Newtonsoft, not
-`System.Text.Json`.
+**What is true** — the platform exporter (`SchemaImporter.GetSchemaData` in
+`TSBpm/Src/Lib/Terrasoft.Core/SchemaImporter.cs`, reached through cliogate `ExportSchema`) writes valid JSON
+and then runs `.Replace("\\n", Environment.NewLine + "\\n")` for readability. The importer
+(`GetSchemaDataDescriptor` in the same file) runs the reverse replacement before it parses.
+`SchemaBundleStore.Write` and `Read` run that reverse replacement too (both CRLF and LF, because the exporter
+writes the line break of the server OS), so `schema-data.json` is the exact JSON the exporter produced.
 
-**Why it is this way** — strict parsers (`System.Text.Json`, Python `json.load`, `jq`) refuse a raw control
-character inside a string, so a verbatim file could not be read or edited by a script (SR-01559669,
-clio#1855). Newtonsoft accepts the raw form. The projections parse the payload as the platform returned it,
-and `Read` meets bundles that clio wrote before ENG-104664, which still have raw line breaks.
+**Why it is this way** — with the inserted line breaks the `MetaData` string carries raw control characters,
+so Python `json.load`, `jq` and `System.Text.Json` refuse the file (SR-01559669, clio#1855). The replacement
+also hits the tail of an escaped backslash before `n` (`\\n`, a line break in schema source code such as an
+entity event process). That leaves a backslash before a raw line break, which even Newtonsoft refuses, so the
+projections were skipped for such schemas. Measured on a 10.1.791 stand: the cleaned file imports, and the
+re-export is byte-identical to the export.
 
-**What breaks if you ignore it** — moving `ParsePayload` or `Read` to `System.Text.Json` makes every real
-payload and every old bundle fail to parse: the projections are skipped with only a warning, and import of an
-old bundle fails. Writing the payload verbatim again brings back the invalid `schema-data.json`. Re-encoding
-through `JObject.Parse` with default settings rewrites ISO date strings and rounds fractions through
-`double`, so import sends the platform a different value than it exported.
+**What breaks if you ignore it** — re-encoding the payload through a JSON library instead (tried first in
+this ticket) escapes each inserted line break as one more `\n`, so the platform receives `MetaData` with
+doubled line breaks, and it still fails on `\\n` in source code. Escaping the backslash in `\` + line break or
+dropping it makes the platform refuse the import ("Unable to create schema instance ... from metadata"). If the
+platform exporter stops inserting the line breaks, the replacement finds nothing and is harmless.

@@ -59,8 +59,9 @@ BUNDLE LAYOUT
     Only schema-data.json is authoritative. The projections exist so a reviewer can
     read what is being shipped; editing one changes nothing about what import applies.
 
-    schema-data.json is standard JSON: line breaks inside the MetaData string are
-    escaped, so scripts can read and edit it with any JSON parser.
+    schema-data.json is standard JSON: export removes the line breaks the platform
+    exporter inserts inside the MetaData string, so scripts can read and edit it
+    with any JSON parser.
 
     Export never overwrites an existing bundle folder.
 

@@ -74,10 +74,10 @@ reviewable, and the point of the feature is a reviewable handover. Import reads 
 ignores the projections, so editing a projection can never silently change what ships.
 
 `schema-data.json` is standard JSON (RFC 8259), so a script can read and edit it with any JSON parser, for
-example Python `json.load` or `jq`. The platform returns the `MetaData` string with raw line breaks; export
-escapes them (`\r\n`), so the string values do not change. Import also accepts bundles written by earlier clio
-versions, which have the raw line breaks. When the platform payload cannot be written as valid JSON (for
-example, a schema that was imported and not yet compiled), export writes it as received and prints a warning.
+example Python `json.load` or `jq`. The platform exporter inserts a line break before every `\n` escape in its
+JSON for readability, which makes the raw payload invalid JSON; export removes those line breaks, the same way
+the platform importer does. Import also accepts bundles written by earlier clio versions, which still have them.
+When the payload is still not valid JSON after that, export writes it as received and prints a warning.
 
 Export never overwrites an existing bundle folder.
 

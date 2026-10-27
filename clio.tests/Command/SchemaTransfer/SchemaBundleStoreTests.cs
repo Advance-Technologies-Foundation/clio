@@ -4,7 +4,6 @@ using System.IO;
 using Clio.Command.SchemaTransfer;
 using Clio.Common;
 using FluentAssertions;
-using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -60,8 +59,8 @@ public class SchemaBundleStoreTests {
 	public void TearDown() => _fileSystem.ClearReceivedCalls();
 
 	[Test]
-	[Description("Write stores the same JSON value the platform returned, because it is the only input import consumes")]
-	public void Write_Should_Store_Same_Payload_Value() {
+	[Description("Write stores the platform payload verbatim, because it is the only input import consumes")]
+	public void Write_Should_Store_Payload_Verbatim() {
 		// Arrange
 		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
 
@@ -71,7 +70,7 @@ public class SchemaBundleStoreTests {
 		// Assert
 		result.Should().Be(BundleDirectory,
 			because: "the caller needs the folder path it can hand over or point import at");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, Arg.Is<string>(text => IsSameJson(text, PlatformPayload)));
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
 	}
 
 	[Test]
@@ -93,7 +92,7 @@ public class SchemaBundleStoreTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "projections are documented as best-effort and the authoritative payload is already written");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, Arg.Is<string>(text => IsSameJson(text, PlatformPayload)));
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("The disk is full.")));
 	}
 
@@ -222,54 +221,36 @@ public class SchemaBundleStoreTests {
 	}
 
 	[Test]
-	[Description("Write escapes the raw CR/LF the platform puts inside MetaData, so a strict JSON parser reads the file")]
-	public void Write_Should_Escape_Control_Characters_Inside_Strings() {
+	[Description("Write removes the line breaks the platform exporter inserts before every \\n escape, so the file is strict JSON")]
+	[TestCase("\n", TestName = "Exporter on Linux inserts LF")]
+	[TestCase("\r\n", TestName = "Exporter on Windows inserts CRLF")]
+	public void Write_Should_Remove_Exporter_Line_Breaks(string serverNewLine) {
 		// Arrange
 		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
-		const string metadata = "{\r\n  \"MetaData\": {\r\n\t\"Schema\": {}\r\n  }\r\n}";
-		// The platform's shape: quotes inside MetaData are escaped, CR/LF/TAB are not.
-		string payload = "{\"Name\":\"UsrProbeSchema\",\"MetaData\":\""
-			+ metadata.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"}";
+		// The second line of MetaData is schema source code with an escaped line break (\\n). The exporter's
+		// replacement also matches its tail, which leaves a backslash before a raw line break.
+		string exporterJson = $$"""{"Name":"{{SchemaName}}","MetaData":"= A \"x\"\n= C4 \"a();\\nb();\""}""";
+		string platformPayload = exporterJson.Replace("\\n", serverNewLine + "\\n", StringComparison.Ordinal);
 		string written = null;
 		_fileSystem.WriteAllTextToFile(SchemaDataPath, Arg.Do<string>(text => written = text));
 
 		// Act
-		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), platformPayload));
 
 		// Assert
+		written.Should().Be(exporterJson,
+			because: "the file must be the exact JSON the exporter produced before it inserted the line breaks");
 		Action strictParse = () => System.Text.Json.JsonDocument.Parse(written).Dispose();
 		strictParse.Should().NotThrow(
 			because: "scripts read schema-data.json with RFC 8259 parsers such as Python json.load");
-		using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(written);
-		document.RootElement.GetProperty("MetaData").GetString().Should().Be(metadata,
-			because: "escaping changes only the encoding, so import still sends the platform the same MetaData");
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 	}
 
 	[Test]
-	[Description("Write keeps date strings and fraction digits as the platform wrote them")]
-	public void Write_Should_Keep_Dates_And_Fractions_As_Written() {
-		// Arrange
-		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
-		const string payload =
-			"{\"Name\":\"UsrProbeSchema\",\"ModifiedOn\":\"2026-10-27T10:08:44.335+02:00\",\"Weight\":1.10}";
-		string written = null;
-		_fileSystem.WriteAllTextToFile(SchemaDataPath, Arg.Do<string>(text => written = text));
-
-		// Act
-		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
-
-		// Assert
-		written.Should().Contain("\"2026-10-27T10:08:44.335+02:00\"",
-			because: "a date string re-parsed as DateTime would come back in another format or offset");
-		written.Should().Contain("1.10",
-			because: "a fraction read as double would lose its trailing digits");
-	}
-
-	[Test]
-	[Description("Write keeps a payload it cannot write as strict JSON and warns, instead of cutting or mangling it")]
+	[Description("Write keeps a payload that is not strict JSON and warns, so the operator learns it before a script fails")]
 	[TestCase("{\"Name\":\"UsrProbeSchema\"} {\"Name\":\"Other\"}", TestName = "Trailing content after the value")]
 	[TestCase("{\"Name\":/*note*/\"UsrProbeSchema\"}", TestName = "Comment inside the value")]
-	[TestCase("{\"MetaData\":\"a\\\nb\"}", TestName = "Backslash before a raw line break")]
+	[TestCase("{\"MetaData\":\"a\nb\"}", TestName = "Raw line break that is not before an escape")]
 	public void Write_Should_Keep_Payload_And_Warn_When_It_Is_Not_Strict_Json(string payload) {
 		// Arrange
 		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
@@ -281,6 +262,27 @@ public class SchemaBundleStoreTests {
 		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payload);
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
 			message.Contains(SchemaBundleStore.SchemaDataFileName) && message.Contains("not valid JSON")));
+	}
+
+	[Test]
+	[Description("Read removes the exporter line breaks from a bundle written by an older clio, so the identity is read from the payload")]
+	public void Read_Should_Remove_Exporter_Line_Breaks_From_An_Older_Bundle() {
+		// Arrange
+		string exporterJson = $$"""{"Name":"{{SchemaName}}","UId":"8375dacb-4ea5-4103-b07a-d365f8d276f3","MetaData":"= C4 \"a();\\nb();\""}""";
+		string olderBundle = exporterJson.Replace("\\n", "\n\\n", StringComparison.Ordinal);
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns(olderBundle);
+		_fileSystem.ExistsFile(DescriptorPath).Returns(false);
+
+		// Act
+		SchemaBundle result = _sut.Read(BundleDirectory);
+
+		// Assert
+		result.SchemaData.Should().Be(exporterJson,
+			because: "the platform importer removes the same line breaks, so sending the exporter JSON is equivalent");
+		result.Descriptor.SchemaName.Should().Be(SchemaName,
+			because: "the payload parses once the line breaks are gone, so the identity comes from the payload");
 	}
 
 	[Test]
@@ -380,8 +382,7 @@ public class SchemaBundleStoreTests {
 
 		// Assert
 		act.Should().NotThrow(because: "a projection of the wrong shape is skipped, not fatal to the export");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath,
-			Arg.Is<string>(text => IsSameJson(text, payloadWithObjectMetadata)));
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payloadWithObjectMetadata);
 		_fileSystem.Received(1).WriteAllTextToFile(
 			System.IO.Path.Combine(BundleDirectory, "properties.json"), Arg.Any<string>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(
@@ -468,9 +469,6 @@ public class SchemaBundleStoreTests {
 		// Assert
 		act.Should().NotThrow(because: "a Guid is the same identity however it is spelled");
 	}
-
-	private static bool IsSameJson(string actual, string expected) =>
-		JToken.DeepEquals(JToken.Parse(actual), JToken.Parse(expected));
 
 	private static SchemaBundleDescriptor BuildDescriptor() =>
 		new() {

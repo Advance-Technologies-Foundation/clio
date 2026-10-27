@@ -87,12 +87,13 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 				$"'{bundleDirectory}' already exists. Choose another destination, or remove it first — "
 				+ "export never overwrites an existing bundle.");
 		}
+		string schemaData = RemoveExporterLineBreaks(bundle.SchemaData);
 		_fileSystem.CreateDirectory(bundleDirectory);
 		try {
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, DescriptorFileName),
 				SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
-				ToStrictJson(bundleDirectory, bundle.SchemaData));
+				schemaData);
 		}
 		catch {
 			RollBackFailedBundle(bundleDirectory);
@@ -101,73 +102,41 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		// Deliberately OUTSIDE the rollback: by this point the authoritative payload is on disk and the export
 		// has succeeded, so the projections are best-effort (see TryWriteProjections) and must never be able to
 		// take the artifact back down with them.
-		TryWriteProjections(bundleDirectory, bundle.SchemaData);
+		TryWriteProjections(bundleDirectory, schemaData);
+		WarnWhenNotStrictJson(bundleDirectory, schemaData);
 		return bundleDirectory;
 	}
 
 	/// <summary>
-	/// Re-encodes the platform payload as JSON that a strict parser accepts.
+	/// Removes the line breaks the platform exporter inserts into its JSON for readability.
 	/// </summary>
-	/// <returns>The same JSON data with control characters inside strings escaped, or the payload unchanged when
-	/// it cannot be re-encoded as strict JSON.</returns>
 	/// <remarks>
-	/// The platform exporter puts raw CR/LF characters inside the <c>MetaData</c> string. RFC 8259 forbids them, so
-	/// Python <c>json.load</c>, <c>jq</c> and <c>System.Text.Json</c> refuse the file and a script cannot read or edit
-	/// the bundle before import. The payload is copied token by token rather than through a <see cref="JObject"/>:
-	/// <see cref="DateParseHandling.None"/> keeps ISO date strings as the platform wrote them,
-	/// <see cref="FloatParseHandling.Decimal"/> keeps every digit of a fraction, and a duplicate member name is
-	/// copied instead of collapsed — so import sends the platform the data it exported.
-	/// <para>
-	/// The result is checked with <c>System.Text.Json</c>, because Newtonsoft also copies what strict JSON forbids
-	/// (comments, <c>undefined</c>, <c>new Date(...)</c>). A payload that fails the copy or the check is written
-	/// unchanged with a warning: the export still produces its artifact, and the operator learns that the file is
-	/// not strict JSON before a script fails on it. The platform returns such a payload for a schema that was
-	/// imported and not yet compiled — its <c>MetaData</c> then has a backslash before a raw line break.
-	/// </para>
+	/// The exporter (<c>SchemaImporter.GetSchemaData</c> in Terrasoft.Core) writes valid JSON and then inserts
+	/// <c>Environment.NewLine</c> before every <c>\n</c> escape, so the <c>MetaData</c> string carries raw line
+	/// breaks, which RFC 8259 forbids. An escaped backslash before an <c>n</c> (<c>\\n</c>, a line break in schema
+	/// source code) also matches, which leaves a backslash before a raw line break that even Newtonsoft refuses.
+	/// The platform importer reverses this with the same replacement before it parses. Doing it here gives the
+	/// exact JSON the exporter produced, so Python <c>json.load</c>, <c>jq</c> and <c>System.Text.Json</c> can read
+	/// the bundle, and the importer's replacement finds nothing to change. Valid JSON never has a raw line break
+	/// before a backslash, so the replacement does not change a payload that is already valid. Both line-break
+	/// forms are removed because the exporter writes the line break of the server OS.
 	/// </remarks>
-	private string ToStrictJson(string bundleDirectory, string schemaData) {
-		string reencoded = TryReencode(schemaData);
-		if (reencoded is not null && IsStrictJson(reencoded)) {
-			return reencoded;
-		}
-		_logger?.WriteWarning(
-			$"The platform payload of the bundle in '{bundleDirectory}' is not valid JSON, so {SchemaDataFileName} "
-			+ "is written as received and a strict JSON parser will refuse it.");
-		return schemaData;
-	}
+	private static string RemoveExporterLineBreaks(string schemaData) =>
+		schemaData
+			.Replace("\r\n\\n", "\\n", StringComparison.Ordinal)
+			.Replace("\n\\n", "\\n", StringComparison.Ordinal);
 
-	private static string TryReencode(string schemaData) {
+	/// <summary>
+	/// Warns when the written payload is still not strict JSON, so the operator learns it before a script fails.
+	/// </summary>
+	private void WarnWhenNotStrictJson(string bundleDirectory, string schemaData) {
 		try {
-			using StringReader source = new(schemaData);
-			using JsonTextReader reader = new(source) {
-				DateParseHandling = DateParseHandling.None,
-				FloatParseHandling = FloatParseHandling.Decimal
-			};
-			using StringWriter target = new(CultureInfo.InvariantCulture);
-			using (JsonTextWriter writer = new(target) { Formatting = Formatting.Indented }) {
-				if (!reader.Read()) {
-					return null;
-				}
-				writer.WriteToken(reader);
-				// Reading past the end throws on trailing content, so text with something after the JSON value
-				// is not silently cut short.
-				while (reader.Read()) {
-				}
-			}
-			return target.ToString();
-		}
-		catch (JsonException) {
-			return null;
-		}
-	}
-
-	private static bool IsStrictJson(string json) {
-		try {
-			using SystemTextJson.JsonDocument document = SystemTextJson.JsonDocument.Parse(json);
-			return true;
+			SystemTextJson.JsonDocument.Parse(schemaData).Dispose();
 		}
 		catch (SystemTextJson.JsonException) {
-			return false;
+			_logger?.WriteWarning(
+				$"The platform payload of the bundle in '{bundleDirectory}' is not valid JSON, so "
+				+ $"{SchemaDataFileName} is written as received and a strict JSON parser will refuse it.");
 		}
 	}
 
@@ -213,7 +182,8 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 				$"'{schemaDataPath}' was not found. Point import at a bundle folder produced by "
 				+ $"'clio export-schema', or directly at its {SchemaDataFileName}.");
 		}
-		string schemaData = _fileSystem.ReadAllText(schemaDataPath);
+		// A bundle written by clio before ENG-104664 still carries the exporter line breaks.
+		string schemaData = RemoveExporterLineBreaks(_fileSystem.ReadAllText(schemaDataPath));
 		if (string.IsNullOrWhiteSpace(schemaData)) {
 			throw new InvalidOperationException($"'{schemaDataPath}' is empty.");
 		}
@@ -405,12 +375,9 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	/// </summary>
 	/// <returns>The parsed payload, or <c>null</c> when it is not JSON at all.</returns>
 	/// <remarks>
-	/// Deliberately Newtonsoft, not <c>System.Text.Json</c>. The platform exporter embeds the schema metadata as
-	/// a JSON STRING containing raw CR/LF control characters, which RFC 8259 forbids and
-	/// <c>System.Text.Json</c> therefore refuses. <see cref="Write"/> escapes them in the file it writes, but the
-	/// projections parse the payload exactly as the platform returned it, and <see cref="Read"/> still meets
-	/// bundles written before that fix — with <c>System.Text.Json</c> every such payload would fail to parse.
-	/// Newtonsoft accepts both forms.
+	/// Newtonsoft, not <c>System.Text.Json</c>: it also reads a payload that still has a raw line break inside a
+	/// string, which RFC 8259 forbids and <c>System.Text.Json</c> refuses. See
+	/// <see cref="RemoveExporterLineBreaks"/> for where such line breaks come from.
 	/// </remarks>
 	[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
 		Justification = "null means 'the payload is not JSON at all', which every caller branches on; an empty "
