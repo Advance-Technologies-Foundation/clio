@@ -2977,6 +2977,48 @@ public sealed class SchemaValidationServiceTests
 			because: "only the real caption should be rejected, not the projected attribute name");
 	}
 
+	[TestCase(false, "insert")]
+	[TestCase(false, "merge")]
+	[TestCase(true, "insert")]
+	[TestCase(true, "merge")]
+	[Description("A crt.Map templateValuesMapping names record columns rather than localized UI text, for web and mobile bodies (issue #1873).")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptMapMapping_WhenMappingNamesColumns(bool mobile, string operation) {
+		// Arrange
+		string diff = """
+			[{"operation":"OPERATION","name":"NearbyPoints_Map","values":{"type":"crt.Map","items":"$NearbyItems","templateValuesMapping":{"id":"Id","title":"Name","lat":"GPSN","lon":"GPSE","subtitle":"PrimaryContact","description":"Address","captionOnMap":"Name","extraColumns":["AccountCategory","Type"]}},"parentName":"MainContainer","propertyName":"items","index":0}]
+			""".Replace("OPERATION", operation);
+		string body = mobile ? "{\"viewConfigDiff\":" + diff + "}" : BuildDiffBackedPageBody(diff, "[]");
+
+		// Act
+		SchemaValidationResult result = mobile
+			? SchemaValidationService.ValidateMobileLocalizableTextLiterals(body)
+			: SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "Map mapping values are column names, not display text");
+		result.Errors.Should().BeEmpty(because: "templateValuesMapping.title on crt.Map must not require a resource binding");
+	}
+
+	[TestCase("""{"type":"crt.Map","caption":"Visible caption","templateValuesMapping":{"title":"Name"}}""")]
+	[TestCase("""{"type":"crt.Map","items":[{"type":"crt.Label","caption":"Visible caption"}],"templateValuesMapping":{"title":"Name"}}""")]
+	[TestCase("""{"type":"crt.Map","itemConfig":{"templateValuesMapping":{"title":"Visible caption"}}}""")]
+	[TestCase("""{"type":"crt.FlexContainer","templateValuesMapping":{"title":"Visible caption"}}""")]
+	[TestCase("""{"type":"crt.FlexContainer","items":[{"type":"crt.Label","templateValuesMapping":{"title":"Visible caption"}}]}""")]
+	[Description("The crt.Map mapping exemption must not hide text on the component, its children, other paths or other components.")]
+	public void ValidateLocalizableTextLiterals_ShouldRejectTitle_WhenOutsideMapMapping(string values) {
+		// Arrange
+		string body = BuildDiffBackedPageBody(
+			$$"""[{"operation":"insert","name":"Map","values":{{values}}}]""", "[]");
+
+		// Act
+		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeFalse(because: "ordinary visible text still requires localization");
+		result.Errors.Should().ContainSingle(error => error.Contains("Visible caption"),
+			because: "only the real text should be rejected, not the mapped column name");
+	}
+
 	[Test]
 	[Description("A Timeline composer's platform-authored data.caption literal is accepted — a component's data descriptor is metadata, not page-authored user-visible text (issue #1298).")]
 	public void ValidateLocalizableTextLiterals_ComposerDataCaptionLiteral_ReturnsValid() {
