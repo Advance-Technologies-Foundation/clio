@@ -217,7 +217,8 @@ NOTES
     designer, then re-run. The same holds for a move or a removal of such a grantee's row.
 
     A move that leaves the rows in the same order changes nothing and exits 0, even when the stored
-    positions have gaps.
+    positions have gaps. So does removing the All employees row of an object that is OFF with no
+    stored rows: that row is the one the service shows for such an object, not a stored row.
 
     Read-modify-write is last-writer-wins: a change another client saves between the read and the save
     is overwritten. The read-back reports any difference from the plan.

@@ -500,6 +500,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return $"grantee {change.GranteeLabel} has no row, so there is nothing to revoke";
 		}
 		string granteeRow = $"the row of grantee {change.GranteeLabel} at position {row.Position}";
+		if (change.Request.Layout?.Kind == RowLayoutKind.Remove) {
+			return $"{granteeRow} is the row the service shows for an object that is off with no stored rows; it is "
+				+ "not stored, so there is nothing to remove";
+		}
 		if (change.Request.ChangesLayout) {
 			return $"{granteeRow} is already where the call puts it";
 		}

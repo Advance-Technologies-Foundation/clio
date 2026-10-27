@@ -340,4 +340,71 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 			&& line.Contains("access WIDENS") && line.Contains("All external users"),
 			because: "the result names the external role whose access widens and the row that now decides");
 	}
+
+	[Test]
+	[Description("Removing the row an object that is off with no stored rows is read with writes nothing and says the row is not stored.")]
+	public void Execute_ShouldWriteNothing_WhenRemovingTheSynthesizedRowOfAnObjectThatIsOff() {
+		// Arrange
+		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
+		_granteeLookup.ResolveGranteeName(AllEmployees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
+
+		// Act
+		int exitCode = _command.Execute(Options(o => { o.Grantee = AllEmployees.ToString(); o.RemoveRow = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "nothing to change is not a failure");
+		_infos.Should().Contain(line => line.Contains("not stored, so there is nothing to remove"),
+			because: "the result must not claim a removal that changed nothing");
+		NothingSaved();
+	}
+
+	[Test]
+	[Description("Removing the last stored row of an object that is off saves an empty list and accepts the synthesized All employees row the read-back then shows.")]
+	public void Execute_ShouldSaveEmptyList_WhenRemovingTheLastRowOfAnObjectThatIsOff() {
+		// Arrange
+		ObjectIs(Info(false, Row(Technicians, 0, "RCE")), readBack: Info(false, Row(AllEmployees, 0, "RCED")));
+
+		// Act
+		int exitCode = _command.Execute(Options(o => o.RemoveRow = true));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the synthesized row is how the service reads an object with no stored rows");
+		_saved.Roles.Should().BeEmpty(because: "the only stored row is removed");
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
+		_infos.Should().Contain(line => line.Contains("removed the row of grantee"), because: "the result says what was done");
+	}
+
+	private static IEnumerable<TestCaseData> AccessChangeLines() {
+		yield return new TestCaseData(Info(true, Row(AllEmployees, 0, "RCED"), Row(Technicians, 1, "RCE")),
+				(Action<SetObjectRightsOptions>)(o => { o.Grantee = AllEmployees.ToString(); o.RemoveRow = true; }),
+				new[] { "role 'All employees'", "access NARROWS", "to no access" })
+			.SetName("Execute_ShouldNameAllEmployeesLosingAccess_WhenPreviewingItsRemoval");
+		yield return new TestCaseData(Info(true, Row(Managers, 0, "RCED"), Row(AllEmployees, 1, "RCED")),
+				(Action<SetObjectRightsOptions>)(o => { o.Grantee = Managers.ToString(); o.RemoveRow = true; }),
+				new[] { "role 'Service managers'", "unchanged", "by [0] All employees" })
+			.SetName("Execute_ShouldNameTheRemovedRoleUnchanged_WhenTheNextRowGivesTheSameAccess");
+		yield return new TestCaseData(Info(true, Row(AllEmployees, 0, "CED"), Row(Technicians, 1, "R")),
+				(Action<SetObjectRightsOptions>)(o => o.Above = AllEmployees.ToString()),
+				new[] { "role 'Service technicians'", "access CHANGES from create/edit/delete to read" })
+			.SetName("Execute_ShouldSayAccessChanges_WhenNeitherSideContainsTheOther");
+	}
+
+	[TestCaseSource(nameof(AccessChangeLines))]
+	[Description("AC7: the preview names each role whose access changes with the right direction — NARROWS, unchanged for a removed role, or CHANGES when neither set contains the other.")]
+	public void Execute_ShouldDescribeTheAccessChange_WhenPreviewing(ObjectRightsInfo before,
+		Action<SetObjectRightsOptions> layout, string[] expectedParts) {
+		// Arrange
+		ObjectIs(before);
+		_granteeLookup.ResolveGranteeName(AllEmployees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
+		_granteeLookup.ResolveGranteeName(Managers, Arg.Any<CreatioRequestOptions>()).Returns("Service managers");
+
+		// Act
+		int exitCode = _command.Execute(Options(o => { layout(o); o.Confirm = false; o.Preview = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "a preview completes without writing");
+		_infos.Should().Contain(line => expectedParts.All(line.Contains),
+			because: "one line names the role, the direction and the decision");
+		NothingSaved();
+	}
 }

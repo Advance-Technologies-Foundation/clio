@@ -255,7 +255,8 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run. The same
   holds for a move or a removal of such a grantee's row.
 - A move that leaves the rows in the same order changes nothing and exits 0, even when the stored positions have
-  gaps.
+  gaps. So does removing the `All employees` row of an object that is OFF with no stored rows: that row is the one
+  the service shows for such an object, not a stored row.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its
   rows say (only technical users follow the rows while it is off). To limit access, turn operation permissions on
   first (a grant with `--enable-operation-permissions`, which keeps the object's `All employees` row as it is or adds

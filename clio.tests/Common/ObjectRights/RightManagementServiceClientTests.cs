@@ -966,6 +966,25 @@ public class RightManagementServiceClientTests {
 			because: "the second save starts from the object as read, not from the first save's payload");
 	}
 
+	[Test]
+	[Description("The layout save is sent exactly once, whatever the caller's retry settings, like the row save: a save the server committed but answered too late must not be sent again.")]
+	public void SaveRowLayout_ShouldSendTheSaveOnce_WhenTheCallerAllowsRetries() {
+		// Arrange
+		GetReturns(ObjectWithRows(true,
+			FlagRow(Employees, 0, true, true, true, true),
+			FlagRow(Grantee, 1, true, false, false, false)));
+		ObjectRightsInfo read = Read();
+		ObjectRightsState after = new(true, new[] { read.Roles[1] with { Position = 0 }, read.Roles[0] with { Position = 1 } });
+
+		// Act
+		_client.SaveRowLayout(read.Snapshot, after, new CreatioRequestOptions { MaxAttempts = 3 });
+
+		// Assert
+		_applicationClient.Received(1).ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(), 1, Arg.Any<int>());
+		_applicationClient.DidNotReceive().ExecutePostRequest(SaveUrl, Arg.Any<string>(), Arg.Any<int>(),
+			Arg.Is<int>(attempts => attempts != 1), Arg.Any<int>());
+	}
+
 	// ---- The call's deadline ----
 
 	// A deadline whose elapsed time advances by the given steps, one per request (each request reads it once).

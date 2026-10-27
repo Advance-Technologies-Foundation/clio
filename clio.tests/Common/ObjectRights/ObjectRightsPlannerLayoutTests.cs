@@ -278,6 +278,21 @@ public class ObjectRightsPlannerLayoutTests {
 		// Assert
 		plan.Refused.Should().BeFalse(because: "turning the switch on later refuses rows that grant nothing on its own");
 		plan.After.Roles.Should().BeEmpty(because: "the only row is removed");
+		plan.RewritesAllRows.Should().BeTrue(because: "the removal saves the whole, now empty, row list");
+	}
+
+	[Test]
+	[Description("On an object that is off with no stored rows, the All employees row is the one the service synthesizes for that state, so removing it changes nothing.")]
+	public void Plan_ShouldChangeNothing_WhenRemovingTheSynthesizedRowOfAnObjectThatIsOff() {
+		// Arrange
+		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
+
+		// Act
+		ObjectRightsPlan plan = _planner.Plan(before, Remove(AllEmployees));
+
+		// Assert
+		plan.Refused.Should().BeFalse(because: "there is nothing wrong with the call, only nothing to do");
+		plan.Changes.Should().BeFalse(because: "an empty list reads back as the same synthesized row");
 	}
 
 	[Test]
