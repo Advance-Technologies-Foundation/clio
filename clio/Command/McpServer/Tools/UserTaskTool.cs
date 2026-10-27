@@ -362,7 +362,7 @@ public record UserTaskParameterDirectionArgs(
 /// </summary>
 public record CreateUserTaskArgs(
 	[property:JsonPropertyName("code")]
-	[Description("User task schema code")]
+	[Description("User task schema code. The target environment's SchemaNamePrefix is prepended when the code does not already start with it, and its casing is canonicalized when it does, so the created schema may be named differently from this argument; an empty SchemaNamePrefix imposes no prefix")]
 	[Required]
 	string Code,
 

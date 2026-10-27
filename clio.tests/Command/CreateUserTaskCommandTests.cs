@@ -99,7 +99,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -210,7 +211,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -257,7 +259,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "Custom",
 			Code = "UsrMyUserTask",
@@ -291,7 +294,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -307,10 +311,189 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			.ExecutePostRequest(default, default, default, default, default);
 	}
 
-	[Test]
-	[Description("Returns an error when the user task code does not start with the required Usr prefix.")]
+	[TestCase("Usr", "UsrMyTask", "UsrMyTask")]
+	[TestCase("Usr", "MyTask", "UsrMyTask")]
+	[TestCase("Usr", "usrMyTask", "UsrMyTask")]
+	[TestCase("Cst", "CstMyTask", "CstMyTask")]
+	[TestCase("Cst", "MyTask", "CstMyTask")]
+	[TestCase("", "MyTask", "MyTask")]
+	[Description("Applies the environment's SchemaNamePrefix to the user task code instead of a hardcoded Usr prefix.")]
 	[Category("Unit")]
-	public void Execute_Should_Return_Error_When_Code_Does_Not_Start_With_Usr() {
+	public void Execute_Should_Apply_Environment_SchemaNamePrefix_To_Code(string schemaNamePrefix,
+		string requestedCode, string expectedCode) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false
+		};
+		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
+		Guid schemaUId = Guid.Parse("8ab0dd66-18a8-4dc5-a452-74e0dc325bcf");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+		Guid editPageSchemaUId = Guid.Parse("c748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		Guid dcmEditPageSchemaUId = Guid.Parse("d748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema).Returns(CreateNewSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
+		fileSystem.ExistsDirectory(packagePath).Returns(true);
+		fileSystem.ExistsFile(descriptorPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath).Returns(new PackageDescriptorDto {
+			Descriptor = new PackageDescriptor {
+				Name = "MyPackage",
+				UId = packageUId,
+				Type = PackageType.Assembly
+			}
+		});
+		applicationClient
+			.ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateNewSchemaResponse(schemaUId, schemaId, packageUId, editPageSchemaUId, dcmEditPageSchemaUId));
+		applicationClient
+			.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient
+			.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{}");
+
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory(schemaNamePrefix));
+		CreateUserTaskOptions options = new() {
+			Package = "MyPackage",
+			Code = requestedCode,
+			Title = "My user task",
+			Culture = "en-US",
+			TitleLocalizations = [],
+			DescriptionLocalizations = [],
+			Parameters = [],
+			ParameterItems = []
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: $"the environment prefix '{schemaNamePrefix}' must make '{requestedCode}' a name Creatio accepts");
+		applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl,
+			Arg.Is<string>(body => HasPropertyWithValue(body, "name", expectedCode)),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("Uses the user task code exactly as supplied on an external-access session, because that session cannot read system settings at all.")]
+	[Category("Unit")]
+	public void Execute_Should_Use_The_Supplied_Code_On_An_External_Access_Session() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		IWorkspacePathBuilder workspacePathBuilder = Substitute.For<IWorkspacePathBuilder>();
+		IJsonConverter jsonConverter = Substitute.For<IJsonConverter>();
+		IFileSystem fileSystem = Substitute.For<IFileSystem>();
+		IFileDesignModePackages fileDesignModePackages = Substitute.For<IFileDesignModePackages>();
+		fileDesignModePackages.LoadPackagesToDb().Returns(FileDesignModeLoadResult.Completed);
+		IUserTaskMetadataDirectionApplier metadataDirectionApplier = Substitute.For<IUserTaskMetadataDirectionApplier>();
+		IUserTaskLookupSchemaResolver lookupSchemaResolver = Substitute.For<IUserTaskLookupSchemaResolver>();
+		ILogger logger = Substitute.For<ILogger>();
+		EnvironmentSettings settings = new() {
+			Uri = "https://localhost",
+			IsNetCore = false,
+			ExternalAccessToken = "external-access-token"
+		};
+		Guid packageUId = Guid.Parse("a00051f4-cde3-4f3f-b08e-c5ad1a5c735a");
+		Guid schemaUId = Guid.Parse("8ab0dd66-18a8-4dc5-a452-74e0dc325bcf");
+		Guid schemaId = Guid.Parse("937d9454-ef79-49e3-b098-4340bca01fd8");
+		Guid editPageSchemaUId = Guid.Parse("c748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		Guid dcmEditPageSchemaUId = Guid.Parse("d748bf4e-e4e1-454e-8f5b-4f65f91d8396");
+		string packagePath = TestFileSystem.GetRootedPath("workspace", "packages", "MyPackage");
+		string descriptorPath = Path.Combine(packagePath, "descriptor.json");
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CreateUserTaskSchema).Returns(CreateNewSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.SaveUserTaskSchema).Returns(SaveSchemaUrl);
+		serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.BuildPackage).Returns(BuildPackageUrl);
+		workspacePathBuilder.IsWorkspace.Returns(true);
+		workspacePathBuilder.BuildPackagePath("MyPackage").Returns(packagePath);
+		fileSystem.ExistsDirectory(packagePath).Returns(true);
+		fileSystem.ExistsFile(descriptorPath).Returns(true);
+		jsonConverter.DeserializeObjectFromFile<PackageDescriptorDto>(descriptorPath).Returns(new PackageDescriptorDto {
+			Descriptor = new PackageDescriptor {
+				Name = "MyPackage",
+				UId = packageUId,
+				Type = PackageType.Assembly
+			}
+		});
+		applicationClient
+			.ExecutePostRequest(CreateNewSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateNewSchemaResponse(schemaUId, schemaId, packageUId, editPageSchemaUId, dcmEditPageSchemaUId));
+		applicationClient
+			.ExecutePostRequest(SaveSchemaUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns($$"""{"success":true,"schemaUid":"{{schemaUId}}","validationErrors":[]}""");
+		applicationClient
+			.ExecutePostRequest(BuildPackageUrl, Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{}");
+		bool settingsWereRead = false;
+		Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory = _ => {
+			settingsWereRead = true;
+			// Mirrors BindingsModule.BuildRemoteDataProvider, which fails closed on this session kind:
+			// ATF.Repository accepts credentials, an OAuth client or an API token, but not session cookies.
+			throw new NotSupportedException("This command reads through ATF.Repository.");
+		};
+
+		CreateUserTaskCommand command =
+			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver, sysSettingsManagerFactory) {
+				Logger = logger
+			};
+		CreateUserTaskOptions options = new() {
+			Package = "MyPackage",
+			Code = "UsrMyTask",
+			Title = "My user task",
+			Culture = "en-US",
+			TitleLocalizations = [],
+			DescriptionLocalizations = [],
+			Parameters = [],
+			ParameterItems = []
+		};
+
+		// Act
+		int result = command.Execute(options);
+
+		// Assert
+		result.Should().Be(0,
+			because: "add-user-task served external-access sessions before clio read this setting at all, so "
+				+ "reading it must not turn a working command into a refusal");
+		settingsWereRead.Should().BeFalse(
+			because: "the session kind is detected up front rather than attempted and caught, so the caller "
+				+ "never waits on a call that cannot succeed");
+		applicationClient.Received(1).ExecutePostRequest(
+			SaveSchemaUrl,
+			Arg.Is<string>(body => HasPropertyWithValue(body, "name", "UsrMyTask")),
+			Arg.Any<int>(),
+			Arg.Any<int>(),
+			Arg.Any<int>());
+		logger.Received().WriteWarning(Arg.Is<string>(message => message.Contains("external-access session")));
+	}
+
+	[TestCase("", "an empty code cannot name a schema")]
+	[TestCase("   ", "a whitespace-only code cannot name a schema")]
+	[TestCase("My-Task", "a hyphen cannot appear in a generated C# class name")]
+	[Description("Returns an error when the resolved user task code cannot be a valid schema name.")]
+	[Category("Unit")]
+	public void Execute_Should_Return_Error_When_Code_Cannot_Produce_Valid_Schema_Name(string code, string reason) {
 		// Arrange
 		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
 		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
@@ -338,10 +521,11 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
-			Code = "MyFinalTask",
+			Code = code,
 			Title = "My final task"
 		};
 
@@ -349,7 +533,7 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		int result = command.Execute(options);
 
 		// Assert
-		result.Should().Be(1);
+		result.Should().Be(1, because: reason);
 		applicationClient.DidNotReceiveWithAnyArgs()
 			.ExecutePostRequest(default, default, default, default, default);
 	}
@@ -488,7 +672,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -548,7 +733,8 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 		});
 		CreateUserTaskCommand command =
 			new(applicationClient, settings, serviceUrlBuilder, workspacePathBuilder, jsonConverter, fileSystem,
-				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver);
+				fileDesignModePackages, metadataDirectionApplier, lookupSchemaResolver,
+				SysSettingsManagerFactory());
 		CreateUserTaskOptions options = new() {
 			Package = "MyPackage",
 			Code = "UsrMyUserTask",
@@ -604,6 +790,16 @@ public class CreateUserTaskCommandTests : BaseCommandTests<CreateUserTaskOptions
 			}
 		};
 		return JsonSerializer.Serialize(response);
+	}
+
+	/// <summary>
+	/// Builds an environment-scoped sys-settings manager that reports the given SchemaNamePrefix.
+	/// </summary>
+	private static Func<EnvironmentSettings, ISysSettingsManager> SysSettingsManagerFactory(
+		string schemaNamePrefix = "Usr") {
+		ISysSettingsManager sysSettingsManager = Substitute.For<ISysSettingsManager>();
+		sysSettingsManager.GetSysSettingValueByCode(SysSettingCodes.SchemaNamePrefix).Returns(schemaNamePrefix);
+		return _ => sysSettingsManager;
 	}
 
 	private static bool HasPropertyWithValue(string json, string propertyName, string expectedValue) {

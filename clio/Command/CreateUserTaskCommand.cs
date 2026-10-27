@@ -20,7 +20,8 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 	/// <summary>
 	/// Gets or sets the user task schema code.
 	/// </summary>
-	[Value(0, MetaName = "Code", Required = true, HelpText = "User task code (schema/class name). Must start with Usr")]
+	[Value(0, MetaName = "Code", Required = true,
+		HelpText = "User task code (schema/class name); the environment's SchemaNamePrefix is prepended when missing and its casing canonicalized when present, so the created schema may be named differently")]
 	public string Code { get; set; }
 
 	/// <summary>
@@ -99,12 +100,14 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	private readonly IFileDesignModePackages _fileDesignModePackages;
 	private readonly IUserTaskMetadataDirectionApplier _userTaskMetadataDirectionApplier;
 	private readonly IUserTaskLookupSchemaResolver _userTaskLookupSchemaResolver;
+	private readonly Func<EnvironmentSettings, ISysSettingsManager> _sysSettingsManagerFactory;
 
 	public CreateUserTaskCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, IWorkspacePathBuilder workspacePathBuilder,
 		IJsonConverter jsonConverter, IFileSystem fileSystem, IFileDesignModePackages fileDesignModePackages,
 		IUserTaskMetadataDirectionApplier userTaskMetadataDirectionApplier,
-		IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver)
+		IUserTaskLookupSchemaResolver userTaskLookupSchemaResolver,
+		Func<EnvironmentSettings, ISysSettingsManager> sysSettingsManagerFactory)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_workspacePathBuilder = workspacePathBuilder;
@@ -113,12 +116,13 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		_fileDesignModePackages = fileDesignModePackages;
 		_userTaskMetadataDirectionApplier = userTaskMetadataDirectionApplier;
 		_userTaskLookupSchemaResolver = userTaskLookupSchemaResolver;
+		_sysSettingsManagerFactory = sysSettingsManagerFactory;
 	}
 
 	protected override void ExecuteRemoteCommand(CreateUserTaskOptions options) {
 		ConfigureWorkspace(options);
 		PackageDescriptor package = ResolveWorkspacePackage(options.Package);
-		string validatedUserTaskCode = ValidateUserTaskCode(options.Code);
+		string validatedUserTaskCode = ResolveUserTaskCode(options.Code);
 		Guid packageUId = package.UId;
 		Dictionary<string, int> explicitParameterDirections = UserTaskSchemaSupport
 			.ExtractExplicitDirections(options.Parameters);
@@ -223,18 +227,67 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 		schema.MetaData = BuildMetaData(schema.UId, schema.Name, package.UId, schema.Color);
 	}
 
-	private static string ValidateUserTaskCode(string code) {
+	/// <summary>
+	/// Resolves the user task code to create: ensures the target environment's schema-name prefix and
+	/// validates that the result is a Latin identifier.
+	/// </summary>
+	/// <param name="code">Code supplied by the caller.</param>
+	/// <returns>The code to write, carrying the environment's schema-name prefix.</returns>
+	/// <remarks>
+	/// Creatio validates a custom schema's code against the <c>SchemaNamePrefix</c> system setting, and that
+	/// value is environment-specific - <c>Usr</c> is only the out-of-the-box default. Hardcoding <c>Usr</c>
+	/// here made the command unusable on every environment configured otherwise: clio refused the code the
+	/// server demanded, and the server refused the code clio demanded (ENG-104560). An empty setting means
+	/// the environment imposes no prefix, so none is applied.
+	/// </remarks>
+	private string ResolveUserTaskCode(string code) {
 		string normalizedCode = code?.Trim();
 		if (string.IsNullOrWhiteSpace(normalizedCode)) {
 			throw new InvalidOperationException("User task code cannot be empty.");
 		}
 
-		if (!normalizedCode.StartsWith("Usr", StringComparison.Ordinal)) {
+		string schemaNamePrefix = ReadSchemaNamePrefix();
+		if (!string.IsNullOrEmpty(schemaNamePrefix)) {
+			normalizedCode = normalizedCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)
+				// Re-canonicalize casing: code 'usrMyTask' with prefix 'Usr' becomes 'UsrMyTask'.
+				? schemaNamePrefix + normalizedCode[schemaNamePrefix.Length..]
+				: schemaNamePrefix + normalizedCode;
+		}
+
+		// ClioIdentifier owns this rule for the whole repository. It admits a leading underscore because a
+		// package may be named that way; a schema may not, so that one extra constraint is layered on top
+		// rather than restated as a fifth copy of the pattern.
+		if (!char.IsAsciiLetter(normalizedCode[0]) || !ClioIdentifier.IsIdentifierFragment(normalizedCode)) {
 			throw new InvalidOperationException(
-				$"User task code '{normalizedCode}' must start with 'Usr'.");
+				$"User task code '{normalizedCode}' is invalid. User task codes must start with a Latin letter "
+				+ "and contain only Latin letters, digits, or underscore.");
 		}
 
 		return normalizedCode;
+	}
+
+	/// <summary>
+	/// Reads the environment's schema-name prefix, or an empty prefix when this session cannot read
+	/// system settings at all.
+	/// </summary>
+	/// <returns>The configured prefix, or <see cref="string.Empty"/> to impose none.</returns>
+	/// <remarks>
+	/// An external-access session cannot read the setting: ATF.Repository has no session-cookie
+	/// constructor, so <c>BindingsModule.BuildRemoteDataProvider</c> fails closed with
+	/// <see cref="NotSupportedException"/> rather than connecting as the wrong identity. add-user-task
+	/// served those sessions before clio read this setting at all, so it uses the code exactly as
+	/// supplied instead of refusing outright.
+	/// </remarks>
+	private string ReadSchemaNamePrefix() {
+		if (!string.IsNullOrEmpty(EnvironmentSettings?.ExternalAccessToken)) {
+			Logger.WriteWarning(
+				"The SchemaNamePrefix system setting cannot be read on an external-access session, so the "
+				+ "user task code is used exactly as supplied. Supply a code that already carries the "
+				+ "environment's schema-name prefix.");
+			return string.Empty;
+		}
+
+		return SysSettingCodes.ReadSchemaNamePrefix(_sysSettingsManagerFactory(EnvironmentSettings));
 	}
 
 	private PackageDescriptor ResolveWorkspacePackage(string packageName) {

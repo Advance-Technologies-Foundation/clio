@@ -163,7 +163,8 @@ public class UserTaskToolTests {
 				Substitute.For<IFileSystem>(),
 				Substitute.For<IFileDesignModePackages>(),
 				Substitute.For<IUserTaskMetadataDirectionApplier>(),
-				Substitute.For<IUserTaskLookupSchemaResolver>()) {
+				Substitute.For<IUserTaskLookupSchemaResolver>(),
+				_ => Substitute.For<ISysSettingsManager>()) {
 		}
 
 		public override int Execute(CreateUserTaskOptions options) {
