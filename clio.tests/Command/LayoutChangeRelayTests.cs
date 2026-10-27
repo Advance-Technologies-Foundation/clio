@@ -53,6 +53,9 @@ public class LayoutChangeRelayTests {
 			because: "a version can never be removed, which the user has to know before choosing it");
 		sentence.Should().Contain("re-drawn too",
 			because: "the version keeps the arrangement on the source only, not on itself");
+		sentence.Should().Contain("a third answer is to send only those",
+			because: "the server offers the non-structural operations on their own, and a relay that ended on "
+				+ "two answers would have the agent drop the one that costs nothing");
 	}
 
 	[Test]

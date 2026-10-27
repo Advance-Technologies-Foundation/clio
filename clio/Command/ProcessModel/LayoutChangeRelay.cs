@@ -64,6 +64,9 @@ public sealed class LayoutChangeRelay {
 		+ "modify-business-process-as-new-version, which leaves this process and its diagram untouched and "
 		+ "creates an INACTIVE version they can look at first - PERMANENT, it cannot be deleted, and its own "
 		+ "diagram is re-drawn too - or the same operations here again with "
-		+ "confirm-layout-change, which re-draws this process in place.";
+		+ "confirm-layout-change, which re-draws this process in place. When the batch also holds operations "
+		+ "other than addElement, removeElement, addFlow, removeFlow and setFlow, a third answer is to send "
+		+ "only those, which apply in place without a re-draw on CrtProcessBuilder 1.6.6.125+ - unless they "
+		+ "depend on the structural ones.";
 
 }

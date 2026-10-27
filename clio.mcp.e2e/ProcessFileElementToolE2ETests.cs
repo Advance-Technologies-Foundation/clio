@@ -1802,7 +1802,7 @@ public sealed class ProcessFileElementToolE2ETests {
 	// The platform re-synchronizes a user-task element's parameters against its template when the design session
 	// loads it (ProcessSchemaActivity.SynchronizeParameter), which the classic designer's save path never does: the
 	// Process file pages force ConnectedObjectId to Lookup (the template declares Guid) and save schema lookups
-	// without the template's ReferenceSchemaUId (L9 = SysSchema). The builder also re-lays out the diagram (BL3).
+	// without the template's ReferenceSchemaUId (L9 = SysSchema). A builder before 1.6.6.125 also re-lays out the diagram (BL3).
 	// These three, in that direction only, may differ after the FIRST builder save of an element in the designer's form.
 	private static IEnumerable<string> ExpectedAfterFirstSave(IReadOnlyList<string> before, IReadOnlyList<string> after) {
 		if (before.Count != after.Count) {

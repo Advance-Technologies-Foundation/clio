@@ -208,13 +208,15 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		reKinded.Kind.Should().Be("conditional",
 			because: "setFlowCondition re-kinds the plain flow by replacing it, which is the path that has to "
 				+ "carry the stored connector");
+		reKinded.Geometry.Should().NotBeNull(
+			because: "mode=full reports the stored connector, and a null on both sides would compare equal");
 		JsonSerializer.Serialize(reKinded.Geometry).Should().Be(JsonSerializer.Serialize(
 				before.Flows.Single(flow => flow.Source == "Decide" && flow.Target == "EndA").Geometry),
 			because: "the replacement flow keeps the routed chain the original carried");
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a refused re-draw states what the new-version route costs: making the lower branch the default one swaps the two branches, the server refuses the edit in place, and the server's message says the version cannot be deleted and is re-drawn the same way (CrtProcessBuilder 1.6.6.125 and later), and clio's relay repeats that its own diagram is re-drawn too, for an older server that does not say it. Nothing is saved.")]
+	[Description("Over the real MCP path, a refused re-draw states what the new-version route costs: making the lower branch the default one swaps the two branches, the server refuses the edit in place, and the server's own message says the version's diagram is re-drawn the same way (CrtProcessBuilder 1.6.6.125 and later; asserted on that server-only phrase), and clio's relay says the version cannot be deleted and is re-drawn too, for an older server that does not say it. Nothing is saved.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process says a version is permanent and re-drawn when it refuses a re-draw")]
 	public async Task ModifyBusinessProcess_Should_SayAVersionIsPermanent_WhenItRefusesARedraw() {

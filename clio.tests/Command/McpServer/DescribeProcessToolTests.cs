@@ -126,7 +126,7 @@ public sealed class DescribeProcessToolTests {
 				+ "the PICTURE in - which arrow leaves where, which one crosses what - and naming the field "
 				+ "without naming its parts leaves that unanswerable");
 		prompt.Should().Contain("READ-ONLY",
-			because: "position, size and geometry are re-derived on every save and no write argument carries "
+			because: "position, size and geometry are re-derived on every structural edit and no write argument carries "
 				+ "them, and a field an agent can see is a field it will otherwise try to set");
 
 		// The TOOL description carries the same disambiguation, and an agent may read either one. Asserted

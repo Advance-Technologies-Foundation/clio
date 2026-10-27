@@ -1,5 +1,5 @@
 ---
-description: a Process file element stored in the designer's form - built in the classic designer, or by the builder from CrtProcessBuilder 1.6.6.101 on - changes once on its next builder save that does not rewrite it (ConnectedObjectId retyped Lookup -> Guid, a template L9 = SysSchema added on the schema lookups, the position relaid), because the design-session load re-syncs parameters against the user-task template; later such saves are byte-identical
+description: a Process file element stored in the designer's form - built in the classic designer, or by the builder from CrtProcessBuilder 1.6.6.101 on - changes once on its next builder save that does not rewrite it (ConnectedObjectId retyped Lookup -> Guid, a template L9 = SysSchema added on the schema lookups, and before CrtProcessBuilder 1.6.6.125 the position relaid), because the design-session load re-syncs parameters against the user-task template; later such saves are byte-identical
 applies-to:
   - clio.mcp.e2e/ProcessFileElementToolE2ETests.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
