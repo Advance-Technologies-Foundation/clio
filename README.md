@@ -87,6 +87,40 @@ For display command help use:
 clio <COMMAND_NAME> --help
 ```
 
+## Tab completion
+
+clio prints a completion script for your shell. Install it once from your shell profile, then
+`clio <TAB>` completes command names and `clio <command> <TAB>` completes that command's options.
+
+Bash (`~/.bashrc`):
+
+```
+eval "$(clio completion bash)"
+```
+
+`eval` rather than `source <(...)`: bash 3.2, which is still `/bin/bash` on macOS, cannot source a
+non-seekable process substitution, so that form silently defines nothing.
+
+Zsh (`~/.zshrc`):
+
+```
+source <(clio completion zsh)
+```
+
+PowerShell 7 or newer (add to `$PROFILE`):
+
+```
+clio completion powershell | Out-String | Invoke-Expression
+```
+
+Fish (`~/.config/fish/config.fish`):
+
+```
+clio completion fish | source
+```
+
+Run `clio completion <shell>` any time to print the script itself.
+
 ## Run with docker
 
 ### Build

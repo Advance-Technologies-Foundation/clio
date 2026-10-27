@@ -14,6 +14,7 @@ using Clio.Command.SchemaTransfer;
 using Clio.Command.ApplicationCommand;
 using Clio.Command.BusinessRules;
 using Clio.Command.ChainItems;
+using Clio.Command.Completion;
 using Clio.Command.CreatioInstallCommand;
 using Clio.Command.IdentityServiceDeployment;
 using Clio.Command.EntitySchemaDesigner;
@@ -1136,6 +1137,7 @@ public class BindingsModule {
 		services.AddTransient<WatchCompilationCommand>();
 		services.AddTransient<LinkWorkspaceWithTideRepositoryCommand>();
 		services.AddTransient<CheckWebFarmNodeConfigurationsCommand>();
+		services.AddTransient<CompletionCommand>();
 		services.AddTransient<GetAppHashCommand>();
 		services.AddTransient<ShowAppListCommand>();
 		services.AddTransient<EnvManageUiCommand>();
