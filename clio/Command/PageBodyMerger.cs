@@ -41,6 +41,9 @@ internal static class PageBodyMerger {
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
+	private static readonly Regex HandlerRequestRegex = new(@"request\s*:\s*[""']([^""']+)[""']",
+		RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
+
 	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
 	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
@@ -698,15 +701,53 @@ internal static class PageBodyMerger {
 		}
 		string currentInner = StripArrayBrackets(currentTrim);
 		string incomingInner = StripArrayBrackets(incomingTrim);
-		HashSet<string> incomingRequests = ExtractHandlerRequestStrings(incomingInner);
-		string filteredCurrent = RemoveHandlersWithRequests(currentInner, incomingRequests);
+		List<string> incomingBlocks = SplitTopLevelObjects(incomingInner);
+		Dictionary<string, List<string>> incomingByRequest = incomingBlocks
+			.Select(block => (Request: ReadHandlerRequest(block), Block: block))
+			.Where(pair => pair.Request is not null)
+			.GroupBy(pair => pair.Request, StringComparer.Ordinal)
+			.ToDictionary(group => group.Key, group => group.Select(pair => pair.Block).ToList(), StringComparer.Ordinal);
+		if (incomingByRequest.Count == 0) {
+			return JoinHandlers(currentInner, incomingInner);
+		}
+		// ENG-104715: an incoming handler whose request a current handler already declares takes that
+		// handler's place, so a re-saved handler does not move to the end and reorder the schema.
+		var merged = new List<string>();
+		var replacedRequests = new HashSet<string>(StringComparer.Ordinal);
+		foreach (string block in SplitTopLevelObjects(currentInner)) {
+			string request = ReadHandlerRequest(block);
+			if (request is not null && incomingByRequest.TryGetValue(request, out List<string> replacement)) {
+				if (replacedRequests.Add(request)) {
+					merged.AddRange(replacement);
+				}
+				continue;
+			}
+			merged.Add(block);
+		}
+		if (replacedRequests.Count == 0 || !IsCoveredByBlocks(incomingInner, incomingBlocks)) {
+			// The naive brace split cannot represent the fragment exactly (a brace inside a string, a comment
+			// between handlers), so it is kept verbatim at the end, as before ENG-104715.
+			List<string> kept = merged.Where(block => {
+				string request = ReadHandlerRequest(block);
+				return request is null || !incomingByRequest.ContainsKey(request);
+			}).ToList();
+			return JoinHandlers(string.Join(",", kept), incomingInner);
+		}
+		IEnumerable<string> appended = incomingBlocks.Where(block => {
+			string request = ReadHandlerRequest(block);
+			return request is null || !replacedRequests.Contains(request);
+		});
+		return "[" + string.Join(",", merged.Concat(appended)) + "]";
+	}
+
+	private static string JoinHandlers(string current, string incoming) {
 		string joined;
-		if (string.IsNullOrWhiteSpace(filteredCurrent)) {
-			joined = incomingInner;
-		} else if (string.IsNullOrWhiteSpace(incomingInner)) {
-			joined = filteredCurrent;
+		if (string.IsNullOrWhiteSpace(current)) {
+			joined = incoming;
+		} else if (string.IsNullOrWhiteSpace(incoming)) {
+			joined = current;
 		} else {
-			joined = filteredCurrent.TrimEnd(',', ' ', '\t', '\n', '\r') + "," + incomingInner;
+			joined = current.TrimEnd(',', ' ', '\t', '\n', '\r') + "," + incoming;
 		}
 		return "[" + joined + "]";
 	}
@@ -718,31 +759,34 @@ internal static class PageBodyMerger {
 		return trimmed.Trim();
 	}
 
-	private static HashSet<string> ExtractHandlerRequestStrings(string handlersInner) {
-		var result = new HashSet<string>(StringComparer.Ordinal);
-		Regex regex = new(@"request\s*:\s*[""']([^""']+)[""']", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
-		foreach (Match match in regex.Matches(handlersInner)) {
-			result.Add(match.Groups[1].Value);
+	/// <summary>
+	/// Reads the handler's own <c>request</c>: the first match at the block's top level, so a request
+	/// object nested in the handler body is never taken for the handler's identity.
+	/// </summary>
+	private static string ReadHandlerRequest(string handlerBlock) {
+		foreach (Match match in HandlerRequestRegex.Matches(handlerBlock)) {
+			string before = handlerBlock.Substring(0, match.Index);
+			int depth = before.Count(ch => ch == '{') - before.Count(ch => ch == '}');
+			if (depth == 1) {
+				return match.Groups[1].Value;
+			}
 		}
-		return result;
+		return null;
 	}
 
-	private static string RemoveHandlersWithRequests(string handlersInner, HashSet<string> existingRequests) {
-		if (existingRequests.Count == 0) {
-			return handlersInner;
-		}
-		var blocks = SplitTopLevelObjects(handlersInner);
-		var kept = new List<string>();
-		Regex requestRegex = new(@"request\s*:\s*[""']([^""']+)[""']", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
+	private static bool IsCoveredByBlocks(string inner, IEnumerable<string> blocks) {
+		string rest = inner;
 		foreach (string block in blocks) {
-			Match match = requestRegex.Match(block);
-			if (match.Success && existingRequests.Contains(match.Groups[1].Value)) {
-				continue;
+			int index = rest.IndexOf(block, StringComparison.Ordinal);
+			if (index < 0 || !IsSeparator(rest.Substring(0, index))) {
+				return false;
 			}
-			kept.Add(block);
+			rest = rest.Substring(index + block.Length);
 		}
-		return string.Join(",", kept);
+		return IsSeparator(rest);
 	}
+
+	private static bool IsSeparator(string text) => text.All(ch => ch == ',' || char.IsWhiteSpace(ch));
 
 	private static List<string> SplitTopLevelObjects(string value) {
 		var result = new List<string>();

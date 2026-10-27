@@ -582,4 +582,120 @@ public class PageBodyMergerTests {
 		inertWarnings.Should().ContainSingle(w => w.Contains("UsrName") && w.Contains("'merge'"),
 			because: "preserving the merge is right — the alternative destroys the insert as the pre-#1132 merger did — but it does NOT take effect: the differ runs the merge group before the insert group, and GH-1240 is exactly the gap of nobody saying so");
 	}
+
+	private static string WebBodyWithHandlers(string handlers) =>
+		WebBody("[]").Replace("/**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/",
+			$"/**SCHEMA_HANDLERS*/{handlers}/**SCHEMA_HANDLERS*/", System.StringComparison.Ordinal);
+
+	private static string MergeWebHandlers(string currentHandlers, string incomingHandlers) {
+		string merged = PageBodyMerger.Merge(WebBodyWithHandlers(currentHandlers), WebBodyWithHandlers(incomingHandlers));
+		PageSchemaSectionReader.TryRead(merged, out string content, "SCHEMA_HANDLERS")
+			.Should().BeTrue(because: "the merge must return a body whose handlers marker pair is intact");
+		return content.Trim();
+	}
+
+	[Test]
+	[Description("ENG-104715 / GitHub #1827: an incoming handler replaces the current handler with the same request at its position, not at the end of the array")]
+	public void Merge_ShouldReplaceHandlerInPlace_WhenIncomingDeclaresExistingRequest() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"},{request:"usr.B",handler:()=>"b"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"new"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"new"},{request:"usr.B",handler:()=>"b"}]""",
+			because: "a re-saved handler must keep its position, otherwise every append save reorders the schema and makes the version-control diff noisy");
+	}
+
+	[Test]
+	[Description("ENG-104715: an incoming handler with a request the current body does not declare is still appended after the replaced ones")]
+	public void Merge_ShouldAppendNewHandler_WhenIncomingMixesExistingAndNewRequests() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.C",handler:()=>"c"},{request:"usr.X",handler:()=>"new"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.X",handler:()=>"new"},{request:"usr.A",handler:()=>"a"},{request:"usr.C",handler:()=>"c"}]""",
+			because: "the replaced handler stays in place and the handler for a new request goes to the end, in fragment order");
+	}
+
+	[Test]
+	[Description("ENG-104715: when the current body declares one request twice, the first occurrence is replaced in place and the later one is dropped")]
+	public void Merge_ShouldReplaceFirstAndDropLaterDuplicates_WhenCurrentDeclaresRequestTwice() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old1"},{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old2"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"new"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.X",handler:()=>"new"},{request:"usr.A",handler:()=>"a"}]""",
+			because: "dedupe by request still keeps neither current copy and the fragment contributes one, now at the first copy's position");
+	}
+
+	[Test]
+	[Description("ENG-104715: a request string nested inside an incoming handler body does not remove a current handler; only the top-level request of each handler is matched")]
+	public void Merge_ShouldKeepCurrentHandler_WhenItsRequestAppearsOnlyNestedInIncomingHandler() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.B",handler:()=>"b"}]""";
+		string incoming = """[{request:"usr.A",handler:async(request,next)=>{await next?.handle({request:"usr.B"});return "new";}}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:async(request,next)=>{await next?.handle({request:"usr.B"});return "new";}},{request:"usr.B",handler:()=>"b"}]""",
+			because: "usr.B is only mentioned inside the usr.A handler body, so the current usr.B handler must survive the merge");
+	}
+
+	[Test]
+	[Description("ENG-104715: when the brace split cannot represent the fragment exactly (a brace inside a string), the fragment is appended verbatim as before instead of being cut")]
+	public void Merge_ShouldAppendFragmentVerbatim_WhenIncomingHandlerHasBraceInString() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""",
+			because: "a cut fragment would lose handlers silently, so the merge keeps the old verbatim append and only drops the replaced current handler");
+	}
+
+	[Test]
+	[Description("ENG-104715: a comment between fragment handlers is not lost; the fragment is appended verbatim as before")]
+	public void Merge_ShouldAppendFragmentVerbatim_WhenIncomingHasCommentBetweenHandlers() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"new"}, /* keep */ {request:"usr.C",handler:()=>"c"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"new"}, /* keep */ {request:"usr.C",handler:()=>"c"}]""",
+			because: "text between fragment handlers must survive the merge");
+	}
+
+	[Test]
+	[Description("ENG-104715: a handler whose top-level request follows a nested request object is identified by its top-level request")]
+	public void Merge_ShouldReplaceHandlerInPlace_WhenHandlerKeyPrecedesRequestKey() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.B",handler:()=>"b"}]""";
+		string incoming = """[{handler:async(r,n)=>{return n?.handle({request:"usr.B"});},request:"usr.A"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{handler:async(r,n)=>{return n?.handle({request:"usr.B"});},request:"usr.A"},{request:"usr.B",handler:()=>"b"}]""",
+			because: "the incoming handler is usr.A by its top-level key, so it replaces usr.A in place and leaves usr.B alone");
+	}
 }

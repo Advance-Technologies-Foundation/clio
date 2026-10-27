@@ -264,7 +264,9 @@ DESCRIPTION
     target. One exception: if your fragment supersedes an identity the page
     carries TWICE, only the first is replaced and the later one is dropped, since
     keeping it would re-apply stale values after your replacement. Handlers
-    dedupe by request.
+    dedupe by request: an incoming handler replaces the current handler with
+    the same request at its position, and a handler for a new request is
+    appended at the end.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;
