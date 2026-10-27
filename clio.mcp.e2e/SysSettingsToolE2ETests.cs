@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
@@ -24,6 +25,8 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 	private const string CreateToolName = SysSettingCreateTool.CreateSysSettingToolName;
 	private const string UpdateToolName = SysSettingUpdateTool.UpdateSysSettingToolName;
 	private const string KnownPlatformSetting = "Maintainer";
+	// The OOTB Supervisor contact, present on every product.
+	private const string SupervisorContactId = "410006e1-ca4e-4502-a9ec-e54d922d2c00";
 
 	#region Read-only tests
 
@@ -198,6 +201,64 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(CreateToolName)]
+	[AllureTag(UpdateToolName)]
+	[AllureName("create-sys-setting binds a Lookup to the base schema of a replaced entity")]
+	[AllureDescription("Creates a Lookup sys-setting on Contact, which every product replaces in several packages, checks through execute-esq that its ReferenceSchemaUId is the base Contact schema row (ExtendParent = false), then writes a Contact record as its value; a replacing layer's UId makes the platform refuse that write.")]
+	[Description("Creates a Lookup sys-setting on Contact, which every product replaces in several packages, checks through execute-esq that its ReferenceSchemaUId is the base Contact schema row (ExtendParent = false), then writes a Contact record as its value; a replacing layer's UId makes the platform refuse that write.")]
+	public async Task CreateSysSetting_Lookup_On_Replaced_Schema_Should_Accept_Value_Write() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2ELkb{Guid.NewGuid():N}"[..32];
+		CallToolResult createResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Lookup",
+				["reference-schema-name"] = "Contact"
+			});
+		SysSettingCreateResult createResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(createResult);
+		createResponse.Success.Should().BeTrue(
+			because: "the value-write scenario requires a successfully-created Lookup setting on Contact");
+
+		// Act
+		CallToolResult updateResult = await CallToolAsync(
+			arrangeContext,
+			UpdateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["value"] = SupervisorContactId
+			});
+		SysSettingUpdateResult updateResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(updateResult);
+		Guid storedReferenceUId = await ReadSingleGuidAsync(arrangeContext, "SysSettings", "ReferenceSchemaUId",
+			("Code", 1, code));
+		Guid baseContactUId = await ReadSingleGuidAsync(arrangeContext, "SysSchema", "UId",
+			("Name", 1, "Contact"), ("ManagerName", 1, "EntitySchemaManager"), ("ExtendParent", 12, false));
+
+		// Assert
+		storedReferenceUId.Should().Be(baseContactUId,
+			because: "the setting must reference the base Contact schema row; the old first-row lookup could store a replacing layer's UId, depending on row order");
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an accepted sys-setting write is a structured success, not a transport error");
+		updateResponse.Success.Should().BeTrue(
+			because: "a Lookup setting bound to the base Contact schema accepts a Contact record; one bound to a replacing layer refuses every value write");
+		updateResponse.Value.Should().NotBeNull(
+			because: "an accepted Lookup write reads back the record it stored");
+		Guid.Parse(updateResponse.Value!).Should().Be(Guid.Parse(SupervisorContactId),
+			because: "the readback must return the Contact record that was written");
+		updateResponse.Error.Should().BeNull(
+			because: "an accepted write carries no error");
+	}
+
+	[Test]
+	[AllureTag(CreateToolName)]
 	[AllureName("create-sys-setting rejects Lookup type without reference-schema-name")]
 	[AllureDescription("Invokes create-sys-setting with value-type-name=Lookup and no reference-schema-name. Verifies the structured failure explicitly names the missing argument and avoids a platform round-trip.")]
 	[Description("Invokes create-sys-setting with value-type-name=Lookup and no reference-schema-name. Verifies the structured failure explicitly names the missing argument and avoids a platform round-trip.")]
@@ -364,6 +425,46 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 				["args"] = args
 			},
 			arrangeContext.CancellationTokenSource.Token);
+	}
+
+	// Reads one Guid column of the single row matching every equality filter through execute-esq; each filter is
+	// (column, DataService dataValueType, value).
+	private static async Task<Guid> ReadSingleGuidAsync(
+		ArrangeContext arrangeContext,
+		string schemaName,
+		string column,
+		params (string Column, int DataValueType, object Value)[] filters) {
+		Dictionary<string, object?> filterItems = filters.ToDictionary(
+			filter => filter.Column,
+			filter => (object?)new {
+				filterType = 1, isEnabled = true, comparisonType = 3,
+				leftExpression = new { expressionType = 0, columnPath = filter.Column },
+				rightExpression = new {
+					expressionType = 2, parameter = new { dataValueType = filter.DataValueType, value = filter.Value }
+				}
+			});
+		Dictionary<string, object?> query = new() {
+			["rootSchemaName"] = schemaName, ["operationType"] = 0, ["allColumns"] = false, ["rowCount"] = 2,
+			["columns"] = new { items = new Dictionary<string, object> {
+				[column] = new { expression = new { expressionType = 0, columnPath = column } }
+			} },
+			["filters"] = new { filterType = 6, isEnabled = true, logicalOperation = 0, items = filterItems }
+		};
+		CallToolResult result = await CallToolAsync(arrangeContext, ExecuteEsqTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["query"] = query
+			});
+		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
+		response.Success.Should().BeTrue(
+			because: $"the {schemaName} readback must succeed to verify the stored reference: {response.Error}");
+		JsonElement[] rows = response.Rows!.Value.EnumerateArray().ToArray();
+		rows.Should().ContainSingle(
+			because: $"exactly one {schemaName} row matches the readback filters");
+		JsonElement value = rows[0].GetProperty(column);
+		return Guid.Parse(value.ValueKind == JsonValueKind.Object
+			? value.GetProperty("value").GetString()!
+			: value.GetString()!);
 	}
 
 	private async Task<ArrangeContext> ArrangeAsync(
