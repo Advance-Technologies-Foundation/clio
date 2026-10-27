@@ -422,21 +422,81 @@ public class SysSettingsManagerNewBehaviorTests {
 	[Test]
 	[Description("FindSchemaUIdByName resolves a schema name to its UId via the data provider's SysSchema model.")]
 	public void FindSchemaUIdByName_ReturnsUId_WhenSchemaExists() {
+		// Arrange
 		DataProviderMock providerMock = new();
 		Guid expectedUId = Guid.NewGuid();
 		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
-			new() {
-				{ "Id", Guid.NewGuid() },
-				{ "UId", expectedUId },
-				{ "Name", "UsrPhoneFormat" }
-			}
+			SysSchemaRow("UsrPhoneFormat", expectedUId, "EntitySchemaManager", extendParent: false)
 		});
 		ISysSettingsManager sut = BuildSut(providerMock);
 
+		// Act
 		Guid? actual = sut.FindSchemaUIdByName("UsrPhoneFormat");
 
+		// Assert
 		actual.Should().Be(expectedUId,
 			because: "FindSchemaUIdByName resolves the schema UId via SysSchema model and must return the value stored in UId");
+	}
+
+	[Test]
+	[Description("FindSchemaUIdByName returns the base schema UId when replacing layers of the schema come back before the base row.")]
+	public void FindSchemaUIdByName_ReturnsBaseSchemaUId_WhenReplacingLayersComeFirst() {
+		// Arrange
+		DataProviderMock providerMock = new();
+		Guid baseUId = Guid.NewGuid();
+		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
+			SysSchemaRow("MailboxSyncSettings", Guid.NewGuid(), "EntitySchemaManager", extendParent: true),
+			SysSchemaRow("MailboxSyncSettings", Guid.NewGuid(), "EntitySchemaManager", extendParent: true),
+			SysSchemaRow("MailboxSyncSettings", baseUId, "EntitySchemaManager", extendParent: false),
+			SysSchemaRow("MailboxSyncSettings", Guid.NewGuid(), "EntitySchemaManager", extendParent: true)
+		});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		// Act
+		Guid? actual = sut.FindSchemaUIdByName("MailboxSyncSettings");
+
+		// Assert
+		actual.Should().Be(baseUId,
+			because: "the platform stores the base schema UId in ReferenceSchemaUId; a replacing layer's UId makes the setting refuse every value write");
+	}
+
+	[Test]
+	[Description("FindSchemaUIdByName restricts the SysSchema query to entity schemas, so a client or source schema of the same name is never picked.")]
+	public void FindSchemaUIdByName_FiltersQueryByEntitySchemaManager() {
+		// Arrange
+		DataProviderMock providerMock = new();
+		Guid entityUId = Guid.NewGuid();
+		IItemsMock sysSchemaMock = providerMock.MockItems("SysSchema");
+		sysSchemaMock.FilterHas("EntitySchemaManager");
+		sysSchemaMock.Returns(new List<Dictionary<string, object>> {
+			SysSchemaRow("UsrOrder", entityUId, "EntitySchemaManager", extendParent: false)
+		});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		// Act
+		Guid? actual = sut.FindSchemaUIdByName("UsrOrder");
+
+		// Assert
+		actual.Should().Be(entityUId,
+			because: "the mock answers only a query filtered on EntitySchemaManager, and a Lookup setting must reference an entity schema");
+	}
+
+	[Test]
+	[Description("FindSchemaUIdByName returns null when only replacing layers of the schema are visible, instead of guessing one of them.")]
+	public void FindSchemaUIdByName_ReturnsNull_WhenNoBaseRowIsReturned() {
+		// Arrange
+		DataProviderMock providerMock = new();
+		providerMock.MockItems("SysSchema").Returns(new List<Dictionary<string, object>> {
+			SysSchemaRow("Contact", Guid.NewGuid(), "EntitySchemaManager", extendParent: true)
+		});
+		ISysSettingsManager sut = BuildSut(providerMock);
+
+		// Act
+		Guid? actual = sut.FindSchemaUIdByName("Contact");
+
+		// Assert
+		actual.Should().BeNull(
+			because: "a replacing layer's UId is never a valid ReferenceSchemaUId, so the helper must not fall back to one");
 	}
 
 	[Test]
@@ -462,6 +522,16 @@ public class SysSettingsManagerNewBehaviorTests {
 		sut.FindSchemaUIdByName("   ").Should().BeNull(
 			because: "a whitespace-only name is invalid input and the helper short-circuits without contacting the provider");
 	}
+
+	private static Dictionary<string, object> SysSchemaRow(string name, Guid uId, string managerName,
+		bool extendParent) =>
+		new() {
+			{ "Id", Guid.NewGuid() },
+			{ "UId", uId },
+			{ "Name", name },
+			{ "ManagerName", managerName },
+			{ "ExtendParent", extendParent }
+		};
 
 	#endregion
 

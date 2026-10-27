@@ -24,6 +24,8 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 	private const string CreateToolName = SysSettingCreateTool.CreateSysSettingToolName;
 	private const string UpdateToolName = SysSettingUpdateTool.UpdateSysSettingToolName;
 	private const string KnownPlatformSetting = "Maintainer";
+	// The OOTB Supervisor contact, present on every product.
+	private const string SupervisorContactId = "410006e1-ca4e-4502-a9ec-e54d922d2c00";
 
 	#region Read-only tests
 
@@ -194,6 +196,58 @@ public sealed class SysSettingsToolE2ETests : McpContractFixtureBase {
 		response.ValueTypeName.Should().Be("Lookup",
 			because: "the persisted type must match the requested Lookup value-type-name");
 		response.Error.Should().BeNull();
+	}
+
+	[Test]
+	[AllureTag(CreateToolName)]
+	[AllureTag(UpdateToolName)]
+	[AllureName("create-sys-setting binds a Lookup to the base schema of a replaced entity")]
+	[AllureDescription("Creates a Lookup sys-setting on Contact, which every product replaces in several packages, then writes a Contact record as its value. The write is accepted only when the setting references the base schema UId; a replacing layer's UId makes the platform refuse it.")]
+	[Description("Creates a Lookup sys-setting on Contact, which every product replaces in several packages, then writes a Contact record as its value. The write is accepted only when the setting references the base schema UId; a replacing layer's UId makes the platform refuse it.")]
+	public async Task CreateSysSetting_Lookup_On_Replaced_Schema_Should_Accept_Value_Write() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(
+			requireReachableEnvironment: true,
+			requireDestructiveOptIn: true);
+		string code = $"UsrMcpE2ELkb{Guid.NewGuid():N}"[..32];
+		CallToolResult createResult = await CallToolAsync(
+			arrangeContext,
+			CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["name"] = code,
+				["value-type-name"] = "Lookup",
+				["reference-schema-name"] = "Contact"
+			});
+		SysSettingCreateResult createResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingCreateResult>(createResult);
+		createResponse.Success.Should().BeTrue(
+			because: "the value-write scenario requires a successfully-created Lookup setting on Contact");
+
+		// Act
+		CallToolResult updateResult = await CallToolAsync(
+			arrangeContext,
+			UpdateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["code"] = code,
+				["value"] = SupervisorContactId
+			});
+		SysSettingUpdateResult updateResponse =
+			EntitySchemaStructuredResultParser.Extract<SysSettingUpdateResult>(updateResult);
+
+		// Assert
+		updateResult.IsError.Should().NotBeTrue(
+			because: "an accepted sys-setting write is a structured success, not a transport error");
+		updateResponse.Success.Should().BeTrue(
+			because: "a Lookup setting bound to the base Contact schema accepts a Contact record; one bound to a replacing layer refuses every value write");
+		updateResponse.Value.Should().NotBeNull(
+			because: "an accepted Lookup write reads back the record it stored");
+		Guid.Parse(updateResponse.Value!).Should().Be(Guid.Parse(SupervisorContactId),
+			because: "the readback must return the Contact record that was written");
+		updateResponse.Error.Should().BeNull(
+			because: "an accepted write carries no error");
 	}
 
 	[Test]
