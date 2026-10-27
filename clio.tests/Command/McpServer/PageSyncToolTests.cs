@@ -938,6 +938,7 @@ public sealed class PageSyncToolTests {
 					SchemaName = "UsrTodo_FormPage",
 					Success = true,
 					ResourcesRegistered = 1,
+					ResourcesUpdated = 2,
 					Page = new PageMetadataInfo {
 						SchemaName = "UsrTodo_FormPage",
 						SchemaUId = "test-uid",
@@ -959,6 +960,8 @@ public sealed class PageSyncToolTests {
 			because: "sync-pages should include the optional page resources payload when it is provided");
 		serializedResponse.Should().Contain("\"resources-registered\":1",
 			because: "sync-pages should serialize the registered-resource count using the documented MCP field name");
+		serializedResponse.Should().Contain("\"resources-updated\":2",
+			because: "sync-pages should serialize the updated-resource count using the documented MCP field name (GitHub #1850)");
 		serializedResponse.Should().Contain("\"page\":{",
 			because: "sync-pages should serialize read-back page metadata when it is present");
 		serializedResponse.Should().Contain("\"verified-body-file\":",

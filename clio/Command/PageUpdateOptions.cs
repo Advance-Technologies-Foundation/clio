@@ -358,6 +358,7 @@
 			string BodyToWrite,
 			PageAppendProjection Projection,
 			List<string> RegisteredKeys,
+			List<string> UpdatedKeys,
 			IReadOnlyList<string> DowngradeWarnings,
 			IReadOnlyList<string> InertWarnings,
 			PageConfigMergeReport ConfigMergeReport,
@@ -387,11 +388,11 @@
 				PageInsertDowngradeDetector.Detect(schemaToSave["body"]?.ToString(), bodyToWrite);
 			IReadOnlyList<string> inertWarnings = PageInertOperationDetector.Detect(bodyToWrite);
 			PageConfigMergeReport configMergeReport = DetectUnresolvedConfigMerges(bodyToWrite, context);
-			List<string> registeredKeys = UpdateSchemaBody(
+			(List<string> registeredKeys, List<string> updatedKeys) = UpdateSchemaBody(
 				schemaToSave, bodyToWrite, context.SchemaType, explicitResources, parsedOptionalProperties);
 			PageUpdateResponse captionGateFailure =
 				ValidateInsertedWidgetCaptionsResolve(options, schemaToSave, bodyToWrite, context);
-			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys,
+			prepared = new PreparedWrite(schemaToSave, bodyToWrite, projection, registeredKeys, updatedKeys,
 				downgradeWarnings, inertWarnings, configMergeReport, captionGateFailure);
 			return true;
 		}
@@ -496,7 +497,7 @@
 				// Parent references require the target hierarchy even during a dry run. No schema is saved.
 				// The caption check reads the schema's stored and inherited keys only for a binding the body
 				// and `resources` leave unresolved (issue #1740), through the same cached read as ValidateInput.
-				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+				response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null, updatedKeys: null);
 				response.Warnings = CombineWarnings(
 					BuildDryRunWidgetCaptionWarnings(options, context.SchemaType, explicitResources,
 						() => _persistedResourceKeyReader.Read(options, () => ReadPersistedResourceKeys(context))?.Keys),
@@ -512,7 +513,7 @@
 			// A failure here needs no stamping: TryUpdatePage marks every dry-run failure on the way out.
 			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
 				out PreparedWrite prepared, out response)) return false;
-			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null);
+			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null, updatedKeys: null);
 			response.AppendProjection = prepared.Projection;
 			// The same four sources the save reports, against the same body. The caption gate is the one that
 			// changes SEVERITY rather than content: blocking on a save, advisory here, because a dry run's job
@@ -548,7 +549,7 @@
 				return false;
 			}
 			if (!TrySaveSchema(prepared.Schema, options, out response)) return false;
-			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys);
+			response = CreateSuccessResponse(options, dryRun: false, prepared.RegisteredKeys, prepared.UpdatedKeys);
 			// The save reports the same projection: a caller who skipped the dry run has no other place to
 			// learn what the merge did.
 			response.AppendProjection = prepared.Projection;
@@ -1305,7 +1306,8 @@
 			return null;
 		}
 
-		private static List<string> UpdateSchemaBody(JObject schemaToSave, string body, PageSchemaType schemaType,
+		private static (List<string> registered, List<string> updated) UpdateSchemaBody(JObject schemaToSave,
+				string body, PageSchemaType schemaType,
 				Dictionary<string, string> explicitResources, JArray optionalProperties = null) {
 			schemaToSave["body"] = body;
 			if (optionalProperties != null) {
@@ -1317,9 +1319,10 @@
 				: SchemaValidationService.CollectViewModelPaths(body);
 			var dsBoundKeys = modelPaths.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase);
 			var existingStrings = schemaToSave[LocalizableStringsKey] as JArray;
-			(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
+			(JArray cleaned, List<string> registered, List<string> updated) =
+				ResourceStringHelper.CleanAndMerge(existingStrings, explicitResources, bodyKeys, dsBoundKeys);
 			schemaToSave[LocalizableStringsKey] = cleaned;
-			return registered.Count > 0 ? registered : null;
+			return (registered.Count > 0 ? registered : null, updated.Count > 0 ? updated : null);
 		}
 
 		/// <summary>
@@ -1524,14 +1527,17 @@
 		private static PageUpdateResponse CreateSuccessResponse(
 			PageUpdateOptions options,
 			bool dryRun,
-			List<string> registeredKeys) {
+			List<string> registeredKeys,
+			List<string> updatedKeys) {
 			return new PageUpdateResponse {
 				Success = true,
 				SchemaName = options.SchemaName,
 				BodyLength = options.Body.Length,
 				DryRun = dryRun,
 				ResourcesRegistered = registeredKeys?.Count ?? 0,
-				RegisteredResourceKeys = registeredKeys
+				RegisteredResourceKeys = registeredKeys,
+				ResourcesUpdated = updatedKeys?.Count ?? 0,
+				UpdatedResourceKeys = updatedKeys
 			};
 		}
 
