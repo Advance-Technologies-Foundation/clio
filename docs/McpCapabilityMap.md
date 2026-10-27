@@ -559,6 +559,18 @@ How an AI should interpret this:
 - the server supports both source-driven and remote-first data seeding strategies
 - the AI can choose between reproducible local artifacts and direct environment mutation
 
+Record file attachments:
+
+- `upload-file`
+  Upload a local file into a file entity (for example `ContactFile`, `AccountFile` or
+  `KnowledgeBaseFile`), link it to a parent record, and return the created `file-id`. Takes
+  `environment-name`, `file`, `entity`, `parent-column` and `parent-id`. Additive only
+  (`Destructive=false`): each call creates a new file record. clio reads the stored bytes back and
+  compares them before it reports success. Limit: 10 MB. Requires forms-auth credentials
+  (login/password) on the environment. On a failure after the file was sent, `file-id` is still set:
+  read that record before you upload again. Use it instead of `odata-create` for a file: OData cannot
+  write the binary `Data` column, and `odata-create` names such a column and points to `upload-file`.
+
 ### 6. Workspace Bootstrap And Local Delivery
 
 This part makes the MCP useful for real development work, not just runtime inspection.
@@ -860,7 +872,8 @@ take a single `args` object with kebab-case fields.
 - `upload-image`
   Upload a local image file to the environment and return the created `image-id`. Additive only
   (`Destructive=false`) — each call stores a new image. Requires forms-auth credentials
-  (login/password) on the environment.
+  (login/password) on the environment. For a file attached to a record, use `upload-file`
+  (see section 5).
 - `set-background-image`
   Set an image as the environment's shell background for all users and bind it into a package —
   pass exactly one of `file` (a local image, uploaded and applied in one call) or `image-id` (an

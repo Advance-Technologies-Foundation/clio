@@ -103,6 +103,39 @@ public sealed class ODataCreateTool(
 		+ "handler that throws is reported as a failed request). Do NOT retry blindly - it may duplicate the row. "
 		+ "Read the entity back (odata-read, filtering on the values you sent) and re-send only if it is absent.";
 
+	/// <summary>
+	/// Next step offered when Creatio refused the row while binding the request body. The refusal happens
+	/// before the controller runs, so the row is known NOT to be inserted.
+	/// </summary>
+	private const string RejectedBeforeWriteGuidance =
+		"Not inserted: Creatio rejected the row before writing anything. Correct the row and re-send it.";
+
+	/// <summary>
+	/// <c>error.message</c> values Creatio answers when the OData body fails model binding: an unknown
+	/// property, a malformed GUID, or any value for a binary (Edm.Stream) column. ASP.NET Web API on .NET
+	/// Framework says "The request is invalid."; ASP.NET Core says "The input was not valid.". Both are
+	/// produced before the controller action runs, so nothing is written
+	/// (docs/knowledge/McpServer/odata-create-model-validation-rejection-is-a-confirmed-no-write.md).
+	/// </summary>
+	private static readonly HashSet<string> ModelValidationMessages = new(StringComparer.Ordinal) {
+		"The request is invalid.",
+		"The input was not valid."
+	};
+
+	/// <summary>EDM types of a binary column. Creatio publishes file and image <c>Data</c> as Edm.Stream.</summary>
+	private static readonly HashSet<string> BinaryEdmTypes = new(StringComparer.Ordinal) {
+		"Edm.Stream",
+		"Edm.Binary"
+	};
+
+	/// <summary>Failure text for a row that sets a binary column. Built from validated column names only.</summary>
+	private static string DescribeBinaryColumns(IReadOnlyList<string> columns) =>
+		(columns.Count == 1 ? $"Column '{columns[0]}' is" : $"Columns {string.Join(", ", columns.Select(column => $"'{column}'"))} are")
+		+ " binary (file or image data). "
+		+ "OData cannot write a binary column, so Creatio rejects the row and creates nothing. "
+		+ "Create the row without these columns, or upload a file record with upload-file "
+		+ "(and an image with upload-image).";
+
 	/// <summary>Creates one or more Creatio records using OData v4.</summary>
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = false)]
 	[McpToolExecution(
@@ -123,8 +156,10 @@ public sealed class ODataCreateTool(
 		"Common synonyms of rows - payload, values, body or data (a single object is wrapped into one row) - are accepted and reported in warnings; sending one together with rows or rows-file is rejected as ambiguous. " +
 		"A date-time value without a UTC designator or offset (e.g. '2024-01-01T04:00:00') fails its row before any " +
 		"request - send '...Z' or '...+02:00' instead. " +
+		"Binary columns (file or image Data) cannot be written through OData: Creatio rejects such a row and creates " +
+		"nothing - use upload-file for a file attached to a record, or upload-image for an image. " +
 		"CRITICAL for failed rows — read 'record-created' before reacting: true inserted, false definitely not " +
-		"inserted (rejected locally, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
+		"inserted (rejected locally or by Creatio before writing, safe to fix and re-send), null UNKNOWN. Null means Creatio failed the call " +
 		"but may already have written the record, which happens when a post-insert entity event handler throws; " +
 		"re-sending such a row DUPLICATES it. On null, read the entity back and re-send only if absent — the " +
 		"row's 'retry-guidance' says so too, and the batch's 'unverified' count is how many rows are in that " +
@@ -159,8 +194,9 @@ public sealed class ODataCreateTool(
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
-				Diagnostic = DataWriteDiagnostic.Create("insert", args.Entity, row.Index, row.RecordCreated != false,
-					row.ResponseReceived, row.Success, row.Error)
+				Diagnostic = DataWriteDiagnostic.Create("insert", args.Entity, row.Index,
+					row.ResponseReceived || row.RecordCreated != false, row.ResponseReceived, row.Success, row.Error,
+					knownNotApplied: row.RecordCreated == false)
 			}).ToArray()
 		};
 	}
@@ -209,15 +245,18 @@ public sealed class ODataCreateTool(
 		}
 
 		string url = urlBuilder.Build(ODataKeyFormatter.CollectionPath(args.Entity));
-		// The metadata read is at most ONE per batch, and only when some row actually carries a
-		// date-time-shaped literal: the service-root CSDL is a multi-megabyte document, and a batch of
-		// plain rows would otherwise pay that download for a guard that cannot fire. It only ever types
-		// the value guard - odata-create does not validate field NAMES - so an unresolved metadata
-		// endpoint must never fail the insert; the guard then falls back to the literal's shape alone.
-		IReadOnlyDictionary<string, string> propertyTypes =
-			rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)
-				? ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, args.Entity.Trim())
-				: null;
+		// The metadata read is at most ONE per batch: the service-root CSDL is a multi-megabyte document.
+		// It is read up front only when some row carries a date-time-shaped literal, for the value guard;
+		// otherwise only after the first row Creatio rejects in model binding, to name a binary column. A
+		// batch of plain rows that all insert never pays for it. It never validates field NAMES, so an
+		// unresolved metadata endpoint must never fail the insert: the guard then falls back to the
+		// literal's shape alone, and a rejected row keeps the generic explanation.
+		string entity = args.Entity.Trim();
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes =
+			new(() => ODataFieldValidation.TryGetPropertyTypes(client, urlBuilder, entity));
+		if (rows.EnumerateArray().Any(ODataDateTimeGuard.HasZoneLessCandidate)) {
+			_ = propertyTypes.Value;
+		}
 		return ODataCreateBatchResponse.From(
 			PostRows(client, url, rows, args.StopOnError, propertyTypes, cancellationToken));
 	}
@@ -230,7 +269,9 @@ public sealed class ODataCreateTool(
 	/// <param name="url">Collection endpoint every row is posted to.</param>
 	/// <param name="rows">Validated non-empty JSON array of row objects.</param>
 	/// <param name="stopOnError">Whether the first failed row aborts the rest.</param>
-	/// <param name="propertyTypes">Entity property types for the date-time guard, or null when unavailable.</param>
+	/// <param name="propertyTypes">
+	/// Entity property types, read on first use; the value is null when the metadata is unavailable.
+	/// </param>
 	/// <param name="cancellationToken">Caller token; the MCP host cancels it when it disconnects.</param>
 	/// <returns>Outcomes for every ATTEMPTED row, plus the first unattempted row when the batch stopped early.</returns>
 	private static List<ODataRowResult> PostRows(
@@ -238,7 +279,7 @@ public sealed class ODataCreateTool(
 		string url,
 		JsonElement rows,
 		bool stopOnError,
-		IReadOnlyDictionary<string, string> propertyTypes,
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes,
 		CancellationToken cancellationToken) {
 		List<ODataRowResult> results = [];
 		int index = 0;
@@ -266,7 +307,8 @@ public sealed class ODataCreateTool(
 			// Cap the per-row timeout to what is left of the batch budget, so the LAST row cannot overshoot
 			// the deadline by a further full timeout.
 			ODataRowResult result = CreateRow(
-				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes);
+				client, url, row, index, Math.Min(RowRequestTimeoutMs, remainingMs), propertyTypes,
+				() => MaxBatchDurationMs - (int)Math.Min(elapsed.ElapsedMilliseconds, MaxBatchDurationMs));
 			results.Add(result);
 			if (!result.Success && stopOnError) {
 				break;
@@ -336,7 +378,7 @@ public sealed class ODataCreateTool(
 
 	private static ODataRowResult CreateRow(
 		IApplicationClient client, string url, JsonElement row, int index, int requestTimeoutMs,
-		IReadOnlyDictionary<string, string> propertyTypes) {
+		Lazy<IReadOnlyDictionary<string, string>> propertyTypes, Func<int> remainingBudgetMs) {
 		bool received = false;
 		try {
 			if (row.ValueKind != JsonValueKind.Object || !row.EnumerateObject().MoveNext()) {
@@ -348,7 +390,10 @@ public sealed class ODataCreateTool(
 					Error = "row must be a non-empty object of field/value pairs."
 				};
 			}
-			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(row, propertyTypes);
+			// Only a type map that is already loaded is used before the POST: loading it here would put the
+			// multi-megabyte metadata read in front of every batch.
+			IReadOnlyDictionary<string, string> loadedTypes = propertyTypes.IsValueCreated ? propertyTypes.Value : null;
+			string zoneLessDateTime = ODataDateTimeGuard.FindZoneLessDateTime(row, loadedTypes);
 			if (zoneLessDateTime is not null) {
 				return new ODataRowResult {
 					Index = index,
@@ -358,12 +403,33 @@ public sealed class ODataCreateTool(
 					Error = zoneLessDateTime
 				};
 			}
+			IReadOnlyList<string> binaryColumns = FindBinaryColumns(row, loadedTypes);
+			if (binaryColumns.Count > 0) {
+				return new ODataRowResult {
+					Index = index,
+					Success = false,
+					// Rejected locally before any POST, so not-inserted is KNOWN for this row.
+					RecordCreated = false,
+					Error = DescribeBinaryColumns(binaryColumns)
+				};
+			}
 			// Declared a write: automatic re-authentication must never re-issue this POST, or a
 			// false-positive expired-session classification of the OData echo creates the record
 			// twice (GitHub #1313).
 			string responseJson = client.ExecuteNonReplayablePostRequest(url, row.GetRawText(), requestTimeoutMs);
 			received = true;
-			return ParseCreated(responseJson, index) with { ResponseReceived = true };
+			ODataRowResult result = ParseCreated(responseJson, index) with { ResponseReceived = true };
+			// Model binding names no column, so the type map is the only way to tell a binary column from an
+			// unknown property or a malformed value. The read is skipped when it does not fit in the batch
+			// budget: the row keeps the generic explanation instead of overshooting the deadline.
+			if (result.RecordCreated == false
+				&& (propertyTypes.IsValueCreated || remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
+				binaryColumns = FindBinaryColumns(row, propertyTypes.Value);
+				if (binaryColumns.Count > 0) {
+					result = result with { Error = DescribeBinaryColumns(binaryColumns) };
+				}
+			}
+			return result;
 		} catch (Exception ex) {
 			// The request may have reached Creatio and been applied before the failure surfaced here, so the
 			// side effect is unknown - never report not-inserted from a transport-level failure.
@@ -378,6 +444,31 @@ public sealed class ODataCreateTool(
 		}
 	}
 
+	/// <summary>
+	/// Whether the error body is Creatio's model-binding rejection, which is answered before any write.
+	/// </summary>
+	private static bool IsModelValidationRejection(JsonElement root) =>
+		root.ValueKind == JsonValueKind.Object
+		&& root.TryGetProperty("error", out JsonElement error)
+		&& error.ValueKind == JsonValueKind.Object
+		&& error.TryGetProperty("message", out JsonElement message)
+		&& message.ValueKind == JsonValueKind.String
+		&& ModelValidationMessages.Contains(message.GetString());
+
+	/// <summary>
+	/// Columns of <paramref name="row"/> that the type map declares binary, in row order. Empty when the
+	/// type map is unavailable.
+	/// </summary>
+	private static IReadOnlyList<string> FindBinaryColumns(JsonElement row, IReadOnlyDictionary<string, string> types) {
+		if (types is null || row.ValueKind != JsonValueKind.Object) {
+			return [];
+		}
+		return row.EnumerateObject()
+			.Where(property => types.TryGetValue(property.Name, out string type) && BinaryEdmTypes.Contains(type))
+			.Select(property => property.Name)
+			.ToList();
+	}
+
 	private static ODataRowResult ParseCreated(string json, int index) {
 		if (string.IsNullOrWhiteSpace(json)) {
 			return new ODataRowResult { Index = index, Success = true, RecordCreated = true };
@@ -386,6 +477,17 @@ public sealed class ODataCreateTool(
 			using JsonDocument doc = JsonDocument.Parse(json);
 			JsonElement root = doc.RootElement;
 			if (CreatioResponseError.TryDetect(root, CreatioResponseContext.ODataPayload, out string serverError)) {
+				if (IsModelValidationRejection(root)) {
+					return new ODataRowResult {
+						Index = index,
+						Success = false,
+						RecordCreated = false,
+						RetryGuidance = RejectedBeforeWriteGuidance,
+						Error = "Creatio rejected the row while reading the request body and wrote nothing. "
+							+ "Typical causes: a column that does not exist on the entity, a value of the wrong type "
+							+ "(for example a malformed GUID), or a value for a binary column."
+					};
+				}
 				// Redact like the sibling error paths: a routing Message can embed the absolute request
 				// URI (host/port/app path), which must not leak into the MCP transcript or logs. The FK hint
 				// (GH-1699) adds the cause only: record-created stays unknown, because the violation can come
@@ -456,6 +558,7 @@ public sealed record ODataCreateArgs {
 		"Set lookup fields via their <Field>Id column with a GUID (e.g. AccountId), not the display name. " +
 		"Date-time values MUST carry a UTC designator or offset ('2024-01-01T04:00:00Z' or '2024-01-01T04:00:00+02:00'); " +
 		"a zone-less literal fails that row before any request, because the platform may silently store 0001-01-01. " +
+		"Do not set binary columns (file or image Data): Creatio rejects the row - use upload-file or upload-image. " +
 		"Example: [ { \"Name\": \"Acme\", \"TypeId\": \"8ecab4a1-0ca3-4515-9399-efe0a19390bd\" }, { \"Name\": \"Globex\" } ] " +
 		"Exactly one of rows or rows-file is required; supplying both is rejected.")]
 	public JsonElement? Rows { get; init; }

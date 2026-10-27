@@ -342,7 +342,11 @@
         }
       ],
       "paths": [
-        "clio/Command/McpServer/Tools/OData*"
+        "clio/Command/McpServer/Tools/OData*",
+        "clio/Command/McpServer/Tools/UploadFileTool.cs",
+        "clio/Command/UploadFileCommand.cs",
+        "clio/Common/RecordFileUploader.cs",
+        "clio/Common/IRecordFileUploader.cs"
       ]
     },
     {

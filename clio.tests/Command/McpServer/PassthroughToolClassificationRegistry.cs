@@ -417,6 +417,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["get-object-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as get-record-rights
 			["set-user-theme"] = PassthroughClassification.NotApplicable,
 			["upload-image"] = PassthroughClassification.NotApplicable,
+			["upload-file"] = PassthroughClassification.NotApplicable, // BaseTool<T>.ExecuteResolved - resolver-backed, same pattern as upload-image
 			["trigger-smoke"] = PassthroughClassification.NotApplicable, // ENG-103024: class (b) - one commandResolver.Resolve<ITriggerSmokeRunner>(...) per call, same pattern as odata-delete
 			["page-smoke"] = PassthroughClassification.NotApplicable, // ENG-103032: class (b) - one commandResolver.Resolve<IPageSmokeRunner>(...) per call, same pattern as trigger-smoke
 			["start-creatio"] = PassthroughClassification.NotApplicable,

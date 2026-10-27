@@ -1591,4 +1591,257 @@ public sealed class ODataCreateToolTests {
 			because: "the id is minted before the work and stamped on the single exit, so a batch refused outright is traceable too");
 	}
 
+	#region model-binding rejection (ENG-104665)
+
+	/// <summary>
+	/// ASP.NET Core (.NET 8) model-binding rejection body, as measured on a 10.2.760 stand.
+	/// </summary>
+	private const string NetCoreModelBindingRejection =
+		"{\"error\":{\"code\":\"\",\"message\":\"The input was not valid.\",\"details\":[{\"code\":\"\",\"message\":\"The input was not valid.\"}]}}";
+
+	/// <summary>
+	/// ASP.NET Web API (.NET Framework) model-binding rejection body, with a server-authored inner message.
+	/// </summary>
+	private const string NetFrameworkModelBindingRejection =
+		"{\"error\":{\"code\":\"\",\"message\":\"The request is invalid.\",\"innererror\":{\"message\":\"item : The property 'labNope' does not exist on type 'Terrasoft.Configuration.OData.Contact'. Make sure to only use property names that are defined by the type.\",\"type\":\"\",\"stacktrace\":\"\"}}}";
+
+	/// <summary>
+	/// Minimal CSDL declaring SysImage with a text column, a date-time column and the binary Data column,
+	/// declared as Edm.Stream the way Creatio publishes it.
+	/// </summary>
+	private const string SysImageCsdl = """
+		<?xml version="1.0" encoding="utf-8" standalone="no"?>
+		<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">
+		  <edmx:DataServices>
+		    <Schema Namespace="Terrasoft.Configuration.OData" xmlns="http://docs.oasis-open.org/odata/ns/edm">
+		      <EntityType Name="SysImage">
+		        <Key><PropertyRef Name="Id" /></Key>
+		        <Property Name="Id" Type="Edm.Guid" Nullable="false" />
+		        <Property Name="Name" Type="Edm.String" />
+		        <Property Name="UploadedOn" Type="Edm.DateTimeOffset" />
+		        <Property Name="Data" Type="Edm.Stream" Nullable="false" />
+		      </EntityType>
+		    </Schema>
+		  </edmx:DataServices>
+		</edmx:Edmx>
+		""";
+
+	private const string MetadataUrl = "http://creatio/odata/$metadata";
+
+	private static void AnswerEveryPostWith(IApplicationClient client, string body) =>
+		client.ExecuteNonReplayablePostRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(body);
+
+	[TestCase(NetCoreModelBindingRejection)]
+	[TestCase(NetFrameworkModelBindingRejection)]
+	[Category("Unit")]
+	[Description("A model-binding rejection (.NET Framework 'The request is invalid.' or ASP.NET Core 'The input was not valid.') reports the row as definitely not created, with re-send guidance and a 'none' side effect, after exactly one POST.")]
+	public void Create_Should_Report_RecordCreated_False_When_Creatio_Rejects_The_Body_In_Model_Binding(string body) {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+		AnswerEveryPostWith(client, body);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\",\"labNope\":\"x\"}]")
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.Success.Should().BeFalse(because: "Creatio refused the row");
+		row.RecordCreated.Should().BeFalse(
+			because: "model binding runs before the controller action, so nothing was written");
+		row.RetryGuidance.Should().NotBeNullOrWhiteSpace(
+			because: "a rejected row tells the caller it is safe to correct and re-send");
+		row.RetryGuidance.Should().Contain("Not inserted",
+			because: "the guidance must state the known side effect, not the unknown-state advice");
+		row.Error.Should().Contain("wrote nothing",
+			because: "the local error text states that nothing was written");
+		row.Error.Should().NotContain("labNope",
+			because: "server-authored inner text is never copied into the MCP transcript");
+		row.Diagnostic.WriteAttempted.Should().BeTrue(because: "the POST left clio and was answered");
+		row.Diagnostic.TransportOutcome.Should().Be("response-received",
+			because: "a response body arrived for the request");
+		row.Diagnostic.SideEffect.Should().Be("none",
+			because: "the rejection is proof that the write was not applied");
+		response.Unverified.Should().Be(0, because: "a row known not to be inserted is not in the unknown bucket");
+		client.Received(1).ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Regression: a server error that is not a model-binding rejection ('An error has occured.' with an inner message) keeps record-created unknown, because a post-insert handler can throw after the write.")]
+	public void Create_Should_Keep_RecordCreated_Unknown_When_Server_Error_Is_Not_A_Model_Binding_Rejection() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(AccountCsdl);
+		AnswerEveryPostWith(client,
+			"{\"error\":{\"code\":\"\",\"message\":\"An error has occured.\",\"innererror\":{\"message\":\"Type field must be filled in\"}}}");
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "Account", Rows = Arr("[{\"Name\":\"Acme\"}]")
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.Success.Should().BeFalse(because: "the server reported the call as failed");
+		row.RecordCreated.Should().BeNull(
+			because: "only the model-binding messages prove no write; any other server error may follow a write");
+		row.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "an unknown side effect must not be reported as 'none'");
+		response.Unverified.Should().Be(1, because: "the row stays in the unknown bucket");
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("After a model-binding rejection, a row column that $metadata declares Edm.Stream is named in the error, which points to upload-file.")]
+	public void Create_Should_Name_The_Binary_Column_When_A_Rejected_Row_Sets_An_Edm_Stream_Column() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+		AnswerEveryPostWith(client, NetCoreModelBindingRejection);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Name\":\"logo.png\",\"Data\":\"iVBORw0KGgo=\"}]")
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.RecordCreated.Should().BeFalse(because: "Creatio rejected the row in model binding");
+		row.Error.Should().Contain("'Data'", because: "the error names the binary column the caller must remove");
+		row.Error.Should().NotContain("'Name'", because: "only the binary column is named");
+		row.Error.Should().Contain("upload-file", because: "the error points to the supported write path for a file");
+		row.Diagnostic.SideEffect.Should().Be("none", because: "the server rejection proves nothing was written");
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Two rows rejected by Creatio in model binding read the service-root $metadata at most once for the whole batch.")]
+	public void Create_Should_Read_Metadata_Once_When_Several_Rows_Are_Rejected() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+		AnswerEveryPostWith(client, NetFrameworkModelBindingRejection);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "SysImage",
+			Rows = Arr("[{\"Name\":\"a\",\"labNope\":\"x\"},{\"Name\":\"b\",\"labNope\":\"y\"}]")
+		});
+
+		// Assert
+		response.Results.Should().OnlyContain(row => row.RecordCreated == false,
+			because: "both rows were rejected in model binding");
+		response.Results.Should().OnlyContain(row => row.Error.Contains("Typical causes"),
+			because: "no row sets a binary column, so the generic explanation stays");
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(2).ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Once a model-binding rejection loaded the type map, a later row that sets an Edm.Stream column is refused locally without a POST, and $metadata is not read again.")]
+	public void Create_Should_Refuse_A_Later_Binary_Row_Locally_When_A_Rejection_Loaded_The_Type_Map() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+		AnswerEveryPostWith(client, NetCoreModelBindingRejection);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "SysImage",
+			Rows = Arr("[{\"Name\":\"a\",\"Data\":\"AAA=\"},{\"Name\":\"b\",\"Data\":\"BBB=\"}]")
+		});
+
+		// Assert
+		response.Results.Should().OnlyContain(row => row.RecordCreated == false && row.Error.Contains("'Data'"),
+			because: "both rows set the binary column and neither is inserted");
+		response.Results[0].Diagnostic.SideEffect.Should().Be("none",
+			because: "the first row was rejected by Creatio after the POST");
+		response.Results[1].Diagnostic.SideEffect.Should().Be("not-attempted",
+			because: "the second row was refused locally with the type map the first rejection loaded");
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("A batch where every row inserts and no row carries a date-time literal never reads $metadata.")]
+	public void Create_Should_Not_Read_Metadata_When_All_Rows_Insert_Without_Date_Literals() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Name\":\"a\"},{\"Name\":\"b\"}]")
+		});
+
+		// Assert
+		response.Created.Should().Be(2, because: "both rows were accepted by the server");
+		client.DidNotReceiveWithAnyArgs().ExecuteGetRequest(null, 0, 0, 0);
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When a zone-less date-time row forced the type map load, a later row that sets an Edm.Stream column is refused locally before any POST, reported as not created and not attempted.")]
+	public void Create_Should_Refuse_A_Binary_Column_Locally_When_The_Type_Map_Is_Already_Loaded() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "SysImage",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"},{\"Name\":\"logo.png\",\"Data\":\"iVBORw0KGgo=\"}]")
+		});
+
+		// Assert
+		response.Results[0].RecordCreated.Should().BeTrue(
+			because: "a date-shaped value on an Edm.String column is a legitimate insert");
+		ODataRowResult binaryRow = response.Results[1];
+		binaryRow.Success.Should().BeFalse(because: "a binary column cannot be written through OData");
+		binaryRow.RecordCreated.Should().BeFalse(because: "the row was refused before any request");
+		binaryRow.Error.Should().Contain("'Data'", because: "the refusal names the binary column");
+		binaryRow.Error.Should().Contain("upload-file", because: "the refusal points to the supported write path");
+		binaryRow.Diagnostic.WriteAttempted.Should().BeFalse(because: "no POST was sent for this row");
+		binaryRow.Diagnostic.SideEffect.Should().Be("not-attempted", because: "the row never left clio");
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.Received(1).ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		client.DidNotReceive().ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Is<string>(json => json.Contains("\"Data\"")), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("When $metadata is unavailable, a model-binding rejection keeps the generic explanation and still reports the row as not created.")]
+	public void Create_Should_Keep_The_Generic_Rejection_Text_When_Metadata_Is_Unavailable() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(string.Empty);
+		AnswerEveryPostWith(client, NetCoreModelBindingRejection);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev", Entity = "SysImage", Rows = Arr("[{\"Name\":\"a\",\"Data\":\"AAA=\"}]")
+		});
+
+		// Assert
+		ODataRowResult row = response.Results.Single();
+		row.RecordCreated.Should().BeFalse(
+			because: "the rejection itself proves no write, whatever the metadata read returns");
+		row.Error.Should().Contain("Typical causes",
+			because: "without a type map the generic explanation is the honest answer");
+		row.Error.Should().NotContain("'Data'",
+			because: "a column cannot be named binary without its declared type");
+		row.Diagnostic.SideEffect.Should().Be("none", because: "the server rejection proves nothing was written");
+		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	#endregion
+
 }
