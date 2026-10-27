@@ -171,6 +171,87 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path, a batch with no structural operation - a new parameter and a re-kind of a plain flow to conditional - is applied in place without a layout-change question and leaves every element where it was. A contract guard on an engine-drawn diagram: such a diagram would also come through unchanged on a server that still laid it out, so this cannot tell the two apart; the hand-arranged case is proven on a stand by the staging recipe in docs/knowledge/ProcessModel/a-hand-arranged-diagram-can-be-staged-without-the-designer.md. The re-kind goes through the flow-replacement path that has to carry the stored geometry.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process applies a structure-free batch without re-drawing the diagram")]
+	public async Task ModifyBusinessProcess_Should_KeepEveryPosition_WhenTheBatchChangesNoStructure() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpNoRedrawE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildThreeBranchTaskDescriptor(processName));
+		DescribeProcessResult before = ParseDescribeResult(await DescribeAsync(context, processName));
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "addParameter", "parameter": { "name": "NoRedrawProbe", "type": "Text" } },
+				  { "op": "setFlowCondition", "source": "Decide", "target": "EndA", "condition": "1 > 0" }
+				]
+				"""
+		});
+
+		// Assert
+		ShouldHaveLanded(callResult,
+			"a parameter and a condition change nothing on the diagram, so there is no re-draw to refuse");
+		LogText(callResult).Should().NotContain("re-draw",
+			because: "a batch with no structural operation is never measured, so nothing about the layout is "
+				+ "reported or asked");
+		DescribeProcessResult after = ParseDescribeResult(await DescribeAsync(context, processName));
+		after.Elements.ToDictionary(element => element.Name, element => element.Position).Should()
+			.Equal(before.Elements.ToDictionary(element => element.Name, element => element.Position),
+				because: "a batch of only non-structural operations is not laid out, so every element keeps "
+					+ "the position it was saved with");
+		DescribedFlow reKinded = after.Flows.Single(flow => flow.Source == "Decide" && flow.Target == "EndA");
+		reKinded.Kind.Should().Be("conditional",
+			because: "setFlowCondition re-kinds the plain flow by replacing it, which is the path that has to "
+				+ "carry the stored connector");
+		JsonSerializer.Serialize(reKinded.Geometry).Should().Be(JsonSerializer.Serialize(
+				before.Flows.Single(flow => flow.Source == "Decide" && flow.Target == "EndA").Geometry),
+			because: "the replacement flow keeps the routed chain the original carried");
+	}
+
+	[Test]
+	[Description("Over the real MCP path, a refused re-draw states what the new-version route costs: making the lower branch the default one swaps the two branches, the server refuses the edit in place, and the server's message says the version cannot be deleted and is re-drawn the same way (CrtProcessBuilder 1.6.6.125 and later), and clio's relay repeats that its own diagram is re-drawn too, for an older server that does not say it. Nothing is saved.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process says a version is permanent and re-drawn when it refuses a re-draw")]
+	public async Task ModifyBusinessProcess_Should_SayAVersionIsPermanent_WhenItRefusesARedraw() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpRedrawTextE2e{Guid.NewGuid():N}";
+		await CreateProcessAsync(context, processName, BuildTwoBranchDescriptor(processName));
+		Dictionary<string, string> before = ParseDescribeResult(await DescribeAsync(context, processName))
+			.Elements.ToDictionary(element => element.Name, element => element.Position);
+
+		// Act
+		CallToolResult callResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[
+				  { "op": "setFlow", "source": "Decide", "target": "EndA", "kind": "conditional",
+				    "condition": "1 > 0" },
+				  { "op": "setFlow", "source": "Decide", "target": "EndB", "kind": "default" }
+				]
+				"""
+		});
+
+		// Assert
+		ShouldBeRefused(callResult, "a default branch moves to the split's own row, so the branches swap places");
+		string text = LogText(callResult);
+		text.Should().Contain("re-drawn the same way",
+			because: "the server's own refusal names the cost of the version it offers - a phrase only the "
+				+ "server sends, so this proves the package text arrived rather than clio's relay");
+		text.Should().Contain("re-drawn too",
+			because: "clio's relay repeats it for an older server, which does not say it");
+		ParseDescribeResult(await DescribeAsync(context, processName)).Elements
+			.ToDictionary(element => element.Name, element => element.Position)
+			.Should().Equal(before, because: "a refused edit saves nothing");
+	}
+
+	[Test]
 	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]

@@ -30,13 +30,29 @@ public class LayoutChangeRelayTests {
 
 		// Assert
 		sentence.Should().Contain("modify-business-process-as-new-version",
-			because: "the answer that costs the user nothing has to be on the surface that reaches the agent");
+			because: "the answer that keeps both the edit and the source's diagram has to be on the surface that reaches the agent");
 		sentence.IndexOf("modify-business-process-as-new-version", System.StringComparison.Ordinal)
 			.Should().BeLessThan(sentence.IndexOf("confirm-layout-change", System.StringComparison.Ordinal),
 				because: "order is what decides which one an agent reaches for; the destructive answer is "
 					+ "second because it is destructive, not because it is unusual");
 		sentence.Should().Contain("ASK THE USER",
 			because: "both answers are the user's, and an agent given two options and no instruction picks one");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The new-version route states its two costs where the agent reads it: a version is permanent "
+		+ "and its own diagram is re-drawn too. Offered without them it reads as free, and an author took a "
+		+ "permanent version to change one parameter.")]
+	public void RelaySentence_ShouldSayTheVersionIsPermanentAndReDrawn_WhenOfferingIt() {
+		// Act
+		string sentence = Relay("HandleT1").RelaySentence();
+
+		// Assert
+		sentence.Should().Contain("cannot be deleted",
+			because: "a version can never be removed, which the user has to know before choosing it");
+		sentence.Should().Contain("re-drawn too",
+			because: "the version keeps the arrangement on the source only, not on itself");
 	}
 
 	[Test]

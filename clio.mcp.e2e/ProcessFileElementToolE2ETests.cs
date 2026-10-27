@@ -772,8 +772,9 @@ public sealed class ProcessFileElementToolE2ETests {
 		IReadOnlyList<string> f1NodesBefore = await ReadElementNodesAsync(context, DesignerFixtureName, f1UId);
 		try {
 			// Act
-			// The designer's hand-laid diagram is re-drawn by the first builder save; the allow-list above takes that
-			// relayout, so this test confirms it rather than being refused by the layout-change guard.
+			// Before CrtProcessBuilder 1.6.6.125 the first builder save re-drew the designer's hand-laid diagram even
+			// for this addParameter-only batch; the allow-list above takes that relayout, and the edit confirms it so
+			// the test runs the same on either side of that version.
 			CallToolResult callResult = await ModifyConfirmingLayoutChangeAsync(context, DesignerFixtureName, $$"""
 				[ { "op": "addParameter", "parameter": { "name": "{{probeName}}", "type": "Text" } } ]
 				""");
@@ -1228,7 +1229,7 @@ public sealed class ProcessFileElementToolE2ETests {
 
 	/// <summary>
 	/// <see cref="ModifyAsync"/> with <c>confirm-layout-change</c> set: for a case that edits a designer-laid diagram
-	/// on purpose and asserts the relayout, which the layout-change guard otherwise refuses unapplied.
+	/// on purpose. A server before 1.6.6.125 re-draws it on any edit and refuses that unapplied unless confirmed.
 	/// </summary>
 	private static async Task<CallToolResult> ModifyConfirmingLayoutChangeAsync(ProcessDesignerArrangeContext context,
 			string processName, string operations) {
