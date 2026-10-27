@@ -4,6 +4,7 @@ using System.IO;
 using Clio.Command.SchemaTransfer;
 using Clio.Common;
 using FluentAssertions;
+using Newtonsoft.Json.Linq;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -59,8 +60,8 @@ public class SchemaBundleStoreTests {
 	public void TearDown() => _fileSystem.ClearReceivedCalls();
 
 	[Test]
-	[Description("Write stores the platform payload verbatim, because it is the only input import consumes")]
-	public void Write_Should_Store_Payload_Verbatim() {
+	[Description("Write stores the same JSON value the platform returned, because it is the only input import consumes")]
+	public void Write_Should_Store_Same_Payload_Value() {
 		// Arrange
 		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
 
@@ -70,7 +71,7 @@ public class SchemaBundleStoreTests {
 		// Assert
 		result.Should().Be(BundleDirectory,
 			because: "the caller needs the folder path it can hand over or point import at");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, Arg.Is<string>(text => IsSameJson(text, PlatformPayload)));
 	}
 
 	[Test]
@@ -92,7 +93,7 @@ public class SchemaBundleStoreTests {
 		// Assert
 		act.Should().NotThrow(
 			because: "projections are documented as best-effort and the authoritative payload is already written");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, PlatformPayload);
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, Arg.Is<string>(text => IsSameJson(text, PlatformPayload)));
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("The disk is full.")));
 	}
 
@@ -221,6 +222,68 @@ public class SchemaBundleStoreTests {
 	}
 
 	[Test]
+	[Description("Write escapes the raw CR/LF the platform puts inside MetaData, so a strict JSON parser reads the file")]
+	public void Write_Should_Escape_Control_Characters_Inside_Strings() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		const string metadata = "{\r\n  \"MetaData\": {\r\n\t\"Schema\": {}\r\n  }\r\n}";
+		// The platform's shape: quotes inside MetaData are escaped, CR/LF/TAB are not.
+		string payload = "{\"Name\":\"UsrProbeSchema\",\"MetaData\":\""
+			+ metadata.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"}";
+		string written = null;
+		_fileSystem.WriteAllTextToFile(SchemaDataPath, Arg.Do<string>(text => written = text));
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
+
+		// Assert
+		Action strictParse = () => System.Text.Json.JsonDocument.Parse(written).Dispose();
+		strictParse.Should().NotThrow(
+			because: "scripts read schema-data.json with RFC 8259 parsers such as Python json.load");
+		using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(written);
+		document.RootElement.GetProperty("MetaData").GetString().Should().Be(metadata,
+			because: "escaping changes only the encoding, so import still sends the platform the same MetaData");
+	}
+
+	[Test]
+	[Description("Write keeps date strings and fraction digits as the platform wrote them")]
+	public void Write_Should_Keep_Dates_And_Fractions_As_Written() {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		const string payload =
+			"{\"Name\":\"UsrProbeSchema\",\"ModifiedOn\":\"2026-10-27T10:08:44.335+02:00\",\"Weight\":1.10}";
+		string written = null;
+		_fileSystem.WriteAllTextToFile(SchemaDataPath, Arg.Do<string>(text => written = text));
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
+
+		// Assert
+		written.Should().Contain("\"2026-10-27T10:08:44.335+02:00\"",
+			because: "a date string re-parsed as DateTime would come back in another format or offset");
+		written.Should().Contain("1.10",
+			because: "a fraction read as double would lose its trailing digits");
+	}
+
+	[Test]
+	[Description("Write keeps a payload it cannot write as strict JSON and warns, instead of cutting or mangling it")]
+	[TestCase("{\"Name\":\"UsrProbeSchema\"} {\"Name\":\"Other\"}", TestName = "Trailing content after the value")]
+	[TestCase("{\"Name\":/*note*/\"UsrProbeSchema\"}", TestName = "Comment inside the value")]
+	[TestCase("{\"MetaData\":\"a\\\nb\"}", TestName = "Backslash before a raw line break")]
+	public void Write_Should_Keep_Payload_And_Warn_When_It_Is_Not_Strict_Json(string payload) {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
+
+		// Assert
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payload);
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(SchemaBundleStore.SchemaDataFileName) && message.Contains("not valid JSON")));
+	}
+
+	[Test]
 	[Description("Read accepts a bundle folder and returns the payload with its descriptor")]
 	public void Read_Should_Accept_Bundle_Directory() {
 		// Arrange
@@ -317,7 +380,8 @@ public class SchemaBundleStoreTests {
 
 		// Assert
 		act.Should().NotThrow(because: "a projection of the wrong shape is skipped, not fatal to the export");
-		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payloadWithObjectMetadata);
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath,
+			Arg.Is<string>(text => IsSameJson(text, payloadWithObjectMetadata)));
 		_fileSystem.Received(1).WriteAllTextToFile(
 			System.IO.Path.Combine(BundleDirectory, "properties.json"), Arg.Any<string>());
 		_fileSystem.DidNotReceive().WriteAllTextToFile(
@@ -404,6 +468,9 @@ public class SchemaBundleStoreTests {
 		// Assert
 		act.Should().NotThrow(because: "a Guid is the same identity however it is spelled");
 	}
+
+	private static bool IsSameJson(string actual, string expected) =>
+		JToken.DeepEquals(JToken.Parse(actual), JToken.Parse(expected));
 
 	private static SchemaBundleDescriptor BuildDescriptor() =>
 		new() {

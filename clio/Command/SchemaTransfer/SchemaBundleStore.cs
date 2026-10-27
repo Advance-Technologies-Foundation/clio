@@ -15,7 +15,7 @@ namespace Clio.Command.SchemaTransfer;
 /// Reads and writes schema-export bundles on disk.
 /// </summary>
 /// <remarks>
-/// A bundle is a folder. Only <c>schema-data.json</c> is authoritative — it holds the verbatim platform
+/// A bundle is a folder. Only <c>schema-data.json</c> is authoritative — it holds the platform
 /// payload and is the only file <see cref="Read"/> consumes. Everything else is a projection written for a
 /// human reviewer, so a hand-edited projection can never silently become the thing that ships.
 /// </remarks>
@@ -92,7 +92,7 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, DescriptorFileName),
 				SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
-				bundle.SchemaData);
+				ToStrictJson(bundleDirectory, bundle.SchemaData));
 		}
 		catch {
 			RollBackFailedBundle(bundleDirectory);
@@ -103,6 +103,72 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		// take the artifact back down with them.
 		TryWriteProjections(bundleDirectory, bundle.SchemaData);
 		return bundleDirectory;
+	}
+
+	/// <summary>
+	/// Re-encodes the platform payload as JSON that a strict parser accepts.
+	/// </summary>
+	/// <returns>The same JSON data with control characters inside strings escaped, or the payload unchanged when
+	/// it cannot be re-encoded as strict JSON.</returns>
+	/// <remarks>
+	/// The platform exporter puts raw CR/LF characters inside the <c>MetaData</c> string. RFC 8259 forbids them, so
+	/// Python <c>json.load</c>, <c>jq</c> and <c>System.Text.Json</c> refuse the file and a script cannot read or edit
+	/// the bundle before import. The payload is copied token by token rather than through a <see cref="JObject"/>:
+	/// <see cref="DateParseHandling.None"/> keeps ISO date strings as the platform wrote them,
+	/// <see cref="FloatParseHandling.Decimal"/> keeps every digit of a fraction, and a duplicate member name is
+	/// copied instead of collapsed — so import sends the platform the data it exported.
+	/// <para>
+	/// The result is checked with <c>System.Text.Json</c>, because Newtonsoft also copies what strict JSON forbids
+	/// (comments, <c>undefined</c>, <c>new Date(...)</c>). A payload that fails the copy or the check is written
+	/// unchanged with a warning: the export still produces its artifact, and the operator learns that the file is
+	/// not strict JSON before a script fails on it. The platform returns such a payload for a schema that was
+	/// imported and not yet compiled — its <c>MetaData</c> then has a backslash before a raw line break.
+	/// </para>
+	/// </remarks>
+	private string ToStrictJson(string bundleDirectory, string schemaData) {
+		string reencoded = TryReencode(schemaData);
+		if (reencoded is not null && IsStrictJson(reencoded)) {
+			return reencoded;
+		}
+		_logger?.WriteWarning(
+			$"The platform payload of the bundle in '{bundleDirectory}' is not valid JSON, so {SchemaDataFileName} "
+			+ "is written as received and a strict JSON parser will refuse it.");
+		return schemaData;
+	}
+
+	private static string TryReencode(string schemaData) {
+		try {
+			using StringReader source = new(schemaData);
+			using JsonTextReader reader = new(source) {
+				DateParseHandling = DateParseHandling.None,
+				FloatParseHandling = FloatParseHandling.Decimal
+			};
+			using StringWriter target = new(CultureInfo.InvariantCulture);
+			using (JsonTextWriter writer = new(target) { Formatting = Formatting.Indented }) {
+				if (!reader.Read()) {
+					return null;
+				}
+				writer.WriteToken(reader);
+				// Reading past the end throws on trailing content, so text with something after the JSON value
+				// is not silently cut short.
+				while (reader.Read()) {
+				}
+			}
+			return target.ToString();
+		}
+		catch (JsonException) {
+			return null;
+		}
+	}
+
+	private static bool IsStrictJson(string json) {
+		try {
+			using SystemTextJson.JsonDocument document = SystemTextJson.JsonDocument.Parse(json);
+			return true;
+		}
+		catch (SystemTextJson.JsonException) {
+			return false;
+		}
 	}
 
 	/// <summary>
@@ -341,8 +407,10 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	/// <remarks>
 	/// Deliberately Newtonsoft, not <c>System.Text.Json</c>. The platform exporter embeds the schema metadata as
 	/// a JSON STRING containing raw CR/LF control characters, which RFC 8259 forbids and
-	/// <c>System.Text.Json</c> therefore refuses — every real payload would fail to parse and every projection
-	/// would be silently skipped. Newtonsoft accepts it.
+	/// <c>System.Text.Json</c> therefore refuses. <see cref="Write"/> escapes them in the file it writes, but the
+	/// projections parse the payload exactly as the platform returned it, and <see cref="Read"/> still meets
+	/// bundles written before that fix — with <c>System.Text.Json</c> every such payload would fail to parse.
+	/// Newtonsoft accepts both forms.
 	/// </remarks>
 	[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
 		Justification = "null means 'the payload is not JSON at all', which every caller branches on; an empty "

@@ -51,13 +51,16 @@ BUNDLE LAYOUT
     <SchemaName>/
       descriptor.json      provenance: schema name, UId, manager, source package,
                            source environment, export timestamp, clio version
-      schema-data.json     the verbatim platform payload - the only file import reads
+      schema-data.json     the platform payload as valid JSON - the only file import reads
       metadata.json        projection of the payload's MetaData, expanded for reading
       properties.json      projection of the payload's Properties
       resources/           projection of the payload's LocalizableValues, per culture
 
     Only schema-data.json is authoritative. The projections exist so a reviewer can
     read what is being shipped; editing one changes nothing about what import applies.
+
+    schema-data.json is standard JSON: line breaks inside the MetaData string are
+    escaped, so scripts can read and edit it with any JSON parser.
 
     Export never overwrites an existing bundle folder.
 
