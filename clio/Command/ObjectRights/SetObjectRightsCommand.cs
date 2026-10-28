@@ -152,14 +152,16 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (!TryReadObject(named, requestOptions, out string schemaName, out ObjectRightsInfo before)) {
 			return 1;
 		}
-		// The effect of a move or a removal is named per role, external ones as such. While operation permissions are off
-		// the rows decide nothing, so there is no effect to name and nothing to look up.
-		IReadOnlySet<Guid> externalUnits = null;
-		if (request.ChangesLayout && before.AdministratedByOperations
-			&& !TryFindExternalUnits(before, schemaName, requestOptions, out externalUnits)) {
-			return 1;
+		ObjectRightsPlan plan = _planner.Plan(before.State, request);
+		// The effect of a move or a removal is named per role, external ones as such. The lookup runs only for a layout
+		// that will be written: a refusal or a no-op is decided by the rows alone, and while operation permissions are off
+		// the rows decide nothing, so there is no effect to name.
+		if (request.ChangesLayout && before.AdministratedByOperations && !plan.Refused && plan.Changes) {
+			if (!TryFindExternalUnits(before, schemaName, requestOptions, out IReadOnlySet<Guid> externalUnits)) {
+				return 1;
+			}
+			plan = _planner.Plan(before.State, request, externalUnits);
 		}
-		ObjectRightsPlan plan = _planner.Plan(before.State, request, externalUnits);
 		Change change = new(schemaName, before.Caption,
 			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(request.GranteeName)}' ({grantee})", request, plan,
 			AnchorLabel(before, layout));

@@ -228,7 +228,7 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 	[AllureTag(GetObjectRightsTool.ToolName)]
 	[AllureName("object-rights rows move and are removed on a real Creatio stand")]
 	[AllureDescription("Creates a disposable object, gives it rows for All employees, System administrators and All external users, previews and applies a move of the administrators' row above All employees, proves the out-of-range refusal, previews and applies the removal of the external row, and proves a removal that would leave no granting row is refused. The fixture package is deleted in teardown.")]
-	public async Task ObjectRights_Should_Move_And_Remove_Rows_On_A_Real_Stand() {
+	public async Task SetObjectRights_ShouldMoveAndRemoveRows_WhenRunOnARealStand() {
 		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
 			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
 			+ "concurrent test on the shared stand fail. Run this scenario by hand against a leased sandbox.");

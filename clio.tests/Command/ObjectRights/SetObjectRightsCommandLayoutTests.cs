@@ -292,7 +292,7 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 	}
 
 	[TestCaseSource(nameof(RefusedLayouts))]
-	[Description("A move or a removal the planner refuses fails with a message that names the reason, and writes nothing.")]
+	[Description("A move or a removal the planner refuses fails with a message that names the reason, writes nothing, and looks up no external roles: the refusal is decided by the rows alone.")]
 	public void Execute_ShouldRefuseAndSayWhy_WhenThePlanIsRefused(ObjectRightsInfo before,
 		Action<SetObjectRightsOptions> layout, string expectedError) {
 		// Arrange
@@ -306,10 +306,11 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 		_errors.Should().Contain(message => message.Contains(expectedError) && message.Contains("Nothing was changed"),
 			because: "the refusal names the reason and that nothing was written");
 		NothingSaved();
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
 	}
 
 	[Test]
-	[Description("A move to where the row already is writes nothing and says so.")]
+	[Description("A move to where the row already is writes nothing, says so, and looks up no external roles.")]
 	public void Execute_ShouldWriteNothing_WhenRowIsAlreadyThere() {
 		// Arrange
 		ObjectIs(Info(true, Row(Technicians, 0, "RCE"), Row(AllEmployees, 1, "RCED")));
@@ -322,6 +323,7 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 		_infos.Should().Contain(line => line.Contains("is already where the call puts it"),
 			because: "the result says the row is already there");
 		NothingSaved();
+		_granteeLookup.DidNotReceiveWithAnyArgs().FindExternalUnits(default, default);
 	}
 
 	[Test]

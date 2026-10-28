@@ -82,9 +82,15 @@ the caller previews.
 
 ## Consequences
 
-- On MCP a move or a removal makes six requests instead of five; the existing 100 s budget and the "save only while
+- On MCP a move or a removal makes up to six requests instead of five (the external-role lookup runs only for a
+  layout that will be written); the existing 100 s budget and the "save only while
   two timeouts are left" rule are unchanged.
 - The object-rights guidance (clio-knowledge) documents both operations and drops "done in the designer" for them.
+- Accepted risk, inherited unchanged (ADR-99741 R1, the ticket's "last-writer-wins, as for grants"): a layout save, like
+  a grant or a revoke, posts the whole row list as read, and the service has no version, so a change another client
+  saves between the read and the save is overwritten. The read-back catches only a change saved after our save; the
+  ticket's edge case "the read-back detects the mismatch" holds for that window alone. A guard for the read-to-save
+  window would have to cover grant and revoke too, so it is not part of this change (operator, 2026-10-29).
 
 ## Review baseline
 

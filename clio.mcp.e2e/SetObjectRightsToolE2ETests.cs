@@ -78,7 +78,7 @@ public sealed class SetObjectRightsToolE2ETests : ObjectRightsToolE2ETestsBase {
 	[AllureName("set-object-rights binds the move and remove arguments")]
 	[AllureDescription("position, above and remove-row bind through the real MCP server with a grantee and no operations, and the call fails on the missing environment, not on an unknown or missing argument.")]
 	[Description("Binds each move or remove argument through the real MCP server: a call with a grantee and one of them, and no operations, reaches the environment check.")]
-	public async Task Tool_Should_Bind_Layout_Argument(string argument, object value) {
+	public async Task SetObjectRights_ShouldBindLayoutArgument_WhenPassedThroughTheTool(string argument, object value) {
 		// Arrange
 		string invalidEnvironmentName = $"missing-{ToolName}-layout-env-{Guid.NewGuid():N}";
 		Dictionary<string, object?> args = new() {
