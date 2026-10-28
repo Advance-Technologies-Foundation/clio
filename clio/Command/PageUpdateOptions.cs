@@ -513,7 +513,10 @@
 			// A failure here needs no stamping: TryUpdatePage marks every dry-run failure on the way out.
 			if (!TryPrepareWrite(options, context, explicitResources, parsedOptionalProperties,
 				out PreparedWrite prepared, out response)) return false;
-			response = CreateSuccessResponse(options, dryRun: true, registeredKeys: null, updatedKeys: null);
+			// GitHub #1850: the prepared write already knows which keys the save would register and which
+			// values it would change, so the dry run reports them. Replace mode prepares no write, so its
+			// dry run keeps both counts at 0.
+			response = CreateSuccessResponse(options, dryRun: true, prepared.RegisteredKeys, prepared.UpdatedKeys);
 			response.AppendProjection = prepared.Projection;
 			// The same four sources the save reports, against the same body. The caption gate is the one that
 			// changes SEVERITY rather than content: blocking on a save, advisory here, because a dry run's job

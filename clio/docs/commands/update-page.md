@@ -32,6 +32,9 @@ Resource identities, other cultures, and omitted keys are preserved. The
 value the save changed (`updatedResourceKeys`). A supplied value equal to the
 stored one is counted in neither, so `0` in both fields after a successful save
 means that the resources were already as supplied.
+On a dry run with `mode: append`, both counts report what the save would
+register and change. A dry run with `mode: replace` prepares no write, so both
+counts stay `0`.
 
 Resource saves return a warning about workspace capture: `update-page` saves
 through the server designer; it does not synchronize an independent local workspace.

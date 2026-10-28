@@ -11,6 +11,8 @@ DESCRIPTION
     --resources adds missing keys and updates supplied en-US values. It preserves
     resource identity, other cultures, and omitted keys. resourcesRegistered counts
     new keys only; resourcesUpdated counts existing keys whose en-US value changed.
+    An append dry run reports both counts as the save would; a replace dry run
+    reports 0.
     Resource saves warn that a stale push-workspace can revert them:
     preserve local edits, capture the affected package with restore-workspace
     (pull-workspace), and review metadata and culture XML before pushing. Follow

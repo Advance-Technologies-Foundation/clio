@@ -430,6 +430,33 @@ public sealed class ToolContractPayloadBudgetTests {
 				+ "run in which nothing came back short did not exercise the fitting at all");
 	}
 
+	// update-page is returned whole only while its reply fits InlineReplyBudgetBytes. Over it, every field
+	// description is cut to its first sentence, and update-page tests that read deeper field text (for example
+	// ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope) fail in an unrelated PR. GitHub #1880
+	// left 67 bytes of margin; this guard keeps at least UpdatePageContractHeadroomBytes, so the next field or
+	// wording change has to shorten something on purpose.
+	private const int UpdatePageContractHeadroomBytes = 512;
+
+	[Test]
+	[Category("Unit")]
+	[Description("A default update-page lookup comes back whole with at least 512 bytes under the inline reply budget, so a small contract edit does not silently switch it to the short form (GitHub #1880 review).")]
+	public void GetToolContracts_ShouldKeepHeadroomUnderTheInlineBudget_ForUpdatePage() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+		int bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply));
+
+		// Assert
+		reply.Tools!.Single().Detail.Should().BeNull(
+			because: "the update-page contract must come back whole; a short form drops the field text agents rely on");
+		bytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes - UpdatePageContractHeadroomBytes,
+			because: $"the update-page reply is {bytes} bytes; keep at least {UpdatePageContractHeadroomBytes} bytes under "
+				+ $"the {ToolContractShortForm.InlineReplyBudgetBytes}-byte budget, and shorten a description (appendProjection "
+				+ "is the largest) rather than lower this margin");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("The request measured in the CAADT transcripts - the seven process-designer contracts in ONE call, 34 KB for one of them in full - fits one inline reply by default, measured as it goes on the wire (ENG-100154, ENG-102797).")]

@@ -2478,6 +2478,105 @@ public class PageToolsTests
 	}
 
 	[Test]
+	[Description("GitHub #1850: an append dry run reports the keys the save would register and the existing keys whose value it would change, and writes nothing.")]
+	public void TryUpdatePage_AppendDryRun_WhenResourcesAreSupplied_ReportsRegisteredAndUpdatedKeys() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string schemaUId = "mobile-schema-uid";
+		const string packageUId = "mobile-package-uid";
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = schemaUId, Name = "UsrMobile_FormPage", PackageUId = packageUId, PackageName = "UsrMobilePackage" }
+		});
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				schemaUId,
+				packageUId,
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["uId"] = schemaUId,
+					["name"] = "UsrMobile_FormPage",
+					["body"] = "{ \"viewConfigDiff\": [{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"visible\":true}}], \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }",
+					["package"] = new JObject { ["uId"] = packageUId },
+					["localizableStrings"] = JArray.Parse("""
+						[{"uId":"title-uid","name":"UsrMobileTitle","values":[{"cultureName":"en-US","value":"Old title"}]}]
+						""")
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		const string fragment = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "merge",
+			      "name": "UsrMobileTitleLabel",
+			      "values": {
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    },
+			    {
+			      "operation": "merge",
+			      "name": "UsrMobileHintLabel",
+			      "values": {
+			        "caption": "$Resources.Strings.UsrMobileHint"
+			      }
+			    }
+			  ]
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = fragment,
+			Mode = "append",
+			Resources = "{\"UsrMobileTitle\":\"New title\",\"UsrMobileHint\":\"Hint\"}",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: $"an append dry run with valid resources succeeds. Error: {response.Error}");
+		response.DryRun.Should().BeTrue(because: "the caller asked for validation only");
+		response.ResourcesRegistered.Should().Be(1,
+			because: "the dry run already prepared the write, so it knows the save would add the new key");
+		response.RegisteredResourceKeys.Should().Equal(["UsrMobileHint"],
+			because: "the response names the key the save would register");
+		response.ResourcesUpdated.Should().Be(1,
+			because: "the dry run already prepared the write, so it knows the save would change the en-US value of the existing key");
+		response.UpdatedResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response names the key whose value the save would change");
+		savedPayload.Should().BeNull(because: "a dry run must not save the schema");
+	}
+
+	[Test]
 	[Description("TryUpdatePage surfaces an advisory warning (without blocking) when a replace body downgrades an own-body insert to a merge")]
 	public void TryUpdatePage_WhenInsertDowngradedToMerge_ReturnsWarningAndSaves() {
 		// Arrange
