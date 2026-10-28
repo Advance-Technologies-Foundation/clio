@@ -921,6 +921,78 @@ public sealed class PageSyncToolTests {
 			because: "the sync-pages response should preserve the number of resources registered by update-page");
 	}
 
+	[TestCase(false, TestName = "SyncPages_Should_Surface_Updated_Resources_On_Plain_Save")]
+	[TestCase(true, TestName = "SyncPages_Should_Surface_Updated_Resources_On_Verified_Save")]
+	[Category("Unit")]
+	[Description("GitHub #1850: sync-pages copies the updated-resource count from the update-page response on the plain save path and on the verify read-back path.")]
+	public async Task SyncPages_Should_Surface_Updated_Resources(bool verify) {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["rows"] = new JArray { new JObject { ["UId"] = "resource-page-uid" } }
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = "original",
+					["localizableStrings"] = JArray.Parse("""
+						[{"uId":"title-uid","name":"UsrTitle","values":[{"cultureName":"en-US","value":"Old title"}]}]
+						""")
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		PageUpdateCommand updateCommand = new(applicationClient, serviceUrlBuilder, Substitute.For<ILogger>(), Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), CreateHierarchyClientFor("resource-page-uid"), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		PageGetCommand getCommand = CreateSuccessfulPageGetCommand();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<PageUpdateCommand>(Arg.Any<PageUpdateOptions>())
+			.Returns(updateCommand);
+		commandResolver.Resolve<PageGetCommand>(Arg.Any<PageGetOptions>())
+			.Returns(getCommand);
+		MockFileSystem mockFs = new();
+		IMobileComponentInfoCatalog mobileCatalog = Substitute.For<IMobileComponentInfoCatalog>();
+		IComponentInfoCatalog webCatalog = Substitute.For<IComponentInfoCatalog>();
+		PageSyncTool tool = new(commandResolver, mockFs, mobileCatalog, webCatalog, new PageBaselineGuard(mockFs), new PersistedResourceKeyReader(), new PageDataSourceReferenceValidator(new PageSchemaBodyParser()));
+		string bodyWithResource = "define('TestPage', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+			"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+			"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[{ values: { caption: \"#ResourceString(UsrTitle)#\" } }]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+			"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/{}/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+			"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/{}/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+			"handlers: /**SCHEMA_HANDLERS*/[]/**SCHEMA_HANDLERS*/, " +
+			"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+			"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+		PageSyncArgs args = new(
+			"dev",
+			[new PageSyncPageInput("UsrTodo_FormPage", bodyWithResource, "{\"UsrTitle\":\"New title\"}")],
+			Validate: false,
+			Verify: verify);
+
+		// Act
+		PageSyncResponse response = await tool.SyncPages(args);
+
+		// Assert
+		response.Pages[0].Success.Should().BeTrue(
+			because: $"the save changes only the value of an existing resource (verify={verify}). Error: {response.Pages[0].Error}");
+		response.Pages[0].ResourcesRegistered.Should().Be(0,
+			because: "the key was already stored on the schema, so no new key was registered");
+		response.Pages[0].ResourcesUpdated.Should().Be(1,
+			because: $"sync-pages must copy the updated-resource count from the update-page response (verify={verify})");
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Serializes sync-pages request and response resource fields using the documented MCP names.")]

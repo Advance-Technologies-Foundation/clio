@@ -21,8 +21,7 @@ overrides*, not the complete registered set — `ResourceStringHelper.CleanAndMe
 existing entry before adding anything and updates only explicitly supplied en-US values,
 preserving declaration identity and other cultures. Re-sending a key answers
 `resourcesRegistered: 0`; when the re-sent value differs from the stored en-US value, the save
-answers `resourcesUpdated: 1` instead (GH-1850). Before GH-1850 only the first count existed, and a
-caller read `0` as "nothing saved" for a value change that the server had applied.
+also answers `resourcesUpdated: 1`.
 
 The label-resource validators (`ValidateInsertedFieldSelfConsistency`,
 `ValidateStandardFieldBindings`) only see the submitted body and the `resources` argument. Both are
