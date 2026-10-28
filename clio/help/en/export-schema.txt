@@ -61,7 +61,9 @@ BUNDLE LAYOUT
 
     schema-data.json is standard JSON: export removes the line breaks the platform
     exporter inserts inside the MetaData string, so scripts can read and edit it
-    with any JSON parser.
+    with any JSON parser. Import also accepts bundles written by earlier clio
+    versions, which still have those line breaks. When the payload is still not
+    valid JSON after that, export writes it as received and prints a warning.
 
     Export never overwrites an existing bundle folder.
 

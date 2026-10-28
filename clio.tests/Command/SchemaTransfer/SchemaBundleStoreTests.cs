@@ -243,6 +243,8 @@ public class SchemaBundleStoreTests {
 		Action strictParse = () => System.Text.Json.JsonDocument.Parse(written).Dispose();
 		strictParse.Should().NotThrow(
 			because: "scripts read schema-data.json with RFC 8259 parsers such as Python json.load");
+		_fileSystem.Received(1).WriteAllTextToFile(System.IO.Path.Combine(BundleDirectory, "metadata.json"),
+			Arg.Any<string>());
 		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
 	}
 
@@ -266,10 +268,12 @@ public class SchemaBundleStoreTests {
 
 	[Test]
 	[Description("Read removes the exporter line breaks from a bundle written by an older clio, so the identity is read from the payload")]
-	public void Read_Should_Remove_Exporter_Line_Breaks_From_An_Older_Bundle() {
+	[TestCase("\n", TestName = "Older bundle from a Linux server has LF")]
+	[TestCase("\r\n", TestName = "Older bundle from a Windows server has CRLF")]
+	public void Read_Should_Remove_Exporter_Line_Breaks_From_An_Older_Bundle(string serverNewLine) {
 		// Arrange
 		string exporterJson = $$"""{"Name":"{{SchemaName}}","UId":"8375dacb-4ea5-4103-b07a-d365f8d276f3","MetaData":"= C4 \"a();\\nb();\""}""";
-		string olderBundle = exporterJson.Replace("\\n", "\n\\n", StringComparison.Ordinal);
+		string olderBundle = exporterJson.Replace("\\n", serverNewLine + "\\n", StringComparison.Ordinal);
 		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
 		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
 		_fileSystem.ReadAllText(SchemaDataPath).Returns(olderBundle);
