@@ -75,11 +75,13 @@ public class UploadFileTool(
 		return ExecuteResolved<UploadFileCommand, UploadFileResult>(options,
 			resolvedCommand => {
 				RecordFileUploadResult result = resolvedCommand.UploadFile(options);
-				return result.Success
-					? UploadFileResult.Successful(result.FileId!.Value)
-					: UploadFileResult.Failure(string.IsNullOrWhiteSpace(result.Error)
-						? "UploadFile returned success=false."
-						: SensitiveErrorTextRedactor.Redact(result.Error), result.FileId);
+				if (result.Success) {
+					return UploadFileResult.Successful(result.FileId.Value);
+				}
+				string error = string.IsNullOrWhiteSpace(result.Error)
+					? "UploadFile returned success=false."
+					: SensitiveErrorTextRedactor.Redact(result.Error);
+				return UploadFileResult.Failure(error, result.FileId);
 			},
 			error => UploadFileResult.Failure(error));
 	}

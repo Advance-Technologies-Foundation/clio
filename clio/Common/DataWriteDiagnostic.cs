@@ -22,22 +22,19 @@ public sealed record DataWriteDiagnostic(
 	/// <param name="responseReceived">Whether a response body arrived for the request.</param>
 	/// <param name="acknowledged">Whether the server acknowledged the write.</param>
 	/// <param name="message">Failure text, or null.</param>
-	/// <param name="knownNotApplied">
-	/// Whether the server's answer proves the write was not applied, for example a request-body rejection
-	/// that happens before the write. Reported as side-effect <c>none</c> instead of <c>unknown</c>.
-	/// </param>
+	/// <remarks>
+	/// When the server's answer proves the write was not applied, call <see cref="AsKnownNotApplied"/> on the result.
+	/// </remarks>
 	public static DataWriteDiagnostic Create(string operation, string entity, int? itemIndex, bool attempted,
-		bool responseReceived, bool acknowledged, string message, bool knownNotApplied = false) {
+		bool responseReceived, bool acknowledged, string message) {
 		string transport = (attempted, responseReceived) switch {
 			(false, _) => "not-attempted", (true, true) => "response-received", _ => "unknown"
 		};
 		string effect = (attempted, acknowledged) switch {
-			(false, _) => "not-attempted", (true, true) => "acknowledged",
-			_ when knownNotApplied && responseReceived => "none", _ => "unknown"
+			(false, _) => "not-attempted", (true, true) => "acknowledged", _ => "unknown"
 		};
 		string advice = effect switch {
 			"not-attempted" => "Correct the input or permissions before submitting.",
-			"none" => "The server rejected the write before applying it. Correct the input and resubmit.",
 			"acknowledged" => "Verify important values by readback; do not repeat solely because later inspection fails.",
 			_ => "A write may have applied despite failure. Read affected records before deciding whether to resubmit; no automatic retry was made."
 		};
@@ -53,4 +50,17 @@ public sealed record DataWriteDiagnostic(
 		return new(operation, safeEntity, itemIndex, attempted,
 			transport, effect, advice, SensitiveErrorTextRedactor.RedactUntrustedOrNull(message));
 	}
+
+	/// <summary>
+	/// Marks an attempted, answered, unacknowledged write as not applied, for example a request-body rejection
+	/// that happens before the write. Reports side-effect <c>none</c> instead of <c>unknown</c>; every other
+	/// boundary keeps its own outcome.
+	/// </summary>
+	public DataWriteDiagnostic AsKnownNotApplied() =>
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+			? this with {
+				SideEffect = "none",
+				RetryAdvice = "The server rejected the write before applying it. Correct the input and resubmit."
+			}
+			: this;
 }

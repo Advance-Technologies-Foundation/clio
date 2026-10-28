@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -100,37 +101,65 @@ public sealed class RecordFileUploader : IRecordFileUploader {
 					BuildUploadUrl(request, fileId, fileName, payload.LongLength, mimeType), payload, fileName,
 					mimeType, cancellationToken: cancellationToken)
 				.ConfigureAwait(false);
-			string uploadBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken)
+			return await ReadUploadOutcomeAsync(client, uploadResponse, request, fileId, payload, cancellationToken)
 				.ConfigureAwait(false);
-			if (uploadResponse.StatusCode == System.Net.HttpStatusCode.BadRequest && IsSecurityFilterRejection(uploadBody)) {
-				return RecordFileUploadResult.Failure(
-					"File upload failed: the file security policy of the environment rejected the file before it " +
-					"was stored. Typical causes: the extension does not match the file content, or the extension " +
-					"is not allowed.");
-			}
-			if (!uploadResponse.IsSuccessStatusCode) {
-				return UnconfirmedFailure(
-					$"the file API returned HTTP {(int)uploadResponse.StatusCode}", fileId);
-			}
-			RecordFileUploadResult rejection = ReadUploadResponse(uploadBody, request, fileId);
-			if (rejection is not null) {
-				return rejection;
-			}
-			return await VerifyUploadAsync(client, request.Entity, fileId, payload, cancellationToken)
-				.ConfigureAwait(false);
-		} catch (CreatioAuthenticationException) {
-			return uploadSent ? UnconfirmedFailure("the session was rejected", fileId) : AuthenticationFailure();
-		} catch (UnauthorizedAccessException) {
-			return uploadSent ? UnconfirmedFailure("the session was rejected", fileId) : AuthenticationFailure();
+		} catch (CreatioAuthenticationException ex) {
+			return MapTransportFailure(ex, uploadSent, fileId, cancellationToken);
+		} catch (UnauthorizedAccessException ex) {
+			return MapTransportFailure(ex, uploadSent, fileId, cancellationToken);
 		} catch (HttpRequestException ex) {
-			return uploadSent
-				? UnconfirmedFailure($"the request failed ({SensitiveErrorTextRedactor.Redact(ex.Message)})", fileId)
-				: RecordFileUploadResult.Failure($"File upload failed: {SensitiveErrorTextRedactor.Redact(ex.Message)}");
-		} catch (OperationCanceledException) {
-			cancellationToken.ThrowIfCancellationRequested();
-			return uploadSent
-				? UnconfirmedFailure("the request timed out", fileId)
-				: RecordFileUploadResult.Failure("File upload timed out before the file was sent.");
+			return MapTransportFailure(ex, uploadSent, fileId, cancellationToken);
+		} catch (OperationCanceledException ex) {
+			return MapTransportFailure(ex, uploadSent, fileId, cancellationToken);
+		}
+	}
+
+	/// <summary>
+	/// Reads the answer of the file API and, when it reports a stored file, verifies the stored bytes.
+	/// </summary>
+	private async Task<RecordFileUploadResult> ReadUploadOutcomeAsync(ICreatioApplicationClient client,
+		HttpResponseMessage uploadResponse, RecordFileUploadRequest request, Guid fileId, byte[] payload,
+		CancellationToken cancellationToken) {
+		string uploadBody = await uploadResponse.Content.ReadAsStringAsync(cancellationToken)
+			.ConfigureAwait(false);
+		if (uploadResponse.StatusCode == System.Net.HttpStatusCode.BadRequest && IsSecurityFilterRejection(uploadBody)) {
+			return RecordFileUploadResult.Failure(
+				"File upload failed: the file security policy of the environment rejected the file before it " +
+				"was stored. Typical causes: the extension does not match the file content, or the extension " +
+				"is not allowed.");
+		}
+		if (!uploadResponse.IsSuccessStatusCode) {
+			return UnconfirmedFailure(
+				$"the file API returned HTTP {(int)uploadResponse.StatusCode}", fileId);
+		}
+		RecordFileUploadResult rejection = ReadUploadResponse(uploadBody, request, fileId);
+		if (rejection is not null) {
+			return rejection;
+		}
+		return await VerifyUploadAsync(client, request.Entity, fileId, payload, cancellationToken)
+			.ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Maps a transport exception to a result. After the upload request was sent the outcome is unconfirmed,
+	/// because the file can be stored even when the answer is lost.
+	/// </summary>
+	private static RecordFileUploadResult MapTransportFailure(Exception exception, bool uploadSent, Guid fileId,
+		CancellationToken cancellationToken) {
+		switch (exception) {
+			case HttpRequestException: {
+				string reason = SensitiveErrorTextRedactor.Redact(exception.Message);
+				return uploadSent
+					? UnconfirmedFailure($"the request failed ({reason})", fileId)
+					: RecordFileUploadResult.Failure($"File upload failed: {reason}");
+			}
+			case OperationCanceledException:
+				cancellationToken.ThrowIfCancellationRequested();
+				return uploadSent
+					? UnconfirmedFailure("the request timed out", fileId)
+					: RecordFileUploadResult.Failure("File upload timed out before the file was sent.");
+			default:
+				return uploadSent ? UnconfirmedFailure("the session was rejected", fileId) : AuthenticationFailure();
 		}
 	}
 
@@ -303,11 +332,10 @@ public sealed class RecordFileUploader : IRecordFileUploader {
 	/// contract (the same rule as <see cref="SysImageUploader"/>).
 	/// </summary>
 	private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value) {
-		foreach (JsonProperty property in element.EnumerateObject()) {
-			if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase)) {
-				value = property.Value;
-				return true;
-			}
+		foreach (JsonProperty property in element.EnumerateObject()
+			.Where(candidate => string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))) {
+			value = property.Value;
+			return true;
 		}
 		value = default;
 		return false;

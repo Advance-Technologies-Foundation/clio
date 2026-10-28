@@ -55,16 +55,16 @@ public sealed class DataWriteDiagnosticTests {
 	[TestCase(true, false, false, "unknown", "unknown")]
 	[TestCase(false, false, false, "not-attempted", "not-attempted")]
 	[TestCase(true, true, true, "response-received", "acknowledged")]
-	[Description("knownNotApplied reports side-effect 'none' only for an attempted, answered, unacknowledged write; every other boundary keeps its own outcome.")]
+	[Description("AsKnownNotApplied reports side-effect 'none' only for an attempted, answered, unacknowledged write; every other boundary keeps its own outcome.")]
 	public void Create_ShouldReportNoSideEffect_OnlyWhenServerAnswerProvesWriteNotApplied(bool attempted, bool received,
 		bool acknowledged, string transport, string effect) {
 		// Arrange
 		const string message = "Creatio rejected the row while reading the request body and wrote nothing.";
 		// Act
-		var result = DataWriteDiagnostic.Create("insert", "Contact", 0, attempted, received, acknowledged, message,
-			knownNotApplied: true);
+		var result = DataWriteDiagnostic.Create("insert", "Contact", 0, attempted, received, acknowledged, message)
+			.AsKnownNotApplied();
 		// Assert
-		result.TransportOutcome.Should().Be(transport, because: "knownNotApplied does not change the observed transport boundary");
+		result.TransportOutcome.Should().Be(transport, because: "AsKnownNotApplied does not change the observed transport boundary");
 		result.SideEffect.Should().Be(effect, because: "'none' needs a received answer that proves the write was not applied");
 		result.WriteAttempted.Should().Be(attempted, because: "the attempted flag is reported as given");
 	}
@@ -75,7 +75,8 @@ public sealed class DataWriteDiagnosticTests {
 		// Arrange
 		const string message = "Creatio rejected the row while reading the request body and wrote nothing.";
 		// Act
-		var result = DataWriteDiagnostic.Create("insert", "Contact", 0, true, true, false, message, knownNotApplied: true);
+		var result = DataWriteDiagnostic.Create("insert", "Contact", 0, true, true, false, message)
+			.AsKnownNotApplied();
 		// Assert
 		result.RetryAdvice.Should().Contain("rejected the write before applying it",
 			because: "the caller may resubmit safely after a rejection that happened before the write");
@@ -84,7 +85,7 @@ public sealed class DataWriteDiagnosticTests {
 	}
 
 	[Test]
-	[Description("Without knownNotApplied an answered, unacknowledged write keeps the unknown side effect.")]
+	[Description("Without AsKnownNotApplied an answered, unacknowledged write keeps the unknown side effect.")]
 	public void Create_ShouldKeepUnknownSideEffect_WhenKnownNotAppliedIsOmitted() {
 		// Arrange
 		const string message = "An error has occurred.";

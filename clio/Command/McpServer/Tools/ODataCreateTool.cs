@@ -194,11 +194,19 @@ public sealed class ODataCreateTool(
 			CorrelationId = correlationId,
 			Diagnostic = result.Error is null ? null : DataWriteDiagnostic.Create("insert", args.Entity, null, false, false, false, result.Error),
 			Results = result.Results.Select(row => row with {
-				Diagnostic = DataWriteDiagnostic.Create("insert", args.Entity, row.Index,
-					row.ResponseReceived || row.RecordCreated != false, row.ResponseReceived, row.Success, row.Error,
-					knownNotApplied: row.RecordCreated == false)
+				Diagnostic = CreateRowDiagnostic(args.Entity, row)
 			}).ToArray()
 		};
+	}
+
+	/// <summary>
+	/// Builds the diagnostic of one row. A row with <c>RecordCreated == false</c> is known not inserted, so an
+	/// answered rejection reports side-effect <c>none</c>.
+	/// </summary>
+	private static DataWriteDiagnostic CreateRowDiagnostic(string entity, ODataRowResult row) {
+		DataWriteDiagnostic diagnostic = DataWriteDiagnostic.Create("insert", entity, row.Index,
+			row.ResponseReceived || row.RecordCreated != false, row.ResponseReceived, row.Success, row.Error);
+		return row.RecordCreated == false ? diagnostic.AsKnownNotApplied() : diagnostic;
 	}
 
 	/// <summary>A single row object becomes a one-element array; anything else is left for the usual validation.</summary>
