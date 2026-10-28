@@ -655,8 +655,8 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
-	[Description("ENG-104715: when the brace split cannot represent the fragment exactly (a brace inside a string), the fragment is appended verbatim as before instead of being cut")]
-	public void Merge_ShouldAppendFragmentVerbatim_WhenIncomingHandlerHasBraceInString() {
+	[Description("ENG-104715: a brace inside a string of an incoming handler does not cut the handler; it is replaced in place")]
+	public void Merge_ShouldReplaceHandlerInPlace_WhenIncomingHandlerHasBraceInString() {
 		// Arrange
 		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"}]""";
 		string incoming = """[{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""";
@@ -666,12 +666,12 @@ public class PageBodyMergerTests {
 
 		// Assert
 		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""",
-			because: "a cut fragment would lose handlers silently, so the merge keeps the old verbatim append and only drops the replaced current handler");
+			because: "the parser reads the string as one token, so usr.X is replaced at its position and usr.C is appended");
 	}
 
 	[Test]
-	[Description("ENG-104715: a comment between fragment handlers is not lost; the fragment is appended verbatim as before")]
-	public void Merge_ShouldAppendFragmentVerbatim_WhenIncomingHasCommentBetweenHandlers() {
+	[Description("ENG-104715: a comment between fragment handlers is not lost; it stays in front of the handler that follows it")]
+	public void Merge_ShouldKeepCommentWithNextHandler_WhenIncomingHasCommentBetweenHandlers() {
 		// Arrange
 		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
 		string incoming = """[{request:"usr.X",handler:()=>"new"}, /* keep */ {request:"usr.C",handler:()=>"c"}]""";
@@ -680,8 +680,8 @@ public class PageBodyMergerTests {
 		string merged = MergeWebHandlers(current, incoming);
 
 		// Assert
-		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"new"}, /* keep */ {request:"usr.C",handler:()=>"c"}]""",
-			because: "text between fragment handlers must survive the merge");
+		merged.Should().Be("""[{request:"usr.X",handler:()=>"new"},{request:"usr.A",handler:()=>"a"},/* keep */ {request:"usr.C",handler:()=>"c"}]""",
+			because: "usr.X is replaced in place, and the comment between fragment handlers moves with usr.C");
 	}
 
 	[Test]
@@ -700,7 +700,7 @@ public class PageBodyMergerTests {
 	}
 
 	[Test]
-	[Description("ENG-104715 review: an unbalanced '{' in a string makes the brace split emit no block; the current handler with the same request must still be removed")]
+	[Description("ENG-104715 review: an unbalanced '{' in a string of an incoming handler; the current handler with the same request must still be removed")]
 	public void Merge_ShouldNotSaveTwoHandlersForOneRequest_WhenIncomingHasUnbalancedOpenBraceInString() {
 		// Arrange
 		string current = """[{request:"usr.X",handler:()=>"old"}]""";
@@ -711,11 +711,11 @@ public class PageBodyMergerTests {
 
 		// Assert
 		merged.Should().Be("""[{request:"usr.X",handler:()=>{log("{");return "new";}}]""",
-			because: "the split cannot represent the fragment, so requests come from the whole fragment text and the old usr.X handler is dropped");
+			because: "the parser reads the string as one token, so the old usr.X handler is replaced and not saved twice");
 	}
 
 	[Test]
-	[Description("ENG-104715 review: an unbalanced '}' in a string hides a later fragment block from the split; every request the fragment names must still remove its current handler")]
+	[Description("ENG-104715 review: an unbalanced '}' in a string of an incoming handler; every request the fragment declares must still replace its current handler")]
 	public void Merge_ShouldRemoveEveryCurrentRequest_WhenIncomingHasUnbalancedCloseBraceInString() {
 		// Arrange
 		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"},{request:"usr.C",handler:()=>"old"}]""";
@@ -726,7 +726,7 @@ public class PageBodyMergerTests {
 
 		// Assert
 		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""",
-			because: "usr.C is not emitted by the split, but the fragment declares it, so the old usr.C handler must not stay in the chain");
+			because: "the fragment declares usr.X and usr.C, so both old handlers are replaced in place and none stays in the chain");
 	}
 
 	[Test]
@@ -772,5 +772,110 @@ public class PageBodyMergerTests {
 		// Assert
 		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.C",handler:()=>"c"}]""",
 			because: "nothing is replaced, so the fragment goes to the end as before");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: a '},{' inside a string of the replaced handler must not split it or insert another handler into that string")]
+	public void Merge_ShouldReplaceHandlerInPlace_WhenIncomingHandlerStringContainsObjectSeparator() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.X",handler:(r,n)=>r.text.split("},{")}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.X",handler:(r,n)=>r.text.split("},{")},{request:"usr.A",handler:()=>"a"}]""",
+			because: "the handler is one array element, so it replaces usr.X whole and usr.A stays after it");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: a '},{' inside a line comment of the replaced handler must not split it")]
+	public void Merge_ShouldReplaceHandlerInPlace_WhenIncomingHandlerCommentContainsObjectSeparator() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = "[{request:\"usr.X\",handler:()=>{\n// split on },{\nreturn \"new\";}}]";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("[{request:\"usr.X\",handler:()=>{\n// split on },{\nreturn \"new\";}},{request:\"usr.A\",handler:()=>\"a\"}]",
+			because: "a comment is not code, so the handler is one element and replaces usr.X whole");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: an unbalanced brace inside a string of a CURRENT handler must not drop later current handlers or save one request twice")]
+	public void Merge_ShouldKeepEveryCurrentHandler_WhenCurrentHandlerHasUnbalancedBraceInString() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>{log("}");}},{request:"usr.X",handler:()=>"old"},{request:"usr.B",handler:()=>"b"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"new"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>{log("}");}},{request:"usr.X",handler:()=>"new"},{request:"usr.B",handler:()=>"b"}]""",
+			because: "the current handlers are read by the parser, so usr.A and usr.B stay and only usr.X is replaced");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: a CURRENT handler is identified by its top-level request, not by a request object nested in its body")]
+	public void Merge_ShouldIdentifyCurrentHandlerByTopLevelRequest_WhenItsBodyNamesAnotherRequest() {
+		// Arrange
+		string current = """[{handler:async(r,n)=>{return n?.handle({request:"usr.B"});},request:"usr.A"},{request:"usr.X",handler:()=>"old"}]""";
+		string incoming = """[{request:"usr.B",handler:()=>"b"},{request:"usr.X",handler:()=>"new"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{handler:async(r,n)=>{return n?.handle({request:"usr.B"});},request:"usr.A"},{request:"usr.X",handler:()=>"new"},{request:"usr.B",handler:()=>"b"}]""",
+			because: "the first current handler is usr.A, so it stays; usr.X is replaced in place and the new usr.B is appended");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: an incoming fragment with no request is appended after the current handlers unchanged")]
+	public void Merge_ShouldAppendFragment_WhenIncomingHandlerHasNoRequest() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{handler:()=>"n"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{handler:()=>"n"}]""",
+			because: "a handler without a request replaces nothing");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: an incoming fragment that is not a JavaScript array is appended verbatim and still removes every current handler whose request it names")]
+	public void Merge_ShouldAppendFragmentVerbatim_WhenIncomingIsNotParsable() {
+		// Arrange
+		string current = """[{handler:()=>n.handle({request:"usr.X"})},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>{log("x");}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>{log("x");}]""",
+			because: "the merge cannot read the fragment, so it keeps the pre-ENG-104715 append and drops the current handler that names usr.X");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: CURRENT handlers that are not a JavaScript array are kept unchanged and the fragment is appended")]
+	public void Merge_ShouldKeepCurrentHandlersVerbatim_WhenCurrentIsNotParsable() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>{log("a");}]""";
+		string incoming = """[{request:"usr.C",handler:()=>"c"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>{log("a");},{request:"usr.C",handler:()=>"c"}]""",
+			because: "the merge must not cut saved handlers at a guessed boundary, so it keeps them and appends the fragment");
 	}
 }

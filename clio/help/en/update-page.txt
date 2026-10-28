@@ -272,9 +272,9 @@ DESCRIPTION
     keeping it would re-apply stale values after your replacement. Handlers
     dedupe by request: an incoming handler replaces the current handler with
     the same request at its position, and a handler for a new request is
-    appended at the end. A fragment the merge cannot split into handlers
-    exactly (a brace inside a string, a comment between handlers) is
-    appended unchanged at the end.
+    appended at the end. Braces and request text inside strings or
+    comments do not change the result. A fragment that is not a valid
+    JavaScript array is appended unchanged at the end.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;
@@ -349,10 +349,10 @@ DESCRIPTION
     are merged by appending and never lose an entry silently: a non-empty section
     the stored body has no marker pair for is rejected with an error (use
     --mode replace). Handlers are NOT covered:
-    they dedupe by request, and the merge drops every current handler whose
-    request appears in your fragment - so a current body carrying one request
-    twice keeps neither and your fragment contributes one. Check handlers by
-    hand when that shape is possible.
+    they are matched by their top-level request, and your handler takes the
+    place of the first current handler with that request - so a current body
+    carrying one request twice keeps neither copy and your fragment
+    contributes one. Check handlers by hand when that shape is possible.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.
