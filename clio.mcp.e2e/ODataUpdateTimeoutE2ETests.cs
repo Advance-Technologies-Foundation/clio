@@ -26,7 +26,7 @@ public sealed class ODataUpdateTimeoutE2ETests {
 
 	[Test]
 	[AllureTag(ODataUpdateTool.ToolName)]
-	[AllureName("odata-update names a PATCH timeout and says a re-send is safe")]
+	[AllureName("odata-update names a PATCH timeout and advises one re-send")]
 	[AllureDescription("Registers an environment against a stub that never answers the PATCH, waits for the 30 s client-side timeout, and verifies odata-update reports the timeout, keeps side-effect unknown and advises a re-send.")]
 	[Description("odata-update against a PATCH that never gets an answer reports the client-side timeout instead of 'A task was canceled', with side-effect unknown and re-send advice.")]
 	public async Task ODataUpdate_Should_Report_Timeout_When_Patch_Gets_No_Answer() {
@@ -51,7 +51,7 @@ public sealed class ODataUpdateTimeoutE2ETests {
 		response.Diagnostic.SideEffect.Should().Be("unknown",
 			because: "the server can still commit a PATCH the client stopped waiting for");
 		response.Diagnostic.RetryAdvice.Should().Be(ODataUpdateTool.PatchTimedOutRetryAdvice,
-			because: "a re-send of the same literal values is the safe next step");
+			because: "a single re-send of the same literal values is the next step, with a read first when processes react to the record");
 
 		IReadOnlyList<RecordedStubRequest> requests = await stand.Stub.GetRecordedRequestsAsync(stand.CancellationToken);
 		requests.Should().Contain(request => request.Method == "PATCH",
