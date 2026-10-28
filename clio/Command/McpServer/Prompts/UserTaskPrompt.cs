@@ -38,7 +38,9 @@ public static class UserTaskPrompt {
 		 Set the title to `{title}` and description to `{description ?? "<not provided>"}`.
 		 clio applies the environment's SchemaNamePrefix to the code, so the schema that gets created may
 		 not be named `{code}`; take the created name from the tool result rather than assuming it, and
-		 use that name when calling `modify-user-task-parameters` afterwards.
+		 use that name when calling `modify-user-task-parameters` afterwards. If the call is refused
+		 because that setting cannot begin a schema code, the environment is misconfigured - report it
+		 and stop, rather than retrying with a different code.
 		 Include initial parameters only when they were explicitly requested, include parameter directions
 		 when the requested task contract depends on them, and when a parameter type is `Lookup`
 		 provide its `lookup` entity schema name or schema UId.

@@ -81,5 +81,7 @@ public sealed class CreateUserTaskToolE2ETests : McpContractFixtureBase {
 			because: "Creatio validates a schema code against the environment's SchemaNamePrefix, so the published contract must not leave an agent to guess the prefix");
 		codeDescription.Should().NotContain("Usr",
 			because: "naming the out-of-the-box prefix in the contract is what made agents send 'Usr' to environments configured otherwise (ENG-104560)");
+		codeDescription.Should().Contain("correct that environment's system setting",
+			because: "an unusable SchemaNamePrefix is the environment's defect, and an agent that is not told so answers the refusal by retrying codes that cannot work either");
 	}
 }

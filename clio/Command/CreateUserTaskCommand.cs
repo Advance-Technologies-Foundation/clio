@@ -240,6 +240,10 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 	/// server demanded, and the server refused the code clio demanded (ENG-104560). An empty setting means
 	/// the environment imposes no prefix, so none is applied.
 	/// </remarks>
+	private const string CodeRuleMessage =
+		"A user task code must start with a Latin letter and contain only Latin letters, digits, or "
+		+ "underscore.";
+
 	private string ResolveUserTaskCode(string code) {
 		string normalizedCode = code?.Trim();
 		if (string.IsNullOrWhiteSpace(normalizedCode)) {
@@ -248,22 +252,103 @@ public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 
 		string schemaNamePrefix = ReadSchemaNamePrefix();
 		if (!string.IsNullOrEmpty(schemaNamePrefix)) {
+			EnsureSchemaNamePrefixIsUsable(schemaNamePrefix);
 			normalizedCode = normalizedCode.StartsWith(schemaNamePrefix, StringComparison.OrdinalIgnoreCase)
 				// Re-canonicalize casing: code 'usrMyTask' with prefix 'Usr' becomes 'UsrMyTask'.
 				? schemaNamePrefix + normalizedCode[schemaNamePrefix.Length..]
 				: schemaNamePrefix + normalizedCode;
 		}
 
-		// ClioIdentifier owns this rule for the whole repository. It admits a leading underscore because a
-		// package may be named that way; a schema may not, so that one extra constraint is layered on top
-		// rather than restated as a fifth copy of the pattern.
-		if (!char.IsAsciiLetter(normalizedCode[0]) || !ClioIdentifier.IsIdentifierFragment(normalizedCode)) {
+		if (!IsUsableSchemaCode(normalizedCode)) {
+			throw new InvalidOperationException($"User task code '{normalizedCode}' is invalid. {CodeRuleMessage}");
+		}
+
+		// Runs AFTER the identifier check, and the order is load-bearing: Length counts UTF-16 code units,
+		// which only equals "characters the column stores" once the value is proven pure ASCII. Hoisting
+		// this up to fail faster would measure an astral-plane code at double its length.
+		// Borrowed rather than restated: SysSchema.Name is one column, so one limit. The 251-character
+		// refusal ("String or binary data would be truncated", 10.1.725) was measured on the add-package
+		// path, not this one - what carries it across is that a process user task schema lands in the same
+		// SysSchema.Name column, so the ceiling is the column's, not that command's.
+		// It is checked here rather than left to the server because the server cannot refuse it cleanly:
+		// ExecuteRemoteCommand creates the schema first and sends the name only in the save that follows,
+		// so an over-long code is rejected with a schema already created, and the shortened retry meets the
+		// leftover. The bound is the DATABASE column's; the metadata path this command later writes has its
+		// own, platform-dependent ceiling that this check does not cover.
+		// The resolved value is NOT quoted back. It carries the environment's prefix, so quoting it would
+		// put a server-authored run into a diagnostic that the console and an MCP envelope both receive,
+		// and neither clamps it - the length, the limit and the two halves to shorten are the diagnosis.
+		if (normalizedCode.Length > PackageCreator.MaxSchemaNameLength) {
 			throw new InvalidOperationException(
-				$"User task code '{normalizedCode}' is invalid. User task codes must start with a Latin letter "
-				+ "and contain only Latin letters, digits, or underscore.");
+				$"The resolved user task code is {normalizedCode.Length} characters long; Creatio stores a "
+				+ $"schema code in SysSchema.Name and accepts at most {PackageCreator.MaxSchemaNameLength}. "
+				+ $"Shorten the code, or the environment's {SysSettingCodes.SchemaNamePrefix}.");
 		}
 
 		return normalizedCode;
+	}
+
+	/// <summary>
+	/// Tells whether a value is usable as a Creatio schema code.
+	/// </summary>
+	/// <param name="value">Candidate code, assumed non-empty.</param>
+	/// <returns><see langword="true"/> when Creatio can carry the value as a schema code.</returns>
+	/// <remarks>
+	/// <see cref="ClioIdentifier"/> owns the identifier pattern for the whole repository. It admits a
+	/// leading underscore because a package may be named that way; a schema may not, so that one extra
+	/// constraint is layered on top rather than restated as another copy of the pattern.
+	/// </remarks>
+	private static bool IsUsableSchemaCode(string value) =>
+		// Length is tested here, not left to the two callers' own guarantees: a third caller would get an
+		// IndexOutOfRangeException out of a validation predicate, and ClioIdentifier already null-checks.
+		!string.IsNullOrEmpty(value) && char.IsAsciiLetter(value[0])
+		&& ClioIdentifier.IsIdentifierFragment(value);
+
+	/// <summary>
+	/// Refuses a schema-name prefix that no user task code can be built from.
+	/// </summary>
+	/// <param name="schemaNamePrefix">The prefix read from the environment, non-empty.</param>
+	/// <exception cref="InvalidOperationException">The prefix cannot begin a schema code.</exception>
+	/// <remarks>
+	/// The value is the environment's answer, not the caller's input, and until this check existed it was
+	/// concatenated unexamined and then interpolated into the failing message verbatim. Two things went
+	/// wrong with that. A prefix of <c>2024</c>, <c>_Usr</c> or <c>My-Co</c> made every add-user-task
+	/// against that environment fail while BLAMING a code the caller never typed, which sends them to fix
+	/// the wrong thing. And the message reaches an MCP envelope an agent reads as its own context, so
+	/// arbitrary server-authored text had a path into it - the rule
+	/// <c>docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md</c> states.
+	/// Refusing here fixes both: past this point the only server-authored contribution to any diagnostic
+	/// is an <c>[A-Za-z][A-Za-z0-9_]*</c> run shorter than
+	/// <see cref="PackageCreator.MaxSchemaNameLength"/>, and the value that failed is fenced as observed
+	/// data rather than embedded as prose. The length half of that bound is load-bearing and was missed on
+	/// the first pass: the charset alone leaves the SIZE of every later diagnostic to the server, and
+	/// <c>[A-Za-z0-9_]</c> still spells a sentence when underscores stand in for spaces.
+	/// <para>
+	/// It refuses rather than degrading to no prefix the way <see cref="SchemaNamePrefixResolver"/> does.
+	/// That resolver serves add-package, which generates locally and can hand back a warned, unprefixed
+	/// package; this command's whole effect is a schema the server has to accept, and Creatio refuses a
+	/// code that does not start with its own prefix. Proceeding would buy a confusing server-side refusal
+	/// instead of a clear local one.
+	/// </para>
+	/// </remarks>
+	private void EnsureSchemaNamePrefixIsUsable(string schemaNamePrefix) {
+		// Strictly shorter, not "at most": a prefix that fills the column leaves no room for a code after
+		// it, so every call against that environment would instead fail the length check below, which
+		// names a resolved code the caller cannot shorten enough to help.
+		if (IsUsableSchemaCode(schemaNamePrefix)
+			&& schemaNamePrefix.Length < PackageCreator.MaxSchemaNameLength) {
+			return;
+		}
+
+		throw new InvalidOperationException(
+			$"The {SysSettingCodes.SchemaNamePrefix} system setting of {EnvironmentSettings?.Uri} is "
+			// Not "(empty)": an empty value never reaches here, so the fallback can only be a value made
+			// of characters that do not survive flattening - which is not the same thing as a blank setting.
+			+ $"{UntrustedText.Fenced(schemaNamePrefix) ?? "(no printable characters)"}, which cannot begin "
+			+ $"a user task code. {CodeRuleMessage} It must also stay under the "
+			+ $"{PackageCreator.MaxSchemaNameLength} characters Creatio stores in SysSchema.Name, so that a "
+			+ "code fits after it. No user task can be created against this environment until that setting "
+			+ "is corrected.");
 	}
 
 	/// <summary>
