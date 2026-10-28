@@ -99,7 +99,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 48640 (190).
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections are two more long-tail tools.
 	// Measured 48990 bytes with them registered (350 over 48640); next 256-byte step is 49152 (192).
-	private const int MaxCompactIndexSerializedBytes = 192 * 256;
+	// Re-pinned for ENG-104665: upload-file is one more long-tail tool. Measured 49214 bytes with it registered
+	// (62 over 49152); next 256-byte step is 49408 (193).
+	private const int MaxCompactIndexSerializedBytes = 193 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object

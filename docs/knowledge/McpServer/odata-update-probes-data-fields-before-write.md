@@ -135,9 +135,11 @@ creates no record — observed (work build `394_15918340_0922`, 2026-08-28) a PO
 `{"error":{"code":"","message":"The request is invalid.","innererror":{"message":"item : The
 property 'labNope' does not exist on type 'Terrasoft.Configuration.OData.Contact'. Make sure to only
 use property names that are defined by the type.","type":"","stacktrace":""}}}`
-with no record created — unlike the PATCH silent drop. `odata-create` therefore gets a loud,
+with no record created — unlike the PATCH silent drop. On .NET Core (10.2.760, 2026-10-27) the same
+rejection reads `"The input was not valid."` and names no property. `odata-create` therefore gets a loud,
 self-correcting failure rather than a silent no-write and needs no client-side pre-validation of field
-NAMES. It is NOT exempt from the value-level guard: `ODataDateTimeGuard` runs per row before every POST,
+NAMES; since ENG-104665 it reports both messages as `record-created=false` (see
+`odata-create-model-validation-rejection-is-a-confirmed-no-write.md`). It is NOT exempt from the value-level guard: `ODataDateTimeGuard` runs per row before every POST,
 and the CSDL is read at most once per batch - only when some row actually carries a date-shaped literal,
 and on a short single-attempt budget, because there the type map merely sharpens an optional guard and
 must never hold up or fail the insert. `odata-delete` sends no field set and is unaffected. (As with the documented PATCH build divergence,

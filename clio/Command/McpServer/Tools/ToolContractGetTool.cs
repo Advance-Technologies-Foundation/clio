@@ -2948,7 +2948,8 @@ internal static class ToolContractCatalog {
 			OdataUnregisteredEntityAntiPatterns(includeEsqEscapeRoute: false),
 			Preconditions: [
 				ODataCreateTool.RowCountLimitDescription,
-				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent."
+				"The batch is bounded in wall-clock time as well as row count: rows are POSTed sequentially, and once the batch budget is spent the first row that was not attempted is reported with record-created=false and the reason, and no further row is sent.",
+				"Binary columns (file or image Data, Edm.Stream in $metadata) cannot be written through OData. Use upload-file for a file attached to a record and upload-image for an image."
 			]);
 	}
 
@@ -7353,7 +7354,10 @@ internal static class ToolContractCatalog {
 				Field(ResultsFieldName, ArrayType,
 					"Per-row outcomes for every attempted row; each item has index, success, id, error, diagnostic, "
 					+ "record-created (true inserted / false definitely not inserted / null UNKNOWN) and, when "
-					+ "record-created is null, retry-guidance. A null record-created means Creatio failed the call "
+					+ "record-created is null or Creatio rejected the row before writing it, retry-guidance. "
+					+ "Creatio rejects a row while reading the request body - an unknown column, a value of the "
+					+ "wrong type, or any value for a binary column - and that row is reported as false with "
+					+ "diagnostic side-effect none. A null record-created means Creatio failed the call "
 					+ "but may already have written the row - verify with odata-read before re-sending, a retry "
 					+ "duplicates it. " + ODataWriteForeignKeyHintDescription),
 				Field(ErrorFieldName, StringType, "Request-level error that prevented any row from being attempted."),
