@@ -2,8 +2,9 @@
 
 - **Status:** accepted by the author (2026-09-30); to be confirmed by the PR's approver.
   - Amended by [adr-ENG-104066-object-rights-row-layout.md](adr-ENG-104066-object-rights-row-layout.md)
-    (2026-10-27): a row moves or goes through a layout call of its own (invariants 3 and 4), and a user logs in again
-    for a change to apply, instead of "applies immediately to a session that is already logged in".
+    (2026-10-27): a row moves or goes through a layout call of its own (invariants 3 and 4), and a change can reach a
+    logged-in user at once but reliably only after they log in again, instead of "applies immediately to a session
+    that is already logged in".
   - Decided: D1 (one object per call), D4 (host approval), D8 (grant and revoke on MCP), `remove-role` as a follow-up.
   - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
     required on every grant and revoke (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object

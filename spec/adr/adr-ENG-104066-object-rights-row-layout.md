@@ -6,8 +6,10 @@
   - `position` past the last row is refused (the operator was asked; the recommended default was kept).
   - Decided with the operator (2026-10-27): no `--below` (D6); the ticket's acceptance criteria are amended to match.
   - Decided with the operator (2026-10-27): when a logged-in user gets the new decision is the platform's rights
-    caching, which clio does not control — a user logs in again to get it — so the ticket's "without re-login"
-    criterion is dropped rather than verified.
+    caching, which clio does not control — the change can reach them at once, but reliably only after they log in
+    again — so the ticket's "without re-login" criterion is dropped rather than verified. The server side was
+    probed on 8.3.4 (a DataService session got the change at once); the application side is operator experience
+    (2026-10-28).
 - **Date:** 2026-10-25
 - **Jira:** [ENG-104066](https://creatio.atlassian.net/browse/ENG-104066) (follows ENG-99741, the `remove-role`
   follow-up named in [adr-ENG-99741-object-rights.md](adr-ENG-99741-object-rights.md) D3)
@@ -15,8 +17,8 @@
   bullet "never removes a row and never reorders rows" and R5 ("never reorders rows"): a grant or a revoke still
   never removes or reorders a row; a row moves or goes only through a layout call of its own (D1). Where the two
   ADRs differ on rows moving or going, this ADR wins (see "Review baseline"). It also replaces ADR-99741's "a
-  change applies immediately to a session that is already logged in": for the permissions to apply correctly, a
-  user logs in to the site again (operator, 2026-10-27).
+  change applies immediately to a session that is already logged in": the change can reach a logged-in user at
+  once, but for the permissions to apply reliably the user logs in to the site again (operator, 2026-10-28).
 
 ---
 
@@ -63,7 +65,8 @@ the rows decide nothing until they are turned on.
 higher of the role's own row and its universal row — `All employees` for an internal role, `All external users` for
 an external one (`SysAdminUnit.ConnectionType = 1`, one DataService query for every grantee on the object). Every
 role whose operations change is listed with old and new operations and the deciding row before and after, external
-roles named as such and a narrowing for them stated as a revoke of external access; a removal always names the row
+roles named as such and any operation they lose (a narrowing, or the lost part of a change both ways) stated as a
+revoke of external access; a removal always names the row
 its members fall to. *Rejected:* following the role hierarchy (parent org roles) — more queries and more ways to be
 wrong; the output states the limit instead. A failed external lookup fails the call before the save.
 

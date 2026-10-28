@@ -356,11 +356,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 				granteeRows.Select(row => row.Position).ToArray());
 		}
 		RoleOperationRights granteeRow = granteeRows[0];
-		// An object that is off with no stored rows is read with a synthesized All employees row. Removing it would send an
-		// empty list and read the same row back, so the call would report a removal that changed nothing.
-		if (layout.Kind == RowLayoutKind.Remove && IsNoStoredRowsReading(before)) {
-			return Unchanged(before);
-		}
 		List<RoleOperationRights> order = rows.Where(row => row != granteeRow).ToList();
 		if (layout.Kind != RowLayoutKind.Remove) {
 			int? index = TargetIndex(order, layout, out ObjectRightsRefusal refusal, out int[] anchorPositions);
@@ -507,11 +502,6 @@ public sealed class ObjectRightsPlanner : IObjectRightsPlanner {
 		before.HasAllEmployeesRow
 			? null
 			: new RoleOperationRights(SysAdminUnitIds.AllEmployees, AllEmployeesName, position, true, true, true, true);
-
-	private static bool IsNoStoredRowsReading(ObjectRightsState state) =>
-		!state.AdministratedByOperations && state.Roles.Count == 1
-		&& state.Roles[0] is { Position: 0, CanRead: true, CanCreate: true, CanEdit: true, CanDelete: true } row
-		&& row.GranteeId == SysAdminUnitIds.AllEmployees;
 
 	private static ObjectRightsPlan Unchanged(ObjectRightsState before) =>
 		new(before, before, ObjectRightsRefusal.None,

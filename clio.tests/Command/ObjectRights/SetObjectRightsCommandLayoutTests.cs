@@ -122,6 +122,10 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 			.SetName("above not a GUID");
 		yield return new TestCaseData((Action<SetObjectRightsOptions>)(o => o.Above = TechniciansText), "--above names the grantee itself")
 			.SetName("above the grantee itself");
+		yield return new TestCaseData((Action<SetObjectRightsOptions>)(o => o.Above = Guid.Empty.ToString()), "--above must be the SysAdminUnit id")
+			.SetName("above an empty GUID");
+		yield return new TestCaseData((Action<SetObjectRightsOptions>)(o => { o.Position = 0; o.Operations = ""; }), "are a call of their own")
+			.SetName("position with empty operations");
 		yield return new TestCaseData((Action<SetObjectRightsOptions>)(o => { o.RemoveRow = true; o.Grantee = null; }), "--grantee must be a SysAdminUnit id")
 			.SetName("remove-row without grantee");
 	}
@@ -342,20 +346,20 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 	}
 
 	[Test]
-	[Description("Removing the row an object that is off with no stored rows is read with writes nothing and says the row is not stored.")]
-	public void Execute_ShouldWriteNothing_WhenRemovingTheSynthesizedRowOfAnObjectThatIsOff() {
+	[Description("Removing the only All employees row of an object that is off saves an empty list — the row may be stored — and the result says the object now reads back with the row the service shows for no stored rows.")]
+	public void Execute_ShouldSayNoStoredRowsRemain_WhenRemovingTheOnlyAllEmployeesRowOfAnObjectThatIsOff() {
 		// Arrange
-		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")));
+		ObjectIs(Info(false, Row(AllEmployees, 0, "RCED")), readBack: Info(false, Row(AllEmployees, 0, "RCED")));
 		_granteeLookup.ResolveGranteeName(AllEmployees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
 
 		// Act
 		int exitCode = _command.Execute(Options(o => { o.Grantee = AllEmployees.ToString(); o.RemoveRow = true; }));
 
 		// Assert
-		exitCode.Should().Be(0, because: "nothing to change is not a failure");
-		_infos.Should().Contain(line => line.Contains("not stored, so there is nothing to remove"),
-			because: "the result must not claim a removal that changed nothing");
-		NothingSaved();
+		exitCode.Should().Be(0, because: "the synthesized row is how the service reads an object with no stored rows");
+		_saved.Roles.Should().BeEmpty(because: "a row that may be stored is removed, not skipped");
+		_infos.Should().Contain(line => line.Contains("removed the row of grantee") && line.Contains("no stored rows now"),
+			because: "the result says the object reads back with the row the service shows, not that a row remains");
 	}
 
 	[Test]
@@ -387,6 +391,11 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 				(Action<SetObjectRightsOptions>)(o => o.Above = AllEmployees.ToString()),
 				new[] { "role 'Service technicians'", "access CHANGES from create/edit/delete to read" })
 			.SetName("Execute_ShouldSayAccessChanges_WhenNeitherSideContainsTheOther");
+		yield return new TestCaseData(Info(true, Row(PortalUsers, 0, "RE"), Row(AllExternalUsers, 1, "RC")),
+				(Action<SetObjectRightsOptions>)(o => { o.Grantee = PortalUsers.ToString(); o.RemoveRow = true; }),
+				new[] { "external role 'Partner portal users'", "access CHANGES (a revoke of external access)",
+					"from read/edit to read/create" })
+			.SetName("Execute_ShouldCallAnExternalLossARevoke_WhenAccessChangesBothWays");
 	}
 
 	[TestCaseSource(nameof(AccessChangeLines))]
@@ -397,6 +406,9 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 		ObjectIs(before);
 		_granteeLookup.ResolveGranteeName(AllEmployees, Arg.Any<CreatioRequestOptions>()).Returns("All employees");
 		_granteeLookup.ResolveGranteeName(Managers, Arg.Any<CreatioRequestOptions>()).Returns("Service managers");
+		_granteeLookup.ResolveGranteeName(PortalUsers, Arg.Any<CreatioRequestOptions>()).Returns("Partner portal users");
+		_granteeLookup.FindExternalUnits(Arg.Any<IReadOnlyCollection<Guid>>(), Arg.Any<CreatioRequestOptions>())
+			.Returns(new HashSet<Guid> { AllExternalUsers, PortalUsers });
 
 		// Act
 		int exitCode = _command.Execute(Options(o => { layout(o); o.Confirm = false; o.Preview = true; }));

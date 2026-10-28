@@ -500,10 +500,6 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return $"grantee {change.GranteeLabel} has no row, so there is nothing to revoke";
 		}
 		string granteeRow = $"the row of grantee {change.GranteeLabel} at position {row.Position}";
-		if (change.Request.Layout?.Kind == RowLayoutKind.Remove) {
-			return $"{granteeRow} is the row the service shows for an object that is off with no stored rows; it is "
-				+ "not stored, so there is nothing to remove";
-		}
 		if (change.Request.ChangesLayout) {
 			return $"{granteeRow} is already where the call puts it";
 		}
@@ -587,8 +583,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		string direction = after.IsSupersetOf(before) ? "WIDENS"
 			: after.IsSubsetOf(before) ? "NARROWS"
 			: "CHANGES";
-		// A narrowing for portal users is the external-access revoke the operator must not miss.
-		string revoke = change.External && direction == "NARROWS" ? " (a revoke of external access)" : "";
+		// Any operation portal users lose — also inside a mixed CHANGES — is the external-access revoke the operator must
+		// not miss.
+		string revoke = change.External && before.Except(after).Any() ? " (a revoke of external access)" : "";
 		return $"  {role}: access {direction}{revoke} from {FormatAccess(change.OperationsBefore)} to "
 			+ $"{FormatAccess(change.OperationsAfter)} — {decided}.";
 	}
@@ -619,6 +616,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ $"({ObjectRightsSupport.FormatOperations(before)}).";
 	}
 
+	// An object that is off with no stored rows reads back with the All employees row the service synthesizes, and
+	// that row cannot be told from a stored one; the result says which state the object is in instead of claiming more.
+	private static string NoStoredRowsNote(ObjectRightsPlan plan) =>
+		!plan.After.AdministratedByOperations && plan.After.Roles.Count == 0
+			? " The object has no stored rows now, so it reads back with the All employees row the service shows for "
+				+ "that state."
+			: string.Empty;
+
 	// The call's own result line, from the plan: a row that changed, or — when only the switch changes — that.
 	private static string DoneLine(Change change) {
 		if (change.Request.SwitchOnly) {
@@ -627,7 +632,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		if (change.Request.ChangesLayout) {
 			return change.Request.Layout.Kind == RowLayoutKind.Remove
-				? $"{change.Label}: removed the row of grantee {change.GranteeLabel}."
+				? $"{change.Label}: removed the row of grantee {change.GranteeLabel}.{NoStoredRowsNote(change.Plan)}"
 				: $"{change.Label}: moved the row of grantee {change.GranteeLabel} to position "
 					+ $"{change.GranteeRowAfter.Position}.";
 		}

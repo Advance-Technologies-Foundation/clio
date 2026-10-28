@@ -39,7 +39,7 @@ follows that model:
 - The preview and the result of a move or a removal list the rows before and after and every role whose operations
   change, for a member who is in no other role with a row: an internal role is decided by the higher of its own row
   and `All employees`, an external (portal) role by the higher of its own row and `All external users`. External
-  roles are named as such, and a narrowing for them is stated as a revoke of external access. While operation
+  roles are named as such, and any operation they lose (a narrowing, or the lost part of a change both ways) is stated as a revoke of external access. While operation
   permissions are OFF, a move or a removal changes nobody's access until they are turned on.
 
 Every change that alters who can reach the object must be **named** in the arguments, or the call is refused and
@@ -255,8 +255,8 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
   the command changes none of them. Remove the duplicates in the Object permissions designer, then re-run. The same
   holds for a move or a removal of such a grantee's row.
 - A move that leaves the rows in the same order changes nothing and exits 0, even when the stored positions have
-  gaps. So does removing the `All employees` row of an object that is OFF with no stored rows: that row is the one
-  the service shows for such an object, not a stored row.
+  gaps. A removal that leaves an object that is OFF with no stored rows says so: such an object reads back with the
+  `All employees` row the service shows for that state, which cannot be told from a stored one.
 - A revoke on an object that does not use operation permissions is refused: company employees reach it whatever its
   rows say (only technical users follow the rows while it is off). To limit access, turn operation permissions on
   first (a grant with `--enable-operation-permissions`, which keeps the object's `All employees` row as it is or adds

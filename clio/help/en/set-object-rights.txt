@@ -36,8 +36,9 @@ DESCRIPTION
     relative order and are renumbered 0..n-1. The preview and the result list the rows before and after
     and every role whose operations change, for a member who is in no other role with a row: an
     internal role is decided by the higher of its own row and All employees, an external (portal) role
-    by the higher of its own row and All external users. External roles are named as such, and a
-    narrowing for them is stated as a revoke of external access. While operation permissions are OFF,
+    by the higher of its own row and All external users. External roles are named as such, and any
+    operation they lose (a narrowing, or the lost part of a change both ways) is stated as a revoke of
+    external access. While operation permissions are OFF,
     a move or a removal changes nobody's access until they are turned on.
 
     Every change that alters who can reach the object must be named in the arguments, or the call is
@@ -217,8 +218,9 @@ NOTES
     designer, then re-run. The same holds for a move or a removal of such a grantee's row.
 
     A move that leaves the rows in the same order changes nothing and exits 0, even when the stored
-    positions have gaps. So does removing the All employees row of an object that is OFF with no
-    stored rows: that row is the one the service shows for such an object, not a stored row.
+    positions have gaps. A removal that leaves an object that is OFF with no stored rows says so: such
+    an object reads back with the All employees row the service shows for that state, which cannot be
+    told from a stored one.
 
     Read-modify-write is last-writer-wins: a change another client saves between the read and the save
     is overwritten. The read-back reports any difference from the plan.

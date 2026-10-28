@@ -282,8 +282,8 @@ public class ObjectRightsPlannerLayoutTests {
 	}
 
 	[Test]
-	[Description("On an object that is off with no stored rows, the All employees row is the one the service synthesizes for that state, so removing it changes nothing.")]
-	public void Plan_ShouldChangeNothing_WhenRemovingTheSynthesizedRowOfAnObjectThatIsOff() {
+	[Description("On an object that is off, an only All employees row with every operation may be stored or synthesized, and the read cannot tell which, so removing it saves an empty list rather than guessing.")]
+	public void Plan_ShouldSaveEmptyList_WhenRemovingTheOnlyAllEmployeesRowOfAnObjectThatIsOff() {
 		// Arrange
 		ObjectRightsState before = State(false, Row(AllEmployees, 0, "RCED"));
 
@@ -291,8 +291,9 @@ public class ObjectRightsPlannerLayoutTests {
 		ObjectRightsPlan plan = _planner.Plan(before, Remove(AllEmployees));
 
 		// Assert
-		plan.Refused.Should().BeFalse(because: "there is nothing wrong with the call, only nothing to do");
-		plan.Changes.Should().BeFalse(because: "an empty list reads back as the same synthesized row");
+		plan.Refused.Should().BeFalse(because: "a stored row of an object that is off may be removed");
+		plan.After.Roles.Should().BeEmpty(because: "a stored row must not be skipped as if it were synthesized");
+		plan.RewritesAllRows.Should().BeTrue(because: "the removal saves the whole, now empty, row list");
 	}
 
 	[Test]
