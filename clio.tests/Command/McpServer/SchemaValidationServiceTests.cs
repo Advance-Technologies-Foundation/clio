@@ -2999,19 +2999,47 @@ public sealed class SchemaValidationServiceTests
 		result.Errors.Should().BeEmpty(because: "templateValuesMapping.title on crt.Map must not require a resource binding");
 	}
 
-	[TestCase("""{"type":"crt.Map","caption":"Visible caption","templateValuesMapping":{"title":"Name"}}""")]
-	[TestCase("""{"type":"crt.Map","items":[{"type":"crt.Label","caption":"Visible caption"}],"templateValuesMapping":{"title":"Name"}}""")]
-	[TestCase("""{"type":"crt.Map","itemConfig":{"templateValuesMapping":{"title":"Visible caption"}}}""")]
-	[TestCase("""{"type":"crt.FlexContainer","templateValuesMapping":{"title":"Visible caption"}}""")]
-	[TestCase("""{"type":"crt.FlexContainer","items":[{"type":"crt.Label","templateValuesMapping":{"title":"Visible caption"}}]}""")]
-	[Description("The crt.Map mapping exemption must not hide text on the component, its children, other paths or other components.")]
-	public void ValidateLocalizableTextLiterals_ShouldRejectTitle_WhenOutsideMapMapping(string values) {
+	[TestCase(false)]
+	[TestCase(true)]
+	[Description("A nested crt.Map mapping and a same-body untyped merge use the same scoped exemption for web and mobile bodies.")]
+	public void ValidateLocalizableTextLiterals_ShouldAcceptMapMapping_WhenNestedOrSameBodyMerge(bool mobile) {
 		// Arrange
-		string body = BuildDiffBackedPageBody(
-			$$"""[{"operation":"insert","name":"Map","values":{{values}}}]""", "[]");
+		const string diff = """
+			[{"operation":"insert","name":"Container","values":{"type":"crt.FlexContainer","items":[{"name":"NestedMap","type":"crt.Map","templateValuesMapping":{"title":"Name"}}]}},
+			{"operation":"insert","name":"Map","values":{"type":"crt.Map"}},
+			{"operation":"merge","name":"Map","values":{"templateValuesMapping":{"title":"Name"}}}]
+			""";
+		string body = mobile ? "{\"viewConfigDiff\":" + diff + "}" : BuildDiffBackedPageBody(diff, "[]");
 
 		// Act
-		SchemaValidationResult result = SchemaValidationService.ValidateLocalizableTextLiterals(body);
+		SchemaValidationResult result = mobile
+			? SchemaValidationService.ValidateMobileLocalizableTextLiterals(body)
+			: SchemaValidationService.ValidateLocalizableTextLiterals(body);
+
+		// Assert
+		result.IsValid.Should().BeTrue(because: "nested nodes and same-body type resolution preserve the Map mapping contract");
+		result.Errors.Should().BeEmpty(because: "all titles in this body are column names");
+	}
+
+	[TestCase(false, "insert", """{"type":"crt.Map","caption":"Visible caption","templateValuesMapping":{"title":"Name"}}""")]
+	[TestCase(false, "insert", """{"type":"crt.Map","items":[{"type":"crt.Label","caption":"Visible caption"}],"templateValuesMapping":{"title":"Name"}}""")]
+	[TestCase(false, "insert", """{"type":"crt.Map","itemConfig":{"templateValuesMapping":{"title":"Visible caption"}}}""")]
+	[TestCase(false, "insert", """{"type":"crt.FlexContainer","templateValuesMapping":{"title":"Visible caption"}}""")]
+	[TestCase(false, "insert", """{"type":"crt.FlexContainer","items":[{"type":"crt.Label","templateValuesMapping":{"title":"Visible caption"}}]}""")]
+	[TestCase(false, "merge", """{"templateValuesMapping":{"title":"Visible caption"}}""")]
+	[TestCase(true, "insert", """{"type":"crt.Map","caption":"Visible caption","templateValuesMapping":{"title":"Name"}}""")]
+	[TestCase(true, "insert", """{"type":"crt.Map","itemConfig":{"templateValuesMapping":{"title":"Visible caption"}}}""")]
+	[TestCase(true, "merge", """{"templateValuesMapping":{"title":"Visible caption"}}""")]
+	[Description("The crt.Map mapping exemption must not hide text on the component, its children, other paths, other components or a standalone merge without a type, for web and mobile bodies.")]
+	public void ValidateLocalizableTextLiterals_ShouldRejectTitle_WhenOutsideMapMapping(bool mobile, string operation, string values) {
+		// Arrange
+		string diff = $$"""[{"operation":"{{operation}}","name":"Map","values":{{values}}}]""";
+		string body = mobile ? "{\"viewConfigDiff\":" + diff + "}" : BuildDiffBackedPageBody(diff, "[]");
+
+		// Act
+		SchemaValidationResult result = mobile
+			? SchemaValidationService.ValidateMobileLocalizableTextLiterals(body)
+			: SchemaValidationService.ValidateLocalizableTextLiterals(body);
 
 		// Assert
 		result.IsValid.Should().BeFalse(because: "ordinary visible text still requires localization");

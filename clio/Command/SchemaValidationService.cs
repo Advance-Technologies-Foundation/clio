@@ -347,6 +347,11 @@ public static class SchemaValidationService
 	private const string MapComponentType = "crt.Map";
 
 	/// <summary>
+	/// Component type that reads <see cref="TemplateValuesMappingPropertyName"/> from its <c>itemConfig</c>.
+	/// </summary>
+	private const string GalleryComponentType = "crt.Gallery";
+
+	/// <summary>
 	/// Marker property the platform writes inside a component's data descriptor. Its presence is what
 	/// distinguishes a descriptor object from an author-writable input that merely happens to be named
 	/// <c>data</c> - see <see cref="IsComponentDescriptorProperty"/> for why the owner's component type
@@ -3287,7 +3292,8 @@ public static class SchemaValidationService
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result, violations);
 					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result, violations,
-						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
+						string.Equals(currentType, GalleryComponentType, StringComparison.Ordinal) &&
+						property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:
