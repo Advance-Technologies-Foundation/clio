@@ -414,7 +414,9 @@ There is one exception. If your fragment supersedes an identity that the page ca
 only the first occurrence is replaced and the later one is dropped — keeping it would re-apply its
 stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
 keys go with it. Handlers dedupe by `request`: an incoming handler replaces the current handler with the same
-`request` at its position, and a handler for a new `request` is appended at the end.
+`request` at its position, and a handler for a new `request` is appended at the end. A fragment that the
+merge cannot split into handlers exactly (a brace inside a string, a comment between handlers) is appended
+unchanged at the end.
 
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
 `SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.

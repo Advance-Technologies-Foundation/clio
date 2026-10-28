@@ -101,8 +101,8 @@ a consent flag such as `confirm-layout-change`. An unmarked sentence past the ke
 form, so it costs the per-contract ceiling only; the lead, a marked sentence or a field description costs the
 seven-contract reply as well.
 
-A single-tool lookup can go short too. The full `update-page` contract is at the 18 KB edge on its own:
-in ENG-104715 about 140 more bytes in its `mode` field made `get-tool-contract tool-names=[update-page]`
-return the short form, and the `error` output field lost every sentence after the first.
+A single-tool lookup can go short too. The full `update-page` contract sits at the 18 KB edge on its own, so
+a few more words in one of its fields make `get-tool-contract tool-names=[update-page]` return the short form,
+and fields lose every sentence after the first.
 `ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope` reports it. Keep new `update-page`
-contract text to a few words, or pay for it by cutting text elsewhere in that contract.
+contract text short, or cut text elsewhere in that contract to pay for it.

@@ -702,6 +702,12 @@ internal static class PageBodyMerger {
 		string currentInner = StripArrayBrackets(currentTrim);
 		string incomingInner = StripArrayBrackets(incomingTrim);
 		List<string> incomingBlocks = SplitTopLevelObjects(incomingInner);
+		if (incomingBlocks.Count == 0 || !IsCoveredByBlocks(incomingInner, incomingBlocks)) {
+			// The naive brace split cannot represent the fragment exactly (a brace inside a string, a comment
+			// between handlers). Do not trust the split: take the requests from the whole fragment text and
+			// append the fragment verbatim at the end, as before ENG-104715.
+			return AppendHandlersVerbatim(currentInner, incomingInner);
+		}
 		Dictionary<string, List<string>> incomingByRequest = incomingBlocks
 			.Select(block => (Request: ReadHandlerRequest(block), Block: block))
 			.Where(pair => pair.Request is not null)
@@ -714,20 +720,38 @@ internal static class PageBodyMerger {
 		// handler's place, so a re-saved handler does not move to the end and reorder the schema.
 		var replacedRequests = new HashSet<string>(StringComparer.Ordinal);
 		List<string> merged = ReplaceHandlersInPlace(currentInner, incomingByRequest, replacedRequests);
-		if (replacedRequests.Count == 0 || !IsCoveredByBlocks(incomingInner, incomingBlocks)) {
-			// The naive brace split cannot represent the fragment exactly (a brace inside a string, a comment
-			// between handlers), so it is kept verbatim at the end, as before ENG-104715.
-			List<string> kept = merged.Where(block => {
-				string request = ReadHandlerRequest(block);
-				return request is null || !incomingByRequest.ContainsKey(request);
-			}).ToList();
-			return JoinHandlers(string.Join(",", kept), incomingInner);
+		if (replacedRequests.Count == 0) {
+			return JoinHandlers(currentInner, incomingInner);
 		}
 		IEnumerable<string> appended = incomingBlocks.Where(block => {
 			string request = ReadHandlerRequest(block);
 			return request is null || !replacedRequests.Contains(request);
 		});
 		return "[" + string.Join(",", merged.Concat(appended)) + "]";
+	}
+
+	/// <summary>
+	/// Pre-ENG-104715 append: every request named anywhere in the fragment text removes the current handler
+	/// that declares it, and the fragment goes to the end unchanged. Used when the brace split cannot
+	/// represent the fragment, so no incoming handler is lost and no request is saved twice.
+	/// </summary>
+	private static string AppendHandlersVerbatim(string currentInner, string incomingInner) {
+		HashSet<string> incomingRequests = HandlerRequestRegex.Matches(incomingInner)
+			.Select(match => match.Groups[1].Value)
+			.ToHashSet(StringComparer.Ordinal);
+		if (incomingRequests.Count == 0) {
+			return JoinHandlers(currentInner, incomingInner);
+		}
+		IEnumerable<string> kept = SplitTopLevelObjects(currentInner).Where(block => {
+			string request = ReadHandlerRequest(block) ?? ReadFirstRequest(block);
+			return request is null || !incomingRequests.Contains(request);
+		});
+		return JoinHandlers(string.Join(",", kept), incomingInner);
+	}
+
+	private static string ReadFirstRequest(string handlerBlock) {
+		Match match = HandlerRequestRegex.Match(handlerBlock);
+		return match.Success ? match.Groups[1].Value : null;
 	}
 
 	private static List<string> ReplaceHandlersInPlace(string currentInner,

@@ -266,7 +266,9 @@ DESCRIPTION
     keeping it would re-apply stale values after your replacement. Handlers
     dedupe by request: an incoming handler replaces the current handler with
     the same request at its position, and a handler for a new request is
-    appended at the end.
+    appended at the end. A fragment the merge cannot split into handlers
+    exactly (a brace inside a string, a comment between handlers) is
+    appended unchanged at the end.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;

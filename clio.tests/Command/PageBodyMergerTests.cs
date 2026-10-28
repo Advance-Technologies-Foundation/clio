@@ -698,4 +698,79 @@ public class PageBodyMergerTests {
 		merged.Should().Be("""[{handler:async(r,n)=>{return n?.handle({request:"usr.B"});},request:"usr.A"},{request:"usr.B",handler:()=>"b"}]""",
 			because: "the incoming handler is usr.A by its top-level key, so it replaces usr.A in place and leaves usr.B alone");
 	}
+
+	[Test]
+	[Description("ENG-104715 review: an unbalanced '{' in a string makes the brace split emit no block; the current handler with the same request must still be removed")]
+	public void Merge_ShouldNotSaveTwoHandlersForOneRequest_WhenIncomingHasUnbalancedOpenBraceInString() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>{log("{");return "new";}}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.X",handler:()=>{log("{");return "new";}}]""",
+			because: "the split cannot represent the fragment, so requests come from the whole fragment text and the old usr.X handler is dropped");
+	}
+
+	[Test]
+	[Description("ENG-104715 review: an unbalanced '}' in a string hides a later fragment block from the split; every request the fragment names must still remove its current handler")]
+	public void Merge_ShouldRemoveEveryCurrentRequest_WhenIncomingHasUnbalancedCloseBraceInString() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"},{request:"usr.C",handler:()=>"old"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>{log("}");return "new";}},{request:"usr.C",handler:()=>"c"}]""",
+			because: "usr.C is not emitted by the split, but the fragment declares it, so the old usr.C handler must not stay in the chain");
+	}
+
+	[Test]
+	[Description("ENG-104715: an incoming handler without a request is appended after the current handlers")]
+	public void Merge_ShouldAppendHandlerWithoutRequest_WhenIncomingAlsoReplacesHandler() {
+		// Arrange
+		string current = """[{request:"usr.X",handler:()=>"old"},{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"new"},{handler:()=>"n"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.X",handler:()=>"new"},{request:"usr.A",handler:()=>"a"},{handler:()=>"n"}]""",
+			because: "a handler without a request has no position to take, so it goes to the end");
+	}
+
+	[Test]
+	[Description("ENG-104715: several incoming handlers that share one request are all inserted at the position of the first current handler")]
+	public void Merge_ShouldInsertAllSharedRequestHandlersInPlace_WhenIncomingDeclaresRequestTwice() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"old"},{request:"usr.B",handler:()=>"b"}]""";
+		string incoming = """[{request:"usr.X",handler:()=>"n1"},{request:"usr.X",handler:()=>"n2"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.X",handler:()=>"n1"},{request:"usr.X",handler:()=>"n2"},{request:"usr.B",handler:()=>"b"}]""",
+			because: "the fragment keeps both of its usr.X handlers in fragment order, at the replaced handler's position");
+	}
+
+	[Test]
+	[Description("ENG-104715: an incoming request that matches no current handler is appended after the current handlers")]
+	public void Merge_ShouldAppendHandler_WhenIncomingRequestIsNew() {
+		// Arrange
+		string current = """[{request:"usr.A",handler:()=>"a"}]""";
+		string incoming = """[{request:"usr.C",handler:()=>"c"}]""";
+
+		// Act
+		string merged = MergeWebHandlers(current, incoming);
+
+		// Assert
+		merged.Should().Be("""[{request:"usr.A",handler:()=>"a"},{request:"usr.C",handler:()=>"c"}]""",
+			because: "nothing is replaced, so the fragment goes to the end as before");
+	}
 }
