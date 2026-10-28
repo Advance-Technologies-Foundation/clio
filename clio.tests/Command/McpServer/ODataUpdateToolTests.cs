@@ -717,6 +717,30 @@ public sealed class ODataUpdateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Issue #1851: a TCP connect timeout on the PATCH does not get the 'PATCH was sent' timeout error, because the request may never have left the process.")]
+	public void Update_Should_Not_Report_Patch_Timeout_When_The_Connect_Times_Out() {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>())
+			.Throws(new System.Net.Http.HttpRequestException("Connection timed out",
+				new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.TimedOut)));
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a PATCH that got no connection is not a confirmed update");
+		response.Error.Should().NotBe(ODataUpdateTool.PatchTimedOutError,
+			because: "a connect timeout does not prove that the PATCH reached Creatio");
+		response.Diagnostic!.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "the generic unknown-outcome path still applies to a transport fault");
+		response.Diagnostic.RetryAdvice.Should().NotBe(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "only a client-side cancellation of a sent PATCH earns the re-send advice");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Issue #1851: the tool description and get-tool-contract state the same PATCH timeout as the error the tool returns.")]
 	public void Update_Timeout_Should_Match_The_Documented_Timeout() {
 		// Arrange

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -188,7 +189,7 @@ public sealed class ODataUpdateTool(
 			string response;
 			try {
 				response = client.ExecutePatchRequest(url, data.GetRawText(), PatchTimeoutMs);
-			} catch (Exception ex) when (ObjectRightsSupport.IsTimeout(ex)) {
+			} catch (Exception ex) when (IsPatchCancelledByTimeout(ex)) {
 				timedOut = true;
 				return ODataWriteResponse.Failure(PatchTimedOutError);
 			}
@@ -202,6 +203,28 @@ public sealed class ODataUpdateTool(
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	/// <summary>
+	/// Whether the PATCH failed because creatio.client cancelled it after <see cref="PatchTimeoutMs"/>: an
+	/// <see cref="OperationCanceledException"/>, alone or inside an <see cref="AggregateException"/>. A TCP connect
+	/// timeout (a <see cref="SocketException"/> with <see cref="SocketError.TimedOut"/> anywhere in the chain) is
+	/// excluded, because then the request may never have left the process and <see cref="PatchTimedOutError"/>
+	/// would say the PATCH was sent when it was not. Such a failure takes the generic unknown-outcome path.
+	/// </summary>
+	/// <param name="exception">The exception the PATCH call threw.</param>
+	/// <returns><see langword="true"/> for a client-side cancellation of a PATCH that was sent.</returns>
+	private static bool IsPatchCancelledByTimeout(Exception exception) {
+		IEnumerable<Exception> faults = exception is AggregateException aggregate
+			? aggregate.Flatten().InnerExceptions
+			: [exception];
+		return faults.Any(fault => fault is OperationCanceledException) && !HasSocketTimeout(exception);
+	}
+
+	private static bool HasSocketTimeout(Exception exception) =>
+		exception is SocketException { SocketErrorCode: SocketError.TimedOut }
+		|| (exception is AggregateException aggregate
+			? aggregate.InnerExceptions.Any(HasSocketTimeout)
+			: exception.InnerException is { } inner && HasSocketTimeout(inner));
 
 	/// <summary>
 	/// Resolves the field/value payload from either the inline <c>data</c> argument or <c>rows-file</c>,
