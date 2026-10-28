@@ -631,7 +631,7 @@ public sealed class DescribedElement {
 	/// Typed beside <see cref="Position"/> because the position alone cannot be turned back into a diagram row:
 	/// elements of different heights share a row by sharing its CENTRE line, so the row is
 	/// <c>(Y + ceil(H / 2) - CenterY) / BranchStep</c> and the height is half of that arithmetic. Read-only — no
-	/// create or modify argument carries it, and the server recomputes the whole layout on every save.
+	/// create or modify argument carries it, so echoing it back changes nothing.
 	/// </remarks>
 	[JsonPropertyName("size")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

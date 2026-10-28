@@ -1,5 +1,5 @@
 ---
-description: a Process file element stored in the designer's form - built in the classic designer, or by the builder from CrtProcessBuilder 1.6.6.101 on - changes once on its next builder save that does not rewrite it (ConnectedObjectId retyped Lookup -> Guid, a template L9 = SysSchema added on the schema lookups, the position relaid), because the design-session load re-syncs parameters against the user-task template; later such saves are byte-identical
+description: a Process file element stored in the designer's form - built in the classic designer, or by the builder from CrtProcessBuilder 1.6.6.101 on - changes once on its next builder save that does not rewrite it (ConnectedObjectId retyped Lookup -> Guid, a template L9 = SysSchema added on the schema lookups, and before CrtProcessBuilder 1.6.6.125 the position relaid), because the design-session load re-syncs parameters against the user-task template; later such saves are byte-identical
 applies-to:
   - clio.mcp.e2e/ProcessFileElementToolE2ETests.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
@@ -11,7 +11,7 @@ date: 2026-10-21
 and saved once in the classic designer (`UsrFpOaDesignerFixture`, an Object and a Report Process file element) was
 re-saved through `modify-business-process` by an unrelated `addParameter`. Both elements' stored nodes changed:
 `ConnectedObjectId` `L1` Lookup -> Guid, `L9` = SysSchema added on the `*EntitySchemaUId` lookups, and `BL3` (the
-builder relays the diagram). A second unrelated save left both nodes byte-identical; the e2e TC-I-46 (2) asserts the
+builder relaid the diagram on every save then; from 1.6.6.125 an `addParameter`-only save does not). A second unrelated save left both nodes byte-identical; the e2e TC-I-46 (2) asserts the
 same on 1.6.6.102. The mechanism is source, not measured: `BaseProcessSchemaManager.GetItemFromMetaData` ->
 `ProcessSchemaActivity.SynchronizeParameter` (`Terrasoft.Core/Process/ProcessSchemaActivity.cs:532-545`) retypes a
 parameter to its template and copies the template's non-empty `ReferenceSchemaUId`; the designer's save stores the

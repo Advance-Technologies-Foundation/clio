@@ -12,7 +12,7 @@ date: 2026-09-16
 `"X;Y"`), `size` (`"W;H"`), and per flow a `geometry` of `start`, `points[]`, `end`, `exitSide` and
 `entrySide`. All three are absent on a `CrtProcessBuilder` that predates them, and all three are
 READ-ONLY by construction: no `create-business-process` or `modify-business-process` argument carries
-any of them, and the server re-derives the whole layout on every save.
+any of them, so echoing them back changes nothing.
 
 **Why the size is not decoration** — a diagram row is
 `(Y + ceil(H / 2) - CenterY) / BranchStep`. Elements sit on a row by sharing its CENTRE line, not its
