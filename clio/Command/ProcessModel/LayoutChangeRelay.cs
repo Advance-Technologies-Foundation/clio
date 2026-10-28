@@ -47,7 +47,8 @@ public sealed class LayoutChangeRelay {
 	/// the two ways forward in the order they should be offered.
 	/// </summary>
 	/// <remarks>
-	/// The new-version route is named FIRST because it is the one that costs the user nothing, and because a
+	/// The new-version route is named FIRST because it loses neither the edit nor the source's diagram (its own
+	/// costs - permanent, re-drawn - are stated to the user in the same sentence), and because a
 	/// bare "re-send with confirm-layout-change" is an instruction an agent can carry out without ever asking
 	/// anybody — which is the failure this gate exists to prevent, arriving by a different door.
 	/// <para>The flag is named in the spelling clio's own surface declares, and in exactly one place. The server
@@ -61,7 +62,11 @@ public sealed class LayoutChangeRelay {
 		ElementsClause()
 		+ " ASK THE USER which they want, and send nothing until they answer: the same operations to "
 		+ "modify-business-process-as-new-version, which leaves this process and its diagram untouched and "
-		+ "creates an INACTIVE version they can look at first, or the same operations here again with "
-		+ "confirm-layout-change, which re-draws this process in place.";
+		+ "creates an INACTIVE version they can look at first - PERMANENT, it cannot be deleted, and its own "
+		+ "diagram is re-drawn too - or the same operations here again with "
+		+ "confirm-layout-change, which re-draws this process in place. When the batch also holds operations "
+		+ "other than addElement, removeElement, addFlow, removeFlow and setFlow, a third answer is to send "
+		+ "only those, which apply in place without a re-draw on CrtProcessBuilder 1.6.6.125+ - unless they "
+		+ "depend on the structural ones.";
 
 }
