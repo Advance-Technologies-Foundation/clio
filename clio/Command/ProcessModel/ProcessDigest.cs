@@ -94,7 +94,7 @@ internal static class ProcessDigest {
 	// off by itself: family state, like the version facts, that changes while this schema's content does not.
 	private static readonly string[] FamilyStateMembers = ["tracing"];
 
-	// The server re-derives the whole layout on every save, so the diagram members would mark every element
+	// The server re-derives the whole layout on every structural edit, so the diagram members would mark every element
 	// of a process as changed by an edit that touched one of them.
 	private static readonly string[] ElementLayoutMembers = ["position", "size"];
 	private static readonly string[] FlowLayoutMembers = ["geometry"];
