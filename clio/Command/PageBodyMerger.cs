@@ -712,18 +712,8 @@ internal static class PageBodyMerger {
 		}
 		// ENG-104715: an incoming handler whose request a current handler already declares takes that
 		// handler's place, so a re-saved handler does not move to the end and reorder the schema.
-		var merged = new List<string>();
 		var replacedRequests = new HashSet<string>(StringComparer.Ordinal);
-		foreach (string block in SplitTopLevelObjects(currentInner)) {
-			string request = ReadHandlerRequest(block);
-			if (request is not null && incomingByRequest.TryGetValue(request, out List<string> replacement)) {
-				if (replacedRequests.Add(request)) {
-					merged.AddRange(replacement);
-				}
-				continue;
-			}
-			merged.Add(block);
-		}
+		List<string> merged = ReplaceHandlersInPlace(currentInner, incomingByRequest, replacedRequests);
 		if (replacedRequests.Count == 0 || !IsCoveredByBlocks(incomingInner, incomingBlocks)) {
 			// The naive brace split cannot represent the fragment exactly (a brace inside a string, a comment
 			// between handlers), so it is kept verbatim at the end, as before ENG-104715.
@@ -738,6 +728,22 @@ internal static class PageBodyMerger {
 			return request is null || !replacedRequests.Contains(request);
 		});
 		return "[" + string.Join(",", merged.Concat(appended)) + "]";
+	}
+
+	private static List<string> ReplaceHandlersInPlace(string currentInner,
+		Dictionary<string, List<string>> incomingByRequest, HashSet<string> replacedRequests) {
+		var merged = new List<string>();
+		foreach (string block in SplitTopLevelObjects(currentInner)) {
+			string request = ReadHandlerRequest(block);
+			if (request is not null && incomingByRequest.TryGetValue(request, out List<string> replacement)) {
+				if (replacedRequests.Add(request)) {
+					merged.AddRange(replacement);
+				}
+				continue;
+			}
+			merged.Add(block);
+		}
+		return merged;
 	}
 
 	private static string JoinHandlers(string current, string incoming) {
