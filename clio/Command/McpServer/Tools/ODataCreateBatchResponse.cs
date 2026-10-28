@@ -119,16 +119,22 @@ public sealed record ODataRowResult {
 	/// an entity event handler that throws post-insert is reported as a failed request while the record persists.
 	/// Reporting that as a plain failure invites a retry that silently duplicates the row (observed on
 	/// <c>MailboxSyncSettings</c>: three "failed" calls produced three records). So the writer never claims
-	/// not-inserted unless it knows: <c>false</c> is reserved for rows rejected locally, before any request.</para>
+	/// not-inserted unless it knows: <c>false</c> is reserved for rows rejected locally, before any request, and
+	/// for rows Creatio rejected while binding the request body, which happens before any write.</para>
 	/// </remarks>
 	[JsonPropertyName("record-created")]
 	[Description("Side effect for this row: true inserted, false definitely not inserted (rejected locally before "
-		+ "any request), null UNKNOWN - the server failed the call but may already have written the record.")]
+		+ "any request, or rejected by Creatio while reading the request body), null UNKNOWN - the server failed "
+		+ "the call but may already have written the record.")]
 	public bool? RecordCreated { get; init; }
 
-	/// <summary>Gets the agent-actionable next step, set only when <see cref="RecordCreated"/> is unknown.</summary>
+	/// <summary>
+	/// Gets the agent-actionable next step, set when <see cref="RecordCreated"/> is unknown or when Creatio
+	/// rejected the row before writing it.
+	/// </summary>
 	[JsonPropertyName("retry-guidance")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-	[Description("Next step when record-created is null. Never blind-retry an unknown row.")]
+	[Description("Next step when record-created is null, or when Creatio rejected the row before writing it. "
+		+ "Never blind-retry an unknown row.")]
 	public string? RetryGuidance { get; init; }
 }

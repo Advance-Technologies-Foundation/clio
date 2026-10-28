@@ -15,6 +15,16 @@ public sealed record DataWriteDiagnostic(
 	[property: JsonPropertyName("retry-advice")] string RetryAdvice,
 	[property: JsonPropertyName("message")] string Message) {
 	/// <summary>Builds bounded context from observed write boundaries, preserving uncertainty after submission.</summary>
+	/// <param name="operation">Write verb such as insert, update or delete.</param>
+	/// <param name="entity">Target entity name.</param>
+	/// <param name="itemIndex">Index of the item in a batch, or null for a single write.</param>
+	/// <param name="attempted">Whether the write request left clio.</param>
+	/// <param name="responseReceived">Whether a response body arrived for the request.</param>
+	/// <param name="acknowledged">Whether the server acknowledged the write.</param>
+	/// <param name="message">Failure text, or null.</param>
+	/// <remarks>
+	/// When the server's answer proves the write was not applied, call <see cref="AsKnownNotApplied"/> on the result.
+	/// </remarks>
 	public static DataWriteDiagnostic Create(string operation, string entity, int? itemIndex, bool attempted,
 		bool responseReceived, bool acknowledged, string message) {
 		string transport = (attempted, responseReceived) switch {
@@ -40,4 +50,17 @@ public sealed record DataWriteDiagnostic(
 		return new(operation, safeEntity, itemIndex, attempted,
 			transport, effect, advice, SensitiveErrorTextRedactor.RedactUntrustedOrNull(message));
 	}
+
+	/// <summary>
+	/// Marks an attempted, answered, unacknowledged write as not applied, for example a request-body rejection
+	/// that happens before the write. Reports side-effect <c>none</c> instead of <c>unknown</c>; every other
+	/// boundary keeps its own outcome.
+	/// </summary>
+	public DataWriteDiagnostic AsKnownNotApplied() =>
+		WriteAttempted && TransportOutcome == "response-received" && SideEffect == "unknown"
+			? this with {
+				SideEffect = "none",
+				RetryAdvice = "The server rejected the write before applying it. Correct the input and resubmit."
+			}
+			: this;
 }

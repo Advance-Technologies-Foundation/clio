@@ -314,7 +314,11 @@
         "id": "b704a8ca-4c4f-4c82-93e8-edd2a42f9052"
       },
       "paths": [
-        "clio/Command/McpServer/Tools/OData*"
+        "clio/Command/McpServer/Tools/OData*",
+        "clio/Command/McpServer/Tools/UploadFileTool.cs",
+        "clio/Command/UploadFileCommand.cs",
+        "clio/Common/RecordFileUploader.cs",
+        "clio/Common/IRecordFileUploader.cs"
       ]
     },
     {

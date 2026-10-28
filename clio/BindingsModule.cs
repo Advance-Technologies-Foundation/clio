@@ -851,6 +851,7 @@ public class BindingsModule {
 		services.AddTransient<DeleteThemeTool>();
 		services.AddTransient<SetUserThemeTool>();
 		services.AddTransient<UploadImageTool>();
+		services.AddTransient<UploadFileTool>();
 		services.AddTransient<SetBackgroundImageTool>();
 		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
@@ -1072,6 +1073,7 @@ public class BindingsModule {
 			sp.GetRequiredService<IServiceUrlBuilder>(),
 			sp.GetRequiredService<Clio.Common.IFileSystem>()));
 		services.AddTransient<UploadImageCommand>();
+		services.AddTransient<UploadFileCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
