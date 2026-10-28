@@ -304,7 +304,7 @@ slot; an attachments-only block is refused by `EnsureConfiguresSomething` as "sp
 | `SendEmailApplierTests.CreateSchema()` builds `new ProcessSchema(...)` with `UId == Guid.Empty`, so a `CreatedInSchemaUId == schema.UId` assertion there passes vacuously; `FileProcessingTestSupport.CreateSchema` sets a real UId | `PBT/SendEmailApplierTests.cs:47`; `PBT/FileProcessingTestSupport.cs:222-228` [source] |
 | No Send email test asserts `CreatedInSchemaUId` today | search over `PBT/SendEmail*.cs` [source] |
 | `SetupEmailTaskSchema()` must run per test in `[SetUp]` | `PBT/SendEmailApplierTests.cs:44-45` [source] |
-| CI compiles and tests against core 8.3.4 (`DEFAULT_VERSION`); the local main checkouts carry core-bin 10.1.37 (`Terrasoft.Core.dll` FileVersion); the worktree `pb95985` has no `.application` | `PBR/docs/ci-cd.md:175-177` [doc]; [measured 2026-10-28] |
+| CI compiles and tests against core 8.3.4 (`DEFAULT_VERSION`); the local main checkouts carry core-bin 10.1.37 (`Terrasoft.Core.dll` FileVersion); a fresh package worktree has no `.application` | `PBR/docs/ci-cd.md:175-177` [doc]; [measured 2026-10-28] |
 | `DataValueType.FileLocatorDataValueTypeUId` and `CompositeObjectListDataValueTypeUId` exist on 8.3.4: production `PB` code references both and CI compiles it there | `PB/Mappings/CollectionBindingRules.cs:140, 144` [source] [inferred] |
 | Existing suites to mirror: `SendEmailApplierTests` (29 tests), `SendEmailElementHandlerDescribeTests` (8), `FileCollectionMappingTests` (79) | `[Test]`/`[TestCase` count [measured 2026-10-28] |
 

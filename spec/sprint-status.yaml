@@ -4993,7 +4993,8 @@ stories:
       at review only for open Definition of Done boxes. Status convention: in-progress set in this BMAD PR, because
       implementation starts before it merges, so ready-for-dev is never true for this row; review when the clio
       feature PR opens; done in the next clio PR that touches this file after the last merge, with only the really
-      ticked Definition of Done boxes. Gates: the EM1 designer capture before the parity rows, the STOP gate (EM2 +
+      ticked Definition of Done boxes. Gates: the EM1 designer capture before P-B2/P-B3 (slice A and C1 may proceed on the agreed answers; its rows feed
+      the P-C5 parity pattern B), the STOP gate (EM2 +
       EM3) after slice B, and EM7 (real delivery) once the owner says mail sending on stand Creatio works. Merge order
       (human merges): package -> knowledge -> clio. Cut numbers are claimed in a claim comment on ENG-95985 (Q13), not
       here.

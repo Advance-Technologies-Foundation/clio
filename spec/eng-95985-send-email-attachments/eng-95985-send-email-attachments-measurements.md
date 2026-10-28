@@ -37,8 +37,9 @@ Sibling files: [README](README.md) · [decisions](eng-95985-send-email-attachmen
 ## 0. Summary
 
 - Sixteen measurement ids; two are dropped and keep their ids: EM6 (Q17 agreed 2026-10-28) and EM12 (Q9 agreed
-  2026-10-28). Four block code: EM0 (read-only, part done) and EM1 (the designer capture, four saves) before
-  any package code; EM2's save, pre-save-gate and stored-bytes steps and EM3 right after the first experimental cut,
+  2026-10-28). Four block code: EM0 (read-only, part done) before EM1, and EM1 (the designer capture, four
+  saves) before P-B2/P-B3 (slot numbering, stamps, sources; slice A and C1 may proceed on the agreed answers, and
+  EM1's rows feed the P-C5 parity pattern B); EM2's save, pre-save-gate and stored-bytes steps and EM3 right after the first experimental cut,
   as the plan's STOP gate (EM2's describe steps need P-C3 and run in its re-run on the final cut). The run-time set
   (EM4 with EM4c, EM5, EM8, EM10, EM11, EM13, EM15, and EM7 on stand `Creatio` once the owner confirms that mail
   sending works there, Q17) must pass before the PRs leave draft. EM9 and EM14 are optional.
@@ -212,8 +213,8 @@ Canceled `201cfba8-58e6-df11-971b-001d60e938c6` (`PS/CrtBase/branches/7.8.0/Data
 
 | EM | When | Blocks (plan task / DoD) | Settles or confirms | Research ids |
 |---|---|---|---|---|
-| EM0 | before code | every EM; plan 0.5 | versions recorded for pattern-B rows; seed availability; the feature states the runs stand on | r10 S0 |
-| EM1 | before code | plan 0.6; slice B (P-B2 numbering and stamps, P-B3 sources); P-C3 issue texts; P-C5 pattern B; DoD AC7 | Q5, Q3 shape, ACR R6, serialization SQ1-SQ8 | r10 S1; r3 P1, P3, P4; r4 P1 |
+| EM0 | before EM1 (read-only) | every EM; plan 0.5 | versions recorded for pattern-B rows; seed availability; the feature states the runs stand on | r10 S0 |
+| EM1 | before P-B2/P-B3 (slice A and C1 may proceed on the agreed answers) | plan 0.6; slice B (P-B2 numbering and stamps, P-B3 sources); P-C3 issue texts; P-C5 pattern B; DoD AC7 | Q5, Q3 shape, ACR R6, serialization SQ1-SQ8 | r10 S1; r3 P1, P3, P4; r4 P1 |
 | EM2 | after the first experimental cut (STOP gate: save, pre-save gate and stored-bytes steps); re-run on the final cut with the describe steps, after P-C3 | slice C start; P-C5; P-C6; DoD AC1, AC7 | pre-save gate accepts the slot (SQ11); twin equals EM1 under ACR; Q4 replace parity; a reused slot number keeps no stale outer DisplayValue (design 4.3); describe round trip on the re-run | r10 S2; r4 P2, P8 |
 | EM3 | after the first experimental cut (STOP gate) | slice C start; DoD AC1, AC7 | designer renders and keeps builder slots (SQ9, SQ12) | r10 S3; r3 P5; r4 P9 |
 | EM4 | before PR ready (designer baseline EM4a optional before code) | CL-7 evidence; DoD AC2, AC3, AC4 | manual + custom delivers the sum of rows; all three variants at run time; an unset FileCollection gives no rows | r10 S4; r4 P1, P3 (TypeId); r8 ST-E1 |
@@ -286,7 +287,7 @@ Canceled `201cfba8-58e6-df11-971b-001d60e938c6` (`PS/CrtBase/branches/7.8.0/Data
 |---|---|
 | Question | What does the current designer store for 2+ slots, a gap, the Process-parameter variant, a process file collection, a process File, auto + template, and a stale parent? |
 | Gates | AC7 (pattern B), AC2 (third variant), AC3; Q5; Q3 shape; serialization SQ1-SQ8, SQ10; slice B; P-C3 issue texts |
-| When | before code |
+| When | before P-B2/P-B3 (slot numbering, stamps, sources); slice A and C1 may proceed on the agreed answers; its rows feed the P-C5 parity pattern B |
 | Writes | four designer saves (S1-S4), each with the owner's yes; the process stays as the e2e fixture |
 | Who | Q18 (agreed): the lead through Claude in Chrome with the owner logged in, or the owner by hand (about 30-45 min) |
 
@@ -883,7 +884,7 @@ report first", and the builder may warn for an RF1 use-in-process source on a ma
 
 | Session | When | Order | Owner approvals (approx.) |
 |---|---|---|---|
-| 1 | before code | EM0 rest (read-only) -> EM1 S1-S4 -> optional baselines on designer-built probes: EM4a + EM15, EM8, EM10a/b, EM13a, EM11b -> cleanup of the probes (EM1 stays) | 4 EM1 saves; per probe 1 save + 1-3 runs + cleanup |
+| 1 | before P-B2/P-B3 | EM0 rest (read-only) -> EM1 S1-S4 -> optional baselines on designer-built probes: EM4a + EM15, EM8, EM10a/b, EM13a, EM11b -> cleanup of the probes (EM1 stays) | 4 EM1 saves; per probe 1 save + 1-3 runs + cleanup |
 | 2 | first experimental cut | install -> EM2 steps 1, 2, 4, 5, 6 -> EM3 (STOP gate) -> cleanup none (twin stays) | install, 4 builder writes, 1 designer save |
 | 3 | claimed cut after gate 1 | install -> EM4b + EM15 -> EM4c -> EM5 -> EM8 (if not in session 1) -> EM10 (runs same; step 3 here) -> EM11a -> EM13 -> cleanup (EM6 dropped, Q17) | install, about 15 writes |
 | 4 | final cut | install -> EM2 re-run on a fresh twin, every step (describe steps 3 and 7 included) -> EM4b quick re-run -> EM7 on stand `Creatio` once the owner confirms that mail sending works (Q17; it may run in session 3 instead if the owner confirms earlier) -> final cleanup, EM1 after the clio e2e evidence run | install, about 12 writes |

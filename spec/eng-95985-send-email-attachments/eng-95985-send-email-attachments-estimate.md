@@ -11,8 +11,9 @@ attachments" refinement comment 493117 (2026-09-08) read on 2026-10-28.
 
 Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` = `tests/UnitTests/CrtProcessBuilder.Tests/` (both relative to the
 crt-process-builder repository root), `CLIO/` = the clio repository root, `KB/` = the clio-knowledge repository root,
-`UT/` = the platform `UnitTests` repository root, `PS/` = the PackageStore repository root, `R/` = the local research
-notes (not in the repository; see README).
+`UT/` = the platform `UnitTests` repository root, `PS/` = the PackageStore repository root, `PD/` =
+`CrtProcessDesigner/branches/7.8.0/Schemas/` (PackageStore repository; see README), `R/` = the local research notes (not
+in the repository; see README).
 
 Model (owner rule): an AI agent writes the code, the tests, the docs and the guidance. The estimate gives (1) agent wall
 time, (2) human time that does not compress, (3) calendar time set by review latency and gate order. The headline is
@@ -82,7 +83,7 @@ two ends of the scope the design allows (for example, describe issue sentences s
 | C2 | `FileSourcePlanner` lifted out of `PB/FileProcessing/ProcessFileProcessingBinder.cs` (326 lines; removes ~150-180); label, member path, target names, consequence sentence and the write entry as parameters (`FilesBinding.Write` writes a single file and an expression through the raw `ApplyMapping`, `:299`, `:305`; a slot takes the block entry); messages byte-identical, own commit first | 250-380 | 250-450 | 1.0-2.9 | 0.35-0.6 |
 | C3 | `EmailAttachmentSlot` + `IEmailAttachmentSlotWriter` (find, create both levels with explicit stamps and `In`, remove by `Parameters.Remove`, numbering = lowest k that no parameter of the element names `Attachments<k>` (Q5 agreed; the designer scans the element's `parameters`, `PD/ProcessFilesControlSchema/ProcessFilesControlSchema.js:243-259`), designer display values on slots only, an explicit empty outer DisplayValue for reused or unbound outers if EM1/EM2 show stale keys survive) | 330-500 | 500-800 | 1.7-4.6 | 0.6-0.9 |
 | C4 | `SendEmailApplier.ApplyAttachments`: plan-all-first, one-to-one replace reconcile with `IProcessDependencySnapshot.FindDependents` before each removal, the block form of `BindCollection` / `ApplyBlockMapping`, refusals incl. a multi-instance Send email (Q16 agreed: `MultiInstanceOptions` on the activity, `TS/Terrasoft.Core/Process/ProcessSchemaActivity.cs:122`; +10-20 src, +30-60 tests) and an unscoped Process file source, Object attachments AND Generated report (Q20 agreed: every source element tracked in `PB/FileProcessing/FileProcessingFilterLedger.cs`, `ObjectFileProcessingEmptyFilterRule` extended to an element a Send email slot reads whatever its action, `ReportFileProcessingEmptyFilterRule` already refuses any unscoped element, judged by `EnsureSelectingFilters` at the end of the request; the Report and end-of-request part +20-40 src, +100-200 tests, TC-U-78a, 78b), notices fired per entry of a sent list (removal notice in the write shape), `EnsureConfiguresSomething`, DI (`packages/CrtProcessBuilder/Files/src/CrtProcessBuilderApp.cs`) | 390-630 | 1,230-2,060 | 3.2-9.4 | 1.15-1.9 |
-| C5 | Slot guards in `PB/Mappings/ProcessMappingService.cs`: onto a slot in `Plan` under `!fromBlock`, before `ResolveTargetParameter`, keyed on the name (so a build `mappings[]` entry onto a slot not created yet is refused too); from a slot in `ResolveStructuredSource` (covers `BindCollectionItems`); the block form of `IProcessMappingService.BindCollection`; every non-block route as TestCases, PU-42 mirror. Shared mapping service: full 3-lens review tier | 80-160 | 250-450 | 0.7-2.1 | 0.25-0.45 |
+| C5 | Slot guards in `PB/Mappings/ProcessMappingService.cs`: onto a slot in `Plan` in a new `if (!fromBlock)` block before `ResolveTargetParameter`, keyed on the name (`IsReservedName`) (so a build `mappings[]` entry onto a slot not created yet is refused too); from a slot beside `EnsureNotReadFromAFilesInput`, right after `ResolveStructuredSource` (covers `BindCollectionItems`); the block form of `IProcessMappingService.BindCollection`; every non-block route as TestCases, PU-42 mirror. Shared mapping service: full 3-lens review tier | 80-160 | 250-450 | 0.7-2.1 | 0.25-0.45 |
 | C6 | Declaration-order refusal on build (item-level names included) + flow-reachability warning on build and modify, reusing `ProcessGraphBuilder.Traverse` (`PB/Graph/ProcessGraphBuilder.cs:2250-2270`, called at `:2228-2230`) over the schema's flows | 110-220 | 240-500 | 0.7-2.5 | 0.25-0.5 |
 | C7 | Describe: `DescribeAttachments`, binding reader generalized from `ProcessFileProcessingFilesBinding.Read`, six issue shapes, build -> describe -> replay; the generic `parameters[]` projection (`PB/Describe/ProcessDescriber.cs:197-218`) leaves slots undecoded, sharing the slot predicate with C5; a multi-instance Send email reported as found with an issue (Q16) and an entry that reads an unscoped source reported with an issue (Q20, TC-U-78c): +10-20 src, +45-85 tests | 250-410 | 485-865 | 1.5-4.5 | 0.5-0.9 |
 | C8 | Removed (Q9 agreed: no build-time check of `UseProcessEmailAttachments`; one troubleshooting line in the KB article, inside KB-1) | 0 | 0 | 0 | 0 |
@@ -160,7 +161,7 @@ a BMAD PR and three repositories.
 | Item | Owner h | Note |
 |---|---|---|
 | Decisions Q1-Q20: read the file, answer, record "Agreed" | 1.75-3.25 | done 2026-10-28 in one sitting: all twenty agreed, Q9, Q16 and Q17 changed after research the owner asked for; the hours stay in the total as spent (estimated, not measured) |
-| Q19 Jira AC wording, by hand | 0.3-0.5 | the HeroCoders checklist breaks on API edits |
+| Q19 Jira AC wording: approve the text | 0.3-0.5 | the owner approves the text; the lead writes it into the description only (never `customfield_10193`, the HeroCoders checklist, which breaks on API edits) and reads it back |
 | EM1 designer capture | 0.5-0.9 | the owner logs in, the lead drives Claude in Chrome; by hand 0.5-0.75 h (Q18); includes the clear-and-reuse save |
 | EM3 designer opens the builder-made element, no-op save | 0.25-0.5 | login again; a fresh session for the `forceRemove` case |
 | Install approvals, 3-5 cuts | 0.4-0.85 | no second-stand install since EM7 runs on stand `Creatio` (Q17); every install restarts the site for every user of stand `Creatio`; after a mid-review rebundle, a reviewer whose clio bundles a newer cut than the stand is refused by convergence until the stand is brought up (`CLIO/docs/agent-instructions/bundled-packages.md:172-176`) |
@@ -219,7 +220,7 @@ gate 3, review -> clio merge.
 
 | # | Step | Depends on | Runs in parallel | On-path working days low / likely / high |
 |---|---|---|---|---|
-| 1 | Owner answers Q1-Q20 (done 2026-10-28); Q19 AC edits by hand, off the path | - | EM0 rest (read-only, partly done 2026-10-28); C1 and slice A (C2, C7 part 1) start on the agreed answers | 0 / 0 / 0 |
+| 1 | Owner answers Q1-Q20 (done 2026-10-28); Q19 AC text written by the lead into the description after the owner approves it (never `customfield_10193`), read back, off the path | - | EM0 rest (read-only, partly done 2026-10-28); C1 and slice A (C2, C7 part 1) start on the agreed answers | 0 / 0 / 0 |
 | 2 | EM1 designer capture | owner login | BMAD docs PR drafted, gate 1, opened on the owner's word | 0 / 0.25 / 0.5 |
 | 3 | Rest of slice B with unit tests (C3, C4 complete incl. replace reconcile and refusals, C9); gate 2 per push | 1 (contract), 2 (C3 target shape) | | 0.5 / 1 / 1.75 |
 | 4 | Experimental cut + install | 3; owner's yes; site restart | | 0.1 / 0.25 / 0.5 |

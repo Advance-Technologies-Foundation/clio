@@ -32,6 +32,10 @@ clio repository root.
 | **TC-01..TC-10** | manual Jira cases (business tasks given to an agent) | TC-01..TC-10 | 10 |
 | **EM0-EM15** | stand measurements (analysis measurements file) | EM6 dropped (Q17), EM12 dropped (Q9) | 14 |
 
+TC-U, TC-P, TC-C and TC-K together are this plan's unit level and TC-I its integration level; every row of all five
+classes is a mandatory exit criterion (AGENTS.md "all TC-U-* and TC-I-* test cases must be implemented" applies to all
+of them).
+
 "Existing" means the test is already in the tree and is only re-run or extended with rows.
 
 ## Coverage matrix
@@ -65,14 +69,14 @@ element's `WriteMetaData` bytes. Run on `-c dev-nf` and `-c dev-n8`.
 
 | Group (fixture) | Ids | What it proves |
 |---|---|---|
-| Slots (C3) `EmailAttachmentSlotTests` | TC-U-01..08 | the one slot predicate equals the run-time filter; lowest free number over every parameter of the element; the designer's two-level shape, stamps, item name; remove both levels; numeric order; the platform's own filter returns exactly the built slots (feasibility-gated) |
+| Slots (C3) `EmailAttachmentSlotTests` | TC-U-01..08 | the read/write slot predicate `IsSlot` equals the run-time filter; lowest free number over every parameter of the element; the designer's two-level shape, stamps, item name; remove both levels; numeric order; the platform's own filter returns exactly the built slots (feasibility-gated) |
 | Sources, shape, modes, routes (C4) `SendEmailAttachmentsApplierTests` | TC-U-09..20, 73 | both levels bound from a collection (item found by type), from an item path, item-only from a single File and an expression; Script bindings stamped with the process; one slot per entry; one collection feeds two emails; identical slots in all four mode combinations and after a mode switch; attachments count as configuration; the same bytes on every route; SysFile-stored Object source; designer display values on slots only |
 | Replace semantics (Q4, Q5) `SendEmailAttachmentsReplaceTests` | TC-U-21..30, 76 | matched slot kept byte for byte; unmatched removed; `[]` removes all; absent untouched; new entry after a gap; matching on resolved bindings; idempotent replay; duplicates; foreign-stamped slot untouched; designer odd shapes replaced; removal refused while something reads the slot |
 | Refusals (Q6, Q16, Q20) `SendEmailAttachmentsRefusalTests` | TC-U-31..41, 78, 78a, 78b, 78c, 80 | each refusal by fragment (element, `email.attachments[<i>]`, source), bytes unchanged, no notice: no source, several sources, `value`, unresolvable, fileless, several File items, nested, own parameter, not a Send email, validate-all-before-write, entry index; unscoped Object and Report sources judged at the end of the request; describe issue for an unscoped source; multi-instance Send email |
 | Notices `SendEmailAttachmentsNoticeTests` | TC-U-43..47, 79 (TC-U-42, 48 removed) | empty single File warning, duplicate source, removal notice in the write shape, expression not checked, notices only on a saved edit, firing rules for every entry of a sent list |
-| Slot guards (C5, Q8, Q10) `SendEmailAttachmentsRawMappingTests` | TC-U-49..53, 74 | raw target refused on every non-block route (also a slot not built yet, near-miss name); block writes pass; a slot as a source refused; other `Attachments`-named parameters as before (PU-42 mirror); `TakesFiles` unchanged |
+| Slot guards (C5, Q8, Q10) `SendEmailAttachmentsRawMappingTests` | TC-U-49..53, 74 | raw target refused on every non-block route through the guard predicate `IsReservedName` (also a slot not built yet, a foreign-stamped slot, a near-miss name); block writes pass; a slot as a source refused; other `Attachments`-named parameters as before (PU-42 mirror); `TakesFiles` unchanged |
 | Order checks (C6, Q6, Q7) rows in `ProcessBuildHandlerTests` / `ProcessGraphBuilderTests` / `ProcessModifyHandlerTests` | TC-U-54..58, 77 | later-declared source refused on build (planned names); earlier accepted; process parameter never order-checked; modify resolves in operation order; block inventory; reachability warning on build and modify |
-| Describe (C7, Q11, Q16) `SendEmailAttachmentsDescribeTests` | TC-U-59..66, 75, 81 | write-shape entries with `slot` and `bindingLevels`; order by slot number; null when none; `configured`; describe -> replay writes nothing; one issue per stored shape; no false alarm on the package's own shapes; non-slots ignored; generic `parameters[]` does not decode a slot; multi-instance element reported with an issue |
+| Describe (C7, Q11, Q16) `SendEmailAttachmentsDescribeTests` | TC-U-59..66, 75, 81 | write-shape entries with `slot` and `bindingLevels`; order by slot number; null when none; `configured`; describe -> replay writes nothing; one issue per stored shape; no false alarm on the package's own shapes; non-slots ignored; generic `parameters[]` does not decode any name `IsReservedName` matches (also a foreign-stamped `Attachments2` and the near-miss `attachments1`); multi-instance element reported with an issue |
 | C2 refactor proof `FileSourcePlannerCharacterizationTests` | TC-U-67, 68 | every `fileProcessing.files` message pinned verbatim BEFORE the lift and unchanged after it; the planner speaks in the caller's terms |
 | Contract, DI, clone (existing fixtures) | TC-U-69..72 | wire names of the new members; DI graph resolves; the version clone keeps the slots owned; every fixture carries a CI category |
 
@@ -178,9 +182,21 @@ Process file e2e fixtures with the same category filter; the whole KB test proje
 
 ## Conventions
 
-AAA with explicit `// Arrange`, `// Act`, `// Assert`; `because` on every assertion; `[Description]` on every test
-without a Jira key; PBT is C# 7.3; no OS paths; categories as the host fixture places them (analysis test plan section
+AAA with explicit `// Arrange`, `// Act`, `// Assert`; `because` on every assertion; a `[Description]` on every test;
+no Jira key in test names or descriptions; PBT is C# 7.3; no OS paths; categories as the host fixture places them (analysis test plan section
 10).
+
+## Risk assessment
+
+The risks and their mitigations are the analysis plan's section 10 (EM2/EM3 failing at the STOP gate, the description
+budget, mail on stand `Creatio`, a foreign cut during review, a KB `libraryVersion` collision, regressions from the
+shared mapping-service guard, the local core-bin newer than CI's 8.3.4); the tests that answer them are the PU-42
+mirror (TC-U-52), the budget rows (TC-C-17..19) and the full regression scope above.
+
+## Exit criteria
+
+The story's Definition of Done, with every row of TC-U, TC-P, TC-C, TC-K and TC-I implemented and green (see "Test id
+classes"); TC-U-42 and TC-U-48 are removed rows, TC-K-12 is the fact-check gate and TC-K-13 follows EM8.
 
 ## Deliberately not covered
 

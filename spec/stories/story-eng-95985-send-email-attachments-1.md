@@ -42,8 +42,8 @@ with a custom or a template message, without the designer
 
 ## Acceptance Criteria
 
-The full text is the SPEC's AC1-AC7 (the agreed Jira text of decisions Q19, written into the issue description only
-after the owner approves it).
+The full text is the SPEC's AC1-AC7 (the proposed Jira text; decisions Q19: the lead writes it into the description
+after the owner approves the wording).
 
 - [ ] **AC1** - `email.attachments` builds one designer row per entry on build, `addElement` and `setElement`;
   describe returns the list in the write shape; a sent list replaces the element's attachments, `[]` removes them.
@@ -70,7 +70,7 @@ after the owner approves it).
 | Q13 | claim comment on ENG-95985 (empty claim table; every number claimed there after checking the tags) | lead, on the owner's yes | the first cut |
 | 0.4 | drift check against the basis | lead | done 2026-10-28 (the plan's drift note) |
 | EM0 | platform version of stand `Creatio`, the Invoice printable, an email template | lead, read-only | EM1 |
-| EM1 | designer capture (AC7 oracle) | lead in Claude in Chrome, owner logs in; writes on the owner's yes | slice B parity rows |
+| EM1 | designer capture (AC7 oracle) | lead in Claude in Chrome, owner logs in; writes on the owner's yes | P-B2/P-B3 (slot numbering, stamps, sources); slice A and C1 may proceed on the agreed answers; its rows feed the P-C5 parity pattern B |
 | STOP | EM2 (save, pre-save gate, stored bytes) + EM3 (designer) on the experimental cut | lead, owner's yes per write | slice C |
 | EM7 | real delivery once the owner says mail on stand `Creatio` works | lead, owner's yes | AC4 closed |
 
@@ -85,11 +85,16 @@ Ids are the analysis plan's (sections 3-5). Components C1-C10 and K1-K12 are the
 **CrtProcessBuilder - slice A: behaviour-neutral refactors** (one commit each; gate 2 single combined lens)
 
 - [ ] **P-A1** C2: lift `PlanFiles` / `FilesBinding` / `FileItemOf` into `FileSourcePlanner` behind
-  `IFileSourcePlanner` (DI), parametrized by label, member path, target names, consequence sentence and write entry;
-  `ProcessFileProcessingBinder` calls it. Done when every existing `FileProcessing*Tests` passes unchanged and a
-  characterization test (TC-U-67, committed before the lift) pins each `files` message.
-- [ ] **P-A2** C7 part 1: generalize `ProcessFileProcessingFilesBinding.Read` and the issue texts of
-  `ProcessFileProcessingDescriber` over (collection, item) names. Done when the `files` describe tests and the Process
+  `IFileSourcePlanner`: `Plan(schema, element, IFileSourceDescriptor source, FileSourceWording wording,
+  UserConnection)`, `FileSourceWording(label, member, noSourceConsequence, nothingConsequence)`, returning a data
+  `FileSourcePlan` (`Mapping(elementName, target)`); the target names and the write route stay with the caller. The
+  variant composes `new ProcessFileProcessingBinder(new FileSourcePlanner())`; the DI registration of
+  `IFileSourcePlanner` lands in P-B3. Done when every existing `FileProcessing*Tests` passes unchanged, a
+  characterization test (TC-U-67, committed before the lift) pins each `files` message, and the planner speaks in the
+  caller's terms (TC-U-68).
+- [ ] **P-A2** C7 part 1: generalize `ProcessFileProcessingFilesBinding.Read` (renamed `FileCollectionBinding`, with
+  `Read(element, name)`, `Of(collection)`, `Shape(...)`) and the issue texts of `ProcessFileProcessingDescriber` over
+  (collection, item) names. Done when the `files` describe tests and the Process
   parameter notice-rule tests pass unchanged.
 
 **CrtProcessBuilder - slice B: slots and the block**
@@ -103,23 +108,27 @@ Ids are the analysis plan's (sections 3-5). Components C1-C10 and K1-K12 are the
   before a removal; bind via the block form of `BindCollection` / `ApplyBlockMapping`; `EnsureConfiguresSomething`
   counts attachments; refusals of design section 5.1; the Q16 multi-instance refusal (`MultiInstanceOptions` on the
   activity); the Q20 ledger tracking and the Object rule extension, judged at the end of the request; designer display
-  values on slots; the version clone keeps the slots owned (TC-U-09..41, 71, 73, 76, 78, 78a, 78b, 80).
+  values on slots; the version clone keeps the slots owned; the DI registration of `IFileSourcePlanner` (first
+  container consumer) (TC-U-09..41, 70, 71, 73, 76, 78, 78a, 78b, 80).
 - [ ] **P-B4** C9 comment fixes (`CollectionBindingRules` Creatio.ai promise, Q15; recipient numbering comment).
 - [ ] Experimental cut (claimed first), installed on stand `Creatio` on the owner's yes; EM2 + EM3 recorded in the
   measurements file (STOP gate).
 
 **CrtProcessBuilder - slice C: guards, describe, notices, parity**
 
-- [ ] **P-C1** C5 guards in `Plan` (onto a slot under `!fromBlock`, keyed on the name) and in
-  `ResolveStructuredSource` (from a slot); the `IProcessMappingService` change documented (TC-U-49..53, 74, 75).
+- [ ] **P-C1** C5 guards: in `Plan`, a new `if (!fromBlock)` block placed first, before `ResolveTargetParameter`
+  (onto a slot, keyed on `EmailAttachmentSlot.IsReservedName` through the name-only `ResolveTargetOwner`), and beside
+  `EnsureNotReadFromAFilesInput` (from a slot); the `IProcessMappingService` change documented (TC-U-49..53, 74).
 - [ ] **P-C2** C6 order checks: build-path declaration-order refusal; flow-reachability warning on build and modify
   (TC-U-54..58, 77).
 - [ ] **P-C3** C7 part 2: `DescribeAttachments`, read-back members, issues (multi-instance element reported as found,
-  with an issue), `configured` (TC-U-59..66, 78c, 81).
+  with an issue), `configured`; the generic `parameters[]` does not decode a name `IsReservedName` matches (TC-U-59..66,
+  75, 78c, 81).
 - [ ] **P-C4** C4 notices of design section 5.2 (single File, expression, the same source twice, removal); Q9: no
   feature reader and no feature-off notice (TC-U-43..47, 79).
 - [ ] **P-C5** parity: pattern A (3 corpus processes under `Fixtures/SendEmail/` with PROVENANCE SHA pins and a
-  `.gitattributes` `-text` line), pattern B (EM1 rows), pattern C (writer JSON diff) (TC-P-01..09).
+  `.gitattributes` `-text` line), pattern B (EM1 rows), pattern C (writer JSON diff) (TC-P-01..09); every new fixture
+  carries a CI category (TC-U-72).
 - [ ] **P-C6** C10 capture doc (`docs/send-email-element-capture.md`, attachments section with the EM1/EM2 results).
 - [ ] Gate 1 (full 3-lens fan-out: the shared mapping service changes) before the draft package PR opens; claimed cut,
   install, EM4, EM4c, EM5, EM8, EM10, EM11, EM13, EM15; final cut, EM2 re-run (describe steps), EM7.
@@ -151,9 +160,9 @@ and `docs/knowledge/McpServer/` before any edit)
   literals; TC-C-06).
 - [ ] **CL-4** K4/K5 descriptions and prompts; re-measure with the ceilings lowered on the branch, including the
   seven-contract wire bundle held to 19,000 B; swaps per Q12, no ceiling raise (`ToolContractPayloadBudgetTests`;
-  TC-C-17..19).
+  create and modify forward the list verbatim; TC-C-07, 08, 17..19).
 - [ ] **CL-5** K6 typed describe, K7 read-back checks (`ServerProcessDescriberTests`, `EmailBlockExpectationTests`;
-  TC-C-07..16, 23).
+  TC-C-09..16, 23).
 - [ ] **CL-6** K8 capability map, K9 curated re-pin. The clio PR stays draft until the KB PR merges and its generation
   is published; then the re-pin, clio gate 3, and only then reviewers (`WorkspaceTemplateGuidanceDriftTests`;
   TC-C-21, 22).
@@ -196,6 +205,8 @@ Plan section 9, as checkboxes. Ticked only when true.
   `Validated:` filter and the re-measured budgets.
 - [ ] CL-8 knowledge records in the clio PR and the `make check-knowledge` report read.
 - [ ] The tracker row moved as plan section 2 says; story DoD boxes ticked only when true.
+- [ ] The inherited flip of `story-eng-92719-file-processing-element-3` in the tracker reviewed (only really done
+  boxes).
 - [ ] Stand leftovers listed (measurements file register); cleanup proposed, run only on the owner's yes.
 
 ## Dev Agent Record

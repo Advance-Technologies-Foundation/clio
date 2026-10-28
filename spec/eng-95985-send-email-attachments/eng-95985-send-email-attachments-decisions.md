@@ -241,9 +241,12 @@ the block?
 
 **Options.**
 - **A. Refuse every non-block mapping onto `Attachments<N>` and `Attachments<N>FileLocator` of a Send email
-  element**, naming `email.attachments`. All mapping entry points plan in one method (`Plan`), and `fromBlock` is the
-  only switch, so the guard sits under `!fromBlock` and `BindCollection` gains a block form for the applier
-  (design 4.5). `TakesFiles` does not change.
+  element**, naming `email.attachments`. `ApplyMapping`, `ApplyBlockMapping` and `BindCollection` plan in one method
+  (`Plan`), and `fromBlock` is the only switch, so the guard sits under `!fromBlock` and `BindCollection` gains a block
+  form for the applier (design 4.5). `BindCollectionItems` does not plan in `Plan`
+  (`PB/Mappings/ProcessMappingService.cs:89-117`); its only caller is the process-parameter mirror
+  (`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a process parameter, so only the from-slot source
+  guard (Q10) covers it. `TakesFiles` does not change.
 - B. Widen `TakesFiles` so P2 pairs the item and R-M2 refuses a fileless source. Touches the shared rules of every
   mapping; PU-42 stays green only with a narrow predicate.
 

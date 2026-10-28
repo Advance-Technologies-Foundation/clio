@@ -11,7 +11,11 @@ component does. No product code has been written; nothing has been written to th
 > compact index ceiling moved to 193*256 for upload-file, neither of which touches the seven process-designer
 > contracts or their 19,000 B wire bundle); clio-knowledge `origin/master` moved `534e913` -> `a49f258` (ENG-104665:
 > `core-rules-details` and `core-rules` only; `libraryVersion` is now 1.15.174, so KB-4 must go above it and above
-> every open branch claim). Nothing in the drift changes the plan.
+> every open branch claim). Nothing in the drift changes the plan. The two clio commits are ENG-104694 "update-page:
+> report changed values of existing resources" and ENG-104665 "odata-create: report a model-binding rejection as not
+> inserted; add upload-file". Line anchors into clio files in this folder are at the basis `358e9db52`; the drift moved
+> some of them (for example `ToolContractPayloadBudgetTests.cs` by about 2-30 lines), so re-read an anchor before
+> editing at it. `docs/McpCapabilityMap.md`, the K8 target, also changed in the drift (the upload-file rows).
 
 Basis: crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio `origin/master` `358e9db52`,
 clio-knowledge `origin/master` `534e913`, stand `Creatio` read-only on 2026-10-28.
@@ -21,8 +25,10 @@ Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` = `tests/UnitT
 ## 0. Critical path
 
 ```
-Q1-Q20 answered ──> EM1 designer capture ──> package slice A (refactors) ──> slice B (slots + block)
-      │                                                                          │
+Q1-Q20 answered ──> package slice A (refactors) + C1 contract ──> P-B2, P-B3 (slots + block)
+      │                                                           ^              │
+      ├──> EM1 designer capture ──────────────────────────────────┘              │
+      │    (EM1 gates P-B2/P-B3; its rows feed the P-C5 parity pattern B)        │
       └──> BMAD docs PR (clio) ── merged before the package PR leaves draft      v
                                                      experimental cut, install ──> EM2 + EM3 (STOP gate)
                                                                                     │
@@ -46,18 +52,20 @@ the EM2 re-run on the final cut, after P-C3. If EM2 or EM3 fails, work stops, th
 estimate is redone before slice C starts.
 
 No package code is written before the SPEC and the ADR of the BMAD docs PR exist on its branch (AGENTS.md: no code
-until the ADR exists); they need not be merged for slice A to start.
+until the ADR exists); they need not be merged for slice A to start. Slice A (behaviour-neutral refactors) and C1 may
+proceed on the agreed answers; EM1 must pass before P-B2/P-B3 (slot numbering, stamps, sources), and its rows feed the
+P-C5 parity pattern B.
 
 ## 1. Phase 0: decisions and day 0
 
 | Step | What | Who | Output |
 |---|---|---|---|
 | 0.1 | Answer Q1-Q20 | owner | done 2026-10-28: all twenty agreed and recorded in the decisions file (Q9, Q16, Q17 changed from the first recommendation) |
-| 0.2 | Jira AC wording (Q19) | owner, by hand | AC text; the HeroCoders checklist stays intact |
+| 0.2 | Jira AC wording (Q19) | lead, after the owner approves the text | AC text written into the description only (never `customfield_10193`, the HeroCoders checklist), read back |
 | 0.3 | Claim comment on ENG-95985 (Q13): an empty claim table; every later number is claimed there after checking the tags of both repositories | lead, on the owner's yes | comment id recorded in the plan |
 | 0.4 | Drift check: `git log 389198a0..origin/main -- PB/Email PB/Mappings PB/FileProcessing PB/Elements/SendEmailElementHandler.cs PB/Graph PB/Design` and the clio/KB equivalents; re-read anything that moved | lead | a drift note at the top of this file |
 | 0.5 | EM0 completion: platform version of stand `Creatio`, the Invoice printable, an email template to reuse | lead, read-only | measurements file |
-| 0.6 | EM1 designer capture (Q18) | lead in Claude in Chrome, owner logs in; owner's yes for the writes | capture metadata + resources, pattern-B rows |
+| 0.6 | EM1 designer capture (Q18) | lead in Claude in Chrome, owner logs in; owner's yes for the writes | capture metadata + resources; must pass before P-B2/P-B3 (slice A and C1 may proceed on the agreed answers); its rows feed the P-C5 parity pattern B |
 
 ## 2. Phase 1: BMAD docs PR (clio, docs-only)
 
@@ -71,7 +79,7 @@ Branch `docs/ENG-95985-send-email-attachments-spec` from `origin/master`; PR tit
 | `spec/stories/story-eng-95985-send-email-attachments-1.md` | one story, tasks P-A..P-C, KB, CL; DoD = section 9 |
 | `spec/test-plans/tp-eng-95985-send-email-attachments.md` | from the test-plan file |
 | `spec/sprint-status.yaml` | the story row as `in-progress` (implementation has started by the time this PR merges, so `ready-for-dev` is never true for it), `blocks:` links fixed; the inherited flip of `story-eng-92719-file-processing-element-3` with only its really done boxes. The clio feature PR flips the row to `review` when it opens; `done` is flipped in the next clio PR that touches the tracker after the last merge, with only the really ticked DoD boxes |
-| `spec/eng-95985-send-email-attachments/` | this folder, after a grep for the stand address (must be 0). Before the commit: drop the "Local, untracked" line from each header, replace absolute local paths with repository-relative ones, and mark the research citations (`R/`, r0-r10) as local notes that are not in the repository. `README.md` keeps its name, as in the committed `spec/eng-92707-sub-process-element/` and `spec/eng-95891-formula-expressions/` |
+| `spec/eng-95985-send-email-attachments/` | this folder, after a grep for the stand address (must be 0); research citations (`R/`, r0-r10) are marked as local notes that are not in the repository. `README.md` keeps its name, as in the committed `spec/eng-92707-sub-process-element/` and `spec/eng-95891-formula-expressions/` |
 
 Review: gate 1 is the full 3-lens fan-out over the complete diff (quality, correctness against the code,
 consistency), as AGENTS.md requires before every PR; gate 2 skips docs-only commits. It merges before the package PR
@@ -91,7 +99,7 @@ and `-c dev-n8`; every new fixture `[TestFixture(Category = "UnitTests"), Catego
 
 | Task | Component | Done when |
 |---|---|---|
-| P-A1 | C2: lift `PlanFiles` / `FilesBinding` / `FileItemOf` into `FileSourcePlanner` behind `IFileSourcePlanner` (DI) (label, member path, target names, consequence sentence and the write entry as parameters: raw `ApplyMapping` for `files`, the block entries for a slot, design 4.2); `ProcessFileProcessingBinder` calls it | every existing `FileProcessing*Tests` passes unchanged; a characterization test pins each `files` message |
+| P-A1 | C2: lift `PlanFiles` / `FilesBinding` / `FileItemOf` into `FileSourcePlanner` behind `IFileSourcePlanner` (`Plan(schema, element, source, wording, userConnection)`, a `FileSourceWording` with the label, member path and two consequence sentences, a data `FileSourcePlan` as the result; the target names and the write route stay with the caller: raw `ApplyMapping` for `files`, the block entries for a slot, design 4.2); `ProcessFileProcessingBinder` calls it (composed as `new ProcessFileProcessingBinder(new FileSourcePlanner())`; the DI registration lands in P-B3) | every existing `FileProcessing*Tests` passes unchanged; a characterization test pins each `files` message |
 | P-A2 | C7 part 1: generalize `ProcessFileProcessingFilesBinding.Read` and the issue texts of `ProcessFileProcessingDescriber` over (collection, item) names | the `files` describe tests and the Process parameter notice-rule tests pass unchanged (`ProcessFileProcessingNoticeRule` reads the same binding, `PB/FileProcessing/ProcessFileProcessingNoticeRule.cs:38`) |
 
 One commit each. Gate 2: single combined lens (refactor, one module).
@@ -112,7 +120,7 @@ result in the measurements file. Stop on failure (section 0).
 
 | Task | Component | Tests |
 |---|---|---|
-| P-C1 | C5 guards in `Plan` (onto a slot under `!fromBlock`, keyed on the name) and in `ResolveStructuredSource` (from a slot); `IProcessMappingService` change documented | raw `addMapping`, a non-block `BindCollection` and build `mappings[]` onto a slot refused; the block's own writes pass; another user task's `Attachments1` unaffected (PU-42 mirror); describe's generic `parameters[]` offers no names for slots |
+| P-C1 | C5 guards in `Plan` (onto a slot: a new `if (!fromBlock)` block placed first, keyed on `EmailAttachmentSlot.IsReservedName`) and beside `EnsureNotReadFromAFilesInput` (from a slot); `IProcessMappingService` change documented | raw `addMapping`, a non-block `BindCollection` and build `mappings[]` onto a slot refused; the block's own writes pass; another user task's `Attachments1` unaffected (PU-42 mirror); describe's generic `parameters[]` offers no names for slots |
 | P-C2 | C6 order checks: build-path declaration-order refusal; flow-reachability warning on build and modify | later-declared source refused; earlier accepted; unreachable source warned on both paths |
 | P-C3 | C7 part 2: `DescribeAttachments`, read-back members, issues (a multi-instance Send email is reported as found, with an issue, Q16), `configured` | round trip build -> describe -> replay writes nothing; one test per issue shape, including an attachment that reads an unscoped source (TC-U-78c) |
 | P-C4 | C4 notices of design §5.2 that remain (single File, expression, the same source twice, removal; the reachability warning comes with P-C2). Q9: no feature reader and no feature-off notice | each notice text; when each fires (every entry of a sent list, kept or new; per removed slot; none when `attachments` is absent) |

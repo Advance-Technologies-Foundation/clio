@@ -13,7 +13,9 @@ the lead only after the owner approves that text.
 **Created**: 2026-10-28
 **Size estimate**: one story, delivered as one feature PR per repository (crt-process-builder, then clio-knowledge,
 then clio) after this docs-only clio PR. The /bmad-spec form is used because the ticket is one story (AGENTS.md: fewer
-than 5 stories); an ADR is added because the change alters the shared mapping service and the MCP contract.
+than 5 stories); an ADR is added because the change alters the shared mapping service and the MCP tool contracts,
+following the ENG-95984 File process parameter type precedent (a small feature in one story, its contract decisions
+recorded in an ADR).
 
 Baselines (2026-10-28): crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio
 `origin/master` `358e9db52` (drift to `0b25e89e6` checked: nothing relevant moved, see the plan's drift note),
@@ -68,7 +70,8 @@ In scope (package `PB/`, clio, clio-knowledge):
   `sourceElementParameter`, `expression`, and a declared-but-refused `value`) (Q1).
 - Sources: anything that holds files - a collection with one FileLocator item (an element output such as
   `ObjectFiles`, `ReportFiles`, a sub-process FileCollection output, a process FileCollection), a collection item path,
-  or a single File (Q2); a single File is accepted with a warning (Q3, confirmed by EM8).
+  or a single File (Q2); a single File is accepted with a warning (Q3; EM8 must confirm it before the guidance states
+  it, otherwise fall back to B: refuse and wrap the File in a FileCollection).
 - Modify semantics: REPLACE (Q4); new slots take the lowest free number from 1, counted over every parameter of the
   element (Q5).
 - Refusals and warnings of design section 5 (Q6, Q7, Q8, Q10, Q16, Q20).
@@ -130,8 +133,8 @@ element with no slot omits the member (null, not `[]`); `configured` counts atta
 
 ## Acceptance criteria
 
-AC1-AC7 are the analysis README section 3 rows; the wording below is the agreed Jira text of decisions Q19, grouped
-under them. The Jira description is written only after the owner approves the text (Q19).
+AC1-AC7 are the analysis README section 3 rows; the wording below is the proposed Jira text (decisions Q19: the lead
+writes it into the description after the owner approves the wording), grouped under them.
 
 - **AC1 - block and describe.** The `sendEmail` configuration accepts an `attachments` list; each entry maps one source
   of files (a collection of files or a single File) into one attachment row of the element;
@@ -154,7 +157,7 @@ under them. The Jira description is written only after the owner approves the te
 - **AC7 - parity, tests, docs, MCP.** Server serialization matches a designer-built capture covering 2+ attachments, a
   numbering gap and the Process parameter variant; tests, docs, and MCP surface updated.
 
-AC -> design -> proof (analysis README section 3):
+AC -> design -> proof (extends analysis README section 3: it adds Q4 to AC1 and Q16 to AC5):
 
 | AC | Design | Proof |
 |---|---|---|
@@ -172,7 +175,8 @@ AC -> design -> proof (analysis README section 3):
   slice A. This docs PR merges before the package PR leaves draft (Q14).
 - **EM1** - a designer capture on the current platform (2+ rows, a numbering gap, the Process-parameter variant, a
   single File), the AC7 oracle: the corpus has only four one-row bindings from 2021-2022. Run by the lead in Claude in
-  Chrome, the owner logs in (Q18).
+  Chrome, the owner logs in (Q18). Slice A (behaviour-neutral refactors) and C1 may proceed on the agreed answers;
+  EM1 must pass before P-B2/P-B3 (slot numbering, stamps, sources), and its rows feed the P-C5 parity pattern B.
 - **STOP gate (EM2 + EM3)** right after slice B, on an experimental cut: the platform's pre-save gate and the
   designer's files control accept a server-built slot. On failure work stops, the cause goes to the owner, and the
   estimate is redone before slice C.
@@ -187,8 +191,17 @@ AC -> design -> proof (analysis README section 3):
   (Q13), the tag and `descriptor.json`. Versions appear only as history ("measured on 1.6.6.125").
 - The stand is named only as `Creatio` (a registered clio environment); its address is not written here.
 - clio create/modify descriptions have about 2-3 bytes free and `process-modeling.md` 1 byte: every added sentence is
-  paid by a swap; no ceiling raise (Q12).
+  paid by a swap; no ceiling raise (Q12). The 2-3 bytes were computed outside the repository (the facts row is marked
+  inferred); the last figures recorded in `clio.tests/Command/McpServer/ToolContractPayloadBudgetTests.cs` are create
+  35,054 and modify 35,021 bytes against the 35,072 ceiling. CL-4 re-measures on the branch with the ceilings lowered.
 - Merge order (human merges only): package (tag on the remote) -> knowledge (published) -> clio (Q13).
+
+## Success signal
+
+An agent builds a process whose Send email element attaches a Process file element's files with one
+`create-business-process` call; `describe-business-process` returns `email.attachments` in the write shape; sending the
+described list back through `modify-business-process` writes nothing; on stand `Creatio` the files arrive in manual mode
+(on the email activity) and in automatic mode (on the delivered message).
 
 ## Risks
 

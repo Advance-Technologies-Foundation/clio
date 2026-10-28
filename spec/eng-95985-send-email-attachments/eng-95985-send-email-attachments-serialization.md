@@ -20,7 +20,6 @@ Basis:
 | `TS/` | `TSBpm/Src/Lib/` (core repository) (client files under `TS/Terrasoft.Nui/Resources/Terrasoft/`) |
 | `CLIO/` | the clio repository root |
 | `KB/` | the clio-knowledge repository root |
-| `CLIOMAIN/` | a local clio checkout (only for an untracked local capture; not in the repository) |
 
 Tags: [source] read in code; [corpus] real stored metadata or resources; [doc] documentation; [measured <date>] a
 stand or file measurement (prior ones name where they are recorded); [traced, not measured] a source trace of run-time
@@ -286,7 +285,7 @@ entry, so a sent list replaces it, design 2.3):
 
 | Shape | Outer `L8` | Item `L8` | Origin | Run time | Tag |
 |---|---|---|---|---|---|
-| item bound to the COLLECTION itself (not its item) | `{}` | `[#M[Parameter:{<D>}]#]` | the mapping window offers a collection node for a FileLocator item: measured on the Process file element, `Files` `{}` and `Files.File` = `[Parameter:{PFiles}]`, DisplayValue `[#PFiles#]` | one row whose value is a list, so the typed read throws `InvalidCastException` (`CompositeObject.cs:125`) | measured 2026-10-20 (`PBT/FileProcessingSysFileParityTests.cs:49-50, 524-526`; `CLIOMAIN/eng-103937-sc1sf/UsrFpSc1SfCapture/metadata.json`); email traced, not measured; EM1 |
+| item bound to the COLLECTION itself (not its item) | `{}` | `[#M[Parameter:{<D>}]#]` | the mapping window offers a collection node for a FileLocator item: measured on the Process file element, `Files` `{}` and `Files.File` = `[Parameter:{PFiles}]`, DisplayValue `[#PFiles#]` | one row whose value is a list, so the typed read throws `InvalidCastException` (`CompositeObject.cs:125`) | measured 2026-10-20 (`PBT/FileProcessingSysFileParityTests.cs:49-50, 524-526`; a raw capture kept outside the repository); email traced, not measured; EM1 |
 | stale parent (EM1d) | the OLD collection binding | the single File | re-binding a row from a collection item to a File leaves the parent as it was | one attachment of the File per row of the old collection | source (`MappingEditMixin.js:1090-1094`); traced, not measured; EM1d |
 | outer-only (raw `addMapping` today) | collection | `{}` | not produced by the designer: on every save of the element's card, `_saveFiles` removes the whole slot of a row whose ITEM is empty (`ProcessFilesControlSchema.js:376-387, 410-419`), whatever the outer holds; the outer itself is saved by `saveExtendedValues` (`PD/Schemas/ProcessFlowElementPropertiesPage/ProcessFlowElementPropertiesPage.js:1000-1009, 1019-1039`). An existing outer-only or unbound slot is therefore DELETED the next time a user opens the card and the designer saves it (when `canRemoveParameter` allows, `ProcessFilesControlSchema.js:392-405`) | rows carry `<slot>FileLocator` = null, then a NullReferenceException in `FileFactory.CreateFileInstance` | traced, not measured (`TS/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:481-487`); EM9 |
 | item bound to a collection item, outer unbound | `{}` | `[#M[Element:{<S>}].[Parameter:{<I>}]#]` | not produced by the designer (it binds the parent) | one row evaluated outside a row: reads empty | traced, not measured (`ProcessInstanceParametersDataReader.cs:444-453`) |
@@ -498,7 +497,7 @@ the freed number. After EVERY save read `SysSchema.MetaData` and the `SysLocaliz
 | 9 | S4 (EM1d): outer `L8` after the re-bind, item `L8` and `L1`, both DisplayValue rows | the stale parent of section 3 |
 | 10 | optional: reopen the saved process and save without change | the designer's own save is stable on the compared keys (baseline for EM3) |
 
-Keep the raw reads locally and untracked (precedent: `CLIOMAIN/eng-103937-sc1sf/UsrFpSc1SfCapture/`); they are not
+Keep the raw reads outside the repository, as the earlier Process file element capture was kept; they are not
 committed (pattern B).
 
 ### 7.3 Turning EM1 into pattern-B rows
@@ -546,7 +545,7 @@ EM4, EM5, EM7, EM8, EM10, EM14 and EM15 are run-time measurements; they settle n
 |---|---|---|
 | 1 | r1 §2 table (`r1-package-send-email.md:99`): the package's mapping service "already writes exactly these display forms" for both levels | only the ITEM gets the designer form; a top-level source, including the outer slot's collection, keeps its bare caption (`PB/Mappings/ProcessMappingService.cs:963-967`; pinned by `PBT/MappingNestedDisplayValueTests.cs:76-77`). AD1/AD2 follow |
 | 2 | r8 §3 pattern A (`r8-testing.md:119`): the committed captures are "UTF-8 BOM, CRLF" | only the three task-template captures have a BOM; `PrintInvoiceReport`, `FileParameterProcess` and the three Send email corpus files start `7b 0d 0a` (no BOM) [measured 2026-10-28]. `PBT/Fixtures/FileProcessing/PROVENANCE.md:32` states a BOM for the process captures and is wrong too |
-| 3 | r3 §4.2 (`r3-designer.md:92`): a collection is offered "only as a node to drill into" | measured 2026-10-20 on the Process file element: the designer stored the FileLocator item bound to the process FileCollection ITSELF (`PBT/FileProcessingSysFileParityTests.cs:49-50, 524-526`; `CLIOMAIN/eng-103937-sc1sf/UsrFpSc1SfCapture/metadata.json`). EM1 must record which node is picked for the email |
+| 3 | r3 §4.2 (`r3-designer.md:92`): a collection is offered "only as a node to drill into" | measured 2026-10-20 on the Process file element: the designer stored the FileLocator item bound to the process FileCollection ITSELF (`PBT/FileProcessingSysFileParityTests.cs:49-50, 524-526`; a raw capture kept outside the repository). EM1 must record which node is picked for the email |
 | 4 | r5 identifier table (`r5-corpus.md:67`): `PB\ProcessDesignConstants.cs:634` holds the Send email UId | it holds the task NAME `EmailTemplateUserTask`; no package production file contains `184dbb27` (grep). The ACR's `<task>` role reads the UId from the element's `J6` |
 | 5 | r5 B2 range (`r5-corpus.md:138`): `3936-3966` | the slot spans `3936-3967` (closing brace at 3967) |
 | 6 | r3 §3 table (`r3-designer.md:65-67`): line pairs listed under parent/item columns | the config lists the ITEM first: `:262-278` item (FILE_LOCATOR `:270`, IN `:271`, None `:272-274`), `:279-294` parent (COMPOSITE_OBJECT_LIST `:287`, IN `:288`, None `:289-291`). Values right, line mapping swapped |

@@ -26,8 +26,11 @@ refuses `email.attachments` pre-send. The designer stores one row per attachment
 `Attachments<N>` with one nested FileLocator item `Attachments<N>FileLocator`, stamped with the process schema; the
 run time finds rows by name and stamp and reads the item. The Process file element already has a `files` source
 planner (`PB/FileProcessing/ProcessFileProcessingBinder.cs`) that classifies a collection, a collection item, a single
-File and an expression and refuses nested sources, and a mapping service whose every entry point plans in one method
-(`ProcessMappingService.Plan`) with `fromBlock` as the only switch between the raw and the block form.
+File and an expression and refuses nested sources, and a mapping service in which `ApplyMapping`, `ApplyBlockMapping`
+and `BindCollection` plan in one method (`ProcessMappingService.Plan`), with `fromBlock` as the only switch between the
+raw and the block form. `BindCollectionItems` does not plan there (`PB/Mappings/ProcessMappingService.cs:89-117`); its
+only caller is the process-parameter mirror (`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a
+process parameter, so only the from-slot source guard covers it.
 
 ## Decisions
 
@@ -35,8 +38,11 @@ File and an expression and refuses nested sources, and a mapping service whose e
 
 One entry per designer row: `processParameter`, `sourceElement` + `sourceElementParameter`, `expression`, and a
 declared-but-refused `value`. The agent already knows this vocabulary from the Process file element, and the planner
-is shared (component C2: `PlanFiles` / `FilesBinding` / `FileItemOf` lifted into `FileSourcePlanner` behind
-`IFileSourcePlanner`, parametrized by label, member path, target names, consequence sentence and write entry).
+is shared (component C2, landed in slice A: `PlanFiles` / `FilesBinding` / `FileItemOf` lifted into
+`FileSourcePlanner` behind `IFileSourcePlanner`, `Plan(schema, element, source, wording, userConnection)` with a
+`FileSourceWording` (label, member path and the two consequence sentences), returning a data `FileSourcePlan`; the
+target names and the write route stay with the caller, and the DI registration lands with its first container
+consumer, the Send email applier).
 
 Rejected:
 - **B. `email.attachments: ["OF1", ...]` (element names only).** Shorter, but cannot express a process parameter, an
@@ -87,12 +93,17 @@ Rejected:
 
 ### D4 (Q8, with Q10). Every non-block mapping onto a slot is refused; mapping FROM a slot is refused
 
-In `ProcessMappingService.Plan`, inside `if (!fromBlock)` and before `ResolveTargetParameter`, a target on a Send
-email element whose root parameter name matches `^Attachments\d+$` (case-insensitive, so near-misses are caught) is
-refused, naming `email.attachments`. It keys on the NAME, so it also covers a build `mappings[]` entry onto a slot that
-does not exist yet, a foreign slot and the item. `IProcessMappingService.BindCollection` gains a block form (the
-applier's collection writes plan with `fromBlock = true`). In `ResolveStructuredSource`, a slot or a slot's item as a
-SOURCE is refused ("only receives files"; Q10), which also covers `BindCollectionItems`. `TakesFiles` does not change.
+In `ProcessMappingService.Plan`, in a NEW `if (!fromBlock)` block placed first, before `ResolveTargetParameter`
+(`PB/Mappings/ProcessMappingService.cs:135`), a target on a Send email element (found by the name-only owner lookup
+`ResolveTargetOwner`, `:580-586`) whose root parameter name satisfies the guard predicate
+`EmailAttachmentSlot.IsReservedName` (`^Attachments\d+$`, case-insensitive, whatever the stamp, so near-misses are
+caught) is refused, naming `email.attachments`. It keys on the NAME, so it also covers a build `mappings[]` entry onto
+a slot that does not exist yet, a foreign slot and the item. `IProcessMappingService.BindCollection` gains a block form
+(the applier's collection writes plan with `fromBlock = true`). A slot or a slot's item as a SOURCE is refused ("only
+receives files"; Q10) beside `EnsureNotReadFromAFilesInput`, which runs right after `ResolveStructuredSource` on both
+paths (`:110`, `:705`); it sits there, not inside `ResolveStructuredSource`, because that method is private static and
+the Send email identity needs a `UserConnection`. This also covers `BindCollectionItems`, whose target is a process
+parameter and never a slot. `TakesFiles` does not change.
 Precedent: a raw mapping onto a block-owned Process file parameter is already refused, naming the block member.
 
 Rejected:
@@ -114,8 +125,12 @@ Each entry is decoded from the stored formulas with the decoder `fileProcessing.
 item-only on a collection item, different sources, stale parent, nothing bound, foreign stamp, unscoped source,
 multi-instance element). Order by slot number; null when there is no slot. The generic element `parameters[]`
 projection does NOT decode a slot into `sourceElement` / `processParameter` names, because those would be re-sent as
-`addMapping`, which D4 refuses; the slot predicate (`EmailAttachmentSlot.IsSlot`) is shared, so describe never offers
-names that a write refuses. clio types `DescribedEmail.Attachments` and keeps the extension bag.
+`addMapping`, which D4 refuses. Two predicates, each defined once on `EmailAttachmentSlot`: `IsSlot` is what the run
+time reads (top level, case-sensitive `^Attachments\d+$`, `CreatedInSchemaUId` = this process) and drives the
+`email.attachments` read and write (find, replace, the describe list); `IsReservedName` is the guard (a root parameter
+name matching `^Attachments\d+$` case-insensitively on a Send email element, whatever its stamp) and drives both the D4
+raw-mapping guards and this non-decoding, so describe never offers names that a write refuses. clio types
+`DescribedEmail.Attachments` and keeps the extension bag.
 
 Rejected:
 - **B. Only the generic element `parameters[]`.** Not re-sendable, so it cannot be the modify recipe D2 relies on,
@@ -133,10 +148,12 @@ Rejected:
   `InputRecordCollection`, where the run time's top-level slot search does not look (traced). Detected by
   `MultiInstanceOptions` on the activity (not `CollectionBindingRules.IsMultiInstance`, which answers for a Sub-process
   only); describe reports such an element as found, with an issue. The per-recipient pattern stays a multi-instance
-  Sub-process, documented only if EM8 passes. (Changed from the first recommendation.)
+  Sub-process, documented only if EM8 passes. A `removeElement` dependency guard for a source is proposed as a
+  follow-up only if EM11 shows that the platform saves a dangling reference green (a silent break). (Changed from the
+  first recommendation.)
 - **Q20 - an unscoped Process file source is refused.** Object attachments with no record scope and no selecting
   filter, and Generated report with no selecting filter, are refused as attachment sources, through the existing
-  ENG-92719 D16 machinery: the applier tracks every Process file source in the request's `IFileProcessingFilterLedger`,
+  ENG-92719 File processing element D16 machinery: the applier tracks every Process file source in the request's `IFileProcessingFilterLedger`,
   `ObjectFileProcessingEmptyFilterRule` also refuses an unscoped element that a Send email slot reads whatever its
   action, and `FileProcessingFilterLedger.EnsureSelectingFilters` judges at the END of the request, so operation order
   in a batch does not matter. Reason: the run time reads attachment files with rights disabled and sends them outside

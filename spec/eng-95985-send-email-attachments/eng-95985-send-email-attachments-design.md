@@ -127,8 +127,11 @@ unit test:
 ### 3.2 Which existing parameters count as slots
 
 A top-level parameter of the Send email element whose name matches the regex and whose `CreatedInSchemaUId` is this
-process. One predicate, defined once (`EmailAttachmentSlot`), used by the writer and the describer. The raw-mapping
-guard (4.5) keys on the NAME only, so it also covers a slot that does not exist yet or was created elsewhere. A slot
+process. Two predicates, each defined once on `EmailAttachmentSlot`: `IsSlot` (this definition, what the run time
+reads) is used by the writer and the describer's `email.attachments` list (find, replace, describe); `IsReservedName`
+(a root parameter name matching `^Attachments\d+$` case-insensitively on a Send email element, whatever its stamp) is
+used by the raw-mapping guards (4.5) and by describe's generic `parameters[]` non-decoding (4.7). The guard keys on
+the NAME only, so it also covers a slot that does not exist yet or was created elsewhere. A slot
 with a different `CreatedInSchemaUId` is not touched and is reported by describe with an issue: the run time ignores
 it.
 
@@ -164,7 +167,10 @@ their own commits, with the existing Process file tests unchanged; that proves t
 ### 4.2 C2: the shared file-source planner
 
 Lift `PlanFiles`, `FilesBinding` and `FileItemOf` (`PB/FileProcessing/ProcessFileProcessingBinder.cs:130-225, 253-318`)
-into `FileSourcePlanner` behind `IFileSourcePlanner` (a DI registration, the seam TC-U-70 resolves), parametrized by:
+into `FileSourcePlanner` behind `IFileSourcePlanner` (landed in slice A as `Plan(schema, element, IFileSourceDescriptor
+source, FileSourceWording wording, UserConnection)` returning a data `FileSourcePlan`; the variant composes
+`new ProcessFileProcessingBinder(new FileSourcePlanner())`, and the DI registration, the seam TC-U-70 resolves, lands
+in P-B3 with its first container consumer), parametrized by:
 
 - the label and the member path used in messages (`files` vs `email.attachments[2]`);
 - the target collection name and item name (`Files`/`File` vs `Attachments<N>`/`Attachments<N>FileLocator`);
@@ -180,7 +186,10 @@ message byte-identical (pinned by the existing `FileProcessingProcessTests`).
 
 ### 4.3 C3: slots
 
-- `EmailAttachmentSlot.IsSlot(element, parameter, schema)`: top level, regex, `CreatedInSchemaUId == schema.UId`.
+- `EmailAttachmentSlot.IsSlot(element, parameter, schema)`: top level, case-sensitive regex,
+  `CreatedInSchemaUId == schema.UId` (what the run time reads; drives find, replace and the describe list).
+- `EmailAttachmentSlot.IsReservedName(name)`: a root parameter name matching `^Attachments\d+$` case-insensitively,
+  whatever its stamp (the guard predicate of 4.5 and 4.7, applied on a Send email element only).
 - `ItemNameOf(slotName)` = slot name + `FileLocator`.
 - `IEmailAttachmentSlotWriter.Find(schema, element)`: the slots in numeric order.
 - `Create(schema, element, number)`: builds the item first (name, type by UId, `In`, `ContainerUId` = element,
@@ -226,17 +235,23 @@ Order inside `SendEmailApplier.Apply` (`PB/Email/SendEmailApplier.cs:59-144`):
 
 There is no separate raw route: `ApplyMapping`, `ApplyBlockMapping` and `BindCollection` all plan their writes in
 `ProcessMappingService.Plan` (`PB/Mappings/ProcessMappingService.cs:61-86, 133-198`); `fromBlock` is the only switch
-between the raw and the block form, and `BindCollection` passes `fromBlock = false` today (`:85`). So:
+between the raw and the block form, and `BindCollection` passes `fromBlock = false` today (`:85`). `BindCollectionItems`
+does not plan in `Plan` (`:89-117`); its only caller is the process-parameter mirror
+(`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a process parameter, so only the from-slot source
+guard covers it. So:
 
-- **onto a slot**: in `Plan`, inside `if (!fromBlock)` and BEFORE `ResolveTargetParameter`, a target on a Send email
-  element (`SendEmailElementIdentity`, `PB/Email/SendEmailElementIdentity.cs`) whose root parameter name matches
-  `^Attachments\d+$` (case-insensitive, so near-misses are caught too) is refused, naming `email.attachments`. It keys
+- **onto a slot**: in `Plan`, in a NEW `if (!fromBlock)` block placed first, BEFORE `ResolveTargetParameter` (`:135`),
+  a target on a Send email element (`SendEmailElementIdentity`, `PB/Email/SendEmailElementIdentity.cs`; the owner
+  comes from the name-only lookup `ResolveTargetOwner`, `:580-586`) whose root parameter name satisfies
+  `EmailAttachmentSlot.IsReservedName` (`^Attachments\d+$`, case-insensitive, so near-misses are caught too) is
+  refused, naming `email.attachments`. It keys
   on the NAME, so it also refuses a build `mappings[]` entry onto a slot that does not exist yet (on build,
   `mappings[]` runs before the `email` pass: `PB/Design/ProcessBuildHandler.cs:553-561`), a foreign slot and the item;
 - **a block form of `BindCollection`**: `IProcessMappingService.BindCollection` gains a `fromBlock` argument (or a new
   `BindBlockCollection`), documented on the interface; the applier's collection writes use it;
-- **from a slot**: in `ResolveStructuredSource`, a source that is a slot or a slot's item of a Send email element is
-  refused (an `In` parameter only receives files; the platform's pre-save gate refuses it as
+- **from a slot**: beside `EnsureNotReadFromAFilesInput`, which runs right after `ResolveStructuredSource` on both
+  paths (`:110`, `:705`), a source that is a slot or a slot's item of a Send email element is refused (not inside
+  `ResolveStructuredSource`: it is private static, and the Send email identity needs a `UserConnection`) (an `In` parameter only receives files; the platform's pre-save gate refuses it as
   `InvalidParameterMappingDirection`, with a less useful message, only while
   `Feature-UseVerificationOfProcessParameterDirection` is on, which is the default:
   `TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-277, 282`, `TS/Terrasoft.Core/GlobalAppSettings.cs:343`;
@@ -272,8 +287,9 @@ collection mirror. `CollectionBindingRules.TakesFiles` does not change.
 - The generic element `parameters[]` projection (`PB/Describe/ProcessDescriber.cs:197-218`, decoded by
   `ProcessParameterService.DecodeElementSource`, `PB/Parameters/ProcessParameterService.cs:366-396`) does NOT decode a
   Send email slot or its item into `sourceElement` / `processParameter` names: it reports them raw, because those names
-  would be re-sent as `addMapping`, which C5 refuses. The slot predicate is shared with C5, so describe never offers
-  names that a write refuses.
+  would be re-sent as `addMapping`, which C5 refuses. The non-decoding uses C5's guard predicate
+  `EmailAttachmentSlot.IsReservedName` (not `IsSlot`), so a foreign-stamped `Attachments2` or a near-miss
+  `attachments1` is not decoded either, and describe never offers names that a write refuses.
 - `DescribeAttachments` reads each slot with a binding reader generalized from `ProcessFileProcessingFilesBinding.Read`
   (`PB/FileProcessing/ProcessFileProcessingFilesBinding.cs:16-60`, parametrized by the two names) and decodes the
   source with `FileProcessingBlockDescriber.DecodeValueSource`.

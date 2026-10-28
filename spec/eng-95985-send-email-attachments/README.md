@@ -1,7 +1,7 @@
 # ENG-95985 Send email attachments: implementation plan
 
-Written 2026-10-28. Phase 1 only: research, design and plan. No product code has been written;
-nothing has been written to the stand, Jira, GitHub or GHE. The owner agreed all twenty decisions on 2026-10-28 (decisions file).
+Written 2026-10-28. Phase 1 only: research, design and plan. As of the plan (2026-10-28), no product code had been
+written and nothing had been written to the stand, Jira, GitHub or GHE. The owner agreed all twenty decisions on 2026-10-28 (decisions file).
 
 Jira: ENG-95985 "Send email attachments" (Story, epic ENG-92704 "Create BP via AI Toolkit", In Progress, sprint
 "BPMS Tools 351"). Its blockers are closed: ENG-92719 "File processing element" (with ENG-95984, ENG-96505, ENG-96506,
@@ -12,7 +12,12 @@ clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0 and the Packa
 the Academy, and a read-only inventory of stand `Creatio` taken on 2026-10-28. Research notes r0-r10 (local, not part of
 the plan) are the lead's working notes and are not in the repository: citations of the form `R/...`, `r0`-`r10`
 or `eng-95985-research` in this folder point at those local notes and are kept only as an evidence trail; every
-claim the plan relies on is restated, with its source anchor, in the facts file.
+claim the plan relies on is restated in this folder, and rows whose only evidence is a local note say so.
+
+Path alias `PD/`: it means the PackageStore `CrtProcessDesigner/branches/7.8.0/`. A path written `PD/Schemas/...`
+(facts, measurements, serialization) already includes the `Schemas/` segment; the files whose legend defines `PD/` as
+`.../7.8.0/Schemas/` (decisions, design, test plan, estimate, the SPEC and the ADR) write the schema folder directly
+after `PD/`.
 
 ## 1. Short answer
 
