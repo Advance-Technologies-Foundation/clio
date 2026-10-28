@@ -152,7 +152,7 @@ public sealed class ProcessDigestTests {
 		// Assert
 		before.Should().MatchRegex("^[0-9a-f]{12}$", because: "the checksum is short lower-case hex");
 		afterLayout.Should().Be(before,
-			because: "the server re-derives layout on every save, and version facts and tracing belong to the family");
+			because: "the server re-derives layout on every structural edit, and version facts and tracing belong to the family");
 		afterEdit.Should().NotBe(before, because: "a content change has to show in the checksum");
 		afterCaption.Should().Be(before,
 			because: "captions are culture-resolved text, left out so a profile-culture read and an en-US read agree");
