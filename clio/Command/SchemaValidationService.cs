@@ -274,7 +274,7 @@ public static class SchemaValidationService
 	/// component (image-input.component.md, "Common pitfalls" #8: tooltip must be a literal string).
 	/// </para>
 	/// <para>
-	/// Follow-up (tracked in ENG-92940): the component registry carries no machine-readable literal-vs-resource flag today
+	/// Follow-up (tracked in ENG-104641): the component registry carries no machine-readable literal-vs-resource flag today
 	/// (only the prose <c>.component.md</c> doc and the input <c>description</c> text distinguish them),
 	/// and the validator is a synchronous static path with no registry access. When the producer emits a
 	/// structured signal, derive this map from the same metadata <c>get-component-info</c> uses instead of
@@ -330,6 +330,26 @@ public static class SchemaValidationService
 	/// gate, and #1298 is about a plain literal, which that scanner never reported in the first place.
 	/// </summary>
 	private const string ComponentDataPropertyName = "data";
+
+	/// <summary>
+	/// Name of a component's template-slot mapping. Its values are record column or data-source attribute
+	/// names (for example <c>"title": "Name"</c>), not user-visible text. The localizable-text scanners skip
+	/// it only on the paths where a component reads it: <c>crt.Gallery</c> → <c>itemConfig</c> (issue #1194)
+	/// and directly on <c>crt.Map</c> (issue #1873). On any other path it stays fully validated.
+	/// </summary>
+	private const string TemplateValuesMappingPropertyName = "templateValuesMapping";
+
+	/// <summary>
+	/// Component type that reads <see cref="TemplateValuesMappingPropertyName"/> directly from its own node
+	/// to map its markers (id, title, lat, lon, subtitle, description, image, captionOnMap, extraColumns)
+	/// to record columns.
+	/// </summary>
+	private const string MapComponentType = "crt.Map";
+
+	/// <summary>
+	/// Component type that reads <see cref="TemplateValuesMappingPropertyName"/> from its <c>itemConfig</c>.
+	/// </summary>
+	private const string GalleryComponentType = "crt.Gallery";
 
 	/// <summary>
 	/// Marker property the platform writes inside a component's data descriptor. Its presence is what
@@ -2835,7 +2855,8 @@ public static class SchemaValidationService
 	/// component's own data descriptor (a <c>data</c> object carrying the platform's <c>typeName</c>
 	/// marker on a node that declares a component type — see <see cref="ComponentDataPropertyName"/>).
 	/// These are platform-written metadata rather than page-authored text. A Gallery's direct
-	/// <c>itemConfig.templateValuesMapping</c> is also excluded because its values name record attributes.
+	/// <c>itemConfig.templateValuesMapping</c> and a Map's own <c>templateValuesMapping</c> are also excluded
+	/// because their values name record attributes.
 	/// </summary>
 	/// <param name="jsBody">Raw JavaScript body of a Freedom UI page schema (marker-delimited).</param>
 	/// <returns>
@@ -2844,7 +2865,7 @@ public static class SchemaValidationService
 	/// expression) and any value that references a <c>#ResourceString(Key)#</c> macro — bare,
 	/// concatenated, or wrapped (e.g. <c>#MacrosTemplateString(#ResourceString(Key)#)#</c>) — are
 	/// accepted; non-string and empty values are ignored. Anything inside an exempt subtree
-	/// (<c>_designOptions</c>, a component data descriptor, or Gallery's template mapping) is not examined.
+	/// (<c>_designOptions</c>, a component data descriptor, or a Gallery or Map template mapping) is not examined.
 	/// </returns>
 	public static SchemaValidationResult ValidateLocalizableTextLiterals(string jsBody) {
 		var result = new SchemaValidationResult { IsValid = true };
@@ -3264,14 +3285,15 @@ public static class SchemaValidationService
 				// for the entry root — see the entryRootType note above).
 				string currentType = TryGetComponentType(node, out string nodeType) ? nodeType : entryRootType;
 				foreach (JsonProperty property in node.EnumerateObject()) {
-					// Gallery template slots map to record attribute names, not displayed captions.
-					// Carry this context only across the direct Gallery -> itemConfig edge.
+					// Gallery and Map template slots map to record attribute names, not displayed captions.
+					// Carry the Gallery context only across the direct Gallery -> itemConfig edge.
 					if (IsExemptFromTextScan(currentType, property, isGalleryItemConfig)) {
 						continue;
 					}
 					ScanTextPropertyForLiterals(currentName, currentType, property, result, violations);
 					ScanNodeForTextLiterals(property.Value, currentName, string.Empty, result, violations,
-						currentType == "crt.Gallery" && property.NameEquals("itemConfig"));
+						string.Equals(currentType, GalleryComponentType, StringComparison.Ordinal) &&
+						property.NameEquals("itemConfig"));
 				}
 				break;
 			case JsonValueKind.Array:
@@ -3350,7 +3372,8 @@ public static class SchemaValidationService
 	private static bool IsExemptFromTextScan(string componentType, JsonProperty property, bool isGalleryItemConfig) =>
 		string.Equals(property.Name, DesignOptionsPropertyName, StringComparison.Ordinal) ||
 		IsComponentDescriptorProperty(componentType, property) ||
-		(isGalleryItemConfig && property.NameEquals("templateValuesMapping"));
+		(property.NameEquals(TemplateValuesMappingPropertyName) &&
+		 (isGalleryItemConfig || string.Equals(componentType, MapComponentType, StringComparison.Ordinal)));
 
 	// True when the property is the data descriptor of a node that declares a component type (see
 	// ComponentDataPropertyName). Callers skip the subtree entirely: it is component metadata, never
