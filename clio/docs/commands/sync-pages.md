@@ -214,12 +214,14 @@ whole operation groups in a fixed order, not in array order. See
 When a page body contains `#ResourceString(key)#` macros, `sync-pages` forwards each page's
 optional `resources` JSON object string to `update-page`. The response returns
 `resources-registered` for each page so callers can see how many child-schema resources
-were added during save.
+were added during save, and `resources-updated` for the existing keys whose `en-US` value
+the save changed. Both are omitted when they are `0`.
 
 `resources` supplies additions and `en-US` value updates, not the full registered set. A key registered by one save
 is written into the page schema's `localizableStrings` and stays there, so it resolves at runtime
 whether or not a later save repeats it — and re-sending it answers `resources-registered: 0`,
-because the count covers new declarations, not value updates. Other cultures and resource identities
+because the count covers new declarations, not value updates; a changed value is counted in
+`resources-updated` instead. Other cultures and resource identities
 are preserved. The validation gate honours this: a label or an inserted widget caption bound to
 a key that is only persisted on the schema, or declared by a schema of its designer hierarchy, is
 accepted without being repeated and is not reported as a dangling binding. The lookup costs one

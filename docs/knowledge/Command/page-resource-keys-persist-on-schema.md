@@ -20,7 +20,8 @@ whether or not that call repeats it. The `resources` argument therefore describe
 overrides*, not the complete registered set — `ResourceStringHelper.CleanAndMerge` copies every
 existing entry before adding anything and updates only explicitly supplied en-US values,
 preserving declaration identity and other cultures. Re-sending a key answers
-`resourcesRegistered: 0`.
+`resourcesRegistered: 0`; when the re-sent value differs from the stored en-US value, the save
+also answers `resourcesUpdated: 1`.
 
 The label-resource validators (`ValidateInsertedFieldSelfConsistency`,
 `ValidateStandardFieldBindings`) only see the submitted body and the `resources` argument. Both are
