@@ -798,6 +798,7 @@ public sealed class PageSyncTool(
 				BodyLength = updateResponse.BodyLength,
 				Validation = validationResult,
 				ResourcesRegistered = updateResponse.ResourcesRegistered,
+				ResourcesUpdated = updateResponse.ResourcesUpdated,
 				ConflictCheck = updateResponse.ConflictCheck,
 				// The body as SAVED - after the before-save preprocessing - which is what update-page digests too.
 				Digest = PageWriteDigest.TryBuild(updateOptions.Body ?? page.Body, appendMode: false, opOptions.Validate,
@@ -945,6 +946,7 @@ public sealed class PageSyncTool(
 			BodyLength = updateResponse.BodyLength,
 			Validation = validationResult,
 			ResourcesRegistered = updateResponse.ResourcesRegistered,
+			ResourcesUpdated = updateResponse.ResourcesUpdated,
 			ConflictCheck = updateResponse.ConflictCheck,
 			Page = getResponse.Page,
 			VerifiedBodyFile = verifiedBodyFile,
@@ -1408,6 +1410,13 @@ public sealed class PageSyncPageResult {
 	[JsonPropertyName("resources-registered")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
 	public int ResourcesRegistered { get; init; }
+
+	/// <summary>
+	/// Number of keys already stored on the schema whose en-US value this save changed; omitted when zero.
+	/// </summary>
+	[JsonPropertyName("resources-updated")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+	public int ResourcesUpdated { get; init; }
 
 	[JsonPropertyName("page")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
