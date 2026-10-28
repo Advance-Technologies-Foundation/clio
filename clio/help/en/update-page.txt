@@ -167,6 +167,9 @@ DESCRIPTION
       (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
       still require localization. For a standalone merge, repeat type:
       "crt.Gallery" unless the same body declares that node's type elsewhere.
+      A crt.Map node's own templateValuesMapping is excluded too: its values
+      (e.g. title: "Name") name record columns. For a standalone merge, repeat
+      type: "crt.Map" on the same terms.
       Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type

@@ -221,7 +221,10 @@ name instead of trying to edit a non-existent local `insert`.
   `caption: "GalleryDS_Name"` name projected record attributes. Keep those identifiers unchanged;
   captions elsewhere on the Gallery or its children still require localization. For a standalone
   `merge` that patches this mapping, include `type: "crt.Gallery"` unless another entry in the
-  same body declares that node's type. Designer-only `_designOptions` mappings are also excluded.
+  same body declares that node's type. A `crt.Map` node's own `templateValuesMapping` is excluded
+  for the same reason: values such as `title: "Name"` name record columns. A standalone `merge` of
+  that mapping needs `type: "crt.Map"` on the same terms. Designer-only `_designOptions` mappings
+  are also excluded.
   A **component's own data descriptor is exempt**: a `data` object that carries the platform's
   `typeName` marker, on a node declaring a component `type`, is component metadata (uId, schemaType,
   typeName and the caption the platform stamped on it) rather than page-authored text, so a literal
