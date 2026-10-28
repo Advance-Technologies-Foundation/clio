@@ -673,6 +673,8 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 
 ## Customization
 
+<a id="upload-file"></a>
+- [`upload-file`](docs/commands/upload-file.md) - Upload a local file into a file entity, attach it to a record and print the file id
 <a id="upload-image"></a>
 - [`upload-image`](docs/commands/upload-image.md) - Upload a local image to an environment and print its image id
 
