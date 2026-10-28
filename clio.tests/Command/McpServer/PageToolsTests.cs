@@ -601,7 +601,9 @@ public class PageToolsTests
 			BodyLength = 123,
 			DryRun = false,
 			ResourcesRegistered = 2,
-			RegisteredResourceKeys = ["UsrTitle", "UsrDetails"]
+			RegisteredResourceKeys = ["UsrTitle", "UsrDetails"],
+			ResourcesUpdated = 1,
+			UpdatedResourceKeys = ["UsrCaption"]
 		};
 
 		// Act
@@ -612,6 +614,10 @@ public class PageToolsTests
 			because: "update-page should surface the number of registered child-schema resources");
 		serializedResponse.Should().Contain("\"registeredResourceKeys\":[\"UsrTitle\",\"UsrDetails\"]",
 			because: "update-page should surface the concrete resource keys that were registered");
+		serializedResponse.Should().Contain("\"resourcesUpdated\":1",
+			because: "update-page should surface the number of existing resources whose value changed (GitHub #1850)");
+		serializedResponse.Should().Contain("\"updatedResourceKeys\":[\"UsrCaption\"]",
+			because: "update-page should surface the existing resource keys whose value changed");
 	}
 
 	[Test]
@@ -2291,6 +2297,283 @@ public class PageToolsTests
 			because: "the saved schema payload should include the new localizable string");
 		savedPayload.Should().Contain("\"value\":\"Mobile title\"",
 			because: "the explicit resource value should be preserved in localizableStrings");
+	}
+
+	[Test]
+	[Description("GitHub #1850: a supplied value for a key the schema already stores is reported as updated, not as registered, so a successful value change does not read as resourcesRegistered: 0 with nothing else.")]
+	public void TryUpdatePage_WhenExistingResourceValueChanges_ReportsItAsUpdated() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				"mobile-schema-uid",
+				"mobile-package-uid",
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["body"] = "{}",
+					["localizableStrings"] = JArray.Parse("""
+						[{"uId":"title-uid","name":"UsrMobileTitle","values":[{"cultureName":"en-US","value":"Old title"}]}]
+						""")
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		string mobileBody = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "insert",
+			      "name": "UsrMobileTitle",
+			      "values": {
+			        "type": "crt.Label",
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    }
+			  ],
+			  "viewModelConfigDiff": [],
+			  "modelConfigDiff": []
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = mobileBody,
+			Resources = "{\"UsrMobileTitle\":\"New title\"}",
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: "changing the value of an existing resource is a valid save");
+		response.ResourcesRegistered.Should().Be(0,
+			because: "the key was already stored on the schema, so no new key was registered");
+		response.RegisteredResourceKeys.Should().BeNull(
+			because: "no key was registered");
+		response.ResourcesUpdated.Should().Be(1,
+			because: "the save changed the en-US value of the existing key, and the caller must see that it was applied");
+		response.UpdatedResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response names the key whose value changed");
+		savedPayload.Should().Contain("\"value\":\"New title\"",
+			because: "the new value is written into the saved localizableStrings");
+		savedPayload.Should().Contain("\"uId\":\"title-uid\"",
+			because: "the existing declaration keeps its identity");
+	}
+
+	[Test]
+	[Description("GitHub #1850: in append mode a supplied value for a key the schema already stores is reported as updated, not as registered - the reported mode: append scenario.")]
+	public void TryUpdatePage_AppendMode_WhenExistingResourceValueChanges_ReportsItAsUpdated() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string schemaUId = "mobile-schema-uid";
+		const string packageUId = "mobile-package-uid";
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = schemaUId, Name = "UsrMobile_FormPage", PackageUId = packageUId, PackageName = "UsrMobilePackage" }
+		});
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				schemaUId,
+				packageUId,
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["uId"] = schemaUId,
+					["name"] = "UsrMobile_FormPage",
+					["body"] = "{ \"viewConfigDiff\": [{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"visible\":true}}], \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }",
+					["package"] = new JObject { ["uId"] = packageUId },
+					["localizableStrings"] = JArray.Parse("""
+						[{"uId":"title-uid","name":"UsrMobileTitle","values":[{"cultureName":"en-US","value":"Old title"}]}]
+						""")
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		const string fragment = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "merge",
+			      "name": "UsrMobileTitleLabel",
+			      "values": {
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    }
+			  ]
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = fragment,
+			Mode = "append",
+			Resources = "{\"UsrMobileTitle\":\"New title\"}",
+			DryRun = false
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: $"changing the value of an existing resource in append mode is a valid save. Error: {response.Error}");
+		response.ResourcesRegistered.Should().Be(0,
+			because: "the key was already stored on the schema, so no new key was registered");
+		response.ResourcesUpdated.Should().Be(1,
+			because: "the append save changed the en-US value of the existing key, and the caller must see that it was applied");
+		response.UpdatedResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response names the key whose value changed");
+		savedPayload.Should().Contain("\"value\":\"New title\"",
+			because: "the new value is written into the saved localizableStrings");
+		savedPayload.Should().Contain("\"uId\":\"title-uid\"",
+			because: "the existing declaration keeps its identity");
+	}
+
+	[Test]
+	[Description("GitHub #1850: an append dry run reports the keys the save would register and the existing keys whose value it would change, and writes nothing.")]
+	public void TryUpdatePage_AppendDryRun_WhenResourcesAreSupplied_ReportsRegisteredAndUpdatedKeys() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IServiceUrlBuilder serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
+		ILogger logger = Substitute.For<ILogger>();
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		const string schemaUId = "mobile-schema-uid";
+		const string packageUId = "mobile-package-uid";
+		serviceUrlBuilder.Build(Arg.Any<string>())
+			.Returns(callInfo => "http://test" + callInfo.Arg<string>());
+		serviceUrlBuilder.Build(Arg.Any<ServiceUrlBuilder.KnownRoute>())
+			.Returns(ci => serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoutes[ci.Arg<ServiceUrlBuilder.KnownRoute>()]));
+		hierarchyClient.GetDesignPackageUId(schemaUId).Returns(packageUId);
+		hierarchyClient.GetParentSchemas(schemaUId, packageUId).Returns(new List<PageDesignerHierarchySchema> {
+			new() { UId = schemaUId, Name = "UsrMobile_FormPage", PackageUId = packageUId, PackageName = "UsrMobilePackage" }
+		});
+		string savedPayload = null;
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SelectQuery")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(CreateMetadataResponse(
+				"UsrMobile_FormPage",
+				schemaUId,
+				packageUId,
+				"UsrMobilePackage",
+				"BaseMobilePageTemplate").ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("GetSchema")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject {
+				["success"] = true,
+				["schema"] = new JObject {
+					["uId"] = schemaUId,
+					["name"] = "UsrMobile_FormPage",
+					["body"] = "{ \"viewConfigDiff\": [{\"operation\":\"merge\",\"name\":\"Existing\",\"values\":{\"visible\":true}}], \"viewModelConfigDiff\": [], \"modelConfigDiff\": [] }",
+					["package"] = new JObject { ["uId"] = packageUId },
+					["localizableStrings"] = JArray.Parse("""
+						[{"uId":"title-uid","name":"UsrMobileTitle","values":[{"cultureName":"en-US","value":"Old title"}]}]
+						""")
+				}
+			}.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("SaveSchema")),
+				Arg.Do<string>(body => savedPayload = body),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(new JObject { ["success"] = true }.ToString());
+		applicationClient.ExecutePostRequest(
+				Arg.Is<string>(url => url.Contains("ResetScriptCache")),
+				Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(string.Empty);
+		PageUpdateCommand command = new(applicationClient, serviceUrlBuilder, logger, Substitute.For<IPageBaselineGuard>(), new PersistedResourceKeyReader(), hierarchyClient, viewConfigApplierFactory: () => Substitute.For<IJsonDiffApplier>());
+		const string fragment = """
+			{
+			  "viewConfigDiff": [
+			    {
+			      "operation": "merge",
+			      "name": "UsrMobileTitleLabel",
+			      "values": {
+			        "caption": "$Resources.Strings.UsrMobileTitle"
+			      }
+			    },
+			    {
+			      "operation": "merge",
+			      "name": "UsrMobileHintLabel",
+			      "values": {
+			        "caption": "$Resources.Strings.UsrMobileHint"
+			      }
+			    }
+			  ]
+			}
+			""";
+		PageUpdateOptions options = new() {
+			SchemaName = "UsrMobile_FormPage",
+			Body = fragment,
+			Mode = "append",
+			Resources = "{\"UsrMobileTitle\":\"New title\",\"UsrMobileHint\":\"Hint\"}",
+			DryRun = true
+		};
+
+		// Act
+		bool result = command.TryUpdatePage(options, out PageUpdateResponse response);
+
+		// Assert
+		result.Should().BeTrue(
+			because: $"an append dry run with valid resources succeeds. Error: {response.Error}");
+		response.DryRun.Should().BeTrue(because: "the caller asked for validation only");
+		response.ResourcesRegistered.Should().Be(1,
+			because: "the dry run already prepared the write, so it knows the save would add the new key");
+		response.RegisteredResourceKeys.Should().Equal(["UsrMobileHint"],
+			because: "the response names the key the save would register");
+		response.ResourcesUpdated.Should().Be(1,
+			because: "the dry run already prepared the write, so it knows the save would change the en-US value of the existing key");
+		response.UpdatedResourceKeys.Should().Equal(["UsrMobileTitle"],
+			because: "the response names the key whose value the save would change");
+		savedPayload.Should().BeNull(because: "a dry run must not save the schema");
 	}
 
 	[Test]
