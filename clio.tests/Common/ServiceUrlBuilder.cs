@@ -322,6 +322,13 @@ internal class ServiceUrlBuilderCommandTests
 			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
 				ServiceUrlBuilder.KnownRoute.ImageApiUpload,
 				"http://localhost/ImageAPIService/upload");
+			// ENG-104665: upload-file posts into a file entity through the platform file API.
+			yield return new TestCaseDataWithKnownRoutes(false, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.FileApiUploadFile,
+				"http://localhost/0/rest/FileApiService/UploadFile");
+			yield return new TestCaseDataWithKnownRoutes(true, "http://localhost",
+				ServiceUrlBuilder.KnownRoute.FileApiUploadFile,
+				"http://localhost/rest/FileApiService/UploadFile");
 		}
 	}
 

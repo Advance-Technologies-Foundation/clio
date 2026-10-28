@@ -2022,6 +2022,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
 			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
 				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+			registeringSave.ResourcesUpdated.Should().Be(0,
+				because: "a newly registered key is counted as registered, never also as updated");
 			registeringSave.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
 				because: "the real MCP response must warn about a stale workspace push");
 
@@ -2036,6 +2038,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			AllureApi.Step("Existing caption updates without registering another key", () => {
 				updated.Success.Should().BeTrue(because: "native SaveSchema must accept the changed value");
 				updated.ResourcesRegistered.Should().Be(0, because: "updating a value preserves declaration identity");
+				updated.ResourcesUpdated.Should().Be(1,
+					because: "GitHub #1850: a changed value of an existing key must be reported as applied, not as resourcesRegistered: 0 alone");
+				updated.UpdatedResourceKeys.Should().Equal([persistedKey],
+					because: "the response must name the key whose value the save changed");
 				updated.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
 					because: "value updates need the same capture warning as new keys");
 			});

@@ -229,6 +229,7 @@ Commands:
   update-sql-schema                           Update the body of a SQL script schema on a remote Creatio environment, sql-schema-update
   update-theme                                Overwrite an existing custom Creatio theme on the target environment via the native ThemeService
   update-toolkit                              Update the Creatio AI App Development Toolkit for all detected coding agents, update-skill
+  upload-file                                 Upload a local file into a file entity, attach it to a record and print the file id
   upload-image                                Upload a local image to an environment and print its image id
   upload-license                              Load license to selected environment, license, load-license, loadlicense
   upload-licenses                             Upload license files to Creatio, lic
