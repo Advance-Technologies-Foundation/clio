@@ -275,12 +275,24 @@ public sealed class RecordFileUploader : IRecordFileUploader {
 			errorCode = ReadString(errorInfo, "errorCode");
 			message = ReadString(errorInfo, "message");
 		}
-		// success:false is the service's own refusal: FileRepository caught the exception before or during the
-		// save, so no file id is returned to inspect.
-		return RecordFileUploadResult.Failure("File upload failed: " + DescribeRejection(errorCode, message, request));
+		// A mapped rejection is raised before the insert (unknown schema or column) or by the insert itself
+		// (missing parent), so nothing was stored and no file id is returned.
+		string knownRejection = DescribeKnownRejection(errorCode, message, request);
+		if (knownRejection is not null) {
+			return RecordFileUploadResult.Failure("File upload failed: " + knownRejection);
+		}
+		// Any other error can come after the insert committed, so the file record can exist.
+		string code = errorCode is not null && SchemaNamePattern.IsMatch(errorCode) ? $" ({errorCode})" : string.Empty;
+		return UnconfirmedFailure(
+			$"the file API reported an error{code}. The server text is not shown; check the environment log " +
+			"for the cause", fileId);
 	}
 
-	private static string DescribeRejection(string errorCode, string message, RecordFileUploadRequest request) {
+	/// <summary>
+	/// Describes a rejection that is known to store nothing, in clio's own words. Returns
+	/// <see langword="null"/> for any other error.
+	/// </summary>
+	private static string DescribeKnownRejection(string errorCode, string message, RecordFileUploadRequest request) {
 		message ??= string.Empty;
 		if (errorCode == "ItemNotFoundException") {
 			if (message.StartsWith("Item with name", StringComparison.Ordinal)) {
@@ -299,10 +311,7 @@ public sealed class RecordFileUploader : IRecordFileUploader {
 			return $"the parent record {request.ParentId} does not exist in the table that " +
 				$"'{request.ParentColumn}' points to.";
 		}
-		return errorCode is not null && SchemaNamePattern.IsMatch(errorCode)
-			? $"the file API rejected the upload ({errorCode}). The server text is not shown; check the " +
-				"environment log for the cause."
-			: "the file API rejected the upload. The server text is not shown; check the environment log for the cause.";
+		return null;
 	}
 
 	/// <summary>
@@ -332,13 +341,10 @@ public sealed class RecordFileUploader : IRecordFileUploader {
 	/// contract (the same rule as <see cref="SysImageUploader"/>).
 	/// </summary>
 	private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value) {
-		foreach (JsonProperty property in element.EnumerateObject()
-			.Where(candidate => string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))) {
-			value = property.Value;
-			return true;
-		}
-		value = default;
-		return false;
+		value = element.EnumerateObject()
+			.FirstOrDefault(candidate => string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+			.Value;
+		return value.ValueKind != JsonValueKind.Undefined;
 	}
 
 	/// <summary>

@@ -1819,6 +1819,27 @@ public sealed class ODataCreateToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("A row that sets an Edm.Stream column to null is not refused locally, even when the type map is already loaded: only a value is measured as a rejection.")]
+	public void Create_Should_Send_A_Row_With_A_Null_Binary_Value_When_The_Type_Map_Is_Already_Loaded() {
+		// Arrange
+		(ODataCreateTool tool, IApplicationClient client) = CreateFixture(SysImageCsdl);
+
+		// Act
+		ODataCreateBatchResponse response = tool.Create(new ODataCreateArgs {
+			EnvironmentName = "dev",
+			Entity = "SysImage",
+			Rows = Arr("[{\"Name\":\"2024-01-01T04:00:00\"},{\"Name\":\"logo.png\",\"Data\":null}]")
+		});
+
+		// Assert
+		response.Results[1].Diagnostic.WriteAttempted.Should().BeTrue(
+			because: "a null binary value is left to the server instead of a local refusal");
+		client.Received(2).ExecuteNonReplayablePostRequest(
+			Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("When $metadata is unavailable, a model-binding rejection keeps the generic explanation and still reports the row as not created.")]
 	public void Create_Should_Keep_The_Generic_Rejection_Text_When_Metadata_Is_Unavailable() {
 		// Arrange
@@ -1838,6 +1859,8 @@ public sealed class ODataCreateToolTests {
 			because: "without a type map the generic explanation is the honest answer");
 		row.Error.Should().NotContain("'Data'",
 			because: "a column cannot be named binary without its declared type");
+		row.Error.Should().Contain("upload-file",
+			because: "the generic text still points to the supported write path for a binary column");
 		row.Diagnostic.SideEffect.Should().Be("none", because: "the server rejection proves nothing was written");
 		client.Received(1).ExecuteGetRequest(MetadataUrl, Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 	}

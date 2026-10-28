@@ -122,10 +122,21 @@ public sealed class ODataCreateTool(
 		"The input was not valid."
 	};
 
-	/// <summary>EDM types of a binary column. Creatio publishes file and image <c>Data</c> as Edm.Stream.</summary>
+	/// <summary>
+	/// EDM types of a binary column, used to name the column after a model-binding rejection. Creatio publishes
+	/// file and image <c>Data</c> as Edm.Stream.
+	/// </summary>
 	private static readonly HashSet<string> BinaryEdmTypes = new(StringComparer.Ordinal) {
 		"Edm.Stream",
 		"Edm.Binary"
+	};
+
+	/// <summary>
+	/// EDM types refused locally before the POST. Only Edm.Stream with a value is measured as a rejection;
+	/// other cases are left to the server, whose rejection is a confirmed no-write.
+	/// </summary>
+	private static readonly HashSet<string> RefusedEdmTypes = new(StringComparer.Ordinal) {
+		"Edm.Stream"
 	};
 
 	/// <summary>Failure text for a row that sets a binary column. Built from validated column names only.</summary>
@@ -411,7 +422,7 @@ public sealed class ODataCreateTool(
 					Error = zoneLessDateTime
 				};
 			}
-			IReadOnlyList<string> binaryColumns = FindBinaryColumns(row, loadedTypes);
+			IReadOnlyList<string> binaryColumns = FindBinaryColumns(row, loadedTypes, RefusedEdmTypes);
 			if (binaryColumns.Count > 0) {
 				return new ODataRowResult {
 					Index = index,
@@ -432,7 +443,7 @@ public sealed class ODataCreateTool(
 			// budget: the row keeps the generic explanation instead of overshooting the deadline.
 			if (result.RecordCreated == false
 				&& (propertyTypes.IsValueCreated || remainingBudgetMs() >= ODataFieldValidation.OptionalMetadataTimeoutMs)) {
-				binaryColumns = FindBinaryColumns(row, propertyTypes.Value);
+				binaryColumns = FindBinaryColumns(row, propertyTypes.Value, BinaryEdmTypes);
 				if (binaryColumns.Count > 0) {
 					result = result with { Error = DescribeBinaryColumns(binaryColumns) };
 				}
@@ -464,15 +475,17 @@ public sealed class ODataCreateTool(
 		&& ModelValidationMessages.Contains(message.GetString());
 
 	/// <summary>
-	/// Columns of <paramref name="row"/> that the type map declares binary, in row order. Empty when the
-	/// type map is unavailable.
+	/// Columns of <paramref name="row"/> with a non-null value that the type map declares as one of
+	/// <paramref name="edmTypes"/>, in row order. Empty when the type map is unavailable.
 	/// </summary>
-	private static IReadOnlyList<string> FindBinaryColumns(JsonElement row, IReadOnlyDictionary<string, string> types) {
+	private static IReadOnlyList<string> FindBinaryColumns(JsonElement row, IReadOnlyDictionary<string, string> types,
+		HashSet<string> edmTypes) {
 		if (types is null || row.ValueKind != JsonValueKind.Object) {
 			return [];
 		}
 		return row.EnumerateObject()
-			.Where(property => types.TryGetValue(property.Name, out string type) && BinaryEdmTypes.Contains(type))
+			.Where(property => property.Value.ValueKind != JsonValueKind.Null
+				&& types.TryGetValue(property.Name, out string type) && edmTypes.Contains(type))
 			.Select(property => property.Name)
 			.ToList();
 	}
@@ -493,7 +506,8 @@ public sealed class ODataCreateTool(
 						RetryGuidance = RejectedBeforeWriteGuidance,
 						Error = "Creatio rejected the row while reading the request body and wrote nothing. "
 							+ "Typical causes: a column that does not exist on the entity, a value of the wrong type "
-							+ "(for example a malformed GUID), or a value for a binary column."
+							+ "(for example a malformed GUID), or a value for a binary column (file or image Data). "
+							+ "OData cannot write a binary column: use upload-file (or upload-image for an image)."
 					};
 				}
 				// Redact like the sibling error paths: a routing Message can embed the absolute request

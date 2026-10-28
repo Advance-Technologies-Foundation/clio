@@ -123,9 +123,7 @@ public sealed class RecordFileUploaderTests
 		"parent record")]
 	[TestCase("DbOperationException", "The INSERT statement conflicted with the FOREIGN KEY constraint \\\"" + ConstraintName + "\\\". " + StackLine,
 		"parent record")]
-	[TestCase("SecurityException", "Access denied to " + ConstraintName + ". " + StackLine,
-		"SecurityException")]
-	[Description("Maps each file API success:false rejection to clio's own text, never copies the server message, stack trace or constraint name, returns no file id and skips the readback.")]
+	[Description("Maps each known file API success:false rejection to clio's own text, never copies the server message, stack trace or constraint name, returns no file id and skips the readback.")]
 	public async Task UploadAsync_ShouldDescribeRejectionInOwnWords_WhenFileApiRejects(string errorCode,
 		string serverMessage, string expectedError) {
 		// Arrange
@@ -141,6 +139,28 @@ public sealed class RecordFileUploaderTests
 		result.Error.Should().NotContain(StackLine, because: "a server stack trace must not reach the caller");
 		result.Error.Should().NotContain(ConstraintName, because: "a database constraint name must not reach the caller");
 		result.FileId.Should().BeNull(because: "the service refused the upload, so there is no file record to inspect");
+		await client.DidNotReceiveWithAnyArgs().ExecuteGetRequestAsync(default, default, default, default, default);
+	}
+
+	[TestCase("SecurityException")]
+	[TestCase("not a schema name!")]
+	[Description("Reports an unmapped file API success:false answer as not confirmed with the file id, because the error can come after the insert committed; the server text is not copied and the readback is skipped.")]
+	public async Task UploadAsync_ShouldReportUnconfirmedWithFileId_WhenFileApiRejectionIsUnmapped(string errorCode) {
+		// Arrange
+		(RecordFileUploader sut, IOwnedApplicationClient client, _, _, _, _) =
+			BuildSut(TextResponse(body: Rejection(errorCode, "Access denied to " + ConstraintName + ". " + StackLine)));
+
+		// Act
+		RecordFileUploadResult result = await sut.UploadAsync(Request());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the file API reported an error");
+		result.Error.Should().Contain("not confirmed", because: "an unmapped error does not prove that nothing was stored");
+		result.FileId.Should().NotBeNull(because: "the file record can exist, so the caller needs its id to check it");
+		result.Error.Should().Contain(result.FileId.ToString(), because: "the text names the record to inspect");
+		result.Error.Should().NotContain(StackLine, because: "a server stack trace must not reach the caller");
+		result.Error.Should().NotContain(ConstraintName, because: "a database constraint name must not reach the caller");
+		result.Error.Should().NotContain("not a schema name!", because: "only a schema-name-shaped error code is shown");
 		await client.DidNotReceiveWithAnyArgs().ExecuteGetRequestAsync(default, default, default, default, default);
 	}
 
@@ -425,6 +445,86 @@ public sealed class RecordFileUploaderTests
 		result.Success.Should().BeFalse(because: "the upload outcome is not confirmed");
 		result.Error.Should().Contain("session was rejected", because: "the cause is the session, after the file was sent");
 		result.FileId.Should().NotBeNull(because: "the file record can exist after a sent upload");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Reports a transport failure during the login as a definite failure without a file id and redacts the host from the exception text.")]
+	public async Task UploadAsync_ShouldFailWithoutFileId_WhenLoginThrowsHttpRequestException() {
+		// Arrange
+		(RecordFileUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.LoginAsync(Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ =>
+				throw new HttpRequestException("Connection refused (https://secret-host.example.com:8443/0/ServiceModel)"));
+
+		// Act
+		RecordFileUploadResult result = await sut.UploadAsync(Request());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the login request failed");
+		result.Error.Should().StartWith("File upload failed", because: "the file was never sent, so the failure is definite");
+		result.Error.Should().NotContain("secret-host.example.com", because: "the exception text is redacted");
+		result.FileId.Should().BeNull(because: "the file was never sent");
+		await client.DidNotReceiveWithAnyArgs().UploadImageAsync(default, default, default, default, default, default);
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Reports a transport failure during the upload as not confirmed with the file id and redacts the host from the exception text.")]
+	public async Task UploadAsync_ShouldReportUnconfirmedWithFileId_WhenUploadThrowsHttpRequestException() {
+		// Arrange
+		(RecordFileUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ =>
+				throw new HttpRequestException("Connection reset (https://secret-host.example.com:8443/0/rest)"));
+
+		// Act
+		RecordFileUploadResult result = await sut.UploadAsync(Request());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the upload outcome is not confirmed");
+		result.Error.Should().Contain("not confirmed", because: "the file can be stored even when the answer is lost");
+		result.Error.Should().NotContain("secret-host.example.com", because: "the exception text is redacted");
+		result.FileId.Should().NotBeNull(because: "the file record can exist after a sent upload");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Reports an HTTP timeout during the upload (not a caller cancel) as not confirmed with the file id.")]
+	public async Task UploadAsync_ShouldReportUnconfirmedWithFileId_WhenUploadTimesOut() {
+		// Arrange
+		(RecordFileUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.UploadImageAsync(Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<string>(), Arg.Any<string>(),
+			Arg.Any<int>(), Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new TaskCanceledException("The request timed out."));
+
+		// Act
+		RecordFileUploadResult result = await sut.UploadAsync(Request(), CancellationToken.None);
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the upload outcome is not confirmed");
+		result.Error.Should().Contain("timed out", because: "the cause is the HTTP timeout");
+		result.FileId.Should().NotBeNull(because: "the file record can exist after a sent upload");
+		client.Received(1).Dispose();
+	}
+
+	[Test]
+	[Description("Reports an exception thrown by the readback GET as not confirmed with the file id, because the file API already accepted the upload.")]
+	public async Task UploadAsync_ShouldReportUnconfirmedWithFileId_WhenReadbackThrows() {
+		// Arrange
+		(RecordFileUploader sut, IOwnedApplicationClient client, _, _, _, _) = BuildSut();
+		client.ExecuteGetRequestAsync(Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>(),
+			Arg.Any<CancellationToken>())
+			.Returns<Task<HttpResponseMessage>>(_ => throw new HttpRequestException("Connection reset"));
+
+		// Act
+		RecordFileUploadResult result = await sut.UploadAsync(Request());
+
+		// Assert
+		result.Success.Should().BeFalse(because: "the stored bytes were not verified");
+		result.Error.Should().Contain("not confirmed", because: "the file API accepted the upload, so the record can exist");
+		result.FileId.Should().NotBeNull(because: "the caller needs the id to check the record");
 		client.Received(1).Dispose();
 	}
 

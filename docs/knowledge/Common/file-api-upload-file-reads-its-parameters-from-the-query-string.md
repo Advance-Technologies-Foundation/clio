@@ -34,7 +34,8 @@ date: 2026-10-27
 **Why it is this way** — the file API is the only write path for a file entity's `Data` column
 (`Edm.Stream`, see `../McpServer/odata-create-model-validation-rejection-is-a-confirmed-no-write.md`).
 `RecordFileUploader` therefore never copies `errorInfo.message` (it maps the known codes to its own
-text), treats the 400 `{"error":...}` answer as a definite rejection, requires a parent column and id,
+text and reports any other `success:false` as not confirmed with the file id, because an unmapped
+error can come after the insert committed), treats the 400 `{"error":...}` answer as a definite rejection, requires a parent column and id,
 and proves success by a byte-identical readback.
 
 **What breaks if you ignore it** — parameters sent as multipart fields together with `Content-Range`
