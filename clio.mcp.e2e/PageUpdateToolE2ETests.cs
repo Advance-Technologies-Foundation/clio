@@ -301,8 +301,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
 		modeField.Description.Should().Contain("The one exception",
 			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
-		modeField.Description.Should().Contain("dedupe by `request` in place",
-			because: "ENG-104715: the caller must learn that a re-sent handler keeps its position, so an append save does not reorder the schema");
+		modeField.Description.Should().Contain("dedupe by `request`, mostly in place",
+			because: "ENG-104715: the caller must learn that a re-sent handler usually keeps its position, so an append save does not reorder the schema, and that the guarantee is not unconditional");
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
 	}
