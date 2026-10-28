@@ -63,7 +63,7 @@ and changes still confirm the write", so it is not read as a reason to describe 
 **Why it is this way** — Copilot CLI spills any tool result over ~20 KB to a file, and in 35 CAADT runs agents
 re-read a process right after writing it 41 times and parsed spilled describes with 169 shell calls. One read
 inside clio is cheaper than the agent's full describe plus its spill handling. The checksum and the change
-list ignore `position`/`size`/`geometry` because the server re-derives the layout on every save, and ignore
+list ignore `position`/`size`/`geometry` because the server re-derives the layout on every structural edit, and ignore
 the version-family facts because they change when a sibling is saved.
 
 **What breaks if you ignore it** — measuring the threshold in graph characters lets a quote-heavy graph spill
