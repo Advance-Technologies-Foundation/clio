@@ -527,3 +527,10 @@ Scope and mechanism agreed with it:
 - **Not caught, deliberately:** a filter that selects something but spans every record (by file name only, for a
   company price list): that is the user's intent. A designer-built process keeps working; describe reports the binding
   with an issue.
+- **Indirect sources (added 2026-10-29 after the slice B review, owner's choice).** Within the process the judgement
+  follows the path the files take: a slot that reads a process parameter counts as reading the Process file element
+  that parameter is mapped from, and a slot that reads the Process parameter variant's `ObjectFiles` counts as reading
+  what that variant's `Files` reads. A slot that reads a SUB-PROCESS output is NOT refused: the callee is another schema
+  that can change after the parent is built, so no build-time check can hold. Such an entry gets a notice instead
+  (P-C4): the builder cannot see what the sub-process reads, the files are read with rights disabled and sent outside
+  Creatio, so the sub-process must read scoped records only.
