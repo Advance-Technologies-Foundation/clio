@@ -835,6 +835,9 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				await TestContext.Error.WriteLineAsync($"Could not {what}; it stays on the stand.");
 			}
 		} catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// A cleanup failure is reported, not the test's verdict, so a parse failure's payload dump would only land in
+			// the published TestResults artifact of a passing run.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			await TestContext.Error.WriteLineAsync($"Could not {what}; it stays on the stand: {exception.Message}");
 		}
 	}
