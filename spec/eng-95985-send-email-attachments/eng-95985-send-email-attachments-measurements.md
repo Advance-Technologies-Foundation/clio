@@ -437,7 +437,9 @@ fresh twin after the PR is ready.
 
 **Steps:**
 1. Open `UsrSeEm2Twin` in the designer (rule 6). Open SE1's card: five attachment rows, each with its display value;
-   SE2: one row. Screenshot or DOM read of the rows (rule 5).
+   SE2: one row. Screenshot or DOM read of the rows (rule 5). Record the PF1 row (`PF1.ObjectFiles` /
+   `ObjectFile`) separately: it has no designer twin, because the picker does not offer PF1's output (EM1,
+   measured 2026-10-29), so this step is its only designer-side evidence.
 2. Open every other element's card (rule 11), change nothing, save (write).
 3. RB-1, RB-2 ("after"). Diff before/after under the ACR, slots only.
 4. Optional, informative: in a fresh designer session, try to delete OF1 and record whether the designer refuses
@@ -450,6 +452,7 @@ fresh twin after the PR is ready.
 | rows found | every slot whose `A3` is the process, which has no parent, and whose name matches `^Attachments\d+$` | `ProcessFilesControlSchema.js:308-324`; `getIsDynamic` = `createdInSchemaUId === parentSchema.uId` (`R/r3-designer.md:50`) | [source] |
 | row content | the row is the slot's FIRST item | `ProcessFilesControlSchema.js:223` | [source] |
 | display text | the item's `sourceValue.displayValue` (its DisplayValue resource); without one, the raw `[#...#]` value | the row's view model takes `parameter.getMappingValue()` (`PD/Schemas/ProcessFlowElementPropertiesPage/ProcessFlowElementPropertiesPage.js:735, 835-837`), which returns `displayValue: displayValue \|\| value \|\| null` (`TS/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/process-schema-parameter.js:790-797, 808-819`) | [source] |
+| PF1 row | rendered like the others, display `[#PF1.Collection of files:ObjectFile#]`; kept by the no-op save although the picker would not offer that source | the control lists rows by stamp and name, not by source (`ProcessFilesControlSchema.js:308-324`) | [inferred] |
 | no-op save | `_saveFiles` re-sets each item's value (`ProcessFilesControlSchema.js:376-387`): compared keys equal; any change is a designer normalisation to name | - | [traced, not measured] |
 
 **If not:**
@@ -460,6 +463,7 @@ fresh twin after the PR is ready.
 | a row shows the raw `[#...#]` formula | the item's DisplayValue resource is missing or keyed wrongly: fix the slot writer's display values (AD2) |
 | a row shows a bare caption | the writer wrote the package's bare caption instead of the designer form (AD1/AD2): fix the writer |
 | the save changes a compared key | either the writer adopts the designer's form, or the owner names the deviation |
+| the PF1 row is missing, empty or rewritten by the no-op save | the designer rejects that source: the owner decides between refusing `PF1.ObjectFiles` in the builder and documenting a designer-incompatible row (AC2, AC7) |
 | deleting OF1 is allowed and leaves SE1's slots dangling | a guidance sentence; no package change (the designer is not ours) |
 
 **Cleanup and leftovers:** none beyond EM2's process.
