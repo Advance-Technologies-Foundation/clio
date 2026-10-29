@@ -221,6 +221,53 @@ public class ModifyBusinessProcessToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
+	[TestCase("[{\"sourceElement\":\"OF1\",\"sourceElementParameter\":\"ObjectFiles\"},{\"processParameter\":\"Doc\"}]")]
+	[TestCase("[]")]
+	[Description("Forwards a setElement whose email block carries an attachments list verbatim - a list, and an EMPTY list, which removes every attachment (Q4): a forwarder that dropped the empty array would leave the attachments in place while the caller believes they are gone.")]
+	[Category("Unit")]
+	public void ModifyBusinessProcess_Should_Forward_SendEmailAttachments_Verbatim(string attachments) {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		string operations = "[{\"op\":\"setElement\",\"elementName\":\"SE1\",\"elementUpdate\":{\"email\":{\"attachments\":"
+			+ attachments + "}}}]";
+		FakeModifyBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<ModifyBusinessProcessCommand>(Arg.Any<ModifyBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		ModifyBusinessProcessTool tool = new(new FakeModifyBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.ModifyBusinessProcess(
+			new ModifyBusinessProcessArgs("docker_fix2", JsonArgument.Text(operations), "UsrSampleProcess", null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a setElement with an attachments list must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions!.OperationsJson.Should().Be(operations,
+			because: "the list, an empty one included, is the whole instruction of the replace rule and must arrive unchanged");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The modify contract and prompt state the attachments replace rule - to add one, send the described list plus the new one, and [] removes them all - beside the recipients' match-or-append, so an agent does not send one new entry expecting it to be appended and remove every other attachment.")]
+	public void ModifyBusinessProcessTool_ShouldStateTheAttachmentsReplaceRule_InTheContractAndThePrompt() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		description.Should().Contain("attachments REPLACES the list: to add one, send the described list plus the new one; [] removes them all",
+			because: "the replace rule differs from the recipients' match-or-append and is decided at call time");
+		description.Should().Contain("(get-guidance name=process-send-email)",
+			because: "the contract routes to the guide that owns the attachments block");
+		prompt.Should().Contain("and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send",
+			because: "the prompt must make the agent describe first, because a stale list deletes rows added since");
+	}
+
 	[Test]
 	[Description("Forwards a setElement operation carrying a changeData block verbatim — the tool is an opaque pass-through, so the target source, every value-source kind (constant, processParameter, sourceElement pair, expression) and the whole block ride through to the command unmodified. Guards the one thing this repo CAN assert about the changeData contract: that clio does not reshape it on the way to the server.")]
 	[Category("Unit")]
@@ -703,8 +750,8 @@ public class ModifyBusinessProcessToolTests {
 			because: "the operation, its argument and its family-wide scope are what a caller decides at call time");
 		description.Should().Contain("get-guidance name=process-tracing",
 			because: "the data and volume costs live in the guide, and the contract must route there");
-		description.Should().Contain("this clio requires 1.6.6.127, for itemProperties, setTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
+		description.Should().Contain("this clio requires 1.6.6.127, for email.attachments, itemProperties, setTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments)");
 		prompt.Should().Contain("`clearConnections`, or `setTracing`",
 			because: "the prompt's operation list must match its tool's contract");
 		prompt.Should().Contain("`get-guidance name=process-tracing`, tell the user",

@@ -155,6 +155,59 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Description("Forwards a descriptor whose sendEmail element carries an email.attachments list verbatim - one entry per source kind (an element file output, a dotted collection item, a process parameter, an expression) - so the opaque pass-through never reshapes the list the server turns into attachment rows.")]
+	[Category("Unit")]
+	public void CreateBusinessProcess_Should_Forward_SendEmailAttachments_Verbatim() {
+		// Arrange
+		ConsoleLogger.Instance.ClearMessages();
+		const string attachmentsDescriptor =
+			"{\"name\":\"UsrSendFilesProc\",\"packageName\":\"Custom\",\"elements\":[{\"name\":\"SE1\",\"type\":\"sendEmail\","
+			+ "\"email\":{\"mode\":\"manual\",\"subject\":\"Your invoice\",\"to\":[{\"processParameter\":\"Contact\"}],"
+			+ "\"attachments\":[{\"sourceElement\":\"GenerateInvoice\",\"sourceElementParameter\":\"ReportFiles\"},"
+			+ "{\"sourceElement\":\"ReadContractFiles\",\"sourceElementParameter\":\"ObjectFiles.File\"},"
+			+ "{\"processParameter\":\"Documents\"},{\"expression\":\"[#Documents#]\"}]}}],\"flows\":[]}";
+		FakeCreateBusinessProcessCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateBusinessProcessCommand>(Arg.Any<CreateBusinessProcessOptions>())
+			.Returns(resolvedCommand);
+		CreateBusinessProcessTool tool = new(new FakeCreateBusinessProcessCommand(), ConsoleLogger.Instance, commandResolver);
+
+		// Act
+		CommandExecutionResult result = tool.CreateBusinessProcess(
+			new CreateBusinessProcessArgs("docker_fix2", JsonArgument.Text(attachmentsDescriptor), null));
+
+		// Assert
+		result.ExitCode.Should().Be(0,
+			because: "a descriptor with an attachments list must be forwarded for the requested environment");
+		resolvedCommand.CapturedOptions!.DescriptorJson.Should().Be(attachmentsDescriptor,
+			because: "every attachment entry and its source must reach the server byte for byte, or the email attaches "
+				+ "other files than the caller named");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("The create contract names email.attachments in the email shape with its three source members and points at the guide that owns it, and the prompt names the member and the Process file element as a source of the files an email sends - an agent that cannot see the member builds an email without its files.")]
+	public void CreateBusinessProcessTool_ShouldNameEmailAttachments_InTheContractAndThePrompt() {
+		// Arrange
+		string toolDescription = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description;
+
+		// Act
+		string prompt = CreateBusinessProcessPrompt.PromptByEnvironmentName("sandbox");
+
+		// Assert
+		toolDescription.Should().Contain("attachments? (files the email SENDS, one row per entry, each exactly one of processParameter | "
+				+ "sourceElement+sourceElementParameter | expression; get-guidance name=process-send-email owns it)",
+			because: "the email shape is where an agent learns the member, its entry shape and the guide that owns it");
+		prompt.Should().Contain("`performer`, and `attachments` - the files the email sends, one entry per attachment row",
+			because: "the prompt's Send email sentence must name the member beside the other email fields");
+		prompt.Should().Contain("list that output in a Send email element's `email.attachments`",
+			because: "the Process file paragraph must name the consumer, or the agent does not know the files can be emailed");
+	}
+
+	[Test]
 	[Description("Forwards a descriptor that contains an openEditPage element with its full block verbatim - the tool is an opaque pass-through, so the new element type and every field (page, recordType, editMode, defaultValues, recordId, recommendation, hint, performer, logActivity, resultsByColumn, completion) rides through to the command byte-for-byte. EDIT mode with a record is used deliberately: the add-mode path is what every describer fixture already pins, so the mode that carries a record is the one whose pass-through was unproven.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Forward_OpenEditPage_Descriptor_Verbatim() {
@@ -428,8 +481,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.127 (for itemProperties, isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.127 (for email.attachments, itemProperties, isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}
