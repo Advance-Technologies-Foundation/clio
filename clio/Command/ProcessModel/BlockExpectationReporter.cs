@@ -33,8 +33,15 @@ internal static class BlockExpectationReporter {
 	/// caveat lands AFTER everything this method reports as dropped outright. Within each method the order
 	/// holds; across the two it does not.</para>
 	/// </summary>
+	/// <param name="logger">Where the warnings go.</param>
+	/// <param name="described">The description read back after the successful write.</param>
+	/// <param name="intent">What the payload asked of each element.</param>
+	/// <param name="before">
+	/// The description read BEFORE the write, when the command took one (modify does, create has nothing to read);
+	/// it is what lets the attachments replace rule say how many rows it removed.
+	/// </param>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
-			BlockExpectationIntent intent) {
+			BlockExpectationIntent intent, DescribeProcessResult? before = null) {
 		// Each check below takes the ONE subset its wording is true of. See BlockExpectationIntent for why the
 		// subsets are not interchangeable; the short version is that a block-shaped message must never name an
 		// element that sent no block, and the filter-state message must cover the ones that did not.
@@ -56,6 +63,12 @@ internal static class BlockExpectationReporter {
 		// (the server knows email blocks), only the template member is gone, so the element is in the wrong mode.
 		Warn(logger, EmailBlockExpectation.BuildTemplateWarning(
 			EmailBlockExpectation.UnlandedTemplates(described, intent.TemplatedEmail)));
+		// The attachments list is a THIRD shape on the same block: the block lands, the list does not. Then what the
+		// list's replace rule removed, which is the one outcome of a landed list a caller can be surprised by.
+		Warn(logger, EmailBlockExpectation.BuildAttachmentWarning(
+			EmailBlockExpectation.Unlanded(described, intent.SentAttachments)));
+		Warn(logger, EmailBlockExpectation.BuildRemovedAttachmentsWarning(
+			EmailBlockExpectation.Removed(before, described, intent.SentAttachments)));
 	}
 
 	/// <summary>

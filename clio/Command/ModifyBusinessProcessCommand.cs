@@ -637,7 +637,8 @@ public class ModifyBusinessProcessCommand(
 			return rights || labels;
 		}
 
-		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent,
+			before.IsError ? null : before.Value);
 
 		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));

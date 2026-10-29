@@ -1544,6 +1544,91 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a Send email element's attachments - two rows with a numbering gap (Attachments1, Attachments3), each in the write shape with its describe-only slot, bindingLevels and issues - into DescribedEmail.Attachments, so describe hands back a list that can be edited and sent through email.attachments instead of leaving it in the extension bag.")]
+	public void Describe_ShouldReadSendEmailAttachments_WhenServerReportsIt() {
+		// Arrange - the shape a CrtProcessBuilder with email attachments returns
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000005\",\"name\":\"SE1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"manual\",\"subject\":\"Your invoice\",\"hasBody\":true,\"body\":\"<p>x</p>\","
+			+ "\"attachments\":["
+			+ "{\"sourceElement\":\"GenerateInvoice\",\"sourceElementParameter\":\"ReportFiles\",\"slot\":\"Attachments1\",\"bindingLevels\":\"both\"},"
+			+ "{\"processParameter\":\"Contract\",\"slot\":\"Attachments3\",\"bindingLevels\":\"itemOnly\","
+			+ "\"issues\":[\"'Attachments3' attaches 'Contract' once per row of 'OF1.ObjectFiles'.\"]}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.Attachments.Should().HaveCount(2, because: "both attachment rows must survive the read-back, typed");
+		DescribedEmailAttachment report = email.Attachments[0];
+		report.SourceElement.Should().Be("GenerateInvoice", because: "the element source is in the write shape");
+		report.SourceElementParameter.Should().Be("ReportFiles", because: "the element output names the files");
+		report.Slot.Should().Be("Attachments1", because: "the stored row name is reported for the reader");
+		report.BindingLevels.Should().Be("both", because: "the collection and its file item are both bound");
+		report.Issues.Should().BeNull(because: "a healthy row carries no issue");
+		DescribedEmailAttachment contract = email.Attachments[1];
+		contract.ProcessParameter.Should().Be("Contract", because: "a process-parameter source maps to its member");
+		contract.Slot.Should().Be("Attachments3", because: "a numbering gap is reported as stored, not renumbered");
+		contract.BindingLevels.Should().Be("itemOnly", because: "a single File binds the item level only");
+		contract.Issues.Should().ContainSingle(because: "the row's run-time surprise is carried as an issue sentence");
+		email.AdditionalData.Should().BeNull(
+			because: "attachments is a typed member now, so it must not ALSO land in the extension bag");
+	}
+
+	[Test]
+	[Description("Leaves DescribedEmail.Attachments null - not an empty list - when the server omits the member (an element with no attachment row, or a server that predates it), so the absent list serializes away and is not read back as a verified 'no attachments' that a modify would send as [] and remove everything with.")]
+	public void Describe_ShouldLeaveEmailAttachmentsNull_WhenServerOmitsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000006\",\"name\":\"SE1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"auto\",\"subject\":\"No files\"}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Elements[0].Email.Attachments.Should().BeNull(
+			because: "an omitted list is unknown or empty on the server's side; an empty array would invite a replace "
+				+ "that removes every attachment");
+	}
+
+	[Test]
+	[Description("A member clio does not type, on the email block and on an attachment entry, still reaches the output through the extension bags, so a newer CrtProcessBuilder's email fields are not discarded without a trace.")]
+	public void Describe_ShouldKeepUnknownEmailMembers_InTheExtensionBag() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\","
+			+ "\"elements\":[{\"uid\":\"a1b2c3d4-0000-0000-0000-000000000007\",\"name\":\"SE1\",\"type\":\"ProcessSchemaUserTask\",\"buildType\":\"sendemail\",\"userTaskName\":\"EmailTemplateUserTask\","
+			+ "\"email\":{\"mode\":\"manual\",\"futureEmailMember\":\"kept\","
+			+ "\"attachments\":[{\"processParameter\":\"Docs\",\"slot\":\"Attachments1\",\"bindingLevels\":\"both\",\"futureEntryMember\":7}]}}],"
+			+ "\"flows\":[],\"parameters\":[]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		DescribedEmail email = result.Value.Elements[0].Email;
+		email.AdditionalData.Should().ContainKey("futureEmailMember",
+			because: "the email block's bag carries a member this clio does not declare");
+		email.AdditionalData["futureEmailMember"].GetString().Should().Be("kept",
+			because: "the untyped member is passed through with its value");
+		email.Attachments.Should().ContainSingle(because: "the typed list is still read beside the bag")
+			.Which.AdditionalData.Should().ContainKey("futureEntryMember",
+				because: "an attachment entry keeps an undeclared member too");
+	}
+
+	[Test]
 	[Description("Leaves the email block's hasBody unset (null) when an older server omits it, so the absent flag serializes away instead of defaulting to false and reading as a verified 'no body'.")]
 	public void Describe_ShouldLeaveEmailHasBodyNull_WhenServerOmitsIt() {
 		// Arrange — an older CrtProcessBuilder that reports an email block without the hasBody flag

@@ -359,6 +359,202 @@ public static class EmailBlockExpectation {
 			+ "or pick the template in the designer.";
 	}
 
+	/// <summary>
+	/// An attachment entry's source in the write shape of <c>email.attachments</c>: the key a sent entry and a
+	/// described one are compared on. The describe-only members (slot, bindingLevels, issues) are not part of it.
+	/// </summary>
+	public sealed record AttachmentSource(string? ProcessParameter, string? SourceElement,
+		string? SourceElementParameter, string? Expression);
+
+	/// <summary>
+	/// The attachments list one payload sent for one Send email element - the LAST list sent for it, because a modify
+	/// list REPLACES the element's attachments and only the final one decides what the element ends with.
+	/// </summary>
+	/// <param name="Element">The element name (or UId) as the caller wrote it.</param>
+	/// <param name="Entries">The sent entries; empty for <c>attachments: []</c>, which removes every attachment.</param>
+	public sealed record SentAttachments(string Element, IReadOnlyList<AttachmentSource> Entries);
+
+	/// <summary>An element whose read-back carries fewer attachment rows than its sent list had entries.</summary>
+	public sealed record UnlandedAttachments(string Element, int Sent, int Described);
+
+	/// <summary>An element the replace rule took attachment rows away from, and how many.</summary>
+	public sealed record RemovedAttachments(string Element, int Count);
+
+	/// <summary>
+	/// The attachments lists a build descriptor sends: every <c>elements[]</c> entry whose <c>email</c> block carries
+	/// an <c>attachments</c> array. An element whose block omits the member is not tracked - an absent list leaves the
+	/// attachments untouched, so there is nothing to verify.
+	/// </summary>
+	/// <param name="descriptorJson">The build descriptor JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<SentAttachments> AttachmentElements(string descriptorJson) {
+		if (BlockExpectationJson.Parse(descriptorJson) is not JsonObject descriptor
+			|| descriptor[ElementsKey] is not JsonArray elements) {
+			return Array.Empty<SentAttachments>();
+		}
+
+		List<SentAttachments> sent = [];
+		foreach (JsonNode? element in elements) {
+			if (element is JsonObject candidate) {
+				Track(sent, ReadName(candidate["name"]), candidate[EmailKey]);
+			}
+		}
+
+		return sent;
+	}
+
+	/// <summary>
+	/// The attachments lists a modify operations array sends through <c>addElement</c> (<c>element.email</c>) and
+	/// <c>setElement</c> (<c>elementUpdate.email</c>), walked IN ORDER: a later list for the same element replaces the
+	/// earlier one, as it does on the server.
+	/// </summary>
+	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
+	public static IReadOnlyList<SentAttachments> AttachmentElementsFromOperations(string operationsJson) {
+		if (BlockExpectationJson.Parse(operationsJson) is not JsonArray operations) {
+			return Array.Empty<SentAttachments>();
+		}
+
+		List<SentAttachments> sent = [];
+		foreach (JsonNode? operation in operations) {
+			if (operation is not JsonObject op) {
+				continue;
+			}
+			if (op["element"] is JsonObject added) {
+				Track(sent, ReadName(added["name"]), added[EmailKey]);
+			} else if (op["elementUpdate"] is JsonObject update) {
+				Track(sent, ReadName(op["elementName"]), update[EmailKey]);
+			}
+		}
+
+		return sent;
+	}
+
+	/// <summary>
+	/// Of the elements that sent an attachments list, those whose read-back reports FEWER attachment rows than the
+	/// list had entries - the signature of a server that discarded the member while answering success (no row at all)
+	/// or of a list that did not land in full. An element absent from the read-back, or one reporting no email block,
+	/// is not reported here: <see cref="Missing"/> covers the dropped block, and an unresolvable identifier is a
+	/// reason to stay quiet.
+	/// </summary>
+	/// <param name="described">The description read back after the successful operation.</param>
+	/// <param name="sent">The lists returned by <see cref="AttachmentElements"/> / <see cref="AttachmentElementsFromOperations"/>.</param>
+	public static IReadOnlyList<UnlandedAttachments> Unlanded(DescribeProcessResult described,
+			IReadOnlyList<SentAttachments> sent) {
+		if (sent.Count == 0 || described?.Elements is null) {
+			return Array.Empty<UnlandedAttachments>();
+		}
+
+		List<UnlandedAttachments> unlanded = [];
+		foreach (SentAttachments list in sent) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, list.Element);
+			if (element?.Email is not { } email) {
+				continue;
+			}
+			int landed = email.Attachments?.Count ?? 0;
+			if (landed < list.Entries.Count) {
+				unlanded.Add(new UnlandedAttachments(list.Element, list.Entries.Count, landed));
+			}
+		}
+
+		return unlanded;
+	}
+
+	/// <summary>
+	/// The caller-facing warning for attachments that did not land. Qualitative on purpose: it names the likely
+	/// cause as a capability gap, never a package version (a version in such a message is advice the reader has
+	/// already satisfied). Returns null when every list landed.
+	/// </summary>
+	public static string? BuildAttachmentWarning(IReadOnlyList<UnlandedAttachments> unlanded) {
+		if (unlanded.Count == 0) {
+			return null;
+		}
+
+		string counts = string.Join("; ", unlanded.Select(item =>
+			$"'{item.Element}' was sent {item.Sent} and reports {item.Described}"));
+		string subject = ElementNoun(unlanded.Count);
+		return $"The operation reported success, but the read-back shows fewer attachments than were sent on the Send "
+			+ $"email {subject} ({counts}). The usual cause is a deployed CrtProcessBuilder that does not support email "
+			+ "attachments: it discards the 'attachments' list while answering success, so the email goes out WITHOUT "
+			+ "those files. Do not report them as attached: install a package that supports email attachments ("
+			+ Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and send the list again, or add the "
+			+ "attachments in the designer.";
+	}
+
+	/// <summary>
+	/// Of the elements that sent an attachments list, those the REPLACE rule took attachment rows away from: rows the
+	/// element carried BEFORE the edit (by source, as describe decodes it) that it no longer carries after it. A row
+	/// whose source the list still names is not counted, even when the server rebuilt it in its own shape. An element
+	/// the before-read cannot show (added by this batch, or an unreadable before-read) is not reported.
+	/// </summary>
+	/// <param name="before">The description read before the write, or null when that read failed.</param>
+	/// <param name="described">The description read back after the successful write.</param>
+	/// <param name="sent">The lists returned by <see cref="AttachmentElementsFromOperations"/>.</param>
+	public static IReadOnlyList<RemovedAttachments> Removed(DescribeProcessResult? before,
+			DescribeProcessResult described, IReadOnlyList<SentAttachments> sent) {
+		if (sent.Count == 0 || before?.Elements is null || described?.Elements is null) {
+			return Array.Empty<RemovedAttachments>();
+		}
+
+		List<RemovedAttachments> removed = [];
+		foreach (SentAttachments list in sent) {
+			List<DescribedEmailAttachment>? had =
+				BlockExpectationJson.ResolveElement(before, list.Element)?.Email?.Attachments;
+			DescribedEmail? after = BlockExpectationJson.ResolveElement(described, list.Element)?.Email;
+			if (had is not { Count: > 0 } || after is null) {
+				continue;
+			}
+			List<AttachmentSource> remaining = [.. (after.Attachments ?? []).Select(SourceOf)];
+			int count = 0;
+			foreach (AttachmentSource source in had.Select(SourceOf)) {
+				if (!remaining.Remove(source)) {
+					count++;
+				}
+			}
+			if (count > 0) {
+				removed.Add(new RemovedAttachments(list.Element, count));
+			}
+		}
+
+		return removed;
+	}
+
+	/// <summary>
+	/// The caller-facing line for attachments the replace rule removed: how many, from which element, and why. Returns
+	/// null when the edit removed none.
+	/// </summary>
+	public static string? BuildRemovedAttachmentsWarning(IReadOnlyList<RemovedAttachments> removed) {
+		if (removed.Count == 0) {
+			return null;
+		}
+
+		string counts = string.Join("; ", removed.Select(item =>
+			$"{item.Count} {(item.Count == 1 ? "attachment was" : "attachments were")} removed from '{item.Element}'"));
+		return $"{counts} by the replace rule: a sent attachments list REPLACES the Send email element's attachments, "
+			+ "so every attachment the list did not name is gone. The server's notices name each removed attachment and "
+			+ "the entry that restores it; if a removal was not intended, describe the element and send the list again "
+			+ "with that entry.";
+	}
+
+	private static AttachmentSource SourceOf(DescribedEmailAttachment entry) =>
+		new(entry.ProcessParameter, entry.SourceElement, entry.SourceElementParameter, entry.Expression);
+
+	// Tracks the attachments list of one email block, replacing an earlier list for the same element. A block without
+	// the member is skipped: an absent list leaves the element's attachments as they are.
+	private static void Track(List<SentAttachments> sent, string? name, JsonNode? email) {
+		if (string.IsNullOrWhiteSpace(name) || email is not JsonObject block
+			|| block["attachments"] is not JsonArray entries) {
+			return;
+		}
+		List<AttachmentSource> sources = [];
+		foreach (JsonNode? entry in entries) {
+			if (entry is JsonObject item) {
+				sources.Add(new AttachmentSource(ReadName(item["processParameter"]), ReadName(item["sourceElement"]),
+					ReadName(item["sourceElementParameter"]), ReadName(item["expression"])));
+			}
+		}
+		sent.RemoveAll(existing => string.Equals(existing.Element, name, StringComparison.OrdinalIgnoreCase));
+		sent.Add(new SentAttachments(name, sources));
+	}
+
 	// True when an email block moves the element to (or keeps it in) the custom message: a NON-EMPTY body, or an
 	// explicit messageSource:"custom". The server clears the template on that switch, so a template sent EARLIER
 	// in the same batch for this element is expected to be gone from the read-back.

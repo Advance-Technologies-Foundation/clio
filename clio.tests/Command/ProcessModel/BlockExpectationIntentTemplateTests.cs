@@ -122,4 +122,45 @@ public sealed class BlockExpectationIntentTemplateTests {
 		warnings.Should().NotContain(warning => warning.Contains(EmailBlockExpectation.TemplateWarningMarker),
 			because: "the template check must not pile a second accusation onto an element whose whole block is already reported missing");
 	}
+
+	[Test]
+	[Description("ReportDescribed reaches both attachment checks from a modify payload: a list that did not land is warned about with its counts, and the rows the replace rule removed are counted against the before-read the command took - while without a before-read (the create path) no removal line is written.")]
+	public void ReportDescribed_ShouldReportUnlandedAndRemovedAttachments_FromTheIntent() {
+		// Arrange
+		List<string> warnings = [];
+		List<string> withoutBefore = [];
+		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations("""
+			[{"op":"setElement","elementName":"Kept","elementUpdate":{"email":{"attachments":[{"processParameter":"Docs"}]}}},
+			 {"op":"setElement","elementName":"Dropped","elementUpdate":{"email":{"attachments":[{"processParameter":"Doc"}]}}}]
+			""");
+		DescribedEmailAttachment docs = new() { Slot = "Attachments1", ProcessParameter = "Docs" };
+		DescribedEmailAttachment report = new() {
+			Slot = "Attachments2", SourceElement = "RF1", SourceElementParameter = "ReportFiles"
+		};
+		DescribeProcessResult before = new() {
+			Elements = [new DescribedElement { Name = "Kept", Email = new DescribedEmail { Attachments = [docs, report] } }]
+		};
+		DescribeProcessResult described = new() {
+			Elements = [
+				new DescribedElement { Name = "Kept", Email = new DescribedEmail { Attachments = [docs] } },
+				new DescribedElement { Name = "Dropped", Email = new DescribedEmail { Subject = "no attachments came back" } }
+			]
+		};
+
+		// Act
+		BlockExpectationReporter.ReportDescribed(RecordingLogger(warnings), described, intent, before);
+		BlockExpectationReporter.ReportDescribed(RecordingLogger(withoutBefore), described, intent);
+
+		// Assert
+		warnings.Should().ContainSingle(warning => warning.Contains("fewer attachments than were sent"),
+				because: "the list sent to 'Dropped' read back with no row")
+			.Which.Should().Contain("'Dropped' was sent 1 and reports 0",
+				because: "the warning names the element and both counts");
+		warnings.Should().ContainSingle(warning => warning.Contains("by the replace rule"),
+				because: "the edit took the report row off 'Kept'")
+			.Which.Should().Contain("1 attachment was removed from 'Kept'",
+				because: "the line says how many rows the replace rule removed");
+		withoutBefore.Should().NotContain(warning => warning.Contains("by the replace rule"),
+			because: "with no before-read there is no evidence of what the edit removed");
+	}
 }
