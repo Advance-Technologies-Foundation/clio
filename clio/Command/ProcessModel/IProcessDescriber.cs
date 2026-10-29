@@ -1240,8 +1240,9 @@ public sealed class DescribedEmail {
 	public DescribedPerformer Performer { get; set; }
 
 	/// <summary>
-	/// The element's attachment rows, one entry per stored <c>Attachments&lt;N&gt;</c> slot, ordered by slot number, in
-	/// the write shape of <c>email.attachments</c> plus the describe-only <see cref="DescribedEmailAttachment.Slot"/>,
+	/// The element's attachment rows, one entry per stored <c>Attachments&lt;N&gt;</c> slot, in the element's stored
+	/// order - the designer's row order, the order the email attaches them, so slot numbers can have gaps and need not
+	/// ascend (CrtProcessBuilder 1.6.6.128; 1.6.6.127 sorted them by slot number) - in the write shape of <c>email.attachments</c> plus the describe-only <see cref="DescribedEmailAttachment.Slot"/>,
 	/// <see cref="DescribedEmailAttachment.BindingLevels"/> and <see cref="DescribedEmailAttachment.Issues"/> - so the
 	/// list can be edited and sent back (modify REPLACES the element's attachments with the list it is sent).
 	/// <c>null</c> when the element carries no attachment slot, and from a server that predates the member.

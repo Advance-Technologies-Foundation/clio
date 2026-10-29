@@ -297,7 +297,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the warnings carry each removed entry in the write shape. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
+	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the warnings carry each removed entry in the write shape. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value, and describe lists the re-added row last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process replaces and then removes the attachments of a Send email element")]
 	public async Task ModifyBusinessProcess_Should_ReplaceThenRemoveAttachments() {
@@ -360,6 +360,9 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the re-added single File takes the freed lowest number, Attachments1");
 			Text(reusedSlot, "bindingLevels").Should().Be("itemOnly",
 				because: "the slot now holds a single File, which binds its item only");
+			Attachments(Element(afterReuse, "SE1")).Select(entry => Text(entry, "slot")).Should().Equal(
+				["Attachments2", "Attachments1"],
+				because: "describe lists the rows in the designer's order: the re-added row is appended after the kept one");
 			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments1.DisplayValue") && row.Contains("[#OF1"),
 				because: "a reused single-File slot carries no stale display value of the collection it replaced");
 			ShouldHaveLanded(cleared, "an empty list removes every row");
