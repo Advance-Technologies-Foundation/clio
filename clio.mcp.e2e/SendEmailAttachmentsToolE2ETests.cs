@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
@@ -20,6 +20,7 @@ using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerStoredReads;
 
 namespace Clio.Mcp.E2E;
 
@@ -54,7 +55,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
 
-	/// <summary>The designer-built fixture of TC-I-09 (EM1).</summary>
+	/// <summary>The designer-built fixture of TC-I-09.</summary>
 	private const string DesignerFixtureName = "UsrSeAttachmentsDesignerFixture";
 
 	/// <summary>The object whose MS Word printable the Generated report cases use.</summary>
@@ -80,6 +81,20 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>The member every attachment refusal and notice names.</summary>
 	private const string AttachmentsMember = "email.attachments";
+
+	/// <summary>The DataService data value type of a Boolean parameter.</summary>
+	private const int BooleanDataValueType = 12;
+
+	/// <summary>The DataService data value type of a Lookup value, written as the referenced record's id.</summary>
+	private const int LookupDataValueType = 10;
+
+	/// <summary>The SelectQuery comparison type CONTAIN, a substring match on a text column.</summary>
+	private const int ContainComparisonType = 11;
+
+	/// <summary>An id as the stored metadata writes it: the dashed form, or 32 hex digits without separators.</summary>
+	private static readonly Regex GuidPattern = new(
+		@"\b(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})\b",
+		RegexOptions.CultureInvariant);
 
 	#region Methods: Tests - create and describe
 
@@ -120,7 +135,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			string processUId = Text(graph, "schemaUId")!;
 			string elementUId = UId(Element(graph, "SE1"));
 			IReadOnlyList<JsonObject> slots = StoredSlots(
-				(await ReadElementNodesAsync(context, processName, elementUId)).Last());
+				await ReadLastElementNodeAsync(context, processName, elementUId));
 			slots.Should().HaveCount(4, because: "the stored element carries exactly one parameter per attachment row");
 			foreach (JsonObject slot in slots) {
 				ShouldBeASlotOf(slot, processUId, elementUId);
@@ -161,8 +176,8 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "one entry was sent").Which;
 			ShouldNameElementOutput(entry, "RF1", "ReportFiles");
 			Text(entry, "bindingLevels").Should().Be("both", because: "the report collection and its file item are bound");
-			JsonObject slot = StoredSlots((await ReadElementNodesAsync(context, processName,
-				UId(Element(graph, "SE1")))).Last()).Should().ContainSingle(because: "one row was built").Which;
+			JsonObject slot = StoredSlots(await ReadLastElementNodeAsync(context, processName,
+				UId(Element(graph, "SE1")))).Should().ContainSingle(because: "one row was built").Which;
 			ShouldBeASlotOf(slot, Text(graph, "schemaUId")!, UId(Element(graph, "SE1")));
 		} finally {
 			await DeleteProcessesAsync(context, created);
@@ -170,7 +185,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-03: one Object attachments collection feeds four Send email elements in every mode combination - manual + custom, manual + template, auto + custom with no sender (the build does not require one), auto + template (a template the test creates) - and every element stores an equal slot under the comparison rule (no UIds, process and element by role); the Process file element's stored bytes equal those of a twin process built without the emails.")]
+	[Description("TC-I-03: one Object attachments collection feeds four Send email elements in every mode combination - manual + custom, manual + template, auto + custom with no sender (the build does not require one), auto + template (a template the test creates) - and every element stores an equal slot, and the Process file element stores the same node as in a twin process built without the emails; both are compared with every id a save generates replaced by what it names.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process feeds four Send email elements from one collection in every mode combination")]
 	public async Task CreateBusinessProcess_Should_FeedFourSendEmailElementsFromOneCollection_InEveryModeCombination() {
@@ -198,40 +213,53 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			// Assert
 			ShouldHaveBuilt(callResult, "the slot is the same in all four mode combinations, so all four build");
 			JsonObject graph = await DescribeGraphAsync(context, processName);
-			string processUId = Text(graph, "schemaUId")!;
-			List<string> shapes = [];
+			List<(string Json, JsonObject Graph, string OwnElementUId)> slots = [];
 			foreach (string name in new[] { "SE1", "SE2", "SE3", "SE4" }) {
 				string elementUId = UId(Element(graph, name));
-				JsonObject slot = StoredSlots((await ReadElementNodesAsync(context, processName, elementUId)).Last())
+				JsonObject slot = StoredSlots(await ReadLastElementNodeAsync(context, processName, elementUId))
 					.Should().ContainSingle(because: $"{name} was sent one entry").Which;
-				shapes.Add(ComparableSlot(slot, processUId, elementUId));
+				slots.Add((slot.ToJsonString(), graph, elementUId));
 			}
+			IReadOnlyList<string> shapes = Comparable([.. slots]);
 			shapes.Distinct().Should().ContainSingle(
 				because: "the mode and the message source do not change the slot; the shapes read: {0}",
 				string.Join(" || ", shapes));
 			JsonObject twin = await DescribeGraphAsync(context, twinName);
-			string ownFile = WithoutUIds((await ReadElementNodesAsync(context, processName, UId(Element(graph, "OF1")))).Last(),
-				processUId, UId(Element(graph, "OF1")));
-			string twinFile = WithoutUIds((await ReadElementNodesAsync(context, twinName, UId(Element(twin, "OF1")))).Last(),
-				Text(twin, "schemaUId")!, UId(Element(twin, "OF1")));
-			ownFile.Should().Be(twinFile,
+			string ownFileUId = UId(Element(graph, "OF1"));
+			string twinFileUId = UId(Element(twin, "OF1"));
+			IReadOnlyList<string> files = Comparable(
+				(await ReadLastElementNodeAsync(context, processName, ownFileUId), graph, ownFileUId),
+				(await ReadLastElementNodeAsync(context, twinName, twinFileUId), twin, twinFileUId));
+			files[0].Should().Be(files[1],
 				because: "feeding emails must not change the Process file element that supplies the files");
 		} finally {
-			await DeleteProcessesAsync(context, created);
-			await EmailTemplateE2EArrange.DeleteAsync(context.Session, context.EnvironmentName, template);
+			try {
+				await DeleteProcessesAsync(context, created);
+			} finally {
+				await EmailTemplateE2EArrange.DeleteAsync(context.Session, context.EnvironmentName, template);
+			}
 		}
 	}
 
-	[TestCase("{}", "no-source")]
-	[TestCase("""{ "sourceElement": "Nobody", "sourceElementParameter": "ObjectFiles" }""", "Nobody")]
-	[TestCase("""{ "sourceElement": "RD", "sourceElementParameter": "ResultCompositeObjectList" }""", "RD")]
-	[TestCase("""{ "sourceElement": "OFLater", "sourceElementParameter": "ObjectFiles" }""", "OFLater")]
-	[TestCase("""{ "sourceElement": "OFUnscoped", "sourceElementParameter": "ObjectFiles" }""", "OFUnscoped")]
-	[Description("TC-I-04: an attachment whose source holds no files is refused and nothing is created - an entry with no source, an unknown element, a Read data collection with no file item, a source declared after the Send email element (the forward-reference refusal) and an Object attachments source with no record scope and no filter condition (Q20, judged at the end of the request); the refusal names email.attachments[0] and the source, and describe of the process name answers that it was not found.")]
+	// The expected fragments are the package's own wording: the planner's refusals name the entry
+	// ('email.attachments[0]') and the source; the forward-reference refusal names the entry and the later element;
+	// the unscoped Object attachments refusal is judged at the end of the request over the whole schema, so it names
+	// the source element and the email that sends its files (Send email 'SE1' (email.attachments)), not the entry.
+	[TestCase("{}", new[] { "Send email element 'SE1': 'email.attachments[0]' names no source" })]
+	[TestCase("""{ "sourceElement": "Nobody", "sourceElementParameter": "ObjectFiles" }""",
+		new[] { "'email.attachments[0]'", "'Nobody'" })]
+	[TestCase("""{ "sourceElement": "RD", "sourceElementParameter": "ResultCompositeObjectList" }""",
+		new[] { "'email.attachments[0]' 'RD.ResultCompositeObjectList'", "no File item" })]
+	[TestCase("""{ "sourceElement": "OFLater", "sourceElementParameter": "ObjectFiles" }""",
+		new[] { "through 'email.attachments[0]'", "'OFLater'", "declared LATER" })]
+	[TestCase("""{ "sourceElement": "OFUnscoped", "sourceElementParameter": "ObjectFiles" }""",
+		new[] { "Process file 'OFUnscoped'", "no record scope and no filter condition",
+			"Send email 'SE1' (email.attachments) sends them outside Creatio" })]
+	[Description("TC-I-04: an attachment whose source holds no files is refused and nothing is created - an entry with no source, an unknown element, a Read data collection with no file item, a source declared after the Send email element, and an Object attachments source with no record scope and no filter condition, which is judged at the end of the request; each refusal says what the package says for that case, and describe of the process name answers that it was not found.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses an attachment without files and creates nothing")]
 	public async Task CreateBusinessProcess_Should_RefuseAnAttachmentWithoutFiles_AndCreateNothing(string entry,
-			string source) {
+			string[] expectedFragments) {
 		// Arrange
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		List<string> created = [];
@@ -252,13 +280,9 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			// Assert
 			ShouldBeRefused(callResult, "an attachment that can hold no files is refused before anything is saved");
 			string log = LogText(callResult);
-			log.Should().Contain($"{AttachmentsMember}[0]", because: "the refusal names the entry it refused");
-			if (source != "no-source") {
-				log.Should().Contain(source, because: "the refusal names the source the entry gave");
-			}
-			if (source == "OFUnscoped") {
-				log.Should().Contain("no record scope",
-					because: "an unscoped record source would send arbitrary files, the Q20 refusal says so");
+			foreach (string fragment in expectedFragments) {
+				log.Should().Contain(fragment,
+					because: "the refusal says which entry or source it refused and why, in the package's own wording");
 			}
 			CallToolResult described = await ProcessDesignerE2EArrange.DescribeAsync(context, processName);
 			JsonSerializer.Serialize(described).Should().Contain("was not found",
@@ -291,7 +315,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 					"""))), "the three-row process");
 			JsonObject before = await DescribeGraphAsync(context, processName);
 			string elementUId = UId(Element(before, "SE1"));
-			JsonObject keptBefore = StoredSlot((await ReadElementNodesAsync(context, processName, elementUId)).Last(),
+			JsonObject keptBefore = StoredSlot(await ReadLastElementNodeAsync(context, processName, elementUId),
 				"Attachments1");
 
 			// Act
@@ -299,17 +323,18 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				[ { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" }, { "processParameter": "Doc" } ]
 				"""));
 			JsonObject afterReplace = await DescribeGraphAsync(context, processName);
-			string replaceNode = (await ReadElementNodesAsync(context, processName, elementUId)).Last();
+			string replaceNode = await ReadLastElementNodeAsync(context, processName, elementUId);
 			IReadOnlyList<string> replaceResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
 			CallToolResult reused = await ModifyAsync(context, processName, SetAttachments("SE1", """
 				[ { "processParameter": "Doc" }, { "processParameter": "Doc" } ]
 				"""));
+			JsonObject afterReuse = await DescribeGraphAsync(context, processName);
 			IReadOnlyList<string> reuseResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
 			CallToolResult cleared = await ModifyAsync(context, processName, SetAttachments("SE1", "[]"));
-			string clearedNode = (await ReadElementNodesAsync(context, processName, elementUId)).Last();
+			string clearedNode = await ReadLastElementNodeAsync(context, processName, elementUId);
 			CallToolResult subjectOnly = await ModifyAsync(context, processName,
-				$$"""[ { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": { "subject": "Only the subject" } } } ]""");
-			string subjectNode = (await ReadElementNodesAsync(context, processName, elementUId)).Last();
+				"""[ { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": { "subject": "Only the subject" } } } ]""");
+			string subjectNode = await ReadLastElementNodeAsync(context, processName, elementUId);
 
 			// Assert
 			ShouldHaveLanded(replaced, "a list that keeps one source and adds another is an ordinary replace");
@@ -328,6 +353,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			WarningText(replaced).Should().Contain("\"sourceElement\": \"PF1\"",
 				because: "the removal notice carries the removed entry in the write shape, so one call restores it");
 			ShouldHaveLanded(reused, "dropping a collection row and adding a single File reuses the freed number");
+			JsonObject reusedSlot = Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
+				entry => Text(entry, "slot") == "Attachments1",
+				because: "the collection row that held Attachments1 was dropped, so its number is free again").Which;
+			Text(reusedSlot, "processParameter").Should().Be("Doc",
+				because: "the re-added single File takes the freed lowest number, Attachments1");
+			Text(reusedSlot, "bindingLevels").Should().Be("itemOnly",
+				because: "the slot now holds a single File, which binds its item only");
 			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments1.DisplayValue") && row.Contains("[#OF1"),
 				because: "a reused single-File slot carries no stale display value of the collection it replaced");
 			ShouldHaveLanded(cleared, "an empty list removes every row");
@@ -359,7 +391,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			string elementUId = UId(Element(graph, "SE1"));
 			string described = new JsonArray([.. Attachments(Element(graph, "SE1")).Select(entry => entry.DeepClone())])
 				.ToJsonString();
-			string nodeBefore = (await ReadElementNodesAsync(context, processName, elementUId)).Last();
+			string nodeBefore = await ReadLastElementNodeAsync(context, processName, elementUId);
 			IReadOnlyList<string> resourcesBefore = await ReadElementResourceRowsAsync(context, processName, "SE1");
 
 			// Act
@@ -369,7 +401,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			ShouldHaveLanded(echoed, "a described list fed back is a valid list");
 			WarningText(echoed).Should().Contain("read-back fields",
 				because: "clio names the describe-only members it ignored instead of refusing them");
-			(await ReadElementNodesAsync(context, processName, elementUId)).Last().Should().Be(nodeBefore,
+			(await ReadLastElementNodeAsync(context, processName, elementUId)).Should().Be(nodeBefore,
 				because: "every entry matches its own row, so the replace keeps every row as it is");
 			(await ReadElementResourceRowsAsync(context, processName, "SE1")).Should().Equal(resourcesBefore,
 				because: "no row was rebuilt, so no resource row changed");
@@ -393,7 +425,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				("SE1", SendEmailJson("SE1", "manual", """[ { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]"""))),
 				"the one-row process");
 			string elementUId = UId(Element(await DescribeGraphAsync(context, processName), "SE1"));
-			string nodeBefore = (await ReadElementNodesAsync(context, processName, elementUId)).Last();
+			string nodeBefore = await ReadLastElementNodeAsync(context, processName, elementUId);
 
 			// Act
 			CallToolResult refused = await ModifyAsync(context, processName, """
@@ -404,7 +436,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			// Assert
 			ShouldBeRefused(refused, "a slot is written only through its block");
 			LogText(refused).Should().Contain(AttachmentsMember, because: "the refusal names the route that writes a slot");
-			(await ReadElementNodesAsync(context, processName, elementUId)).Last().Should().Be(nodeBefore,
+			(await ReadLastElementNodeAsync(context, processName, elementUId)).Should().Be(nodeBefore,
 				because: "a refused edit saves nothing");
 		} finally {
 			await DeleteProcessesAsync(context, created);
@@ -438,14 +470,18 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 					["operations"] = """[ { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": { "subject": "Version" } } } ]"""
 				});
 			IgnoreWhenProcessBuilderIsBehind(ToolText(saved), MinimumPackageVersion);
+			// The platform composes the version's name, so it cannot be registered before the call; it is registered
+			// as soon as the response names it, before any assertion on the response can throw past the cleanup.
+			if (ProcessDesignerE2EArrange.TryReadCreatedVersionName(saved, out string createdVersion)) {
+				created.Add(createdVersion);
+			}
 			ShouldHaveLanded(saved, "a version of a process with attachments is an ordinary clone");
 			string versionName = ProcessDesignerE2EArrange.CreatedVersionName(saved);
-			created.Add(versionName);
 			JsonObject version = await DescribeGraphAsync(context, versionName);
 			string versionUId = Text(version, "schemaUId")!;
 			string versionElementUId = UId(Element(version, "SE1"));
 			IReadOnlyList<JsonObject> slots = StoredSlots(
-				(await ReadElementNodesAsync(context, versionName, versionElementUId)).Last());
+				await ReadLastElementNodeAsync(context, versionName, versionElementUId));
 
 			// Assert
 			slots.Should().HaveCount(2, because: "the clone carries every row of the source");
@@ -464,7 +500,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - designer fixture and run time
 
 	[Test]
-	[Description("TC-I-09: read-only on the designer-built fixture UsrSeAttachmentsDesignerFixture (EM1): five entries decoded in the write shape across SE1 and SE2 - SE1's rows including the stale-parent row (a single File item under a collection-bound slot) with its issue - and SE2's entries in automatic mode with a template. Nothing is written. Ignored, with the build instructions, when the stand lacks the fixture.")]
+	[Description("TC-I-09: read-only on the designer-built fixture UsrSeAttachmentsDesignerFixture: five entries decoded in the write shape across SE1 and SE2 - SE1's rows including the stale-parent row (a single File item under a collection-bound slot) with its issue - and SE2's entries in automatic mode with a template. Nothing is written. Ignored, with the build instructions, when the stand lacks the fixture.")]
 	[AllureTag(DescribeProcessTool.ToolName)]
 	[AllureName("describe-business-process reads the designer-built attachments fixture")]
 	public async Task DescribeBusinessProcess_Should_ReadTheDesignerBuiltAttachmentsFixture() {
@@ -490,7 +526,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-10: at run time a manual Send email element puts a generated report on its draft email activity: RF1 generates a Word report of an existing invoice, the run parks on SE1, and the created Activity carries one ActivityFile with a size and a .docx name. The activity is canceled (which ends the parked instance) and both rows and the process are removed in finally. Ignored without an MS Word printable on Invoice, without an invoice, with the attachments feature off, or without McpE2E:AllowDestructiveMcpTests.")]
+	[Description("TC-I-10: at run time a manual Send email element puts a generated report on its draft email activity: RF1 generates a Word report of an existing invoice, the run parks on SE1, and the created Activity carries one ActivityFile with a size and a .docx name. The activity and its files are found by the token the email subject carries; the activity is canceled (which ends the parked instance), and the files, the activity and the process are removed in finally. Ignored without an MS Word printable on Invoice, without an invoice, with the attachments feature off, or without McpE2E:AllowDestructiveMcpTests.")]
 	[AllureTag(RunProcessTool.ToolName)]
 	[AllureName("run-process puts the generated report on the manual email activity")]
 	public async Task RunProcess_Should_PutTheGeneratedReportOnTheManualEmailActivity() {
@@ -503,7 +539,6 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		string invoiceId = await ReadFirstRecordIdAsync(context, InvoiceObject);
 		await IgnoreUnlessAttachmentsFeatureIsOnAsync(context);
 		List<string> created = [];
-		List<RunProcessRecord> records = [];
 		string token = $"ClioSeAttach{Guid.NewGuid():N}";
 		try {
 			string processName = NewProcessName("Run");
@@ -515,32 +550,32 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 			// Act
 			RunProcessEnvelope run = await RunAsync(context, processName, invoiceId);
-			records.AddRange(run.Created ?? []);
 
 			// Assert
 			run.Error.Should().BeNull(because: "a run parked on a manual email is not a failure: {0}", run.Error);
 			run.WaitingOn.Should().Contain(element => element.Type != null,
 				because: "the run parks on the manual Send email until its activity is completed");
-			RunProcessRecord activity = records.Should().ContainSingle(record => record.Entity == "Activity",
-				because: "manual mode creates one draft email activity").Which;
-			activity.Title.Should().Contain(token, because: "the activity is the one this run's email created");
-			RunProcessRecord file = records.Should().ContainSingle(record => record.Entity == "ActivityFile",
-				because: "the generated report is copied onto the draft activity").Which;
-			JsonElement row = (await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("ActivityFile",
-				[
-					new SelectQueryHelper.SelectQueryColumnDefinition("Activity.Id", "ActivityId"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("Size", "Size"),
-					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")
-				],
-				[new SelectQueryHelper.SelectQueryFilterDefinition("Id", file.Id, SelectQueryHelper.GuidDataValueType)],
-				rowCount: 1), "the copied ActivityFile row")).EnumerateArray().Single();
-			TextOf(row, "ActivityId").Should().BeEquivalentTo(activity.Id,
-				because: "the file belongs to the email activity the run created");
-			int.Parse(TextOf(row, "Size")).Should().BePositive(because: "the generated report is not empty");
-			TextOf(row, "Name").Should().EndWith(".docx", because: "an MS Word printable generates a Word file");
+			// The activity is found by the token its subject carries, not by run.Created: the watch is a before/after
+			// diff of the whole table, so it also counts rows other users or a mailbox synchronization wrote meanwhile.
+			JsonElement activity = (await SelectInlineAsync(context, ActivitiesTitledWith(token),
+					"the run's email activity")).EnumerateArray()
+				.Should().ContainSingle(because: "manual mode creates one draft email activity, titled with the subject")
+				.Which;
+			string activityId = TextOf(activity, "Id");
+			(run.Created ?? []).Should().Contain(record => record.Entity == "Activity"
+					&& string.Equals(record.Id, activityId, StringComparison.OrdinalIgnoreCase),
+				because: "the run-process watch reports the activity this run created");
+			JsonElement file = (await SelectInlineAsync(context, FilesOfActivity(activityId),
+					"the copied ActivityFile row")).EnumerateArray()
+				.Should().ContainSingle(because: "the generated report is copied onto the draft activity").Which;
+			int.Parse(TextOf(file, "Size")).Should().BePositive(because: "the generated report is not empty");
+			TextOf(file, "Name").Should().EndWith(".docx", because: "an MS Word printable generates a Word file");
 		} finally {
-			await CleanUpRunAsync(context, records);
-			await DeleteProcessesAsync(context, created);
+			try {
+				await CleanUpRunAsync(context, token);
+			} finally {
+				await DeleteProcessesAsync(context, created);
+			}
 		}
 	}
 
@@ -758,7 +793,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			[
 				new SelectQueryHelper.SelectQueryFilterDefinition("Feature.Code", AttachmentsFeatureCode,
 					SelectQueryHelper.TextDataValueType),
-				new SelectQueryHelper.SelectQueryFilterDefinition("FeatureState", true, 12)
+				new SelectQueryHelper.SelectQueryFilterDefinition("FeatureState", true, BooleanDataValueType)
 			], rowCount: 1), "the attachments feature state");
 		if (rows.GetArrayLength() == 0) {
 			Assert.Ignore($"Feature {AttachmentsFeatureCode} is not on for any user on '{context.EnvironmentName}', so "
@@ -798,30 +833,93 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(result);
 	}
 
+	/// <summary>The Activity rows whose Title carries <paramref name="token"/>, the subject this test's email sent.</summary>
+	private static object ActivitiesTitledWith(string token) =>
+		SelectQueryHelper.BuildSelectQuery("Activity",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("Title", token, SelectQueryHelper.TextDataValueType,
+					ContainComparisonType)
+			], rowCount: 10);
+
+	/// <summary>The ActivityFile rows of one activity, with the size and name the run-time case asserts on.</summary>
+	private static object FilesOfActivity(string activityId) =>
+		SelectQueryHelper.BuildSelectQuery("ActivityFile",
+			[
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Size", "Size"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")
+			],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("Activity.Id", activityId,
+					SelectQueryHelper.GuidDataValueType)
+			], rowCount: 10);
+
 	/// <summary>
-	/// Cancels every activity the run created (which ends the parked instance), then deletes the files before the
-	/// activities. Called from finally, so a failure is reported, not thrown.
+	/// Finds the email activity this run created by <paramref name="token"/> and that activity's files, each with a query
+	/// of its own, cancels the activity (which ends the parked instance), then deletes the files before the activity.
+	/// Called from finally, also when the run itself threw, which is why it reads the rows rather than the run's answer,
+	/// and why it runs on a cancellation token of its own: the test's may be the one that ran out. Only rows the token
+	/// identifies are touched - never another user's activity, nor one a mailbox synchronization imported. A failure is
+	/// reported, not thrown.
+	/// <para>What remains on the stand: the generated report is a temporary file of the process instance - the
+	/// package's own notice says it lives as long as the instance, so ending the instance is its cleanup - and it
+	/// carries no token to find it by; the instance's process log rows stay as well.</para>
 	/// </summary>
-	private static async Task CleanUpRunAsync(ProcessDesignerArrangeContext context, IReadOnlyList<RunProcessRecord> records) {
-		foreach (RunProcessRecord activity in records.Where(record => record.Entity == "Activity")) {
+	private static async Task CleanUpRunAsync(ProcessDesignerArrangeContext context, string token) {
+		using CancellationTokenSource cleanup = new(TimeSpan.FromMinutes(2));
+		foreach (string activityId in await FindIdsBestEffortAsync(context, ActivitiesTitledWith(token),
+				$"the activities titled with {token}", cleanup.Token)) {
+			IReadOnlyList<string> fileIds = await FindIdsBestEffortAsync(context, FilesOfActivity(activityId),
+				$"the files of activity {activityId}", cleanup.Token);
 			await BatchBestEffortAsync(context, new Dictionary<string, object?> {
-				["operation"] = "update", ["schema-name"] = "Activity", ["record-id"] = activity.Id,
+				["operation"] = "update", ["schema-name"] = "Activity", ["record-id"] = activityId,
 				["values"] = new Dictionary<string, object?> {
 					["Status"] = new Dictionary<string, object?> {
-						["data-value-type"] = 10, ["value"] = CanceledActivityStatusId
+						["data-value-type"] = LookupDataValueType, ["value"] = CanceledActivityStatusId
 					}
 				}
-			}, $"cancel activity {activity.Id}");
-		}
-		foreach (RunProcessRecord record in records.OrderBy(record => record.Entity == "Activity" ? 1 : 0)) {
+			}, $"cancel activity {activityId}", cleanup.Token);
+			foreach (string fileId in fileIds) {
+				await BatchBestEffortAsync(context, new Dictionary<string, object?> {
+					["operation"] = "delete", ["schema-name"] = "ActivityFile", ["record-id"] = fileId
+				}, $"delete ActivityFile {fileId}", cleanup.Token);
+			}
 			await BatchBestEffortAsync(context, new Dictionary<string, object?> {
-				["operation"] = "delete", ["schema-name"] = record.Entity, ["record-id"] = record.Id
-			}, $"delete {record.Entity} {record.Id}");
+				["operation"] = "delete", ["schema-name"] = "Activity", ["record-id"] = activityId
+			}, $"delete Activity {activityId}", cleanup.Token);
+		}
+	}
+
+	/// <summary>The ids a cleanup query returns; none, reported, when the read fails.</summary>
+	private static async Task<IReadOnlyList<string>> FindIdsBestEffortAsync(ProcessDesignerArrangeContext context,
+			object query, string what, CancellationToken cancellationToken) {
+		try {
+			CallToolResult call = await context.Session.CallToolAsync(ExecuteEsqTool.ToolName,
+				new Dictionary<string, object?> {
+					["args"] = new Dictionary<string, object?> {
+						["environment-name"] = context.EnvironmentName,
+						["query"] = JsonSerializer.SerializeToElement(query)
+					}
+				}, cancellationToken);
+			ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(call);
+			if (!response.Success || response.Rows is not { ValueKind: JsonValueKind.Array } rows) {
+				await TestContext.Error.WriteLineAsync(
+					$"Could not read {what}: {response.Error}; whatever they hold stays on the stand.");
+				return [];
+			}
+			return [.. rows.EnumerateArray().Select(row => TextOf(row, "Id")).Where(id => id.Length > 0)];
+		} catch (Exception exception) when (exception is not OutOfMemoryException) {
+			// Reported, not the test's verdict, for the reason BatchBestEffortAsync gives.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
+			await TestContext.Error.WriteLineAsync(
+				$"Could not read {what}; whatever they hold stays on the stand: {exception.Message}");
+			return [];
 		}
 	}
 
 	private static async Task BatchBestEffortAsync(ProcessDesignerArrangeContext context,
-			Dictionary<string, object?> operation, string what) {
+			Dictionary<string, object?> operation, string what, CancellationToken cancellationToken) {
 		try {
 			CallToolResult call = await context.Session.CallToolAsync(DataServiceBatchTool.ToolName,
 				new Dictionary<string, object?> {
@@ -829,7 +927,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 						["environment-name"] = context.EnvironmentName,
 						["operations"] = new[] { operation }
 					}
-				}, context.CancellationTokenSource.Token);
+				}, cancellationToken);
 			DataServiceBatchResult result = EntitySchemaStructuredResultParser.Extract<DataServiceBatchResult>(call);
 			if (!result.Success) {
 				await TestContext.Error.WriteLineAsync($"Could not {what}; it stays on the stand.");
@@ -840,169 +938,6 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			await TestContext.Error.WriteLineAsync($"Could not {what}; it stays on the stand: {exception.Message}");
 		}
-	}
-
-	#endregion
-
-	#region Methods: Raw database reads
-
-	/// <summary>
-	/// The raw JSON of the element with <paramref name="elementUId"/> in each stored <c>SysSchema.MetaData</c> row of
-	/// <paramref name="schemaName"/>, ordered by row id. The database and not describe: a preservation claim is about
-	/// the stored bytes.
-	/// </summary>
-	private static async Task<IReadOnlyList<string>> ReadElementNodesAsync(ProcessDesignerArrangeContext context,
-			string schemaName, string elementUId) {
-		JsonElement rows = await SelectToFileAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id", OrderDirection: 1, OrderPosition: 0),
-				new SelectQueryHelper.SelectQueryColumnDefinition("MetaData", "MetaData")
-			],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
-				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "ProcessSchemaManager",
-					SelectQueryHelper.TextDataValueType)
-			]), $"the SysSchema rows of '{schemaName}'");
-		List<string> nodes = [];
-		foreach (JsonElement row in rows.EnumerateArray()) {
-			string metadata = DecodeMetaData(row.GetProperty("MetaData"));
-			using JsonDocument document = JsonDocument.Parse(metadata);
-			string? node = FindNodeByUId(document.RootElement, Guid.Parse(elementUId));
-			if (node != null) {
-				nodes.Add(node);
-			}
-		}
-		nodes.Should().NotBeEmpty(
-			because: $"the element {elementUId} must be found in the stored metadata of '{schemaName}', or the "
-				+ "comparison would compare nothing");
-		return nodes;
-	}
-
-	/// <summary>
-	/// The stored <c>SysLocalizableValue</c> rows of one element - keys <c>BaseElements.&lt;element&gt;.*</c>, every
-	/// culture - as sorted <c>key | culture | value</c> lines.
-	/// </summary>
-	private static async Task<IReadOnlyList<string>> ReadElementResourceRowsAsync(ProcessDesignerArrangeContext context,
-			string schemaName, string elementName) {
-		JsonElement rows = await SelectToFileAsync(context, SelectQueryHelper.BuildSelectQuery("SysLocalizableValue",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Key", "Key"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("SysCulture.Name", "Culture"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("Value", "Value")
-			],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", schemaName,
-					SelectQueryHelper.TextDataValueType)
-			]), $"the resource rows of '{schemaName}'");
-		string prefix = $"BaseElements.{elementName}.";
-		return rows.EnumerateArray()
-			.Select(row => (Key: TextOf(row, "Key"), Culture: TextOf(row, "Culture"), Value: TextOf(row, "Value")))
-			.Where(row => row.Key.StartsWith(prefix, StringComparison.Ordinal))
-			.Select(row => $"{row.Key} | {row.Culture} | {row.Value}")
-			.OrderBy(line => line, StringComparer.Ordinal)
-			.ToList();
-	}
-
-	/// <summary>Runs a small SelectQuery through <c>execute-esq</c> and returns its rows array.</summary>
-	private static async Task<JsonElement> SelectInlineAsync(ProcessDesignerArrangeContext context, object query,
-			string what) {
-		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ExecuteEsqTool.ToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["query"] = JsonSerializer.SerializeToElement(query)
-			});
-		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
-		response.Success.Should().BeTrue(because: $"{what} must be readable for this case to measure anything; the read "
-			+ "failed with: {0}", response.Error);
-		JsonElement rows = response.Rows.GetValueOrDefault();
-		rows.ValueKind.Should().Be(JsonValueKind.Array,
-			because: "a SelectQuery answers with a rows array; anything else is a shape this read cannot use");
-		return rows.Clone();
-	}
-
-	/// <summary>Runs a SelectQuery through <c>execute-esq-to-file</c> and returns the rows array the file holds.</summary>
-	private static async Task<JsonElement> SelectToFileAsync(ProcessDesignerArrangeContext context, object query,
-			string what) {
-		string directory = ScratchDirectory.CreateUnderPhysicalTemp("clio-send-email-attachments-e2e");
-		try {
-			string outputFile = Path.Combine(directory, "rows.json");
-			CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ExecuteEsqToFileTool.ToolName,
-				new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName,
-					["query"] = JsonSerializer.SerializeToElement(query),
-					["output-file"] = outputFile
-				});
-			ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
-			response.Success.Should().BeTrue(because: $"{what} must be readable for this case to measure anything; the "
-				+ "read failed with: {0}", response.Error);
-			using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
-			document.RootElement.ValueKind.Should().Be(JsonValueKind.Array,
-				because: "the file holds the rows array of the SelectQuery");
-			return document.RootElement.Clone();
-		} finally {
-			ScratchDirectory.TryDelete(directory);
-		}
-	}
-
-	/// <summary>
-	/// The metadata JSON text of a <c>SysSchema.MetaData</c> value as DataService returns a binary column: a base64
-	/// string, an array of bytes, or - tolerated - the JSON text itself. A UTF-8 byte-order mark is dropped.
-	/// </summary>
-	private static string DecodeMetaData(JsonElement value) {
-		byte[]? bytes = null;
-		if (value.ValueKind == JsonValueKind.String) {
-			string text = value.GetString() ?? string.Empty;
-			if (text.TrimStart().StartsWith('{')) {
-				return text;
-			}
-			bytes = Convert.FromBase64String(text);
-		} else if (value.ValueKind == JsonValueKind.Array) {
-			bytes = value.EnumerateArray().Select(item => item.GetByte()).ToArray();
-		}
-		bytes.Should().NotBeNull(because: "SysSchema.MetaData must come back as binary content; the value read was: {0}",
-			value.GetRawText());
-		return Encoding.UTF8.GetString(bytes!).TrimStart('﻿');
-	}
-
-	/// <summary>The raw text of the first object whose <c>UId</c> is <paramref name="uid"/>, depth first.</summary>
-	private static string? FindNodeByUId(JsonElement node, Guid uid) {
-		switch (node.ValueKind) {
-			case JsonValueKind.Object:
-				if (node.TryGetProperty("UId", out JsonElement id) && id.ValueKind == JsonValueKind.String
-						&& Guid.TryParse(id.GetString(), out Guid parsed) && parsed == uid) {
-					return node.GetRawText();
-				}
-				foreach (JsonProperty property in node.EnumerateObject()) {
-					string? found = FindNodeByUId(property.Value, uid);
-					if (found != null) {
-						return found;
-					}
-				}
-				return null;
-			case JsonValueKind.Array:
-				foreach (JsonElement item in node.EnumerateArray()) {
-					string? found = FindNodeByUId(item, uid);
-					if (found != null) {
-						return found;
-					}
-				}
-				return null;
-			default:
-				return null;
-		}
-	}
-
-	/// <summary>A row value as text: a string as is, a lookup by its display value, anything else raw.</summary>
-	private static string TextOf(JsonElement row, string column) {
-		if (!row.TryGetProperty(column, out JsonElement value)) {
-			return string.Empty;
-		}
-		return value.ValueKind switch {
-			JsonValueKind.String => value.GetString() ?? string.Empty,
-			JsonValueKind.Object when value.TryGetProperty("displayValue", out JsonElement display) => display.ToString(),
-			JsonValueKind.Null => string.Empty,
-			_ => value.GetRawText()
-		};
 	}
 
 	#endregion
@@ -1075,17 +1010,70 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		}
 	}
 
-	/// <summary>A slot with its UIds removed and the process and element replaced by their roles.</summary>
-	private static string ComparableSlot(JsonObject slot, string processUId, string elementUId) =>
-		WithoutUIds(slot.ToJsonString(), processUId, elementUId);
+	/// <summary>
+	/// Stored JSON made comparable ACROSS saves. What is compared: the stored text with its <c>UId</c> and <c>BL3</c>
+	/// members dropped, and every id in it replaced by what it names - the process by <c>&lt;process&gt;</c>, the
+	/// element the JSON belongs to by <c>&lt;element&gt;</c>, every other element and every process parameter by its
+	/// name as describe reports it, so a <c>[#...#]</c> binding to <c>ContactRef</c> compares as the binding to
+	/// <c>ContactRef</c> in both processes. Of the ids left, one that EVERY compared text carries is a constant (a
+	/// data value type, the object read, a source all of them bind) and stays as it is; any other was generated by
+	/// its own save - a filter item key, an id of the element's own parameters - and is replaced by its order of
+	/// first appearance. Two texts then compare equal when they have the same structure, the same constants and the
+	/// same pattern of generated ids. What this cannot see: one non-shared id swapped for another at the same place,
+	/// which no comparison of two saves can tell from a freshly generated one.
+	/// </summary>
+	private static IReadOnlyList<string> Comparable(params (string Json, JsonObject Graph, string OwnElementUId)[] stored) {
+		List<string> named = [.. stored.Select(item => Named(item.Json, item.Graph, item.OwnElementUId))];
+		HashSet<Guid>? shared = null;
+		foreach (string text in named) {
+			HashSet<Guid> ids = [.. GuidPattern.Matches(text).Select(match => Guid.Parse(match.Value))];
+			if (shared is null) {
+				shared = ids;
+			} else {
+				shared.IntersectWith(ids);
+			}
+		}
+		HashSet<Guid> constants = shared ?? [];
+		return [.. named.Select(text => GeneratedByOrder(text, constants))];
+	}
 
-	/// <summary>Raw JSON with the process and element UIds replaced by roles and every other UId member dropped.</summary>
-	private static string WithoutUIds(string rawJson, string processUId, string elementUId) {
+	/// <summary>The JSON with <c>UId</c>/<c>BL3</c> dropped and every id describe can name replaced by that name.</summary>
+	private static string Named(string rawJson, JsonObject graph, string ownElementUId) {
 		JsonNode node = JsonNode.Parse(rawJson)!;
 		Strip(node);
-		return node.ToJsonString()
-			.Replace(processUId, "<process>", StringComparison.OrdinalIgnoreCase)
-			.Replace(elementUId, "<element>", StringComparison.OrdinalIgnoreCase);
+		Dictionary<Guid, string> names = [];
+		foreach (JsonObject parameter in (graph["parameters"] as JsonArray)?.OfType<JsonObject>() ?? []) {
+			AddName(names, Text(parameter, "uid"), $"<parameter:{Text(parameter, "name")}>");
+		}
+		foreach (JsonObject element in (graph["elements"] as JsonArray)?.OfType<JsonObject>() ?? []) {
+			AddName(names, Text(element, "uid"), $"<element:{Text(element, "name")}>");
+		}
+		AddName(names, Text(graph, "schemaUId"), "<process>");
+		AddName(names, ownElementUId, "<element>");
+		return GuidPattern.Replace(node.ToJsonString(), match =>
+			names.TryGetValue(Guid.Parse(match.Value), out string? name) ? name : match.Value);
+	}
+
+	private static void AddName(Dictionary<Guid, string> names, string? uid, string name) {
+		if (Guid.TryParse(uid, out Guid parsed)) {
+			names[parsed] = name;
+		}
+	}
+
+	/// <summary>Every id <paramref name="constants"/> does not hold replaced by its order of first appearance.</summary>
+	private static string GeneratedByOrder(string text, HashSet<Guid> constants) {
+		Dictionary<Guid, int> order = [];
+		return GuidPattern.Replace(text, match => {
+			Guid id = Guid.Parse(match.Value);
+			if (constants.Contains(id)) {
+				return id.ToString("D");
+			}
+			if (!order.TryGetValue(id, out int position)) {
+				position = order.Count + 1;
+				order[id] = position;
+			}
+			return $"<generated{position}>";
+		});
 	}
 
 	private static void Strip(JsonNode? node) {
