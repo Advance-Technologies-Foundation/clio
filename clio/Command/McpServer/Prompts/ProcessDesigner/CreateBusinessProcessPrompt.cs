@@ -49,7 +49,7 @@ public static class CreateBusinessProcessPrompt {
 		 against an object — never both a template and a body), `importance`, `ignoreErrors`, a manual-mode
 		 `performer`, and `attachments` - the files the email sends, one entry per attachment row, each naming ONE
 		 source: a process FileCollection or File parameter, or an element's file output such as a Process file
-		 element's `ObjectFiles` or `ReportFiles` (read `get-guidance name=process-send-email-attachments` first);
+		 element's `ObjectFiles` or `ReportFiles` (read `get-guidance name=process-send-email` first);
 		 when several templates could fit or none is named, ASK the user which template to use or offer
 		 a custom message rather than guessing. To route a record for sign-off, add an
 		 `approval` element with an `approval` block — the `object` and the `recordId` under approval, the `approver`

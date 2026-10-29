@@ -296,12 +296,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// the three to create 35070, modify 35069, describe 34917 - 2, 3 and 155 bytes of headroom. The feature adds
 	// email.attachments to create's email shape with its guide (+210 bytes at the final guide name), the replace rule
 	// to modify's email clause (+157), the read-back line to describe (+112), and email.attachments to create's and
-	// modify's floor reasons (+19 each). Paid by SWAP, no ceiling raise (decision Q12): create dropped the body's
-	// whole-parameter rule (a process parameter is inserted WHOLE, no column drill on a bare parameter) and the
-	// {{...}} clause, both restated from process-send-email; modify dropped the switching detail that
-	// process-send-email-template "owns in full". Re-measured by lowering the ceiling, with the final guide name
-	// process-send-email-attachments: create 35015, modify 35009, describe 35029 - 57, 63 and 43 bytes of headroom.
-	// Until that guide is published, create and modify point at process-send-email (12 bytes shorter each).
+	// modify's floor reasons (+19 each). Paid by SWAP, no ceiling raise: create dropped the body's whole-parameter
+	// rule (a process parameter is inserted WHOLE, no column drill on a bare parameter), restated from
+	// process-send-email; modify dropped the switching detail that process-send-email-template "owns in full". The
+	// {{...}} caveat came back in a short form, because it fails SILENTLY (the literal text is emailed), paid for by
+	// two clauses that fail loudly or carry nothing for an agent: "column names are matched case-sensitively" (an
+	// unknown column is REJECTED, naming it) and "verified on a stand". Re-measured by lowering the ceiling with the
+	// interim guide name process-send-email: create 35003 before that swap and 34997 after it, modify 34997,
+	// describe 35029 - 75, 75 and 43 bytes of headroom. Switching create and modify to the final guide name
+	// process-send-email-attachments costs 12 bytes each.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
