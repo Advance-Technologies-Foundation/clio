@@ -60,8 +60,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[TestCase("setElement")]
 	[TestCase("removeElement")]
-	[TestCase("addElement")]
-	[Description("A name sent in 'element' - the addElement OBJECT on the server - is refused for every operation and points to 'elementName'; the same operation naming its element by 'elementName' passes clean.")]
+	[Description("A name sent in 'element' - the addElement OBJECT on the server - is refused for an operation on an existing element and points to 'elementName'; the same operation naming its element by 'elementName' passes clean.")]
 	public void Check_Should_RefuseANameInElement_AndPointToElementName(string op) {
 		// Act
 		ProcessBlockKeyCheckResult refused = CheckOperations($"[{{\"op\":\"{op}\",\"element\":\"Send1\"}}]");
@@ -74,6 +73,37 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "the refusal shows the key to use, with the caller's own element name");
 		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
 			because: "'elementName' is the key the server reads for an existing element");
+	}
+
+	[Test]
+	[Description("A name sent in 'element' on addElement is refused with the fix for that operation: 'element' takes the new element as an object with its name and type. It is not told to name an existing element with 'elementName', which addElement has none of.")]
+	public void Check_Should_RefuseANameInElement_OnAddElement_AndAskForTheElementObject() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckOperations("[{\"op\":\"addElement\",\"element\":\"Send1\"}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:", because: "the server cannot read a name in 'element'");
+		refused.Error.Should().Contain("operations[0] (addElement)", because: "the refusal names the operation");
+		refused.Error.Should().Contain("as an object with its 'name' and 'type'",
+			because: "addElement adds a new element, so the fix is the element object, not a reference to an existing one");
+		refused.Error.Should().Contain("\"element\": {\"name\": \"Send1\", \"type\": ...}",
+			because: "the refusal shows the object shape with the caller's own value as its name");
+		refused.Error.Should().NotContain("Name an existing element",
+			because: "addElement has no existing element to name");
+	}
+
+	[Test]
+	[Description("The misplaced value is printed as the caller wrote it: a non-ASCII name and an apostrophe appear as themselves rather than as HTML-safe escapes, so the key the refusal shows can be copied back.")]
+	public void Check_Should_PrintTheMisplacedNameReadably() {
+		// Act
+		ProcessBlockKeyCheckResult refused =
+			CheckOperations("[{\"op\":\"setElement\",\"element\":\"Лист O'Brien\"}]");
+
+		// Assert
+		refused.Error.Should().Contain("\"elementName\": \"Лист O'Brien\"",
+			because: "the printed key is meant to be copied back, so its characters must appear as themselves");
+		refused.Error.Should().NotContain("\\u",
+			because: "neither a Cyrillic letter nor an apostrophe needs an escape in JSON");
 	}
 
 	[Test]

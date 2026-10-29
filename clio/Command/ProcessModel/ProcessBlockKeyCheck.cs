@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Common;
 
@@ -421,9 +422,13 @@ internal static class ProcessBlockKeyCheck {
 		// key: WCF fails to read the WHOLE request and answers an error string, which used to reach the caller only
 		// as "could not read the response" - agents guessed 'element' for setElement and blamed the server.
 		if (operation[ElementKey] is JsonValue misplacedName) {
+			string value = misplacedName.ToJsonString(ReadableJson);
+			string remedy = string.Equals(op, "addElement", StringComparison.OrdinalIgnoreCase)
+				? $"Send the new element itself there, as an object with its 'name' and 'type' (\"{ElementKey}\": "
+					+ $"{{\"name\": {value}, \"type\": ...}})."
+				: $"Name an existing element with '{ElementNameKey}' (\"{ElementNameKey}\": {value}).";
 			walk.RefuseShape($"{where}: '{ElementKey}' takes the element OBJECT that addElement adds, so a name there "
-				+ $"makes the server fail the whole request. Name an existing element with '{ElementNameKey}' "
-				+ $"(\"{ElementNameKey}\": {misplacedName.ToJsonString()}).");
+				+ $"makes the server fail the whole request. {remedy}");
 		}
 		if (string.Equals(op, "addElement", StringComparison.OrdinalIgnoreCase)
 			&& operation[ElementKey] is JsonObject element) {
@@ -441,6 +446,12 @@ internal static class ProcessBlockKeyCheck {
 			walk.Visit(signal, SignalBlock, where, Signal + ".", Placement.Nested);
 		}
 	}
+
+	// The misplaced value is printed with the MCP result encoder: the default one escapes for HTML, so a non-ASCII
+	// name or an apostrophe would read as \uXXXX in the very key the caller copies back.
+	private static readonly JsonSerializerOptions ReadableJson = new() {
+		Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance
+	};
 
 	private static string ElementLabel(JsonNode name, string fallback) =>
 		(name as JsonValue)?.TryGetValue(out string text) == true && !string.IsNullOrWhiteSpace(text)
