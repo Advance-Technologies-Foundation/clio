@@ -64,11 +64,18 @@ internal static class BlockExpectationReporter {
 		Warn(logger, EmailBlockExpectation.BuildTemplateWarning(
 			EmailBlockExpectation.UnlandedTemplates(described, intent.TemplatedEmail)));
 		// The attachments list is a THIRD shape on the same block: the block lands, the list does not. Then what the
-		// list's replace rule removed, which is the one outcome of a landed list a caller can be surprised by.
+		// list's replace rule removed, which is the one outcome of a landed list a caller can be surprised by - a
+		// WARNING; and what an empty list removed, which is what it asks for - an Info line, so the caller is told
+		// what went without being told it lost something.
 		Warn(logger, EmailBlockExpectation.BuildAttachmentWarning(
 			EmailBlockExpectation.Unlanded(described, intent.SentAttachments)));
-		Warn(logger, EmailBlockExpectation.BuildRemovedAttachmentsWarning(
-			EmailBlockExpectation.Removed(before, described, intent.SentAttachments)));
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removedAttachments =
+			EmailBlockExpectation.Removed(before, described, intent.SentAttachments);
+		Warn(logger, EmailBlockExpectation.BuildRemovedAttachmentsWarning(removedAttachments));
+		string? clearedAttachments = EmailBlockExpectation.BuildClearedAttachmentsNote(removedAttachments);
+		if (clearedAttachments is not null) {
+			logger.WriteInfo(clearedAttachments);
+		}
 	}
 
 	/// <summary>

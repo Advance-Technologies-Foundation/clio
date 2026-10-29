@@ -377,8 +377,20 @@ public static class EmailBlockExpectation {
 	/// <summary>An element whose read-back carries fewer attachment rows than its sent list had entries.</summary>
 	public sealed record UnlandedAttachments(string Element, int Sent, int Described);
 
-	/// <summary>An element the replace rule took attachment rows away from, and how many.</summary>
-	public sealed record RemovedAttachments(string Element, int Count);
+	/// <summary>
+	/// An element whose attachment rows were taken away by the edit: the rows it carried BEFORE the edit, as describe
+	/// decoded them then, whose source it no longer carries.
+	/// </summary>
+	/// <param name="Element">The element name (or UId) as the caller wrote it.</param>
+	/// <param name="Rows">The removed rows as the before-read described them, each with its slot and source.</param>
+	/// <param name="Requested">
+	/// True when the caller sent an EMPTY list: removing every row is then exactly what was asked, not a side effect of
+	/// the replace rule.
+	/// </param>
+	public sealed record RemovedAttachments(string Element, IReadOnlyList<DescribedEmailAttachment> Rows, bool Requested) {
+		/// <summary>How many rows were removed.</summary>
+		public int Count => Rows.Count;
+	}
 
 	/// <summary>
 	/// The attachments lists a build descriptor sends: every <c>elements[]</c> entry whose <c>email</c> block carries
@@ -405,7 +417,10 @@ public static class EmailBlockExpectation {
 	/// <summary>
 	/// The attachments lists a modify operations array sends through <c>addElement</c> (<c>element.email</c>) and
 	/// <c>setElement</c> (<c>elementUpdate.email</c>), walked IN ORDER: a later list for the same element replaces the
-	/// earlier one, as it does on the server.
+	/// earlier one, as it does on the server. "The same element" here is the same SPELLING: a batch that names one
+	/// element by its name and then by its UId yields two lists, because only a read-back can tell they are one
+	/// element; <see cref="Unlanded"/> and <see cref="Removed"/> collapse them on the element the read-back resolves,
+	/// keeping the list sent last.
 	/// </summary>
 	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<SentAttachments> AttachmentElementsFromOperations(string operationsJson) {
@@ -433,7 +448,7 @@ public static class EmailBlockExpectation {
 	/// list had entries - the signature of a server that discarded the member while answering success (no row at all)
 	/// or of a list that did not land in full. An element absent from the read-back, or one reporting no email block,
 	/// is not reported here: <see cref="Missing"/> covers the dropped block, and an unresolvable identifier is a
-	/// reason to stay quiet.
+	/// reason to stay quiet. Two lists that name one element two ways count once, as the list sent last.
 	/// </summary>
 	/// <param name="described">The description read back after the successful operation.</param>
 	/// <param name="sent">The lists returned by <see cref="AttachmentElements"/> / <see cref="AttachmentElementsFromOperations"/>.</param>
@@ -444,8 +459,7 @@ public static class EmailBlockExpectation {
 		}
 
 		List<UnlandedAttachments> unlanded = [];
-		foreach (SentAttachments list in sent) {
-			DescribedElement? element = BlockExpectationJson.ResolveElement(described, list.Element);
+		foreach ((SentAttachments list, DescribedElement? element) in LastPerElement(described, sent)) {
 			if (element?.Email is not { } email) {
 				continue;
 			}
@@ -480,10 +494,11 @@ public static class EmailBlockExpectation {
 	}
 
 	/// <summary>
-	/// Of the elements that sent an attachments list, those the REPLACE rule took attachment rows away from: rows the
-	/// element carried BEFORE the edit (by source, as describe decodes it) that it no longer carries after it. A row
-	/// whose source the list still names is not counted, even when the server rebuilt it in its own shape. An element
-	/// the before-read cannot show (added by this batch, or an unreadable before-read) is not reported.
+	/// Of the elements that sent an attachments list, those the edit took attachment rows away from: rows the element
+	/// carried BEFORE the edit (by source, as describe decodes it) that it no longer carries after it. A row whose
+	/// source the list still names is not counted, even when the server rebuilt it in its own shape. An element the
+	/// before-read cannot show (added by this batch, or an unreadable before-read) is not reported. Two lists that
+	/// name one element two ways count once, as the list sent last.
 	/// </summary>
 	/// <param name="before">The description read before the write, or null when that read failed.</param>
 	/// <param name="described">The description read back after the successful write.</param>
@@ -495,22 +510,17 @@ public static class EmailBlockExpectation {
 		}
 
 		List<RemovedAttachments> removed = [];
-		foreach (SentAttachments list in sent) {
+		foreach ((SentAttachments list, DescribedElement? element) in LastPerElement(described, sent)) {
 			List<DescribedEmailAttachment>? had =
 				BlockExpectationJson.ResolveElement(before, list.Element)?.Email?.Attachments;
-			DescribedEmail? after = BlockExpectationJson.ResolveElement(described, list.Element)?.Email;
+			DescribedEmail? after = element?.Email;
 			if (had is not { Count: > 0 } || after is null) {
 				continue;
 			}
 			List<AttachmentSource> remaining = [.. (after.Attachments ?? []).Select(SourceOf)];
-			int count = 0;
-			foreach (AttachmentSource source in had.Select(SourceOf)) {
-				if (!remaining.Remove(source)) {
-					count++;
-				}
-			}
-			if (count > 0) {
-				removed.Add(new RemovedAttachments(list.Element, count));
+			List<DescribedEmailAttachment> gone = [.. had.Where(row => !remaining.Remove(SourceOf(row)))];
+			if (gone.Count > 0) {
+				removed.Add(new RemovedAttachments(list.Element, gone, Requested: list.Entries.Count == 0));
 			}
 		}
 
@@ -518,26 +528,86 @@ public static class EmailBlockExpectation {
 	}
 
 	/// <summary>
-	/// The caller-facing line for attachments the replace rule removed: how many, from which element, and why. Returns
-	/// null when the edit removed none.
+	/// The caller-facing warning for attachments the REPLACE rule removed - a non-empty list that did not name them:
+	/// how many, from which element, and each removed row's slot and source in the write shape. After the edit
+	/// describe no longer shows a removed row, so the source printed here (or the describe taken before the edit) is
+	/// what restores it. Returns null when the replace rule removed none; a removal an empty list asked for is
+	/// reported by <see cref="BuildClearedAttachmentsNote"/> instead.
 	/// </summary>
 	public static string? BuildRemovedAttachmentsWarning(IReadOnlyList<RemovedAttachments> removed) {
-		if (removed.Count == 0) {
+		List<RemovedAttachments> replaced = [.. removed.Where(item => !item.Requested)];
+		if (replaced.Count == 0) {
 			return null;
 		}
 
-		string counts = string.Join("; ", removed.Select(item =>
-			$"{item.Count} {(item.Count == 1 ? "attachment was" : "attachments were")} removed from '{item.Element}'"));
+		string counts = string.Join("; ", replaced.Select(item =>
+			$"{item.Count} {(item.Count == 1 ? "attachment was" : "attachments were")} removed from '{item.Element}' "
+			+ $"({RowsInWriteShape(item.Rows)})"));
 		return $"{counts} by the replace rule: a sent attachments list REPLACES the Send email element's attachments, "
-			+ "so every attachment the list did not name is gone. The server's notices name each removed attachment and "
-			+ "the entry that restores it; if a removal was not intended, describe the element and send the list again "
-			+ "with that entry.";
+			+ "so every attachment the list did not name is gone, and describe no longer shows it. If a removal was not "
+			+ "intended, send the list again with the removed entry added as printed here; a row printed without a "
+			+ "source is one describe could not name, so restore it from the describe taken before this edit, or in "
+			+ "the designer.";
+	}
+
+	/// <summary>
+	/// The caller-facing note for an EMPTY attachments list: it removed every row, which is what it asks for, so this
+	/// is informative rather than a warning - it says what went, so a list emptied by mistake can still be restored.
+	/// Returns null when no empty list removed anything.
+	/// </summary>
+	public static string? BuildClearedAttachmentsNote(IReadOnlyList<RemovedAttachments> removed) {
+		List<RemovedAttachments> cleared = [.. removed.Where(item => item.Requested)];
+		if (cleared.Count == 0) {
+			return null;
+		}
+
+		string counts = string.Join("; ", cleared.Select(item =>
+			$"'{item.Element}' ({item.Count}: {RowsInWriteShape(item.Rows)})"));
+		return $"The empty attachments list removed every attachment of the Send email {ElementNoun(cleared.Count)} "
+			+ $"{counts}, as asked.";
+	}
+
+	// Each removed row as "<slot> <entry in the write shape>", the entry that restores it; a row describe could not
+	// name a source for says so instead of printing an empty entry.
+	private static string RowsInWriteShape(IEnumerable<DescribedEmailAttachment> rows) =>
+		string.Join(", ", rows.Select(row => {
+			JsonObject entry = new();
+			AddMember(entry, "processParameter", row.ProcessParameter);
+			AddMember(entry, "sourceElement", row.SourceElement);
+			AddMember(entry, "sourceElementParameter", row.SourceElementParameter);
+			AddMember(entry, "expression", row.Expression);
+			string slot = string.IsNullOrWhiteSpace(row.Slot) ? "a row" : row.Slot;
+			return entry.Count == 0 ? $"{slot} with no source describe could name" : $"{slot} {entry.ToJsonString()}";
+		}));
+
+	private static void AddMember(JsonObject entry, string key, string? value) {
+		if (!string.IsNullOrWhiteSpace(value)) {
+			entry[key] = value;
+		}
+	}
+
+	// The lists to judge, one per element AS THE READ-BACK RESOLVES IT. Track can only collapse lists by the spelling
+	// the caller used, so a batch that names one element by its name and by its UId arrives as two; the later of the
+	// two is the one the element ends with, since the server applies the operations in order. A list whose element the
+	// read-back cannot resolve is kept as it is: every check is quiet about it anyway.
+	private static List<(SentAttachments List, DescribedElement? Element)> LastPerElement(
+			DescribeProcessResult described, IReadOnlyList<SentAttachments> sent) {
+		List<(SentAttachments List, DescribedElement? Element)> lists = [];
+		foreach (SentAttachments list in sent) {
+			DescribedElement? element = BlockExpectationJson.ResolveElement(described, list.Element);
+			if (element is not null) {
+				lists.RemoveAll(existing => ReferenceEquals(existing.Element, element));
+			}
+			lists.Add((list, element));
+		}
+		return lists;
 	}
 
 	private static AttachmentSource SourceOf(DescribedEmailAttachment entry) =>
 		new(entry.ProcessParameter, entry.SourceElement, entry.SourceElementParameter, entry.Expression);
 
-	// Tracks the attachments list of one email block, replacing an earlier list for the same element. A block without
+	// Tracks the attachments list of one email block, replacing an earlier list for the same element as SPELLED (one
+	// element named two ways is collapsed by LastPerElement, on the read-back). A block without
 	// the member is skipped: an absent list leaves the element's attachments as they are.
 	private static void Track(List<SentAttachments> sent, string? name, JsonNode? email) {
 		if (string.IsNullOrWhiteSpace(name) || email is not JsonObject block

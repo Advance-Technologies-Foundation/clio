@@ -445,7 +445,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("An attachments list on the Send email block passes clean on every route the block travels - a create element, an addElement element, a setElement update, and an empty list (which removes every attachment, Q4) - so clio no longer refuses email.attachments before the server reads it.")]
+	[Description("An attachments list on the Send email block passes clean on every route the block travels - a create element, an addElement element, a setElement update, and an empty list (which removes every attachment) - so clio no longer refuses email.attachments before the server reads it.")]
 	public void Check_Should_AcceptAnAttachmentsList_OnEveryRoute() {
 		// Arrange
 		const string email = """
@@ -479,9 +479,12 @@ public sealed class ProcessBlockKeyCheckTests {
 	[TestCase("SourceElement", "keys are case-sensitive: write 'sourceElement'")]
 	[Description("An unknown key inside an attachment entry is refused naming the element and the entry's key path, with the entry's accepted keys - instead of the server dropping the key and attaching nothing from the source the caller meant.")]
 	public void Check_Should_RefuseAnUnknownAttachmentEntryKey_NamingItsPath(string key, string pointer) {
+		// Arrange
+		string element =
+			$"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{{\"subject\":\"s\",\"attachments\":[{{\"{key}\":\"OF1\"}}]}}}}";
+
 		// Act
-		ProcessBlockKeyCheckResult result = CheckElements(
-			$"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{{\"subject\":\"s\",\"attachments\":[{{\"{key}\":\"OF1\"}}]}}}}");
+		ProcessBlockKeyCheckResult result = CheckElements(element);
 
 		// Assert
 		result.Error.Should().NotBeNull(because: "the server drops an undeclared entry key without a word");

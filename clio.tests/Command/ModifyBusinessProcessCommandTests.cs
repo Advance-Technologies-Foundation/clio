@@ -200,6 +200,60 @@ public sealed class ModifyBusinessProcessCommandTests {
 				+ "nothing else proves that half still fires");
 	}
 
+	[TestCase(true)]
+	[TestCase(false)]
+	[Category("Unit")]
+	[Description("The read taken BEFORE the edit reaches the attachments check: a setElement whose attachments list drops a row the element carried warns that the replace rule removed it when that read succeeded, and stays quiet about removals when it failed, because then nothing shows what the element had.")]
+	public void Execute_ShouldReportTheReplaceRuleRemoval_OnlyWhenTheBeforeReadSucceeded(bool beforeReadable) {
+		// Arrange
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"setElement","elementName":"Mail","elementUpdate":{"email":{"attachments":[{"processParameter":"Doc"}]}}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(BuildResult());
+		DescribeProcessResult Described(params string[] parameters) => new() {
+			Name = "UsrSampleProcess", SchemaUId = "uid", Flows = [], Parameters = [],
+			Elements = [new DescribedElement {
+				Name = "Mail",
+				Email = new DescribedEmail {
+					Subject = "s",
+					Attachments = [.. parameters.Select((parameter, index) => new DescribedEmailAttachment {
+						Slot = $"Attachments{index + 1}", ProcessParameter = parameter
+					})]
+				}
+			}]
+		};
+		if (beforeReadable) {
+			_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Is(false), Arg.Any<bool>())
+				.Returns(Described("Doc", "Docs"));
+		} else {
+			_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Is(false), Arg.Any<bool>())
+				.Returns(_ => throw new InvalidOperationException("before-read exploded"));
+		}
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Is(true), Arg.Any<bool>())
+			.Returns(Described("Doc"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the edit applied; the removal line is a caveat, never a failure");
+		if (beforeReadable) {
+			warnings.Should().ContainSingle(message => message.Contains("1 attachment was removed from 'Mail'"),
+				because: "the command hands its before-read to the reporter, which is the only evidence of the removed row");
+		} else {
+			warnings.Should().NotContain(message => message.Contains("removed from 'Mail'"),
+				because: "without the before-read nothing shows what the element had, so no removal can be claimed");
+		}
+	}
+
 	[Test]
 	[Category("Unit")]
 	[Description("Does NOT claim an addElement accessRights block was dropped when a setElement in the same array configures that element - the payload the warning itself recommends.")]

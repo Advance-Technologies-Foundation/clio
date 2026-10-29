@@ -488,7 +488,7 @@ public class EmailBlockExpectationTests {
 		[.. Enumerable.Range(1, count).Select(index => Row($"Attachments{index}", processParameter: $"P{index}"))];
 
 	[Test]
-	[Description("The attachments lists a payload sends are detected on every route the block travels - a create element, an addElement element and a setElement update - with their entries in the write shape; an email block without the member is not tracked (an absent list leaves the attachments untouched), and an empty list is tracked as zero entries (it removes every attachment, Q4).")]
+	[Description("The attachments lists a payload sends are detected on every route the block travels - a create element, an addElement element and a setElement update - with their entries in the write shape; an email block without the member is not tracked (an absent list leaves the attachments untouched), and an empty list is tracked as zero entries (it removes every attachment).")]
 	public void AttachmentElements_ShouldBeDetected_OnEveryRoute() {
 		// Arrange
 		const string descriptor = """
@@ -656,6 +656,93 @@ public class EmailBlockExpectationTests {
 		noBefore.Should().BeEmpty(because: "without a before-read nothing can be said about what the edit removed");
 		rebuilt.Should().BeEmpty(
 			because: "a row rebuilt under a new slot for the same source is not a removal, and an element absent before the edit had nothing to lose");
+	}
+
+	[Test]
+	[Description("The replace rule's warning prints each removed row's slot and source in the write shape, because describe no longer shows a removed row, and points at that printed entry or the describe taken before the edit to restore it; it no longer claims the server's notices always name the entry that restores it, which is false for a row describe cannot decode.")]
+	public void BuildRemovedAttachmentsWarning_ShouldPrintTheRemovedEntries_InTheWriteShape() {
+		// Arrange
+		DescribedEmailAttachment kept = Row("Attachments1", "OF1", "ObjectFiles");
+		DescribeProcessResult before = WithAttachments("SE1", kept, Row("Attachments2", processParameter: "Docs"),
+			Row("Attachments3"));
+		DescribeProcessResult after = WithAttachments("SE1", kept);
+		EmailBlockExpectation.SentAttachments sent = new("SE1",
+			[new EmailBlockExpectation.AttachmentSource(null, "OF1", "ObjectFiles", null)]);
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed =
+			EmailBlockExpectation.Removed(before, after, [sent]);
+		string? warning = EmailBlockExpectation.BuildRemovedAttachmentsWarning(removed);
+		string? note = EmailBlockExpectation.BuildClearedAttachmentsNote(removed);
+
+		// Assert
+		warning.Should().Contain("2 attachments were removed from 'SE1'",
+			because: "the warning says how many rows the replace rule took and from which element");
+		warning.Should().Contain("Attachments2 {\"processParameter\":\"Docs\"}",
+			because: "the removed entry is printed in the write shape, so the caller can send it back");
+		warning.Should().Contain("Attachments3 with no source describe could name",
+			because: "a row describe could not decode is named by its slot instead of as an empty entry");
+		warning.Should().Contain("describe taken before this edit",
+			because: "after the edit describe no longer shows the removed row, so the advice points before it");
+		warning.Should().NotContain("notices name",
+			because: "the server's notices do not name a restoring entry for every row, so the warning must not promise it");
+		note.Should().BeNull(because: "a non-empty list did not ask for every attachment to go");
+	}
+
+	[Test]
+	[Description("An empty attachments list removes every row because the caller asked for exactly that, so its outcome is an informative note naming what went - not the replace rule's warning, which would tell the caller it lost something.")]
+	public void BuildClearedAttachmentsNote_ShouldReportAnAskedForRemoval_WithoutAWarning() {
+		// Arrange
+		DescribeProcessResult before = WithAttachments("SE1", Row("Attachments1", "OF1", "ObjectFiles"),
+			Row("Attachments2", processParameter: "Doc"));
+		DescribeProcessResult after = WithAttachments("SE1");
+		EmailBlockExpectation.SentAttachments cleared = new("SE1", []);
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed =
+			EmailBlockExpectation.Removed(before, after, [cleared]);
+		string? warning = EmailBlockExpectation.BuildRemovedAttachmentsWarning(removed);
+		string? note = EmailBlockExpectation.BuildClearedAttachmentsNote(removed);
+
+		// Assert
+		removed.Should().ContainSingle(because: "the element lost both rows")
+			.Which.Requested.Should().BeTrue(because: "an empty list asks for every attachment to go");
+		warning.Should().BeNull(because: "a removal the caller asked for is not a surprise to warn about");
+		note.Should().Contain("removed every attachment", because: "the note says what the empty list did");
+		note.Should().Contain("'SE1' (2: Attachments1 {\"sourceElement\":\"OF1\",\"sourceElementParameter\":\"ObjectFiles\"}",
+			because: "the note names what went, so a list emptied by mistake can still be restored");
+		note.Should().Contain("as asked", because: "the note confirms the outcome rather than reporting a loss");
+		note.Should().NotContain("not intended", because: "the note does not suggest the removal was a mistake");
+	}
+
+	[Test]
+	[Description("One batch that names a Send email element by its name and then by its UId is tracked as two lists, because only the read-back can tell they are one element; the read-back checks collapse them on the element it resolves and judge only the list sent last, so the earlier list neither raises a not-landed warning nor counts the removal twice.")]
+	public void AttachmentChecks_ShouldJudgeOneElementOnce_WhenTheBatchNamesItByNameAndByUId() {
+		// Arrange
+		const string uid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55";
+		const string operations = """
+			[{"op":"setElement","elementName":"SE1","elementUpdate":{"email":{"attachments":[{"processParameter":"A"},{"processParameter":"B"}]}}},
+			 {"op":"setElement","elementName":"5c58c4c4-134b-4744-9c67-96d9c69c9d55","elementUpdate":{"email":{"attachments":[{"processParameter":"C"}]}}}]
+			""";
+		DescribeProcessResult before = WithAttachments("SE1", Row("Attachments1", processParameter: "Old"));
+		DescribeProcessResult after = WithAttachments("SE1", Row("Attachments1", processParameter: "C"));
+		before.Elements[0].Uid = uid;
+		after.Elements[0].Uid = uid;
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.SentAttachments> sent =
+			EmailBlockExpectation.AttachmentElementsFromOperations(operations);
+		IReadOnlyList<EmailBlockExpectation.UnlandedAttachments> unlanded = EmailBlockExpectation.Unlanded(after, sent);
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed =
+			EmailBlockExpectation.Removed(before, after, sent);
+
+		// Assert
+		sent.Select(list => list.Element).Should().Equal(["SE1", uid],
+			because: "the payload alone cannot tell that the name and the UId are one element");
+		unlanded.Should().BeEmpty(
+			because: "the element ends with the one entry of the list sent last, which landed; the earlier two-entry list is not judged");
+		removed.Should().ContainSingle(because: "one element lost one row, however many ways the batch named it")
+			.Which.Count.Should().Be(1, because: "the removed row is counted once");
 	}
 
 	#endregion

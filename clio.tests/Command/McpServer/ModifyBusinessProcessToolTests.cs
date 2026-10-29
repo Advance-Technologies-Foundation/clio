@@ -223,7 +223,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[TestCase("[{\"sourceElement\":\"OF1\",\"sourceElementParameter\":\"ObjectFiles\"},{\"processParameter\":\"Doc\"}]")]
 	[TestCase("[]")]
-	[Description("Forwards a setElement whose email block carries an attachments list verbatim - a list, and an EMPTY list, which removes every attachment (Q4): a forwarder that dropped the empty array would leave the attachments in place while the caller believes they are gone.")]
+	[Description("Forwards a setElement whose email block carries an attachments list verbatim - a list, and an EMPTY list, which removes every attachment: a forwarder that dropped the empty array would leave the attachments in place while the caller believes they are gone.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Forward_SendEmailAttachments_Verbatim(string attachments) {
 		// Arrange
