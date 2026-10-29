@@ -26,7 +26,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.127 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.128 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -49,8 +49,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string ModifyToolName = ModifyBusinessProcessTool.ModifyBusinessProcessToolName;
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
-	/// <summary>The create/modify floor: 1.6.6.127 is the first archive that reads <c>email.attachments</c>.</summary>
-	private const string MinimumPackageVersion = "1.6.6.127";
+	/// <summary>
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.128,
+	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c>, but TC-I-05 asserts
+	/// that describe lists the rows in stored order, which arrived in 1.6.6.128 - and clio refuses a stand older than
+	/// its bundled archive anyway.
+	/// </summary>
+	private const string MinimumPackageVersion = "1.6.6.128";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
