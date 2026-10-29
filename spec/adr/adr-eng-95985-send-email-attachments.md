@@ -123,7 +123,8 @@ Each entry is decoded from the stored formulas with the decoder `fileProcessing.
 (`FileProcessingBlockDescriber.DecodeValueSource`) and carries read-back members `slot`, `bindingLevels` (`both` |
 `outerOnly` | `itemOnly` | `none`) and `issues` (only when a stored shape would fail or surprise at run time: outer-only,
 item-only on a collection item, different sources, stale parent, nothing bound, foreign stamp, unscoped source,
-multi-instance element). Order by slot number; null when there is no slot. The generic element `parameters[]`
+multi-instance element). Stored (designer) order, the order the email attaches them, not slot number (serialization
+SQ10, revised 2026-10-29); null when there is no slot. The generic element `parameters[]`
 projection does NOT decode a slot into `sourceElement` / `processParameter` names, because those would be re-sent as
 `addMapping`, which D4 refuses. Two predicates, each defined once on `EmailAttachmentSlot`: `IsSlot` is what the run
 time reads (top level, case-sensitive `^Attachments\d+$`, `CreatedInSchemaUId` = this process) and drives the

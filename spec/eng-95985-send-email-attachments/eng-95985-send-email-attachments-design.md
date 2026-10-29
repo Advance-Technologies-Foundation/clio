@@ -71,9 +71,10 @@ recipients.
 - Read-back members: `slot` (the stored parameter name), `bindingLevels` (`both` | `outerOnly` | `itemOnly` | `none`),
   `issues` (list of sentences, only when a stored shape would fail or surprise at run time). clio's key check tolerates
   them as read-back fields.
-- Order: by slot number. (The run time sends in parameter-collection order, which differs after a gap; the order of
-  files in an email is not part of the contract.) An element with no slot omits `attachments` (null, not `[]`), like
-  the other optional members.
+- Order: the element's stored parameter order - the designer's row order and the order the run time attaches the
+  files - not the slot number: a re-added slot (lowest free number, appended) comes last, so numbers can have gaps and
+  need not ascend (serialization SQ10, revised 2026-10-29: a stand run showed agents report the read-back order to
+  users). An element with no slot omits `attachments` (null, not `[]`), like the other optional members.
 - `configured` (the block's "is anything set" flag) counts attachments.
 
 ### 2.3 Modify semantics (Q4 = replace)
@@ -191,7 +192,8 @@ message byte-identical (pinned by the existing `FileProcessingProcessTests`).
 - `EmailAttachmentSlot.IsReservedName(name)`: a root parameter name matching `^Attachments\d+$` case-insensitively,
   whatever its stamp (the guard predicate of 4.5 and 4.7, applied on a Send email element only).
 - `ItemNameOf(slotName)` = slot name + `FileLocator`.
-- `IEmailAttachmentSlotWriter.Find(schema, element)`: the slots in numeric order.
+- `IEmailAttachmentSlotWriter.Find(schema, element)`: the slots in numeric order (write side only; describe keeps the
+  stored order, 2.2).
 - `Create(schema, element, number)`: builds the item first (name, type by UId, `In`, `ContainerUId` = element,
   explicit stamps, caption), adds it to the outer's `ItemProperties`, then builds the outer the same way and adds it to
   `element.Parameters`. Precedents: `MultiInstanceApplier.AParameter` (`PB/Elements/MultiInstanceApplier.cs:1004-1044`),

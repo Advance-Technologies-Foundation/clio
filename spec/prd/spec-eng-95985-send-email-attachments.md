@@ -128,7 +128,8 @@ Read back (`describe-business-process`, the element's `email` block):
 ```
 
 Write members are decoded from the stored formulas, so an entry can be sent back unchanged; `slot`, `bindingLevels`
-(`both` | `outerOnly` | `itemOnly` | `none`) and `issues` are read-back fields clio tolerates. Order by slot number; an
+(`both` | `outerOnly` | `itemOnly` | `none`) and `issues` are read-back fields clio tolerates. Order: the designer's row order, the order the email attaches them (revised
+2026-10-29, was slot number); an
 element with no slot omits the member (null, not `[]`); `configured` counts attachments.
 
 ## Acceptance criteria

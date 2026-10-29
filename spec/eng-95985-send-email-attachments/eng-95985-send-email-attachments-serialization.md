@@ -362,8 +362,8 @@ package. [source; order of the sent files traced, not measured]
 
 So after a gap, `BP2` order is not numeric order, and the absolute `BP2` index of a slot depends on how many template
 parameters and later syncs sit around it (corpus: index 49-50 of 51-55) [corpus]. Parity compares the RELATIVE order
-of the slots only (6.2 R9). Describe returns the slots by number (design 2.2, 4.3 `Find`); collection order, the
-order the email attaches, is not part of the contract (SQ10).
+of the slots only (6.2 R9). Describe returns the slots in `BP2` order - the order the email attaches and the designer
+shows - not by number (SQ10, revised 2026-10-29); `Find` keeps numeric order for the write side only (design 4.3).
 
 ## 6. Parity method (AC7)
 
@@ -529,7 +529,7 @@ committed (pattern B).
 | SQ7 | New slot after a gap: name `Attachments2`, appended last in `BP2`? | Q5 parity, R9 | EM1 S3 | 5.4 table |
 | SQ8 | Captions and display values: which culture rows the designer writes for a non-en-US user, and which the package writes | R10, AD3 | EM1 (record 5), EM2 | authoring culture only |
 | SQ9 | Outer display value (AD1) and single-File item display value (AD2): does the designer render a bare caption, and does a no-op designer save rewrite it? | whether the designer form the slot writer writes (6.3) is what the designer shows and keeps | EM2 (diff), EM3 (render + no-op save) | write the designer form |
-| SQ10 | Describe order: numeric or collection order | round trip and the order the email attaches | EM1 S3 shows the stored order | design 2.2: by slot number; the order of files in an email is not part of the contract |
+| SQ10 | Describe order: numeric or collection order | round trip and the order the email attaches | EM1 S3 shows the stored order | Revised 2026-10-29: stored (designer) order, because the run time sends the rows in that order and a stand run showed agents report the read-back order to users (design 2.2). Was: by slot number, the order of files not part of the contract |
 | SQ11 | Does the pre-save gate accept a package-built nested Script on the item (compiled against `IFileLocator`)? | a refusal blocks every build | EM2 | traced only: each Script value is compiled against the parameter's value type (`TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:206-207, 325-350`) |
 | SQ12 | Does a designer no-op save of a package-built element keep every compared key (adds `GS5`, rewrites display values, adds `BK15`)? | the residual risk of the refinement comment | EM3 | - |
 | SQ13 | Version clone: does `A3`/`A4`/`GS5` of both levels follow the clone UId? (`PB/Design/ProcessVersionCloneFactory.cs:106-111` text-replaces the source UId) | an un-replaced `A3` makes the run time ignore the slot (I3) | EM13 | traced: yes |
