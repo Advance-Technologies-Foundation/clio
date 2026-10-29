@@ -63,8 +63,8 @@ public sealed class ExportSchemaGateResponse : BaseResponse {
 	public SchemaLayerDto Schema { get; set; }
 
 	/// <summary>
-	/// Gets or sets the verbatim payload produced by the platform schema exporter. This is the only input the
-	/// import route accepts.
+	/// Gets or sets the payload produced by the platform schema exporter. clio removes the line breaks the exporter
+	/// adds for readability before it writes the bundle; the import route accepts the payload in both forms.
 	/// </summary>
 	[JsonPropertyName("schemaData")]
 	public string SchemaData { get; set; }

@@ -50,6 +50,7 @@ public sealed class SchemaBundleDescriptor {
 /// </summary>
 /// <param name="Descriptor">Provenance and identity of the export.</param>
 /// <param name="SchemaData">
-/// The verbatim payload produced by the platform schema exporter — the only thing import consumes.
+/// The payload produced by the platform schema exporter, without the line breaks the exporter adds for
+/// readability — the only thing import consumes.
 /// </param>
 public sealed record SchemaBundle(SchemaBundleDescriptor Descriptor, string SchemaData);
