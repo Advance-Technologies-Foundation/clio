@@ -63,7 +63,7 @@ manager (--manager-name) to disambiguate.
 <SchemaName>/
   descriptor.json      provenance: schema name, UId, manager, source package,
                        source environment, export timestamp, clio version
-  schema-data.json     the verbatim platform payload — the ONLY file import reads
+  schema-data.json     the platform payload as valid JSON — the ONLY file import reads
   metadata.json        projection of the payload's MetaData, expanded for reading
   properties.json      projection of the payload's Properties
   resources/           projection of the payload's LocalizableValues, one file per culture
@@ -72,6 +72,12 @@ manager (--manager-name) to disambiguate.
 Only `schema-data.json` is authoritative. The projections exist because a single escaped-JSON blob is not
 reviewable, and the point of the feature is a reviewable handover. Import reads `schema-data.json` and
 ignores the projections, so editing a projection can never silently change what ships.
+
+`schema-data.json` is standard JSON (RFC 8259), so a script can read and edit it with any JSON parser, for
+example Python `json.load` or `jq`. The platform exporter inserts a line break before every `\n` escape inside
+the `MetaData` string for readability, which makes the raw payload invalid JSON; export removes those line breaks, the same way
+the platform importer does. Import also accepts bundles written by earlier clio versions, which still have them.
+When the payload is still not valid JSON after that, export writes it as received and prints a warning.
 
 Export never overwrites an existing bundle folder.
 
