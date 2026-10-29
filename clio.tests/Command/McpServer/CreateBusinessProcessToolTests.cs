@@ -187,7 +187,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The create contract names email.attachments in the email shape with its three source members and points at the guide that owns it, and the prompt names the member and the Process file element as a source of the files an email sends - an agent that cannot see the member builds an email without its files.")]
+	[Description("The create contract names email.attachments in the email shape with its three source members and tells the agent to read its guide, and the prompt names the member and the Process file element as a source of the files an email sends - an agent that cannot see the member builds an email without its files.")]
 	public void CreateBusinessProcessTool_ShouldNameEmailAttachments_InTheContractAndThePrompt() {
 		// Arrange
 		string toolDescription = typeof(CreateBusinessProcessTool)
@@ -199,8 +199,8 @@ public class CreateBusinessProcessToolTests {
 
 		// Assert
 		toolDescription.Should().Contain("attachments? (files the email SENDS, one row per entry, each exactly one of processParameter | "
-				+ "sourceElement+sourceElementParameter | expression; get-guidance name=process-send-email owns it)",
-			because: "the email shape is where an agent learns the member, its entry shape and the guide that owns it");
+				+ "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email)",
+			because: "the email shape is where an agent learns the member, its entry shape and the guide to read for it");
 		prompt.Should().Contain("`performer`, and `attachments` - the files the email sends, one entry per attachment row",
 			because: "the prompt's Send email sentence must name the member beside the other email fields");
 		prompt.Should().Contain("list that output in a Send email element's `email.attachments`",

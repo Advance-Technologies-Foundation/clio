@@ -265,7 +265,7 @@ public class ModifyBusinessProcessTool(
 		 + "to/cc/bcc recipients MATCH-OR-APPEND: an existing entry (same resolved source AND value) is a no-op, a "
 		 + "genuinely new address is appended (a wrong recipient cannot be replaced or removed through modify yet). "
 		 + "attachments REPLACES the list: to add one, send the described list plus the new one; [] removes them "
-		 + "all (get-guidance name=process-send-email). "
+		 + "all (read get-guidance name=process-send-email). "
 		 + "Switching mode to auto stops describe reporting a performer, though the element keeps the assignment; "
 		 + "switch back to manual to see it again), "
 		 + "approval reconfigures an Approval element IN PLACE, same block as create-business-process: omit 'object' "

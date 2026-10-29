@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using Clio.Command.ProcessModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -659,7 +660,7 @@ public class EmailBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("The replace rule's warning prints each removed row's slot and source in the write shape, because describe no longer shows a removed row, and points at that printed entry or the describe taken before the edit to restore it; it no longer claims the server's notices always name the entry that restores it, which is false for a row describe cannot decode.")]
+	[Description("The replace rule's warning prints each removed row's slot and source in the write shape, because describe no longer shows a removed row, and points at that printed entry to restore it; a row describe could not name a source for, before the edit as after it, is sent to the designer to rebuild instead. It does not claim the server's notices always name the entry that restores it, which is false for a row describe cannot decode.")]
 	public void BuildRemovedAttachmentsWarning_ShouldPrintTheRemovedEntries_InTheWriteShape() {
 		// Arrange
 		DescribedEmailAttachment kept = Row("Attachments1", "OF1", "ObjectFiles");
@@ -682,8 +683,12 @@ public class EmailBlockExpectationTests {
 			because: "the removed entry is printed in the write shape, so the caller can send it back");
 		warning.Should().Contain("Attachments3 with no source describe could name",
 			because: "a row describe could not decode is named by its slot instead of as an empty entry");
-		warning.Should().Contain("describe taken before this edit",
-			because: "after the edit describe no longer shows the removed row, so the advice points before it");
+		warning.Should().Contain("send the list again with the removed entry added as printed here",
+			because: "after the edit describe no longer shows the removed row, so the printed entry is what restores it");
+		warning.Should().Contain("rebuild it in the designer",
+			because: "a row with no source was not named by the describe taken before the edit either, so only the designer can restore it");
+		warning.Should().NotContain("describe taken before this edit",
+			because: "that describe showed no source for the row, so pointing at it would restore nothing");
 		warning.Should().NotContain("notices name",
 			because: "the server's notices do not name a restoring entry for every row, so the warning must not promise it");
 		note.Should().BeNull(because: "a non-empty list did not ask for every attachment to go");
@@ -713,6 +718,58 @@ public class EmailBlockExpectationTests {
 			because: "the note names what went, so a list emptied by mistake can still be restored");
 		note.Should().Contain("as asked", because: "the note confirms the outcome rather than reporting a loss");
 		note.Should().NotContain("not intended", because: "the note does not suggest the removal was a mistake");
+	}
+
+	[Test]
+	[Description("A removed expression row is printed readably - an apostrophe, angle brackets and a plus sign appear as themselves rather than as HTML-safe escapes - and the printed entry still parses back to the same expression, so the caller can send it as it reads.")]
+	public void BuildRemovedAttachmentsWarning_ShouldPrintAnExpressionReadably_AndParseBackToTheSameValue() {
+		// Arrange
+		const string expression = "[#Docs#] + '<draft>'";
+		DescribedEmailAttachment kept = Row("Attachments1", "OF1", "ObjectFiles");
+		DescribeProcessResult before = WithAttachments("SE1", kept,
+			new DescribedEmailAttachment { Slot = "Attachments2", Expression = expression });
+		DescribeProcessResult after = WithAttachments("SE1", kept);
+		EmailBlockExpectation.SentAttachments sent = new("SE1",
+			[new EmailBlockExpectation.AttachmentSource(null, "OF1", "ObjectFiles", null)]);
+
+		// Act
+		string? warning = EmailBlockExpectation.BuildRemovedAttachmentsWarning(
+			EmailBlockExpectation.Removed(before, after, [sent]));
+
+		// Assert
+		warning.Should().Contain("Attachments2 {\"expression\":\"[#Docs#] + '<draft>'\"}",
+			because: "the printed entry is meant to be read and copied back, so its characters must appear as themselves");
+		int start = warning!.IndexOf("{\"expression\"", StringComparison.Ordinal);
+		string printed = warning[start..(warning.IndexOf('}', start) + 1)];
+		JsonNode.Parse(printed)!["expression"]!.GetValue<string>().Should().Be(expression,
+			because: "the readable form is still JSON, so the entry parses back to the expression that was removed");
+	}
+
+	[Test]
+	[Description("An empty attachments list sent to each of two Send email elements is reported in one note whose wording is plural, naming both elements and what each lost.")]
+	public void BuildClearedAttachmentsNote_ShouldSpeakOfLists_WhenSeveralElementsWereCleared() {
+		// Arrange
+		DescribeProcessResult before = new() {
+			Elements = [
+				.. WithAttachments("SE1", Row("Attachments1", processParameter: "Docs")).Elements,
+				.. WithAttachments("SE2", Row("Attachments1", processParameter: "Doc")).Elements
+			]
+		};
+		DescribeProcessResult after = new() {
+			Elements = [.. WithAttachments("SE1").Elements, .. WithAttachments("SE2").Elements]
+		};
+
+		// Act
+		string? note = EmailBlockExpectation.BuildClearedAttachmentsNote(EmailBlockExpectation.Removed(before, after,
+			[new EmailBlockExpectation.SentAttachments("SE1", []), new EmailBlockExpectation.SentAttachments("SE2", [])]));
+
+		// Assert
+		note.Should().StartWith("The empty attachments lists removed every attachment of the Send email elements",
+			because: "two empty lists were sent, one to each element, so the note speaks of lists and elements");
+		note.Should().Contain("'SE1' (1: Attachments1 {\"processParameter\":\"Docs\"})",
+			because: "the note names what the first element lost");
+		note.Should().Contain("'SE2' (1: Attachments1 {\"processParameter\":\"Doc\"})",
+			because: "the note names what the second element lost");
 	}
 
 	[Test]

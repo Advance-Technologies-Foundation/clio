@@ -303,8 +303,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// two clauses that fail loudly or carry nothing for an agent: "column names are matched case-sensitively" (an
 	// unknown column is REJECTED, naming it) and "verified on a stand". Re-measured by lowering the ceiling with the
 	// interim guide name process-send-email: create 35003 before that swap and 34997 after it, modify 34997,
-	// describe 35029 - 75, 75 and 43 bytes of headroom. Switching create and modify to the final guide name
-	// process-send-email-attachments costs 12 bytes each.
+	// describe 35029 - 75, 75 and 43 bytes of headroom; the published guide kept that name, so those figures held.
+	// Review fixes then made both pointers an instruction to read the guide rather than a claim that it owns the
+	// member (create -3 bytes, modify +5), re-measured by lowering the ceiling: create 34994, modify 35002,
+	// describe 35029 - 78, 70 and 43 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

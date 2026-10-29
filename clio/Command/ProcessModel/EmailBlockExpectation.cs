@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Clio.Command.ProcessModel;
@@ -546,8 +547,8 @@ public static class EmailBlockExpectation {
 		return $"{counts} by the replace rule: a sent attachments list REPLACES the Send email element's attachments, "
 			+ "so every attachment the list did not name is gone, and describe no longer shows it. If a removal was not "
 			+ "intended, send the list again with the removed entry added as printed here; a row printed without a "
-			+ "source is one describe could not name, so restore it from the describe taken before this edit, or in "
-			+ "the designer.";
+			+ "source is one describe could not name, before this edit as well as after it, so rebuild it in the "
+			+ "designer.";
 	}
 
 	/// <summary>
@@ -563,9 +564,17 @@ public static class EmailBlockExpectation {
 
 		string counts = string.Join("; ", cleared.Select(item =>
 			$"'{item.Element}' ({item.Count}: {RowsInWriteShape(item.Rows)})"));
-		return $"The empty attachments list removed every attachment of the Send email {ElementNoun(cleared.Count)} "
-			+ $"{counts}, as asked.";
+		string lists = cleared.Count == 1 ? "The empty attachments list" : "The empty attachments lists";
+		return $"{lists} removed every attachment of the Send email {ElementNoun(cleared.Count)} {counts}, as asked.";
 	}
+
+	// The entries are printed with the MCP result encoder rather than the default one: the default escapes for HTML,
+	// so an expression's ', <, > and + would read as \u0027, \u003C, \u003E and \u002B in the very line the caller
+	// copies back. The relaxed form still escapes what JSON requires (and the invisible Format characters), so the
+	// printed entry parses back to the same value.
+	private static readonly JsonSerializerOptions WriteShapeJson = new() {
+		Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance
+	};
 
 	// Each removed row as "<slot> <entry in the write shape>", the entry that restores it; a row describe could not
 	// name a source for says so instead of printing an empty entry.
@@ -577,7 +586,7 @@ public static class EmailBlockExpectation {
 			AddMember(entry, "sourceElementParameter", row.SourceElementParameter);
 			AddMember(entry, "expression", row.Expression);
 			string slot = string.IsNullOrWhiteSpace(row.Slot) ? "a row" : row.Slot;
-			return entry.Count == 0 ? $"{slot} with no source describe could name" : $"{slot} {entry.ToJsonString()}";
+			return entry.Count == 0 ? $"{slot} with no source describe could name" : $"{slot} {entry.ToJsonString(WriteShapeJson)}";
 		}));
 
 	private static void AddMember(JsonObject entry, string key, string? value) {

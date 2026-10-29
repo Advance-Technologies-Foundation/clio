@@ -163,4 +163,49 @@ public sealed class BlockExpectationIntentTemplateTests {
 		withoutBefore.Should().NotContain(warning => warning.Contains("by the replace rule"),
 			because: "with no before-read there is no evidence of what the edit removed");
 	}
+
+	[Test]
+	[Description("ReportDescribed writes what an explicit empty attachments list removed as an Info line and not as a warning, because the caller asked for it, while what a non-empty list's replace rule removed on another element of the same batch is still a warning.")]
+	public void ReportDescribed_ShouldWriteAnEmptyListAsInfo_AndAReplaceAsAWarning() {
+		// Arrange
+		List<string> warnings = [];
+		List<string> infos = [];
+		ILogger logger = RecordingLogger(warnings);
+		logger.When(instance => instance.WriteInfo(Arg.Any<string>()))
+			.Do(call => infos.Add(call.Arg<string>()));
+		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations("""
+			[{"op":"setElement","elementName":"Cleared","elementUpdate":{"email":{"attachments":[]}}},
+			 {"op":"setElement","elementName":"Replaced","elementUpdate":{"email":{"attachments":[{"processParameter":"Docs"}]}}}]
+			""");
+		DescribedEmailAttachment docs = new() { Slot = "Attachments1", ProcessParameter = "Docs" };
+		DescribedEmailAttachment doc = new() { Slot = "Attachments2", ProcessParameter = "Doc" };
+		DescribeProcessResult before = new() {
+			Elements = [
+				new DescribedElement { Name = "Cleared", Email = new DescribedEmail { Attachments = [doc] } },
+				new DescribedElement { Name = "Replaced", Email = new DescribedEmail { Attachments = [docs, doc] } }
+			]
+		};
+		DescribeProcessResult described = new() {
+			Elements = [
+				new DescribedElement { Name = "Cleared", Email = new DescribedEmail { Subject = "no attachments left" } },
+				new DescribedElement { Name = "Replaced", Email = new DescribedEmail { Attachments = [docs] } }
+			]
+		};
+
+		// Act
+		BlockExpectationReporter.ReportDescribed(logger, described, intent, before);
+
+		// Assert
+		infos.Should().ContainSingle(info => info.Contains("removed every attachment"),
+				because: "the empty list removed what it asked to remove, which is reported as information")
+			.Which.Should().Contain("'Cleared'", because: "the Info line names the element the empty list cleared");
+		warnings.Should().NotContain(warning => warning.Contains("'Cleared'"),
+			because: "a removal the caller asked for must not reach the caller as a warning");
+		warnings.Should().ContainSingle(warning => warning.Contains("by the replace rule"),
+				because: "the non-empty list on 'Replaced' did not name one of its rows")
+			.Which.Should().Contain("1 attachment was removed from 'Replaced'",
+				because: "the replace rule's removal is still a warning naming the element and the count");
+		infos.Should().NotContain(info => info.Contains("'Replaced'"),
+			because: "a removal the caller did not ask for must not be downgraded to information");
+	}
 }

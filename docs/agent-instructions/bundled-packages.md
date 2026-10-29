@@ -353,16 +353,35 @@ before touching anything otherwise — an equal version publishes to nobody, and
 built for one order: the checkout sits on the PRE-stamp commit, the script stamps `descriptor.json` itself, packs
 the commit with that file overlaid, and the stamp is committed afterwards. When the package branch committed and
 tagged the stamp first (`set-pkg-version`, tag `crtprocessbuilder-<version>` on the stamp commit), the descriptor
-already carries the target version and the script refuses `-Version <that version>` before writing anything — and
-it has no same-version flag on purpose. Do not raise `-Version` to get past it: that restamps the checkout and ships
-a version and stamp no package commit carries. Do not check out the pre-stamp commit either: re-stamping writes a
-new `ModifiedOnUtc`, and the bytes no longer match the tagged cut. Instead export the stamp commit with
-`git -c core.autocrlf=false -c core.eol=lf archive --format=zip <stamp commit> -- packages/CrtProcessBuilder`,
-expand it, pack `packages/CrtProcessBuilder` with `clio compress <dir> --skip-pdb -d clio/CrtProcessBuilder/CrtProcessBuilder.gz`
-with NO descriptor overlay, check the archive's inventory as the script does (two DLLs, both under `Files/Libs`,
-the compile marker, no own assembly, nothing outside the allowed top-level set), and set the four provenance pins by
-hand. `ExpectedProducingCommit` is then the stamp commit itself, whose `descriptor.json` carries the pinned
-version and `ModifiedOnUtc`, so every archive entry — the descriptor included — is that commit's blob.
+already carries the target version, so the script refuses `-Version <that version>` at its version check - which
+runs AFTER step 1 has built the package into `Files/Bin` and run its suite, and BEFORE step 2 writes the
+descriptor. It has no same-version flag on purpose. Do not raise `-Version` to get past it: that restamps the
+checkout and ships a version and stamp no package commit carries. Do not check out the pre-stamp commit either:
+re-stamping writes a new `ModifiedOnUtc`, and the bytes no longer match the tagged cut.
+
+Instead follow [Without the script](#without-the-script) from the stamp commit, with exactly these steps left out:
+
+- **2 and 2c** - the stamp is already made and committed;
+- **the `descriptor.json` overlay in 3b** - export the stamp commit with the two `-c` flags and pack the export
+  as it is, so every archive entry, the descriptor included, is that commit's blob.
+
+Everything else stays mandatory, and the script is no longer there to do it:
+
+- **1 - build the package and run its tests.** Those tests are the only check that each operation is still bound
+  to its authorization gate; clio's own pins cannot see a gate moved between handlers.
+- **2b - check the schema descriptors' `ModifiedOnUtc`**, and compare the compile marker's against
+  `ExpectedSchemaDescriptorModifiedOnUtc`.
+- **The version must be higher than the one clio already ships**, read out of the committed
+  `clio/CrtProcessBuilder/CrtProcessBuilder.gz` BEFORE step 4 overwrites it - not only higher than the
+  descriptor's previous version. A stale branch can otherwise cut an archive below the shipped one, and nothing
+  downstream refuses it.
+- **3, 4 and 5** - remove `Files/Bin`, pack with `--skip-pdb`, and check the inventory (two DLLs, both under
+  `Files/Libs`, the compile marker, no own assembly, nothing outside the allowed top-level set).
+- **The pins** - the four provenance pins by hand as well as the three hand-maintained ones.
+  `ExpectedProducingCommit` is then the stamp commit itself, whose `descriptor.json` carries the pinned version
+  and `ModifiedOnUtc`.
+- **Rebuild clio** (the script's step 7): an install resolves the archive from the build output, so until then
+  every local install ships the previous one.
 
 Add `-Configuration` / `-Framework` when more than one clio build output exists. The script refuses to
 guess, because whichever it picks is the one that receives the new archive; the others keep the previous

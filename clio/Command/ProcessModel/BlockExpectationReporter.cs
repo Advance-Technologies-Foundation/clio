@@ -65,8 +65,9 @@ internal static class BlockExpectationReporter {
 			EmailBlockExpectation.UnlandedTemplates(described, intent.TemplatedEmail)));
 		// The attachments list is a THIRD shape on the same block: the block lands, the list does not. Then what the
 		// list's replace rule removed, which is the one outcome of a landed list a caller can be surprised by - a
-		// WARNING; and what an empty list removed, which is what it asks for - an Info line, so the caller is told
-		// what went without being told it lost something.
+		// WARNING; and what an empty list removed, which is what it asks for - an Info line, so clio's own line names
+		// what went without calling it a loss. That is clio's line only: the package still returns its per-row
+		// removal notice for the same edit, and that notice reaches the caller as a warning either way.
 		Warn(logger, EmailBlockExpectation.BuildAttachmentWarning(
 			EmailBlockExpectation.Unlanded(described, intent.SentAttachments)));
 		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removedAttachments =

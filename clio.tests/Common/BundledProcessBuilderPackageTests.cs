@@ -72,7 +72,7 @@ public class BundledProcessBuilderPackageTests {
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
 	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>cd09f0af</c>, tagged
 	/// <c>crtprocessbuilder-1.6.6.127</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
-	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut took the MANUAL route, and
+	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
 	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
 	/// 1.6.6.127) before the cut, so the script refused a version equal to the descriptor's, and the archive was packed
 	/// from a <c>git archive</c> export of the tagged commit with the two <c>-c</c> flags, with no overlay. Every entry,
@@ -98,10 +98,10 @@ public class BundledProcessBuilderPackageTests {
 	/// it described archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4989 passed,
-	/// 0 failed, on <c>dev-nf</c> (run by hand on the producing checkout, the manual route's step 1) -
+	/// 0 failed, on <c>dev-nf</c> (run by hand on the producing checkout, step 1 of the hand cut) -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
-	/// not running it on the manual route) is the ONE path that can reach the coarse failure the two
+	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
 	/// security counts below exist to catch. The inventory was checked with the script's own walk: 309
 	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
 	/// that executes on install.
@@ -217,7 +217,7 @@ public class BundledProcessBuilderPackageTests {
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
-	/// commit <c>b6105d45</c>). For 1.6.6.127 it was typed by hand on the manual route, and it IS the restamp commit (the tag
+	/// commit <c>b6105d45</c>). For 1.6.6.127 it was typed by hand for a hand cut, and it IS the restamp commit (the tag
 	/// <c>crtprocessbuilder-1.6.6.127</c> points at it), because the package branch committed its stamp before the cut.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three

@@ -262,8 +262,8 @@ public class ModifyBusinessProcessToolTests {
 		// Assert
 		description.Should().Contain("attachments REPLACES the list: to add one, send the described list plus the new one; [] removes them all",
 			because: "the replace rule differs from the recipients' match-or-append and is decided at call time");
-		description.Should().Contain("(get-guidance name=process-send-email)",
-			because: "the contract routes to the guide that owns the attachments block");
+		description.Should().Contain("(read get-guidance name=process-send-email)",
+			because: "the contract tells the agent which guide to read for the attachments block");
 		prompt.Should().Contain("and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send",
 			because: "the prompt must make the agent describe first, because a stale list deletes rows added since");
 	}
