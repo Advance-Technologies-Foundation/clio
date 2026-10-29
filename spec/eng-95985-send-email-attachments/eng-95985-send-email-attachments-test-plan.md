@@ -304,7 +304,7 @@ Fixture `SendEmailAttachmentsStandCaptureParityTests`:
 | TC | Test | Proves |
 |---|---|---|
 | TC-P-04 | `Slot_ShouldEqualTheStandCapture` [OF1 Object; RF1 Report; PF1 Process-parameter variant (`ObjectFiles` / `ObjectFile`); `Docs` FileCollection item; `Doc` File (outer stores nothing)] | AC2, Q3: every source kind, both levels |
-| TC-P-05 | `Element_ShouldEqualTheStandCapture_WithFiveSlots` | AC3: count, names, order by number |
+| TC-P-05 | `Element_ShouldEqualTheStandCapture_WithFourSlots` | AC3: count, names, order by number (four: the designer picker does not offer PF1's output, EM1 2026-10-29; the PF1 row is checked against the EM3 addendum instead) |
 | TC-P-06 | `Numbering_ShouldEqualTheStandCapture_AfterAGapAndAReAdd` | Q5: clear row 2, save, add a row: the new row's name equals the capture's (expected `Attachments2`) |
 | TC-P-07 | `TemplateAutoElement_ShouldEqualTheStandCapture` (SE2) | AC4 on the current platform |
 
