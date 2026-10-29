@@ -445,6 +445,75 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("An attachments list on the Send email block passes clean on every route the block travels - a create element, an addElement element, a setElement update, and an empty list (which removes every attachment, Q4) - so clio no longer refuses email.attachments before the server reads it.")]
+	public void Check_Should_AcceptAnAttachmentsList_OnEveryRoute() {
+		// Arrange
+		const string email = """
+			{ "mode": "manual", "subject": "Your invoice", "to": [ { "processParameter": "Contact" } ],
+			  "attachments": [
+			    { "sourceElement": "GenerateInvoice", "sourceElementParameter": "ReportFiles" },
+			    { "sourceElement": "ReadContractFiles", "sourceElementParameter": "ObjectFiles.File" },
+			    { "processParameter": "Documents" },
+			    { "expression": "[#Documents#]" } ] }
+			""";
+		string element = $$"""{ "name": "SE1", "type": "sendEmail", "email": {{email}} }""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "SE2", "type": "sendEmail", "email": {{email}} } },
+			  { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": {{email}} } },
+			  { "op": "setElement", "elementName": "SE3", "elementUpdate": { "email": { "attachments": [] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "SendEmailDescriptor declares attachments and every entry key is a SendEmailAttachmentDescriptor member");
+		modify.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "addElement and setElement carry the same email block, and an empty list is how every attachment is removed");
+	}
+
+	[TestCase("sourceElementParam", "Accepted attachment keys: processParameter, sourceElement, sourceElementParameter, expression, value")]
+	[TestCase("file", "Accepted attachment keys:")]
+	[TestCase("SourceElement", "keys are case-sensitive: write 'sourceElement'")]
+	[Description("An unknown key inside an attachment entry is refused naming the element and the entry's key path, with the entry's accepted keys - instead of the server dropping the key and attaching nothing from the source the caller meant.")]
+	public void Check_Should_RefuseAnUnknownAttachmentEntryKey_NamingItsPath(string key, string pointer) {
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(
+			$"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{{\"subject\":\"s\",\"attachments\":[{{\"{key}\":\"OF1\"}}]}}}}");
+
+		// Assert
+		result.Error.Should().NotBeNull(because: "the server drops an undeclared entry key without a word");
+		result.Error.Should().Contain("'SE1'", because: "the refusal names the element");
+		result.Error.Should().Contain($"'email.attachments[0].{key}'",
+			because: "the refusal names the entry and the key inside it");
+		result.Error.Should().Contain(pointer, because: "the refusal says what an attachment entry accepts");
+	}
+
+	[Test]
+	[Description("A described attachment entry fed back verbatim - the modify recipe is describe, edit the list, send it back - keeps building: its slot, bindingLevels and issues are named in the read-back warning, never refused.")]
+	public void Check_Should_TolerateTheReadBackFields_OfADescribedEntry() {
+		// Arrange
+		string operations = """
+			[ { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": { "attachments": [
+			    { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles", "slot": "Attachments1", "bindingLevels": "both" },
+			    { "processParameter": "Doc", "slot": "Attachments3", "bindingLevels": "itemOnly",
+			      "issues": [ "'Attachments3' is empty and attaches nothing" ] } ] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
+		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+			.Which.Should().Contain("email.attachments[0].slot", because: "the stored row name is describe-only")
+			.And.Contain("email.attachments[0].bindingLevels", because: "the bound levels are describe-only")
+			.And.Contain("email.attachments[1].issues", because: "the issues are describe-only");
+	}
+
+	[Test]
 	[Description("Every key set mirrors its server request contract in the bundled CrtProcessBuilder exactly, so a new server member is never refused here by a stale list and a key the server lacks is never accepted.")]
 	public void KeySets_Should_EqualTheMembersOfTheBundledServerContracts() {
 		// Arrange

@@ -184,12 +184,16 @@ internal static class ProcessBlockKeyCheck {
 
 	private static readonly KeySet EmailBlock = new KeySet("SendEmailDescriptor", "email", "DescribeSendEmailInfo",
 			"messageSource template templateEntity body bodyFormat mode sender subject to cc bcc importance ignoreErrors "
-			+ Performer,
+			+ "attachments " + Performer,
 			"templateDisplay senderDisplay hasBody")
 		.With(new KeySet("SendEmailTemplateEntityDescriptor", "templateEntity", null,
 			"processParameter sourceElement sourceElementParameter expression"))
 		.With("to cc bcc", new KeySet("SendEmailRecipientDescriptor", Recipient, null,
 			"value processParameter expression referenceSchema"))
+		// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
+		// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
+		.With("attachments", new KeySet("SendEmailAttachmentDescriptor", "attachment", "DescribeSendEmailAttachment",
+			"processParameter sourceElement sourceElementParameter expression value", "slot bindingLevels issues"))
 		.With(TaskPerformer);
 
 	private static readonly KeySet AccessRightsEntry = new KeySet("AccessRightsEntryDescriptor", "access rights entry",
