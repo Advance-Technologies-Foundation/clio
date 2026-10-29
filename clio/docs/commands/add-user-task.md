@@ -60,8 +60,14 @@ clio add-user-task <CODE> --package <WORKSPACE_PACKAGE_NAME> --title <TITLE>
 ## Options
 
 ```bash
-Code (pos. 0)               User task code (schema/class name). Must start
-with Usr
+Code (pos. 0)               User task code (schema/class name). clio reads
+the environment's SchemaNamePrefix and applies it: it is prepended when missing,
+and its casing is canonicalized when already present, so the created schema may
+be named differently from this argument. A SchemaNamePrefix that cannot itself
+begin a schema code - one starting with a digit or underscore, carrying any
+other character, or long enough to fill the 250-character schema-name column -
+is refused: no code can satisfy both Creatio and C#, so correct the
+environment's system setting
 
 --package                   Workspace package name
 
