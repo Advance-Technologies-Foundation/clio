@@ -28,6 +28,10 @@ public class SysSchema : BaseModel
 	[SchemaProperty("Checksum")]
 	public string Checksum { get; set; }
 
+	/// <summary><c>true</c> for a package's replacing layer of the schema, <c>false</c> for the base schema.</summary>
+	[SchemaProperty("ExtendParent")]
+	public bool ExtendParent { get; set; }
+
 	[SchemaProperty("SysPackage")]
 	public Guid SysPackageId { get; set; }
  

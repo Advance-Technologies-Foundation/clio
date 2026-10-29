@@ -18,6 +18,9 @@ body:
       options:
         - "Freedom UI pages (create/update/get/sync/validate-page, page templates, client unit schemas, component registry)"
         - "Freedom UI page custom logic (handlers, converters, validators, helper modules, code kept by a Designer save)"
+        - "Classic to Freedom UI migration (get-classic-page-sources, get-classic-list-columns, Classic section and page analysis)"
+        - "Localization (localize-page, section and entity captions localization, get-user-culture, culture catalog)"
+        - "Mobile Freedom UI pages (create, design and validate mobile pages, mobile component registry)"
         - "Mobile page conversion (web to mobile Freedom UI pages, get-mobile-page-conversion-guide)"
         - "Business rules (page and entity business rules)"
         - "Applications and sections (create-app, app sections, install-application)"

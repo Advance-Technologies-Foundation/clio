@@ -347,6 +347,28 @@ test('the committed component-owners.json is valid', () => {
   assert.doesNotThrow(act, 'the workflow fails on an invalid map, so it must never be committed broken');
 });
 
+test('Responsibility Matrix links in the committed map have the documented shape', () => {
+  // Arrange
+  const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  const guid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+  const problems = [];
+  const module = raw.responsibilityMatrixModule;
+  // Act
+  if (Object.keys(module ?? {}).sort().join(',') !== 'id,name' || typeof module.name !== 'string' || !module.name.trim() || !guid.test(module.id)) {
+    problems.push('responsibilityMatrixModule must be { name, id } with a non-empty name and a record Id');
+  }
+  for (const c of raw.components) {
+    if (!('responsibilityMatrix' in c)) continue;
+    const link = c.responsibilityMatrix;
+    const keys = Array.isArray(link) ? '' : Object.keys(link ?? {}).sort().join(',');
+    if (keys !== 'function,id' || typeof link.function !== 'string' || !link.function.trim() || !guid.test(link.id)) {
+      problems.push(`${c.id}: responsibilityMatrix must be one { function, id } with a non-empty function and a record Id`);
+    }
+  }
+  // Assert
+  assert.deepEqual(problems, [], 'routing does not read these fields, so only this test catches a typo');
+});
+
 // Reads the options of the dropdown with `id: component` from our own issue-form YAML. Deliberately
 // minimal (no YAML dependency): it relies on the layout of the committed templates, and fails loudly
 // rather than passing when that layout changes.

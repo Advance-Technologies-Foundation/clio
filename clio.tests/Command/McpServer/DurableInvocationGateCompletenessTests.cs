@@ -204,7 +204,8 @@ public sealed class DurableInvocationGateCompletenessTests {
 			"create-schema",
 			"create-sql-schema",
 			"create-theme",
-			"upload-image"
+			"upload-image",
+			"upload-file"
 		];
 
 		// Act & Assert

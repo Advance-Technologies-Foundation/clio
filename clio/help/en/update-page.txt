@@ -10,7 +10,10 @@ ALIASES
 DESCRIPTION
     --resources adds missing keys and updates supplied en-US values. It preserves
     resource identity, other cultures, and omitted keys. resourcesRegistered counts
-    new keys only. Resource saves warn that a stale push-workspace can revert them:
+    new keys only; resourcesUpdated counts existing keys whose en-US value changed.
+    An append dry run reports both counts as the save would; a replace dry run
+    reports 0.
+    Resource saves warn that a stale push-workspace can revert them:
     preserve local edits, capture the affected package with restore-workspace
     (pull-workspace), and review metadata and culture XML before pushing. Follow
     workspace instructions for linked FSM packages; check the native designer's
@@ -167,6 +170,9 @@ DESCRIPTION
       (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
       still require localization. For a standalone merge, repeat type:
       "crt.Gallery" unless the same body declares that node's type elsewhere.
+      A crt.Map node's own templateValuesMapping is excluded too: its values
+      (e.g. title: "Name") name record columns. For a standalone merge, repeat
+      type: "crt.Map" on the same terms.
       Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type

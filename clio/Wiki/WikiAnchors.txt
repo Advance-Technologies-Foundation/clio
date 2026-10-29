@@ -88,6 +88,7 @@ create-theme:create-theme
 update-theme:update-theme
 delete-theme:delete-theme
 set-user-theme:set-user-theme,apply-user-theme
+upload-file:upload-file
 upload-image:upload-image
 set-background-image:set-background-image
 set-logo:set-logo

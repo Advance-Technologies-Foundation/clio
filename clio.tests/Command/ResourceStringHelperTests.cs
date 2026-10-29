@@ -44,6 +44,7 @@ public sealed class ResourceStringHelperTests {
 		}
 		JToken.DeepEquals(result.cleaned[1], original[1]).Should().BeTrue(because: "omitted keys remain unchanged");
 		result.registered.Should().BeEmpty(because: "an update does not register a new key");
+		result.updated.Should().Equal(["Title"], because: "the supplied value replaced the stored en-US value, so the key is reported as updated");
 		original.ToString().Should().Be(snapshot, because: "preparing a save or dry run must not mutate the fetched DTO");
 	}
 
@@ -78,7 +79,7 @@ public sealed class ResourceStringHelperTests {
 		HashSet<string> bodyKeys = ["UsrExistingTitle", "UsrTitle", "Caption"];
 
 		// Act
-		(JArray cleaned, List<string> registered) result = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, List<string> updated) result = ResourceStringHelper.CleanAndMerge(
 			localizableStrings,
 			resources,
 			bodyKeys);
@@ -123,7 +124,7 @@ public sealed class ResourceStringHelperTests {
 		HashSet<string> bodyKeys = ["UsrName"];
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			localizableStrings, null, bodyKeys);
 
 		// Assert
@@ -149,7 +150,7 @@ public sealed class ResourceStringHelperTests {
 		HashSet<string> bodyKeys = ["UsrTitle"];
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			null, null, bodyKeys);
 
 		// Assert
@@ -178,7 +179,7 @@ public sealed class ResourceStringHelperTests {
 		HashSet<string> bodyKeys = ["UsrName", "SaveButton"];
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			localizableStrings, null, bodyKeys);
 
 		// Assert
@@ -228,7 +229,7 @@ public sealed class ResourceStringHelperTests {
 		var dsBoundKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "UsrStatus" };
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			null, null, bodyKeys, dsBoundKeys);
 
 		// Assert
@@ -249,7 +250,7 @@ public sealed class ResourceStringHelperTests {
 		var resources = new Dictionary<string, string> { ["UsrStatus"] = "Custom Status Label" };
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			null, resources, bodyKeys, dsBoundKeys);
 
 		// Assert
@@ -311,7 +312,7 @@ public sealed class ResourceStringHelperTests {
 		HashSet<string> bodyKeys = ["UsrStatus", "UsrName"];
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(
 			null, null, bodyKeys, null);
 
 		// Assert
@@ -375,7 +376,7 @@ public sealed class ResourceStringHelperTests {
 		var resources = new Dictionary<string, string> { ["Title"] = "Title v2", ["NewKey"] = "New" };
 
 		// Act
-		(JArray cleaned, List<string> registered) = ResourceStringHelper.CleanAndMerge(existing, resources, []);
+		(JArray cleaned, List<string> registered, _) = ResourceStringHelper.CleanAndMerge(existing, resources, []);
 
 		// Assert
 		registered.Should().Equal(["NewKey"], because: "only the key absent from the schema is registered");
@@ -390,5 +391,30 @@ public sealed class ResourceStringHelperTests {
 		newValues.Should().ContainSingle(because: "a newly registered key starts with the default culture only");
 		newValues[0]["cultureName"].ToString().Should().Be("en-US", because: "new keys are authored in en-US");
 		newValues[0]["value"].ToString().Should().Be("New", because: "the supplied value is stored");
+	}
+
+	[Test]
+	[Description("GitHub #1850: CleanAndMerge reports an existing key as updated only when the supplied value changes its en-US value; an equal value and a new key are not reported as updated.")]
+	public void CleanAndMerge_ShouldReportUpdatedKeys_OnlyWhenTheEnglishValueChanges() {
+		// Arrange
+		JArray existing = JArray.Parse("""
+			[{"uId":"id-1","name":"Changed","values":[{"cultureName":"en-US","value":"Old"}]},
+			 {"uId":"id-2","name":"Same","values":[{"cultureName":"en-US","value":"Same"}]},
+			 {"uId":"id-3","name":"Omitted","values":[{"cultureName":"en-US","value":"Keep"}]}]
+			""");
+		var resources = new Dictionary<string, string> {
+			["Changed"] = "New", ["Same"] = "Same", ["NewKey"] = "Added"
+		};
+
+		// Act
+		(JArray cleaned, List<string> registered, List<string> updated) =
+			ResourceStringHelper.CleanAndMerge(existing, resources, []);
+
+		// Assert
+		updated.Should().Equal(["Changed"],
+			because: "only the existing key whose stored en-US value differs from the supplied value is updated");
+		registered.Should().Equal(["NewKey"],
+			because: "the key absent from the schema is registered, not updated");
+		cleaned.Should().HaveCount(4, because: "every existing entry is kept and the new key is added");
 	}
 }

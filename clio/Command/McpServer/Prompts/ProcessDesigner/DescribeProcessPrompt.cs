@@ -43,7 +43,7 @@ public static class DescribeProcessPrompt {
 		   is where the connector runs and the only way to answer a question about the PICTURE. Read `size`
 		   whenever you reason about rows: elements of different heights share a row by its CENTRE line, so
 		   `position` alone cannot be inverted into one. All three are READ-ONLY - no create/modify argument
-		   carries them and the server re-derives the layout on every save. It also reports the
+		   carries them, and the server re-derives the layout on every structural edit. It also reports the
 		   version standing: `version`, `isActiveVersion`, `activeVersionName`, `activeVersionSchemaUId` and
 		   the `versions[]` family.
 		   A `preconfiguredPage` element also carries its `preconfiguredPage` block: the page it shows, its

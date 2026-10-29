@@ -110,6 +110,15 @@ public interface ISysSettingsManager
 		bool cached = true, string description = "", bool valueForCurrentUser = false,
 		Guid? referenceSchemaUId = null);
 
+	/// <summary>
+	/// Resolves an entity schema name to the UId of its base schema (the <c>SysSchema</c> row with
+	/// <c>ExtendParent = false</c>), which is the value the platform stores in a Lookup setting's
+	/// <c>ReferenceSchemaUId</c>. Replacing layers of the schema in other packages are ignored.
+	/// </summary>
+	/// <param name="schemaName">Entity schema name, for example <c>Contact</c>.</param>
+	/// <returns>
+	/// The base schema UId, or <c>null</c> when the name is blank or no base entity schema with that name exists.
+	/// </returns>
 	Guid? FindSchemaUIdByName(string schemaName);
 
 	/// <summary>
@@ -385,6 +394,7 @@ public class SysSettingsManager : ISysSettingsManager
 	}
 
 	private const string LookupTypeName = "Lookup";
+	private const string EntitySchemaManagerName = "EntitySchemaManager";
 
 	private static readonly TimeSpan SysSettingCodeRegexTimeout = TimeSpan.FromSeconds(1);
 
@@ -1048,14 +1058,18 @@ public class SysSettingsManager : ISysSettingsManager
 		return result.Success;
 	}
 
+	/// <inheritdoc cref="ISysSettingsManager.FindSchemaUIdByName" />
 	public Guid? FindSchemaUIdByName(string schemaName) {
 		if (string.IsNullOrWhiteSpace(schemaName)) {
 			return null;
 		}
+		// One SysSchema row per package carries the schema, each with its own UId; only the base row is a
+		// valid ReferenceSchemaUId (docs/knowledge/platform/a-sys-setting-lookup-holds-the-root-schema-uid.md).
 		SysSchema sysSchema = AppDataContextFactory.GetAppDataContext(_dataProvider)
 			.Models<SysSchema>()
-			.Where(s => s.Name == schemaName)
-			.AsEnumerable().FirstOrDefault();
+			.Where(s => s.Name == schemaName && s.ManagerName == EntitySchemaManagerName)
+			.AsEnumerable()
+			.FirstOrDefault(s => !s.ExtendParent);
 		return sysSchema?.UId;
 	}
 

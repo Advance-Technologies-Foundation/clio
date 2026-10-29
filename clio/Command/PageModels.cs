@@ -1055,6 +1055,25 @@ public sealed class PageUpdateResponse {
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
 	public List<string> RegisteredResourceKeys { get; set; }
 
+	/// <summary>
+	/// Gets or sets the number of keys already stored on the schema whose en-US value this save changed.
+	/// <see cref="ResourcesRegistered"/> counts only new keys, so without this count a save that changed
+	/// only existing values reads as "nothing saved" (GitHub #1850).
+	/// </summary>
+	[DataMember(Name = "resourcesUpdated")]
+	[JsonProperty("resourcesUpdated")]
+	[JsonPropertyName("resourcesUpdated")]
+	public int ResourcesUpdated { get; set; }
+
+	/// <summary>
+	/// Gets or sets the keys counted by <see cref="ResourcesUpdated"/>; <c>null</c> when no value changed.
+	/// </summary>
+	[DataMember(Name = "updatedResourceKeys")]
+	[JsonProperty("updatedResourceKeys", NullValueHandling = NullValueHandling.Ignore)]
+	[JsonPropertyName("updatedResourceKeys")]
+	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+	public List<string> UpdatedResourceKeys { get; set; }
+
 	[JsonProperty("warnings", NullValueHandling = NullValueHandling.Ignore)]
 	[JsonPropertyName("warnings")]
 	[System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]

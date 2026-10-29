@@ -164,7 +164,15 @@ internal static class ResourceStringHelper {
 		cultureValues?.Children<JObject>().FirstOrDefault(item =>
 			string.Equals(item[CultureNamePropertyName]?.ToString(), culture, StringComparison.OrdinalIgnoreCase));
 
-	public static (JArray cleaned, List<string> registered) CleanAndMerge(
+	/// <summary>
+	/// Builds the <c>localizableStrings</c> to save: copies every existing entry, writes the supplied en-US
+	/// values into the entries that already exist, and adds entries for the keys that are missing.
+	/// </summary>
+	/// <returns>
+	/// The merged entries; <c>registered</c> - the keys added as new entries; <c>updated</c> - the existing
+	/// keys whose en-US value the supplied value changed. A supplied value equal to the stored one is in neither.
+	/// </returns>
+	public static (JArray cleaned, List<string> registered, List<string> updated) CleanAndMerge(
 		JArray localizableStrings,
 		Dictionary<string, string> resources,
 		HashSet<string> bodyKeys,
@@ -172,7 +180,8 @@ internal static class ResourceStringHelper {
 		var result = new JArray();
 		var existingKeys = new HashSet<string>();
 		var registered = new List<string>();
-		CopyExistingEntries(localizableStrings, resources, result, existingKeys);
+		var updated = new List<string>();
+		CopyExistingEntries(localizableStrings, resources, result, existingKeys, updated);
 		RegisterMissingBodyKeys(bodyKeys, resources, dsBoundKeys, existingKeys, result, registered);
 		if (resources != null) {
 			foreach (KeyValuePair<string, string> kvp in resources.Where(kvp =>
@@ -182,14 +191,15 @@ internal static class ResourceStringHelper {
 				registered.Add(kvp.Key);
 			}
 		}
-		return (result, registered);
+		return (result, registered, updated);
 	}
 
 	private static void CopyExistingEntries(
 		JArray localizableStrings,
 		IReadOnlyDictionary<string, string> resources,
 		JArray result,
-		ISet<string> existingKeys) {
+		ISet<string> existingKeys,
+		ICollection<string> updated) {
 		if (localizableStrings == null) {
 			return;
 		}
@@ -199,8 +209,9 @@ internal static class ResourceStringHelper {
 				continue;
 			}
 			var copy = (JObject)entry.DeepClone();
-			if (resources != null && resources.TryGetValue(name, out string value)) {
-				SetCultureValue(copy, DefaultCultureName, value);
+			if (resources != null && resources.TryGetValue(name, out string value)
+				&& SetCultureValue(copy, DefaultCultureName, value)) {
+				updated.Add(name);
 			}
 			result.Add(copy);
 			existingKeys.Add(name);
