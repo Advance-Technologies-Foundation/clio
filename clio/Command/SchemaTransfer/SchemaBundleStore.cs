@@ -15,7 +15,7 @@ namespace Clio.Command.SchemaTransfer;
 /// Reads and writes schema-export bundles on disk.
 /// </summary>
 /// <remarks>
-/// A bundle is a folder. Only <c>schema-data.json</c> is authoritative — it holds the verbatim platform
+/// A bundle is a folder. Only <c>schema-data.json</c> is authoritative — it holds the platform
 /// payload and is the only file <see cref="Read"/> consumes. Everything else is a projection written for a
 /// human reviewer, so a hand-edited projection can never silently become the thing that ships.
 /// </remarks>
@@ -87,12 +87,13 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 				$"'{bundleDirectory}' already exists. Choose another destination, or remove it first — "
 				+ "export never overwrites an existing bundle.");
 		}
+		string schemaData = RemoveExporterLineBreaks(bundle.SchemaData);
 		_fileSystem.CreateDirectory(bundleDirectory);
 		try {
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, DescriptorFileName),
 				SystemTextJson.JsonSerializer.Serialize(bundle.Descriptor, WriteOptions));
 			_fileSystem.WriteAllTextToFile(System.IO.Path.Combine(bundleDirectory, SchemaDataFileName),
-				bundle.SchemaData);
+				schemaData);
 		}
 		catch {
 			RollBackFailedBundle(bundleDirectory);
@@ -101,8 +102,42 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 		// Deliberately OUTSIDE the rollback: by this point the authoritative payload is on disk and the export
 		// has succeeded, so the projections are best-effort (see TryWriteProjections) and must never be able to
 		// take the artifact back down with them.
-		TryWriteProjections(bundleDirectory, bundle.SchemaData);
+		TryWriteProjections(bundleDirectory, schemaData);
+		WarnWhenNotStrictJson(bundleDirectory, schemaData);
 		return bundleDirectory;
+	}
+
+	/// <summary>
+	/// Removes the line breaks the platform exporter inserts into its JSON for readability.
+	/// </summary>
+	/// <remarks>
+	/// The exporter (<c>SchemaImporter.GetSchemaData</c> in Terrasoft.Core) writes valid JSON and then inserts
+	/// <c>Environment.NewLine</c> before every <c>\n</c> escape, so the <c>MetaData</c> string carries raw line
+	/// breaks, which RFC 8259 forbids. An escaped backslash before an <c>n</c> (<c>\\n</c>, a line break in schema
+	/// source code) also matches, which leaves a backslash before a raw line break that even Newtonsoft refuses.
+	/// The platform importer reverses this with the same replacement before it parses. Doing it here gives the
+	/// exact JSON the exporter produced, so Python <c>json.load</c>, <c>jq</c> and <c>System.Text.Json</c> can read
+	/// the bundle, and the importer's replacement finds nothing to change. Valid JSON never has a raw line break
+	/// before a backslash, so the replacement does not change a payload that is already valid. Both line-break
+	/// forms are removed because the exporter writes the line break of the server OS.
+	/// </remarks>
+	private static string RemoveExporterLineBreaks(string schemaData) =>
+		schemaData
+			.Replace("\r\n\\n", "\\n", StringComparison.Ordinal)
+			.Replace("\n\\n", "\\n", StringComparison.Ordinal);
+
+	/// <summary>
+	/// Warns when the written payload is still not strict JSON, so the operator learns it before a script fails.
+	/// </summary>
+	private void WarnWhenNotStrictJson(string bundleDirectory, string schemaData) {
+		try {
+			SystemTextJson.JsonDocument.Parse(schemaData).Dispose();
+		}
+		catch (SystemTextJson.JsonException) {
+			_logger?.WriteWarning(
+				$"The platform payload of the bundle in '{bundleDirectory}' is not valid JSON, so "
+				+ $"{SchemaDataFileName} is written as received and a strict JSON parser will refuse it.");
+		}
 	}
 
 	/// <summary>
@@ -147,7 +182,8 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 				$"'{schemaDataPath}' was not found. Point import at a bundle folder produced by "
 				+ $"'clio export-schema', or directly at its {SchemaDataFileName}.");
 		}
-		string schemaData = _fileSystem.ReadAllText(schemaDataPath);
+		// A bundle written by clio before ENG-104664 still carries the exporter line breaks.
+		string schemaData = RemoveExporterLineBreaks(_fileSystem.ReadAllText(schemaDataPath));
 		if (string.IsNullOrWhiteSpace(schemaData)) {
 			throw new InvalidOperationException($"'{schemaDataPath}' is empty.");
 		}
@@ -339,10 +375,9 @@ public sealed class SchemaBundleStore : ISchemaBundleStore {
 	/// </summary>
 	/// <returns>The parsed payload, or <c>null</c> when it is not JSON at all.</returns>
 	/// <remarks>
-	/// Deliberately Newtonsoft, not <c>System.Text.Json</c>. The platform exporter embeds the schema metadata as
-	/// a JSON STRING containing raw CR/LF control characters, which RFC 8259 forbids and
-	/// <c>System.Text.Json</c> therefore refuses — every real payload would fail to parse and every projection
-	/// would be silently skipped. Newtonsoft accepts it.
+	/// Newtonsoft, not <c>System.Text.Json</c>: it also reads a payload that still has a raw line break inside a
+	/// string, which RFC 8259 forbids and <c>System.Text.Json</c> refuses. See
+	/// <see cref="RemoveExporterLineBreaks"/> for where such line breaks come from.
 	/// </remarks>
 	[SuppressMessage("Major Code Smell", "S1168:Empty arrays and collections should be returned instead of null",
 		Justification = "null means 'the payload is not JSON at all', which every caller branches on; an empty "

@@ -221,6 +221,75 @@ public class SchemaBundleStoreTests {
 	}
 
 	[Test]
+	[Description("Write removes the line breaks the platform exporter inserts before every \\n escape, so the file is strict JSON")]
+	[TestCase("\n", TestName = "Exporter on Linux inserts LF")]
+	[TestCase("\r\n", TestName = "Exporter on Windows inserts CRLF")]
+	public void Write_Should_Remove_Exporter_Line_Breaks(string serverNewLine) {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+		// The second line of MetaData is schema source code with an escaped line break (\\n). The exporter's
+		// replacement also matches its tail, which leaves a backslash before a raw line break.
+		string exporterJson = $$"""{"Name":"{{SchemaName}}","MetaData":"= A \"x\"\n= C4 \"a();\\nb();\""}""";
+		string platformPayload = exporterJson.Replace("\\n", serverNewLine + "\\n", StringComparison.Ordinal);
+		string written = null;
+		_fileSystem.WriteAllTextToFile(SchemaDataPath, Arg.Do<string>(text => written = text));
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), platformPayload));
+
+		// Assert
+		written.Should().Be(exporterJson,
+			because: "the file must be the exact JSON the exporter produced before it inserted the line breaks");
+		Action strictParse = () => System.Text.Json.JsonDocument.Parse(written).Dispose();
+		strictParse.Should().NotThrow(
+			because: "scripts read schema-data.json with RFC 8259 parsers such as Python json.load");
+		_fileSystem.Received(1).WriteAllTextToFile(System.IO.Path.Combine(BundleDirectory, "metadata.json"),
+			Arg.Any<string>());
+		_logger.DidNotReceive().WriteWarning(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Write keeps a payload that is not strict JSON and warns, so the operator learns it before a script fails")]
+	[TestCase("{\"Name\":\"UsrProbeSchema\"} {\"Name\":\"Other\"}", TestName = "Trailing content after the value")]
+	[TestCase("{\"Name\":/*note*/\"UsrProbeSchema\"}", TestName = "Comment inside the value")]
+	[TestCase("{\"MetaData\":\"a\nb\"}", TestName = "Raw line break that is not before an escape")]
+	public void Write_Should_Keep_Payload_And_Warn_When_It_Is_Not_Strict_Json(string payload) {
+		// Arrange
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(false);
+
+		// Act
+		_sut.Write(BundleDirectory, new SchemaBundle(BuildDescriptor(), payload));
+
+		// Assert
+		_fileSystem.Received(1).WriteAllTextToFile(SchemaDataPath, payload);
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains(SchemaBundleStore.SchemaDataFileName) && message.Contains("not valid JSON")));
+	}
+
+	[Test]
+	[Description("Read removes the exporter line breaks from a bundle written by an older clio, so the identity is read from the payload")]
+	[TestCase("\n", TestName = "Older bundle from a Linux server has LF")]
+	[TestCase("\r\n", TestName = "Older bundle from a Windows server has CRLF")]
+	public void Read_Should_Remove_Exporter_Line_Breaks_From_An_Older_Bundle(string serverNewLine) {
+		// Arrange
+		string exporterJson = $$"""{"Name":"{{SchemaName}}","UId":"8375dacb-4ea5-4103-b07a-d365f8d276f3","MetaData":"= C4 \"a();\\nb();\""}""";
+		string olderBundle = exporterJson.Replace("\\n", serverNewLine + "\\n", StringComparison.Ordinal);
+		_fileSystem.ExistsDirectory(BundleDirectory).Returns(true);
+		_fileSystem.ExistsFile(SchemaDataPath).Returns(true);
+		_fileSystem.ReadAllText(SchemaDataPath).Returns(olderBundle);
+		_fileSystem.ExistsFile(DescriptorPath).Returns(false);
+
+		// Act
+		SchemaBundle result = _sut.Read(BundleDirectory);
+
+		// Assert
+		result.SchemaData.Should().Be(exporterJson,
+			because: "the platform importer removes the same line breaks, so sending the exporter JSON is equivalent");
+		result.Descriptor.SchemaName.Should().Be(SchemaName,
+			because: "the payload parses once the line breaks are gone, so the identity comes from the payload");
+	}
+
+	[Test]
 	[Description("Read accepts a bundle folder and returns the payload with its descriptor")]
 	public void Read_Should_Accept_Bundle_Directory() {
 		// Arrange
