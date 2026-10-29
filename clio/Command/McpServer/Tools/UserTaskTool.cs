@@ -362,7 +362,7 @@ public record UserTaskParameterDirectionArgs(
 /// </summary>
 public record CreateUserTaskArgs(
 	[property:JsonPropertyName("code")]
-	[Description("User task schema code")]
+	[Description("User task schema code. The target environment's SchemaNamePrefix is prepended when the code does not already start with it, and its casing is canonicalized when it does, so the created schema may be named differently from this argument; an empty SchemaNamePrefix imposes no prefix; a SchemaNamePrefix that cannot itself begin a schema code - one starting with a digit or underscore, carrying any other character, or long enough to fill the 250-character schema-name column - fails the call, because no code can satisfy both Creatio and C#: correct that environment's system setting instead of retrying with another code")]
 	[Required]
 	string Code,
 
