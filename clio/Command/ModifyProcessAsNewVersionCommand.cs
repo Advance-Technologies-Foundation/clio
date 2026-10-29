@@ -209,13 +209,22 @@ public sealed class ModifyProcessAsNewVersionService(
 		try {
 			envelope = JsonSerializer.Deserialize<ResponseEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException exception) {
+			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
+			if (ProcessDesignServerFault.IsUnreadableRequest(serverText)) {
+				throw new InvalidOperationException(
+					"ModifyProcessAsNewVersion could not read the request, so NO version was created and the edit was "
+					+ "NOT applied. An operation carries a value of the wrong shape for its key; check each operation "
+					+ "against get-tool-contract modify-business-process-as-new-version before retrying."
+					+ ProcessDesignServerFault.ServerSaid(serverText), exception);
+			}
 			throw new InvalidOperationException(
 				"ModifyProcessAsNewVersion returned a response clio could not read, so whether a version was "
 				+ "created is UNKNOWN - and a version that DID persist cannot be deleted. Re-read the process "
 				+ "with describe-business-process mode=versions and check its versions[] before retrying, because a retry "
 				+ "would allocate a second version rather than replace the first. The parser detail is on the "
 				+ "inner exception; it names a .NET type and a byte offset, which helps a developer reading a "
-				+ "stack trace and is noise to the caller reading this.",
+				+ "stack trace and is noise to the caller reading this."
+				+ ProcessDesignServerFault.ServerSaid(serverText),
 				exception);
 		}
 

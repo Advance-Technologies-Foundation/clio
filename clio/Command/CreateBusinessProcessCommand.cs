@@ -380,11 +380,19 @@ public sealed class CreateBusinessProcessService(
 		try {
 			envelope = JsonSerializer.Deserialize<BuildProcessResponseEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException exception) {
+			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
+			if (ProcessDesignServerFault.IsUnreadableRequest(serverText)) {
+				throw new InvalidOperationException(
+					"BuildProcess could not read the request, so the process was NOT created. A descriptor member "
+					+ "carries a value of the wrong shape for its key; check the descriptor against get-tool-contract "
+					+ "create-business-process." + ProcessDesignServerFault.ServerSaid(serverText), exception);
+			}
 			throw new InvalidOperationException(
 				"BuildProcess returned a response clio could not read, so whether the process was created is "
 				+ "UNKNOWN — re-read it with describe-business-process before deciding what to do. The parser "
 				+ "detail is on the inner exception; it names a .NET type and a byte offset, which helps a "
-				+ "developer reading a stack trace and is noise to the caller reading this.",
+				+ "developer reading a stack trace and is noise to the caller reading this."
+				+ ProcessDesignServerFault.ServerSaid(serverText),
 				exception);
 		}
 

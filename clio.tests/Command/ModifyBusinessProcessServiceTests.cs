@@ -311,6 +311,28 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A request-deserialization fault longer than 400 characters is still reported as NOT applied, and the quoted server text is cut at 400 characters with an ellipsis so a long fault does not flood the message.")]
+	public void ModifyProcess_ShouldCapTheQuotedServerText_At400Characters() {
+		// Arrange
+		string longFault = "The formatter threw an exception while trying to deserialize the message: "
+			+ new string('x', 500);
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns($"\"{longFault}\"");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the server answered an error, not a result").Which;
+		thrown.Message.Should().Contain("the edit was NOT applied",
+			because: "the cut does not change what the fault says about the outcome");
+		thrown.Message.Should().EndWith($" The server said: {longFault[..400]}...",
+			because: "the server's text is quoted and cut at 400 characters");
+	}
+
+	[Test]
 	[Description("Rejects a request with neither a process name nor a uid before any server call.")]
 	public void ModifyProcess_ShouldThrow_WhenNeitherNameNorUid() {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();

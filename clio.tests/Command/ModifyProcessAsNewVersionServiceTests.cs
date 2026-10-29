@@ -260,6 +260,50 @@ public sealed class ModifyProcessAsNewVersionServiceTests {
 	}
 
 	[Test]
+	[Description("When the server answers WCF's request-deserialization error string instead of the envelope, the save is reported as having created NO version, with the server's text quoted - the request never reached an operation, so the outcome is known and a retry cannot allocate a second version.")]
+	public void ModifyAsNewVersion_ShouldReportNoVersionCreated_WhenTheServerCouldNotReadTheRequest() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(VersionUrl, Arg.Any<string>()).Returns(
+			"\"The formatter threw an exception while trying to deserialize the message: There was an error while "
+			+ "trying to deserialize parameter http://tempuri.org/:request.\"");
+		ModifyProcessAsNewVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, Operations));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the server answered an error, not a result").Which;
+		thrown.Message.Should().Contain("could not read the request, so NO version was created",
+			because: "a request the server could not read ran no operation, so no version exists");
+		thrown.Message.Should().Contain("get-tool-contract modify-business-process-as-new-version",
+			because: "the caller is pointed at the contract of the tool it called");
+		thrown.Message.Should().Contain("The server said: The formatter threw an exception",
+			because: "the quoted text says what failed");
+		thrown.Message.Should().NotContain("UNKNOWN", because: "the outcome of an unread request is known");
+	}
+
+	[Test]
+	[Description("Any other bare error string keeps the version save's outcome UNKNOWN - it may come after the version was persisted - and quotes the server's text instead of dropping it.")]
+	public void ModifyAsNewVersion_ShouldKeepTheOutcomeUnknown_AndQuoteTheServer_WhenAnotherErrorStringComesBack() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(VersionUrl, Arg.Any<string>()).Returns("\"Object reference not set to an instance.\"");
+		ModifyProcessAsNewVersionService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyAsNewVersion(Env,
+			new ModifyProcessAsNewVersionRequest("UsrProc", null, null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the body is not the result envelope")
+			.WithMessage("*UNKNOWN*cannot be deleted*The server said: Object reference not set to an instance.",
+				because: "a failure after the save may have persisted a version, so only a re-read can tell");
+	}
+
+	[Test]
 	[Description("Reads the server's warnings[] off a SUCCESSFUL save — the channel carrying outcomes that applied but are not what the caller assumes, which an undeclared member would drop in silence.")]
 	public void ModifyAsNewVersion_ShouldReadWarnings_WhenServerReportsThem() {
 		// Arrange
