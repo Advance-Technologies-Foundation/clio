@@ -701,14 +701,12 @@ internal static class PageBodyMerger {
 		}
 		string currentInner = StripArrayBrackets(currentTrim);
 		string incomingInner = StripArrayBrackets(incomingTrim);
-		List<HandlerEntry> currentHandlers = TryParseHandlers(currentTrim);
-		if (currentHandlers is null) {
+		if (!TryParseHandlers(currentTrim, out List<HandlerEntry> currentHandlers)) {
 			// The saved handlers are not a JavaScript array this merge can read: keep them unchanged rather
 			// than cut them at a guessed boundary, which could drop a handler or corrupt the schema body.
 			return JoinHandlers(currentInner, incomingInner);
 		}
-		List<HandlerEntry> incomingHandlers = TryParseHandlers(incomingTrim);
-		if (incomingHandlers is null) {
+		if (!TryParseHandlers(incomingTrim, out List<HandlerEntry> incomingHandlers)) {
 			return AppendHandlersVerbatim(currentInner, currentHandlers, incomingInner);
 		}
 		Dictionary<string, List<string>> incomingByRequest = incomingHandlers
@@ -790,20 +788,21 @@ internal static class PageBodyMerger {
 	/// strings, template literals, regular expressions and comments never split or identify a handler.
 	/// Each entry keeps its raw source, together with the comments in front of it.
 	/// </summary>
-	/// <returns>The handlers in array order, or <see langword="null"/> when the text is not a JavaScript array.</returns>
-	private static List<HandlerEntry> TryParseHandlers(string arraySource) {
+	/// <returns><see langword="true"/> with the handlers in array order; <see langword="false"/> when the text
+	/// is not a JavaScript array.</returns>
+	private static bool TryParseHandlers(string arraySource, out List<HandlerEntry> handlers) {
+		handlers = [];
 		string wrappedSource = $"({arraySource})";
 		Script script;
 		try {
 			script = new Parser().ParseScript(wrappedSource);
 		} catch (SyntaxErrorException) {
-			return null;
+			return false;
 		}
 		if (script.Body.Count != 1
 			|| script.Body[0] is not ExpressionStatement { Expression: ArrayExpression array }) {
-			return null;
+			return false;
 		}
-		var handlers = new List<HandlerEntry>();
 		int sliceStart = array.Start + 1;
 		foreach (Node element in array.Elements) {
 			if (element is null) {
@@ -813,7 +812,7 @@ internal static class PageBodyMerger {
 			handlers.Add(new HandlerEntry(ReadHandlerRequest(element), source));
 			sliceStart = SkipElementSeparator(wrappedSource, element.End);
 		}
-		return handlers;
+		return true;
 	}
 
 	/// <summary>
@@ -827,19 +826,36 @@ internal static class PageBodyMerger {
 			if (ch == ',') {
 				return i + 1;
 			}
-			if (ch == '/' && i + 1 < source.Length && source[i + 1] == '/') {
-				int lineEnd = source.IndexOf('\n', i);
-				i = lineEnd < 0 ? source.Length : lineEnd + 1;
-			} else if (ch == '/' && i + 1 < source.Length && source[i + 1] == '*') {
-				int commentEnd = source.IndexOf("*/", i + 2, StringComparison.Ordinal);
-				i = commentEnd < 0 ? source.Length : commentEnd + 2;
-			} else if (char.IsWhiteSpace(ch)) {
+			if (char.IsWhiteSpace(ch)) {
 				i++;
-			} else {
+				continue;
+			}
+			int afterComment = SkipComment(source, i);
+			if (afterComment == i) {
 				return i;
 			}
+			i = afterComment;
 		}
 		return i;
+	}
+
+	/// <summary>
+	/// Returns the position after a line or block comment that starts at <paramref name="position"/>,
+	/// or <paramref name="position"/> itself when no comment starts there.
+	/// </summary>
+	private static int SkipComment(string source, int position) {
+		if (source[position] != '/' || position + 1 >= source.Length) {
+			return position;
+		}
+		if (source[position + 1] == '/') {
+			int lineEnd = source.IndexOf('\n', position);
+			return lineEnd < 0 ? source.Length : lineEnd + 1;
+		}
+		if (source[position + 1] == '*') {
+			int commentEnd = source.IndexOf("*/", position + 2, StringComparison.Ordinal);
+			return commentEnd < 0 ? source.Length : commentEnd + 2;
+		}
+		return position;
 	}
 
 	/// <summary>
