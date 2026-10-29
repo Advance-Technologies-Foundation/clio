@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -88,6 +89,8 @@ public class CreateUserTaskOptions : RemoteCommandOptions {
 /// <summary>
 /// Creates a new process user task schema in a workspace package and builds that package.
 /// </summary>
+[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+	Justification = "Command composes its required collaborators (application client, URL builder, workspace path builder, JSON converter, file system, file-design-mode packages, parameter-direction applier, lookup-schema resolver, sys-settings factory) via constructor injection; grouping them into a parameter object would hide which step of the create-save-build sequence each one serves and gain nothing behaviorally.")]
 public class CreateUserTaskCommand : RemoteCommand<CreateUserTaskOptions> {
 
 	private const string ProcessUserTaskSchemaManagerName = "ProcessUserTaskSchemaManager";
