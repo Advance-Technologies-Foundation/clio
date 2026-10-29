@@ -112,7 +112,8 @@ Ids are the analysis plan's (sections 3-5). Components C1-C10 and K1-K12 are the
   container consumer) (TC-U-09..41, 70, 71, 73, 76, 78, 78a, 78b, 80).
 - [ ] **P-B4** C9 comment fixes (`CollectionBindingRules` Creatio.ai promise, Q15; recipient numbering comment).
 - [ ] Experimental cut (claimed first), installed on stand `Creatio` on the owner's yes; EM2 + EM3 recorded in the
-  measurements file (STOP gate).
+  measurements file (STOP gate). Owner's choice 2026-10-29: the cut may precede P-C1 (the raw-mapping guards) because
+  it lives only on stand `Creatio`; it never reaches a clio bundle, and no released cut precedes P-C1.
 
 **CrtProcessBuilder - slice C: guards, describe, notices, parity**
 
