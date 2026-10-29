@@ -228,8 +228,10 @@ Order inside `SendEmailApplier.Apply` (`PB/Email/SendEmailApplier.cs:59-144`):
 4. Reconcile and bind attachments (section 2.3). Collection entries go through the BLOCK form of `BindCollection`
    (4.5), item-only entries through `ApplyBlockMapping` (`PB/Mappings/IProcessMappingService.cs:72`); both pass the
    C5 slot guard because they plan with `fromBlock = true`. `SendEmailApplier` gains the mapping service, the C2
-   planner, the C3 slot writer and the request's `IFileProcessingFilterLedger` (Q20, section 4.9) in its constructor.
-5. Notices (section 5.2), recorded in the request's ledger.
+   planner and the C3 slot writer in its constructor. (As built, 2026-10-29: the applier does not track Q20 sources;
+   the end-of-request sweep of section 4.9 finds them on the final schema.)
+5. Notices (section 5.2), handed to the request's element configuration ledger and judged on the final schema at the
+   end of the request, together with the flow-reachability warning (as built).
 
 ### 4.5 C5: raw-route guards (Q8, Q10)
 
@@ -329,17 +331,20 @@ line (section 7).
   applies no record rights (`UseAdminRights = false`, `PD/FileProcessing/FileProcessing.cs`), and the Process Designer
   has no check at all (decisions Q20).
 - **Q20 (agreed): an unscoped Process file source is refused**, for Object attachments AND Generated report, through the
-  D16 machinery that already exists:
-  - `ApplyAttachments` tracks every Process file element an entry reads in the request's `IFileProcessingFilterLedger`
-    (`Track(element, "<SE>.email.attachments")`), so the element is judged at the end of the request even when this
-    request did not configure it (a designer-built source);
-  - `ObjectFileProcessingEmptyFilterRule.Judge` refuses an unscoped element that is read by a Send email slot whatever
-    its action (today it refuses only a saving one); it asks the dependency snapshot whether a slot reads the element's
-    `ObjectFiles`, so a later `setFilter` / `clearFilter` that leaves the source unscoped is refused too;
-  - `ReportFileProcessingEmptyFilterRule` already refuses an unscoped MS Word element whatever its action; tracking the
-    source adds the designer-built case;
-  - `FileProcessingFilterLedger.EnsureSelectingFilters` runs at the END of the request, so the order of operations in a
-    modify batch does not matter.
+  D16 machinery that already exists. As built (2026-10-29, after the slice B review; supersedes the per-write tracking
+  first drafted here):
+  - `FileProcessingFilterLedger.EnsureSelectingFilters` runs at the END of EVERY request (build, modify, version save)
+    and sweeps every Send email slot of the FINAL schema (`EmailAttachmentSources`), following the path the files take:
+    process parameters, `[Parameter:]` segments in formulas, element parameters' stored values (the Process parameter
+    variant's `Files` -> `ObjectFiles` among them), Formula element results; an undecodable value fails closed. Every
+    Process file element reached is judged; a sub-process OUTPUT is not followed and gets a notice (decisions Q20,
+    "Indirect sources");
+  - `ObjectFileProcessingEmptyFilterRule.Judge` refuses an unscoped element that a Send email sends whatever its action
+    (today it refuses only a saving one); `ReportFileProcessingEmptyFilterRule` refuses an unscoped one whatever its
+    printable type, and fails closed on a printable it cannot read;
+  - because the sweep reads the final schema, the order of operations in a modify batch does not matter, a later
+    `setFilter` / `clearFilter` that leaves the source unscoped is refused too, and a designer-built violation is
+    refused on the next builder save of any kind (decisions Q20, "Every request is judged").
   A filter that selects something but spans every record (file name only) passes: that is the user's intent.
 - The guide says that attachments are read with system rights, not the process user's.
 
