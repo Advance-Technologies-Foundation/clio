@@ -3559,6 +3559,58 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
+	[Description("Over the real MCP path: an element NAME sent in 'element' - the addElement OBJECT on the server - is refused by clio before anything is sent, on setElement pointed to 'elementName' and on addElement pointed to the element object. Sent, the server could not read the whole request and the caller saw only an unreadable response. The process named does not exist and nothing is built: a request that reached the server would be answered with a missing process, so a refusal that does not mention one proves the check fired first, and the stand is not written to. The environment has to be registered, because it is resolved before the check runs.")]
+	[AllureTag(ToolName)]
+	[AllureName("modify-business-process refuses a name in 'element' before sending")]
+	public async Task ModifyBusinessProcess_Should_RefuseANameInElement_BeforeAnythingIsSent() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: true);
+		string processName = $"UsrClioBpStringElementE2e{Guid.NewGuid():N}";
+
+		// Act
+		CallToolResult setResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """
+				[ { "op": "setElement", "element": "SendInvoiceEmail",
+				    "elementUpdate": { "email": { "attachments": [ { "processParameter": "Docs" } ] } } } ]
+				"""
+		});
+		string setText = SerializeToolText(setResult);
+		IgnoreWhenProcessBuilderIsBehind(setText, "1.6.6.127");
+		CallToolResult addResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["operations"] = """[ { "op": "addElement", "element": "SendInvoiceEmail" } ]"""
+		});
+		string addText = SerializeToolText(addResult);
+
+		// Assert - quote-free fragments: the text is a serialized envelope, so a double quote arrives escaped.
+		setText.Should().Contain("Nothing was sent:",
+			because: "a name in 'element' cannot be read by the server, so clio must stop the request itself");
+		setText.Should().Contain("operations[0] (setElement",
+			because: "the refusal names the operation the caller has to change");
+		setText.Should().Contain("takes the element OBJECT that addElement adds",
+			because: "the refusal says what 'element' really holds");
+		setText.Should().Contain("Name an existing element with",
+			because: "setElement is pointed to 'elementName', the key that names an existing element");
+		setText.Should().Contain("SendInvoiceEmail", because: "the refusal repeats the caller's own element name");
+		setText.Should().NotContainEquivalentOf("not found",
+			because: "the process does not exist, so a request that reached the server would have been answered with "
+				+ "a missing process - its absence proves nothing was sent");
+		string.Join(" ", setResult.Content.OfType<TextContentBlock>().Select(block => block.Text))
+			.Should().Contain("\"exit-code\":1",
+				because: "a payload of the wrong shape is a caller error, exit code 1 - not -1, which means clio broke");
+		addText.Should().Contain("Nothing was sent:", because: "addElement with a name in 'element' is refused too");
+		addText.Should().Contain("operations[0] (addElement",
+			because: "the refusal names the operation the caller has to change");
+		addText.Should().Contain("as an object with its",
+			because: "addElement adds a new element, so it is pointed to the element object rather than to a name");
+		addText.Should().NotContain("Name an existing element with",
+			because: "addElement has no existing element to name");
+	}
+
+	[Test]
 	[Description("Over the real MCP path: one modify request adds two Read data elements without their block and finishes ONE of them with setElement.readData in the same request. Only the one still unconfigured at the END of the request is reported (ENG-102537): the check is judged on the final schema, so the documented addElement -> setElement flow raises nothing for the element it completed, and the edit itself is not refused. Needs CrtProcessBuilder 1.6.6.127 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.90).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process warns only about elements left unconfigured at the end of the request")]
