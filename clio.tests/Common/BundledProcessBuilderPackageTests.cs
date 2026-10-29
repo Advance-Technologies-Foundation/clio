@@ -117,35 +117,36 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// <para>
 	/// Verify the reference rather than copying the previous one, and verify it in BOTH directions — this
-	/// paragraph has now been wrong each way round. It first named <c>e01a0ec</c>, whose descriptor carried
-	/// <c>/Date(1786026213000)/</c> and so cannot produce these bytes. It was then corrected to a commit whose
-	/// descriptor still said <c>/Date(1786075660000)/</c> while the archive shipped
-	/// <c>/Date(1786345127000)/</c>: that time the COMMIT was behind, because the restamp a rebundle performs
-	/// happens in the package checkout and was left uncommitted there. Both failures look identical to whoever
-	/// follows the reference — a different hash — so the check is the same: the <c>ModifiedOnUtc</c> pinned
-	/// below CANNOT match the descriptor at the commit named above, and expecting it to was the error in this
-	/// paragraph. The script captures <c>rev-parse HEAD</c> at step 0b and performs the restamp at step 2, so
-	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
-	/// not commit. A script cut shows it plainly: its <see cref="ExpectedProducingCommit"/> resolves to a descriptor
-	/// reading a version one restamp behind the archive beside it. The current cut is the exception named in the
-	/// summary: the package branch committed its stamp before the cut, so the pinned commit carries the pinned stamp
-	/// and reproducing it IS a plain export of that commit.
-	/// <para>So reproducing the bytes is not a checkout, and not two steps either: EXPORT the pinned commit
-	/// with <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>, re-run
-	/// <c>set-pkg-version</c> with the pinned version, hand-set <c>ModifiedOnUtc</c> to
-	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, overlay that one file onto the export, then pack it. The
-	/// timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no
-	/// timestamp argument, so re-running it stamps the present and the descriptor bytes differ every time. That
-	/// pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what removes the
-	/// host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
+	/// paragraph has been wrong each way round. It once named a commit whose descriptor carried an OLDER stamp than
+	/// any these bytes could come from, and once a commit left BEHIND because the restamp a rebundle performs was
+	/// left uncommitted in the package checkout. Both look identical to whoever follows the reference — a different
+	/// hash. What the descriptor at <see cref="ExpectedProducingCommit"/> should read depends on which route made the
+	/// cut, and the summary above says which one this cut took:
+	/// <list type="bullet">
+	/// <item>A SCRIPT cut. The script captures <c>rev-parse HEAD</c> at step 0b and restamps at step 2 without
+	/// committing, so the pin names the commit BEFORE the version moved, by design: that commit's descriptor reads one
+	/// restamp behind the archive beside it, and <see cref="ExpectedArchiveVersion"/> and
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/> do NOT match it.</item>
+	/// <item>A HAND cut from a commit that already carries the stamp (the package branch committed and tagged its own
+	/// <c>set-pkg-version</c>, so the script refuses the equal version; the route is in
+	/// <c>docs/agent-instructions/bundled-packages.md</c>). The pin names that stamp commit, and its descriptor DOES
+	/// carry the pinned version and <c>ModifiedOnUtc</c>.</item>
+	/// </list>
+	/// <para>Either way reproducing the bytes is an EXPORT, never a checkout: export the pinned commit with
+	/// <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>. For a hand cut from the stamp commit,
+	/// pack the export as it is. For a script cut, first re-run <c>set-pkg-version</c> with the pinned version,
+	/// hand-set <c>ModifiedOnUtc</c> to <see cref="ExpectedDescriptorModifiedOnUtc"/>, and overlay that one file onto
+	/// the export. The timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c>
+	/// and takes no timestamp argument, so re-running it stamps the present and the descriptor bytes differ every
+	/// time. That pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what
+	/// removes the host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
 	/// host-dependent is the PATH SEPARATOR the archive records per entry, so cut and verify on Windows.</para>
-	/// <para>What the pin establishes is which SOURCES the
-	/// archive was built from — which is the question that actually matters, since the descriptor is the one
-	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
-	/// restamp afterwards is still part of every rebundle, but not for the reason first written here: the pin
-	/// names the PRE-restamp commit, which is on the branch either way. The real reasons are that the next cut's
-	/// clean-tree gate refuses a dirty tree, and that the pinned <c>ModifiedOnUtc</c> would otherwise exist in no
-	/// commit at all.</para>
+	/// <para>What the pin establishes is which SOURCES the archive was built from — which is the question that
+	/// actually matters, since the descriptor is the one file a script cut rewrites and the one whose expected
+	/// content is pinned separately. Committing the restamp afterwards is still part of every script cut, but not
+	/// for the reason first written here: the pin names the PRE-restamp commit, which is on the branch either way.
+	/// The real reasons are that the next cut's clean-tree gate refuses a dirty tree, and that the pinned
+	/// <c>ModifiedOnUtc</c> would otherwise exist in no commit at all.</para>
 	/// </para>
 	/// <para>
 	/// It was wrong a THIRD way twice, and that class is now CLOSED at the source rather than watched for. The
@@ -169,9 +170,10 @@ public class BundledProcessBuilderPackageTests {
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
-	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
-	/// contract cannot match a pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// the archive is byte-IDENTICAL to the producing commit's blob, with one exception on a SCRIPT cut only:
+	/// <c>descriptor.json</c>, which by contract cannot match a pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. A hand cut from the
+	/// stamp commit has no exception.
 	/// <para>Verify it in two commands: extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
 	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
 	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision

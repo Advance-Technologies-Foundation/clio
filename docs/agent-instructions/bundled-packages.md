@@ -349,6 +349,21 @@ pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <ProcessBuilder checkout> -
 before touching anything otherwise — an equal version publishes to nobody, and a lower one is worse:
 `SysPackage.Version` is not monotonic (fact 2), so it would pin environments below what clio ships.
 
+**When the package branch has already committed its own stamp, cut by hand from that commit.** The script is
+built for one order: the checkout sits on the PRE-stamp commit, the script stamps `descriptor.json` itself, packs
+the commit with that file overlaid, and the stamp is committed afterwards. When the package branch committed and
+tagged the stamp first (`set-pkg-version`, tag `crtprocessbuilder-<version>` on the stamp commit), the descriptor
+already carries the target version and the script refuses `-Version <that version>` before writing anything — and
+it has no same-version flag on purpose. Do not raise `-Version` to get past it: that restamps the checkout and ships
+a version and stamp no package commit carries. Do not check out the pre-stamp commit either: re-stamping writes a
+new `ModifiedOnUtc`, and the bytes no longer match the tagged cut. Instead export the stamp commit with
+`git -c core.autocrlf=false -c core.eol=lf archive --format=zip <stamp commit> -- packages/CrtProcessBuilder`,
+expand it, pack `packages/CrtProcessBuilder` with `clio compress <dir> --skip-pdb -d clio/CrtProcessBuilder/CrtProcessBuilder.gz`
+with NO descriptor overlay, check the archive's inventory as the script does (two DLLs, both under `Files/Libs`,
+the compile marker, no own assembly, nothing outside the allowed top-level set), and set the four provenance pins by
+hand. `ExpectedProducingCommit` is then the stamp commit itself, whose `descriptor.json` carries the pinned
+version and `ModifiedOnUtc`, so every archive entry — the descriptor included — is that commit's blob.
+
 Add `-Configuration` / `-Framework` when more than one clio build output exists. The script refuses to
 guess, because whichever it picks is the one that receives the new archive; the others keep the previous
 one and an install run from them ships it. It names them all at the end.
