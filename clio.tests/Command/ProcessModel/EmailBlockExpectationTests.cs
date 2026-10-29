@@ -660,6 +660,32 @@ public class EmailBlockExpectationTests {
 	}
 
 	[Test]
+	[Description("Two rows of one source listed out of slot order, of which the edit kept one: the removed slot is the one the read-back no longer shows, not the first row describe listed, because a row whose slot and source both survive is matched before the rest is matched by source.")]
+	public void RemovedAttachments_ShouldNameTheRemovedSlot_WhenTwoRowsShareASourceOutOfSlotOrder() {
+		// Arrange
+		DescribeProcessResult before = WithAttachments("SE1", Row("Attachments2", processParameter: "Doc"),
+			Row("Attachments1", processParameter: "Doc"));
+		DescribeProcessResult after = WithAttachments("SE1", Row("Attachments1", processParameter: "Doc"));
+		EmailBlockExpectation.SentAttachments sent = new("SE1",
+			[new EmailBlockExpectation.AttachmentSource("Doc", null, null, null)]);
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed =
+			EmailBlockExpectation.Removed(before, after, [sent]);
+		string? warning = EmailBlockExpectation.BuildRemovedAttachmentsWarning(removed);
+
+		// Assert
+		removed.Should().ContainSingle(because: "the element lost one of its two rows")
+			.Which.Rows.Should().ContainSingle(because: "exactly one row went")
+			.Which.Slot.Should().Be("Attachments2",
+				because: "Attachments1 is still in the read-back, so the row that went is Attachments2");
+		warning.Should().Contain("Attachments2 {\"processParameter\":\"Doc\"}",
+			because: "the warning names the slot that was actually removed");
+		warning.Should().NotContain("Attachments1 {",
+			because: "the slot that survived must not be reported as removed");
+	}
+
+	[Test]
 	[Description("The replace rule's warning prints each removed row's slot and source in the write shape, because describe no longer shows a removed row, and points at that printed entry to restore it; a row describe could not name a source for, before the edit as after it, is sent to the designer to rebuild instead. It does not claim the server's notices always name the entry that restores it, which is false for a row describe cannot decode.")]
 	public void BuildRemovedAttachmentsWarning_ShouldPrintTheRemovedEntries_InTheWriteShape() {
 		// Arrange

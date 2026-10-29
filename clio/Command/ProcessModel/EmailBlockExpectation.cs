@@ -497,7 +497,8 @@ public static class EmailBlockExpectation {
 	/// <summary>
 	/// Of the elements that sent an attachments list, those the edit took attachment rows away from: rows the element
 	/// carried BEFORE the edit (by source, as describe decodes it) that it no longer carries after it. A row whose
-	/// source the list still names is not counted, even when the server rebuilt it in its own shape. An element the
+	/// source the list still names is not counted, even when the server rebuilt it in its own shape. A row whose slot
+	/// and source both survive is matched first, so with two rows of one source the removed slot is the one named. An element the
 	/// before-read cannot show (added by this batch, or an unreadable before-read) is not reported. Two lists that
 	/// name one element two ways count once, as the list sent last.
 	/// </summary>
@@ -518,8 +519,7 @@ public static class EmailBlockExpectation {
 			if (had is not { Count: > 0 } || after is null) {
 				continue;
 			}
-			List<AttachmentSource> remaining = [.. (after.Attachments ?? []).Select(SourceOf)];
-			List<DescribedEmailAttachment> gone = [.. had.Where(row => !remaining.Remove(SourceOf(row)))];
+			List<DescribedEmailAttachment> gone = Gone(had, after.Attachments ?? []);
 			if (gone.Count > 0) {
 				removed.Add(new RemovedAttachments(list.Element, gone, Requested: list.Entries.Count == 0));
 			}
@@ -527,6 +527,32 @@ public static class EmailBlockExpectation {
 
 		return removed;
 	}
+
+	// The before-rows the after-rows do not account for. A row whose slot AND source both survive is cancelled first;
+	// only the rest is matched by source alone. Describe lists rows in stored order, not slot order, so with two rows
+	// of one source a single by-source pass walking that order can cancel the wrong one - before [Attachments2 Doc,
+	// Attachments1 Doc], after [Attachments1 Doc] would name Attachments1 as removed, while the package kept the
+	// lowest-numbered slot and removed Attachments2. The by-source pass still keeps a row the server rebuilt under a
+	// new slot for a source the list names.
+	private static List<DescribedEmailAttachment> Gone(IEnumerable<DescribedEmailAttachment> had,
+			IEnumerable<DescribedEmailAttachment> kept) {
+		List<DescribedEmailAttachment> remaining = [.. kept];
+		List<DescribedEmailAttachment> unmatched = [];
+		foreach (DescribedEmailAttachment row in had) {
+			int index = remaining.FindIndex(survivor => SameSlot(survivor, row) && SourceOf(survivor) == SourceOf(row));
+			if (index >= 0) {
+				remaining.RemoveAt(index);
+			} else {
+				unmatched.Add(row);
+			}
+		}
+		List<AttachmentSource> sources = [.. remaining.Select(SourceOf)];
+		return [.. unmatched.Where(row => !sources.Remove(SourceOf(row)))];
+	}
+
+	private static bool SameSlot(DescribedEmailAttachment left, DescribedEmailAttachment right) =>
+		!string.IsNullOrWhiteSpace(left.Slot)
+		&& string.Equals(left.Slot.Trim(), right.Slot?.Trim(), StringComparison.OrdinalIgnoreCase);
 
 	/// <summary>
 	/// The caller-facing warning for attachments the REPLACE rule removed - a non-empty list that did not name them:
