@@ -534,3 +534,8 @@ Scope and mechanism agreed with it:
   that can change after the parent is built, so no build-time check can hold. Such an entry gets a notice instead
   (P-C4): the builder cannot see what the sub-process reads, the files are read with rights disabled and sent outside
   Creatio, so the sub-process must read scoped records only.
+- **Every request is judged (owner's choice 2026-10-29).** The end-of-request sweep over every Send email of the final
+  schema runs on EVERY build, modify and version save, not only on a request that writes an attachment or a file
+  hand-off. Consequence, accepted: a designer-built process whose email already sends files from an unscoped source is
+  refused on its next builder save of any kind, until the source is scoped or the attachment removed; the refusal names
+  the element, the email and the remedy.
