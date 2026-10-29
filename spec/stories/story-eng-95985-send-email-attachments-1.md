@@ -124,8 +124,9 @@ Ids are the analysis plan's (sections 3-5). Components C1-C10 and K1-K12 are the
 - [ ] **P-C3** C7 part 2: `DescribeAttachments`, read-back members, issues (multi-instance element reported as found,
   with an issue), `configured`; the generic `parameters[]` does not decode a name `IsReservedName` matches (TC-U-59..66,
   75, 78c, 81).
-- [ ] **P-C4** C4 notices of design section 5.2 (single File, expression, the same source twice, removal); Q9: no
-  feature reader and no feature-off notice (TC-U-43..47, 79).
+- [ ] **P-C4** C4 notices of design section 5.2 (single File, expression, the same source twice, removal; a
+  sub-process output source, decisions Q20 "Indirect sources"); Q9: no feature reader and no feature-off notice
+  (TC-U-43..47, 79).
 - [ ] **P-C5** parity: pattern A (3 corpus processes under `Fixtures/SendEmail/` with PROVENANCE SHA pins and a
   `.gitattributes` `-text` line), pattern B (EM1 rows), pattern C (writer JSON diff) (TC-P-01..09); every new fixture
   carries a CI category (TC-U-72).
