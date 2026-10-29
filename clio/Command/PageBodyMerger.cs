@@ -41,6 +41,9 @@ internal static class PageBodyMerger {
 
 	private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(5);
 
+	private static readonly Regex HandlerRequestRegex = new(@"request\s*:\s*[""']([^""']+)[""']",
+		RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
+
 	/// <summary>
 	/// Which side of the append merge a body belongs to, so the full-config rejection message can name the
 	/// correct actor. The corrective advice differs by role: the caller can convert an <see cref="Incoming"/>
@@ -698,15 +701,77 @@ internal static class PageBodyMerger {
 		}
 		string currentInner = StripArrayBrackets(currentTrim);
 		string incomingInner = StripArrayBrackets(incomingTrim);
-		HashSet<string> incomingRequests = ExtractHandlerRequestStrings(incomingInner);
-		string filteredCurrent = RemoveHandlersWithRequests(currentInner, incomingRequests);
+		if (!TryParseHandlers(currentTrim, out List<HandlerEntry> currentHandlers)) {
+			// The saved handlers are not a JavaScript array this merge can read: keep them unchanged rather
+			// than cut them at a guessed boundary, which could drop a handler or corrupt the schema body.
+			return JoinHandlers(currentInner, incomingInner);
+		}
+		if (!TryParseHandlers(incomingTrim, out List<HandlerEntry> incomingHandlers)) {
+			return AppendHandlersVerbatim(currentInner, currentHandlers, incomingInner);
+		}
+		Dictionary<string, List<string>> incomingByRequest = incomingHandlers
+			.Where(handler => handler.Request is not null)
+			.GroupBy(handler => handler.Request, StringComparer.Ordinal)
+			.ToDictionary(group => group.Key, group => group.Select(handler => handler.Source).ToList(),
+				StringComparer.Ordinal);
+		// ENG-104715: an incoming handler whose request a current handler already declares takes that
+		// handler's place, so a re-saved handler does not move to the end and reorder the schema.
+		var replacedRequests = new HashSet<string>(StringComparer.Ordinal);
+		var merged = new List<string>();
+		foreach (HandlerEntry handler in currentHandlers) {
+			if (handler.Request is not null
+				&& incomingByRequest.TryGetValue(handler.Request, out List<string> replacement)) {
+				if (replacedRequests.Add(handler.Request)) {
+					merged.AddRange(replacement);
+				}
+				continue;
+			}
+			merged.Add(handler.Source);
+		}
+		if (replacedRequests.Count == 0) {
+			return JoinHandlers(currentInner, incomingInner);
+		}
+		merged.AddRange(incomingHandlers
+			.Where(handler => handler.Request is null || !replacedRequests.Contains(handler.Request))
+			.Select(handler => handler.Source));
+		return "[" + string.Join(",", merged) + "]";
+	}
+
+	/// <summary>
+	/// Pre-ENG-104715 append, used when the incoming fragment is not a JavaScript array this merge can read:
+	/// every request named anywhere in the fragment text removes the current handler that declares it, and
+	/// the fragment goes to the end unchanged, so no request is saved twice.
+	/// </summary>
+	private static string AppendHandlersVerbatim(string currentInner, List<HandlerEntry> currentHandlers,
+		string incomingInner) {
+		HashSet<string> incomingRequests = HandlerRequestRegex.Matches(incomingInner)
+			.Select(match => match.Groups[1].Value)
+			.ToHashSet(StringComparer.Ordinal);
+		if (incomingRequests.Count == 0) {
+			return JoinHandlers(currentInner, incomingInner);
+		}
+		IEnumerable<string> kept = currentHandlers
+			.Where(handler => {
+				string request = handler.Request ?? ReadFirstRequest(handler.Source);
+				return request is null || !incomingRequests.Contains(request);
+			})
+			.Select(handler => handler.Source);
+		return JoinHandlers(string.Join(",", kept), incomingInner);
+	}
+
+	private static string ReadFirstRequest(string handlerSource) {
+		Match match = HandlerRequestRegex.Match(handlerSource);
+		return match.Success ? match.Groups[1].Value : null;
+	}
+
+	private static string JoinHandlers(string current, string incoming) {
 		string joined;
-		if (string.IsNullOrWhiteSpace(filteredCurrent)) {
-			joined = incomingInner;
-		} else if (string.IsNullOrWhiteSpace(incomingInner)) {
-			joined = filteredCurrent;
+		if (string.IsNullOrWhiteSpace(current)) {
+			joined = incoming;
+		} else if (string.IsNullOrWhiteSpace(incoming)) {
+			joined = current;
 		} else {
-			joined = filteredCurrent.TrimEnd(',', ' ', '\t', '\n', '\r') + "," + incomingInner;
+			joined = current.TrimEnd(',', ' ', '\t', '\n', '\r') + "," + incoming;
 		}
 		return "[" + joined + "]";
 	}
@@ -718,51 +783,100 @@ internal static class PageBodyMerger {
 		return trimmed.Trim();
 	}
 
-	private static HashSet<string> ExtractHandlerRequestStrings(string handlersInner) {
-		var result = new HashSet<string>(StringComparer.Ordinal);
-		Regex regex = new(@"request\s*:\s*[""']([^""']+)[""']", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
-		foreach (Match match in regex.Matches(handlersInner)) {
-			result.Add(match.Groups[1].Value);
+	/// <summary>
+	/// Reads a <c>SCHEMA_HANDLERS</c> array with Acornima, so braces, commas and <c>request</c> text inside
+	/// strings, template literals, regular expressions and comments never split or identify a handler.
+	/// Each entry keeps its raw source, together with the comments in front of it.
+	/// </summary>
+	/// <returns><see langword="true"/> with the handlers in array order; <see langword="false"/> when the text
+	/// is not a JavaScript array.</returns>
+	private static bool TryParseHandlers(string arraySource, out List<HandlerEntry> handlers) {
+		handlers = [];
+		string wrappedSource = $"({arraySource})";
+		Script script;
+		try {
+			script = new Parser().ParseScript(wrappedSource);
+		} catch (SyntaxErrorException) {
+			return false;
 		}
-		return result;
-	}
-
-	private static string RemoveHandlersWithRequests(string handlersInner, HashSet<string> existingRequests) {
-		if (existingRequests.Count == 0) {
-			return handlersInner;
+		if (script.Body.Count != 1
+			|| script.Body[0] is not ExpressionStatement { Expression: ArrayExpression array }) {
+			return false;
 		}
-		var blocks = SplitTopLevelObjects(handlersInner);
-		var kept = new List<string>();
-		Regex requestRegex = new(@"request\s*:\s*[""']([^""']+)[""']", RegexOptions.CultureInvariant | RegexOptions.Compiled, RegexTimeout);
-		foreach (string block in blocks) {
-			Match match = requestRegex.Match(block);
-			if (match.Success && existingRequests.Contains(match.Groups[1].Value)) {
+		int sliceStart = array.Start + 1;
+		foreach (Node element in array.Elements) {
+			if (element is null) {
 				continue;
 			}
-			kept.Add(block);
+			string source = wrappedSource.Substring(sliceStart, element.End - sliceStart).Trim().TrimStart(',').Trim();
+			handlers.Add(new HandlerEntry(ReadHandlerRequest(element), source));
+			sliceStart = SkipElementSeparator(wrappedSource, element.End);
 		}
-		return string.Join(",", kept);
+		return true;
 	}
 
-	private static List<string> SplitTopLevelObjects(string value) {
-		var result = new List<string>();
-		int depth = 0;
-		int start = -1;
-		for (int i = 0; i < value.Length; i++) {
-			char ch = value[i];
-			if (ch == '{') {
-				if (depth == 0) start = i;
-				depth++;
-			} else if (ch == '}') {
-				depth--;
-				if (depth == 0 && start >= 0) {
-					result.Add(value.Substring(start, i - start + 1));
-					start = -1;
-				}
+	/// <summary>
+	/// Returns the position after the comma that follows an array element. The text between two elements
+	/// holds only whitespace, comments and that comma, so a scan that skips comments finds it exactly.
+	/// </summary>
+	private static int SkipElementSeparator(string source, int position) {
+		int i = position;
+		while (i < source.Length) {
+			char ch = source[i];
+			if (ch == ',') {
+				return i + 1;
+			}
+			if (char.IsWhiteSpace(ch)) {
+				i++;
+				continue;
+			}
+			int afterComment = SkipComment(source, i);
+			if (afterComment == i) {
+				return i;
+			}
+			i = afterComment;
+		}
+		return i;
+	}
+
+	/// <summary>
+	/// Returns the position after a line or block comment that starts at <paramref name="position"/>,
+	/// or <paramref name="position"/> itself when no comment starts there.
+	/// </summary>
+	private static int SkipComment(string source, int position) {
+		if (source[position] != '/' || position + 1 >= source.Length) {
+			return position;
+		}
+		if (source[position + 1] == '/') {
+			int lineEnd = source.IndexOf('\n', position);
+			return lineEnd < 0 ? source.Length : lineEnd + 1;
+		}
+		if (source[position + 1] == '*') {
+			int commentEnd = source.IndexOf("*/", position + 2, StringComparison.Ordinal);
+			return commentEnd < 0 ? source.Length : commentEnd + 2;
+		}
+		return position;
+	}
+
+	/// <summary>
+	/// Reads the handler's own <c>request</c>: the string value of the object's top-level <c>request</c>
+	/// property, so a request object nested in the handler body is never taken for the handler's identity.
+	/// </summary>
+	private static string ReadHandlerRequest(Node element) {
+		if (element is not ObjectExpression handler) {
+			return null;
+		}
+		foreach (Node member in handler.Properties) {
+			if (member is Property { Computed: false } property
+				&& property.Key is Identifier { Name: "request" } or Literal { Value: "request" }
+				&& property.Value is Literal { Value: string request }) {
+				return request;
 			}
 		}
-		return result;
+		return null;
 	}
+
+	private sealed record HandlerEntry(string Request, string Source);
 
 	private static JArray ReadJsonArray(string body, string marker) {
 		if (!PageSchemaSectionReader.TryRead(body, out string content, marker)) {

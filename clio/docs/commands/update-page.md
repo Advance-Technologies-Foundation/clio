@@ -423,7 +423,10 @@ necessarily applied; see the group-ordering caveat below).
 There is one exception. If your fragment supersedes an identity that the page carries **twice**,
 only the first occurrence is replaced and the later one is dropped — keeping it would re-apply its
 stale values *after* your replacement. When those two entries set disjoint keys, the later entry's
-keys go with it. Handlers dedupe by `request`.
+keys go with it. Handlers dedupe by `request`: an incoming handler replaces the current handler with the same
+`request` at its position, and a handler for a new `request` is appended at the end. The merge reads both
+handler arrays with a JavaScript parser, so braces and `request` text inside strings or comments do not
+change the result. A fragment that is not a valid JavaScript array is appended unchanged at the end.
 
 `SCHEMA_CONVERTERS` and `SCHEMA_VALIDATORS` entries merge by type key, and incoming wins. The final merged web body is rejected when a custom validator reference has no matching
 `SCHEMA_VALIDATORS` declaration. Built-in `crt.*` validators need no local declaration.
@@ -550,9 +553,11 @@ run.
 `appendProjection` speaks for `viewConfigDiff` only. The sibling `*_DIFF` arrays are merged by
 appending and never lose an entry silently: a non-empty section the stored body has no marker pair
 for is rejected with an error (use `--mode replace`), so they have no loss to report. Handlers are **not**
-covered: they dedupe by `request`, and the merge drops every current handler whose `request` appears
-in your fragment — so a current body that carries one `request` twice keeps neither and your fragment
-contributes one. Check the handlers section by hand when that shape is possible.
+covered: they are matched by their top-level `request`, and your handler takes the place of the first
+current handler with that `request` — so a current body that carries one `request` twice keeps neither
+copy and your fragment contributes one. Only a fragment that is not a valid JavaScript array falls back
+to matching every `request` in its text, and is appended at the end. Check the handlers section by hand
+when that shape is possible.
 
 Append requires the **diff form**. A full-config body — the `SCHEMA_VIEW_MODEL_CONFIG` /
 `SCHEMA_MODEL_CONFIG` markers (mobile: top-level `viewModelConfig` / `modelConfig`) instead
