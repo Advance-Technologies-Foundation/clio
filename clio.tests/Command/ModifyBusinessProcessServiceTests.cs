@@ -254,6 +254,63 @@ public sealed class ModifyBusinessProcessServiceTests {
 	}
 
 	[Test]
+	[Description("A setElement that names its element in 'element' - the addElement OBJECT on the server - is stopped before anything is posted, and the refusal points to 'elementName'. Sent, it made the server fail the whole request and the caller saw only 'could not read the response'.")]
+	public void ModifyProcess_ShouldNotPost_WhenSetElementNamesTheElementInElement() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		ModifyBusinessProcessService service = CreateService(client);
+		const string operations = "[{\"op\":\"setElement\",\"element\":\"SendInvoiceEmail\",\"elementUpdate\":"
+			+ "{\"email\":{\"attachments\":[{\"sourceElement\":\"Report1\",\"sourceElementParameter\":\"ReportFiles\"}]}}}]";
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a name in 'element' cannot be read by the server, so the request must not be sent")
+			.WithMessage("Nothing was sent:*operations[0] (setElement)*'element'*\"elementName\": \"SendInvoiceEmail\"*",
+				because: "the refusal names the operation and shows the key to use with the caller's own name");
+		client.DidNotReceive().ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("When the server answers WCF's request-deserialization error string instead of the envelope, the edit is reported as NOT applied and the server's text is quoted - the request never reached an operation, so the outcome is known.")]
+	public void ModifyProcess_ShouldReportNothingApplied_WhenTheServerCouldNotReadTheRequest() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns(
+			"\"The formatter threw an exception while trying to deserialize the message: There was an error while "
+			+ "trying to deserialize parameter http://tempuri.org/:request.\"");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the server answered an error, not a result")
+			.WithMessage("*could not read the request, so the edit was NOT applied*get-tool-contract*"
+				+ "The server said: The formatter threw an exception*",
+				because: "a request the server could not read ran no operation, and the quoted text says what failed");
+	}
+
+	[Test]
+	[Description("Any other bare error string keeps the outcome UNKNOWN - it may come after the save - but now quotes the server's text instead of dropping it.")]
+	public void ModifyProcess_ShouldKeepTheOutcomeUnknown_AndQuoteTheServer_WhenAnotherErrorStringComesBack() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(ModifyUrl, Arg.Any<string>()).Returns("\"Object reference not set to an instance.\"");
+		ModifyBusinessProcessService service = CreateService(client);
+
+		// Act
+		Action act = () => service.ModifyProcess(Env, new ModifyBusinessProcessRequest("UsrProc", null, Operations));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the body is not the result envelope")
+			.WithMessage("*UNKNOWN*The server said: Object reference not set to an instance.",
+				because: "a failure after the save may have written the edit, so only a re-read can tell");
+	}
+
+	[Test]
 	[Description("Rejects a request with neither a process name nor a uid before any server call.")]
 	public void ModifyProcess_ShouldThrow_WhenNeitherNameNorUid() {
 		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();

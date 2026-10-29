@@ -417,6 +417,14 @@ internal static class ProcessBlockKeyCheck {
 		string op = (operation["op"] as JsonValue)?.TryGetValue(out string token) == true ? token : null;
 		string target = ElementLabel(operation[ElementNameKey], null);
 		string where = $"operations[{index}] ({op}{(target is null ? "" : " " + target)})";
+		// 'element' is the addElement OBJECT on the server for every op. A name there is not dropped like an unknown
+		// key: WCF fails to read the WHOLE request and answers an error string, which used to reach the caller only
+		// as "could not read the response" - agents guessed 'element' for setElement and blamed the server.
+		if (operation[ElementKey] is JsonValue misplacedName) {
+			walk.RefuseShape($"{where}: '{ElementKey}' takes the element OBJECT that addElement adds, so a name there "
+				+ $"makes the server fail the whole request. Name an existing element with '{ElementNameKey}' "
+				+ $"(\"{ElementNameKey}\": {misplacedName.ToJsonString()}).");
+		}
 		if (string.Equals(op, "addElement", StringComparison.OrdinalIgnoreCase)
 			&& operation[ElementKey] is JsonObject element) {
 			walk.Visit(element, Element,
@@ -456,7 +464,11 @@ internal static class ProcessBlockKeyCheck {
 	private sealed class Walk {
 
 		private readonly List<string> _refusals = [];
+		private readonly List<string> _shapeRefusals = [];
 		private readonly List<string> _readBacks = [];
+
+		/// <summary>Records an operation the server cannot read at all, as opposed to a key it would drop.</summary>
+		internal void RefuseShape(string sentence) => _shapeRefusals.Add(sentence);
 
 		internal void Visit(JsonObject node, KeySet set, string where, string prefix, Placement placement) {
 			Visit(node, set, where, prefix, placement, depth: 0);
@@ -561,7 +573,7 @@ internal static class ProcessBlockKeyCheck {
 		}
 
 		internal ProcessBlockKeyCheckResult Result() {
-			if (_refusals.Count == 0 && _readBacks.Count == 0) {
+			if (_refusals.Count == 0 && _shapeRefusals.Count == 0 && _readBacks.Count == 0) {
 				return ProcessBlockKeyCheckResult.Clean;
 			}
 			string error = null;
@@ -573,6 +585,13 @@ internal static class ProcessBlockKeyCheck {
 				error = "Nothing was sent: the server reads its request with a contract that DROPS an undeclared key "
 					+ "without a word, so these keys would have saved a process that ignores them. "
 					+ string.Join(" ", shown) + more;
+			}
+			if (_shapeRefusals.Count > 0) {
+				string moreShapes = _shapeRefusals.Count > MaxReportedKeys
+					? $" (and {_shapeRefusals.Count - MaxReportedKeys} more)"
+					: string.Empty;
+				string shapes = string.Join(" ", _shapeRefusals.Take(MaxReportedKeys)) + moreShapes;
+				error = error is null ? "Nothing was sent: " + shapes : error + " Also: " + shapes;
 			}
 			IReadOnlyList<string> warnings = [];
 			if (_readBacks.Count > 0) {

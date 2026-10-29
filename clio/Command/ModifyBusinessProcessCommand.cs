@@ -342,11 +342,21 @@ public sealed class ModifyBusinessProcessService(
 		try {
 			envelope = JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException exception) {
+			string serverText = ReadServerErrorText(responseBody);
+			if (serverText?.StartsWith(RequestDeserializationFailure, StringComparison.Ordinal) == true) {
+				// WCF answers this string when it cannot read the REQUEST, before any operation runs, so here - unlike
+				// below - the outcome is known: nothing was applied.
+				throw new InvalidOperationException(
+					"ModifyProcess could not read the request, so the edit was NOT applied. An operation carries a "
+					+ "value of the wrong shape for its key; check each operation against get-tool-contract "
+					+ $"modify-business-process. The server said: {serverText}", exception);
+			}
 			throw new InvalidOperationException(
 				"ModifyProcess returned a response clio could not read, so whether the edit was applied is "
 				+ "UNKNOWN — re-read the process with describe-business-process before deciding what to do. "
 				+ "The parser detail is on the inner exception; it names a .NET type and a byte offset, which "
-				+ "helps a developer reading a stack trace and is noise to the caller reading this.",
+				+ "helps a developer reading a stack trace and is noise to the caller reading this."
+				+ (serverText is null ? string.Empty : $" The server said: {serverText}"),
 				exception);
 		}
 
@@ -387,6 +397,29 @@ public sealed class ModifyBusinessProcessService(
 			message += " " + string.Join(" ", result.Warnings);
 		}
 		return message;
+	}
+
+	// The start of the error string WCF returns when the request body does not fit the service contract.
+	private const string RequestDeserializationFailure =
+		"The formatter threw an exception while trying to deserialize the message";
+
+	private const int MaxServerErrorTextLength = 400;
+
+	// A WCF fault comes back as a bare JSON string instead of the envelope; its text says what failed.
+	private static string? ReadServerErrorText(string? responseBody) {
+		if (string.IsNullOrWhiteSpace(responseBody) || !responseBody.TrimStart().StartsWith('"')) {
+			return null;
+		}
+		try {
+			string? text = JsonSerializer.Deserialize<string>(responseBody);
+			if (string.IsNullOrWhiteSpace(text)) {
+				return null;
+			}
+			text = text.Trim();
+			return text.Length <= MaxServerErrorTextLength ? text : text[..MaxServerErrorTextLength] + "...";
+		} catch (JsonException) {
+			return null;
+		}
 	}
 
 	private static JsonArray ParseOperations(string operationsJson) {

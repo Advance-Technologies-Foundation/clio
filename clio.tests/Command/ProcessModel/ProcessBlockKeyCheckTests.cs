@@ -58,6 +58,24 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "the refusal lists the block's real keys");
 	}
 
+	[TestCase("setElement")]
+	[TestCase("removeElement")]
+	[TestCase("addElement")]
+	[Description("A name sent in 'element' - the addElement OBJECT on the server - is refused for every operation and points to 'elementName'; the same operation naming its element by 'elementName' passes clean.")]
+	public void Check_Should_RefuseANameInElement_AndPointToElementName(string op) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckOperations($"[{{\"op\":\"{op}\",\"element\":\"Send1\"}}]");
+		ProcessBlockKeyCheckResult accepted = CheckOperations($"[{{\"op\":\"{op}\",\"elementName\":\"Send1\"}}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:", because: "the server cannot read a name in 'element'");
+		refused.Error.Should().Contain($"operations[0] ({op})", because: "the refusal names the operation");
+		refused.Error.Should().Contain("\"elementName\": \"Send1\"",
+			because: "the refusal shows the key to use, with the caller's own element name");
+		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "'elementName' is the key the server reads for an existing element");
+	}
+
 	[Test]
 	[Description("The repro with the filter moved to element level - the documented shape - passes without an error or a warning.")]
 	public void Check_Should_AcceptAnElementLevelFilter() {
