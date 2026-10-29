@@ -101,7 +101,9 @@ Full unit suite before every commit (more than three modules change):
 | Floors (K3) | TC-C-06 | the three floors and the shipped archive |
 | Forwarding (K4) | TC-C-07, 08 | create and modify forward the list verbatim; an empty list survives |
 | Typed describe (K6) `ServerProcessDescriberTests` | TC-C-09..11 | typed `DescribedEmail.Attachments` with a gap; null when omitted; the extension bag kept |
-| Read-back checks (K7) `EmailBlockExpectationTests` | TC-C-12..16, 23 | detected on every route; last list wins; unlanded attachments reported; quiet when all landed; qualitative wording without a version; "N attachments were removed by the replace rule" |
+| Read-back checks (K7) `EmailBlockExpectationTests` | TC-C-12..16, 23, 26 | detected on every route; last list wins; unlanded attachments reported; quiet when all landed; qualitative wording without a version; "N attachments were removed by the replace rule"; TC-C-26: two rows of one source listed out of slot order (before `[Attachments2 Doc, Attachments1 Doc]`, after `[Attachments1 Doc]`) report Attachments2 as the removed slot - rows whose slot and source both survive are matched before the rest is matched by source |
+| Stand-run fix: a name in `element` (`ProcessBlockKeyCheckTests`, `ModifyBusinessProcessServiceTests`) | TC-C-24 | a string `element` is refused on every operation before anything is posted; setElement / removeElement are pointed to `elementName` with the caller's value, addElement to the element object with its `name` and `type`; the value prints readably (non-ASCII, `'`) |
+| Stand-run fix: a request the server could not read (`ProcessDesignServerFaultTests`, `CreateBusinessProcessServiceTests`, `ModifyBusinessProcessServiceTests`, `ModifyProcessAsNewVersionServiceTests`) | TC-C-25 | WCF's request-deserialization string is reported as NOT applied - create: no process, modify: no edit, version save: no version - with the server's text quoted and cut at 400 characters; any other bare error string keeps the outcome UNKNOWN and is quoted; one shared helper classifies all three |
 | Descriptions, budgets, prompts (K4, K5, Q12) | TC-C-17..19 | description pins; `ToolContractPayloadBudgetTests` incl. the seven-contract 19,000 B wire bundle; prompt pins |
 | Bundle, curated names, e2e selection (K1, K9) | TC-C-20..22 | `BundledProcessBuilderPackageTests` with the two security counts unchanged; `WorkspaceTemplateGuidanceDriftTests` after the re-pin; `McpE2eSelectionCoverageTests` |
 
@@ -128,6 +130,7 @@ dotnet test clio.mcp.e2e/clio.mcp.e2e.csproj -f net8.0  --filter "TestCategory=M
 | TC-I-08 | `ModifyProcessAsNewVersion_Should_KeepTheAttachmentsOwnedByTheNewVersion` | clone stamps on both levels |
 | TC-I-09 | `DescribeBusinessProcess_Should_ReadTheDesignerBuiltAttachmentsFixture` | read-only on the EM1 fixture `UsrSeAttachmentsDesignerFixture` |
 | TC-I-10 | `RunProcess_Should_PutTheGeneratedReportOnTheManualEmailActivity` | a run parks on the manual email; one Activity and one `ActivityFile` (a `.docx`); cleanup through `execute-dataservice-batch` |
+| TC-I-11 | `ModifyBusinessProcessToolE2ETests.ModifyBusinessProcess_Should_RefuseANameInElement_BeforeAnythingIsSent` | setElement and addElement with a name in `element` are refused by clio before sending, each with its own fix, exit code 1, no missing-process answer from the server; needs a registered environment, writes nothing (lives in the modify fixture, not this one) |
 
 ## TC-K - clio-knowledge tests and gates
 
