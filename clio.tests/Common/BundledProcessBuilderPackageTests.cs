@@ -70,7 +70,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>3a1ad286</c>, tagged
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>768f666c</c>, tagged
 	/// <c>crtprocessbuilder-1.6.6.130</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
 	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
 	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
@@ -108,7 +108,7 @@ public class BundledProcessBuilderPackageTests {
 	/// 1.6.6.129 or 1.6.6.130 changes the write contract. What earlier cuts carried is in this file's git history rather than
 	/// here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5108 passed,
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5123 passed,
 	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> (run by hand on the producing checkout, step 1 of the hand
 	/// cut) -
 	/// measured on this cut, not carried over from a
@@ -195,7 +195,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"C4A122427838151C8FA7EA66D9EED40161596A9A16F563AB5B66C43162CB09B0";
+		"948F42948A3726604051D0D4106C4BCCBF51C7D3D166A675AF9B8515335F59CC";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -238,7 +238,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "3a1ad2863bb817f75ac0b8aeaa10f5932d54dee7";
+	private const string ExpectedProducingCommit = "768f666c0f03ea930465cbea9e85140a93068ee2";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -264,7 +264,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793359648000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793362066000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
