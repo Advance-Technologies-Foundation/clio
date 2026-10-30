@@ -256,6 +256,56 @@ public sealed class ModifyBusinessProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("When the edit's own reply already carries the package's removal notice for the Send email element, clio relays that notice and does not add its own replace-rule line for the same removal; the fewer-landed check is unaffected.")]
+	public void Execute_ShouldNotRepeatTheReplaceRuleRemoval_WhenTheServerReportedIt() {
+		// Arrange
+		const string serverNotice = "Send email 'Mail': removed attachment 'Attachments2' (it read 'Docs'): the sent "
+			+ "list no longer names it. To restore it, add {\"processParameter\": \"Docs\"} to the list.";
+		ModifyBusinessProcessOptions options = new() {
+			Environment = "sandbox",
+			ProcessName = "UsrSampleProcess",
+			OperationsJson = """
+				[{"op":"setElement","elementName":"Mail","elementUpdate":{"email":{"attachments":[{"processParameter":"Doc"}]}}}]
+				"""
+		};
+		_modifyBusinessProcessService.ModifyProcess("sandbox", Arg.Any<ModifyBusinessProcessRequest>())
+			.Returns(new ModifyBusinessProcessResult("UsrSampleProcess", "5c58c4c4-134b-4744-9c67-96d9c69c9d55", 1,
+				[serverNotice]));
+		DescribeProcessResult Described(params string[] parameters) => new() {
+			Name = "UsrSampleProcess", SchemaUId = "uid", Flows = [], Parameters = [],
+			Elements = [new DescribedElement {
+				Name = "Mail",
+				Email = new DescribedEmail {
+					Subject = "s",
+					Attachments = [.. parameters.Select((parameter, index) => new DescribedEmailAttachment {
+						Slot = $"Attachments{index + 1}", ProcessParameter = parameter
+					})]
+				}
+			}]
+		};
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Is(false), Arg.Any<bool>())
+			.Returns(Described("Doc", "Docs"));
+		_processDescriber.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>(), Arg.Is(true), Arg.Any<bool>())
+			.Returns(Described("Doc"));
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
+
+		// Act
+		int exitCode = _command.Execute(options);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the edit applied; a removal is a caveat, never a failure");
+		warnings.Should().ContainSingle(message => message == serverNotice,
+			because: "the package's own removal notice is relayed as it came");
+		warnings.Should().NotContain(message => message.Contains(EmailBlockExpectation.RemovedAttachmentsWarningMarker),
+			because: "the package already named the removed row and its restore entry, so clio's line would repeat it");
+		warnings.Should().NotContain(message => message.Contains(EmailBlockExpectation.UnlandedAttachmentsWarningMarker),
+			because: "the one entry sent landed as one row");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Does NOT claim an addElement accessRights block was dropped when a setElement in the same array configures that element - the payload the warning itself recommends.")]
 	public void Execute_ShouldNotWarnAboutAddElement_WhenASetElementConfiguresTheSameElement() {
 		// Arrange

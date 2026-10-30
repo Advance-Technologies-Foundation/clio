@@ -515,7 +515,8 @@ public class ModifyBusinessProcessCommand(
 			ErrorOr<DescribeProcessResult>? saved = null;
 			bool readFailureReported = false;
 			try {
-				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, before, out saved);
+				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, result.Warnings, before,
+					out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
@@ -573,7 +574,8 @@ public class ModifyBusinessProcessCommand(
 	// the read-back for the digest (null when there was no identity to read back by) as soon as it is taken, and
 	// returns whether the reply already says why there is no read-back (a guard warned that it failed or could not be taken, or a caller was not read back), so the digest does not say it twice.
 	private bool WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options,
-		string? schemaName, ErrorOr<DescribeProcessResult> before, out ErrorOr<DescribeProcessResult>? readBack) {
+		string? schemaName, IReadOnlyList<string>? serverWarnings, ErrorOr<DescribeProcessResult> before,
+		out ErrorOr<DescribeProcessResult>? readBack) {
 		readBack = null;
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -646,7 +648,7 @@ public class ModifyBusinessProcessCommand(
 		}
 
 		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent,
-			before.IsError ? null : before.Value);
+			before.IsError ? null : before.Value, serverWarnings);
 
 		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));

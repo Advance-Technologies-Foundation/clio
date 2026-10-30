@@ -40,8 +40,13 @@ internal static class BlockExpectationReporter {
 	/// The description read BEFORE the write, when the command took one (modify does, create has nothing to read);
 	/// it is what lets the attachments replace rule say how many rows it removed.
 	/// </param>
+	/// <param name="serverWarnings">
+	/// The warnings the write itself returned, when the command has them: an attachments removal the server already
+	/// reported is not reported a second time.
+	/// </param>
 	internal static void ReportDescribed(ILogger logger, DescribeProcessResult described,
-			BlockExpectationIntent intent, DescribeProcessResult? before = null) {
+			BlockExpectationIntent intent, DescribeProcessResult? before = null,
+			IReadOnlyList<string>? serverWarnings = null) {
 		// Each check below takes the ONE subset its wording is true of. See BlockExpectationIntent for why the
 		// subsets are not interchangeable; the short version is that a block-shaped message must never name an
 		// element that sent no block, and the filter-state message must cover the ones that did not.
@@ -66,12 +71,14 @@ internal static class BlockExpectationReporter {
 		// The attachments list is a THIRD shape on the same block: the block lands, the list does not. Then what the
 		// list's replace rule removed, which is the one outcome of a landed list a caller can be surprised by - a
 		// WARNING; and what an empty list removed, which is what it asks for - an Info line, so clio's own line names
-		// what went without calling it a loss. That is clio's line only: the package still returns its per-row
-		// removal notice for the same edit, and that notice reaches the caller as a warning either way.
+		// what went without calling it a loss. Both only for an element the write's own reply did not report: the
+		// package returns a per-slot removal notice, restore entry included, and saying it twice is noise. clio's line
+		// stays for a removal the reply is silent about.
 		Warn(logger, EmailBlockExpectation.BuildAttachmentWarning(
 			EmailBlockExpectation.Unlanded(described, intent.SentAttachments)));
 		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removedAttachments =
-			EmailBlockExpectation.Removed(before, described, intent.SentAttachments);
+			EmailBlockExpectation.NotReportedByServer(
+				EmailBlockExpectation.Removed(before, described, intent.SentAttachments), described, serverWarnings);
 		Warn(logger, EmailBlockExpectation.BuildRemovedAttachmentsWarning(removedAttachments));
 		string? clearedAttachments = EmailBlockExpectation.BuildClearedAttachmentsNote(removedAttachments);
 		if (clearedAttachments is not null) {

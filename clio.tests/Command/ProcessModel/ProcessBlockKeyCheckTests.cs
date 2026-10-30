@@ -92,6 +92,73 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "addElement has no existing element to name");
 	}
 
+	private const string OneAttachmentObject = """{"processParameter":"Docs"}""";
+
+	private static ProcessBlockKeyCheckResult CheckAttachments(string route, string attachments) {
+		string email = $"{{\"subject\":\"s\",\"attachments\":{attachments}}}";
+		return route switch {
+			"create" => CheckElements($"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{email}}}"),
+			"addElement" => CheckOperations(
+				$"[{{\"op\":\"addElement\",\"element\":{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{email}}}}}]"),
+			_ => CheckOperations(
+				$"[{{\"op\":\"setElement\",\"elementName\":\"SE1\",\"elementUpdate\":{{\"email\":{email}}}}}]")
+		};
+	}
+
+	[TestCase("create")]
+	[TestCase("setElement")]
+	[TestCase("addElement")]
+	[Description("email.attachments sent as one object instead of a list is refused before sending, on create, setElement and addElement: the server's contract reads a list there and fails the whole request on an object, so the refusal says nothing was sent, names the member and shows the array shape.")]
+	public void Check_Should_RefuseAttachmentsSentAsOneObject(string route) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments(route, OneAttachmentObject);
+		ProcessBlockKeyCheckResult accepted = CheckAttachments(route, $"[{OneAttachmentObject}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:",
+			because: "an object where the contract reads a list fails the whole request on the server");
+		refused.Error.Should().Contain("email.attachments' takes a LIST of attachment entries, so a single object",
+			because: "the refusal names the member and what was wrong with it");
+		refused.Error.Should().Contain("\"attachments\": [",
+			because: "the refusal shows the array shape to send instead");
+		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "the same entry wrapped in an array is the shape the server reads");
+	}
+
+	[TestCase("create")]
+	[TestCase("setElement")]
+	[TestCase("addElement")]
+	[Description("email.attachments whose entries are not objects - a string and a number among object entries - is refused before sending on every route, naming each wrong entry by its index; a null entry is not refused here, because the server reads it and refuses an entry with no source in its own words.")]
+	public void Check_Should_RefuseAttachmentEntriesThatAreNotObjects(string route) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments(route, $"[{OneAttachmentObject}, \"Docs\", 7]");
+		ProcessBlockKeyCheckResult withNull = CheckAttachments(route, $"[{OneAttachmentObject}, null]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:",
+			because: "an entry that is not an object fails the whole request on the server");
+		refused.Error.Should().Contain("email.attachments[1]', '",
+			because: "the refusal names the string entry by its index");
+		refused.Error.Should().Contain("email.attachments[2]' are not objects",
+			because: "the refusal names the number entry too, in one sentence");
+		refused.Error.Should().NotContain("attachments[0]",
+			because: "the object entry is well formed");
+		withNull.Error.Should().BeNull(because: "a null entry reaches the server, which refuses it in its own words");
+	}
+
+	[Test]
+	[Description("A wrong attachments shape and an unknown key in a well-formed entry of the same list are refused together, so one round trip fixes both.")]
+	public void Check_Should_ReportAnUnknownEntryKey_AlongsideANonObjectEntry() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments("setElement", """[{"parameter":"Docs"}, "Doc"]""");
+
+		// Assert
+		refused.Error.Should().Contain("'elementUpdate.email.attachments[0].parameter' is not a key",
+			because: "the object entry is still walked for keys the contract drops");
+		refused.Error.Should().Contain("email.attachments[1]' is not an object",
+			because: "the non-object entry is refused in the same reply");
+	}
+
 	[Test]
 	[Description("The misplaced value is printed as the caller wrote it: a non-ASCII name and an apostrophe appear as themselves rather than as HTML-safe escapes, so the key the refusal shows can be copied back.")]
 	public void Check_Should_PrintTheMisplacedNameReadably() {

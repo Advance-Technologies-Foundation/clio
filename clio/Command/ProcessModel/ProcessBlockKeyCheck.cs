@@ -183,6 +183,14 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet TaskPerformer = new("UserTaskPerformerDescriptor", Performer,
 		"DescribeUserTaskPerformerInfo", "type contact role showPage", "roleDisplay");
 
+	// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
+	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
+	// Named on its own because email.attachments is the one LIST of this walk whose wrong shape is refused before
+	// sending (see Walk.RefusesAttachmentsShape).
+	private static readonly KeySet EmailAttachment = new("SendEmailAttachmentDescriptor", "attachment",
+		"DescribeSendEmailAttachment", "processParameter sourceElement sourceElementParameter expression value",
+		"slot bindingLevels issues");
+
 	private static readonly KeySet EmailBlock = new KeySet("SendEmailDescriptor", "email", "DescribeSendEmailInfo",
 			"messageSource template templateEntity body bodyFormat mode sender subject to cc bcc importance ignoreErrors "
 			+ "attachments " + Performer,
@@ -191,10 +199,7 @@ internal static class ProcessBlockKeyCheck {
 			"processParameter sourceElement sourceElementParameter expression"))
 		.With("to cc bcc", new KeySet("SendEmailRecipientDescriptor", Recipient, null,
 			"value processParameter expression referenceSchema"))
-		// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
-		// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
-		.With("attachments", new KeySet("SendEmailAttachmentDescriptor", "attachment", "DescribeSendEmailAttachment",
-			"processParameter sourceElement sourceElementParameter expression value", "slot bindingLevels issues"))
+		.With("attachments", EmailAttachment)
 		.With(TaskPerformer);
 
 	private static readonly KeySet AccessRightsEntry = new KeySet("AccessRightsEntryDescriptor", "access rights entry",
@@ -536,6 +541,9 @@ internal static class ProcessBlockKeyCheck {
 			if (!set.Children.TryGetValue(key, out KeySet child)) {
 				return;
 			}
+			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
+				return;
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -547,6 +555,36 @@ internal static class ProcessBlockKeyCheck {
 					}
 				}
 			}
+		}
+
+		// email.attachments is a LIST on the server's contract. A single object there, or an entry that is not an
+		// object, is not a key the contract drops: the serializer fails to read the WHOLE request, which reached the
+		// caller only as an unreadable reply. A null list or a null entry reads fine (the package refuses an entry
+		// with no source in its own words), so neither is refused here. Returns whether the value is not a list at
+		// all, so there is nothing to walk.
+		private bool RefusesAttachmentsShape(JsonNode value, string where, string path) {
+			const string entryShape = "{\"processParameter\": ...}, {\"sourceElement\": ..., "
+				+ "\"sourceElementParameter\": ...} or {\"expression\": ...}";
+			if (value is JsonObject or JsonValue) {
+				string sent = value is JsonObject ? "a single object" : value.ToJsonString(ReadableJson);
+				RefuseShape($"{where}: '{path}' takes a LIST of attachment entries, so {sent} there makes the server "
+					+ $"fail the whole request. Send an array, one object per attachment: \"attachments\": [{entryShape}].");
+				return true;
+			}
+			if (value is not JsonArray items) {
+				return false;
+			}
+			List<int> wrong = [.. Enumerable.Range(0, items.Count).Where(index => items[index] is JsonValue or JsonArray)];
+			if (wrong.Count == 0) {
+				return false;
+			}
+			string entries = string.Join(", ", wrong.Take(MaxReportedKeys).Select(index => $"'{path}[{index}]'"))
+				+ (wrong.Count > MaxReportedKeys ? $" (and {wrong.Count - MaxReportedKeys} more)" : string.Empty);
+			RefuseShape($"{where}: {entries} {(wrong.Count == 1 ? "is not an object" : "are not objects")}, so the "
+				+ "server fails the whole request. Each attachment entry is an object naming one source: "
+				+ $"{entryShape}.");
+			// The object entries are still walked: a key the contract drops is reported in the same refusal.
+			return false;
 		}
 
 		private static string Describe(KeySet set, int depth) =>

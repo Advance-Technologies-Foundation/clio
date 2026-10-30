@@ -36,6 +36,30 @@ public static class EmailBlockExpectation {
 	public const string TemplateWarningMarker = "sent a 'template' that the read-back does NOT show";
 
 	/// <summary>
+	/// The one phrase of the warning that fewer attachments landed than were sent (<see cref="BuildAttachmentWarning"/>).
+	/// Public for the same reason as <see cref="TemplateWarningMarker"/>: the e2e assertion that it does NOT fire on a
+	/// healthy build references the literal the warning is built from.
+	/// </summary>
+	public const string UnlandedAttachmentsWarningMarker = "the read-back shows fewer attachments than were sent";
+
+	/// <summary>
+	/// The one phrase of clio's own replace-rule removal warning (<see cref="BuildRemovedAttachmentsWarning"/>), which
+	/// is written only for an element the server's reply reported no removal for (<see cref="NotReportedByServer"/>).
+	/// </summary>
+	public const string RemovedAttachmentsWarningMarker = "by the replace rule: a sent attachments list REPLACES";
+
+	/// <summary>
+	/// The one phrase of clio's own note about what an empty attachments list removed
+	/// (<see cref="BuildClearedAttachmentsNote"/>), written under the same condition as the removal warning.
+	/// </summary>
+	public const string ClearedAttachmentsNoteMarker = "removed every attachment of the Send email";
+
+	// How CrtProcessBuilder's per-slot removal notice reads around the element's name: every attachment notice starts
+	// "Send email '<name>': " and the removal one goes on "removed attachment '<slot>'".
+	private const string ServerNoticePrefix = "Send email '";
+	private const string ServerRemovalNoticeTail = "': removed attachment '";
+
+	/// <summary>
 	/// Element names that a build descriptor asks to configure as email elements — every entry under
 	/// <c>elements[]</c> carrying a non-null <c>email</c> object. Returns an empty list for a payload with no email
 	/// block, which is the common case and skips the verification entirely.
@@ -422,6 +446,10 @@ public static class EmailBlockExpectation {
 	/// element by its name and then by its UId yields two lists, because only a read-back can tell they are one
 	/// element; <see cref="Unlanded"/> and <see cref="Removed"/> collapse them on the element the read-back resolves,
 	/// keeping the list sent last.
+	/// <para>A <c>removeElement</c> forgets the list sent for that element, and so does an <c>addElement</c> of that
+	/// name: the element the batch ends with is a NEW one, and it carries only the list its own addElement sends (none
+	/// when the addElement sends no list). Keeping the earlier list would compare a removed element's attachments with
+	/// the new one's and report the difference as a loss.</para>
 	/// </summary>
 	/// <param name="operationsJson">The operations array JSON exactly as the caller supplied it.</param>
 	public static IReadOnlyList<SentAttachments> AttachmentElementsFromOperations(string operationsJson) {
@@ -434,8 +462,12 @@ public static class EmailBlockExpectation {
 			if (operation is not JsonObject op) {
 				continue;
 			}
-			if (op["element"] is JsonObject added) {
-				Track(sent, ReadName(added["name"]), added[EmailKey]);
+			if (string.Equals(ReadName(op["op"])?.Trim(), "removeElement", StringComparison.OrdinalIgnoreCase)) {
+				Forget(sent, ReadName(op["elementName"]));
+			} else if (op["element"] is JsonObject added) {
+				string? name = ReadName(added["name"]);
+				Forget(sent, name);
+				Track(sent, name, added[EmailKey]);
 			} else if (op["elementUpdate"] is JsonObject update) {
 				Track(sent, ReadName(op["elementName"]), update[EmailKey]);
 			}
@@ -486,7 +518,7 @@ public static class EmailBlockExpectation {
 		string counts = string.Join("; ", unlanded.Select(item =>
 			$"'{item.Element}' was sent {item.Sent} and reports {item.Described}"));
 		string subject = ElementNoun(unlanded.Count);
-		return $"The operation reported success, but the read-back shows fewer attachments than were sent on the Send "
+		return $"The operation reported success, but {UnlandedAttachmentsWarningMarker} on the Send "
 			+ $"email {subject} ({counts}). The usual cause is a deployed CrtProcessBuilder that does not support email "
 			+ "attachments: it discards the 'attachments' list while answering success, so the email goes out WITHOUT "
 			+ "those files. Do not report them as attached: install a package that supports email attachments ("
@@ -570,7 +602,7 @@ public static class EmailBlockExpectation {
 		string counts = string.Join("; ", replaced.Select(item =>
 			$"{item.Count} {(item.Count == 1 ? "attachment was" : "attachments were")} removed from '{item.Element}' "
 			+ $"({RowsInWriteShape(item.Rows)})"));
-		return $"{counts} by the replace rule: a sent attachments list REPLACES the Send email element's attachments, "
+		return $"{counts} {RemovedAttachmentsWarningMarker} the Send email element's attachments, "
 			+ "so every attachment the list did not name is gone, and describe no longer shows it. If a removal was not "
 			+ "intended, send the list again with the removed entry added as printed here; a row printed without a "
 			+ "source is one describe could not name, before this edit as well as after it, so rebuild it in the "
@@ -591,8 +623,34 @@ public static class EmailBlockExpectation {
 		string counts = string.Join("; ", cleared.Select(item =>
 			$"'{item.Element}' ({item.Count}: {RowsInWriteShape(item.Rows)})"));
 		string lists = cleared.Count == 1 ? "The empty attachments list" : "The empty attachments lists";
-		return $"{lists} removed every attachment of the Send email {ElementNoun(cleared.Count)} {counts}, as asked.";
+		return $"{lists} {ClearedAttachmentsNoteMarker} {ElementNoun(cleared.Count)} {counts}, as asked.";
 	}
+
+	/// <summary>
+	/// Of the removals <see cref="Removed"/> found, those the server's own reply did not report. CrtProcessBuilder
+	/// returns a removal notice per slot a sent list removed (<c>Send email 'SE1': removed attachment 'Attachments2'
+	/// ...</c>), with the entry that restores it; for an element it reported, clio's own line would say the same thing
+	/// twice. Matched on the element's name as the read-back reports it (the notice names it so) and as the caller
+	/// spelled it. A notice clio cannot match leaves clio's line in, which repeats the information rather than losing it.
+	/// </summary>
+	/// <param name="removed">What <see cref="Removed"/> returned.</param>
+	/// <param name="described">The description read back after the write, which resolves a UId to the element's name.</param>
+	/// <param name="serverWarnings">The warnings the write returned; <c>null</c> when it returned none.</param>
+	public static IReadOnlyList<RemovedAttachments> NotReportedByServer(IReadOnlyList<RemovedAttachments> removed,
+			DescribeProcessResult described, IReadOnlyList<string>? serverWarnings) {
+		if (removed.Count == 0 || serverWarnings is not { Count: > 0 }) {
+			return removed;
+		}
+
+		return [.. removed.Where(item => !ServerReportedRemoval(serverWarnings,
+			[item.Element, BlockExpectationJson.ResolveElement(described, item.Element)?.Name]))];
+	}
+
+	private static bool ServerReportedRemoval(IReadOnlyList<string> serverWarnings, IEnumerable<string?> names) =>
+		names.Where(name => !string.IsNullOrWhiteSpace(name))
+			.Select(name => ServerNoticePrefix + name!.Trim() + ServerRemovalNoticeTail)
+			.Any(notice => serverWarnings.Any(warning =>
+				warning is not null && warning.StartsWith(notice, StringComparison.OrdinalIgnoreCase)));
 
 	// The entries are printed with the MCP result encoder rather than the default one: the default escapes for HTML,
 	// so an expression's ', <, > and + would read as \u0027, \u003C, \u003E and \u002B in the very line the caller
@@ -656,8 +714,15 @@ public static class EmailBlockExpectation {
 					ReadName(item["sourceElementParameter"]), ReadName(item["expression"])));
 			}
 		}
-		sent.RemoveAll(existing => string.Equals(existing.Element, name, StringComparison.OrdinalIgnoreCase));
+		Forget(sent, name);
 		sent.Add(new SentAttachments(name, sources));
+	}
+
+	// Drops the list tracked for an element as SPELLED; a name that is blank forgets nothing.
+	private static void Forget(List<SentAttachments> sent, string? name) {
+		if (!string.IsNullOrWhiteSpace(name)) {
+			sent.RemoveAll(existing => string.Equals(existing.Element, name, StringComparison.OrdinalIgnoreCase));
+		}
 	}
 
 	// True when an email block moves the element to (or keeps it in) the custom message: a NON-EMPTY body, or an

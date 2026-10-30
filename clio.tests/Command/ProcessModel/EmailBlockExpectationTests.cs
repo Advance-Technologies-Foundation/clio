@@ -828,6 +828,106 @@ public class EmailBlockExpectationTests {
 			.Which.Count.Should().Be(1, because: "the removed row is counted once");
 	}
 
+	[Test]
+	[Description("A list sent to an element that the same batch then removes and adds again is forgotten: the element the batch ends with is a new one carrying only what its own addElement sends, so an addElement without a list leaves nothing to verify and the earlier two-entry list raises no fewer-landed warning against a fresh element with no rows.")]
+	public void AttachmentElementsFromOperations_ShouldForgetTheList_WhenTheElementIsRemovedAndAddedAgain() {
+		// Arrange
+		const string operations = """
+			[{"op":"setElement","elementName":"SE1","elementUpdate":{"email":{"attachments":[{"processParameter":"A"},{"processParameter":"B"}]}}},
+			 {"op":"removeElement","elementName":"SE1"},
+			 {"op":"addElement","element":{"name":"SE1","type":"sendEmail","email":{"subject":"fresh"}}}]
+			""";
+		DescribeProcessResult after = WithAttachments("SE1");
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.SentAttachments> sent =
+			EmailBlockExpectation.AttachmentElementsFromOperations(operations);
+		string? warning = EmailBlockExpectation.BuildAttachmentWarning(EmailBlockExpectation.Unlanded(after, sent));
+
+		// Assert
+		sent.Should().BeEmpty(because: "the list was sent to the element the batch removed, not to the one it added");
+		warning.Should().BeNull(because: "a fresh element that was sent no list has no attachments to miss");
+	}
+
+	[TestCase("removeElement", 0)]
+	[TestCase("addElement", 1)]
+	[Description("A removeElement forgets the list sent earlier for that element, and an addElement of the same name replaces it with the list its own element carries: after removeElement nothing is tracked, after an addElement that sends one entry exactly that entry is.")]
+	public void AttachmentElementsFromOperations_ShouldResetTheList_OnRemoveOrAddOfTheSameName(string op,
+			int expectedEntries) {
+		// Arrange
+		string second = op == "removeElement"
+			? """{"op":"removeElement","elementName":"se1"}"""
+			: """{"op":"addElement","element":{"name":"se1","type":"sendEmail","email":{"attachments":[{"processParameter":"C"}]}}}""";
+		string operations = "[" + """
+			{"op":"setElement","elementName":"SE1","elementUpdate":{"email":{"attachments":[{"processParameter":"A"},{"processParameter":"B"}]}}}
+			""" + "," + second + "]";
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.SentAttachments> sent =
+			EmailBlockExpectation.AttachmentElementsFromOperations(operations);
+
+		// Assert
+		sent.Sum(list => list.Entries.Count).Should().Be(expectedEntries,
+			because: "the earlier two-entry list belongs to an element the batch removed or replaced");
+		sent.Should().NotContain(list => list.Entries.Any(entry => entry.ProcessParameter == "A"),
+			because: "the list sent before the remove or the re-add is not what the element ends with");
+	}
+
+	[Test]
+	[Description("A removal the server's reply already reported - its notice starts \"Send email '<name>': removed attachment '\" - is left out of clio's own removal reporting, matched on the element's described name even when the caller named the element by its UId; an element the reply is silent about stays in.")]
+	public void NotReportedByServer_ShouldLeaveOutTheElementsTheServerReported() {
+		// Arrange
+		const string uid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55";
+		DescribeProcessResult described = new() {
+			Elements = [.. WithAttachments("SE1").Elements, .. WithAttachments("SE2").Elements]
+		};
+		described.Elements[0].Uid = uid;
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed = [
+			new(uid, [Row("Attachments2", processParameter: "Docs")], Requested: false),
+			new("SE2", [Row("Attachments1", processParameter: "Doc")], Requested: true)
+		];
+		IReadOnlyList<string> serverWarnings = [
+			"Send email 'SE1': removed attachment 'Attachments2' (it read 'Docs'): the sent list no longer names it.",
+			"Send email 'SE2': Attachments1 attaches the single file in 'Doc'."
+		];
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> left =
+			EmailBlockExpectation.NotReportedByServer(removed, described, serverWarnings);
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> unfiltered =
+			EmailBlockExpectation.NotReportedByServer(removed, described, null);
+
+		// Assert
+		left.Should().ContainSingle(because: "the reply reported SE1's removal and nothing about SE2's")
+			.Which.Element.Should().Be("SE2",
+				because: "a notice about SE2 that is not a removal notice does not stand in for one");
+		unfiltered.Should().BeEquivalentTo(removed,
+			because: "a reply with no warnings reported no removal, so clio reports every one it found");
+	}
+
+	[Test]
+	[Description("The attachment read-back warnings carry their public markers, so an e2e assertion on a marker fails to compile rather than passing forever when the wording moves.")]
+	public void AttachmentWarnings_ShouldCarryTheirMarkers() {
+		// Arrange
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> removed = [
+			new("SE1", [Row("Attachments2", processParameter: "Docs")], Requested: false),
+			new("SE2", [Row("Attachments1", processParameter: "Doc")], Requested: true)
+		];
+
+		// Act
+		string? unlanded = EmailBlockExpectation.BuildAttachmentWarning([new("SE1", 2, 0)]);
+		string? replaced = EmailBlockExpectation.BuildRemovedAttachmentsWarning(removed);
+		string? cleared = EmailBlockExpectation.BuildClearedAttachmentsNote(removed);
+
+		// Assert
+		unlanded.Should().Contain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
+			because: "the fewer-landed warning is built from its marker");
+		replaced.Should().Contain(EmailBlockExpectation.RemovedAttachmentsWarningMarker,
+			because: "the replace-rule warning is built from its marker");
+		cleared.Should().Contain(EmailBlockExpectation.ClearedAttachmentsNoteMarker,
+			because: "the empty-list note is built from its marker");
+	}
+
 	#endregion
 
 }

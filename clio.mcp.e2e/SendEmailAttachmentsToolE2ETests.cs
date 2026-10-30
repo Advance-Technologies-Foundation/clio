@@ -11,6 +11,7 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.ProcessModel;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Common;
 using Clio.Mcp.E2E.Support;
@@ -27,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.128 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.130 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -51,12 +52,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.128,
-	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c>, but TC-I-05 asserts
-	/// that describe lists the rows in stored order, which arrived in 1.6.6.128 - and clio refuses a stand older than
-	/// its bundled archive anyway.
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.130,
+	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the
+	/// first whose describe lists the rows in stored order, which TC-I-05 asserts - but clio refuses a stand older than
+	/// its bundled archive, so below the bundled version every case would fail on that refusal instead of being
+	/// Ignored. Moves with every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.128";
+	private const string MinimumPackageVersion = "1.6.6.130";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
@@ -134,6 +136,8 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			ShouldHaveBuilt(callResult, "four attachment rows from four kinds of file source are an ordinary create");
 			WarningText(callResult).Should().Contain(SingleFileNotice,
 				because: "a single File row fails the element when the File is empty at run time, and the build says so");
+			WarningText(callResult).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
+				because: "every sent entry landed as a row, so clio's read-back must not report a dropped list");
 			JsonObject graph = await DescribeGraphAsync(context, processName);
 			IReadOnlyList<JsonObject> attachments = Attachments(Element(graph, "SE1"));
 			attachments.Select(entry => Text(entry, "slot")).Should().Equal(
@@ -312,7 +316,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the warnings carry each removed entry in the write shape. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value, and describe lists the re-added row last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
+	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the package's warnings carry each removed entry in the write shape while clio adds no removal line of its own. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value, and describe lists the re-added row last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process replaces and then removes the attachments of a Send email element")]
 	public async Task ModifyBusinessProcess_Should_ReplaceThenRemoveAttachments() {
@@ -367,7 +371,15 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the replace rule says which rows it removed");
 			WarningText(replaced).Should().Contain("\"sourceElement\": \"PF1\"",
 				because: "the removal notice carries the removed entry in the write shape, so one call restores it");
+			WarningText(replaced).Should().NotContain(EmailBlockExpectation.RemovedAttachmentsWarningMarker,
+				because: "the package already reported each removed row, so clio does not report the removal again");
+			WarningText(replaced).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
+				because: "both entries of the replacing list landed");
 			ShouldHaveLanded(reused, "dropping a collection row and adding a single File reuses the freed number");
+			WarningText(reused).Should().Contain(RemovalNotice,
+				because: "the dropped collection row is a removal the package reports");
+			WarningText(reused).Should().NotContain(EmailBlockExpectation.RemovedAttachmentsWarningMarker,
+				because: "the package reported the removal, so clio's own line stays out");
 			JsonObject reusedSlot = Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
 				entry => Text(entry, "slot") == "Attachments1",
 				because: "the collection row that held Attachments1 was dropped, so its number is free again").Which;
@@ -381,6 +393,10 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments1.DisplayValue") && row.Contains("[#OF1"),
 				because: "a reused single-File slot carries no stale display value of the collection it replaced");
 			ShouldHaveLanded(cleared, "an empty list removes every row");
+			WarningText(cleared).Should().Contain(RemovalNotice,
+				because: "the package reports every row an empty list removed");
+			OutputText(cleared).Should().NotContain(EmailBlockExpectation.ClearedAttachmentsNoteMarker,
+				because: "the package reported the rows the empty list removed, so clio's note stays out");
 			StoredSlots(clearedNode).Should().BeEmpty(because: "[] removes every attachment row from the element");
 			Attachments(Element(await DescribeGraphAsync(context, processName), "SE1"), allowAbsent: true)
 				.Should().BeEmpty(because: "an element with no row reports no attachments");
@@ -421,6 +437,10 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			ShouldHaveLanded(echoed, "a described list fed back is a valid list");
 			WarningText(echoed).Should().Contain("read-back fields",
 				because: "clio names the describe-only members it ignored instead of refusing them");
+			WarningText(echoed).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
+				because: "every described entry fed back matched its own row, so none is missing from the read-back");
+			OutputText(echoed).Should().NotContain(RemovalNotice,
+				because: "a list that names every row removes none, so neither the package nor clio reports a removal");
 			(await ReadLastElementNodeAsync(context, processName, elementUId)).Should().Be(nodeBefore,
 				because: "every entry matches its own row, so the replace keeps every row as it is");
 			// The create writes the Send email template's parameter captions in every culture; this modify is the
@@ -973,6 +993,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#endregion
 
 	#region Methods: Graph reading and slot assertions
+
+	/// <summary>
+	/// Every message of a tool result, of every type: clio writes the note about what an empty list removed as Info, so
+	/// <see cref="ProcessDesignerE2ESupport.WarningText"/> alone cannot show that it is absent.
+	/// </summary>
+	private static string OutputText(CallToolResult result) =>
+		string.Join("\n", (McpCommandExecutionParser.Extract(result).Output ?? []).Select(message => message.Value ?? string.Empty));
 
 	/// <summary>The described attachments of a Send email element; absent fails the test unless allowed.</summary>
 	private static IReadOnlyList<JsonObject> Attachments(JsonObject element, bool allowAbsent = false) {
