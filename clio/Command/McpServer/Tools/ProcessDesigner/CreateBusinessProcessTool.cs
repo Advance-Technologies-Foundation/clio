@@ -206,7 +206,7 @@ public class CreateBusinessProcessTool(
 		 + "'expression' source against the element's Subject parameter, NOT a 'value' source, which stores a constant "
 		 + "and reproduces exactly what the refusal prevents), "
 		 + "body? (the HTML custom message; to insert PROCESS DATA use friendly macros the server resolves BY NAME "
-		 + "into the platform's image tokens — no UID needed: [[param:<Name>]] (a whole process parameter), "
+		 + "into the platform's image tokens — no UID needed: [[param:<Name>]] (a process parameter, inserted WHOLE: no column drill), "
 		 + "[[element:<ElementName>.<OutputParameter>]] (a whole element output, e.g. a readData element's "
 		 + "ResultEntity), [[element:<ElementName>.<OutputParameter>.<Column>]] (ONE direct column of that output "
 		 + "record); an unknown parameter/element/column is REJECTED "
