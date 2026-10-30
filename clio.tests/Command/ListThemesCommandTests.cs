@@ -201,4 +201,23 @@ public sealed class ListThemesCommandTests : BaseCommandTests<ListThemesOptions>
 		exitCode.Should().Be(0,
 			because: "an empty body is the contract default and yields an empty catalog");
 	}
+
+	[TestCase("{\"mode\":\"Image\",\"imageId\":\"0b8f5c43-6f0e-4b84-9a52-0f1d2c3e4a5b\",\"color\":null}", "Image",
+		"0b8f5c43-6f0e-4b84-9a52-0f1d2c3e4a5b", null)]
+	[TestCase("{\"mode\":\"Color\",\"imageId\":null,\"color\":\" #0A1B2C \"}", "Color", null, "#0A1B2C")]
+	[Category("Unit")]
+	[Description("Maps an image or a color background from the catalog into the theme descriptor, trimmed.")]
+	public void ListThemes_ShouldMapBackground_WhenThemeDeclaresOne(string background, string mode, string imageId,
+		string color) {
+		_applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true,\"values\":[{\"id\":\"a\",\"caption\":\"A\",\"cssClassName\":\"a\"," +
+				"\"cssFilePath\":\"a/theme.css\",\"background\":" + background + "}]}");
+
+		_command.TryGetAvailableThemes(new ListThemesOptions(), out IReadOnlyList<ThemeDescriptor> themes, out _);
+
+		themes.Single().Background.Should().BeEquivalentTo(
+			new ThemeBackground { Mode = mode, ImageId = imageId, Color = color },
+			because: "the catalog's background must reach the descriptor with its mode and value");
+	}
 }

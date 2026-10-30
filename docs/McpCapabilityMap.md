@@ -836,9 +836,9 @@ These tools manage custom themes — one part of branding a Creatio app: build a
 - `delete-theme`
   Delete a theme by id; deleting an unknown id is an error.
 - `list-themes`
-  List custom themes (id, caption, CSS class name, CSS file path). An empty list means no themes or no `CanCustomizeBranding` license.
+  List custom themes (id, caption, CSS class name, CSS file path, background). An empty list means no themes or no `CanCustomizeBranding` license.
 - `get-theme`
-  Read an existing theme's content (`theme.css`) and metadata by id — the returned caption, CSS class name, and CSS content feed `update-theme` verbatim, closing the read → edit → update round-trip. `output-file` writes the CSS to a confined local path instead of returning it (which is why the tool is `ReadOnly=false` while staying non-destructive).
+  Read an existing theme's content (`theme.css`) and metadata by id, including its `background` — the returned caption, CSS class name, and CSS content feed `update-theme` verbatim, closing the read → edit → update round-trip. `output-file` writes the CSS to a confined local path instead of returning it (which is why the tool is `ReadOnly=false` while staying non-destructive).
 - `clear-themes-cache`
   Refresh the theme catalog cache; needed only when theme files change on the environment outside a clio install.
 - `check-theming-access`

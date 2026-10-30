@@ -34,7 +34,8 @@ public class ListThemesTool(
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("List the custom Creatio themes available on a registered environment. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
-		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath }], error? }. " +
+		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath, background? }], error? }; " +
+		"background is { mode: Image, imageId } or { mode: Color, color }, absent when the theme declares none. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public ListThemesResult ListThemes(
@@ -117,7 +118,8 @@ public sealed record ListThemesResult {
 					TextUtilities.SanitizeForDisplay(theme.Id ?? string.Empty, ThemeParameterValidator.MaxIdLength),
 					TextUtilities.SanitizeForDisplay(theme.Caption ?? string.Empty, ThemeParameterValidator.MaxCaptionLength),
 					TextUtilities.SanitizeForDisplay(theme.CssClassName ?? string.Empty, ThemeParameterValidator.MaxCssClassNameLength),
-					TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty)))
+					TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty),
+					theme.Background))
 				.ToList()
 		};
 	}
@@ -138,4 +140,7 @@ public sealed record ThemeDescriptorResult(
 	[property: JsonPropertyName("id")] string Id,
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("cssClassName")] string CssClassName,
-	[property: JsonPropertyName("cssFilePath")] string CssFilePath);
+	[property: JsonPropertyName("cssFilePath")] string CssFilePath,
+	[property: JsonPropertyName("background")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	ThemeBackground Background = null);
