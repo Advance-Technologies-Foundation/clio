@@ -6,10 +6,10 @@
   - `position` past the last row is refused (the operator was asked; the recommended default was kept).
   - Decided with the operator (2026-10-27): no `--below` (D6); the ticket's acceptance criteria are amended to match.
   - Decided with the operator (2026-10-27): when a logged-in user gets the new decision is the platform's rights
-    caching, which clio does not control — the change can reach them at once, but reliably only after they log in
-    again — so the ticket's "without re-login" criterion is dropped rather than verified. The server side was
-    probed on 8.3.4 (a DataService session got the change at once); the application side is operator experience
-    (2026-10-28).
+    caching, which clio does not control, so the ticket's "without re-login" criterion is dropped rather than made
+    a clio guarantee. Probed since (2026-10-30, Creatio 10.2.471): an open Freedom UI page followed a move in both
+    directions without a reload, so the guidance says a change applies at once and offers logging in again as the
+    fallback when a user still sees the old access.
 - **Date:** 2026-10-25
 - **Jira:** [ENG-104066](https://creatio.atlassian.net/browse/ENG-104066) (follows ENG-99741, the `remove-role`
   follow-up named in [adr-ENG-99741-object-rights.md](adr-ENG-99741-object-rights.md) D3)
@@ -17,8 +17,9 @@
   bullet "never removes a row and never reorders rows" and R5 ("never reorders rows"): a grant or a revoke still
   never removes or reorders a row; a row moves or goes only through a layout call of its own (D1). Where the two
   ADRs differ on rows moving or going, this ADR wins (see "Review baseline"). It also replaces ADR-99741's "a
-  change applies immediately to a session that is already logged in": the change can reach a logged-in user at
-  once, but for the permissions to apply reliably the user logs in to the site again (operator, 2026-10-28).
+  change applies immediately to a session that is already logged in": the change applies at once (probed again
+  on 10.2.471 in an open Freedom UI page), and logging in again is the fallback when a user still sees the old
+  access.
 
 ---
 

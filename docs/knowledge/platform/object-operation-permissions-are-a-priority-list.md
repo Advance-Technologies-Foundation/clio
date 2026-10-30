@@ -26,12 +26,12 @@ from that user's session:
 A denied read comes back from DataService as a SUCCESS with zero rows, not as an error; a denied insert is a
 `SecurityException`. The designer's "+ Add" puts a new role at the highest position + 1.
 
-In that probe a change reached the user's existing DataService session at once. That is the server side
-only: a user already working in the application can keep the old permissions until they log in again. That
-part is operator experience, not a probe (ENG-104066, 2026-10-27, see
-[adr-ENG-104066-object-rights-row-layout.md](../../../spec/adr/adr-ENG-104066-object-rights-row-layout.md)), so
-the change can reach a logged-in user at once, but for the permissions to apply reliably the user should log in
-to the site again. When it reaches them is the platform's rights caching, which clio does not control.
+In that probe a change reached the user's existing DataService session at once. On Creatio 10.2.471
+(.NET Framework, MSSQL, stand `ar_platform`, 2026-10-30, ENG-104066) a Freedom UI list page already open as a
+non-admin user followed a row move in both directions without a reload: create and delete became available
+after a widening and were blocked again after a narrowing. So a change applies at once; logging in again is
+the fallback when a user still sees the old access, not a step every change needs (see
+[adr-ENG-104066-object-rights-row-layout.md](../../../spec/adr/adr-ENG-104066-object-rights-row-layout.md)).
 
 **Why it is this way** — it is the platform's model (Creatio Academy describes the same "highest role in
 the list" rule); nothing in the `GetAdministratedObject` payload says so, and the flags alone look like a
