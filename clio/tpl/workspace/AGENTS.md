@@ -17,7 +17,8 @@ Typical locations:
 ### /projects (Angular / Freedom UI clients)
 
 Custom Freedom UI components are Angular projects under `./projects/<NG_PROJECT>/`. They build into a package's
-file content (see each project's `angular.json` `outputPath`, e.g. `../../packages/<PACKAGE_NAME>/Files/src/js/<NG_PROJECT>`).
+file content (see `OUTPUT_PATH` in each project's `rspack.config.js`, or `angular.json` `outputPath` in projects created by
+older clio versions, e.g. `../../packages/<PACKAGE_NAME>/Files/src/js/<NG_PROJECT>`).
 
 **Only when an Angular project exists**, it is wired into `MainSolution.slnx` via a `.esproj` (next to its
 `package.json`). Because of that, **building the solution also builds the Angular bundle** — prefer:
