@@ -285,23 +285,24 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, Call(administrators, ("position", 3)))));
 
 		// Assert — the preview wrote nothing, the move landed, the out-of-range position was refused
-		AllureApi.Step("Assert the preview names the narrowing and writes nothing", () => {
+		AllureApi.Step("Assert the preview names the narrowing", () =>
 			preview.Output.Should().Contain("access NARROWS",
-				because: "administrators lose delete once their row decides first");
+				because: "administrators lose delete once their row decides first"));
+		AllureApi.Step("Assert the preview wrote nothing", () =>
 			unchanged.Output.Should().Contain($"[1] System administrators ({administrators})",
-				because: "a preview writes nothing");
-		});
-		AllureApi.Step("Assert the move landed and the other rows kept their order", () => {
-			moved.Success.Should().BeTrue(because: $"the move is valid and its read-back matches. Error: {moved.Error}");
+				because: "a preview writes nothing"));
+		AllureApi.Step("Assert the move succeeded", () =>
+			moved.Success.Should().BeTrue(because: $"the move is valid and its read-back matches. Error: {moved.Error}"));
+		AllureApi.Step("Assert the moved row is at position 0", () =>
 			afterMove.Output.Should().Contain($"[0] System administrators ({administrators}): read/create/edit",
-				because: "the administrators' row now has the highest priority");
+				because: "the administrators' row now has the highest priority"));
+		AllureApi.Step("Assert the other rows kept their relative order", () =>
 			afterMove.Output.Should().Contain($"[1] All employees ({AllEmployees}): read/create/edit/delete",
-				because: "the other rows keep their relative order");
-		});
-		AllureApi.Step("Assert a position past the last row is refused with the valid range", () => {
-			outOfRange.Success.Should().BeFalse(because: "three rows have positions 0..2");
-			outOfRange.Error.Should().Contain("0..2", because: "the refusal names the valid range");
-		});
+				because: "the other rows keep their relative order"));
+		AllureApi.Step("Assert a position past the last row is refused", () =>
+			outOfRange.Success.Should().BeFalse(because: "three rows have positions 0..2"));
+		AllureApi.Step("Assert the out-of-range refusal names the valid range", () =>
+			outOfRange.Error.Should().Contain("0..2", because: "the refusal names the valid range"));
 
 		// Act — preview, then apply, the removal of the external row; then try to remove the last granting row
 		(ObjectRightsToolResponse removalPreview, ObjectRightsToolResponse removed, ObjectRightsToolResponse afterRemoval)
@@ -323,14 +324,14 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 		AllureApi.Step("Assert the removal preview names the revoke of external access", () =>
 			removalPreview.Output.Should().Contain("a revoke of external access",
 				because: "removing the All external users row takes read away from portal users"));
-		AllureApi.Step("Assert the external row is gone", () => {
-			removed.Success.Should().BeTrue(because: $"the removal is valid. Error: {removed.Error}");
-			afterRemoval.Output.Should().NotContain($"({ExternalUsers})", because: "the service deleted the row left out");
-		});
-		AllureApi.Step("Assert removing the last granting row is refused", () => {
-			lastRow.Success.Should().BeFalse(because: "no row would grant any operation on an administered object");
-			lastRow.Error.Should().Contain("would leave no row", because: "the refusal says why");
-		});
+		AllureApi.Step("Assert the external row removal succeeded", () =>
+			removed.Success.Should().BeTrue(because: $"the removal is valid. Error: {removed.Error}"));
+		AllureApi.Step("Assert the external row is gone", () =>
+			afterRemoval.Output.Should().NotContain($"({ExternalUsers})", because: "the service deleted the row left out"));
+		AllureApi.Step("Assert removing the last granting row is refused", () =>
+			lastRow.Success.Should().BeFalse(because: "no row would grant any operation on an administered object"));
+		AllureApi.Step("Assert the last-row refusal says why", () =>
+			lastRow.Error.Should().Contain("would leave no row", because: "the refusal says why"));
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,
