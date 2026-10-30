@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO.Abstractions.TestingHelpers;
 using System.Linq;
 using System.Text;
@@ -684,6 +685,112 @@ public sealed class ODataUpdateToolTests {
 			.Contain("[redacted-path]")
 			.And.NotContain("/home/depot",
 				because: "server-side absolute paths must not reach the MCP caller's transcript");
+		response.Diagnostic.RetryAdvice.Should().NotBe(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "only a timeout earns the re-send advice; a broken connection keeps the generic read-first advice");
+	}
+
+	private static IEnumerable<TestCaseData> PatchCancellationShapes() {
+		// The production shape: creatio.client reads the PATCH task through Task.Result, so its CancelAfter
+		// timeout arrives as an AggregateException around a TaskCanceledException.
+		yield return new TestCaseData(new AggregateException(
+				new System.Threading.Tasks.TaskCanceledException("A task was canceled.")))
+			.SetName("Update_Should_Report_Timeout_When_Patch_Is_Cancelled(aggregate)");
+		yield return new TestCaseData(new System.Threading.Tasks.TaskCanceledException("A task was canceled."))
+			.SetName("Update_Should_Report_Timeout_When_Patch_Is_Cancelled(bare)");
+		yield return new TestCaseData(new AggregateException(new AggregateException(
+				new System.Threading.Tasks.TaskCanceledException("A task was canceled."))))
+			.SetName("Update_Should_Report_Timeout_When_Patch_Is_Cancelled(nested-aggregate)");
+		// Control: a socket error other than TimedOut in the chain does not mean the connect failed.
+		yield return new TestCaseData(new AggregateException(
+				new System.Threading.Tasks.TaskCanceledException("A task was canceled."),
+				new System.Net.Http.HttpRequestException("Connection reset",
+					new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionReset))))
+			.SetName("Update_Should_Report_Timeout_When_Patch_Is_Cancelled(connection-reset)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCaseSource(nameof(PatchCancellationShapes))]
+	[Description("Issue #1851: a PATCH cancelled by the client-side timeout names the timeout and advises one re-send, instead of 'A task was canceled', in every shape the cancellation can arrive in.")]
+	public void Update_Should_Report_Timeout_When_Patch_Is_Cancelled(Exception cancellation) {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Throws(cancellation);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a PATCH without an answer is not a confirmed update");
+		response.Error.Should().Be(ODataUpdateTool.PatchTimedOutError,
+			because: "the caller must learn that the client stopped waiting, not read an opaque cancellation");
+		response.Diagnostic!.WriteAttempted.Should().BeTrue(because: "the PATCH call was entered before the timeout");
+		response.Diagnostic.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "a client-side cancellation does not stop Creatio from committing the PATCH");
+		response.Diagnostic.RetryAdvice.Should().Be(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "a timed-out PATCH gets the single re-send advice instead of the generic read-first advice");
+		f.Client.Received(1).ExecutePatchRequest(KeyUrl, Arg.Any<string>(), 30_000);
+	}
+
+	private static IEnumerable<TestCaseData> ConnectTimeoutShapes() {
+		yield return new TestCaseData(new System.Net.Http.HttpRequestException("Connection timed out",
+				new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.TimedOut)))
+			.SetName("Update_Should_Not_Report_Patch_Timeout_When_The_Connect_Times_Out(no-cancellation)");
+		yield return new TestCaseData(new AggregateException(
+				new System.Threading.Tasks.TaskCanceledException("A task was canceled."),
+				new System.Net.Http.HttpRequestException("Connection timed out",
+					new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.TimedOut))))
+			.SetName("Update_Should_Not_Report_Patch_Timeout_When_The_Connect_Times_Out(aggregate-sibling)");
+		yield return new TestCaseData(new System.Threading.Tasks.TaskCanceledException("A task was canceled.",
+				new System.Net.Http.HttpRequestException("Connection timed out",
+					new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.TimedOut))))
+			.SetName("Update_Should_Not_Report_Patch_Timeout_When_The_Connect_Times_Out(inner-exception)");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[TestCaseSource(nameof(ConnectTimeoutShapes))]
+	[Description("Issue #1851: a TCP connect timeout on the PATCH does not get the PATCH timeout error, even when a cancellation is in the same chain, because the request did not leave the process.")]
+	public void Update_Should_Not_Report_Patch_Timeout_When_The_Connect_Times_Out(Exception connectFailure) {
+		// Arrange
+		Fixture f = CsdLFixture();
+		f.Client.ExecutePatchRequest(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>()).Throws(connectFailure);
+
+		// Act
+		ODataWriteResponse response = Update(f, """{"Name":"New"}""");
+
+		// Assert
+		response.Success.Should().BeFalse(because: "a PATCH that got no connection is not a confirmed update");
+		response.Error.Should().NotBe(ODataUpdateTool.PatchTimedOutError,
+			because: "a socket connect timeout in the chain means the PATCH did not reach Creatio");
+		response.Diagnostic!.TransportOutcome.Should().Be("unknown", because: "no response was received");
+		response.Diagnostic.SideEffect.Should().Be("unknown",
+			because: "the generic unknown-outcome path still applies to a transport fault");
+		response.Diagnostic.RetryAdvice.Should().NotBe(ODataUpdateTool.PatchTimedOutRetryAdvice,
+			because: "only a client-side cancellation of the PATCH earns the re-send advice");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Issue #1851: the tool description and get-tool-contract state the same PATCH timeout as the error the tool returns.")]
+	public void Update_Timeout_Should_Match_The_Documented_Timeout() {
+		// Arrange
+		const string statedTimeout = "within 30 s";
+
+		// Act
+		string description = typeof(ODataUpdateTool).GetMethod(nameof(ODataUpdateTool.Update))!
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false)
+			.Cast<System.ComponentModel.DescriptionAttribute>().Single().Description;
+		string contract = ToolContractCatalog.GetContracts([ODataUpdateTool.ToolName]).Tools!.Single().Description;
+
+		// Assert
+		ODataUpdateTool.PatchTimedOutError.Should().Contain(statedTimeout,
+			because: "the error is built from the timeout the PATCH is sent with");
+		description.Should().Contain(statedTimeout,
+			because: "the tool description is a literal and must not drift from the timeout the PATCH applies");
+		contract.Should().Contain(statedTimeout,
+			because: "get-tool-contract is a literal and must not drift from the timeout the PATCH applies");
 	}
 
 	[Test]

@@ -10,7 +10,10 @@ ALIASES
 DESCRIPTION
     --resources adds missing keys and updates supplied en-US values. It preserves
     resource identity, other cultures, and omitted keys. resourcesRegistered counts
-    new keys only. Resource saves warn that a stale push-workspace can revert them:
+    new keys only; resourcesUpdated counts existing keys whose en-US value changed.
+    An append dry run reports both counts as the save would; a replace dry run
+    reports 0.
+    Resource saves warn that a stale push-workspace can revert them:
     preserve local edits, capture the affected package with restore-workspace
     (pull-workspace), and review metadata and culture XML before pushing. Follow
     workspace instructions for linked FSM packages; check the native designer's
@@ -167,6 +170,9 @@ DESCRIPTION
       (e.g. caption: "GalleryDS_Name") and must stay unchanged. Other captions
       still require localization. For a standalone merge, repeat type:
       "crt.Gallery" unless the same body declares that node's type elsewhere.
+      A crt.Map node's own templateValuesMapping is excluded too: its values
+      (e.g. title: "Name") name record columns. For a standalone merge, repeat
+      type: "crt.Map" on the same terms.
       Designer-only _designOptions mappings are also excluded.
       A component's own data descriptor is exempt: a "data" object carrying the
       platform's "typeName" marker, on any node that declares a component type
@@ -264,7 +270,11 @@ DESCRIPTION
     target. One exception: if your fragment supersedes an identity the page
     carries TWICE, only the first is replaced and the later one is dropped, since
     keeping it would re-apply stale values after your replacement. Handlers
-    dedupe by request.
+    dedupe by request: an incoming handler replaces the current handler with
+    the same request at its position, and a handler for a new request is
+    appended at the end. Braces and request text inside strings or
+    comments do not change the result. A fragment that is not a valid
+    JavaScript array is appended unchanged at the end.
     SCHEMA_CONVERTERS and SCHEMA_VALIDATORS entries merge by type key and
     incoming wins. The merged web body is rejected when a custom
     validator reference lacks a matching SCHEMA_VALIDATORS declaration;
@@ -339,10 +349,10 @@ DESCRIPTION
     are merged by appending and never lose an entry silently: a non-empty section
     the stored body has no marker pair for is rejected with an error (use
     --mode replace). Handlers are NOT covered:
-    they dedupe by request, and the merge drops every current handler whose
-    request appears in your fragment - so a current body carrying one request
-    twice keeps neither and your fragment contributes one. Check handlers by
-    hand when that shape is possible.
+    they are matched by their top-level request, and your handler takes the
+    place of the first current handler with that request - so a current body
+    carrying one request twice keeps neither copy and your fragment
+    contributes one. Check handlers by hand when that shape is possible.
     Append requires the diff form: a full-config body (the SCHEMA_VIEW_MODEL_CONFIG
     / SCHEMA_MODEL_CONFIG markers, instead of the *_DIFF markers) cannot be merged
     and is rejected with an actionable hint — use --mode replace for such a body.

@@ -415,7 +415,16 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>EntityConnection</c> rows merged with the <c>EntityConnections</c> add-on, ordered by position. The body is
 		///     <c>{"entitySchemaUId":"&lt;guid&gt;"}</c>; the response carries <c>connections[].columnUId</c> and no names.
 		/// </summary>
-		GetEntityConnections = 120
+		GetEntityConnections = 120,
+
+		/// <summary>
+		///     Uploads a file into a file entity (for example <c>ContactFile</c>) and links it to its parent record
+		///     (<c>FileApiService.UploadFile</c>). With a <c>Content-Range</c> header the service reads
+		///     <c>entitySchemaName</c>, <c>columnName</c>, <c>fileId</c>, <c>parentColumnName</c> and
+		///     <c>parentColumnValue</c> from the query string; it answers HTTP 200 with
+		///     <c>{"success":false,"errorInfo":{...}}</c> on a rejection.
+		/// </summary>
+		FileApiUploadFile = 121
 
 	}
 
@@ -532,6 +541,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsGetRecordRights, "/rest/RightsService/GetRecordRights"},
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
+		{KnownRoute.FileApiUploadFile, "/rest/FileApiService/UploadFile"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},

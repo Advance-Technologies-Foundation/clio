@@ -160,6 +160,13 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	public const string ODataPreWriteMetadata = "metadata";
 
 	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that serves the same CSDL as
+	/// <see cref="ODataPreWriteMetadata"/> but never answers the PATCH, so odata-update's client-side PATCH timeout
+	/// fires (issue #1851). The PATCH is still recorded, which proves the write was sent before the timeout.
+	/// </summary>
+	public const string ODataPreWriteStallPatch = "stallpatch";
+
+	/// <summary>
 	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value that answers BOTH
 	/// pre-write reads (<c>$metadata</c> and the keyed <c>$select</c> probe) with a non-JSON body, so the
 	/// payload can be neither confirmed nor refuted. A PATCH is still acked, so a tool that wrote anyway
@@ -186,6 +193,17 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 	/// than a literal it could drift from.
 	/// </summary>
 	public const string ODataExpandRead = "expandread";
+
+	/// <summary>
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataPreWriteMode"/> value for the <c>odata-create</c>
+	/// model-binding rejection (ENG-104665). The service-root <c>odata/$metadata</c> declares
+	/// <see cref="RuntimeDetectionStubServerConfiguration.ODataEntity"/> with a binary
+	/// <c>&lt;Property Name="Data" Type="Edm.Stream" /&gt;</c> next to <c>Id</c> and <c>Name</c>. A POST to the
+	/// collection is answered with HTTP 400 and the ASP.NET Core model-binding body
+	/// <c>{"error":{"code":"","message":"The input was not valid.",...}}</c>, which names no column. This is
+	/// the answer a .NET Core Creatio gives for any value of a binary column.
+	/// </summary>
+	public const string ODataCreateModelValidationRejected = "modelvalidationrejected";
 
 	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
@@ -241,7 +259,7 @@ function serveUiMarker(request, response, mode, enabled, redirectLocation) {
   sendText(response, effective === "ok" ? 200 : 404, effective === "ok" ? "OK" : "Not Found");
 }
 
-function metadataCsdl(entity) {
+function metadataCsdl(entity, withBinaryData) {
   return '<?xml version="1.0" encoding="utf-8" standalone="no"?>'
     + '<edmx:Edmx Version="4.0" xmlns:edmx="http://docs.oasis-open.org/odata/ns/edmx">'
     + '<edmx:DataServices>'
@@ -253,6 +271,9 @@ function metadataCsdl(entity) {
     // Declared so a test can show the zone-less date-time guard firing on a temporal column while a
     // date-shaped value on the Edm.String column above is still written (GitHub issue #1369).
     + '<Property Name="DueDate" Type="Edm.DateTimeOffset" />'
+    // Declared only in the model-validation mode: the binary column of a file or image entity, which
+    // odata-create names after Creatio rejects the row in model binding (ENG-104665).
+    + (withBinaryData ? '<Property Name="Data" Type="Edm.Stream" />' : '')
     + '</EntityType>'
     + '</Schema>'
     + '</edmx:DataServices></edmx:Edmx>';
@@ -602,9 +623,26 @@ http.createServer((request, response) => {
         && url.includes("$select=");
       const isPatch = request.method === "PATCH" && url.includes("/odata/" + config.ODataEntity + "(");
       const isCollectionPost = request.method === "POST" && url.endsWith("/odata/" + config.ODataEntity);
-      if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}") {
+      if (isMetadata && (config.ODataPreWriteMode === "{{ODataPreWriteMetadata}}"
+          || config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}")) {
         response.writeHead(200, { "Content-Type": "application/xml" });
-        response.end(metadataCsdl(config.ODataEntity));
+        response.end(metadataCsdl(config.ODataEntity, false));
+        return;
+      }
+      if (isMetadata && config.ODataPreWriteMode === "{{ODataCreateModelValidationRejected}}") {
+        response.writeHead(200, { "Content-Type": "application/xml" });
+        response.end(metadataCsdl(config.ODataEntity, true));
+        return;
+      }
+      if (isCollectionPost && config.ODataPreWriteMode === "{{ODataCreateModelValidationRejected}}") {
+        // The ASP.NET Core model-binding answer measured on Creatio 10.2.760: it names no column.
+        sendJson(response, 400, {
+          error: {
+            code: "",
+            message: "The input was not valid.",
+            details: [{ code: "", message: "The input was not valid." }]
+          }
+        });
         return;
       }
       if (isMetadata && config.ODataPreWriteMode === "{{ODataPreWriteEmptyRecord}}") {
@@ -673,6 +711,10 @@ http.createServer((request, response) => {
           }
         }
         sendJson(response, 200, record);
+        return;
+      }
+      if (isPatch && config.ODataPreWriteMode === "{{ODataPreWriteStallPatch}}") {
+        // No answer at all: the request stays open until the client gives up or the stub is killed.
         return;
       }
       if (isPatch) {

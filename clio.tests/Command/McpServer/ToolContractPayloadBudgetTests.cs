@@ -99,7 +99,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 48640 (190).
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections are two more long-tail tools.
 	// Measured 48990 bytes with them registered (350 over 48640); next 256-byte step is 49152 (192).
-	private const int MaxCompactIndexSerializedBytes = 192 * 256;
+	// Re-pinned for ENG-104665: upload-file is one more long-tail tool. Measured 49214 bytes with it registered
+	// (62 over 49152); next 256-byte step is 49408 (193).
+	private const int MaxCompactIndexSerializedBytes = 193 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -428,6 +430,33 @@ public sealed class ToolContractPayloadBudgetTests {
 		replies.Where(reply => reply.Detail is not null).Should().NotBeEmpty(
 			because: "anti-vacuity: at least the process-designer contracts are far over the budget in full, so a "
 				+ "run in which nothing came back short did not exercise the fitting at all");
+	}
+
+	// update-page is returned whole only while its reply fits InlineReplyBudgetBytes. Over it, every field
+	// description is cut to its first sentence, and update-page tests that read deeper field text (for example
+	// ToolContractGet_Should_Declare_Warnings_In_UpdatePage_Output_Envelope) fail in an unrelated PR. GitHub #1880
+	// left 67 bytes of margin; this guard keeps at least UpdatePageContractHeadroomBytes, so the next field or
+	// wording change has to shorten something on purpose.
+	private const int UpdatePageContractHeadroomBytes = 512;
+
+	[Test]
+	[Category("Unit")]
+	[Description("A default update-page lookup comes back whole with at least 512 bytes under the inline reply budget, so a small contract edit does not silently switch it to the short form (GitHub #1880 review).")]
+	public void GetToolContracts_ShouldKeepHeadroomUnderTheInlineBudget_ForUpdatePage() {
+		// Arrange
+		ToolContractGetTool tool = BuildToolOverDefaultSurface();
+
+		// Act
+		ToolContractGetResponse reply = tool.GetToolContracts(new ToolContractGetArgs([PageUpdateTool.ToolName]));
+		int bytes = Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(reply));
+
+		// Assert
+		reply.Tools!.Single().Detail.Should().BeNull(
+			because: "the update-page contract must come back whole; a short form drops the field text agents rely on");
+		bytes.Should().BeLessThanOrEqualTo(ToolContractShortForm.InlineReplyBudgetBytes - UpdatePageContractHeadroomBytes,
+			because: $"the update-page reply is {bytes} bytes; keep at least {UpdatePageContractHeadroomBytes} bytes under "
+				+ $"the {ToolContractShortForm.InlineReplyBudgetBytes}-byte budget, and shorten a description (appendProjection "
+				+ "is the largest) rather than lower this margin");
 	}
 
 	[Test]

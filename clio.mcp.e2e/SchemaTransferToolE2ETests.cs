@@ -201,6 +201,10 @@ public sealed class SchemaTransferToolE2ETests : McpContractFixtureBase {
 			because: "a bundle without its reviewable descriptor is not the artifact export-schema promises");
 		File.Exists(Path.Combine(bundleDirectory, "schema-data.json")).Should().BeTrue(
 			because: "the platform payload is what import-schema actually writes, so it must be in the bundle");
+		Action strictParse = () => JsonDocument.Parse(
+			File.ReadAllText(Path.Combine(bundleDirectory, "schema-data.json"))).Dispose();
+		strictParse.Should().NotThrow(
+			because: "schema-data.json must be RFC 8259 JSON so scripts can edit the bundle; the replace import below proves the platform accepts the escaped form");
 		JsonElement descriptor = JsonDocument.Parse(File.ReadAllText(descriptorPath)).RootElement;
 		descriptor.GetProperty("schemaName").GetString().Should().Be(sandbox.SchemaName,
 			because: "the descriptor must name the schema that was exported, not a stale or copied identity");

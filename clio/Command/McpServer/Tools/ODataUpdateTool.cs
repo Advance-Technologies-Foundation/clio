@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -40,6 +41,31 @@ public sealed class ODataUpdateTool(
 	private const string ValidArgumentsHint =
 		"Valid: entity, id, environment-name, data, rows-file, confirm.";
 
+	/// <summary>How long the PATCH waits for an answer before creatio.client cancels it on the client side.</summary>
+	private const int PatchTimeoutMs = 30_000;
+
+	/// <summary>
+	/// The error for a PATCH that got no answer within <see cref="PatchTimeoutMs"/>. creatio.client reports it as
+	/// "One or more errors occurred. (A task was canceled.)", which names neither the timeout nor the fact that the
+	/// cancellation is local: the request may already have reached Creatio, which can still commit it (issue #1851).
+	/// A client-side cancellation cannot tell whether the request left the process, so the text says "may".
+	/// </summary>
+	internal static readonly string PatchTimedOutError =
+		$"odata-update got no response within {PatchTimeoutMs / 1000} s and stopped waiting (client-side timeout). " +
+		"The PATCH may have reached Creatio, so Creatio may have applied it; several writes sent in parallel make a slow answer more likely.";
+
+	/// <summary>
+	/// The retry advice for a timed-out PATCH. It replaces the generic "read before you resubmit" advice of an
+	/// unknown outcome, because a PATCH of literal values sets the same column values again. It is not free of side
+	/// effects: if the first PATCH was applied, the re-send is a second update, and update-time business processes
+	/// and event handlers of the entity run again.
+	/// </summary>
+	internal const string PatchTimedOutRetryAdvice =
+		"Re-send the same odata-update call on its own, not in parallel with other writes; it sets the same values again. " +
+		"If the first PATCH was applied, the re-send is a second update and can run update-time business processes again. " +
+		"Read the record with odata-read first when processes react to changes of this record, " +
+		"or when another writer may have changed these fields since, and re-send only if the values do not match yet.";
+
 	/// <summary>
 	/// The camelCase / snake_case spellings an LLM emits for this tool's kebab-case fields. Without this map
 	/// (and the overflow bag it reads) a request carrying inline <c>data</c> plus <c>rows_file</c> bound only
@@ -73,6 +99,8 @@ public sealed class ODataUpdateTool(
 		"success:true means the service accepted the PATCH after this pre-validation; " +
 		"platform builds that silently discard unsupported values can still leave some fields unwritten, so " +
 		"re-read important values with odata-read after a critical write. " +
+		"A PATCH that gets no answer within 30 s fails with side-effect unknown, because Creatio may still apply it; " +
+		"re-sending the same call sets the same values again, but can run update-time business processes a second time. " +
 		"This tool never performs a keyless mass update. " +
 		"This is a destructive operation: it requires confirm=true to proceed. " +
 		McpToolDescriptions.CorrelationIdOnEveryResponse +
@@ -95,17 +123,23 @@ public sealed class ODataUpdateTool(
 		}
 		bool attempted = false;
 		bool received = false;
+		bool timedOut = false;
 		ODataWriteResponse result = payloadAlias.Error is not null
 			? ODataWriteResponse.Failure(payloadAlias.Error)
-			: UpdateCore(args, out attempted, out received);
+			: UpdateCore(args, out attempted, out received, out timedOut);
+		DataWriteDiagnostic diagnostic = DataWriteDiagnostic.Create("update",
+			args.Entity, null, attempted, received, result.Success, result.Error);
+		if (timedOut) {
+			diagnostic = diagnostic with { RetryAdvice = PatchTimedOutRetryAdvice };
+		}
 		return result with { Warnings = payloadAlias.WarningFor(!result.Success && !attempted) is { } warning ? [warning] : null,
-			CorrelationId = correlationId, Diagnostic = DataWriteDiagnostic.Create("update",
-			args.Entity, null, attempted, received, result.Success, result.Error) };
+			CorrelationId = correlationId, Diagnostic = diagnostic };
 	}
 
-	private ODataWriteResponse UpdateCore(ODataUpdateArgs args, out bool attempted, out bool received) {
+	private ODataWriteResponse UpdateCore(ODataUpdateArgs args, out bool attempted, out bool received, out bool timedOut) {
 		attempted = false;
 		received = false;
+		timedOut = false;
 		try {
 			//Runs before the confirmation gate, before the file is touched and before any PATCH: an unbound
 			//file-source key such as rows_file would otherwise be dropped silently and the inline data sent
@@ -156,7 +190,13 @@ public sealed class ODataUpdateTool(
 				return ODataWriteResponse.Failure($"odata-update rejected: {zoneLessDateTime}");
 			}
 			attempted = true;
-			string response = client.ExecutePatchRequest(url, data.GetRawText(), 30_000);
+			string response;
+			try {
+				response = client.ExecutePatchRequest(url, data.GetRawText(), PatchTimeoutMs);
+			} catch (Exception ex) when (IsPatchCancelledByTimeout(ex)) {
+				timedOut = true;
+				return ODataWriteResponse.Failure(PatchTimedOutError);
+			}
 			received = true;
 			string validationError = ODataKeyedWrite.ValidateWriteResponse(response);
 			if (validationError is not null) {
@@ -167,6 +207,28 @@ public sealed class ODataUpdateTool(
 			return ODataWriteResponse.Failure(SensitiveErrorTextRedactor.Redact(ex.Message));
 		}
 	}
+
+	/// <summary>
+	/// Whether the PATCH failed because creatio.client cancelled it after <see cref="PatchTimeoutMs"/>: an
+	/// <see cref="OperationCanceledException"/>, alone or inside an <see cref="AggregateException"/>. A TCP connect
+	/// timeout (a <see cref="SocketException"/> with <see cref="SocketError.TimedOut"/> anywhere in the chain) is
+	/// excluded, because then the connection was never made and the request did not leave the process. Such a
+	/// failure takes the generic unknown-outcome path.
+	/// </summary>
+	/// <param name="exception">The exception the PATCH call threw.</param>
+	/// <returns><see langword="true"/> for a client-side cancellation of the PATCH.</returns>
+	private static bool IsPatchCancelledByTimeout(Exception exception) {
+		IEnumerable<Exception> faults = exception is AggregateException aggregate
+			? aggregate.Flatten().InnerExceptions
+			: [exception];
+		return faults.Any(fault => fault is OperationCanceledException) && !HasSocketTimeout(exception);
+	}
+
+	private static bool HasSocketTimeout(Exception exception) =>
+		exception is SocketException { SocketErrorCode: SocketError.TimedOut }
+		|| (exception is AggregateException aggregate
+			? aggregate.InnerExceptions.Any(HasSocketTimeout)
+			: exception.InnerException is { } inner && HasSocketTimeout(inner));
 
 	/// <summary>
 	/// Resolves the field/value payload from either the inline <c>data</c> argument or <c>rows-file</c>,

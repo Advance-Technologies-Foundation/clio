@@ -301,6 +301,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			because: "the safety guarantee the issue disputed — an unrelated append never drops an existing operation — must be stated on the wire");
 		modeField.Description.Should().Contain("The one exception",
 			because: "the caller must also learn the one case where an existing entry IS dropped, or the contract repeats #1132 by promising more than the code delivers");
+		modeField.Description.Should().Contain("dedupe by `request`, in place",
+			because: "ENG-104715: the caller must learn that a re-sent handler keeps its position, so an append save does not reorder the schema");
 		modeField.Description.Should().NotContain("dedupe by `name`",
 			because: "the pre-#1132 claim describes behaviour the merger no longer has, and shipping it would keep steering agents into the data-loss assumption");
 	}
@@ -1633,6 +1635,90 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("ENG-104715 / GitHub #1827: an append that re-saves a handler keeps it at its position in SCHEMA_HANDLERS through the real MCP server and Creatio save path.")]
+	[AllureTag(ToolName)]
+	[AllureName("update-page append replaces a handler in place")]
+	[AllureDescription("Uses the real clio MCP server and a dedicated Creatio sandbox to append three handlers (A, X, B), then appends a new version of X only. Reads the page back and proves the new X is stored between A and B and the old X is gone, so an append save does not reorder the schema. The original page body is restored in cleanup.")]
+	public async Task PageUpdateTool_Should_Replace_Handler_In_Place_Through_Append() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		settings.ClioProcessPath = TestConfiguration.ResolveFreshClioProcessPath();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore("AllowDestructiveMcpTests is false — skipping destructive ENG-104715 append regression test.");
+		}
+		string environmentName = await ResolveReachableEnvironmentAsync(settings);
+		await using var arrangeContext = Arrange(TimeSpan.FromMinutes(5));
+		const string savePage = "McpServer_FormPage";
+		const string oldHandlerBody = "handler: async (request, next) => { return next?.handle(request); }";
+		const string newHandlerBody = "handler: async (request, next) => { const result = await next?.handle(request); return result; }";
+		string outputDirectory = Directory.CreateTempSubdirectory("clio-e2e-handler-append-").FullName;
+		string? originalBody = null;
+		try {
+			PageGetResponse original = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+			original.Success.Should().BeTrue(
+				because: $"get-page must load the seeded page before the append regression. Error: {original.Error}");
+			originalBody = await File.ReadAllTextAsync(original.Files.BodyFile);
+			PageUpdateResponse seedResponse = await UpdatePageAsync(arrangeContext, savePage,
+				HandlersFragment(
+					"{ request: \"usr.ClioE2E1827A\", " + oldHandlerBody + " }, " +
+					"{ request: \"usr.ClioE2E1827X\", " + oldHandlerBody + " }, " +
+					"{ request: \"usr.ClioE2E1827B\", " + oldHandlerBody + " }"),
+				environmentName, outputDirectory, mode: "append");
+			seedResponse.Success.Should().BeTrue(
+				because: $"append must save the three seed handlers. Error: {seedResponse.Error}");
+
+			// Act
+			PageUpdateResponse saveResponse = await UpdatePageAsync(arrangeContext, savePage,
+				HandlersFragment("{ request: \"usr.ClioE2E1827X\", " + newHandlerBody + " }"),
+				environmentName, outputDirectory, mode: "append");
+			PageGetResponse readBack = await GetPageAsync(arrangeContext, savePage, environmentName, outputDirectory);
+
+			// Assert
+			saveResponse.Success.Should().BeTrue(
+				because: $"append must save the re-sent handler. Error: {saveResponse.Error}");
+			readBack.Success.Should().BeTrue(
+				because: $"get-page must read the saved page back from Creatio. Error: {readBack.Error}");
+			string readBackBody = await File.ReadAllTextAsync(readBack.Files.BodyFile);
+			Match handlersSection = Regex.Match(
+				readBackBody,
+				@"/\*\*SCHEMA_HANDLERS\*/(?<content>[\s\S]*?)/\*\*SCHEMA_HANDLERS\*/",
+				RegexOptions.CultureInvariant);
+			handlersSection.Success.Should().BeTrue(
+				because: "the read-back body must contain a SCHEMA_HANDLERS marker pair");
+			string handlers = handlersSection.Groups["content"].Value;
+			int indexA = handlers.IndexOf("usr.ClioE2E1827A", StringComparison.Ordinal);
+			int indexX = handlers.IndexOf("usr.ClioE2E1827X", StringComparison.Ordinal);
+			int indexB = handlers.IndexOf("usr.ClioE2E1827B", StringComparison.Ordinal);
+			indexA.Should().BeGreaterThanOrEqualTo(0, because: "the untouched handler A must survive the append");
+			indexB.Should().BeGreaterThan(indexA, because: "the untouched handler B must survive the append after A");
+			indexX.Should().BeInRange(indexA, indexB,
+				because: "the re-saved handler X must stay between A and B instead of moving to the end of the array");
+			handlers.Should().Contain("const result = await next?.handle(request); return result;",
+				because: "the incoming version of handler X must be the one stored");
+			Regex.Matches(handlers, "usr\\.ClioE2E1827X").Count.Should().Be(1,
+				because: "the old version of handler X must be replaced, not kept beside the new one");
+		} finally {
+			if (!string.IsNullOrWhiteSpace(originalBody)) {
+				PageUpdateResponse restore = await UpdatePageAsync(
+					arrangeContext, savePage, originalBody, environmentName, outputDirectory, force: true);
+				restore.Success.Should().BeTrue(
+					because: $"the E2E test must restore the seeded page body. Error: {restore.Error}");
+			}
+			TryDeleteDirectory(outputDirectory);
+		}
+	}
+
+	private static string HandlersFragment(string handlers) =>
+		"define('Issue1827', /**SCHEMA_DEPS*/[]/**SCHEMA_DEPS*/, " +
+		"function(/**SCHEMA_ARGS*//**SCHEMA_ARGS*/) { return { " +
+		"viewConfigDiff: /**SCHEMA_VIEW_CONFIG_DIFF*/[]/**SCHEMA_VIEW_CONFIG_DIFF*/, " +
+		"viewModelConfigDiff: /**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/[]/**SCHEMA_VIEW_MODEL_CONFIG_DIFF*/, " +
+		"modelConfigDiff: /**SCHEMA_MODEL_CONFIG_DIFF*/[]/**SCHEMA_MODEL_CONFIG_DIFF*/, " +
+		"handlers: /**SCHEMA_HANDLERS*/[" + handlers + "]/**SCHEMA_HANDLERS*/, " +
+		"converters: /**SCHEMA_CONVERTERS*/{}/**SCHEMA_CONVERTERS*/, " +
+		"validators: /**SCHEMA_VALIDATORS*/{}/**SCHEMA_VALIDATORS*/ }; });";
+
+	[Test]
 	[Description("ENG-91317 ticket scenario: get-page captures a checksum baseline, an out-of-band save changes the schema, update-page detects the conflict (verifying SysSchema.Checksum is bumped on save — risk A-01), recovery via get-page + retry succeeds, and force=true overwrites deliberately.")]
 	[AllureTag(ToolName)]
 	[AllureName("update-page detects out-of-band schema modification via checksum baseline and recovers")]
@@ -2022,6 +2108,8 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 				because: $"the key is supplied in `resources`, so the save must go through. Error: {registeringSave.Error}");
 			registeringSave.RegisteredResourceKeys.Should().Contain(persistedKey,
 				because: "the response must report the key it persisted on the schema for the omission below to be meaningful");
+			registeringSave.ResourcesUpdated.Should().Be(0,
+				because: "a newly registered key is counted as registered, never also as updated");
 			registeringSave.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
 				because: "the real MCP response must warn about a stale workspace push");
 
@@ -2036,6 +2124,10 @@ public sealed class PageUpdateToolE2ETests : McpContractFixtureBase {
 			AllureApi.Step("Existing caption updates without registering another key", () => {
 				updated.Success.Should().BeTrue(because: "native SaveSchema must accept the changed value");
 				updated.ResourcesRegistered.Should().Be(0, because: "updating a value preserves declaration identity");
+				updated.ResourcesUpdated.Should().Be(1,
+					because: "GitHub #1850: a changed value of an existing key must be reported as applied, not as resourcesRegistered: 0 alone");
+				updated.UpdatedResourceKeys.Should().Equal([persistedKey],
+					because: "the response must name the key whose value the save changed");
 				updated.Warnings.Should().Contain(PageUpdateCommand.ResourceWorkspaceCaptureWarning,
 					because: "value updates need the same capture warning as new keys");
 			});

@@ -52,8 +52,10 @@ internal sealed class ODataPreWriteStand : IAsyncDisposable {
 	/// </summary>
 	/// <param name="preWriteMode">
 	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteMetadata"/>,
-	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteEmptyRecord"/> or
-	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteUnverified"/>.
+	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteStallPatch"/>,
+	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteEmptyRecord"/>,
+	/// <see cref="RuntimeDetectionStubServer.ODataPreWriteUnverified"/> or
+	/// <see cref="RuntimeDetectionStubServer.ODataCreateModelValidationRejected"/>.
 	/// </param>
 	/// <param name="entity">OData entity set the stub serves.</param>
 	/// <returns>The started stand; dispose it to tear everything down.</returns>
