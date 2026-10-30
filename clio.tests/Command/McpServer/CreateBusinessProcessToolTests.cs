@@ -199,7 +199,7 @@ public class CreateBusinessProcessToolTests {
 
 		// Assert
 		toolDescription.Should().Contain("attachments? (files the email SENDS, one row per entry, each exactly one of processParameter | "
-				+ "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email)",
+				+ "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email-attachments)",
 			because: "the email shape is where an agent learns the member, its entry shape and the guide to read for it");
 		prompt.Should().Contain("`performer`, and `attachments` - the files the email sends, one entry per attachment row",
 			because: "the prompt's Send email sentence must name the member beside the other email fields");

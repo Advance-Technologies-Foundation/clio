@@ -97,7 +97,7 @@ public static class ModifyBusinessProcessPrompt {
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
 		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
-		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email`),
+		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights
 		 element's `accessRights` block (a partial update: a supplied `add`/`remove` REPLACES that whole collection
 		 and `[]` clears it — clearing ONE is safe only while the other still holds an entry, since an element

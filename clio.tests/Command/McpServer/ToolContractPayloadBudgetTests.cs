@@ -308,10 +308,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ceiling: create 34994, modify 35002, describe 35029 - 78, 70 and 43 bytes of headroom. The final review restored
 	// two data-loss caveats in a short form: modify's "to template it clears Body and a constant Subject not re-sent"
 	// (+55) and create's "a process parameter, inserted WHOLE: no column drill" (+27). Re-measured by lowering the
-	// ceiling: create 35021, modify 35057, describe 35029 - 51, 15 and 43 bytes of headroom. The pointers still name
-	// the interim process-send-email: CL-6 renames both to process-send-email-attachments once clio-knowledge#307 is
-	// published (+12 bytes each, create 35033 and modify 35069), so that headroom is spoken for - see
-	// docs/knowledge/McpServer/process-tool-descriptions-point-at-process-send-email-until-the-attachments-guide-is-published.md.
+	// ceiling: create 35021, modify 35057, describe 35029 - 51, 15 and 43 bytes of headroom. Both pointers then moved
+	// from process-send-email to the attachments guide, process-send-email-attachments (guidance 1.15.176, +12 bytes
+	// each). Re-measured by lowering the ceiling: create 35033, modify 35069, describe 35029 - 39, 3 and 43 bytes of
+	// headroom, so anything added to modify-business-process now has to be paid for by a trim.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

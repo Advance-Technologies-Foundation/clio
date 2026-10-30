@@ -219,7 +219,7 @@ public class CreateBusinessProcessTool(
 		 + "referenceSchema:<ObjectName> when it references a record, e.g. a fixed Contact)}), "
 		 + "importance?:none|normal|high|low (the designer labels normal as \"Medium\"), ignoreErrors?, "
 		 + "attachments? (files the email SENDS, one row per entry, each exactly one of processParameter | "
-		 + "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email), "
+		 + "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email-attachments), "
 		 + "performer? (manual mode only — who performs the task: "
 		 + "{type:user|manager|role, contact? (a formula; defaults to the current user's contact), role? (a "
 		 + "SysAdminUnit role name or record id, required for type:role), showPage?})}), "
