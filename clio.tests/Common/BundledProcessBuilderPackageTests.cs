@@ -70,7 +70,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>768f666c</c>, tagged
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>22b68c9f</c>, tagged
 	/// <c>crtprocessbuilder-1.6.6.130</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
 	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
 	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
@@ -103,18 +103,22 @@ public class BundledProcessBuilderPackageTests {
 	/// Files input; a sent source that cannot be judged is refused (an Object source on a missing object, a Generated
 	/// report whose printable names no object, a printable that is not found); notices for the files handed into a
 	/// Sub-process and for an attachment whose files the caller decides; describe and the sweep walk an attachment's
-	/// sources one way; and a stored attachment formula is matched in the spelling the formula check writes.
+	/// sources one way; a stored attachment formula is matched in the spelling the formula check writes; a Formula
+	/// result into an attachment slot blocks the slot's removal; hand-offs inside event and expanded sub-processes
+	/// are followed; a source nested in an event or expanded sub-process is judged too and, when it is unscoped,
+	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; and a save whose
+	/// nested elements cannot be read is refused when an email sends attachments.
 	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128,
 	/// 1.6.6.129 or 1.6.6.130 changes the write contract. What earlier cuts carried is in this file's git history rather than
 	/// here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5123 passed,
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5150 passed,
 	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> (run by hand on the producing checkout, step 1 of the hand
 	/// cut) -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The inventory was checked on the extracted archive: 311
+	/// security counts below exist to catch. The inventory was checked on the extracted archive: 312
 	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
 	/// that executes on install.
 	/// </para>
@@ -195,7 +199,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"948F42948A3726604051D0D4106C4BCCBF51C7D3D166A675AF9B8515335F59CC";
+		"E9C90240B48A85FDC1FBC562C88E57602860081D385D808B47133322183D49CD";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -238,7 +242,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "768f666c0f03ea930465cbea9e85140a93068ee2";
+	private const string ExpectedProducingCommit = "22b68c9f95b3e9bee059d5528962149b4bd70212";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -264,7 +268,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793362066000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793370369000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
