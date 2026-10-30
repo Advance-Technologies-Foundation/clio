@@ -3,7 +3,7 @@
 Written 2026-10-28. Phase 1 only: research, design and plan. As of the plan (2026-10-28), no product code had been
 written and nothing had been written to the stand, Jira, GitHub or GHE. The owner agreed all twenty decisions on 2026-10-28 (decisions file).
 
-Jira: ENG-95985 "Send email attachments" (Story, epic ENG-92704 "Create BP via AI Toolkit", In Progress, sprint
+Jira: ENG-95985 "Send email attachments" (Story, epic ENG-92704 "Create BP via AI Toolkit", sprint
 "BPMS Tools 351"). Its blockers are closed: ENG-92719 "File processing element" (with ENG-95984, ENG-96505, ENG-96506,
 ENG-103937) and ENG-95986 "Support template message mode in the Send Email element".
 

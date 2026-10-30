@@ -24,7 +24,7 @@ clio repository root.
 
 | Class | Where | Ids | Count |
 |---|---|---|---|
-| **TC-U** | package unit tests (PBT) | TC-U-01..TC-U-90, plus TC-U-78a, 78b, 78c; TC-U-42 and TC-U-48 are removed rows (Q9) | 91 live |
+| **TC-U** | package unit tests (PBT) | TC-U-01..TC-U-92, plus TC-U-78a, 78b, 78c; TC-U-42 and TC-U-48 are removed rows (Q9) | 93 live |
 | **TC-P** | package parity tests (PBT) | TC-P-01..TC-P-09 | 9 |
 | **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-23 | 23 |
 | **TC-I** | clio MCP e2e (`clio.mcp.e2e/SendEmailAttachmentsToolE2ETests.cs`, on stand `Creatio`) | TC-I-01..TC-I-10 | 10 |
@@ -58,7 +58,7 @@ of them).
 | **Q10** mapping FROM a slot refused, a Formula body too | TC-U-51, 83 | - | - | - | - | - | - |
 | **Q11** describe shape | TC-U-59..66 | - | TC-C-03, 09..11 | TC-I-01, 06, 09 | TC-K-04 | EM2 | TC-10 |
 | **Q16** multi-instance Send email refused | TC-U-80, 81 | - | - | - | TC-K-13 | EM8, EM11 | - |
-| **Q20** unscoped Process file source refused | TC-U-78, 78a, 78b, 78c, 84..86, 89 | - | - | TC-I-04 | TC-K-06 | - | - |
+| **Q20** unscoped Process file source refused; Sub-process hand-offs noticed | TC-U-78, 78a, 78b, 78c, 84..86, 89, 91, 92 | - | - | TC-I-04 | TC-K-06 | - | - |
 | **G3** modify-as-new-version keeps the slots owned | TC-U-71 | - | TC-C-06 | TC-I-08 | - | EM13 | - |
 
 ## TC-U - package unit tests (PBT)
@@ -79,6 +79,7 @@ element's `WriteMetaData` bytes. Run on `-c dev-nf` and `-c dev-n8`.
 | Describe (C7, Q11, Q16) `SendEmailAttachmentsDescribeTests` | TC-U-59..66, 75, 81, 82 | write-shape entries with `slot` and `bindingLevels`; stored (designer) order, not slot number (revised 2026-10-29); null when none; `configured`; describe -> replay writes nothing; one issue per stored shape; no false alarm on the package's own shapes; non-slots ignored; generic `parameters[]` does not decode any name `IsReservedName` matches (also a foreign-stamped `Attachments2` and the near-miss `attachments1`); multi-instance element reported with an issue |
 | C2 refactor proof `FileSourcePlannerCharacterizationTests` | TC-U-67, 68 | every `fileProcessing.files` message pinned verbatim BEFORE the lift and unchanged after it; the planner speaks in the caller's terms |
 | Reuse round: stored filter read as the run time reads it, flags, formula body, consolidation pins | TC-U-83..90 | a Formula body reading a slot refused; `$id`/`$ref`, shared trees and (Object) unmarked filters unreadable; a disabled item in any spelling selects nothing; a negated or OR scope never lifted; refusal wording for an ungenerated printable |
+| Sub-process and Formula hand-offs (decisions Q20, 2026-10-30) `SendEmailAttachmentsSweepTests`, `SendEmailAttachmentsNoticeTests` | TC-U-91, 92 | a Formula element result onto a Process parameter element's `Files` input is followed by the end-of-request sweep (unscoped refused, scoped sent); files passed into a Sub-process `In`/`Variable` parameter from an unscoped source, and a slot reading an `In`/`Variable` parameter, get a notice on each side and save |
 | Contract, DI, clone (existing fixtures) | TC-U-69..72 | wire names of the new members; DI graph resolves; the version clone keeps the slots owned; every fixture carries a CI category |
 
 ## TC-P - package parity tests (PBT)

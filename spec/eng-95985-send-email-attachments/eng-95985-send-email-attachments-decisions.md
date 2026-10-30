@@ -535,6 +535,18 @@ Scope and mechanism agreed with it:
   that can change after the parent is built, so no build-time check can hold. Such an entry gets a notice instead
   (P-C4): the builder cannot see what the sub-process reads, the files are read with rights disabled and sent outside
   Creatio, so the sub-process must read scoped records only.
+- **Files handed across a Sub-process boundary: a notice on each side, not a refusal (owner's choice 2026-10-30).**
+  A parent that maps files from an unscoped Process file source (Object attachments or Generated report with no
+  record scope and no selecting filter) into a Sub-process `In` or `Variable` parameter gets a notice: the called
+  process may email them, so scope the source. A Send email slot that reads an `In`/`Variable` process parameter gets
+  a notice: the caller decides which files arrive, and they are sent outside Creatio. Neither is refused, for the
+  reason the sub-process output is not: the callee is another schema, and the caller too, and either can change
+  after this one is built, so a build-time check of one schema cannot hold.
+- **A Formula element result onto a Process parameter element's `Files` input is followed by the sweep (fixed
+  2026-10-30).** The sweep followed the Process parameter variant's `Files` -> `ObjectFiles` hand-off only through a
+  stored mapping value, so a Formula element whose result targets that input handed unscoped files on unchecked. The
+  input is now followed as the element parameter it is, Formula results onto it included, and such a source is
+  refused at the end of the request like any other hand-off (test plan TC-U-91).
 - **Every request is judged (owner's choice 2026-10-29).** The end-of-request sweep over every Send email of the final
   schema runs on EVERY build, modify and version save, not only on a request that writes an attachment or a file
   hand-off. Consequence, accepted: a designer-built process whose email already sends files from an unscoped source is

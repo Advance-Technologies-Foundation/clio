@@ -4976,7 +4976,8 @@ stories:
     feature: "eng-95985-send-email-attachments"
     repo: "crt-process-builder + clio-knowledge + clio"
     size: L
-    status: in-progress
+    # review since 2026-10-29: the clio feature PR is open (draft); done only after the last merge.
+    status: review
     jira: ENG-95985
     file: spec/stories/story-eng-95985-send-email-attachments-1.md
     prd: spec/prd/spec-eng-95985-send-email-attachments.md

@@ -91,7 +91,7 @@ Rejected:
 - **B. A flow REFUSAL.** Cheap over `Traverse`, but wrong as a refusal: a source on another gateway branch can reach
   the email and still not run, and a loop can make an "after" source run first, so reachability is a hint, not a proof.
 
-### D4 (Q8, with Q10). Every non-block mapping onto a slot is refused; mapping FROM a slot is refused
+### D4 (Q8, with Q10). Every non-block mapping onto a slot is refused; mapping FROM a slot, or a Formula body reading one, is refused
 
 In `ProcessMappingService.Plan`, in a NEW `if (!fromBlock)` block placed first, before `ResolveTargetParameter`
 (`PB/Mappings/ProcessMappingService.cs:135`), a target on a Send email element (found by the name-only owner lookup
@@ -105,6 +105,14 @@ paths (`:110`, `:705`); it sits there, not inside `ResolveStructuredSource`, bec
 the Send email identity needs a `UserConnection`. This also covers `BindCollectionItems`, whose target is a process
 parameter and never a slot. `TakesFiles` does not change.
 Precedent: a raw mapping onto a block-owned Process file parameter is already refused, naming the block member.
+
+A Formula element BODY that reads a slot or its item is refused too (Q10 addendum, agreed 2026-10-30), with the same
+sentence after "The body of the formula element '<name>' is refused: ". `ProcessFormulaTaskApplier` scans the
+expanded, bounded body with `EmailAttachmentSlot.TryFindSlotReadBy` before it writes the body, and a scan that does
+not finish in time is refused (fail closed); every route that writes a body (build, `addElement`, `setElement`)
+passes this applier. The body was the one write route left open: the designer's mapping picker hides element `In`
+parameters, and the platform's pre-save gate does not read a Formula body, which is not a parameter value. A Script
+task body stays unchecked: it is C# code.
 
 Rejected:
 - **B. Widen `CollectionBindingRules.TakesFiles`** so the pairing rule binds the item and the fileless-source rule
@@ -154,11 +162,29 @@ Rejected:
   first recommendation.)
 - **Q20 - an unscoped Process file source is refused.** Object attachments with no record scope and no selecting
   filter, and Generated report with no selecting filter, are refused as attachment sources, through the existing
-  ENG-92719 File processing element D16 machinery: the applier tracks every Process file source in the request's `IFileProcessingFilterLedger`,
-  `ObjectFileProcessingEmptyFilterRule` also refuses an unscoped element that a Send email slot reads whatever its
-  action, and `FileProcessingFilterLedger.EnsureSelectingFilters` judges at the END of the request, so operation order
-  in a batch does not matter. Reason: the run time reads attachment files with rights disabled and sends them outside
-  the system, and the designer has no such check.
+  ENG-92719 File processing element D16 machinery: `ObjectFileProcessingEmptyFilterRule` also refuses an unscoped
+  element that a Send email sends whatever its action, and `ReportFileProcessingEmptyFilterRule` one whatever its
+  printable type. Reason: the run time reads attachment files with rights disabled and sends them outside the system,
+  and the designer has no such check. As built (design 4.9, 4.10):
+  - **An end-of-request sweep over the final schema, on EVERY save.** `FileProcessingFilterLedger.EnsureSelectingFilters`
+    runs at the END of every build, modify and version save, not only on a request that writes an attachment, and
+    sweeps every Send email slot of the FINAL schema, following the path the files take inside it: process
+    parameters, `[Parameter:]` segments in formulas, element parameters' stored values (the Process parameter
+    variant's `Files` -> `ObjectFiles` among them, a Formula element result onto that `Files` input included) and
+    Formula element results. An undecodable value fails closed. So the order of operations in a batch does not
+    matter, and a later `setFilter` / `clearFilter` that leaves an emailed source unscoped is refused too.
+  - **The stored filter read as the run time reads it.** The sweep deserializes a source's stored filter into the
+    platform's `Filters` data-contract model (`Terrasoft.Common.Json.Json.Deserialize`, as `ProcessFilterFactory`
+    does), not with a hand-written walk. It fails closed on text carrying `$id`/`$ref` metadata, on a tree that is not
+    a bounded tree (a shared or repeated item, over the item budget), and, for Object attachments only, on text
+    without the data-contract marker, which the Object run time reads with its legacy reader.
+  - **Accepted consequence (agreed 2026-10-29).** A designer-built process whose email already sends an unscoped
+    source is refused on its next save through the tool, of any kind, until the source is scoped or the attachment
+    removed; the refusal names the element, the email and the remedy.
+  - **Notices, not refusals.** A slot that reads a Sub-process output, files passed INTO a Sub-process from an
+    unscoped source, and a slot that reads an `In`/`Variable` process parameter (owner's choice 2026-10-30): the
+    other side is another schema that can change after this one is built, so each side gets a notice. A filter that
+    selects something but spans every record (file name only) passes: that is the user's intent.
 
 ## Consequences
 

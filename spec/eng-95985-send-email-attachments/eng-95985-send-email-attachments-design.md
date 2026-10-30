@@ -342,9 +342,11 @@ line (section 7).
   - `FileProcessingFilterLedger.EnsureSelectingFilters` runs at the END of EVERY request (build, modify, version save)
     and sweeps every Send email slot of the FINAL schema (`EmailAttachmentSources`), following the path the files take:
     process parameters, `[Parameter:]` segments in formulas, element parameters' stored values (the Process parameter
-    variant's `Files` -> `ObjectFiles` among them), Formula element results; an undecodable value fails closed. Every
-    Process file element reached is judged; a sub-process OUTPUT is not followed and gets a notice (decisions Q20,
-    "Indirect sources");
+    variant's `Files` -> `ObjectFiles` among them, a Formula element result onto that `Files` input included, fixed
+    2026-10-30), Formula element results; an undecodable value fails closed. Every Process file element reached is
+    judged; a sub-process OUTPUT is not followed and gets a notice (decisions Q20, "Indirect sources"), and so, on
+    each side, do files passed INTO a Sub-process `In`/`Variable` parameter from an unscoped source and a slot that
+    reads an `In`/`Variable` process parameter (owner's choice 2026-10-30): the other side is another schema;
   - `ObjectFileProcessingEmptyFilterRule.Judge` refuses an unscoped element that a Send email sends whatever its action
     (today it refuses only a saving one); `ReportFileProcessingEmptyFilterRule` refuses an unscoped one whatever its
     printable type, and fails closed on a printable it cannot read;
@@ -376,6 +378,10 @@ PR, behaviour-preserving except where stated:
   `"IsNot":true` was lifted and rewritten as a positive scope). Measured on the PackageStore corpus: no stored
   filter reads differently (1,479 texts, 2026-10-30).
 - **Formula element body** reading a slot is refused (4.5, Q10 addendum).
+- **Formula into a `Files` input.** A Formula element result onto a Process parameter element's `Files` input is
+  followed by the Q20 sweep (4.9; fixed 2026-10-30, TC-U-91); before, those files reached `ObjectFiles` unchecked.
+- **Sub-process hand-off notices.** Files passed into a Sub-process from an unscoped source, and a slot reading an
+  `In`/`Variable` parameter, get a notice on each side, not a refusal (4.9, decisions Q20; TC-U-92).
 - **Wording.** A Q20 refusal for a printable the run time does not generate (neither MS Word nor FastReport) no
   longer says it reports on every record.
 - **Consolidation.** One body for the slot-as-source refusal; parameter walks at any depth through the element
@@ -470,8 +476,9 @@ Edits elsewhere: `files.md` (the sentence "Send email attachments ... are not bu
 every declared process article), `bundle-source.json` (resource with NO `legacyUris`, `requirements.itemIds` and
 `resourceUris`, the `process-send-email` AND `process-modeling` entry descriptions, `libraryVersion` above master and
 every open branch claim; the `sequence` is derived from `libraryVersion` at build time and an authored `sequence` field
-is refused, `KB/CONTRIBUTING.md:166-171`, `GenerationSequenceTests.RepositoryManifest_ShouldNotDeclare_AnAuthoredSequence`), `GuidanceMigrationTests` (`PostMigrationGuidance` gains the new name). Tests: `SendEmailGuidanceTests` (contract, order rule,
-the feature troubleshooting line, retired-claim sweep), size gates. Every claim is fact-checked by refute-first agents that may not cite
+is refused, `KB/CONTRIBUTING.md:166-171`, `GenerationSequenceTests.RepositoryManifest_ShouldNotDeclare_AnAuthoredSequence`), `GuidanceMigrationTests` (`PostMigrationGuidance` gains the new name). Tests: `SendEmailAttachmentsGuidanceTests` (its `Guide_Should*`
+methods: contract, order rules, the feature troubleshooting line, the design target;
+`NoArticleOrDescription_ShouldClaimSendEmailAttachmentsAreNotBuildable`: the retired-claim sweep), size gates. Every claim is fact-checked by refute-first agents that may not cite
 our own records (owner rule) before the PR leaves draft.
 
 ## 8. What is deliberately not built
