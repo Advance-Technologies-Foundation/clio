@@ -531,8 +531,10 @@ public static class EmailBlockExpectation {
 	/// carried BEFORE the edit (by source, as describe decodes it) that it no longer carries after it. A row whose
 	/// source the list still names is not counted, even when the server rebuilt it in its own shape. A row whose slot
 	/// and source both survive is matched first, so with two rows of one source the removed slot is the one named. An element the
-	/// before-read cannot show (added by this batch, or an unreadable before-read) is not reported. Two lists that
-	/// name one element two ways count once, as the list sent last.
+	/// before-read cannot show (added by this batch, or an unreadable before-read) is not reported, and neither is one
+	/// the batch removed and added again under the same name: the before-read and the read-back then report different
+	/// UIds, the rows the old element carried went with it, and the server matches by UId, so it reports no removal
+	/// either. Two lists that name one element two ways count once, as the list sent last.
 	/// </summary>
 	/// <param name="before">The description read before the write, or null when that read failed.</param>
 	/// <param name="described">The description read back after the successful write.</param>
@@ -545,10 +547,10 @@ public static class EmailBlockExpectation {
 
 		List<RemovedAttachments> removed = [];
 		foreach ((SentAttachments list, DescribedElement? element) in LastPerElement(described, sent)) {
-			List<DescribedEmailAttachment>? had =
-				BlockExpectationJson.ResolveElement(before, list.Element)?.Email?.Attachments;
+			DescribedElement? previous = BlockExpectationJson.ResolveElement(before, list.Element);
+			List<DescribedEmailAttachment>? had = previous?.Email?.Attachments;
 			DescribedEmail? after = element?.Email;
-			if (had is not { Count: > 0 } || after is null) {
+			if (had is not { Count: > 0 } || after is null || IsReplacedElement(previous, element)) {
 				continue;
 			}
 			List<DescribedEmailAttachment> gone = Gone(had, after.Attachments ?? []);
@@ -559,6 +561,14 @@ public static class EmailBlockExpectation {
 
 		return removed;
 	}
+
+	// True when the before-read and the read-back resolve the caller's name to two DIFFERENT elements: the batch removed
+	// the element and added a new one under the same name. Both UIds must be present to tell; a missing one keeps the
+	// comparison, which is what it did before UIds were read here.
+	private static bool IsReplacedElement(DescribedElement? previous, DescribedElement? current) =>
+		!string.IsNullOrWhiteSpace(previous?.Uid)
+		&& !string.IsNullOrWhiteSpace(current?.Uid)
+		&& !string.Equals(previous.Uid.Trim(), current.Uid.Trim(), StringComparison.OrdinalIgnoreCase);
 
 	// The before-rows the after-rows do not account for. A row whose slot AND source both survive is cancelled first;
 	// only the rest is matched by source alone. Describe lists rows in stored order, not slot order, so with two rows

@@ -849,6 +849,42 @@ public class EmailBlockExpectationTests {
 		warning.Should().BeNull(because: "a fresh element that was sent no list has no attachments to miss");
 	}
 
+	[Test]
+	[Description("A batch that removes a Send email element and adds a new one under the same name WITH an attachments list reports no replace-rule removal: the before-read and the read-back resolve the name to two different UIds, so the old element's rows went with the element and are not compared with the new element's. The same lists on one surviving element still report the removal.")]
+	public void Removed_ShouldReportNoRemoval_WhenTheBatchRemovesAndAddsTheElementAgainWithAList() {
+		// Arrange
+		const string operations = """
+			[{"op":"removeElement","elementName":"SE1"},
+			 {"op":"addElement","element":{"name":"SE1","type":"sendEmail","email":{"attachments":[{"processParameter":"C"}]}}}]
+			""";
+		DescribeProcessResult before = WithAttachments("SE1", Row("Attachments1", processParameter: "Old"),
+			Row("Attachments2", processParameter: "Older"));
+		DescribeProcessResult after = WithAttachments("SE1", Row("Attachments1", processParameter: "C"));
+		DescribeProcessResult sameElementAfter = WithAttachments("SE1", Row("Attachments1", processParameter: "C"));
+		before.Elements[0].Uid = "5c58c4c4-134b-4744-9c67-96d9c69c9d55";
+		after.Elements[0].Uid = "0f1d2c3b-4a59-4687-9e0d-1c2b3a495867";
+		sameElementAfter.Elements[0].Uid = "5C58C4C4-134B-4744-9C67-96D9C69C9D55";
+
+		// Act
+		IReadOnlyList<EmailBlockExpectation.SentAttachments> sent =
+			EmailBlockExpectation.AttachmentElementsFromOperations(operations);
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> replaced =
+			EmailBlockExpectation.Removed(before, after, sent);
+		IReadOnlyList<EmailBlockExpectation.RemovedAttachments> surviving =
+			EmailBlockExpectation.Removed(before, sameElementAfter, sent);
+
+		// Assert
+		sent.Should().ContainSingle(because: "the addElement sends the one list the new element carries")
+			.Which.Entries.Should().HaveCount(1, because: "that list has one entry");
+		replaced.Should().BeEmpty(
+			because: "the element the batch ends with is a different element, so the old element's rows were not removed by the replace rule");
+		EmailBlockExpectation.BuildRemovedAttachmentsWarning(replaced).Should().BeNull(
+			because: "no replace-rule removal line is emitted for rows that left with the removed element");
+		surviving.Should().ContainSingle(
+				because: "when the read-back reports the same UId, in any casing, the element survived and lost its two rows")
+			.Which.Count.Should().Be(2, because: "both rows the list did not name are counted");
+	}
+
 	[TestCase("removeElement", 0)]
 	[TestCase("addElement", 1)]
 	[Description("A removeElement forgets the list sent earlier for that element, and an addElement of the same name replaces it with the list its own element carries: after removeElement nothing is tracked, after an addElement that sends one entry exactly that entry is.")]
