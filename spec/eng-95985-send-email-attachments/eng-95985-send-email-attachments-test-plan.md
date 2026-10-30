@@ -501,7 +501,7 @@ Procedures, gates, expected results and cleanup: measurements file. Every write 
 | EM7 | real delivery on stand `Creatio`, once the owner says its mailbox works: auto + custom, auto + template, and the Create activity variant that leaves ActivityFile rows | AC4, Q17 | DoD AC4 with EM4 and EM5; until EM7 runs, auto mode rests on the unit tests and the shared run-time path |
 | EM8 | single File: set -> one file; unset -> element error | Q3, Q16 | TC-U-11, TC-U-43, TC-K-06, TC-K-13; failure flips Q3 to B |
 | EM9 | outer-only slot: loud or silent | Q8 | TC-U-64 row 1 wording; the article's troubleshooting line |
-| EM10 | unexecuted source -> 0 files, no error | AC6, Q6 | TC-K-03; the reachability warning's consequence clause (TC-U-77) |
+| EM10 | unexecuted source -> 0 files, no error (collection); the element fails (single File) — measured 2026-10-30 | AC6, Q6 | TC-K-03; the reachability warning's consequence clause (TC-U-77) |
 | EM11 | one collection -> two emails; `removeElement` of the source | AC2, Q16 | a follow-up only if the platform saves a dangling reference green |
 | EM12 | (removed: Q9 agreed 2026-10-28) | - | - |
 | EM13 | modify-as-new-version: the clone's slots attach at run time | G3 | TC-U-71, TC-I-08 shape side |

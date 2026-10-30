@@ -195,7 +195,7 @@ Plan section 9, as checkboxes. Ticked only when true.
   variant with its `ActivityFile` rows by real delivery (EM7), all on stand `Creatio` after the owner configures mail
   sending there (Q17).
 - [ ] **AC5** every refusal of design section 5.1 has a unit test, and the e2e refusal test shows nothing was created.
-- [ ] **AC6** the article states both order rules with EM10's measured result; build-path guard tested.
+- [x] **AC6** the article states both order rules with EM10's measured result; build-path guard tested. (EM10 measured 2026-10-30, measurements file.)
 - [ ] **AC7** parity patterns A, B, C green against the corpus and EM1; tests, docs, MCP surface updated; e2e on stand
   with Ignored = 0.
 - [ ] Every TC-U, TC-P, TC-C, TC-I and TC-K row of the test plan implemented and green (TC-U-42 and TC-U-48 are removed

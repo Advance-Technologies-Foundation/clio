@@ -142,7 +142,7 @@ Run the whole `automation/Clio.Knowledge.Bundle.Tests` project.
 |---|---|
 | TC-K-01 | the new article owns the block and carries the real floor; the entry article routes to it |
 | TC-K-02 | `email.attachments` (files the email sends) kept apart from `fileProcessing.attachments` (files a Process file element reads) in both articles |
-| TC-K-03 | both order rules, with EM10's measured result |
+| TC-K-03 | both order rules, with EM10's measured result (the dated record is in the measurements file, EM10) |
 | TC-K-04 | the replace rule and the describe-before-send recipe |
 | TC-K-05 | the `UseProcessEmailAttachments` troubleshooting line (Q9), and no claim of a build-time check |
 | TC-K-06 | run-time facts: four combinations, manual activity, system rights (Q20), report is a Word file |

@@ -752,6 +752,21 @@ NullReferenceException (`ProcessInstanceParametersDataReader.cs:481-487`; `Compo
 
 **Cleanup and leftovers:** CU-1, CU-2 (2 Activities), CU-3 for the three processes.
 
+**Measured 2026-10-30** on stand `Creatio` (CrtProcessBuilder 1.6.6.130, CrtProcessDesigner 7.8.0); all probes built
+with the builder (its slots equal the designer's, EM2/EM3); D1 = a contact with 2 files:
+
+| Probe | Result | Tag |
+|---|---|---|
+| EM10a, OF1 on the untaken branch (`PTake` = false), merge -> SE1 manual | OF1 has no element log (did not run); the email Activity is created with **0 `ActivityFile` rows and no error**; the run parks on SE1. Build raised no reachability warning (OF1 reaches SE1 through the merge) | [measured] |
+| EM10b, Start -> SE1 manual -> OF1, OF1 declared first | build AND a `setElement` re-sending the same list (row kept, checksum unchanged) both return the reachability warning, word for word: "Send email 'SE1': email.attachments[0] reads 'OF1', which does not lie on a path before 'SE1'. If 'OF1' has not run when the email runs, the email goes out without these files and without an error." The run creates the Activity with **0 files and no error**; OF1 ran only after the activity was closed | [measured] |
+| EM10c (added), a single File source that has not run (a Sub-process File output read by an email placed before the Sub-process) | the run **fails the element**: `System.NullReferenceException` in `FileFactory.CreateFileInstance` <- `EmailTemplateUserTask.GetEmailAttachment`; no Activity, process in Error. The build's single-File notice ("If 'SP1.Doc' is empty when the email runs, the element fails") is right; the reachability warning in the same answer ("without an error") is not, for a single File | [measured] |
+
+Consequence: the guide's rule ("a collection source that has not run sends no files and no error; a single File ... that
+has not run is empty, so the element fails") matches both measurements. The reachability warning's consequence clause
+is right for a collection and wrong for a single File source (one clause for every source kind); the single-File notice
+of the same answer states the failure. Leftovers: the three runs' `SysProcessLog` rows (statuses rewritten to Canceled by
+the schema deletes); processes, activities and files removed.
+
 ### EM11 One collection, two emails; removing the source
 
 | | |
