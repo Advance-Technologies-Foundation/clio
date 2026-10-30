@@ -70,7 +70,7 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>22b68c9f</c>, tagged
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>7f01899f</c>, tagged
 	/// <c>crtprocessbuilder-1.6.6.130</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
 	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
 	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
@@ -106,13 +106,14 @@ public class BundledProcessBuilderPackageTests {
 	/// sources one way; a stored attachment formula is matched in the spelling the formula check writes; a Formula
 	/// result into an attachment slot blocks the slot's removal; hand-offs inside event and expanded sub-processes
 	/// are followed; a source nested in an event or expanded sub-process is judged too and, when it is unscoped,
-	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; and a save whose
-	/// nested elements cannot be read is refused when an email sends attachments.
+	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; a save whose
+	/// nested elements cannot be read is refused when an email sends attachments; and the reachability warning states
+	/// the consequence by the entry's source kind - a single File source that has not run fails the element.
 	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128,
 	/// 1.6.6.129 or 1.6.6.130 changes the write contract. What earlier cuts carried is in this file's git history rather than
 	/// here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5150 passed,
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5152 passed,
 	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> (run by hand on the producing checkout, step 1 of the hand
 	/// cut) -
 	/// measured on this cut, not carried over from a
@@ -199,7 +200,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"E9C90240B48A85FDC1FBC562C88E57602860081D385D808B47133322183D49CD";
+		"EF864FCA2EA818A6E5BD850A31D3054005491A281F7BD0CE9D858EE7ECDEE5B2";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -242,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "22b68c9f95b3e9bee059d5528962149b4bd70212";
+	private const string ExpectedProducingCommit = "7f01899f380a35222d6de506bb1af2cd4ba8fddd";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -268,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793370369000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793381293000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
