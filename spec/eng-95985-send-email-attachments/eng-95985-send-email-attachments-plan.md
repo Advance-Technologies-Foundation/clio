@@ -189,7 +189,7 @@ with the inspected Ring paths; the re-measured budgets; the `Validated:` command
   commit `crtprocessbuilder-<version>` and push the tag; rebuild clio afterwards (an install reads the archive from the
   build output, and a running e2e locks `clio/bin`).
 - Expected cuts: 3-5: experimental (slice B), mid (claimed after gate 1), final, plus a review-round or foreign-cut
-  re-cut (estimate 4.2). Superseded numbers are marked in the claim comment, never reused.
+  re-cut. Superseded numbers are marked in the claim comment, never reused.
 - Every install on stand `Creatio` needs the owner's explicit yes: it restarts the site for every user. A reviewer
   whose clio bundles a cut NEWER than the stand is refused by convergence until the stand is brought up
   (`CLIO/clio/Common/BundledPackageConvergence.cs`: no refusal when the installed version is at or ahead of the

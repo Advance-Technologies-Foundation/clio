@@ -267,17 +267,10 @@ gets the feature's `DefaultState` (`TS/Terrasoft.Core/FeatureToggling/DbFeatureP
 feature's package data does not set; option A below would have needed a reader that asks for the current user, and
 none is built (design 4.8). [source] [measured]
 
-**History of the toggle (researched 2026-10-28 at the owner's request; SVN `PackageStore/CrtProcessDesigner`, Jira).**
-- Added 2020-11-19 (r194794) with the feature itself, task CRM-58692 "Реализовать возможность прикреплять вложенные
-  файлы к письмам ... элемента «Отправить email»" (epic ENG-64351), and switched ON six days later, 2020-11-25 (r195148,
-  "включена фича"), through `AdminUnitFeatureState` rows for "All employees" and the portal users (renamed "All
-  external users" in r258827, 2023-04-03). Shipped in 7.17.1 (released 2021-01-14). A classic rollout toggle. [measured, svn]
-- Never switched off or scheduled for removal: Jira has no issue about it besides ENG-95985; no package in PackageStore
-  references it outside CrtProcessDesigner; no data row sets it to 0. [measured]
-- Kept alive by later refactors rather than by a decision: the run-time sender check dates from 2020-11-23 (r195004),
-  the activity-copy check was carried into the code written for RND-10941 (r204435, 2021-06-11), and the designer check
-  was re-written as a `getIsFileControlEnabled` override when the files control became generic for the Creatio.ai
-  element (RND-72316, r336217, 2025-06-03). [measured, svn blame]
+**History of the toggle.** It was added in 2020 together with the feature itself and switched on for both groups
+from the start; it has never been switched off or scheduled for removal, no package outside CrtProcessDesigner
+references it, and no data row sets it to 0. The run-time, activity-copy and designer checks survive through later
+refactors, not through a decision. [measured 2026-10-28]
 - The shipped state rows force-update `FeatureState` and `SysAdminUnit` (`IsForceUpdate: true` in
   `PD/../Data/AdminUnitFeatureState_UseProcessEmailAttachments/descriptor.json`), so every install of the package resets
   the two group rows to ON; switching it off durably is possible only for individual users or other roles. [source]
@@ -307,6 +300,14 @@ on (`TS/Terrasoft.Core/Process/ProcessValidationResult.cs:44-54`; default true).
 
 **Recommendation: refuse in the package** **Agreed 2026-10-28 by the owner.**, with a message that names the slot and says it only receives files. The
 platform would refuse it anyway under the default settings, with a less helpful message.
+
+**Addendum (reuse round, agreed 2026-10-30 by the owner).** A Formula element BODY reading a slot or its item is
+refused too, with the same sentence. The designer cannot write one: its mapping picker hides element `In`
+parameters (`PD/ProcessElementParametersMappingPage/ProcessElementParametersMappingPage.js:506-509, 654`), and the
+platform's pre-save gate does not see a Formula body, which is the Script task `Body`, not a parameter value
+(`TS/Terrasoft.Core/Process/ProcessSchemaFormulaTask.cs`). The body was the one write route left open. No process in
+the PackageStore corpus reads a slot (scan 2026-10-30). A Script task body stays unchecked: it is C# code. [source]
+[corpus]
 
 ---
 

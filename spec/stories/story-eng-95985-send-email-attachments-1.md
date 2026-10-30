@@ -12,8 +12,7 @@ sections 3-5 hold the task tables this story restates; section 9 is the Definiti
 `ready-for-dev` is never true for it; plan section 2). The clio feature PR flips it to `review` when it opens; `done` is
 flipped in the next clio PR that touches `spec/sprint-status.yaml` after the last merge, with only the really ticked
 Definition of Done boxes.
-**Size**: L (likely ~42 h of AI-agent time, range 23-68 h; ~15 h of the owner's time, range 11.2-22.3 h; 7 working
-days of calendar, range 4-12; estimate file of the analysis)
+**Size**: L
 **Repo**: crt-process-builder, then clio-knowledge, then clio (one feature PR each, titled
 `ENG-95985 Send email attachments`, branch `feature/ENG-95985-send-email-attachments`), after this docs-only clio PR
 (branch `docs/ENG-95985-send-email-attachments-spec`)
@@ -213,5 +212,5 @@ Plan section 9, as checkboxes. Ticked only when true.
 
 ## Dev Agent Record
 
-- 2026-10-28: analysis, decisions Q1-Q20 (all agreed), plan, test plan and estimate written; drift check done (the
+- 2026-10-28: analysis, decisions Q1-Q20 (all agreed), plan and test plan written; drift check done (the
   plan's drift note). No product code written yet; nothing written to the stand, Jira, GitHub or GHE.

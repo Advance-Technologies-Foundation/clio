@@ -5,7 +5,7 @@
 **Story**: [1](../stories/story-eng-95985-send-email-attachments-1.md) (the whole ticket)
 **Test plan**: [tp-eng-95985-send-email-attachments.md](../test-plans/tp-eng-95985-send-email-attachments.md)
 **Analysis**: [`spec/eng-95985-send-email-attachments/`](../eng-95985-send-email-attachments/README.md) - README,
-decisions (Q1-Q20), facts, serialization, design, measurements (EM0-EM15), plan, test plan, estimate. This SPEC
+decisions (Q1-Q20), facts, serialization, design, measurements (EM0-EM15), plan, test plan. This SPEC
 restates what implementation needs; the analysis holds the evidence and the source anchors.
 **Status**: Accepted. All twenty owner questions (Q1-Q20) were agreed by the owner on 2026-10-28; Q9, Q16 and Q17
 differ from the first recommendation. The Jira acceptance-criteria text (Q19) is written into the issue description by

@@ -32,7 +32,7 @@ Sibling files: [README](README.md) · [decisions](eng-95985-send-email-attachmen
 [facts](eng-95985-send-email-attachments-facts.md) · [serialization](eng-95985-send-email-attachments-serialization.md)
 (the comparison rule ACR R1-R11, what EM1 records) · [design](eng-95985-send-email-attachments-design.md) ·
 [plan](eng-95985-send-email-attachments-plan.md) (tasks P-A1..P-C6, KB-1..KB-6, CL-1..CL-8) ·
-[test plan](eng-95985-send-email-attachments-test-plan.md) · [estimate](eng-95985-send-email-attachments-estimate.md).
+[test plan](eng-95985-send-email-attachments-test-plan.md).
 
 ## 0. Summary
 

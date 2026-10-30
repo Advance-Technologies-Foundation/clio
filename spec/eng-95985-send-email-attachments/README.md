@@ -16,7 +16,7 @@ claim the plan relies on is restated in this folder, and rows whose only evidenc
 
 Path alias `PD/`: it means the PackageStore `CrtProcessDesigner/branches/7.8.0/`. A path written `PD/Schemas/...`
 (facts, measurements, serialization) already includes the `Schemas/` segment; the files whose legend defines `PD/` as
-`.../7.8.0/Schemas/` (decisions, design, test plan, estimate, the SPEC and the ADR) write the schema folder directly
+`.../7.8.0/Schemas/` (decisions, design, test plan, the SPEC and the ADR) write the schema folder directly
 after `PD/`.
 
 ## 1. Short answer
@@ -55,7 +55,6 @@ after `PD/`.
 | [measurements](eng-95985-send-email-attachments-measurements.md) | stand probes EM0-EM15: question, gate, steps, expected result, cleanup |
 | [plan](eng-95985-send-email-attachments-plan.md) | critical path, phases, slices, PR split, cuts, merge order, gates, DoD, risks |
 | [test plan](eng-95985-send-email-attachments-test-plan.md) | coverage matrix, unit/parity/clio/e2e/KB tests, manual Jira TCs |
-| [estimate](eng-95985-send-email-attachments-estimate.md) | agent time, human time, calendar, calibrated on the delivered Send email and Process file work |
 
 ## 3. Acceptance criteria -> plan
 
@@ -92,26 +91,7 @@ owner logs in. Q19 the lead writes the Jira AC (description only, text approved 
 filter, for Object attachments and Generated report, judged at the end of the request (files are read with system
 rights and sent out; the designer has no such check).
 
-## 5. Estimate (headline)
-
-Model: an AI agent writes the code, tests, docs and guidance (owner rule). Calibrated on ENG-92706, ENG-95986 and the
-four Process file tickets; per-package table and risks in the estimate file.
-
-| Quantity | Likely | Range |
-|---|---|---|
-| Agent wall time | ~42 h | 23-68 h |
-| Owner time (decisions, captures, mail setup on stand `Creatio`, approvals, review, merges) | ~15 h | 11.2-22.3 h |
-| Calendar, owner's answers -> last merge | 7 working days | 4-12 |
-| Authored lines, all repositories | ~9.8k | 6.9-12.7k |
-| PRs | 5-6 | 5-7 |
-| CrtProcessBuilder cuts | 4 | 3-5 |
-
-The refinement estimated 7-8 days (6-11). The calendar lands at its low end although the scope is larger (replace
-semantics, describe issues, guards, a new KB article, a BMAD PR, the measurement campaign), because the refinement's
-`ProcessParameterService` change and its build-time feature check drop out (Q9), its mailbox blocker shrinks to the
-owner's mail setup on stand `Creatio` (Q17), and review latency in this family is hours.
-
-## 6. Rules this plan follows
+## 5. Rules this plan follows
 
 - No future CrtProcessBuilder cut number appears in these files; numbers live in the claim comment, the tag and
   `descriptor.json`. Versions appear only as history ("measured on 1.6.6.125").

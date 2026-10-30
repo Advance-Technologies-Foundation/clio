@@ -260,6 +260,10 @@ guard covers it. So:
   `Feature-UseVerificationOfProcessParameterDirection` is on, which is the default:
   `TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-277, 282`, `TS/Terrasoft.Core/GlobalAppSettings.cs:343`;
   the package guard holds either way). Placed there, it also covers `BindCollectionItems`.
+- **a Formula element body reading a slot** (Q10 addendum): `ProcessFormulaTaskApplier` scans the expanded, bounded
+  body with `EmailAttachmentSlot.TryFindSlotReadBy` before it writes the body and refuses with the same sentence; a
+  scan that does not finish in time is refused (fail closed). Every route that writes a body (build, `addElement`,
+  `setElement`) passes this applier.
 
 This reaches every mapping that is not the block's own: build `mappings[]`, `addMapping`, connections, approval, the
 collection mirror. `CollectionBindingRules.TakesFiles` does not change.
@@ -349,6 +353,35 @@ line (section 7).
     refused on the next builder save of any kind (decisions Q20, "Every request is judged").
   A filter that selects something but spans every record (file name only) passes: that is the user's intent.
 - The guide says that attachments are read with system rights, not the process user's.
+
+
+### 4.10 Reuse round (after the stand run)
+
+A read-only comparison of the package code with core, the compiled configuration, CrtProcessDesigner and
+PackageStore found one place to call a public core API and some duplication inside the package. Applied in the same
+PR, behaviour-preserving except where stated:
+
+- **Stored filter read as the run time reads it.** The Q20 sweep and the SysFile notice read a Process file
+  element's stored filter with `Terrasoft.Common.Json.Json.Deserialize` into the platform's
+  `Terrasoft.Nui.ServiceModel.DataContract.Filters` model (as `ProcessFilterFactory` does), not with a hand-written
+  JSON walk. A disabled condition spelled with another letter case or as text no longer reads as selecting
+  (it was the one fail-open). Fail closed on: text carrying `$id`/`$ref` metadata (the deserializer would build a
+  cyclic graph), a tree with a shared or repeated item or over the item budget, and, for Object attachments only,
+  text without the data-contract marker (the Object run time reads such text with the legacy reader:
+  `ProcessConvertorUtilities.GetIsDataContractFilter`). Package-written and designer-written filters carry the
+  marker and are unaffected.
+- **Flags read as the run time reads them.** The filter descriptor reader reads `isNot`, `logicalOperation` and the
+  other flags case-insensitively with the run time's conversions; a flag it cannot read is a loss. A negated
+  record condition is never lifted as the record scope and an OR root is never split, in any spelling (before,
+  `"IsNot":true` was lifted and rewritten as a positive scope). Measured on the PackageStore corpus: no stored
+  filter reads differently (1,479 texts, 2026-10-30).
+- **Formula element body** reading a slot is refused (4.5, Q10 addendum).
+- **Wording.** A Q20 refusal for a printable the run time does not generate (neither MS Word nor FastReport) no
+  longer says it reports on every record.
+- **Consolidation.** One body for the slot-as-source refusal; parameter walks at any depth through the element
+  locator (with its cycle guard); one helper that types a parameter; notice literals through `SafeText`; the
+  attachment applier binds the file item the planner found by type; the planner takes the request's Send email
+  identity.
 
 ## 5. Messages
 

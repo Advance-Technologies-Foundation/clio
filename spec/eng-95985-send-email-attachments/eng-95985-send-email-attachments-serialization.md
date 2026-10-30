@@ -27,7 +27,7 @@ behaviour; [inferred] my inference. Decision ids (Q1-Q20) are the decisions file
 
 Siblings: [README](README.md) · [decisions](eng-95985-send-email-attachments-decisions.md) ·
 [design](eng-95985-send-email-attachments-design.md) · [plan](eng-95985-send-email-attachments-plan.md) ·
-facts, measurements, test plan, estimate (same folder).
+facts, measurements, test plan (same folder).
 
 ## 0. Summary
 

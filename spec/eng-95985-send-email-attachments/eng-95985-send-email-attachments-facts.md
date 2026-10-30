@@ -13,8 +13,7 @@ Sibling documents: [README](README.md) · [decisions](eng-95985-send-email-attac
 [serialization](eng-95985-send-email-attachments-serialization.md) ·
 [design](eng-95985-send-email-attachments-design.md) ·
 [measurements](eng-95985-send-email-attachments-measurements.md) ·
-[plan](eng-95985-send-email-attachments-plan.md) · [test plan](eng-95985-send-email-attachments-test-plan.md) ·
-[estimate](eng-95985-send-email-attachments-estimate.md).
+[plan](eng-95985-send-email-attachments-plan.md) · [test plan](eng-95985-send-email-attachments-test-plan.md).
 
 **Basis.**
 - crt-process-builder `origin/main` `389198a0` (merge of PR #110, 2026-10-28), CrtProcessBuilder 1.6.6.125
@@ -424,21 +423,11 @@ Evidence for the null path: `TS/Terrasoft.Common/CompositeObject.cs:120-127`; `T
   `TS/Terrasoft.Core/FeatureToggling/DbFeatureProvider.cs:302-307`; the older path takes the top row by state
   descending, `:355-367`), so a user-level 0 does not switch it off for a member of either group [source]. It can be
   off only for a user in neither group, or after someone edits the group rows, until the next install [inferred].
-- **History of the toggle** (researched 2026-10-28 at the owner's request; SVN log of `PS/CrtProcessDesigner`, Jira).
-  Added 2020-11-19 (r194794) with the feature itself, task CRM-58692 "Implement attaching files to emails sent by the
-  Send email element" (title in Russian; epic ENG-64351, a process element for files: copying, reports, email
-  attachments), and switched ON 2020-11-25 (r195148) through the two `AdminUnitFeatureState` rows, "All employees" and
-  the portal users (renamed "All external users" in r258827, 2023-04-03, ENG-38709 "Rename portal users to external
-  users"; the commits name the old keys, RND-38709, RND-10941 and RND-72316, which Jira now resolves to the keys
-  given here). Shipped in 7.17.1 (released 2021-01-14) [doc]. A classic rollout toggle [measured 2026-10-28, svn].
-  Never switched off or scheduled for removal: no package in `PS` references it outside CrtProcessDesigner (search
-  2026-10-28), no data row sets it to 0, and Jira has no issue about it besides ENG-95985 "Send email attachments"
-  [measured 2026-10-28]. The checks survive by later refactors, not by a decision: the run-time sender check dates
-  from r195004 (2020-11-24, CRM-58692), the activity-copy check was carried into the code of ENG-10941 "Implement the
-  run time of activity creation for automatic email sending" (r204435, 2021-06-11), and the designer check was
-  rewritten as a `getIsFileControlEnabled` override when the files control became generic for the Creatio.ai element
-  (APD-3313 "[2] Ability to add attachments to the BP ExecuteIntentUserTask element (Creation.ai call)", r336217,
-  2025-06-03) [measured 2026-10-28, svn log and blame]. Consequence, decisions Q9 (agreed 2026-10-28): no build-time
+- **History of the toggle.** It was added in 2020 together with the feature itself and switched on for both
+  groups from the start; it has never been switched off or scheduled for removal, and no package outside
+  CrtProcessDesigner references it. The run-time, activity-copy and designer checks survive through later
+  refactors, not through a decision. [measured 2026-10-28]
+- Consequence, decisions Q9 (agreed 2026-10-28): no build-time
   check; the guide carries one troubleshooting line (an email without its files: check the feature for the user who
   runs the process).
 - Rights: the source file is read and the `ActivityFile` copy created with rights disabled
