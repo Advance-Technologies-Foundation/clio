@@ -27,13 +27,13 @@ public sealed class SetObjectRightsTool(
 
 	internal const string ValidArguments =
 		"Valid: environment-name, entity-schema-name, grantee, operations, revoke, enable-operation-permissions, "
-		+ "disable-operation-permissions, preview.";
+		+ "disable-operation-permissions, position, above, remove-row, preview.";
 
 	// The worker is killed at its budget (120 s by default, McpWorkerCallDispatcher.DefaultBudget), and a call makes up
-	// to five requests in sequence: the grantee lookup, the SysSchema lookup, the read, the save and the read-back. So
-	// each request gets one attempt of at most 25 s, all of them share a 100 s limit, and the save is sent only while
-	// 50 s are left for it and the read-back. A save that gets no answer is then still read back and reported as
-	// "may still be applied" before the kill, instead of being lost to it.
+	// to six requests in sequence: the grantee lookup, the SysSchema lookup, the read, the external-role lookup (a move
+	// or a removal only), the save and the read-back. So each request gets one attempt of at most 25 s, all of them
+	// share a 100 s limit, and the save is sent only while 50 s are left for it and the read-back. A save that gets no
+	// answer is then still read back and reported as "may still be applied" before the kill, instead of being lost to it.
 	internal const int McpRequestTimeoutMilliseconds = 25_000;
 
 	internal static readonly TimeSpan McpCallBudget = TimeSpan.FromSeconds(100);
@@ -46,17 +46,18 @@ public sealed class SetObjectRightsTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false)]
-	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
+	[Description("Grant or revoke OBJECT operation permissions (read/create/edit/delete) for one role on ONE object, or move or remove that role's row — the SysEntitySchemaOperationRight / \"Object permissions\" layer (DESTRUCTIVE — changes access rights). " +
 		"Works like the Object permissions designer, one object per call, for ANY role. To cover an object's lookups, read them with get-object-rights include-connected, decide per object, and make one call per object. " +
 		"entity-schema-name is the object's CODE, not its title: the developer's word can be another object's title, so a title is refused with the code it belongs to, and the output shows the title next to the code ('Creatio functionality' (Feature)) — before a write, name the object to the developer by both. " +
 		"grantee is a SysAdminUnit id (roles/users; names are not unique); it must exist. " +
-		"A grant or revoke needs grantee and operations (read,create,edit,delete): nothing is granted by default. revoke=true clears the named operations on the role's row while KEEPING the row (rows are never removed or moved). " +
+		"A grant or revoke needs grantee and operations (read,create,edit,delete): nothing is granted by default. revoke=true clears the named operations on the role's row while KEEPING the row, as a deny. " +
 		"The rows are a priority list: a user in several roles gets the highest matching row, and a row with an operation cleared denies it to users for whom it is that row. A new row goes at the lowest priority; the result names the rows above the grantee's row. " +
+		"To change where the grantee's row sits, pass grantee with ONE of position (0 = highest) or above (a role id whose single row it goes directly above): e.g. above All employees, so a narrower role's row decides first for its members. remove-row=true deletes the grantee's row: its members are then decided by the next matching row, which can WIDEN their access. Each is a call of its own (no operations, revoke or switch flag); the other rows keep their relative order and are renumbered 0..n-1. Preview first: it lists the rows before and after and every role, external roles included, whose access widens or narrows. " +
 		"The switch changes only through its flags, or the call is refused: enable-operation-permissions turns the object's operation permissions ON, with a grant or alone (from then on its rows decide who can reach it; when the object has rows but none for All employees, an All employees row with every operation is added below them); disable-operation-permissions ALONE (no grantee, operations or revoke) turns them OFF and keeps every row (the object becomes available to ALL internal users). A revoke never turns them off; one that would leave no granting row is refused. " +
 		"preview=true is a dry run: it writes nothing and shows what the call would change. Read the result back with get-object-rights. Does NOT change column or record permissions. " +
 		"Unknown or misspelled argument names are REFUSED before any read or write.")]
 	public ObjectRightsToolResponse SetObjectRights(
-		[Description("Parameters: environment-name, entity-schema-name (required); grantee and operations (required for a grant or revoke); revoke, enable-operation-permissions, disable-operation-permissions, preview (optional).")]
+		[Description("Parameters: environment-name, entity-schema-name (required); grantee and operations (required for a grant or revoke); grantee and one of position, above, remove-row (to move or remove a row); revoke, enable-operation-permissions, disable-operation-permissions, preview (optional).")]
 		[Required]
 		SetObjectRightsArgs args) {
 		// A long-tail tool reached through clio-run: the flat-argument classifier never sees this wrapped payload,
@@ -87,6 +88,9 @@ public sealed class SetObjectRightsTool(
 			Revoke = args.Revoke ?? false,
 			EnableOperationPermissions = args.EnableOperationPermissions ?? false,
 			DisableOperationPermissions = args.DisableOperationPermissions ?? false,
+			Position = args.Position,
+			Above = args.Above,
+			RemoveRow = args.RemoveRow ?? false,
 			Preview = preview,
 			// MCP cannot prompt anyone: the host's approval of this call is the confirmation (as for
 			// set-record-rights and manage-access). A preview writes nothing, so it is never confirmed.
@@ -106,6 +110,9 @@ public sealed class SetObjectRightsTool(
 /// <param name="Revoke">Revoke instead of grant.</param>
 /// <param name="EnableOperationPermissions">Turn operation permissions on: with a grant, or alone.</param>
 /// <param name="DisableOperationPermissions">Turn operation permissions off, alone: no row changes.</param>
+/// <param name="Position">Move the grantee's row to this position, 0 the highest.</param>
+/// <param name="Above">Move the grantee's row directly above this role's row.</param>
+/// <param name="RemoveRow">Remove the grantee's row.</param>
 /// <param name="Preview">Write nothing; show what the call would change.</param>
 public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("environment-name")]
@@ -137,6 +144,18 @@ public sealed record SetObjectRightsArgs(
 	[property: JsonPropertyName("disable-operation-permissions")]
 	[property: Description("Turn the object's operation permissions OFF, keeping every row as it is (default false): the object becomes available to ALL internal users, and external users have no access while it is off. A call of its own: not with grantee, operations or revoke.")]
 	bool? DisableOperationPermissions = null,
+
+	[property: JsonPropertyName("position")]
+	[property: Description("Move the grantee's row to this position, 0 the highest priority; the other rows keep their relative order and are renumbered 0..n-1. A call of its own with grantee: not with operations, revoke, above, remove-row or a switch flag. A position past the last row is refused.")]
+	int? Position = null,
+
+	[property: JsonPropertyName("above")]
+	[property: Description("Move the grantee's row directly above the row of this role (SysAdminUnit id), which must have exactly one row on the object — e.g. above All employees (a29a3ba5-4b0d-de11-9a51-005056c00008), so the grantee's row decides first for its members. A call of its own, like position.")]
+	string? Above = null,
+
+	[property: JsonPropertyName("remove-row")]
+	[property: Description("Remove the grantee's row (default false). Its members are then decided by the next matching row, which can WIDEN their access — unlike revoke, which keeps the row as a deny. Refused when the object uses operation permissions and no row would grant any operation. A call of its own, like position.")]
+	bool? RemoveRow = null,
 
 	[property: JsonPropertyName("preview")]
 	[property: Description("Dry run (default false): write nothing and show what the call would change, the rows it affects, and whether it would be refused.")]

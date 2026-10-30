@@ -29,7 +29,9 @@ DESCRIPTION
     for All employees itself.
 
     With --grantee the grantee's row is shown (each row with its own position when it has several),
-    followed by the rows above it: for a user who is also in one of those roles, they decide first. When
+    followed by the rows above it: for a user who is also in one of those roles, they decide first. The
+    output then points at set-object-rights --above / --position, which move the row; --remove-row
+    removes it. When
     the grantee has NO row, every row is listed after that line: a grant adds the row at the lowest
     priority, below all of them. The command draws no coverage verdict.
 

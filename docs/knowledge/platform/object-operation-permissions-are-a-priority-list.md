@@ -23,9 +23,15 @@ from that user's session:
 | 0: All employees → R, 1: role → RCE | yes | no (the role's grant is shadowed) |
 | All employees → RCED alone | yes | yes |
 
-A change applies to sessions that are already logged in. A denied read comes back from DataService as a
-SUCCESS with zero rows, not as an error; a denied insert is a `SecurityException`. The designer's "+ Add"
-puts a new role at the highest position + 1.
+A denied read comes back from DataService as a SUCCESS with zero rows, not as an error; a denied insert is a
+`SecurityException`. The designer's "+ Add" puts a new role at the highest position + 1.
+
+In that probe a change reached the user's existing DataService session at once. On Creatio 10.2.471
+(.NET Framework, MSSQL, stand `ar_platform`, 2026-10-30, ENG-104066) a Freedom UI list page already open as a
+non-admin user followed a row move in both directions without a reload: create and delete became available
+after a widening and were blocked again after a narrowing. So a change applies at once; logging in again is
+the fallback when a user still sees the old access, not a step every change needs (see
+[adr-ENG-104066-object-rights-row-layout.md](../../../spec/adr/adr-ENG-104066-object-rights-row-layout.md)).
 
 **Why it is this way** — it is the platform's model (Creatio Academy describes the same "highest role in
 the list" rule); nothing in the `GetAdministratedObject` payload says so, and the flags alone look like a
@@ -35,7 +41,10 @@ set to be merged.
 both directions, silently. A revoke that clears a role's row and then REMOVES the row lets the role's
 members fall through to a lower, broader row — the "revoke" widens their access. A grant appended at the
 bottom looks applied but is shadowed for every user who is also in a role above it. That is why
-`set-object-rights` keeps a revoked row (as a deny), never removes or moves a row, adds a new row at the
-lowest priority and names the rows above it, and why `get-object-rights` prints every row with its
-position plus the rule itself. "Clear every operation" (a deny) and "remove the role" are different
-operations; the design is recorded in [`spec/adr/adr-ENG-99741-object-rights.md`](../../../spec/adr/adr-ENG-99741-object-rights.md).
+`set-object-rights` keeps a revoked row (as a deny), never removes or moves a row as a side effect of a
+grant or revoke, adds a new row at the lowest priority and names the rows above it, and why
+`get-object-rights` prints every row with its position plus the rule itself. Moving a row
+(`--position`/`--above`) and removing one (`--remove-row`, ENG-104066) are calls of their own,
+and their preview names every role whose deciding row changes. "Clear every operation" (a deny) and
+"remove the role" are different operations; the design is recorded in
+[`spec/adr/adr-ENG-99741-object-rights.md`](../../../spec/adr/adr-ENG-99741-object-rights.md).

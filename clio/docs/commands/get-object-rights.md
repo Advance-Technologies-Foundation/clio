@@ -37,7 +37,8 @@ denies them. Every listing states that rule once. Per object the output is one o
   grant is for `All employees` itself.
 
 With `--grantee` the grantee's row is shown (every row, each with its own position, when it has several),
-followed by the rows above it: for a user who is also in one of those roles, they decide first. When the grantee
+followed by the rows above it: for a user who is also in one of those roles, they decide first. The output then
+points at `set-object-rights --above` / `--position`, which move the row (`--remove-row` removes it). When the grantee
 has NO row, `has NO row (no operations granted)` is followed by every row: a grant adds the row at the lowest
 priority, below all of them. The command draws no coverage verdict — which roles a user is in, and what the facts
 mean for a given audience, is up to the caller.

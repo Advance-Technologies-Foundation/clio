@@ -8,12 +8,12 @@ using CommandLine;
 namespace Clio.Command.ObjectRights;
 
 /// <summary>
-/// Options of <c>set-object-rights</c>: grant or revoke one role's operation permissions on one object, or turn the
-/// object's operation permissions on or off alone.
+/// Options of <c>set-object-rights</c>: grant or revoke one role's operation permissions on one object, move or remove
+/// that role's row, or turn the object's operation permissions on or off alone.
 /// </summary>
 [Verb("set-object-rights", HelpText =
-	"Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, or turn the "
-	+ "object's operation permissions on or off (destructive)")]
+	"Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, move or remove "
+	+ "that role's row, or turn the object's operation permissions on or off (destructive)")]
 public class SetObjectRightsOptions : RemoteCommandOptions {
 
 	/// <summary>The object whose operation permissions change, by its code (entity schema name).</summary>
@@ -44,8 +44,29 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	/// <summary>Revoke the operations instead of granting them.</summary>
 	[Option("revoke", Required = false, HelpText =
 		"Revoke the operations named in --operations instead of granting them. The role's row is kept, with those "
-		+ "operations cleared: a row is never removed.")]
+		+ "operations cleared, as a deny: a revoke never removes the row (--remove-row does).")]
 	public bool Revoke { get; set; }
+
+	/// <summary>Move the grantee's row to this position, 0 the highest; a call of its own.</summary>
+	[Option("position", Required = false, HelpText =
+		"Move the grantee's row to this position, 0 the highest priority. The other rows keep their relative order and "
+		+ "are renumbered 0..n-1, as the Object permissions designer does. A call of its own, with --grantee: not with "
+		+ "--operations, --revoke, --above, --remove-row or a switch flag.")]
+	public int? Position { get; set; }
+
+	/// <summary>Move the grantee's row directly above the row of this role; a call of its own.</summary>
+	[Option("above", Required = false, HelpText =
+		"Move the grantee's row directly above the row of this role (SysAdminUnit id), which must have exactly one row "
+		+ "on the object; for example above All employees, so that the grantee's row decides first for its members. A "
+		+ "call of its own, like --position.")]
+	public string Above { get; set; }
+
+	/// <summary>Remove the grantee's row; a call of its own.</summary>
+	[Option("remove-row", Required = false, HelpText =
+		"Remove the grantee's row. Its members are then decided by the next matching row (often All employees), which "
+		+ "can WIDEN their access - unlike --revoke, which keeps the row as a deny. Refused when no row would grant any "
+		+ "operation on an object that uses operation permissions. A call of its own, like --position.")]
+	public bool RemoveRow { get; set; }
 
 	/// <summary>Turn the object's operation permissions on: with a grant, or alone.</summary>
 	[Option("enable-operation-permissions", Required = false, HelpText =
@@ -114,12 +135,12 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	/// <inheritdoc />
 	public override int Execute(SetObjectRightsOptions options) {
 		if (!TryParseInputs(options, out string named, out Guid grantee,
-				out IReadOnlyCollection<ObjectOperation> operations)) {
+				out IReadOnlyCollection<ObjectOperation> operations, out RowLayoutRequest layout)) {
 			return 1;
 		}
 		CreatioRequestOptions requestOptions = ObjectRightsCommandInput.RequestOptions(options, options.CallBudget);
 		ObjectRightsChangeRequest request = new(grantee, null, operations, options.Revoke,
-			options.EnableOperationPermissions, options.DisableOperationPermissions);
+			options.EnableOperationPermissions, options.DisableOperationPermissions, layout);
 		// A call that only turns the switch names no grantee: there is no row of a role to change, so none is looked up.
 		if (!request.SwitchOnly) {
 			if (!ObjectRightsCommandInput.TryResolveUnitName(_granteeLookup, grantee, "grantee", requestOptions, _logger,
@@ -132,8 +153,18 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return 1;
 		}
 		ObjectRightsPlan plan = _planner.Plan(before.State, request);
+		// The effect of a move or a removal is named per role, external ones as such. The lookup runs only for a layout
+		// that will be written: a refusal or a no-op is decided by the rows alone, and while operation permissions are off
+		// the rows decide nothing, so there is no effect to name.
+		if (request.ChangesLayout && before.AdministratedByOperations && !plan.Refused && plan.Changes) {
+			if (!TryFindExternalUnits(before, schemaName, requestOptions, out IReadOnlySet<Guid> externalUnits)) {
+				return 1;
+			}
+			plan = _planner.Plan(before.State, request, externalUnits);
+		}
 		Change change = new(schemaName, before.Caption,
-			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(request.GranteeName)}' ({grantee})", request, plan);
+			request.SwitchOnly ? null : $"'{ObjectRightsSupport.Display(request.GranteeName)}' ({grantee})", request, plan,
+			AnchorLabel(before, layout));
 		if (plan.Refused) {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			return 1;
@@ -159,7 +190,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (!ObjectRightsCommandInput.HasTimeToSave(requestOptions, change.SchemaName, _logger)) {
 			return 1;
 		}
-		ObjectRightsSaveResult save = _writer.Save(before.Snapshot, plan.After, requestOptions);
+		ObjectRightsSaveResult save = plan.RewritesAllRows
+			? _writer.SaveRowLayout(before.Snapshot, plan.After, requestOptions)
+			: _writer.Save(before.Snapshot, plan.After, requestOptions);
 		// After a failed save the read-back is one attempt as well: the object is checked once, and on MCP the answer
 		// still arrives within the call's budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
@@ -171,7 +204,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 
 	// Everything the output of one call is rendered from.
 	private sealed record Change(string SchemaName, string Caption, string GranteeLabel, ObjectRightsChangeRequest Request,
-		ObjectRightsPlan Plan) {
+		ObjectRightsPlan Plan, string AnchorLabel) {
 
 		// The object by its title and its code, so the developer sees which object the code names.
 		public string Label => ObjectRightsSupport.FormatObject(SchemaName, Caption);
@@ -181,6 +214,14 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				if (Request.SwitchOnly) {
 					string state = Request.DisableOperationPermissions ? "OFF" : "ON";
 					return $"Turn operation permissions {state} on {Label}.";
+				}
+				if (Request.ChangesLayout) {
+					return Request.Layout.Kind switch {
+						RowLayoutKind.Remove => $"Remove the row of grantee {GranteeLabel} on {Label}.",
+						RowLayoutKind.MoveToPosition =>
+							$"Move the row of grantee {GranteeLabel} to position {Request.Layout.Position} on {Label}.",
+						_ => $"Move the row of grantee {GranteeLabel} above the row of {AnchorLabel} on {Label}."
+					};
 				}
 				string verb = Request.Revoke ? "Revoke" : "Grant";
 				return $"{verb} [{Operations}] for grantee {GranteeLabel} on {Label}.";
@@ -200,15 +241,19 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	}
 
 	private bool TryParseInputs(SetObjectRightsOptions options, out string named, out Guid grantee,
-		out IReadOnlyCollection<ObjectOperation> operations) {
+		out IReadOnlyCollection<ObjectOperation> operations, out RowLayoutRequest layout) {
 		grantee = Guid.Empty;
 		operations = Array.Empty<ObjectOperation>();
+		layout = null;
 		if (!ObjectRightsCommandInput.TryReadObjectName(options.EntitySchemaName, _logger, out named)) {
 			return false;
 		}
 		if (options.Preview && options.Confirm) {
 			_logger.WriteError("Error: --preview writes nothing, so it cannot be combined with --confirm.");
 			return false;
+		}
+		if (options.Position.HasValue || options.Above is not null || options.RemoveRow) {
+			return TryReadLayout(options, out grantee, out layout);
 		}
 		if (!TryReadCallShape(options, out bool switchOnly)) {
 			return false;
@@ -221,8 +266,7 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ "permissions on.");
 			return false;
 		}
-		if (!Guid.TryParse(options.Grantee, out grantee) || grantee == Guid.Empty) {
-			_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
+		if (!TryReadGrantee(options.Grantee, out grantee)) {
 			return false;
 		}
 		// The arguments show the whole effect: every grant or revoke names its operations; none is implied.
@@ -236,6 +280,90 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return false;
 		}
 		return true;
+	}
+
+	private bool TryReadGrantee(string raw, out Guid grantee) {
+		if (Guid.TryParse(raw, out grantee) && grantee != Guid.Empty) {
+			return true;
+		}
+		_logger.WriteError("Error: --grantee must be a SysAdminUnit id (GUID).");
+		return false;
+	}
+
+	// A move or a removal is a call of its own: it changes no operation and no switch, so an argument about either beside
+	// it would read as part of the change while nothing of it happens — and one call naming two row changes could not
+	// show a single before and after.
+	private bool TryReadLayout(SetObjectRightsOptions options, out Guid grantee, out RowLayoutRequest layout) {
+		grantee = Guid.Empty;
+		layout = null;
+		int changes = (options.Position.HasValue ? 1 : 0) + (options.Above is null ? 0 : 1)
+			+ (options.RemoveRow ? 1 : 0);
+		if (changes > 1) {
+			_logger.WriteError("Error: --position, --above and --remove-row each name one change of the "
+				+ "grantee's row; pass one of them.");
+			return false;
+		}
+		if (options.Operations is not null || options.Revoke || options.EnableOperationPermissions
+			|| options.DisableOperationPermissions) {
+			_logger.WriteError("Error: --position, --above and --remove-row are a call of their own: they move or "
+				+ "remove the grantee's row and change no operation, so --operations, --revoke, "
+				+ "--enable-operation-permissions and --disable-operation-permissions do not go with them. Make the grant, "
+				+ "the revoke or the switch change in a separate call.");
+			return false;
+		}
+		if (!TryReadGrantee(options.Grantee, out grantee)) {
+			return false;
+		}
+		if (options.RemoveRow) {
+			layout = new RowLayoutRequest(RowLayoutKind.Remove);
+			return true;
+		}
+		if (options.Position is { } position) {
+			if (position < 0) {
+				_logger.WriteError("Error: --position must be 0 (the highest priority) or more.");
+				return false;
+			}
+			layout = new RowLayoutRequest(RowLayoutKind.MoveToPosition, position);
+			return true;
+		}
+		if (!Guid.TryParse(options.Above, out Guid anchor) || anchor == Guid.Empty) {
+			_logger.WriteError("Error: --above must be the SysAdminUnit id (GUID) of a role with a row on the object.");
+			return false;
+		}
+		if (anchor == grantee) {
+			_logger.WriteError("Error: --above names the grantee itself; name the role whose row the grantee's row goes "
+				+ "above.");
+			return false;
+		}
+		layout = new RowLayoutRequest(RowLayoutKind.MoveAbove, Anchor: anchor);
+		return true;
+	}
+
+	// A failed lookup fails the call: an external role reported as internal would hide exactly the change to portal
+	// users that the operator must see.
+	private bool TryFindExternalUnits(ObjectRightsInfo before, string schemaName, CreatioRequestOptions requestOptions,
+		out IReadOnlySet<Guid> externalUnits) {
+		try {
+			externalUnits = _granteeLookup.FindExternalUnits(
+				before.Roles.Select(row => row.GranteeId).Distinct().ToArray(), requestOptions);
+			return true;
+		}
+		catch (Exception ex) when (ObjectRightsSupport.IsServiceFailure(ex)) {
+			externalUnits = null;
+			_logger.WriteError($"Error: '{schemaName}': could not tell which roles with a row are external, so the effect "
+				+ $"of the change cannot be shown: {ObjectRightsSupport.DisplayFailure(ex)}. Nothing was changed.");
+			return false;
+		}
+	}
+
+	private static string AnchorLabel(ObjectRightsInfo before, RowLayoutRequest layout) {
+		if (layout is not { Kind: RowLayoutKind.MoveAbove }) {
+			return null;
+		}
+		RoleOperationRights row = before.Roles.FirstOrDefault(role => role.GranteeId == layout.Anchor);
+		return row is null
+			? $"role {layout.Anchor}"
+			: $"'{ObjectRightsSupport.Display(row.GranteeName)}' ({layout.Anchor})";
 	}
 
 	// Which kind of call the arguments describe. A switch-only call (--enable- or --disable-operation-permissions
@@ -324,6 +452,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ "off. Grant the operations in the same call instead (--grantee, --operations and "
 				+ "--enable-operation-permissions); for internal users grant them to All employees, whose row decides "
 				+ "before a new row of any other role, which goes at the lowest priority.",
+			ObjectRightsRefusal.LeavesNoGrantingRow when change.Request.ChangesLayout =>
+				$"removing the row of grantee {change.GranteeLabel} would leave no row on {label} that grants any "
+				+ $"operation ({ObjectRightsSupport.FormatRows(plan.Before.Roles.Where(row => row.GranteeId != change.Request.Grantee))}), "
+				+ "so only the holders of the '…any data' system operations could reach it. Grant operations to another "
+				+ "role first, or turn operation permissions OFF with --disable-operation-permissions alone.",
+			ObjectRightsRefusal.NoGranteeRow =>
+				$"grantee {change.GranteeLabel} has no row on {label}, so there is no row to "
+				+ $"{(change.Request.Layout.Kind == RowLayoutKind.Remove ? "remove" : "move")}. A grant adds a row, at the "
+				+ "lowest priority.",
+			ObjectRightsRefusal.AnchorHasNoRow =>
+				$"{change.AnchorLabel} has no row on {label}, so there is no row to move the grantee's row above. "
+				+ $"Rows: {ObjectRightsSupport.FormatRows(plan.Before.Roles)}.",
+			ObjectRightsRefusal.AnchorHasSeveralRows =>
+				$"{change.AnchorLabel} has {plan.DuplicatePositions.Count} rows on {label} (positions "
+				+ $"{string.Join(", ", plan.DuplicatePositions)}), so the place above it is ambiguous. Remove "
+				+ "the duplicates in the Object permissions designer, or move the row with --position.",
+			ObjectRightsRefusal.PositionOutOfRange =>
+				$"position {change.Request.Layout.Position} is past the last row: {label} has "
+				+ $"{plan.Before.Roles.Count} rows, so the positions are 0..{plan.Before.Roles.Count - 1}.",
 			ObjectRightsRefusal.LeavesNoGrantingRow =>
 				$"after this revoke no row on {label} would grant any operation. A revoke never turns operation "
 				+ "permissions off: to turn them OFF instead — the object becomes available to ALL internal users and "
@@ -355,6 +502,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			return $"grantee {change.GranteeLabel} has no row, so there is nothing to revoke";
 		}
 		string granteeRow = $"the row of grantee {change.GranteeLabel} at position {row.Position}";
+		if (change.Request.ChangesLayout) {
+			return $"{granteeRow} is already where the call puts it";
+		}
 		return change.Request.Revoke
 			? $"{granteeRow} already has none of [{change.Operations}]"
 			: $"{granteeRow} already has [{change.Operations}]";
@@ -389,6 +539,9 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		if (change.Request.SwitchOnly) {
 			return facts;
 		}
+		if (change.Request.ChangesLayout) {
+			return DescribeLayout(change);
+		}
 		facts.Add(DescribeGranteeRow(change));
 		if (plan.RowsAboveGrantee.Count > 0) {
 			facts.Add("Rows above the grantee's row, which decide first for a user who is also in those roles: "
@@ -396,6 +549,54 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		}
 		return facts;
 	}
+
+	// While operation permissions are off the rows decide nothing, so no one's access changes until they are turned on.
+	private static IReadOnlyList<string> DescribeLayout(Change change) {
+		ObjectRightsPlan plan = change.Plan;
+		List<string> facts = new() {
+			$"Rows before: {ObjectRightsSupport.FormatRows(plan.Before.Roles)}.",
+			$"Rows after: {ObjectRightsSupport.FormatRows(plan.After.Roles)}."
+		};
+		if (!plan.Before.AdministratedByOperations) {
+			facts.Add($"Operation permissions on {change.Label} are OFF: the rows decide nothing until they are turned on "
+				+ "(--enable-operation-permissions), so no one's access changes now.");
+			return facts;
+		}
+		if (plan.RoleAccessChanges.Count == 0) {
+			facts.Add("No role's operations change.");
+			return facts;
+		}
+		facts.Add("What changes, for a member who is in no other role with a row (a member of several listed roles, or "
+			+ "of a parent role, can be decided by another row):");
+		facts.AddRange(plan.RoleAccessChanges.Select(DescribeAccessChange));
+		return facts;
+	}
+
+	private static string DescribeAccessChange(RoleAccessChange change) {
+		string role = $"{(change.External ? "external role" : "role")} "
+			+ $"'{ObjectRightsSupport.Display(change.GranteeName)}' ({change.GranteeId})";
+		string decided = $"decided by {DecidingRow(change.DecidingBefore)} before, by {DecidingRow(change.DecidingAfter)} "
+			+ "after";
+		HashSet<string> before = change.OperationsBefore.ToHashSet();
+		HashSet<string> after = change.OperationsAfter.ToHashSet();
+		if (before.SetEquals(after)) {
+			return $"  {role}: unchanged, {FormatAccess(change.OperationsAfter)} — {decided}.";
+		}
+		string direction = after.IsSupersetOf(before) ? "WIDENS"
+			: after.IsSubsetOf(before) ? "NARROWS"
+			: "CHANGES";
+		// Any operation portal users lose — also inside a mixed CHANGES — is the external-access revoke the operator must
+		// not miss.
+		string revoke = change.External && before.Except(after).Any() ? " (a revoke of external access)" : "";
+		return $"  {role}: access {direction}{revoke} from {FormatAccess(change.OperationsBefore)} to "
+			+ $"{FormatAccess(change.OperationsAfter)} — {decided}.";
+	}
+
+	private static string DecidingRow(RoleOperationRights row) =>
+		row is null ? "no row" : ObjectRightsSupport.FormatRow(row);
+
+	private static string FormatAccess(IReadOnlyList<string> operations) =>
+		operations.Count == 0 ? "no access" : string.Join("/", operations);
 
 	private static string DescribeGranteeRow(Change change) {
 		RoleOperationRights before = change.GranteeRowBefore;
@@ -417,11 +618,25 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 				+ $"({ObjectRightsSupport.FormatOperations(before)}).";
 	}
 
+	// An object that is off with no stored rows reads back with the All employees row the service synthesizes, and
+	// that row cannot be told from a stored one; the result says which state the object is in instead of claiming more.
+	private static string NoStoredRowsNote(ObjectRightsPlan plan) =>
+		!plan.After.AdministratedByOperations && plan.After.Roles.Count == 0
+			? " The object has no stored rows now, so it reads back with the All employees row the service shows for "
+				+ "that state."
+			: string.Empty;
+
 	// The call's own result line, from the plan: a row that changed, or — when only the switch changes — that.
 	private static string DoneLine(Change change) {
 		if (change.Request.SwitchOnly) {
 			return $"{change.Label}: operation permissions turned "
 				+ $"{(change.Plan.DisablesOperationPermissions ? "OFF; every row is kept as it is" : "ON")}.";
+		}
+		if (change.Request.ChangesLayout) {
+			return change.Request.Layout.Kind == RowLayoutKind.Remove
+				? $"{change.Label}: removed the row of grantee {change.GranteeLabel}.{NoStoredRowsNote(change.Plan)}"
+				: $"{change.Label}: moved the row of grantee {change.GranteeLabel} to position "
+					+ $"{change.GranteeRowAfter.Position}.";
 		}
 		if (change.GranteeRowChanges) {
 			return $"{change.Label}: {(change.Request.Revoke ? "revoked" : "granted")} [{change.Operations}] for "
