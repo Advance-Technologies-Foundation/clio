@@ -70,11 +70,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>7f01899f</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.130</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>417ae636</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.131</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
 	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
 	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
-	/// 1.6.6.130) before the cut, so the script refused a version equal to the descriptor's, and the archive was packed
+	/// 1.6.6.131) before the cut, so the script refused a version equal to the descriptor's, and the archive was packed
 	/// from a <c>git archive</c> export of the tagged commit with the two <c>-c</c> flags, with no overlay. Every entry,
 	/// <c>descriptor.json</c> included, is therefore the producing commit's blob.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
@@ -99,7 +99,7 @@ public class BundledProcessBuilderPackageTests {
 	/// and data-contract marker gates, <c>isNot</c> and <c>logicalOperation</c> included), a formula body may not read a
 	/// Send email attachment slot, the attachment and file-source paths are consolidated, and a DevExpress report
 	/// source is no longer told it reports on every record or generates a report from a filter it cannot read.
-	/// 1.6.6.130 adds the final review round: the Q20 sweep follows a formula that fills a Process parameter element's
+	/// 1.6.6.131 adds the final review round: the Q20 sweep follows a formula that fills a Process parameter element's
 	/// Files input; a sent source that cannot be judged is refused (an Object source on a missing object, a Generated
 	/// report whose printable names no object, a printable that is not found); notices for the files handed into a
 	/// Sub-process and for an attachment whose files the caller decides; describe and the sweep walk an attachment's
@@ -109,8 +109,8 @@ public class BundledProcessBuilderPackageTests {
 	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; a save whose
 	/// nested elements cannot be read is refused when an email sends attachments; and the reachability warning states
 	/// the consequence by the entry's source kind - a single File source that has not run fails the element.
-	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128,
-	/// 1.6.6.129 or 1.6.6.130 changes the write contract. What earlier cuts carried is in this file's git history rather than
+	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128
+	/// through 1.6.6.131 changes the write contract. What earlier cuts carried is in this file's git history rather than
 	/// here: it described archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5152 passed,
@@ -200,7 +200,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"EF864FCA2EA818A6E5BD850A31D3054005491A281F7BD0CE9D858EE7ECDEE5B2";
+		"148DC56F5037B242A590A523148088619A1FE54A54099D66F80ACEA490C8C99E";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -228,14 +228,14 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.130";
+	private const string ExpectedArchiveVersion = "1.6.6.131";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
-	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.130 it was typed by hand for a hand cut, and it IS the
-	/// restamp commit (the tag <c>crtprocessbuilder-1.6.6.130</c> points at it), because the package branch committed its stamp before the cut.
+	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut, and it IS the
+	/// restamp commit (the tag <c>crtprocessbuilder-1.6.6.131</c> points at it), because the package branch committed its stamp before the cut.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -243,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7f01899f380a35222d6de506bb1af2cd4ba8fddd";
+	private const string ExpectedProducingCommit = "417ae636d9ce4bb1a018bbb7388587955061a4b1";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -269,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793381293000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793382997000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
