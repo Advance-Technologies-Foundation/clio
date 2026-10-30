@@ -1243,51 +1243,6 @@ public sealed class ProcessFileElementToolE2ETests {
 		return result;
 	}
 
-	/// <summary>The names of the environment's active cultures (<c>SysCulture.Active</c>), e.g. <c>en-US</c>.</summary>
-	private static async Task<IReadOnlySet<string>> ReadActiveCultureNamesAsync(ProcessDesignerArrangeContext context) {
-		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysCulture",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("Active", "Active")
-			],
-			[]), "the environment's cultures");
-		HashSet<string> active = rows.EnumerateArray()
-			.Where(row => row.TryGetProperty("Active", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
-			.Select(row => TextOf(row, "Name"))
-			.ToHashSet(StringComparer.Ordinal);
-		active.Should().NotBeEmpty(because: "an environment has at least one active culture, or the read saw nothing");
-		return active;
-	}
-
-	/// <summary>
-	/// The resource rows (<c>key | culture | value</c>) without the template parameter captions
-	/// (<c>BaseElements.&lt;El&gt;.Parameters.&lt;P&gt;[.&lt;Item&gt;].Caption</c>) of the cultures that are not active, in
-	/// their order: what the first builder save of a designer-built element keeps.
-	/// </summary>
-	private static IReadOnlyList<string> WithoutInactiveTemplateCaptions(IReadOnlyList<string> rows,
-			IReadOnlySet<string> activeCultures) =>
-		rows.Where(row => {
-			string[] parts = row.Split(" | ");
-			if (parts.Length < 2 || activeCultures.Contains(parts[1])) {
-				return true;
-			}
-			string key = parts[0];
-			bool templateCaption = key.StartsWith("BaseElements.", StringComparison.Ordinal)
-				&& key.Contains(".Parameters.", StringComparison.Ordinal)
-				&& key.EndsWith(".Caption", StringComparison.Ordinal);
-			return !templateCaption;
-		}).ToList();
-
-	/// <summary>
-	/// The rows <paramref name="after"/> lost and gained against <paramref name="before"/>, in full: an assertion's own
-	/// listing stops after 32 items, which hides the difference in a long resource list.
-	/// </summary>
-	private static string RowDifference(IReadOnlyList<string> before, IReadOnlyList<string> after) {
-		string removed = string.Join("; ", before.Except(after, StringComparer.Ordinal));
-		string added = string.Join("; ", after.Except(before, StringComparer.Ordinal));
-		return $"{before.Count} rows before, {after.Count} after. REMOVED: [{removed}] ADDED: [{added}]";
-	}
-
 	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
 	private static Task<CallToolResult> CreateSysFileAsync(ProcessDesignerArrangeContext context, List<string> created,
 			string processName, string descriptor) =>

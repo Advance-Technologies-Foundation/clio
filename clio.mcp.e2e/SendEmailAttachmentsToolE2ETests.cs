@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -100,6 +101,15 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private static readonly Regex GuidPattern = new(
 		@"\b(?:[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[0-9a-fA-F]{32})\b",
 		RegexOptions.CultureInvariant);
+
+	/// <summary>
+	/// How <see cref="Named"/> writes the stored JSON back to text: a quote inside a string as <c>\"</c>. The default
+	/// encoder writes it as <c>\u0022</c>, whose last hex digit runs into an id that opens a nested JSON string (a
+	/// filter item key in <c>serializedFilterEditData</c>), so <see cref="GuidPattern"/>'s word boundary never matches
+	/// and that generated id compares as a literal.
+	/// </summary>
+	private static readonly JsonSerializerOptions ComparableTextOptions =
+		new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
 	#region Methods: Tests - create and describe
 
@@ -383,7 +393,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	}
 
 	[Test]
-	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which clio warns about and does not refuse - and the Send email element's stored node and its resource rows are byte-identical before and after.")]
+	[Description("TC-I-06: describe, then send the described entries back VERBATIM in a setElement - read-back members included, which clio warns about and does not refuse - and the Send email element's stored node is byte-identical before and after, and so is every resource row except the template parameter captions of the inactive cultures, which the create writes in every culture and the platform's first re-save of the process drops; none is added.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process changes no stored byte when the described list is sent back")]
 	public async Task ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedListIsSentBack() {
@@ -401,9 +411,11 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				.ToJsonString();
 			string nodeBefore = await ReadLastElementNodeAsync(context, processName, elementUId);
 			IReadOnlyList<string> resourcesBefore = await ReadElementResourceRowsAsync(context, processName, "SE1");
+			IReadOnlySet<string> activeCultures = await ReadActiveCultureNamesAsync(context);
 
 			// Act
 			CallToolResult echoed = await ModifyAsync(context, processName, SetAttachments("SE1", described));
+			IReadOnlyList<string> resourcesAfter = await ReadElementResourceRowsAsync(context, processName, "SE1");
 
 			// Assert
 			ShouldHaveLanded(echoed, "a described list fed back is a valid list");
@@ -411,8 +423,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "clio names the describe-only members it ignored instead of refusing them");
 			(await ReadLastElementNodeAsync(context, processName, elementUId)).Should().Be(nodeBefore,
 				because: "every entry matches its own row, so the replace keeps every row as it is");
-			(await ReadElementResourceRowsAsync(context, processName, "SE1")).Should().Equal(resourcesBefore,
-				because: "no row was rebuilt, so no resource row changed");
+			// The create writes the Send email template's parameter captions in every culture; this modify is the
+			// process's first re-save, and the platform save keeps only the active cultures' rows (measured: 1356 rows in
+			// 28 cultures -> 252 in the 4 active ones, no value changed, none added). The tolerance is exactly those rows.
+			resourcesAfter.Should().Equal(WithoutInactiveTemplateCaptions(resourcesBefore, activeCultures),
+				because: "no row was rebuilt, so no resource row changed beyond the platform's first-save drop of the "
+					+ "inactive cultures' template captions; the rows it removed and added: {0}",
+				RowDifference(resourcesBefore, resourcesAfter));
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -508,7 +525,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - designer fixture and run time
 
 	[Test]
-	[Description("TC-I-09: read-only on the designer-built fixture UsrSeAttachmentsDesignerFixture: five entries decoded in the write shape across SE1 and SE2 - SE1's rows including the stale-parent row (a single File item under a collection-bound slot) with its issue - and SE2's entries in automatic mode with a template. Nothing is written. Ignored, with the build instructions, when the stand lacks the fixture.")]
+	[Description("TC-I-09: read-only on the designer-built fixture UsrSeAttachmentsDesignerFixture: five entries decoded in the write shape across the elements captioned SE1 and SE2 (the designer names them after their user task) - SE1's rows including the stale-parent row (a single File item under a collection-bound slot) with its issue - and SE2's entries in automatic mode with a template. Nothing is written. Ignored, with the build instructions, when the stand lacks the fixture.")]
 	[AllureTag(DescribeProcessTool.ToolName)]
 	[AllureName("describe-business-process reads the designer-built attachments fixture")]
 	public async Task DescribeBusinessProcess_Should_ReadTheDesignerBuiltAttachmentsFixture() {
@@ -520,16 +537,20 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		JsonObject graph = await DescribeGraphAsync(context, DesignerFixtureName);
 
 		// Assert
-		IReadOnlyList<JsonObject> first = Attachments(Element(graph, "SE1"));
-		IReadOnlyList<JsonObject> second = Attachments(Element(graph, "SE2"));
+		// The designer names each element after its user task (EmailTemplateUserTask1, ...); the fixture's
+		// instructions set the CAPTIONS, so its elements are found by caption.
+		JsonObject se1 = ElementByCaption(graph, "SE1");
+		JsonObject se2 = ElementByCaption(graph, "SE2");
+		IReadOnlyList<JsonObject> first = Attachments(se1);
+		IReadOnlyList<JsonObject> second = Attachments(se2);
 		(first.Count + second.Count).Should().Be(5, because: "the fixture carries four rows on SE1 and one on SE2");
 		first.Should().OnlyContain(entry => !string.IsNullOrEmpty(Text(entry, "slot")),
 			because: "every described row names the slot it was read from");
 		first.Should().Contain(entry => Strings(entry["issues"]).Any(),
 			because: "the stale-parent row attaches one copy of its File per row of the old collection, which describe reports");
-		Text(Group(Element(graph, "SE2"), "email"), "mode").Should().Be("auto",
+		Text(Group(se2, "email"), "mode").Should().Be("auto",
 			because: "SE2 is the automatic, template-mode element of the fixture");
-		Text(Group(Element(graph, "SE2"), "email"), "messageSource").Should().Be("template",
+		Text(Group(se2, "email"), "messageSource").Should().Be("template",
 			because: "SE2 sends a template");
 	}
 
@@ -783,10 +804,11 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			], rowCount: 1), "the designer fixture's SysSchema row");
 		if (rows.GetArrayLength() == 0) {
 			Assert.Ignore($"Designer fixture {DesignerFixtureName} not found on '{context.EnvironmentName}'. Build it in "
-				+ "the classic designer: an Object attachments element OF1, a Generated report element RF1, a Process "
-				+ "parameter element PF1, the process FileCollection Docs and File Doc, a manual custom-message Send "
-				+ "email SE1 with rows OF1, RF1, Docs and Doc, and an automatic template-mode SE2 with RF1; save, clear "
-				+ "SE1's RF1 row and save, add an OF1 row and save, re-bind SE1's first row to Doc and save.");
+				+ "the classic designer, each element CAPTIONED as named here (the test finds them by caption): an Object "
+				+ "attachments element OF1, a Generated report element RF1, a Process parameter element PF1, the process "
+				+ "FileCollection Docs and File Doc, a manual custom-message Send email SE1 with rows OF1, RF1, Docs and "
+				+ "Doc, and an automatic template-mode SE2 with RF1; save, clear SE1's RF1 row and save, add an OF1 row "
+				+ "and save, re-bind SE1's first row to Doc and save.");
 		}
 	}
 
@@ -1068,7 +1090,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		}
 		AddName(names, Text(graph, "schemaUId"), "<process>");
 		AddName(names, ownElementUId, "<element>");
-		return GuidPattern.Replace(node.ToJsonString(), match =>
+		return GuidPattern.Replace(node.ToJsonString(ComparableTextOptions), match =>
 			names.TryGetValue(Guid.Parse(match.Value), out string? name) ? name : match.Value);
 	}
 
@@ -1135,6 +1157,15 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		found.Should().NotBeNull(because: $"the element '{name}' must be described; what was read: {{0}}",
 			graph.ToJsonString());
 		return found!;
+	}
+
+	/// <summary>The one described element with that caption: how a designer-built fixture's elements are found.</summary>
+	private static JsonObject ElementByCaption(JsonObject graph, string caption) {
+		List<JsonObject> found = (graph["elements"] as JsonArray)?.OfType<JsonObject>()
+			.Where(candidate => Text(candidate, "caption") == caption).ToList() ?? [];
+		found.Should().ContainSingle(because: $"exactly one element is captioned '{caption}'; what was read: {{0}}",
+			graph.ToJsonString());
+		return found[0];
 	}
 
 	/// <summary>A nested object member, failing the test with what was read when it is absent.</summary>
