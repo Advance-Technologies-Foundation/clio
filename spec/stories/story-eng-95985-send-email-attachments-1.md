@@ -154,8 +154,9 @@ Ids are the analysis plan's (sections 3-5). Components C1-C10 and K1-K12 are the
 **clio** (read `docs/agent-instructions/bundled-packages.md` before CL-1 and CL-3, and `docs/knowledge/ProcessModel/`
 and `docs/knowledge/McpServer/` before any edit)
 
-- [ ] **CL-1** rebundle the final cut (`pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <pkg> -Version
-  <claimed>`), pins in the same commit (`BundledProcessBuilderPackageTests`; TC-C-20).
+- [x] **CL-1** rebundle the final cut (`pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <pkg> -Version
+  <claimed>`), pins in the same commit (`BundledProcessBuilderPackageTests`; TC-C-20). (Done 2026-10-30 by the
+  documented hand-cut route, the stamp being already committed.)
 - [x] **CL-2** K2 key check + tests (`KeySets_Should_EqualTheMembersOfTheBundledServerContracts`,
   `ReadBackFields_Should_BeDescribeOnlyMembers`; TC-C-01..05).
 - [x] **CL-3** K3 floors + pins (`ProcessDesignerRequiresPackageAttributeTests`, description pins, the e2e floor
@@ -165,9 +166,10 @@ and `docs/knowledge/McpServer/` before any edit)
   create and modify forward the list verbatim; TC-C-07, 08, 17..19).
 - [x] **CL-5** K6 typed describe, K7 read-back checks (`ServerProcessDescriberTests`, `EmailBlockExpectationTests`;
   TC-C-09..16, 23).
-- [ ] **CL-6** K8 capability map, K9 curated re-pin. The clio PR stays draft until the KB PR merges and its generation
+- [x] **CL-6** K8 capability map, K9 curated re-pin. The clio PR stays draft until the KB PR merges and its generation
   is published; then the re-pin, clio gate 3, and only then reviewers (`WorkspaceTemplateGuidanceDriftTests`;
-  TC-C-21, 22).
+  TC-C-21, 22). (Done 2026-10-30 ahead of publication, owner's choice: the re-pin targets the generation the KB PR
+  will publish; the clio PR merges only after that generation is published.)
 - [x] **CL-7** K10 e2e `SendEmailAttachmentsToolE2ETests`, run on stand `Creatio` on net10.0 and net8.0, Ignored = 0
   (TC-I-01..10).
 - [x] **CL-8** K11 knowledge records (only facts the code does not say); records whose `applies-to` paths
