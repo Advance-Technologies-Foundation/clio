@@ -26,10 +26,11 @@ namespace Clio.Mcp.E2E;
 /// <para>They are also the only check that a HOST really keeps undeclared keys: the package can prove its own reader
 /// works, but not that the platform binds the request with a serializer that fills the extension data. Run them on
 /// both a .NET Framework and a .NET Core stand before a release.</para>
-/// <para>The describe-echo case feeds a described element back unchanged: it must SAVE, its read-only fields ignored
-/// and named once per place in a warning, none of them refused or listed as a typo - describe -> modify keeps working
-/// (decision Q4 of the package spec). A field a write takes elsewhere is refused only when it carries a value; a plain
-/// start event carries none.</para>
+/// <para>The describe-echo case feeds a described Read data block back unchanged through setElement: it must SAVE,
+/// its read-only fields (sourceSchemaUId, outputs ...) ignored by the SERVER and named in its warning, none refused or
+/// listed as a typo - describe -> modify keeps working (decision Q4 of the package spec). It echoes the BLOCK, not the
+/// whole element: clio's own pre-send check (<c>ProcessBlockKeyCheck</c>, ENG-103085) refuses element-level describe
+/// fields in an elementUpdate before anything is sent, so a whole-element echo never reaches the server.</para>
 /// <para><c>lable</c> on a flow and on a <c>setFlow</c> operation are the misspellings the ENG-95244 stand probe
 /// measured (the operation used to answer "1 operation(s) applied" and change nothing); <c>tpye</c> is the parameter
 /// case of the package's own unit tests.</para>
@@ -128,23 +129,28 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, an element copied verbatim from describe into a setElement elementUpdate is SAVED: its read-only fields are ignored and named once per place in the 'Read-only fields copied from describe were ignored' warning, and nothing is refused or listed as a typo.")]
+	[Description("Over the real MCP path, a Read data block copied verbatim from describe into a setElement elementUpdate is SAVED: the server ignores its read-only fields and names them in the 'Read-only fields copied from describe were ignored' warning, and nothing is refused or listed as a typo.")]
 	[AllureTag(ModifyToolName)]
 	[AllureTag(DescribeToolName)]
-	[AllureName("modify-business-process saves a described element fed back verbatim and names its ignored read-only fields")]
-	public async Task ModifyBusinessProcess_Should_SaveAndNameIgnoredReadOnlyFields_WhenADescribedElementIsFedBack() {
+	[AllureName("modify-business-process saves a described block fed back verbatim and names its ignored read-only fields")]
+	public async Task ModifyBusinessProcess_Should_SaveAndNameIgnoredReadOnlyFields_WhenADescribedBlockIsFedBack() {
 		// Arrange
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
 		string processName = $"UsrClioBpUnknownKeyEchoE2e{Guid.NewGuid():N}";
-		(await CreateAsync(context, processName, "label")).ExitCode.Should().Be(0,
-			because: "the process to modify must exist");
+		McpCommandExecutionParser.Extract(await CallToolAsync(context, CreateToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = context.EnvironmentName,
+				["descriptor"] = ReadDataDescriptor(processName)
+			})).ExitCode.Should().Be(0, because: "the process to modify must exist");
 		JsonObject described = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
+		JsonNode? readData = ElementNamed(described, "Read1")["readData"];
+		readData.Should().NotBeNull(because: "describe reports the Read data block");
 		var operations = new JsonArray {
 			new JsonObject {
 				["op"] = "setElement",
-				["elementName"] = "Start1",
-				["elementUpdate"] = ElementNamed(described, "Start1").DeepClone()
+				["elementName"] = "Read1",
+				["elementUpdate"] = new JsonObject { ["readData"] = readData!.DeepClone() }
 			}
 		};
 
@@ -162,8 +168,8 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		output.Should().NotContain(Refused, because: "read-only fields are ignored, never refused");
 		output.Should().Contain("Read-only fields copied from describe were ignored",
 			because: "the fields describe added are named in a warning, not dropped in silence");
-		output.Should().MatchRegex(@"operations\[\]\.elementUpdate: [^;.]*\buid\b",
-			because: "the read-only fields are named once per place, the element's uid among them");
+		output.Should().Contain("operations[].elementUpdate.readData:",
+			because: "the read-only fields are named once per place, at the block they were sent in");
 		output.Should().NotMatchRegex(@"operations\[0\]\.\S+ - ",
 			because: "a verbatim describe echo holds no misspelled key, so no key may be listed one by one with a hint");
 	}
@@ -207,6 +213,24 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 			element => element["name"] != null && element["name"]!.GetValue<string>() == name,
 			because: $"the described process holds the element {name}").Subject;
 	}
+
+	private static string ReadDataDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio unknown keys echo E2E",
+		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Read1", "type": "readData", "readData": { "source": "Contact", "mode": "first" } },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Read1" },
+		    { "source": "Read1", "target": "End1" }
+		  ]
+		}
+		""";
 
 	private static string TwoElementDescriptor(string processName, string labelKey) =>
 		$$"""

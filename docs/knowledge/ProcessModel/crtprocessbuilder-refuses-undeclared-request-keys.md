@@ -1,10 +1,11 @@
 ---
-description: From CrtProcessBuilder 1.6.6.128 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores", and clio deliberately has no payload-key check of its own
+description: From CrtProcessBuilder 1.6.6.128 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores"; clio's own pre-send ProcessBlockKeyCheck stays in front of it
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/CreateBusinessProcessCommand.cs
   - clio/Command/ModifyBusinessProcessCommand.cs
   - clio/Command/ModifyProcessAsNewVersionCommand.cs
+  - clio/Command/ProcessModel/ProcessBlockKeyCheck.cs
 ticket: ENG-95244
 date: 2026-10-31
 ---
@@ -18,11 +19,14 @@ match, the keys valid there). Fields copied from describe are grouped once per p
   sent as `null` it is ignored;
 - a READ-ONLY field (`position`, `size`, `uid`, `buildType`, `templateDisplay`, `completionMode`, an element's
   `parameters` list...) is IGNORED, and the saved result carries one warning naming them once per place - so a
-  described element fed back as is still saves.
+  described element fed back as is still saves on the server (clio is stricter, see below).
 
 Past the message's caps the rest is counted and the next attempt names it. clio relays that text as exit code 1
-(modify also names the operation when every finding sits under one); it checks MCP tool ARGUMENTS, never payload
-keys. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
+(modify also names the operation when every finding sits under one). clio's own pre-send `ProcessBlockKeyCheck`
+(ENG-103085) still runs first and is STRICTER for a whole element: element-level describe fields (`uid`, `position`,
+`buildType`...) in a `setElement` elementUpdate, and an element's `parameters` / `connections`, are refused before
+anything is sent ("Nothing was sent"), so only a describe BLOCK (readData, email...) echoed back reaches the server's
+ignore-with-warning path. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
 itself unavailable the write goes ahead with a warning that it was not checked. Details: the package's
 `.ai/specs/ENG-95244-unknown-request-keys.md`.
 
