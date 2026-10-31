@@ -565,8 +565,12 @@ internal static class ProcessBlockKeyCheck {
 		private bool RefusesAttachmentsShape(JsonNode value, string where, string path) {
 			const string entryShape = "{\"processParameter\": ...}, {\"sourceElement\": ..., "
 				+ "\"sourceElementParameter\": ...} or {\"expression\": ...}";
-			if (value is JsonObject or JsonValue) {
-				string sent = value is JsonObject ? "a single object" : value.ToJsonString(ReadableJson);
+			string? sent = value switch {
+				JsonObject => "a single object",
+				JsonValue scalar => scalar.ToJsonString(ReadableJson),
+				_ => null
+			};
+			if (sent is not null) {
 				RefuseShape($"{where}: '{path}' takes a LIST of attachment entries, so {sent} there makes the server "
 					+ $"fail the whole request. Send an array, one object per attachment: \"attachments\": [{entryShape}].");
 				return true;

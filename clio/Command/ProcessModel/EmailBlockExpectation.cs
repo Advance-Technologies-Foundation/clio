@@ -27,6 +27,7 @@ public static class EmailBlockExpectation {
 	// repeated string literals out of the analyzer's duplicate-literal radar.
 	private const string ElementsKey = "elements";
 	private const string EmailKey = "email";
+	private const string ElementNameKey = "elementName";
 
 	/// <summary>
 	/// The one phrase every template-landed warning carries. Public so the e2e negative assertion ("the warning
@@ -113,7 +114,7 @@ public static class EmailBlockExpectation {
 
 			// setElement: the name is on the operation, the block is under "elementUpdate".
 			if (op["elementUpdate"] is JsonObject update && update[EmailKey] is JsonObject) {
-				string? name = ReadName(op["elementName"]);
+				string? name = ReadName(op[ElementNameKey]);
 				if (!string.IsNullOrWhiteSpace(name)) {
 					names.Add(name);
 				}
@@ -316,7 +317,7 @@ public static class EmailBlockExpectation {
 				name = ReadName(added["name"]);
 				email = added[EmailKey];
 			} else if (op["elementUpdate"] is JsonObject update) {
-				name = ReadName(op["elementName"]);
+				name = ReadName(op[ElementNameKey]);
 				email = update[EmailKey];
 			}
 
@@ -463,13 +464,13 @@ public static class EmailBlockExpectation {
 				continue;
 			}
 			if (string.Equals(ReadName(op["op"])?.Trim(), "removeElement", StringComparison.OrdinalIgnoreCase)) {
-				Forget(sent, ReadName(op["elementName"]));
+				Forget(sent, ReadName(op[ElementNameKey]));
 			} else if (op["element"] is JsonObject added) {
 				string? name = ReadName(added["name"]);
 				Forget(sent, name);
 				Track(sent, name, added[EmailKey]);
 			} else if (op["elementUpdate"] is JsonObject update) {
-				Track(sent, ReadName(op["elementName"]), update[EmailKey]);
+				Track(sent, ReadName(op[ElementNameKey]), update[EmailKey]);
 			}
 		}
 
@@ -658,7 +659,7 @@ public static class EmailBlockExpectation {
 
 	private static bool ServerReportedRemoval(IReadOnlyList<string> serverWarnings, IEnumerable<string?> names) =>
 		names.Where(name => !string.IsNullOrWhiteSpace(name))
-			.Select(name => ServerNoticePrefix + name!.Trim() + ServerRemovalNoticeTail)
+			.Select(name => ServerNoticePrefix + name.Trim() + ServerRemovalNoticeTail)
 			.Any(notice => serverWarnings.Any(warning =>
 				warning is not null && warning.StartsWith(notice, StringComparison.OrdinalIgnoreCase)));
 
