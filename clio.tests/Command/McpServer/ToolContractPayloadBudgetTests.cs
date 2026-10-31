@@ -291,6 +291,27 @@ public sealed class ToolContractPayloadBudgetTests {
 	// instruction that also drops a mirror's itemProperties (+35 bytes): create 35054, modify 35021, describe 34918 -
 	// 18, 51 and 154 bytes of headroom. The 1.6.6.118 re-cut said that a FileCollection re-sent with its itemProperties keeps
 	// its item (describe +56 bytes): create 35054, modify 35021, describe 34974 - 18, 51 and 98 bytes of headroom.
+	//
+	// ENG-95985 (2026-10-29, Send email attachments) re-measured first by lowering the ceiling: later commits had moved
+	// the three to create 35070, modify 35069, describe 34917 - 2, 3 and 155 bytes of headroom. The feature adds
+	// email.attachments to create's email shape with its guide (+210 bytes at the final guide name), the replace rule
+	// to modify's email clause (+157), the read-back line to describe (+112), and email.attachments to create's and
+	// modify's floor reasons (+19 each). Paid by SWAP, no ceiling raise: create dropped the body's whole-parameter
+	// rule (a process parameter is inserted WHOLE, no column drill on a bare parameter), restated from
+	// process-send-email; modify dropped the switching detail that process-send-email-template "owns in full". The
+	// {{...}} caveat came back in a short form, because it fails SILENTLY (the literal text is emailed), paid for by
+	// two clauses that fail loudly or carry nothing for an agent: "column names are matched case-sensitively" (an
+	// unknown column is REJECTED, naming it) and "verified on a stand". Re-measured by lowering the ceiling with the
+	// interim guide name process-send-email: create 35003 before that swap and 34997 after it, modify 34997,
+	// describe 35029 - 75, 75 and 43 bytes of headroom. Review fixes then made both pointers an instruction to read
+	// the guide rather than a claim that it owns the member (create -3 bytes, modify +5), re-measured by lowering the
+	// ceiling: create 34994, modify 35002, describe 35029 - 78, 70 and 43 bytes of headroom. The final review restored
+	// two data-loss caveats in a short form: modify's "to template it clears Body and a constant Subject not re-sent"
+	// (+55) and create's "a process parameter, inserted WHOLE: no column drill" (+27). Re-measured by lowering the
+	// ceiling: create 35021, modify 35057, describe 35029 - 51, 15 and 43 bytes of headroom. Both pointers then moved
+	// from process-send-email to the attachments guide, process-send-email-attachments (guidance 1.15.176, +12 bytes
+	// each). Re-measured by lowering the ceiling: create 35033, modify 35069, describe 35029 - 39, 3 and 43 bytes of
+	// headroom, so anything added to modify-business-process now has to be paid for by a trim.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -312,7 +333,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// safety marker, so no short form keeps them and the bundle did not move. Re-measured by lowering this guard: 18993
 	// bytes on the wire at the time - 7 bytes under it. That figure went stale when a later commit retired a marked
 	// sentence: re-measured on 2026-10-19 (ENG-96506, whose additions carry no safety marker and leave the bundle
-	// where it was), the bundle is 18815 bytes on the wire - 185 bytes under this guard.
+	// where it was), the bundle is 18815 bytes on the wire - 185 bytes under this guard. Re-measured on 2026-10-29
+	// (ENG-95985) by lowering this guard: 18832 bytes before the Send email attachments text and 18832 after it - the
+	// additions carry no safety marker, so no short form keeps them - 168 bytes under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

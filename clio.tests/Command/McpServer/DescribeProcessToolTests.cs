@@ -464,6 +464,25 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The describe contract and its prompt say a Send email element reads back its attachments in the email.attachments write shape with the describe-only slot, bindingLevels and issues, so an agent can edit the described list and send it back, and knows which members are read-back only.")]
+	public void DescribeProcess_ShouldDocumentTheEmailAttachments_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("and attachments (one per row, in the email.attachments write shape plus describe-only slot, bindingLevels, issues)",
+			because: "the email read-back line is where an agent learns the list exists and which members are derived");
+		prompt.Should().Contain("A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of",
+			because: "the prompt narrates the attachments the contract reports");
+		prompt.Should().Contain("`email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each",
+			because: "the prompt must match the contract on the describe-only members");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back, its three groups, and the describe-only members to remove before resubmitting: the server reports actionStored, outputs, issues, bindingLevels, report.caption, report.convertToPdf and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
 	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
 		// Arrange

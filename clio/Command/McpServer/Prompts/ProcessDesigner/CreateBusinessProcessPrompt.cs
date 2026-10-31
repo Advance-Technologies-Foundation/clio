@@ -46,8 +46,11 @@ public static class CreateBusinessProcessPrompt {
 		 element with an `email` block — `mode` (auto/manual), `sender`, `to`/`cc`/`bcc` recipients, `subject`, the
 		 message as EITHER an HTML custom-message `body` (`bodyFormat` `html` only) OR an existing email `template`
 		 (by name or id; plus `templateEntity`, the record its macros resolve against, when the template is authored
-		 against an object — never both a template and a body), `importance`, `ignoreErrors`, and a manual-mode
-		 `performer`; when several templates could fit or none is named, ASK the user which template to use or offer
+		 against an object — never both a template and a body), `importance`, `ignoreErrors`, a manual-mode
+		 `performer`, and `attachments` - the files the email sends, one entry per attachment row, each naming ONE
+		 source: a process FileCollection or File parameter, or an element's file output such as a Process file
+		 element's `ObjectFiles` or `ReportFiles` (read `get-guidance name=process-send-email-attachments` first);
+		 when several templates could fit or none is named, ASK the user which template to use or offer
 		 a custom message rather than guessing. To route a record for sign-off, add an
 		 `approval` element with an `approval` block — the `object` and the `recordId` under approval, the `approver`
 		 (a nested object taking `type` user|manager|role plus that type's `employee` or `role`), `allowDelegation`,
@@ -107,7 +110,9 @@ public static class CreateBusinessProcessPrompt {
 		 `list-printables`' `templateId`, `report.recordId` the record; a printable that does not exist is refused,
 		 since this element cannot create one); `files` for Process parameter (a FileCollection, a File or an
 		 element's file output; it only saves, so `saveTo` is required and `useInProcess` is refused).
-		 Read `get-guidance name=process-files` before writing it — that guide owns the block.
+		 Read `get-guidance name=process-files` before writing it — that guide owns the block. To EMAIL the files
+		 the element outputs, list that output in a Send email element's `email.attachments`, and declare the
+		 Process file element before the Send email element and on the flow before it.
 		 A SUCCESSFUL build can still report caveats, and they arrive as `message-type: "Warning"` entries in
 		 `execution-log-messages` — there is no separate `warnings` field on the response, so looking for one
 		 and finding nothing is not evidence there were none.

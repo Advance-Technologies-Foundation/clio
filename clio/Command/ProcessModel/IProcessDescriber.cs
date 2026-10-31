@@ -1240,11 +1240,69 @@ public sealed class DescribedEmail {
 	public DescribedPerformer Performer { get; set; }
 
 	/// <summary>
+	/// The element's attachment rows, one entry per stored <c>Attachments&lt;N&gt;</c> slot, in the element's stored
+	/// order - the designer's row order, the order the email attaches them, so slot numbers can have gaps and need not
+	/// ascend (CrtProcessBuilder 1.6.6.128; 1.6.6.127 sorted them by slot number) - in the write shape of <c>email.attachments</c> plus the describe-only <see cref="DescribedEmailAttachment.Slot"/>,
+	/// <see cref="DescribedEmailAttachment.BindingLevels"/> and <see cref="DescribedEmailAttachment.Issues"/> - so the
+	/// list can be edited and sent back (modify REPLACES the element's attachments with the list it is sent).
+	/// <c>null</c> when the element carries no attachment slot, and from a server that predates the member.
+	/// </summary>
+	[JsonPropertyName("attachments")]
+	public List<DescribedEmailAttachment> Attachments { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports inside the email block so the description round-trips
-	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format, an
-	/// attachment list — reaches the command output verbatim instead of being
+	/// losslessly: a newer <c>CrtProcessBuilder</c> reporting something this build does not declare — a body format,
+	/// a further email member — reaches the command output verbatim instead of being
 	/// discarded without a trace. This block is where the next email feature lands, so it needs the bag most.
 	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One attachment row of a Send email element, read back off its <c>Attachments&lt;N&gt;</c> slot. Mirrors the server's
+/// <c>DescribeSendEmailAttachment</c>: the source in the write shape of an <c>email.attachments</c> entry (at most one of
+/// <see cref="ProcessParameter"/>, <see cref="SourceElement"/> + <see cref="SourceElementParameter"/>,
+/// <see cref="Expression"/>), and the describe-only members a write ignores with a warning.
+/// </summary>
+public sealed class DescribedEmailAttachment {
+	/// <summary>The process parameter holding the files (a FileCollection, a File, or a dotted item of a collection).</summary>
+	[JsonPropertyName("processParameter")]
+	public string ProcessParameter { get; set; }
+
+	/// <summary>The element whose output holds the files; paired with <see cref="SourceElementParameter"/>.</summary>
+	[JsonPropertyName("sourceElement")]
+	public string SourceElement { get; set; }
+
+	/// <summary>The output of <see cref="SourceElement"/> holding the files, e.g. <c>ObjectFiles</c> or <c>ReportFiles</c>.</summary>
+	[JsonPropertyName("sourceElementParameter")]
+	public string SourceElementParameter { get; set; }
+
+	/// <summary>A stored formula the decoder could not name as a parameter or an element output, reported as written.</summary>
+	[JsonPropertyName("expression")]
+	public string Expression { get; set; }
+
+	/// <summary>Declared by the write shape only so a refusal can name it; a file has no constant form, so describe never fills it.</summary>
+	[JsonPropertyName("value")]
+	public string Value { get; set; }
+
+	/// <summary>Describe-only: the stored attachment parameter, e.g. <c>Attachments1</c>.</summary>
+	[JsonPropertyName("slot")]
+	public string Slot { get; set; }
+
+	/// <summary>
+	/// Describe-only: which levels of the slot are bound - <c>both</c> (the collection and its file item),
+	/// <c>outerOnly</c>, <c>itemOnly</c> (a single File) or <c>none</c>.
+	/// </summary>
+	[JsonPropertyName("bindingLevels")]
+	public string BindingLevels { get; set; }
+
+	/// <summary>Describe-only: sentences naming a stored shape that would fail or surprise at run time; <c>null</c> when none.</summary>
+	[JsonPropertyName("issues")]
+	public List<string> Issues { get; set; }
+
+	/// <summary>Every other member a newer server reports on the entry, kept so the read-back stays lossless.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }
@@ -2151,7 +2209,7 @@ public sealed class DescribedParameter {
 	/// was MIRRORED: re-create it through <c>addParameter</c>'s <c>typeFromElement</c> naming its source. An untagged
 	/// one was DECLARED and has no source to mirror: send it back as described, <c>type</c> + <c>itemProperties</c>,
 	/// which the write side reads as the declared shape while ignoring the describe-only members (from
-	/// <c>CrtProcessBuilder</c> 1.6.6.119, this clio's create floor; an older one drops <c>itemProperties</c>). A bound one's
+	/// <c>CrtProcessBuilder</c> 1.6.6.119, below this clio's create floor; an older one drops <c>itemProperties</c>). A bound one's
 	/// <c>value</c> is its binding: drop it and replay the binding through a mapping. A process parameter described as
 	/// <c>FileCollection</c> is declared by that type with its <c>itemProperties</c>, which keep the described item; sent
 	/// by the type alone, the rebuild names its one item <c>File</c>.</para>

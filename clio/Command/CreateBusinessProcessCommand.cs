@@ -282,9 +282,15 @@ namespace Clio.Command;
 // reads it (1.6.6.110-1.6.6.116 carried the SysFile storage work and its follow-ups, which this floor also covers; 1.6.6.117
 // and 1.6.6.118 were superseded cuts of this work; 1.6.6.118 added that a described FileCollection keeps its item, and
 // 1.6.6.119 that setParameter takes a re-sent Float on a parameter an older cut stored as the base Float as a no-op).
-// ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for this same reason and point
-// here instead of repeating it.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.119",
+// Raised to 1.6.6.127 by ENG-95985: `email.attachments`, the Send email element's attachment rows. The member rides a
+// KNOWN block, so a 1.6.6.119-1.6.6.125 server's serializer drops it and answers success: an email block that also
+// sets another field saves with no attachment row and nothing says so, and an attachments-only setElement is refused
+// as configuring nothing, in a message that does not name attachments. This clio's contract names the member (and its
+// replace rule on modify), so the floor is the first archive that reads it. 1.6.6.126 was an experimental cut of this
+// work that never left the stand.
+// ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
+// point here instead of repeating them.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.127",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
@@ -374,11 +380,19 @@ public sealed class CreateBusinessProcessService(
 		try {
 			envelope = JsonSerializer.Deserialize<BuildProcessResponseEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException exception) {
+			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
+			if (ProcessDesignServerFault.IsUnreadableRequest(serverText)) {
+				throw new InvalidOperationException(
+					"BuildProcess could not read the request, so the process was NOT created. A descriptor member "
+					+ "carries a value of the wrong shape for its key; check the descriptor against get-tool-contract "
+					+ "create-business-process." + ProcessDesignServerFault.ServerSaid(serverText), exception);
+			}
 			throw new InvalidOperationException(
 				"BuildProcess returned a response clio could not read, so whether the process was created is "
 				+ "UNKNOWN — re-read it with describe-business-process before deciding what to do. The parser "
 				+ "detail is on the inner exception; it names a .NET type and a byte offset, which helps a "
-				+ "developer reading a stack trace and is noise to the caller reading this.",
+				+ "developer reading a stack trace and is noise to the caller reading this."
+				+ ProcessDesignServerFault.ServerSaid(serverText),
 				exception);
 		}
 

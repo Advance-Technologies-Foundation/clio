@@ -60,6 +60,9 @@ public static class DescribeProcessPrompt {
 		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
 		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
+		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
+		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
+		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.
 		2. CHECK `isActiveVersion` BEFORE narrating anything. Every saved version is a separate schema with
 		   its own name, so resolving by `process-name` returns the family ROOT — and on a versioned process
 		   that is NOT what the runtime executes. Three outcomes: true, narrate this graph; false WITH an

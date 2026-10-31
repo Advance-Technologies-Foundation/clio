@@ -222,8 +222,9 @@ namespace Clio.Command;
 // released.
 // Raised to 1.6.6.109 by ENG-96506 for the Generated report and Process parameter variants of the fileProcessing
 // element; the rationale is recorded once, on CreateBusinessProcessOptions, and holds here unchanged.
-// Raised to 1.6.6.119 by ENG-103162 for itemProperties on addParameter; the rationale is on CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.119",
+// Raised to 1.6.6.119 by ENG-103162 for itemProperties on addParameter, and to 1.6.6.127 by ENG-95985 for
+// email.attachments on addElement / setElement; the rationale is on CreateBusinessProcessOptions.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.127",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
@@ -341,11 +342,19 @@ public sealed class ModifyBusinessProcessService(
 		try {
 			envelope = JsonSerializer.Deserialize<ModifyProcessResponseEnvelope>(responseBody, JsonOptions);
 		} catch (JsonException exception) {
+			string serverText = ProcessDesignServerFault.ReadServerText(responseBody);
+			if (ProcessDesignServerFault.IsUnreadableRequest(serverText)) {
+				throw new InvalidOperationException(
+					"ModifyProcess could not read the request, so the edit was NOT applied. An operation carries a "
+					+ "value of the wrong shape for its key; check each operation against get-tool-contract "
+					+ "modify-business-process." + ProcessDesignServerFault.ServerSaid(serverText), exception);
+			}
 			throw new InvalidOperationException(
 				"ModifyProcess returned a response clio could not read, so whether the edit was applied is "
 				+ "UNKNOWN — re-read the process with describe-business-process before deciding what to do. "
 				+ "The parser detail is on the inner exception; it names a .NET type and a byte offset, which "
-				+ "helps a developer reading a stack trace and is noise to the caller reading this.",
+				+ "helps a developer reading a stack trace and is noise to the caller reading this."
+				+ ProcessDesignServerFault.ServerSaid(serverText),
 				exception);
 		}
 
@@ -506,7 +515,8 @@ public class ModifyBusinessProcessCommand(
 			ErrorOr<DescribeProcessResult>? saved = null;
 			bool readFailureReported = false;
 			try {
-				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, before, out saved);
+				readFailureReported = WarnOnDiscardedConfigurationBlocks(options, result.SchemaName, result.Warnings, before,
+					out saved);
 			} catch (Exception verification) {
 				logger.WriteWarning(
 					$"The edit was applied, but verifying its configuration failed: {verification.Message}. Re-read the process with describe-business-process mode=full before reporting a grant or revoke as applied.");
@@ -564,7 +574,8 @@ public class ModifyBusinessProcessCommand(
 	// the read-back for the digest (null when there was no identity to read back by) as soon as it is taken, and
 	// returns whether the reply already says why there is no read-back (a guard warned that it failed or could not be taken, or a caller was not read back), so the digest does not say it twice.
 	private bool WarnOnDiscardedConfigurationBlocks(ModifyBusinessProcessOptions options,
-		string? schemaName, ErrorOr<DescribeProcessResult> before, out ErrorOr<DescribeProcessResult>? readBack) {
+		string? schemaName, IReadOnlyList<string>? serverWarnings, ErrorOr<DescribeProcessResult> before,
+		out ErrorOr<DescribeProcessResult>? readBack) {
 		readBack = null;
 		BlockExpectationIntent intent = BlockExpectationIntent.FromOperations(options.OperationsJson);
 		// The Approval element has the same silent-drop failure, so master's guard verifies it
@@ -636,7 +647,8 @@ public class ModifyBusinessProcessCommand(
 			return rights || labels;
 		}
 
-		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent);
+		BlockExpectationReporter.ReportDescribed(logger, described.Value, intent,
+			before.IsError ? null : before.Value, serverWarnings);
 
 		string? approvalWarning = ApprovalBlockExpectation.BuildWarning(
 			ApprovalBlockExpectation.Missing(described.Value, expectedApproval));
