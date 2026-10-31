@@ -4699,7 +4699,8 @@ stories:
   # that ENG-95984 can close). They were deferred until story-eng-92719-file-processing-element-2 merged its package
   # PR; that happened on 2026-10-20 (crt-process-builder PR 100, CrtProcessBuilder 1.6.6.109), so the slot is open and
   # they no longer wait on story 2. They stay deferred only until their criteria are refined with the owner.
-  # ENG-95985 Send email attachments has no story id in this tracker yet, so the dependencies name its Jira key.
+  # ENG-95985 Send email attachments was named here by its Jira key until its story id
+  # story-eng-95985-send-email-attachments-1 was added on 2026-10-28; the blocks links now name the story id.
   - id: story-eng-95984-file-parameter-type-1
     title: "File and FileCollection process parameters, the two-level collection binder, and describe read-back"
     feature: "eng-95984-file-parameter-type"
@@ -4714,7 +4715,7 @@ stories:
     depends_on: []
     blocks:
       - story-eng-92719-file-processing-element-2
-      - ENG-95985
+      - story-eng-95985-send-email-attachments-1
       - story-eng-95984-file-parameter-type-2
       - story-eng-95984-file-parameter-type-3
       - story-eng-95984-file-parameter-type-4
@@ -4822,7 +4823,8 @@ stories:
   # same place in this file (this PR merges master in after that PR merges), and before the Story's first package
   # PR opens. The Story has no row of its own: it is done when stories 1-3 are done (stories 4 and 5 do not gate it),
   # and its Definition of Done is in story 3's file. story-eng-95984-file-parameter-type-1 arrives with that ENG-95984
-  # PR; ENG-95985 Send email attachments has no story id yet, so it is named by its Jira key.
+  # PR; ENG-95985 Send email attachments was named by its Jira key until its story id
+  # story-eng-95985-send-email-attachments-1 was added on 2026-10-28.
   - id: story-eng-92719-file-processing-element-1
     title: "Element readiness and the Object attachments variant of the Process file element"
     feature: "eng-92719-file-processing-element"
@@ -4841,7 +4843,7 @@ stories:
       - story-eng-95984-file-parameter-type-1
     blocks:
       - story-eng-92719-file-processing-element-2
-      - ENG-95985
+      - story-eng-95985-send-email-attachments-1
     note: >-
       ENG-96505 Element readiness and object attachments mode (a Task that relates to ENG-92719 since 2026-10-14,
       converted from a Sub-task). OA-1..OA-12 replace the Jira acceptance criteria (agreed
@@ -4917,7 +4919,11 @@ stories:
       1.6.6.110, SC-4 again on 1.6.6.111, the Process file e2e on 1.6.6.114 (57/57); this clio PR rebundles it with no floor
       raise. The knowledge PR (SF.4, #300) is a draft and splits off process-files-parameter. The story file also holds the Story-level Definition of Done
       of ENG-92719. Done carried by the next clio PR that touches this file (by link L5 the first clio PR of ENG-95985
-      Send email attachments).
+      Send email attachments). 2026-10-28: that PR (the ENG-95985 docs-only BMAD set) reviewed the flip and leaves the
+      row at review with no box ticked: the story file still has SF-1g and SF.5 unchecked, and its open Definition of
+      Done boxes (the clio full unit suite and PR-description statements, the knowledge publication read through
+      info-knowledge, ST-08 / DT-04 / SC-4 with the story 3 test-plan cases, review gates 1-3, and the Jira items) cannot
+      be established from this repository. The flip passes to the next clio PR that touches this file.
 
   - id: story-eng-92719-file-processing-element-4
     title: "Refuse collection parameters as filter values"
@@ -4961,3 +4967,35 @@ stories:
       every other builder-made user task keeps the gap (M14 measured BO2 absent on the generic route on 1.6.6.54).
       Criteria are proposed in the story and confirmed when the Sub-task is created. Does not gate the closure of
       ENG-92719.
+
+  # --- eng-95985-send-email-attachments (ENG-95985 Send email attachments) - added 2026-10-28 ---
+  # One story carries the whole ticket (crt-process-builder -> clio-knowledge -> clio, one feature PR each); this BMAD
+  # set is the docs-only clio PR that merges before the package PR leaves draft (owner decision Q14, 2026-10-28).
+  - id: story-eng-95985-send-email-attachments-1
+    title: "Send email attachments through the process builder"
+    feature: "eng-95985-send-email-attachments"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: L
+    # review since 2026-10-29: the clio feature PR is open (draft); done only after the last merge.
+    status: review
+    jira: ENG-95985
+    file: spec/stories/story-eng-95985-send-email-attachments-1.md
+    prd: spec/prd/spec-eng-95985-send-email-attachments.md
+    adr: spec/adr/adr-eng-95985-send-email-attachments.md
+    test_plan: spec/test-plans/tp-eng-95985-send-email-attachments.md
+    depends_on:
+      - story-eng-95984-file-parameter-type-1
+      - story-eng-92719-file-processing-element-1
+    blocks: []
+    note: >-
+      ENG-95985 Send email attachments. Owner questions Q1-Q20 were agreed on 2026-10-28 (Q9, Q16 and Q17 changed from
+      the first recommendation); the analysis is spec/eng-95985-send-email-attachments/. depends_on is link L5 of
+      ENG-92719 File processing element (ENG-95984 and ENG-96505 block ENG-95985); both are merged, and their rows stay
+      at review only for open Definition of Done boxes. Status convention: in-progress set in this BMAD PR, because
+      implementation starts before it merges, so ready-for-dev is never true for this row; review when the clio
+      feature PR opens; done in the next clio PR that touches this file after the last merge, with only the really
+      ticked Definition of Done boxes. Gates: the EM1 designer capture before P-B2/P-B3 (slice A and C1 may proceed on the agreed answers; its rows feed
+      the P-C5 parity pattern B), the STOP gate (EM2 +
+      EM3) after slice B, and EM7 (real delivery) once the owner says mail sending on stand Creatio works. Merge order
+      (human merges): package -> knowledge -> clio. Cut numbers are claimed in a claim comment on ENG-95985 (Q13), not
+      here.
