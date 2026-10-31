@@ -1,6 +1,7 @@
 ---
 description: the SchemaNamePrefix rule for a locally generated schema is NOT enforced by push-pkg install or compile-configuration - both accept an unprefixed schema - the source-code schema designer and the file-system load path are what refuse it, Usr is only the default value of the setting, and the environment read is capped by clio at 30 s
 applies-to:
+  - clio/Command/CreateUserTaskCommand.cs
   - clio/Common/SchemaNamePrefixResolver.cs
   - clio/Common/SysSettingCodes.cs
   - clio/Package/PackageCreator.cs
@@ -17,7 +18,12 @@ object must start with the "Usr" prefix`. Three things the message hides:
   package carrying an UNPREFIXED source-code schema installed through `clio push-pkg`, and
   `clio compile-configuration` then ran clean. `SourceCodeSchemaDesignerService` DOES enforce it,
   verbatim — `clio create-schema` with an unprefixed name is refused, and case-sensitively
-  (`usrFoo` is refused too, so the already-prefixed check must stay `StringComparison.Ordinal`).
+  (`usrFoo` is refused too). What that constrains is the prefix clio EMITS: it has to carry the
+  server's own casing. It does NOT mean the test for whether a code ALREADY CARRIES the prefix must
+  be ordinal — that test is deliberately case-insensitive, so `usrFoo` is re-canonicalized to
+  `UsrFoo` instead of being prefixed a second time into `UsrusrFoo`. `ApplicationSectionCreateCommand`
+  and `CreateUserTaskCommand` both read it that way; `PackageCreator` keeps `StringComparison.Ordinal`
+  for PACKAGE names, which is a different rule — do not unify them.
   Issue #1309 hit the error at its step 4 — linking the package from the file system and compiling
   from the UI; that path needs server file-system access and has not been re-measured. Never treat a
   green install or compile as proof that a generated schema is acceptable; that is not the path that
@@ -58,3 +64,30 @@ populated workspace exits **1** regardless of the prefix, from the `DconfChainIt
 prefix too, so it is not evidence about the prefix read.
 
 `--schema-name-prefix` is the path that makes no request.
+
+**The degrade is `add-package`'s answer, not the repository's.** `add-user-task` reads the same setting
+and REFUSES an unusable value instead. The discriminator is what the command's effect is: `add-package`
+generates a local artifact and can hand back a warned, unprefixed package, while `add-user-task`'s whole
+effect is a schema the server has to accept — degrading there buys a confusing server-side refusal in
+place of a clear local one. Do not unify the two policies; each is right for its own command.
+
+Two consequences of that split, both easy to get wrong:
+
+- The two *predicates* differ, not just the policies. `SchemaNamePrefixResolver.IsValidPrefix` accepts a
+  leading underscore because `ClioIdentifier` does — a package may be named `_Usr`. A schema may not, so
+  `CreateUserTaskCommand.IsUsableSchemaCode` layers `char.IsAsciiLetter` on top. They have already
+  drifted once: `PackageCreator.BuildLocalizationSchemaName` will emit `_UsrMyPkgLocalizableStrings` for
+  a prefix `add-user-task` declares impossible. That is a real inconsistency, not a bug this record
+  closes — if you unify them, unify toward the stricter one and measure the package path first.
+- The prefix is UNTRUSTED input, in both commands. It is the server's answer, it reaches the console and
+  an MCP envelope an agent reads as its own context, and
+  `docs/knowledge/Common/server-prose-never-reaches-a-non-debug-diagnostic-field.md` is the rule it has
+  to satisfy. `add-user-task` bounds it in charset AND length and renders the failing value through
+  `UntrustedText.Fenced`. `SchemaNamePrefixResolver` still interpolates it raw into its own
+  invalid-prefix warning — the one remaining hole, and the reason a hostile value reaches an agent
+  through `add-package` even though `add-user-task` now stops it.
+
+The length bound `add-user-task` applies is `PackageCreator.MaxSchemaNameLength`: `SysSchema.Name` is
+one column, and a process user task schema lands in it like any other. The 251-character measurement
+behind that constant was taken on the `add-package` path, not this one; what carries it across is the
+shared column, not the shared command.
