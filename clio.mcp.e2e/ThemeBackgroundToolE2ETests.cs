@@ -37,4 +37,15 @@ public sealed class ThemeBackgroundToolE2ETests : McpContractFixtureBase {
 		response.Output.Should().Contain(message => message.Value != null && message.Value.Contains("theme is required"),
 			because: "the removal has no target without a theme");
 	}
+
+	[Test]
+	[AllureTag(SetBackgroundColorTool.ToolName)]
+	[Description("Calls set-background-color without a theme through the real MCP server and verifies the structured failure names theme before any environment work.")]
+	public async Task SetBackgroundColor_Should_Require_Theme() {
+		CommandExecutionEnvelope response = await CallAsync(SetBackgroundColorTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = "docker_fix2", ["color"] = "#0A1B2C" });
+
+		response.Output.Should().Contain(message => message.Value != null && message.Value.Contains("theme is required"),
+			because: "a theme color has no target without a theme");
+	}
 }

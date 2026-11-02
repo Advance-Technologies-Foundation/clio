@@ -41,7 +41,7 @@ public class UpdateThemeTool(
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
 		" or later on the target environment. Only inline CSS content is accepted. " +
-		"The theme's background is kept as stored; change it with set-background-image or remove-background. " +
+		"The theme's background is kept as stored; change it with set-background-image, set-background-color or remove-background. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
 		[Description("Parameters: environment-name (required), id (required), caption (required), " +

@@ -92,6 +92,7 @@ upload-file:upload-file
 upload-image:upload-image
 set-background-image:set-background-image
 remove-background:remove-background
+set-background-color:set-background-color
 set-logo:set-logo
 get-build-info:get-build-info,bi,buildinfo
 get-classic-page-sources:get-classic-page-sources,classic-page-sources,get-classic-migration-bundle,classic-migration-bundle

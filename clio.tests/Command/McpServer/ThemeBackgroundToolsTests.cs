@@ -12,6 +12,7 @@ namespace Clio.Tests.Command.McpServer;
 public class ThemeBackgroundToolsTests {
 
 	[TestCase(typeof(RemoveBackgroundTool), nameof(RemoveBackgroundTool.RemoveBackground))]
+	[TestCase(typeof(SetBackgroundColorTool), nameof(SetBackgroundColorTool.SetBackgroundColor))]
 	[Category("Unit")]
 	[Description("Declares the theme background tools a destructive, idempotent, closed-world write, because each replaces or removes a stored background and a repeat leaves the same state.")]
 	public void Tool_ShouldDeclareDestructiveIdempotentWrite(Type toolType, string methodName) {

@@ -854,6 +854,7 @@ public class BindingsModule {
 		services.AddTransient<UploadFileTool>();
 		services.AddTransient<SetBackgroundImageTool>();
 		services.AddTransient<RemoveBackgroundTool>();
+		services.AddTransient<SetBackgroundColorTool>();
 		services.AddTransient<SetLogoTool>();
 		services.AddTransient<CheckThemingAccessTool>();
 		services.AddTransient<GetUserCultureTool>();
@@ -1077,6 +1078,7 @@ public class BindingsModule {
 		services.AddTransient<UploadFileCommand>();
 		services.AddTransient<SetBackgroundImageCommand>();
 		services.AddTransient<RemoveBackgroundCommand>();
+		services.AddTransient<SetBackgroundColorCommand>();
 		services.AddTransient<SetLogoCommand>();
 		services.AddTransient<CheckThemingAccessCommand>();
 		services.AddTransient<ICreatioRightsClient, CreatioRightsClient>();

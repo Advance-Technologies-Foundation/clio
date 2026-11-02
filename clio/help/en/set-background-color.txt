@@ -1,0 +1,34 @@
+COMMAND TYPE
+    Branding commands
+
+NAME
+    set-background-color - set a solid color as the background of a custom
+    Creatio theme
+
+DESCRIPTION
+    Sets a solid color (#RGB, #RRGGBB or #RRGGBBAA) as a custom theme's
+    background and turns off the panel icon background unless
+    --keep-icon-background is passed. Requires Creatio 10.2.96 or later.
+
+SYNOPSIS
+    clio set-background-color <color> --theme <theme-id> [--keep-icon-background] -e <environment>
+
+OPTIONS
+    <color>                         Hex color (#RGB, #RRGGBB or #RRGGBBAA) to use as the background (required)
+
+    --theme                         Id (a GUID) of the custom theme to give the background (required)
+
+    --keep-icon-background          Keep the panel icon background feature (UsePanelIconBackground) as is instead of turning it off
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

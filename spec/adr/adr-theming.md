@@ -464,8 +464,8 @@ background (`CrtBackgroundConfig`) for its users. The branding commands write it
 | # | Decision |
 | --- | --- |
 | F-D1 | Read: `get-theme` and `list-themes` return `background`, absent when none. |
-| F-D2 | Write: `set-background-image --theme <id>` runs the site pipeline but replaces the `CrtBackgroundConfig` write with `UpdateTheme { id, background }`, unbound. `remove-background` sends `background: {}`. |
-| F-D3 | Floor `10.2.96`: class level on `remove-background`, on `set-background-image` only with `--theme` (`TargetsTheme`). |
+| F-D2 | Write: `set-background-image --theme <id>` runs the site pipeline but replaces the `CrtBackgroundConfig` write with `UpdateTheme { id, background }`, unbound. `set-background-color` sends `{ mode: Color, color }` and turns off the panel icon background; `remove-background` sends `background: {}`. |
+| F-D3 | Floor `10.2.96`: class level on `set-background-color` and `remove-background`, on `set-background-image` only with `--theme` (`TargetsTheme`). |
 | F-D4 | The write is not read back: a ThemeService that predates theme backgrounds refuses an `UpdateTheme` carrying only `{ id, background }`. Only an explicit `success:true` counts, before any follow-up write. |
 | F-D5 | A theme image and its gallery membership are bound into `--package` or `CurrentPackageId` under their own folders (`..._ThemeBackground_<theme id N>`), so a theme run never replaces the site background's bindings. |
 

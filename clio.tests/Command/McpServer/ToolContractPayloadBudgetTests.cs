@@ -101,7 +101,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Measured 48990 bytes with them registered (350 over 48640); next 256-byte step is 49152 (192).
 	// Re-pinned for ENG-104665: upload-file is one more long-tail tool. Measured 49214 bytes with it registered
 	// (62 over 49152); next 256-byte step is 49408 (193).
-	private const int MaxCompactIndexSerializedBytes = 193 * 256;
+	private const int MaxCompactIndexSerializedBytes = 194 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
@@ -125,7 +125,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	//
 	// Re-pinned for ENG-101678: get-entity-connections and update-entity-connections add two lines. Measured
 	// 18244 bytes (68 over 18176); next 256-byte step is 18432 (72), 568 bytes under the 19000-byte spill line.
-	private const int MaxToolIndexSerializedBytes = 72 * 256;
+	private const int MaxToolIndexSerializedBytes = 73 * 256;
 
 	// Worst-case ceiling for ONE named full contract, measured as the SERIALIZED contract in UTF-8 bytes
 	// — the same quantity the index ratchet above measures, and what the agent actually receives.

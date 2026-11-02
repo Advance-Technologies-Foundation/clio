@@ -886,6 +886,9 @@ take a single `args` object with kebab-case fields.
   snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
   customized gallery tag, a feature state that is not confirmed off) are surfaced.
   With `theme` the image goes to that one theme instead of the site (Creatio 10.2.96+).
+- `set-background-color`
+  Set a solid color as one theme's background (`theme` required; Creatio 10.2.96+) and turn off the panel
+  icon background unless `keep-icon-background`. A confirmed write (`Destructive=true`), idempotent.
 - `remove-background`
   Remove one theme's own background (`theme` required; Creatio 10.2.96+), so its users see the site
   background again. A confirmed write (`Destructive=true`), idempotent.

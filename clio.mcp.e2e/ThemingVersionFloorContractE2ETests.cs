@@ -126,10 +126,10 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 	[Test]
 	[AllureTag(RemoveBackgroundTool.ToolName)]
 	[AllureName("theme-background contracts advertise the theme-background Creatio version floor")]
-	[Description("Expands the set-background-image and remove-background contracts through get-tool-contract on the real clio MCP server and verifies both name the Creatio build that stores theme backgrounds.")]
+	[Description("Expands the set-background-image, set-background-color and remove-background contracts through get-tool-contract on the real clio MCP server and verifies each names the Creatio build that stores theme backgrounds.")]
 	public async Task ThemeBackgroundContracts_Should_Advertise_BackgroundVersionFloor() {
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-		string[] toolNames = [SetBackgroundImageTool.ToolName, RemoveBackgroundTool.ToolName];
+		string[] toolNames = [SetBackgroundImageTool.ToolName, SetBackgroundColorTool.ToolName, RemoveBackgroundTool.ToolName];
 
 		CallToolResult contractResult = await context.Session.CallToolAsync(
 			ToolContractGetTool.ToolName,
@@ -142,7 +142,7 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 		ToolContractGetResponse contracts =
 			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
 
-		contracts.Success.Should().BeTrue(because: "both tools must resolve a full contract");
+		contracts.Success.Should().BeTrue(because: "every background tool must resolve a full contract");
 		foreach (string toolName in toolNames) {
 			contracts.Tools!.Should().ContainSingle(definition => definition.Name == toolName,
 					because: $"the {toolName} tool must expose exactly one full contract")

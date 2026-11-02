@@ -412,6 +412,7 @@ internal static class PassthroughToolClassificationRegistry {
 			["set-logo"] = PassthroughClassification.NotApplicable,
 			["set-record-rights"] = PassthroughClassification.NotApplicable,
 			["remove-background"] = PassthroughClassification.NotApplicable,
+			["set-background-color"] = PassthroughClassification.NotApplicable,
 			["set-object-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-record-rights
 			["set-default-record-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-object-rights
 			["apply-default-record-rights"] = PassthroughClassification.NotApplicable, // BaseTool<T>.InternalExecute<TCommand> - already resolver-backed (class a), same pattern as set-object-rights
