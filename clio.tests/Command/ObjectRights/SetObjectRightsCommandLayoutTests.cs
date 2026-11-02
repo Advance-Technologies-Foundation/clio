@@ -191,6 +191,27 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 	}
 
 	[Test]
+	[Description("AC7: a confirmed removal of the All external users row saves the layout once and its result names the external role losing read as a revoke of external access.")]
+	public void Execute_ShouldNameExternalRevokeInTheResult_WhenRemovalOfExternalRowIsConfirmed() {
+		// Arrange
+		ObjectIs(Info(true, Row(AllEmployees, 0, "RCED"), Row(AllExternalUsers, 1, "R")));
+		_granteeLookup.ResolveGranteeName(AllExternalUsers, Arg.Any<CreatioRequestOptions>()).Returns("All external users");
+
+		// Act
+		int exitCode = _command.Execute(Options(o => { o.Grantee = AllExternalUsers.ToString(); o.RemoveRow = true; }));
+
+		// Assert
+		exitCode.Should().Be(0, because: "the removal is valid and the read-back matches");
+		_writer.Received(1).SaveRowLayout(Arg.Any<ObjectRightsSnapshot>(), Arg.Any<ObjectRightsState>(),
+			Arg.Any<CreatioRequestOptions>());
+		_infos.Should().Contain(line => line.Contains("removed the row of grantee"),
+			because: "the result line says the row was removed");
+		_infos.Should().Contain(line => line.Contains("external role 'All external users'")
+			&& line.Contains("a revoke of external access") && line.Contains("from read to no access"),
+			because: "the confirmed result, not only the preview, states portal users losing read as a revoke");
+	}
+
+	[Test]
 	[Description("TC-05: a removal for a grantee with no row is refused and writes nothing.")]
 	public void Execute_ShouldRefuse_WhenGranteeHasNoRow() {
 		// Arrange

@@ -29,8 +29,9 @@ A denied read comes back from DataService as a SUCCESS with zero rows, not as an
 In that probe a change reached the user's existing DataService session at once. On Creatio 10.2.471
 (.NET Framework, MSSQL, stand `ar_platform`, 2026-10-30, ENG-104066) a Freedom UI list page already open as a
 non-admin user followed a row move in both directions without a reload: create and delete became available
-after a widening and were blocked again after a narrowing. So a change applies at once; logging in again is
-the fallback when a user still sees the old access, not a step every change needs (see
+after a widening and were blocked again after a narrowing. So on Creatio 8.3.4 and later a change applies at
+once; logging in again is the fallback when a user still sees the old access, and a
+narrowing is checked in a session opened after the write before it is reported effective (see
 [adr-ENG-104066-object-rights-row-layout.md](../../../spec/adr/adr-ENG-104066-object-rights-row-layout.md)).
 
 **Why it is this way** — it is the platform's model (Creatio Academy describes the same "highest role in
