@@ -4,7 +4,7 @@ Written 2026-10-28. The order of work, the work packages per repository, the PR 
 and the definition of done. It follows the answers the owner agreed on 2026-10-28 (decisions file); the design file says what each
 component does. No product code has been written; nothing has been written to the stand, Jira, GitHub or GHE.
 
-> **Drift note (step 0.4, 2026-10-28).** crt-process-builder `origin/main` is still `389198a0` (no commits since the
+> **Drift note (step 0.4, 2026-10-28).** the package's main branch is unchanged (no commits since the
 > basis); clio `origin/master` moved `358e9db52` -> `0b25e89e6` (ENG-104694 update-page resources-updated, ENG-104665
 > upload-file: no file under `clio/Command/ProcessModel`, the process-designer tools, `clio/CrtProcessBuilder` or the
 > curated knowledge names changed; `ToolContractPayloadBudgetTests` gained an update-page headroom guard and the
@@ -17,10 +17,9 @@ component does. No product code has been written; nothing has been written to th
 > some of them (for example `ToolContractPayloadBudgetTests.cs` by about 2-30 lines), so re-read an anchor before
 > editing at it. `docs/McpCapabilityMap.md`, the K8 target, also changed in the drift (the upload-file rows).
 
-Basis: crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio `origin/master` `358e9db52`,
+Basis: CrtProcessBuilder 1.6.6.125 (the package's main branch on 2026-10-28), clio `origin/master` `358e9db52`,
 clio-knowledge `origin/master` `534e913`, stand `Creatio` read-only on 2026-10-28.
-Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` = `tests/UnitTests/CrtProcessBuilder.Tests/`,
-`CLIO/`, `KB/` = repository roots.
+Paths: `CLIO/`, `KB/` = repository roots. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 ## 0. Critical path
 
@@ -63,7 +62,7 @@ P-C5 parity pattern B.
 | 0.1 | Answer Q1-Q20 | owner | done 2026-10-28: all twenty agreed and recorded in the decisions file (Q9, Q16, Q17 changed from the first recommendation) |
 | 0.2 | Jira AC wording (Q19) | lead, after the owner approves the text | AC text written into the description only (never `customfield_10193`, the HeroCoders checklist), read back |
 | 0.3 | Claim comment on ENG-95985 (Q13): an empty claim table; every later number is claimed there after checking the tags of both repositories | lead, on the owner's yes | comment id recorded in the plan |
-| 0.4 | Drift check: `git log 389198a0..origin/main -- PB/Email PB/Mappings PB/FileProcessing PB/Elements/SendEmailElementHandler.cs PB/Graph PB/Design` and the clio/KB equivalents; re-read anything that moved | lead | a drift note at the top of this file |
+| 0.4 | Drift check: the package's history since the basis for its email, mapping, file-processing, graph and design sources, and the clio/KB equivalents; re-read anything that moved | lead | a drift note at the top of this file |
 | 0.5 | EM0 completion: platform version of stand `Creatio`, the Invoice printable, an email template to reuse | lead, read-only | measurements file |
 | 0.6 | EM1 designer capture (Q18) | lead in Claude in Chrome, owner logs in; owner's yes for the writes | capture metadata + resources; must pass before P-B2/P-B3 (slice A and C1 may proceed on the agreed answers); its rows feed the P-C5 parity pattern B |
 
@@ -90,7 +89,7 @@ leaves draft. Pushing the branch and opening the PR wait for the owner's word.
 A short-path worktree (net472 MAX_PATH), branch `feature/ENG-95985-send-email-attachments`
 from `origin/main`. The worktree has no `.application`; junction it from the main checkout before the first build
 (`docs/running-tests-outside-the-main-checkout.md`). The local core-bin is newer than CI's 8.3.4: keep the FileLocator
-type UId as a literal in tests, as `PBT/FileProcessParameterTests.cs` does.
+type UId as a literal in tests, as `FileProcessParameterTests.cs` does.
 
 Validation for every commit: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`
 and `-c dev-n8`; every new fixture `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`.
@@ -100,7 +99,7 @@ and `-c dev-n8`; every new fixture `[TestFixture(Category = "UnitTests"), Catego
 | Task | Component | Done when |
 |---|---|---|
 | P-A1 | C2: lift `PlanFiles` / `FilesBinding` / `FileItemOf` into `FileSourcePlanner` behind `IFileSourcePlanner` (`Plan(schema, element, source, wording, userConnection)`, a `FileSourceWording` with the label, member path and two consequence sentences, a data `FileSourcePlan` as the result; the target names and the write route stay with the caller: raw `ApplyMapping` for `files`, the block entries for a slot, design 4.2); `ProcessFileProcessingBinder` calls it (composed as `new ProcessFileProcessingBinder(new FileSourcePlanner())`; the DI registration lands in P-B3) | every existing `FileProcessing*Tests` passes unchanged; a characterization test pins each `files` message |
-| P-A2 | C7 part 1: generalize `ProcessFileProcessingFilesBinding.Read` and the issue texts of `ProcessFileProcessingDescriber` over (collection, item) names | the `files` describe tests and the Process parameter notice-rule tests pass unchanged (`ProcessFileProcessingNoticeRule` reads the same binding, `PB/FileProcessing/ProcessFileProcessingNoticeRule.cs:38`) |
+| P-A2 | C7 part 1: generalize `ProcessFileProcessingFilesBinding.Read` and the issue texts of `ProcessFileProcessingDescriber` over (collection, item) names | the `files` describe tests and the Process parameter notice-rule tests pass unchanged (`ProcessFileProcessingNoticeRule` reads the same binding, `ProcessFileProcessingNoticeRule.cs`) |
 
 One commit each. Gate 2: single combined lens (refactor, one module).
 
@@ -110,7 +109,7 @@ One commit each. Gate 2: single combined lens (refactor, one module).
 |---|---|---|
 | P-B1 | C1 contract: `SendEmailAttachmentDescriptor`, `SendEmailDescriptor.Attachments`, describe types; wire-contract rows | wire contract |
 | P-B2 | C3 `EmailAttachmentSlot` + `IEmailAttachmentSlotWriter` (find, create with explicit stamps and `In`, remove with `Parameters.Remove` after the dependency check, lowest free number over every parameter of the element); DI registration. Whether a removed slot's resource keys survive is settled by EM1/EM2 (design 4.3) | slot shape, stamps on a schema with a REAL UId, numbering (a non-slot `Attachments1` blocks its number) |
-| P-B3 | C4 `ApplyAttachments`: plan all entries before the first write, reconcile (Q4) with the dependency check before a removal, bind via the block form of `BindCollection` / `ApplyBlockMapping` (the `fromBlock` argument lands here, the slot guard in P-C1); `EnsureConfiguresSomething` counts attachments; refusals of design §5.1; Q16: `email.attachments` on a multi-instance Send email (`MultiInstanceOptions` set on the activity; `CollectionBindingRules.IsMultiInstance` answers for a Sub-process only, `PB/Mappings/CollectionBindingRules.cs:194-195`) is refused: "attachments of a multi-instance Send email are not supported through this tool"; Q20: track every Process file source in the filter ledger, and let `ObjectFileProcessingEmptyFilterRule` refuse an unscoped element read by a Send email slot whatever its action (the Report rule already refuses any unscoped element), judged by `FileProcessingFilterLedger.EnsureSelectingFilters` at the end of the request; designer display values on slots | sources x4 kinds, replace, refusals, untouched-after-refusal, multi-instance Send email refused with nothing written, unscoped Object and Report sources refused at the end of the request (TC-U-78, 78a, 78b), four mode combinations, display values on slots only; the version clone keeps the slots owned (TC-U-71, design 3.3) |
+| P-B3 | C4 `ApplyAttachments`: plan all entries before the first write, reconcile (Q4) with the dependency check before a removal, bind via the block form of `BindCollection` / `ApplyBlockMapping` (the `fromBlock` argument lands here, the slot guard in P-C1); `EnsureConfiguresSomething` counts attachments; refusals of design §5.1; Q16: `email.attachments` on a multi-instance Send email (`MultiInstanceOptions` set on the activity; `CollectionBindingRules.IsMultiInstance` answers for a Sub-process only, `CollectionBindingRules.cs`) is refused: "attachments of a multi-instance Send email are not supported through this tool"; Q20: track every Process file source in the filter ledger, and let `ObjectFileProcessingEmptyFilterRule` refuse an unscoped element read by a Send email slot whatever its action (the Report rule already refuses any unscoped element), judged by `FileProcessingFilterLedger.EnsureSelectingFilters` at the end of the request; designer display values on slots | sources x4 kinds, replace, refusals, untouched-after-refusal, multi-instance Send email refused with nothing written, unscoped Object and Report sources refused at the end of the request (TC-U-78, 78a, 78b), four mode combinations, display values on slots only; the version clone keeps the slots owned (TC-U-71, design 3.3) |
 | P-B4 | C9 comment fixes (`CollectionBindingRules` Creatio.ai promise, recipient numbering comment) | - |
 
 Then the EXPERIMENTAL CUT (section 6), installed on stand `Creatio` with the owner's yes, and EM2 + EM3. Record the
@@ -124,7 +123,7 @@ result in the measurements file. Stop on failure (section 0).
 | P-C2 | C6 order checks: build-path declaration-order refusal; flow-reachability warning on build and modify | later-declared source refused; earlier accepted; unreachable source warned on both paths |
 | P-C3 | C7 part 2: `DescribeAttachments`, read-back members, issues (a multi-instance Send email is reported as found, with an issue, Q16), `configured` | round trip build -> describe -> replay writes nothing; one test per issue shape, including an attachment that reads an unscoped source (TC-U-78c) |
 | P-C4 | C4 notices of design §5.2 that remain (single File, expression, the same source twice, removal; the reachability warning comes with P-C2). Q9: no feature reader and no feature-off notice | each notice text; when each fires (every entry of a sent list, kept or new; per removed slot; none when `attachments` is absent) |
-| P-C5 | Parity: pattern A (3 corpus processes committed under `PBT/Fixtures/SendEmail/` with PROVENANCE SHA pins and a `.gitattributes` `-text` line), pattern B (EM1 rows), pattern C (writer JSON diff) | parity suite |
+| P-C5 | Parity: pattern A (3 corpus processes committed under the package test fixture folder `Fixtures/SendEmail/` with PROVENANCE SHA pins and a `.gitattributes` `-text` line), pattern B (EM1 rows), pattern C (writer JSON diff) | parity suite |
 | P-C6 | C10 capture doc (`docs/send-email-element-capture.md`, attachments section with EM1/EM2 results) | - |
 
 Gate 1 before the PR opens: full 3-lens fan-out (quality, performance+correctness, security), because the shared

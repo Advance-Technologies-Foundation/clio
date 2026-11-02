@@ -4,10 +4,9 @@ Written 2026-10-28. The design follows the answers the owner agreed on 2026-10-2
 (Q1-Q20); a different answer changes the sections marked with its Q number. Facts and their evidence are in
 `eng-95985-send-email-attachments-facts.md`; the target bytes are in `eng-95985-send-email-attachments-serialization.md`.
 
-Basis: crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio `origin/master` `358e9db52`,
-clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0, core `TSBpm` trunk.
-Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` = `tests/UnitTests/CrtProcessBuilder.Tests/`,
-`PD/` = `CrtProcessDesigner/branches/7.8.0/Schemas/`, `TS/` = `TSBpm/Src/Lib/`, `CLIO/`, `KB/` = repository roots.
+Basis: CrtProcessBuilder 1.6.6.125 (the package's main branch on 2026-10-28), clio `origin/master` `358e9db52`,
+clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0, the core platform source.
+Paths: `CLIO/`, `KB/` = repository roots. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 ## 1. What the feature does, in one paragraph
 
@@ -41,7 +40,7 @@ taken, a file deleted before the run) is stated in the guidance.
 }
 ```
 
-Entry members (new contract type, same five members as `fileProcessing.files`, `PB/Contracts/ProcessDescriptorContracts.cs:416-440`):
+Entry members (new contract type, same five members as `fileProcessing.files`, `ProcessDescriptorContracts.cs`):
 
 | Member | Meaning | Rule |
 |---|---|---|
@@ -87,9 +86,9 @@ recipients.
    UIds, resources. A designer-made slot with an odd shape (outer-only, stale parent, different sources) never
    matches, so it is replaced by a slot in the package's shape.
 4. Remove every slot that matched no entry. Before removing, ask the dependency snapshot
-   (`IProcessDependencySnapshot.FindDependents(element, slot)`, `PB/Graph/IProcessDependencySnapshot.cs:55-58`) and
+   (`IProcessDependencySnapshot.FindDependents(element, slot)`, `IProcessDependencySnapshot.cs`) and
    refuse, naming the dependents, as the designer's `canRemoveParameter` does
-   (`PD/ProcessFilesControlSchema/ProcessFilesControlSchema.js:392-405`). The removal notice carries each removed
+   (`ProcessFilesControlSchema.js`). The removal notice carries each removed
    entry in the write shape, so one call restores it.
 5. Create a slot for every entry that matched nothing, numbered per section 4.3 (Q5), and bind it.
 6. Two entries with the same source are allowed (the designer allows it) and produce a warning: the files are
@@ -106,15 +105,15 @@ unit test:
 
 | Invariant | Why |
 |---|---|
-| name matches `^Attachments\d+$` (case-sensitive) | the run time finds slots by this regex (`TS/Terrasoft.Core/Process/ProcessUserTaskExtensions.cs:19, 78-98`) |
+| name matches `^Attachments\d+$` (case-sensitive) | the run time finds slots by this regex (`ProcessUserTaskExtensions.cs`) |
 | outer `CreatedInSchemaUId` = `ModifiedInSchemaUId` = the PROCESS schema UId; the item stamped the same, explicitly | run-time filter; a nested item is not back-filled by `MetaItemCollection.InsertItem` |
-| item name = slot name + `FileLocator`; exactly one item | the run time reads the key `<slot>FileLocator` (`PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:107-119`); the designer renders `ItemProperties.first()` |
+| item name = slot name + `FileLocator`; exactly one item | the run time reads the key `<slot>FileLocator` (`EmailTemplateUserTask.cs`); the designer renders `ItemProperties.first()` |
 | `Direction = In` on both levels | designer and corpus; a recipient-style parameter would get the default `Variable` |
 | types by `DataValueType.CompositeObjectListDataValueTypeUId` and `DataValueType.FileLocatorDataValueTypeUId` | resolving "File" by name returns the BLOB type |
 | `ContainerUId` = the Send email element on both levels | corpus `IL2` |
-| bindings stored as `Script` `[#...#]` with `GS5` = process UId | the pre-save gate registers only Script sources; `GS5` = process UId is designer/corpus parity, and the compiled-code generator skips an element parameter whose `GS5` is another schema (`TS/Terrasoft.Core/Process/ProcessSchemaGeneratorNew.cs:296-298`) |
+| bindings stored as `Script` `[#...#]` with `GS5` = process UId | the pre-save gate registers only Script sources; `GS5` = process UId is designer/corpus parity, and the compiled-code generator skips an element parameter whose `GS5` is another schema (`ProcessSchemaGeneratorNew.cs`) |
 | captions "Attachments collection" / "Attachment"; no `BK15` mapping row | designer and corpus |
-| display values in the designer form: outer `[#<element>.<collection>#]`, item `[#<element>.<collection>:<item>#]`, single File `[#<parameter>#]` | the package's `SourceDisplayValue` gives a top-level source its bare caption (`PB/Mappings/ProcessMappingService.cs:963-967`); the slot writer sets the designer form after binding, for slots only (serialization AD1/AD2), so other mappings keep today's display values |
+| display values in the designer form: outer `[#<element>.<collection>#]`, item `[#<element>.<collection>:<item>#]`, single File `[#<parameter>#]` | the package's `SourceDisplayValue` gives a top-level source its bare caption (`ProcessMappingService.cs`); the slot writer sets the designer form after binding, for slots only (serialization AD1/AD2), so other mappings keep today's display values |
 
 ### 3.1 Binding per source kind
 
@@ -139,7 +138,7 @@ it.
 ### 3.3 Version clone
 
 `modify-business-process-as-new-version` copies the schema through `ProcessVersionCloneFactory`, which replaces the
-source schema UId in the serialized metadata as text (`PB/Design/ProcessVersionCloneFactory.cs:106-119`), so `A3`, `A4`
+source schema UId in the serialized metadata as text (`ProcessVersionCloneFactory.cs`), so `A3`, `A4`
 and `GS5` of both slot levels follow the clone. No code change is expected; TC-U-71 pins it and EM13 verifies the
 run; a re-stamp task is added only if EM13 fails.
 
@@ -149,14 +148,14 @@ run; a re-stamp task is added only if EM13 fails.
 
 | # | Component | Kind | Files (expected) |
 |---|---|---|---|
-| C1 | Contract: `SendEmailAttachmentDescriptor`, `SendEmailDescriptor.Attachments`, `DescribeSendEmailAttachment`, `DescribeSendEmailInfo.Attachments` | contracts | `PB/Contracts/ProcessDescriptorContracts.cs`, `DescribeContracts.cs`, `ModifyContracts.cs` (doc of `setElement`) |
-| C2 | Shared file-source planner: the `files` classification lifted out of `ProcessFileProcessingBinder` | refactor | `PB/FileProcessing/ProcessFileProcessingBinder.cs` -> new `IFileSourcePlanner` / `FileSourcePlanner` in `PB/FileProcessing/`, registered in `CrtProcessBuilderApp.cs` |
-| C3 | Slot model and writer: `EmailAttachmentSlot` (predicate, names), `IEmailAttachmentSlotWriter` (find, create, remove, number) | new | `PB/Email/` |
-| C4 | Applier: `SendEmailApplier.ApplyAttachments` (plan, reconcile, bind, notices) | change | `PB/Email/SendEmailApplier.cs`, `CrtProcessBuilderApp.cs` (DI) |
-| C5 | Raw-route guards: no `addMapping` onto a slot, no mapping from a slot; a block form of `BindCollection` | change (shared mapping service: full review tier) | `PB/Mappings/ProcessMappingService.cs`, `PB/Mappings/IProcessMappingService.cs` |
-| C6 | Order checks for attachment sources: build-path declaration order (refusal), flow reachability on both paths (warning) | change | `PB/Design/ProcessBuildHandler.cs`, `PB/Graph/ProcessGraphBuilder.cs` |
-| C7 | Describe: `DescribeAttachments` + a binding reader shared with the `files` describer | change + refactor | `PB/Elements/SendEmailElementHandler.cs`, `PB/FileProcessing/ProcessFileProcessingFilesBinding.cs`, `ProcessFileProcessingDescriber.cs` |
-| C9 | Comment fixes | docs | `PB/Mappings/CollectionBindingRules.cs:164-169` (Q15), `PB/Email/SendEmailApplier.cs:791, 811, 851-852` (numbering comments: the code takes max existing suffix + 1, `:854-867`, and does not refill gaps) |
+| C1 | Contract: `SendEmailAttachmentDescriptor`, `SendEmailDescriptor.Attachments`, `DescribeSendEmailAttachment`, `DescribeSendEmailInfo.Attachments` | contracts | `ProcessDescriptorContracts.cs`, `DescribeContracts.cs`, `ModifyContracts.cs` (doc of `setElement`) |
+| C2 | Shared file-source planner: the `files` classification lifted out of `ProcessFileProcessingBinder` | refactor | `ProcessFileProcessingBinder.cs` -> new `IFileSourcePlanner` / `FileSourcePlanner` beside it, registered in `CrtProcessBuilderApp.cs` |
+| C3 | Slot model and writer: `EmailAttachmentSlot` (predicate, names), `IEmailAttachmentSlotWriter` (find, create, remove, number) | new | the package's email sources |
+| C4 | Applier: `SendEmailApplier.ApplyAttachments` (plan, reconcile, bind, notices) | change | `SendEmailApplier.cs`, `CrtProcessBuilderApp.cs` (DI) |
+| C5 | Raw-route guards: no `addMapping` onto a slot, no mapping from a slot; a block form of `BindCollection` | change (shared mapping service: full review tier) | `ProcessMappingService.cs`, `IProcessMappingService.cs` |
+| C6 | Order checks for attachment sources: build-path declaration order (refusal), flow reachability on both paths (warning) | change | `ProcessBuildHandler.cs`, `ProcessGraphBuilder.cs` |
+| C7 | Describe: `DescribeAttachments` + a binding reader shared with the `files` describer | change + refactor | `SendEmailElementHandler.cs`, `ProcessFileProcessingFilesBinding.cs`, `ProcessFileProcessingDescriber.cs` |
+| C9 | Comment fixes | docs | `CollectionBindingRules.cs` (Q15), `SendEmailApplier.cs` (numbering comments: the code takes max existing suffix + 1and does not refill gaps) |
 | C10 | Package docs: the capture record for attachments | docs | `docs/send-email-element-capture.md` (attachments section) |
 
 C8 (a feature reader for `UseProcessEmailAttachments`) was dropped with Q9 (section 4.8); C9 and C10 keep their
@@ -167,7 +166,7 @@ their own commits, with the existing Process file tests unchanged; that proves t
 
 ### 4.2 C2: the shared file-source planner
 
-Lift `PlanFiles`, `FilesBinding` and `FileItemOf` (`PB/FileProcessing/ProcessFileProcessingBinder.cs:130-225, 253-318`)
+Lift `PlanFiles`, `FilesBinding` and `FileItemOf` (`ProcessFileProcessingBinder.cs`)
 into `FileSourcePlanner` behind `IFileSourcePlanner` (landed in slice A as `Plan(schema, element, IFileSourceDescriptor
 source, FileSourceWording wording, UserConnection)` returning a data `FileSourcePlan`; the variant composes
 `new ProcessFileProcessingBinder(new FileSourcePlanner())`, and the DI registration, the seam TC-U-70 resolves, lands
@@ -178,7 +177,7 @@ in P-B3 with its first container consumer), parametrized by:
 - the consequence sentence of the "names no source" refusal (the Process variant's "keeps the process from starting"
   is not true for an email slot);
 - the write entry: `FilesBinding.Write` writes the single-file and expression cases through the raw `ApplyMapping`
-  (`PB/FileProcessing/ProcessFileProcessingBinder.cs:299, 305`); for an email slot they go through the block entries
+  (`ProcessFileProcessingBinder.cs`); for an email slot they go through the block entries
   (4.5), because the slot guard refuses the raw route.
 
 It returns a plan (collection, collection item, single file, expression) with the resolved source names and the item
@@ -196,39 +195,39 @@ message byte-identical (pinned by the existing `FileProcessingProcessTests`).
   stored order, 2.2).
 - `Create(schema, element, number)`: builds the item first (name, type by UId, `In`, `ContainerUId` = element,
   explicit stamps, caption), adds it to the outer's `ItemProperties`, then builds the outer the same way and adds it to
-  `element.Parameters`. Precedents: `MultiInstanceApplier.AParameter` (`PB/Elements/MultiInstanceApplier.cs:1004-1044`),
-  `ProcessParameterService.StampAsCreatedIn` (`PB/Parameters/ProcessParameterService.cs:861-876`).
+  `element.Parameters`. Precedents: `MultiInstanceApplier.AParameter` (`MultiInstanceApplier.cs`),
+  `ProcessParameterService.StampAsCreatedIn` (`ProcessParameterService.cs`).
 - `Remove(schema, element, slot)`: removes the parameter (both levels) with `Parameters.Remove`, after the dependency
   check of 2.3 step 4. The package has no mechanism that deletes `SysLocalizableValue` rows (every removal in the
-  package is a bare `Parameters.Remove`: `PB/Parameters/ProcessParameterService.cs:559-568`,
-  `PB/AccessRights/ChangeAccessRightsApplier.cs:531-545`), and resource keys are built from element and slot NAMES
-  (`TS/Terrasoft.Core/Process/ProcessSchemaParameter.cs:900-930`). Whether a save drops the keys of a removed slot is
+  package is a bare `Parameters.Remove`: `ProcessParameterService.cs`,
+  `ChangeAccessRightsApplier.cs`), and resource keys are built from element and slot NAMES
+  (`ProcessSchemaParameter.cs`). Whether a save drops the keys of a removed slot is
   measured (EM1, EM2), not assumed; if a stale outer DisplayValue survives under a reused name, the writer writes an
   explicit empty outer DisplayValue for every reused or unbound outer.
 - `NextFreeNumber(element)`: the lowest k >= 1 such that no parameter of the element (every parameter of the
   element, nested items included, whatever its `CreatedInSchemaUId`) is named `Attachments<k>` (ordinal), as the
   designer's `generateItemUniqueName` scans the element's `parameters` collection (flat or roots-only by a client flag,
   the same numbers either way: serialization 5.1)
-  (`PD/ProcessFilesControlSchema/ProcessFilesControlSchema.js:244-249, 259-260`,
-  `PD/ProcessSchemaUserTaskUtilities/ProcessSchemaUserTaskUtilities.js:465-479`). A parameter that is not a slot (for
+  (`ProcessFilesControlSchema.js`,
+  `ProcessSchemaUserTaskUtilities.js`). A parameter that is not a slot (for
   example one created in another schema) still blocks its number.
 
 ### 4.4 C4: `SendEmailApplier.ApplyAttachments`
 
-Order inside `SendEmailApplier.Apply` (`PB/Email/SendEmailApplier.cs:59-144`):
+Order inside `SendEmailApplier.Apply` (`SendEmailApplier.cs`):
 
 1. `EnsureConfiguresSomething` counts `attachments` (also `[]`).
 2. Plan every attachment entry with C2, before the first write, together with the body and subject checks, so every
    refusal the planner can raise fires before any write (the "untouched on refusal" invariant the applier keeps for
-   body, subject and template, `PB/Email/SendEmailApplier.cs:75-78, 98-100`). An `attachments` member (also `[]`) on a
+   body, subject and template, `SendEmailApplier.cs`). An `attachments` member (also `[]`) on a
    multi-instance Send email (`MultiInstanceOptions` set on the activity, Q16) is refused here too, before any write;
-   `CollectionBindingRules.IsMultiInstance` (`PB/Mappings/CollectionBindingRules.cs:194-195`) answers for a Sub-process
+   `CollectionBindingRules.IsMultiInstance` (`CollectionBindingRules.cs`) answers for a Sub-process
    only, so the check reads the activity's `MultiInstanceOptions` itself. Refusals raised later inside
    `BindCollection` / `ApplyBlockMapping` (type, P1, R-M3) leave earlier in-memory writes behind, which is harmless
-   because the request fails before save, as sender and recipient refusals do today (`:120-139`).
+   because the request fails before save, as sender and recipient refusals do today.
 3. Existing writes (mode, body, subject, sender, importance, options, performer, recipients) as today.
 4. Reconcile and bind attachments (section 2.3). Collection entries go through the BLOCK form of `BindCollection`
-   (4.5), item-only entries through `ApplyBlockMapping` (`PB/Mappings/IProcessMappingService.cs:72`); both pass the
+   (4.5), item-only entries through `ApplyBlockMapping` (`IProcessMappingService.cs`); both pass the
    C5 slot guard because they plan with `fromBlock = true`. `SendEmailApplier` gains the mapping service, the C2
    planner and the C3 slot writer in its constructor. (As built, 2026-10-29: the applier does not track Q20 sources;
    the end-of-request sweep of section 4.9 finds them on the final schema.)
@@ -238,27 +237,27 @@ Order inside `SendEmailApplier.Apply` (`PB/Email/SendEmailApplier.cs:59-144`):
 ### 4.5 C5: raw-route guards (Q8, Q10)
 
 There is no separate raw route: `ApplyMapping`, `ApplyBlockMapping` and `BindCollection` all plan their writes in
-`ProcessMappingService.Plan` (`PB/Mappings/ProcessMappingService.cs:61-86, 133-198`); `fromBlock` is the only switch
-between the raw and the block form, and `BindCollection` passes `fromBlock = false` today (`:85`). `BindCollectionItems`
-does not plan in `Plan` (`:89-117`); its only caller is the process-parameter mirror
-(`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a process parameter, so only the from-slot source
+`ProcessMappingService.Plan` (`ProcessMappingService.cs`); `fromBlock` is the only switch
+between the raw and the block form, and `BindCollection` passes `fromBlock = false` today. `BindCollectionItems`
+does not plan in `Plan`; its only caller is the process-parameter mirror
+(`ProcessParameterService.cs`), whose target is a process parameter, so only the from-slot source
 guard covers it. So:
 
-- **onto a slot**: in `Plan`, in a NEW `if (!fromBlock)` block placed first, BEFORE `ResolveTargetParameter` (`:135`),
-  a target on a Send email element (`SendEmailElementIdentity`, `PB/Email/SendEmailElementIdentity.cs`; the owner
-  comes from the name-only lookup `ResolveTargetOwner`, `:580-586`) whose root parameter name satisfies
+- **onto a slot**: in `Plan`, in a NEW `if (!fromBlock)` block placed first, BEFORE `ResolveTargetParameter`,
+  a target on a Send email element (`SendEmailElementIdentity`, `SendEmailElementIdentity.cs`; the owner
+  comes from the name-only lookup `ResolveTargetOwner`) whose root parameter name satisfies
   `EmailAttachmentSlot.IsReservedName` (`^Attachments\d+$`, case-insensitive, so near-misses are caught too) is
   refused, naming `email.attachments`. It keys
   on the NAME, so it also refuses a build `mappings[]` entry onto a slot that does not exist yet (on build,
-  `mappings[]` runs before the `email` pass: `PB/Design/ProcessBuildHandler.cs:553-561`), a foreign slot and the item;
+  `mappings[]` runs before the `email` pass: `ProcessBuildHandler.cs`), a foreign slot and the item;
 - **a block form of `BindCollection`**: `IProcessMappingService.BindCollection` gains a `fromBlock` argument (or a new
   `BindBlockCollection`), documented on the interface; the applier's collection writes use it;
 - **from a slot**: beside `EnsureNotReadFromAFilesInput`, which runs right after `ResolveStructuredSource` on both
-  paths (`:110`, `:705`), a source that is a slot or a slot's item of a Send email element is refused (not inside
+  paths, a source that is a slot or a slot's item of a Send email element is refused (not inside
   `ResolveStructuredSource`: it is private static, and the Send email identity needs a `UserConnection`) (an `In` parameter only receives files; the platform's pre-save gate refuses it as
   `InvalidParameterMappingDirection`, with a less useful message, only while
   `Feature-UseVerificationOfProcessParameterDirection` is on, which is the default:
-  `TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-277, 282`, `TS/Terrasoft.Core/GlobalAppSettings.cs:343`;
+  `ParameterValuesValidationRule.cs`, `GlobalAppSettings.cs`;
   the package guard holds either way). Placed there, it also covers `BindCollectionItems`.
 - **a Formula element body reading a slot** (Q10 addendum): `ProcessFormulaTaskApplier` scans the expanded, bounded
   body with `EmailAttachmentSlot.TryFindSlotReadBy` before it writes the body and refuses with the same sentence; a
@@ -272,34 +271,34 @@ collection mirror. `CollectionBindingRules.TakesFiles` does not change.
 
 - **Declaration order (refusal, build path).** An attachment entry whose `sourceElement` is declared after the Send
   email element in `elements[]` is refused with the existing forward-reference sentence
-  (`PB/Graph/ProcessGraphBuilder.cs:458-462`), the convention the data blocks already follow. The check runs on the
+  (`ProcessGraphBuilder.cs`), the convention the data blocks already follow. The check runs on the
   planned names, before any write, so nested item paths are covered. It needs two changes: the build handler's
-  `DeclarationIndex` moves before the `email` pass (today it is computed after it, `PB/Design/ProcessBuildHandler.cs:588-589`),
+  `DeclarationIndex` moves before the `email` pass (today it is computed after it, `ProcessBuildHandler.cs`),
   and the applier receives the declaration order (an optional argument on `ISendEmailApplier.Apply`, which has none
   today and is shared with modify, or a planner result the build handler checks). `ForwardReferenceMessage` is private
-  (`PB/Graph/ProcessGraphBuilder.cs:458`) and the existing walk reads top-level values only (`:377-380`), so the sentence
-  is exposed as internal, or the guard calls the internal `RefuseForwardReferenceIn` (`:397`) over the written values
+  (`ProcessGraphBuilder.cs`) and the existing walk reads top-level values only, so the sentence
+  is exposed as internal, or the guard calls the internal `RefuseForwardReferenceIn` over the written values
   of BOTH slot levels. On modify, an element that does not exist yet is refused by name resolution.
 - **Flow reachability (warning, both paths).** When the source element cannot reach the Send email element along
   sequence flows, the build warns: at run time such a source has not run when the email reads it, and the email goes
   out without those files and without an error (EM10). The package already walks the flow graph breadth-first
-  (`ProcessGraphBuilder.Traverse`, private, `PB/Graph/ProcessGraphBuilder.cs:2250-2270`, called by `ValidateStructure`
-  on create at `:2228-2230`); the check reuses it over the schema's flows, so it also runs on modify. It is a warning, not a refusal: a source on
+  (`ProcessGraphBuilder.Traverse`, private, `ProcessGraphBuilder.cs`, called by `ValidateStructure`
+  on create); the check reuses it over the schema's flows, so it also runs on modify. It is a warning, not a refusal: a source on
   ANOTHER branch of a gateway can reach the email yet still not run, and a loop can make an "after" source run first,
   so reachability is a hint, not a proof.
 - `templateEntity` is not covered by either check (Q7 B, follow-up).
 
 ### 4.7 C7: describe
 
-- `SendEmailElementHandler.Describe` (`PB/Elements/SendEmailElementHandler.cs:105-172`) adds `Attachments`.
-- The generic element `parameters[]` projection (`PB/Describe/ProcessDescriber.cs:197-218`, decoded by
-  `ProcessParameterService.DecodeElementSource`, `PB/Parameters/ProcessParameterService.cs:366-396`) does NOT decode a
+- `SendEmailElementHandler.Describe` (`SendEmailElementHandler.cs`) adds `Attachments`.
+- The generic element `parameters[]` projection (`ProcessDescriber.cs`, decoded by
+  `ProcessParameterService.DecodeElementSource`, `ProcessParameterService.cs`) does NOT decode a
   Send email slot or its item into `sourceElement` / `processParameter` names: it reports them raw, because those names
   would be re-sent as `addMapping`, which C5 refuses. The non-decoding uses C5's guard predicate
   `EmailAttachmentSlot.IsReservedName` (not `IsSlot`), so a foreign-stamped `Attachments2` or a near-miss
   `attachments1` is not decoded either, and describe never offers names that a write refuses.
 - `DescribeAttachments` reads each slot with a binding reader generalized from `ProcessFileProcessingFilesBinding.Read`
-  (`PB/FileProcessing/ProcessFileProcessingFilesBinding.cs:16-60`, parametrized by the two names) and decodes the
+  (`ProcessFileProcessingFilesBinding.cs`, parametrized by the two names) and decodes the
   source with `FileProcessingBlockDescriber.DecodeValueSource`.
 - Issues (designer-built or raw-written shapes the package never writes):
 
@@ -312,16 +311,16 @@ collection mirror. `CollectionBindingRules.TakesFiles` does not change.
 | nothing bound | "'Attachments2' is empty and attaches nothing; the designer removes such a row when it saves." |
 | slot created in another schema | "'Attachments2' was created in another process schema, so this process never sends it." |
 | slot reads an unscoped Process file source (designer-built) | "'Attachments2' reads 'OF1', which has no record scope and no filter condition, so the email sends up to N arbitrary files; a write through this tool refuses it until OF1 is scoped." |
-| multi-instance Send email (designer-built, `MultiInstanceOptions` set, Q16): the conversion moved every root parameter, the slots included, into the item properties of `InputRecordCollection` (`TS/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/process-activity-schema.js:317-338`), where the run time's top-level slot search (`TS/Terrasoft.Core/Process/ProcessUserTaskExtensions.cs:78-98`) does not look (traced, not measured). Each moved slot is reported as found, with this issue | "'SE1' is a multi-instance Send email, so 'Attachments2' is an item of its InputRecordCollection, where the run time does not look for attachments; attachments of a multi-instance Send email are not supported through this tool." |
+| multi-instance Send email (designer-built, `MultiInstanceOptions` set, Q16): the conversion moved every root parameter, the slots included, into the item properties of `InputRecordCollection` (`process-activity-schema.js`), where the run time's top-level slot search (`ProcessUserTaskExtensions.cs`) does not look (traced, not measured). Each moved slot is reported as found, with this issue | "'SE1' is a multi-instance Send email, so 'Attachments2' is an item of its InputRecordCollection, where the run time does not look for attachments; attachments of a multi-instance Send email are not supported through this tool." |
 
 ### 4.8 Feature `UseProcessEmailAttachments`: no build-time check (Q9)
 
 The run time honours the feature for the user the process runs as
-(`PD/EmailTemplateUserTaskSender/EmailTemplateUserTaskSender.cs:227`, `PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:207-210`):
+(`EmailTemplateUserTaskSender.cs`, `EmailTemplateUserTask.cs`):
 with it off, the email, or the email activity in manual mode, has no files, silently. The package does not check it.
 It is a rollout toggle shipped with the feature in 7.17.1 (added 2020-11-19, switched on 2020-11-25), on for "All
 employees" and "All external users" through `AdminUnitFeatureState` rows that every install force-updates
-(`IsForceUpdate: true`, `PD/../Data/AdminUnitFeatureState_UseProcessEmailAttachments/descriptor.json`), and never
+(`IsForceUpdate: true`, `AdminUnitFeatureState_UseProcessEmailAttachments/descriptor.json`), and never
 switched off (history: decisions Q9). No feature reader, no feature-off notice; the guide carries one troubleshooting
 line (section 7).
 
@@ -329,12 +328,12 @@ line (section 7).
 
 - Authority is the designer's: saving a process through the builder needs the same process-design rights as saving
   it in the designer. The feature adds no privilege.
-- The run time reads attachment files with rights disabled (`PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:76-104`)
+- The run time reads attachment files with rights disabled (`EmailTemplateUserTask.cs`)
   and sends them out of the system. A Process file Object attachments element with no record scope and no selecting
   filter reads "up to N arbitrary files"; saving such files is already refused (ENG-92719 decision D16), but using them
   in the process only gets a notice from that element's own describe, and no notice fires when a later request wires
-  the element into an email (`PB/FileProcessing/ObjectFileProcessingNoticeRule.cs:62-104`). The selection itself
-  applies no record rights (`UseAdminRights = false`, `PD/FileProcessing/FileProcessing.cs`), and the Process Designer
+  the element into an email (`ObjectFileProcessingNoticeRule.cs`). The selection itself
+  applies no record rights (`UseAdminRights = false`, `FileProcessing.cs`), and the Process Designer
   has no check at all (decisions Q20).
 - **Q20 (agreed): an unscoped Process file source is refused**, for Object attachments AND Generated report, through the
   D16 machinery that already exists. As built (2026-10-29, after the slice B review; supersedes the per-write tracking
@@ -360,7 +359,7 @@ line (section 7).
 ### 4.10 Reuse round (after the stand run)
 
 A read-only comparison of the package code with core, the compiled configuration, CrtProcessDesigner and
-PackageStore found one place to call a public core API and some duplication inside the package. Applied in the same
+the shipped packages found one place to call a public core API and some duplication inside the package. Applied in the same
 PR, behaviour-preserving except where stated:
 
 - **Stored filter read as the run time reads it.** The Q20 sweep and the SysFile notice read a Process file
@@ -375,7 +374,7 @@ PR, behaviour-preserving except where stated:
 - **Flags read as the run time reads them.** The filter descriptor reader reads `isNot`, `logicalOperation` and the
   other flags case-insensitively with the run time's conversions; a flag it cannot read is a loss. A negated
   record condition is never lifted as the record scope and an OR root is never split, in any spelling (before,
-  `"IsNot":true` was lifted and rewritten as a positive scope). Measured on the PackageStore corpus: no stored
+  `"IsNot":true` was lifted and rewritten as a positive scope). Measured on the shipped package corpus: no stored
   filter reads differently (1,479 texts, 2026-10-30).
 - **Formula element body** reading a slot is refused (4.5, Q10 addendum).
 - **Formula into a `Files` input.** A Formula element result onto a Process parameter element's `Files` input is
@@ -400,7 +399,7 @@ PR, behaviour-preserving except where stated:
 | `value` | "... email.attachments[2].value is not accepted - a file has no constant form. Pass the files from a process parameter or an element output." |
 | unknown element, parameter, item | existing locator messages, prefixed with the entry path |
 | holds no files | "... email.attachments[2] 'RD.ResultCompositeObjectList' holds no files (it is neither a File nor a collection with a File item), so the email would attach nothing. Pass a Process file element's output (ObjectFiles, ReportFiles), a FileCollection or a File." |
-| collection with several File items | the shared planner sentence ("... is a collection with several File items (...), so which file each row hands on is not decided", `PB/FileProcessing/ProcessFileProcessingBinder.cs:218-224`), prefixed with the entry path |
+| collection with several File items | the shared planner sentence ("... is a collection with several File items (...), so which file each row hands on is not decided", `ProcessFileProcessingBinder.cs`), prefixed with the entry path |
 | nested collection | the shared R-M3 sentence (`CollectionBindingRules.NestedSourceSentence`) |
 | the element itself as source | "... email.attachments[2] names the element's own parameter." |
 | source declared later (build) | the existing forward-reference sentence, naming the entry |
@@ -417,7 +416,7 @@ PR, behaviour-preserving except where stated:
 | Case | Draft |
 |---|---|
 | single File source | "email.attachments[2] attaches the single file in 'Doc'. If 'Doc' is empty when the email runs, the element fails." (after EM8) |
-| `expression` source | the shared planner's notice (`PB/FileProcessing/ProcessFileProcessingBinder.cs:300-301`), worded for the slot item: "email.attachments[2].expression is written onto 'Attachments2.Attachments2FileLocator' as given, and the result is not checked: the formula must yield one file. If it yields none when the email runs, the element fails." (an unbound outer with a bound item gives one row, `TS/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:444-452`, and a null locator is read, `PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:107-119`) |
+| `expression` source | the shared planner's notice (`ProcessFileProcessingBinder.cs`), worded for the slot item: "email.attachments[2].expression is written onto 'Attachments2.Attachments2FileLocator' as given, and the result is not checked: the formula must yield one file. If it yields none when the email runs, the element fails." (an unbound outer with a bound item gives one row, `ProcessInstanceParametersDataReader.cs`, and a null locator is read, `EmailTemplateUserTask.cs`) |
 | the same source twice | "email.attachments[1] and [3] read the same files, so each file is attached twice." |
 | slots removed by the replace rule | "Removed attachment 'Attachments2' (it read 'OF1.ObjectFiles'): the sent list no longer names it. To restore it, add { \"sourceElement\": \"OF1\", \"sourceElementParameter\": \"ObjectFiles\" } to the list." |
 | source not on a path before the email | "email.attachments[2] reads 'OF1', which does not lie on a path before 'SE1'. If OF1 has not run when the email runs, the email goes out without these files and without an error." |
@@ -463,7 +462,7 @@ New article `process-send-email-attachments` (about 4-6 KB), owned topics:
    rows added since); `[]` removes all; the removal notice carries what was removed; recipients still append.
 5. Run time: works in manual and automatic mode, custom and template message; manual mode puts the files on the draft
    email activity; a row whose file is empty (a single File, an `expression` that yields nothing, a collection row
-   without a file) fails the element (traced: a null locator is read, `PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:107-119`); files are read with system rights, not the process
+   without a file) fails the element (traced: a null locator is read, `EmailTemplateUserTask.cs`); files are read with system rights, not the process
    user's; a generated report is a Word file.
 6. Troubleshooting: an email without its files -> the source's filter, whether the source ran, and one line for the
    feature (Q9): "an email without its files: check feature UseProcessEmailAttachments for the user who runs the

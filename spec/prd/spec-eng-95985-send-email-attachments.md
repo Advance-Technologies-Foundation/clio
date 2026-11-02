@@ -17,16 +17,14 @@ than 5 stories); an ADR is added because the change alters the shared mapping se
 following the ENG-95984 File process parameter type precedent (a small feature in one story, its contract decisions
 recorded in an ADR).
 
-Baselines (2026-10-28): crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio
+Baselines (2026-10-28): CrtProcessBuilder 1.6.6.125 (the package's main branch on 2026-10-28), clio
 `origin/master` `358e9db52` (drift to `0b25e89e6` checked: nothing relevant moved, see the plan's drift note),
 clio-knowledge `origin/master` `534e913` (drift to `a49f258`, `libraryVersion` 1.15.174), CrtProcessDesigner 7.8.0 and
-the PackageStore corpus, core `TSBpm` trunk, a read-only inventory of stand `Creatio` (a registered clio environment).
+the shipped package corpus, the core platform source, a read-only inventory of stand `Creatio` (a registered clio environment).
 Basis labels: *source* (read in code; a run-time claim with this label is a hypothesis until an EM measures it),
 *measured* (observed on a stand or counted over the shipped corpus, with the date), *inference*.
 
-Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PD/` = PackageStore
-`CrtProcessDesigner/branches/7.8.0/Schemas/`; `TS/` = core `TSBpm/Src/Lib/`; clio and clio-knowledge paths are
-relative to their repository roots.
+clio and clio-knowledge paths are relative to their repository roots. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 ---
 
@@ -46,10 +44,10 @@ exist until something creates it, and a raw outer-only mapping saves green and t
 ## What the platform requires (the contract the package must meet)
 
 - **One designer row per attachment.** An attachment is an element parameter `Attachments<N>` (a collection, Direction
-  `In`) with exactly one nested item `Attachments<N>FileLocator` (a file) (`PD/ProcessFilesControlSchema/`; corpus).
+  `In`) with exactly one nested item `Attachments<N>FileLocator` (a file) (`ProcessFilesControlSchema`; corpus).
 - **The run time finds rows by name AND stamp**: regex `^Attachments\d+$` over the element's own top-level
   parameters whose `CreatedInSchemaUId` is the process schema, and reads each row's `<slot>FileLocator`
-  (`TS/Terrasoft.Core/Process/ProcessUserTaskExtensions.cs`, `PD/EmailTemplateUserTask/EmailTemplateUserTask.cs`;
+  (`ProcessUserTaskExtensions.cs`, `EmailTemplateUserTask.cs`;
   source). A wrong stamp, a wrong item name or a missing outer binding saves green and then sends nothing or fails at
   run time.
 - **All four mode combinations share one run-time path** (manual/auto x custom/template). Manual mode copies the files
@@ -63,7 +61,7 @@ Full key-by-key target: analysis `serialization` file; invariants: design sectio
 
 ## Scope
 
-In scope (package `PB/`, clio, clio-knowledge):
+In scope (the CrtProcessBuilder package, clio, clio-knowledge):
 
 - New `email.attachments: [entry]` member on create (`elements[].email`), `addElement` and `setElement`
   (`elementUpdate.email`); entry = the `fileProcessing.files` shape (`processParameter`, `sourceElement` +
@@ -94,7 +92,7 @@ Out of scope (deliberately not built, design section 8):
 
 ## Contract
 
-Write (all three routes reach one applier, `PB/Email/SendEmailApplier.cs`):
+Write (all three routes reach one applier, `SendEmailApplier.cs`):
 
 ```json
 "email": {

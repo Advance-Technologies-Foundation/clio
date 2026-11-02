@@ -14,9 +14,7 @@ not duplicated here. A row changes there first.
 name it)
 **Created**: 2026-10-28
 
-Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PBT/` =
-`tests/UnitTests/CrtProcessBuilder.Tests/`; `KB/` = the clio-knowledge repository root; clio paths are relative to the
-clio repository root.
+`KB/` = the clio-knowledge repository root; clio paths are relative to the clio repository root. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 ---
 

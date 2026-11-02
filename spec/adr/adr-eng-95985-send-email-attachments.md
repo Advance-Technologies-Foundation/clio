@@ -11,9 +11,7 @@ five that shape the architecture (Q1, Q4, Q6, Q8, Q11) and names the related agr
 decisions file argues every question below with its source anchors, the design file holds components C1-C10 (C8
 dropped) and K1-K12.
 
-Path aliases: `PB/` = crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/`; `PD/` = PackageStore
-`CrtProcessDesigner/branches/7.8.0/Schemas/`; `TS/` = core `TSBpm/Src/Lib/`; `CLIO/` and `KB/` = the clio and
-clio-knowledge repository roots. Options are compared on clean-slate cost and constraints; the prototype mentioned in
+`CLIO/` and `KB/` = the clio and clio-knowledge repository roots. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here. Options are compared on clean-slate cost and constraints; the prototype mentioned in
 the refinement comment is not an argument for or against any option (owner rule).
 
 ---
@@ -21,15 +19,15 @@ the refinement comment is not an argument for or against any option (owner rule)
 ## Context
 
 The package builds a Send email element through one applier on every route (build, `addElement`, `setElement`,
-`PB/Design/ProcessBuildHandler.cs`, `PB/Operations/ElementOperations.cs`). It has no member for attachments, and clio
+`ProcessBuildHandler.cs`, `ElementOperations.cs`). It has no member for attachments, and clio
 refuses `email.attachments` pre-send. The designer stores one row per attachment as an `In` collection parameter
 `Attachments<N>` with one nested FileLocator item `Attachments<N>FileLocator`, stamped with the process schema; the
 run time finds rows by name and stamp and reads the item. The Process file element already has a `files` source
-planner (`PB/FileProcessing/ProcessFileProcessingBinder.cs`) that classifies a collection, a collection item, a single
+planner (`ProcessFileProcessingBinder.cs`) that classifies a collection, a collection item, a single
 File and an expression and refuses nested sources, and a mapping service in which `ApplyMapping`, `ApplyBlockMapping`
 and `BindCollection` plan in one method (`ProcessMappingService.Plan`), with `fromBlock` as the only switch between the
-raw and the block form. `BindCollectionItems` does not plan there (`PB/Mappings/ProcessMappingService.cs:89-117`); its
-only caller is the process-parameter mirror (`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a
+raw and the block form. `BindCollectionItems` does not plan there (`ProcessMappingService.cs`); its
+only caller is the process-parameter mirror (`ProcessParameterService.cs`), whose target is a
 process parameter, so only the from-slot source guard covers it.
 
 ## Decisions
@@ -94,14 +92,14 @@ Rejected:
 ### D4 (Q8, with Q10). Every non-block mapping onto a slot is refused; mapping FROM a slot, or a Formula body reading one, is refused
 
 In `ProcessMappingService.Plan`, in a NEW `if (!fromBlock)` block placed first, before `ResolveTargetParameter`
-(`PB/Mappings/ProcessMappingService.cs:135`), a target on a Send email element (found by the name-only owner lookup
-`ResolveTargetOwner`, `:580-586`) whose root parameter name satisfies the guard predicate
+(`ProcessMappingService.cs`), a target on a Send email element (found by the name-only owner lookup
+`ResolveTargetOwner`) whose root parameter name satisfies the guard predicate
 `EmailAttachmentSlot.IsReservedName` (`^Attachments\d+$`, case-insensitive, whatever the stamp, so near-misses are
 caught) is refused, naming `email.attachments`. It keys on the NAME, so it also covers a build `mappings[]` entry onto
 a slot that does not exist yet, a foreign slot and the item. `IProcessMappingService.BindCollection` gains a block form
 (the applier's collection writes plan with `fromBlock = true`). A slot or a slot's item as a SOURCE is refused ("only
 receives files"; Q10) beside `EnsureNotReadFromAFilesInput`, which runs right after `ResolveStructuredSource` on both
-paths (`:110`, `:705`); it sits there, not inside `ResolveStructuredSource`, because that method is private static and
+paths; it sits there, not inside `ResolveStructuredSource`, because that method is private static and
 the Send email identity needs a `UserConnection`. This also covers `BindCollectionItems`, whose target is a process
 parameter and never a slot. `TakesFiles` does not change.
 Precedent: a raw mapping onto a block-owned Process file parameter is already refused, naming the block member.

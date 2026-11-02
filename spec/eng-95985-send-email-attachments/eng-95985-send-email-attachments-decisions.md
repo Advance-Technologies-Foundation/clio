@@ -2,11 +2,10 @@
 
 Written 2026-10-28. All twenty questions were answered by the owner on 2026-10-28; each row and section carries the answer. Answers are recorded in place ("**Agreed <date>.**"), the way ENG-92719 recorded Q1-Q20.
 
-Basis: crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio `origin/master` `358e9db52`,
-clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0 (PackageStore), core `TSBpm` trunk, the PackageStore
+Basis: CrtProcessBuilder 1.6.6.125 (the package's main branch on 2026-10-28), clio `origin/master` `358e9db52`,
+clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0, the core platform source, the shipped package
 corpus, a read-only inventory of stand `Creatio` on 2026-10-28, and the research notes r0-r10 (local notes, not in the repository; see README).
-Paths: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PD/` = `CrtProcessDesigner/branches/7.8.0/Schemas/`,
-`TS/` = `TSBpm/Src/Lib/`, `CLIO/` = clio repository root, `KB/` = clio-knowledge repository root.
+Paths: `CLIO/` = clio repository root, `KB/` = clio-knowledge repository root. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 Rule for arguing options (owner feedback): options are compared on clean-slate cost and constraints. The prototype
 mentioned in the refinement comment is not an argument for or against any option.
@@ -44,12 +43,12 @@ mentioned in the refinement comment is not an argument for or against any option
 
 **Facts.**
 - The `email` block is applied by one applier on every route: build, `addElement`, `setElement`
-  (`PB/Design/ProcessBuildHandler.cs:553-561`, `PB/Operations/ElementOperations.cs:64-70, 326-332`). [source]
+  (`ProcessBuildHandler.cs`, `ElementOperations.cs`). [source]
 - `fileProcessing.files` already describes "exactly one source of files": `processParameter`, `sourceElement` +
-  `sourceElementParameter`, `expression`, and a declared-but-refused `value` (`PB/Contracts/ProcessDescriptorContracts.cs:416-440`).
+  `sourceElementParameter`, `expression`, and a declared-but-refused `value` (`ProcessDescriptorContracts.cs`).
   Its planner classifies a collection, a collection item, a single File and an expression, and refuses nested sources
-  (`PB/FileProcessing/ProcessFileProcessingBinder.cs:130-195`). [source]
-- One designer row is one slot `Attachments<N>` holding one collection (or one file) (`PD/ProcessFilesControlSchema/ProcessFilesControlSchema.js:254-295`). [source]
+  (`ProcessFileProcessingBinder.cs`). [source]
+- One designer row is one slot `Attachments<N>` holding one collection (or one file) (`ProcessFilesControlSchema.js`). [source]
 - The word "attachments" already names a SOURCE group of the Process file element (`fileProcessing.attachments`, the
   Object attachments variant). The new member is a CONSUMER. Guidance must keep them apart. [source]
 
@@ -68,8 +67,8 @@ guidance problem, solved by one sentence in each article.
 
 **Consequences.** New `[DataMember(Name = "attachments")]` on `SendEmailDescriptor` and on `DescribeSendEmailInfo`;
 clio `ProcessBlockKeyCheck` gets the key and a child key set; the floor rises. An older package drops the unknown
-member (`PB/Contracts/VersionContracts.cs:24-26`): a block that carries ONLY `attachments` is then refused as
-configuring nothing (`PB/Email/SendEmailApplier.cs:203-216`), and a block with other members saves green without the
+member (`VersionContracts.cs`): a block that carries ONLY `attachments` is then refused as
+configuring nothing (`SendEmailApplier.cs`), and a block with other members saves green without the
 attachments, which is the silent case the floor and clio's read-back check exist for.
 
 ---
@@ -82,9 +81,9 @@ attachments, which is the silent case the floor and clio's read-back check exist
 - The designer's picker for the attachment item offers, on the element tab, items of element output collections and
   single FileLocator outputs (a whole element collection is listed but cannot be selected, and `In` parameters are
   dropped); on the process tab, a File parameter, an item of a process FileCollection, and the process FileCollection
-  itself (`PD/ProcessElementParametersMappingPage/ProcessElementParametersMappingPage.js:506-509, 532-538, 880-883`; facts section 3). [source]
+  itself (`ProcessElementParametersMappingPage.js`; facts section 3). [source]
 - The runtime reads every row's `<slot>FileLocator` and does not care where the collection came from
-  (`PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:107-119, 280-287`). [source]
+  (`EmailTemplateUserTask.cs`). [source]
 - The Academy describes the attachment field as taking a file collection, normally produced by a Process file
   element (research r6 §2.2). [doc]
 - The corpus has only Object and Report sources (research r5 §3.2). [corpus]
@@ -109,14 +108,14 @@ an email from a parent process or a page (Academy use case UC4).
 
 **Facts.**
 - The designer stores exactly that for a single File: the item is bound, the parent stays as created (None)
-  (`PD/MappingEditMixin/MappingEditMixin.js:1090-1094`; research r10 §3d). [source]
+  (`MappingEditMixin.js`; research r10 §3d). [source]
 - At run time the parameter reader builds ONE row for an unbound collection whose item is bound
-  (`TS/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:443-452`). Traced, not measured for the email.
+  (`ProcessInstanceParametersDataReader.cs`). Traced, not measured for the email.
   The same shape on the Process file element copied one file (measured 2026-10-19, recorded at
-  `PB/FileProcessing/ProcessFileProcessingBinder.cs:27-29`). [prior measured]
+  `ProcessFileProcessingBinder.cs`). [prior measured]
 - An EMPTY File gives a row with a null locator, and the email element then fails with a NullReferenceException in
-  `FileFactory.CreateFileInstance`, which `IgnoreErrors` does not cover (`TS/Terrasoft.Common/CompositeObject.cs:120-127`,
-  `TS/Terrasoft.File/FileFactory.cs:44-45`). Traced, not measured. [source]
+  `FileFactory.CreateFileInstance`, which `IgnoreErrors` does not cover (`CompositeObject.cs`,
+  `FileFactory.cs`). Traced, not measured. [source]
 
 **Options.** **A. Accept, with a warning** ("if '<File>' is empty when the email runs, the element fails"). B. Refuse
 and tell the agent to wrap the File in a FileCollection.
@@ -131,18 +130,18 @@ attach, fall back to B.
 **Question.** What does `setElement` with `email.attachments` do to the slots already on the element?
 
 **Facts.**
-- Recipients are match-or-append: no way to remove or replace one through the tool (`PB/Email/SendEmailApplier.cs:798-818`);
+- Recipients are match-or-append: no way to remove or replace one through the tool (`SendEmailApplier.cs`);
   the guidance routes removal to the designer (`KB/guidance/mcp/guides/processes/send-email.md`). The refinement called
   this out as "discovered late last time". [source]
-- The designer removes a slot by clearing its row and saving (`ProcessFilesControlSchema.js:376-421`). [source]
+- The designer removes a slot by clearing its row and saving (`ProcessFilesControlSchema.js`). [source]
 - No mapping or Script value can read an element `In` parameter while `Feature-UseVerificationOfProcessParameterDirection`
-  is on (`TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-277`, gated at `:282`; default true,
-  `GlobalAppSettings.cs:343`, but configurable). The designer still checks `canRemoveParameter` before it removes a slot
-  (`PD/ProcessFilesControlSchema/ProcessFilesControlSchema.js:396-403`), so the package checks dependents too
+  is on (`ParameterValuesValidationRule.cs`, gated by that feature; default true,
+  `GlobalAppSettings.cs`, but configurable). The designer still checks `canRemoveParameter` before it removes a slot
+  (`ProcessFilesControlSchema.js`), so the package checks dependents too
   (design 2.3 step 4). [source; that nothing reads a slot in practice is inferred]
-- Modify has no concurrency token (the modify contract, `PB/Contracts/ModifyContracts.cs`, has no expected-version member), so a list built
+- Modify has no concurrency token (the modify contract, `ModifyContracts.cs`, has no expected-version member), so a list built
   from a stale describe deletes rows added since. [source]
-- Replace-the-list precedents in the package: access rights (`PB/AccessRights/ChangeAccessRightsApplier.cs:526-545`). [source]
+- Replace-the-list precedents in the package: access rights (`ChangeAccessRightsApplier.cs`). [source]
 
 **Options.**
 - **A. Replace.** A sent `attachments` list becomes the element's attachments. Slots whose resolved source equals
@@ -163,10 +162,10 @@ move recipients to the same rule.
 
 ## Q5. Slot numbering
 
-**Facts.** The designer takes the lowest free number from 1 (`PD/ProcessSchemaUserTaskUtilities/*.js:465-479`,
-called from `ProcessFilesControlSchema.js:244-260`). The package's recipients take max+1
-(`PB/Email/SendEmailApplier.cs:854-867`), and its doc comment wrongly says "first free". The runtime does not care
-(regex `^Attachments\d+$`, `TS/Terrasoft.Core/Process/ProcessUserTaskExtensions.cs:19, 78-98`). [source]
+**Facts.** The designer takes the lowest free number from 1 (`*.js`,
+called from `ProcessFilesControlSchema.js`). The package's recipients take max+1
+(`SendEmailApplier.cs`), and its doc comment wrongly says "first free". The runtime does not care
+(regex `^Attachments\d+$`, `ProcessUserTaskExtensions.cs`). [source]
 
 **Options.** **A. Lowest free from 1.** B. max+1.
 
@@ -182,17 +181,17 @@ Q4 = A, kept slots keep their names, so only new slots are numbered.
 
 **Facts.**
 - Named refusals already exist for an unknown element, parameter or process parameter
-  (`PB/ProcessSchemaElementLocator.cs:60-66, 247-252, 262-268`). [source]
+  (`ProcessSchemaElementLocator.cs`). [source]
 - The `files` planner has the "names no source", "neither a file nor a collection of files", "with no File item" and
-  nested-source refusals (`PB/FileProcessing/ProcessFileProcessingBinder.cs:136-187, 209-225`). [source]
+  nested-source refusals (`ProcessFileProcessingBinder.cs`). [source]
 - The build path's declaration-order guard ("a source element must appear EARLIER in `elements[]`") is not wired to
-  the `email` block and scans top-level values only (`PB/Graph/ProcessGraphBuilder.cs:356-430, 452-455`;
-  `PB/Design/ProcessBuildHandler.cs:557-561`). [source]
+  the `email` block and scans top-level values only (`ProcessGraphBuilder.cs`;
+  `ProcessBuildHandler.cs`). [source]
 - No check in the package says that an attachment's SOURCE lies upstream of its consumer. The only flow traversal is
   `ValidateStructure`'s reachability from a start and to an end, a breadth-first `Traverse` over adjacency maps, run on
-  the create path (`PB/Graph/ProcessGraphBuilder.cs:2228-2230`; `Traverse` itself, private, `:2250-2270`). [source]
+  the create path (`ProcessGraphBuilder.cs`; `Traverse` itself, private). [source]
 - At run time a source element that has not run yields 0 attachments and no error
-  (`TS/Terrasoft.Core/Process/ProcessInstanceParametersDataReader.cs:454-468`; traced, not measured: EM10). [source]
+  (`ProcessInstanceParametersDataReader.cs`; traced, not measured: EM10). [source]
 
 **Options.**
 - **A. Refuse:** (i) an entry with no source; (ii) an unresolvable element, parameter or item; (iii) a source that holds
@@ -212,8 +211,8 @@ The flow rule also goes into guidance (Q7) with EM10's measured result.
 ## Q7. How AC6 is enforced
 
 **Facts.** On build, every `fileProcessing` block is configured before any `email` block (the configure loop
-`PB/Graph/ProcessGraphBuilder.cs:238-243`, inside `BuildGraph`, which `PB/Design/ProcessBuildHandler.cs:166` calls before
-`ApplyDeclarativeContent` `:172`, whose `email` pass is `:557-561`), so "configured before" holds
+`ProcessGraphBuilder.cs`, inside `BuildGraph`, which `ProcessBuildHandler.cs` calls before
+`ApplyDeclarativeContent` and its `email` pass), so "configured before" holds
 by construction on build; on modify, operations run in order and a missing element is refused. The real hazard is
 FLOW order (EM10). The Academy states the configuration-order rule (research r6 §2.4). [source] [doc]
 
@@ -232,20 +231,20 @@ the block?
 
 **Facts.**
 - Today `CollectionBindingRules.TakesFiles` is false for a Send email slot, so a raw outer mapping binds the outer
-  level only, with no notice (`PB/Mappings/CollectionBindingRules.cs:164-181`). At run time that row reads a null
+  level only, with no notice (`CollectionBindingRules.cs`). At run time that row reads a null
   locator and fails the element (traced, research r10 C12; EM9). [source]
 - `TakesFiles` is reached by every structured mapping of every element and by every describe
-  (`PB/Mappings/CollectionBindingRules.cs:93, 361, 396`; research r2 §7). [source]
+  (`CollectionBindingRules.cs`; research r2 §7). [source]
 - Precedent: a raw mapping onto a block-owned Process file parameter is refused, naming the block member
-  (`PB/Mappings/ProcessMappingService.cs:416-435`). [source]
+  (`ProcessMappingService.cs`). [source]
 
 **Options.**
 - **A. Refuse every non-block mapping onto `Attachments<N>` and `Attachments<N>FileLocator` of a Send email
   element**, naming `email.attachments`. `ApplyMapping`, `ApplyBlockMapping` and `BindCollection` plan in one method
   (`Plan`), and `fromBlock` is the only switch, so the guard sits under `!fromBlock` and `BindCollection` gains a block
   form for the applier (design 4.5). `BindCollectionItems` does not plan in `Plan`
-  (`PB/Mappings/ProcessMappingService.cs:89-117`); its only caller is the process-parameter mirror
-  (`PB/Parameters/ProcessParameterService.cs:1099`), whose target is a process parameter, so only the from-slot source
+  (`ProcessMappingService.cs`); its only caller is the process-parameter mirror
+  (`ProcessParameterService.cs`), whose target is a process parameter, so only the from-slot source
   guard (Q10) covers it. `TakesFiles` does not change.
 - B. Widen `TakesFiles` so P2 pairs the item and R-M2 refuses a fileless source. Touches the shared rules of every
   mapping; PU-42 stays green only with a narrow predicate.
@@ -257,13 +256,13 @@ through the block too (Q4).
 
 ## Q9. `UseProcessEmailAttachments` off
 
-**Facts.** The feature gates the designer control and the RUN TIME (`PD/EmailTemplateUserTaskSender/EmailTemplateUserTaskSender.cs:227`,
-`PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:207-210`). With it off for the EXECUTING user the email (or, in
-manual mode, the email activity, `PD/ManualEmailUserTaskSender/ManualEmailUserTaskSender.cs:56-70, 163-181`) has no
+**Facts.** The feature gates the designer control and the RUN TIME (`EmailTemplateUserTaskSender.cs`,
+`EmailTemplateUserTask.cs`). With it off for the EXECUTING user the email (or, in
+manual mode, the email activity, `ManualEmailUserTaskSender.cs`) has no
 files, silently. The package ships it on through `AdminUnitFeatureState` rows for "All employees" and "All
 external users"; stand `Creatio` has both (measured 2026-10-28). A feature-reader seam exists
-(`PB/FileProcessing/FileProcessingFeatureReader.cs`), but it asks without a user, and a request without a user
-gets the feature's `DefaultState` (`TS/Terrasoft.Core/FeatureToggling/DbFeatureProvider.cs:810-827`), which this
+(`FileProcessingFeatureReader.cs`), but it asks without a user, and a request without a user
+gets the feature's `DefaultState` (`DbFeatureProvider.cs`), which this
 feature's package data does not set; option A below would have needed a reader that asks for the current user, and
 none is built (design 4.8). [source] [measured]
 
@@ -272,7 +271,7 @@ from the start; it has never been switched off or scheduled for removal, no pack
 references it, and no data row sets it to 0. The run-time, activity-copy and designer checks survive through later
 refactors, not through a decision. [measured 2026-10-28]
 - The shipped state rows force-update `FeatureState` and `SysAdminUnit` (`IsForceUpdate: true` in
-  `PD/../Data/AdminUnitFeatureState_UseProcessEmailAttachments/descriptor.json`), so every install of the package resets
+  `AdminUnitFeatureState_UseProcessEmailAttachments/descriptor.json`), so every install of the package resets
   the two group rows to ON; switching it off durably is possible only for individual users or other roles. [source]
 - Stand `Creatio`: the `Feature` row has `DefaultState = 1` (set by the platform on 2022-12-03, not by the package data,
   which carries Code and Id only), both group rows 1, no row with state 0. So even a context-free read answers ON
@@ -293,20 +292,20 @@ guide names it for troubleshooting.
 ## Q10. Mapping FROM a slot
 
 **Facts.** A slot is an `In` parameter; the platform's pre-save gate refuses an element `In` parameter as a mapping
-source (`InvalidParameterMappingDirection`, `TS/Terrasoft.Core/Process/ParameterValuesValidationRule.cs:252-277`),
-only while `Feature-UseVerificationOfProcessParameterDirection` is on (`:282`; default true,
-`TS/Terrasoft.Core/GlobalAppSettings.cs:343`), and counts it as an error while `Feature-UseInterpretableProcessOnly` is
-on (`TS/Terrasoft.Core/Process/ProcessValidationResult.cs:44-54`; default true). [source]
+source (`InvalidParameterMappingDirection`, `ParameterValuesValidationRule.cs`),
+only while `Feature-UseVerificationOfProcessParameterDirection` is on (default true,
+`GlobalAppSettings.cs`), and counts it as an error while `Feature-UseInterpretableProcessOnly` is
+on (`ProcessValidationResult.cs`; default true). [source]
 
 **Recommendation: refuse in the package** **Agreed 2026-10-28 by the owner.**, with a message that names the slot and says it only receives files. The
 platform would refuse it anyway under the default settings, with a less helpful message.
 
 **Addendum (reuse round, agreed 2026-10-30 by the owner).** A Formula element BODY reading a slot or its item is
 refused too, with the same sentence. The designer cannot write one: its mapping picker hides element `In`
-parameters (`PD/ProcessElementParametersMappingPage/ProcessElementParametersMappingPage.js:506-509, 654`), and the
+parameters (`ProcessElementParametersMappingPage.js`), and the
 platform's pre-save gate does not see a Formula body, which is the Script task `Body`, not a parameter value
-(`TS/Terrasoft.Core/Process/ProcessSchemaFormulaTask.cs`). The body was the one write route left open. No process in
-the PackageStore corpus reads a slot (scan 2026-10-30). A Script task body stays unchecked: it is C# code. [source]
+(`ProcessSchemaFormulaTask.cs`). The body was the one write route left open. No process in
+the shipped package corpus reads a slot (scan 2026-10-30). A Script task body stays unchecked: it is C# code. [source]
 [corpus]
 
 ---
@@ -314,8 +313,8 @@ the PackageStore corpus reads a slot (scan 2026-10-30). A Script task body stays
 ## Q11. Describe shape
 
 **Facts.** `SendEmailElementHandler.DescribeRecipients` projects without decoding sources and skips a slot whose own
-value is None (`PB/Elements/SendEmailElementHandler.cs:228-255`). `ProcessFileProcessingDescriber` already reports
-`bindingLevels` and issues for the `files` binding (`PB/FileProcessing/ProcessFileProcessingDescriber.cs:26-72`).
+value is None (`SendEmailElementHandler.cs`). `ProcessFileProcessingDescriber` already reports
+`bindingLevels` and issues for the `files` binding (`ProcessFileProcessingDescriber.cs`).
 clio's `DescribedEmail` has an extension bag that passes an unknown `attachments` member through
 (`CLIO/clio/Command/ProcessModel/IProcessDescriber.cs:1240-1249`). [source]
 
@@ -353,7 +352,7 @@ another ticket (research r9 §4.6). `git ls-remote --tags` in the package reposi
 time. The File family merged package -> knowledge -> clio within minutes ("guide-first"). A clio built from
 2026-10-13 onward (when `ProcessBlockKeyCheck` was added) refuses `email.attachments` loudly; an older clio 8.1.0.x
 forwards it, the published library still reaches that clio (`KB/bundle-source.json` serves clio 8.1.0-8.1.999), and
-an older package then drops the member with success (`PB/Contracts/VersionContracts.cs:23-26`). For that window the
+an older package then drops the member with success (`VersionContracts.cs`). For that window the
 article's floor sentence is the only defence. [source; the build window is inferred from clio's git history]
 
 **Recommendation.** **Agreed 2026-10-28 by the owner.** Claim every number in a new claim comment on ENG-95985 after checking the tags of both
@@ -376,7 +375,7 @@ done), and this folder (stand address already absent). It merges before the pack
 
 ## Q15. Creatio.ai promise in package code
 
-**Facts.** `PB/Mappings/CollectionBindingRules.cs:164-169` says the email and Creatio.ai attachment slots join
+**Facts.** `CollectionBindingRules.cs` says the email and Creatio.ai attachment slots join
 `TakesFiles` "with ENG-95985". The ENG-92719 decision D22 (agreed 2026-10-07) puts Creatio.ai out of scope. With
 Q8 = A the email slots do not join either. [source]
 
@@ -388,22 +387,22 @@ Q8 = A the email slots do not join either. [source]
 ## Q16. Out-of-AC patterns
 
 - **Multi-instance Send email.** The package makes only a Sub-process multi-instance
-  (`PB/Elements/MultiInstanceApplier.cs:1051-1058`). The mapping rules' `IsMultiInstance`
-  (`PB/Mappings/CollectionBindingRules.cs:194-195`) answers false for a designer-built multi-instance Send email, so
+  (`MultiInstanceApplier.cs`). The mapping rules' `IsMultiInstance`
+  (`CollectionBindingRules.cs`) answers false for a designer-built multi-instance Send email, so
   mappings onto one get the single-instance rules.
   The Process Designer CAN make a Send email multi-instance (checked 2026-10-28 at the owner's request): mapping a
   TOP-LEVEL parameter of any activity, for example a recipient, to an ITEM of a collection fires
-  `collectionMappingSet` (`PD/MappingEditMixin/MappingEditMixin.js:981-995, 1029-1035`), and the base properties page
-  converts the element (`PD/ProcessFlowElementPropertiesPage/ProcessFlowElementPropertiesPage.js:846, 875-888`);
+  `collectionMappingSet` (`MappingEditMixin.js`), and the base properties page
+  converts the element (`ProcessFlowElementPropertiesPage.js`);
   `convertToMultiInstance` lives on the client activity class that user tasks extend
-  (`TS/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/process-activity-schema.js:526`),
-  and the server keeps `MultiInstanceOptions` on every activity (`TS/Terrasoft.Core/Process/ProcessSchemaActivity.cs:22, 122`;
+  (`process-activity-schema.js`),
+  and the server keeps `MultiInstanceOptions` on every activity (`ProcessSchemaActivity.cs`;
   a user task is a `ProcessSchemaTask : ProcessSchemaActivity`). The conversion MOVES every root parameter of the
-  element into the item properties of `InputRecordCollection` / `OutputRecordCollection` (`process-activity-schema.js:317-338`),
+  element into the item properties of `InputRecordCollection` / `OutputRecordCollection` (`process-activity-schema.js`),
   so an `Attachments<N>` slot would become a nested item, which the run time's top-level slot search
-  (`TS/Terrasoft.Core/Process/ProcessUserTaskExtensions.cs:78-98`) does not see [traced, not measured]. Nobody uses it:
+  (`ProcessUserTaskExtensions.cs`) does not see [traced, not measured]. Nobody uses it:
   the corpus holds 61 multi-instance elements, all Sub-processes, and no multi-instance user task at all
-  (scan of every PackageStore `metadata.json` for `BP6`, 2026-10-28). [source] [corpus]
+  (scan of every shipped package `metadata.json` for `BP6`, 2026-10-28). [source] [corpus]
   **Recommendation (changed): refuse `email.attachments` on a multi-instance Send email** **Agreed 2026-10-28 by the owner.** ("attachments of a
   multi-instance Send email are not supported through this tool"), detected by `MultiInstanceOptions` on the activity;
   describe reports such an element as found, with an issue. The supported per-recipient pattern stays the
@@ -411,7 +410,7 @@ Q8 = A the email slots do not join either. [source]
 - **One file per recipient** (Academy UC1 variant): a multi-instance sub-process whose callee has a File `In`
   parameter feeding its Send email as a single File (Q3). Documented in the guide only if EM8 passes.
 - **`removeElement` of a source.** No dependency guard exists for `removeElement`
-  (`PB/Graph/ProcessGraphBuilder.cs:1882-1919`). If EM11 shows the platform saves a dangling reference green, propose a
+  (`ProcessGraphBuilder.cs`). If EM11 shows the platform saves a dangling reference green, propose a
   follow-up; otherwise the platform's own refusal is enough.
 
 ---
@@ -421,7 +420,7 @@ Q8 = A the email slots do not join either. [source]
 **Facts.** Manual mode copies the files to `ActivityFile` without a mailbox. Auto mode creates an Activity (and copies
 the files) only with `CreateActivity = true`, a non-empty sender and no existing `ActivityId` (a re-executed element
 re-sends its stored Activity and copies nothing,
-`PD/AutoEmailUserTaskSender/AutoEmailUserTaskSender.cs:120-133, 165-174`); the builder resolves `sender` against
+`AutoEmailUserTaskSender.cs`); the builder resolves `sender` against
 `MailboxSyncSettings`, and stand `Creatio` has 0 rows (measured 2026-10-28). The `email` block has no
 `CreateActivity` member, so the Create activity probe (EM7c since EM6 was dropped) builds the slots with the builder
 and sets `CreateActivity` by a raw constant mapping or in the designer: the slots under test stay builder-made. Real delivery needs a working mailbox. [source] [measured]
@@ -492,23 +491,23 @@ variants in the unscoped-source refusal (Q20).
 record condition and no selecting filter?
 
 **Facts.**
-- The run time reads attachment files with rights disabled (`PD/EmailTemplateUserTask/EmailTemplateUserTask.cs:76-104`)
+- The run time reads attachment files with rights disabled (`EmailTemplateUserTask.cs`)
   and sends them outside the system. [source]
 - Such an Object element reads "up to N arbitrary files". Saving them is refused (ENG-92719 decision D16, enforced in
-  `PB/FileProcessing/FileProcessingFilterLedger.cs:75-95`); using them in the process gets only a notice, raised by the
+  `FileProcessingFilterLedger.cs`); using them in the process gets only a notice, raised by the
   element's own describe; no notice fires when a later request wires the element into an email
-  (`PB/FileProcessing/ObjectFileProcessingNoticeRule.cs:62-104`). [source]
+  (`ObjectFileProcessingNoticeRule.cs`). [source]
 - Authority is unchanged: the builder needs the same process-design rights as the designer. [source]
 - The file selection itself applies no record rights: the Process file element builds its query with
-  `UseAdminRights = false` (`PD/FileProcessing/FileProcessing.cs`, `InitializeEntitySchemaQuery`). [source]
+  `UseAdminRights = false` (`FileProcessing.cs`, `InitializeEntitySchemaQuery`). [source]
 - The Process Designer has NO such check anywhere (checked 2026-10-28 at the owner's request): the Object attachments
   page validates only that the source object is chosen and that "Read first" is 1-5000 (default 50,
-  `PD/ProcessSchemaUserTaskUtilities/ProcessSchemaUserTaskUtilities.js:506-518`,
-  `PD/ObjectFileProcessingUserTaskPropertiesPage/ObjectFileProcessingUserTaskPropertiesPage.js:353-357`); its filter
-  panel only OFFERS a `RecordId` condition (`:423-438`) and never requires one, in either action; the Report page has
+  `ProcessSchemaUserTaskUtilities.js`,
+  `ObjectFileProcessingUserTaskPropertiesPage.js`); its filter
+  panel only OFFERS a `RecordId` condition and never requires one, in either action; the Report page has
   only confirmation dialogs; the Send email files control checks only that the row's mapping is not empty
-  (`ProcessSchemaUserTaskUtilities.js:489-498`); the run time runs an empty filter as "first N files"
-  (`PD/ObjectFileProcessingUserTask/ObjectFileProcessingUserTask.cs` `InternalExecute`). D16 was already a
+  (`ProcessSchemaUserTaskUtilities.js`); the run time runs an empty filter as "first N files"
+  (`ObjectFileProcessingUserTask.cs` `InternalExecute`). D16 was already a
   builder-only rule, stricter than the designer, because an agent leaves out a condition it was never shown. [source]
 
 **Options.** **A. Refuse the entry**, naming the missing record condition. B. Warn. C. Nothing.

@@ -7,17 +7,14 @@ Jira: ENG-95985 "Send email attachments" (Story, epic ENG-92704 "Create BP via A
 "BPMS Tools 351"). Its blockers are closed: ENG-92719 "File processing element" (with ENG-95984, ENG-96505, ENG-96506,
 ENG-103937) and ENG-95986 "Support template message mode in the Send Email element".
 
-Basis: crt-process-builder `origin/main` `389198a0` (CrtProcessBuilder 1.6.6.125), clio `origin/master` `358e9db52`,
-clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0 and the PackageStore corpus, core `TSBpm` trunk,
+Basis: CrtProcessBuilder 1.6.6.125 (the package's main branch on 2026-10-28), clio `origin/master` `358e9db52`,
+clio-knowledge `origin/master` `534e913`, CrtProcessDesigner 7.8.0 and the shipped package corpus, the core platform source,
 the Academy, and a read-only inventory of stand `Creatio` taken on 2026-10-28. Research notes r0-r10 (local, not part of
 the plan) are the lead's working notes and are not in the repository: citations of the form `R/...`, `r0`-`r10`
 or `eng-95985-research` in this folder point at those local notes and are kept only as an evidence trail; every
 claim the plan relies on is restated in this folder, and rows whose only evidence is a local note say so.
 
-Path alias `PD/`: it means the PackageStore `CrtProcessDesigner/branches/7.8.0/`. A path written `PD/Schemas/...`
-(facts, measurements, serialization) already includes the `Schemas/` segment; the files whose legend defines `PD/` as
-`.../7.8.0/Schemas/` (decisions, design, test plan, the SPEC and the ADR) write the schema folder directly
-after `PD/`.
+Citations: clio paths (`CLIO/`) and clio-knowledge paths (`KB/`) are repository-relative. Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are cited by file or type name only; their repository paths, line numbers and revisions are not published here.
 
 ## 1. Short answer
 
