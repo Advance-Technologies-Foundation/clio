@@ -49,9 +49,9 @@ both the C# package assembly and the Angular client bundle. Specifically it:
 
 A two-part version is compared as `.0`: `8.3` means `8.3.0` and selects `ui/8.0.10`.
 
-The current template is an Angular 21 project that runs without zone.js
-(`provideZonelessChangeDetection()`), so its remote module works on a Creatio page with or
-without zone.js. It needs Node.js 20.19 or later. Its `AGENTS.md` carries the zoneless rules and
+The current template is an Angular 22.0.8 project (the version Creatio itself uses) that runs
+without zone.js (`provideZonelessChangeDetection()`), so its remote module works on a Creatio page
+with or without zone.js. It needs Node.js 22.22.3 or later. Its `AGENTS.md` carries the zoneless rules and
 the steps to migrate an existing project. The legacy templates still use zone.js.
 
 Every template writes the bundle to `packages/<package-name>/Files/src/js/<name>`. On success the

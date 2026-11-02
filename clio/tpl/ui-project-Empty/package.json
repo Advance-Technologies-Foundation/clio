@@ -2,7 +2,7 @@
   "name": "<%projectName%>",
   "version": "0.0.0",
   "engines": {
-    "node": ">=20.19.0",
+    "node": "^22.22.3 || ^24.15.0 || >=26.0.0",
     "npm": ">=10.0.0"
   },
   "scripts": {
@@ -16,16 +16,16 @@
   },
   "private": true,
   "dependencies": {
-    "@angular-architects/module-federation": "^21.2.0",
-    "@angular/animations": "^21.2.0",
-    "@angular/common": "^21.2.0",
-    "@angular/compiler": "^21.2.0",
-    "@angular/core": "^21.2.0",
-    "@angular/elements": "^21.2.0",
-    "@angular/forms": "^21.2.0",
-    "@angular/platform-browser": "^21.2.0",
-    "@angular/platform-browser-dynamic": "^21.2.0",
-    "@angular/router": "^21.2.0",
+    "@angular-architects/module-federation": "^22.0.0",
+    "@angular/animations": "22.0.8",
+    "@angular/common": "22.0.8",
+    "@angular/compiler": "22.0.8",
+    "@angular/core": "22.0.8",
+    "@angular/elements": "22.0.8",
+    "@angular/forms": "22.0.8",
+    "@angular/platform-browser": "22.0.8",
+    "@angular/platform-browser-dynamic": "22.0.8",
+    "@angular/router": "22.0.8",
     "@creatio-devkit/common": "^0.834.0",
     "@creatio/interface-designer": "^0.834.0",
     "lodash-es": "^4.17.21",
@@ -33,18 +33,18 @@
     "tslib": "^2.3.0"
   },
   "devDependencies": {
-    "@angular-builders/jest": "^21.0.0",
-    "@angular-devkit/build-angular": "^21.2.0",
-    "@angular/cli": "^21.2.0",
-    "@angular/compiler-cli": "^21.2.0",
+    "@angular-builders/jest": "^22.0.0",
+    "@angular-devkit/build-angular": "22.0.8",
+    "@angular/cli": "22.0.8",
+    "@angular/compiler-cli": "22.0.8",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.14.0",
     "jest": "^30.0.0",
     "jest-environment-jsdom": "^30.0.0",
-    "jest-preset-angular": "^16.0.0",
+    "jest-preset-angular": "16.2.0",
     "ngx-build-plus": "^20.0.0",
     "ts-node": "^10.9.2",
-    "typescript": "~5.9.3",
-    "webpack": "5.112.0"
+    "typescript": "~6.0.3",
+    "webpack": "5.106.2"
   }
 }

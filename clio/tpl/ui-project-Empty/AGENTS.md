@@ -33,9 +33,12 @@ Rules:
 
 ### Migrating an existing remote module project
 
-1. Move to Angular 21: `@angular/*`, `@angular/cli` and `@angular-devkit/build-angular` ^21.2,
-   `@angular-architects/module-federation` ^21.2, `ngx-build-plus` ^20, TypeScript ~5.9,
-   Node.js 20.19 or later.
+1. Move to the Angular version of this template (see `package.json`): `@angular/*`, `@angular/cli`
+   and `@angular-devkit/build-angular` 22.0.8, `@angular-architects/module-federation` ^22,
+   `ngx-build-plus` ^20, TypeScript ~6.0, Node.js 22.22.3 or later. Pin `webpack` to the version
+   `@angular-devkit/build-angular` depends on (5.106.2): a second webpack copy breaks the Module
+   Federation plugin. TypeScript 6 rejects `baseUrl` and `downlevelIteration` in `tsconfig.json`;
+   remove them.
 2. Remove `zone.js` from `package.json`, set `"polyfills": []` for the build and test targets in
    `angular.json`, and delete `src/polyfills.ts`.
 3. Bootstrap the root module with
