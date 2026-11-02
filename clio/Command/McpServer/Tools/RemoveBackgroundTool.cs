@@ -17,13 +17,14 @@ public class RemoveBackgroundTool(
 	IToolCommandResolver commandResolver) : BaseTool<RemoveBackgroundOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "remove-background";
+	private const string ThemeArgument = "theme";
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
-			["id"] = "theme",
-			["themeId"] = "theme",
-			["theme-id"] = "theme",
-			["theme_id"] = "theme"
+			["id"] = ThemeArgument,
+			["themeId"] = ThemeArgument,
+			["theme-id"] = ThemeArgument,
+			["theme_id"] = ThemeArgument
 		};
 
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),

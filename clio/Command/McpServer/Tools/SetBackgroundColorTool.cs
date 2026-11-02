@@ -17,13 +17,14 @@ public class SetBackgroundColorTool(
 	IToolCommandResolver commandResolver) : BaseTool<SetBackgroundColorOptions>(command, logger, commandResolver) {
 
 	internal const string ToolName = "set-background-color";
+	private const string ThemeArgument = "theme";
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
-			["id"] = "theme",
-			["themeId"] = "theme",
-			["theme-id"] = "theme",
-			["theme_id"] = "theme",
+			["id"] = ThemeArgument,
+			["themeId"] = ThemeArgument,
+			["theme-id"] = ThemeArgument,
+			["theme_id"] = ThemeArgument,
 			["keepIconBackground"] = "keep-icon-background",
 			["keep_icon_background"] = "keep-icon-background"
 		};
