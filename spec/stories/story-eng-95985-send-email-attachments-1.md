@@ -217,7 +217,8 @@ Plan section 9, as checkboxes. Ticked only when true.
 
 - 2026-10-28: analysis, decisions Q1-Q20 (all agreed), plan and test plan written; drift check done (the
   plan's drift note).
-- 2026-10-30: the three feature PRs are open as drafts. Package (crt-process-builder PR 111): slices A-C - the shared
+- 2026-10-30 (its versions and open items are superseded by the 2026-11-02 entry below): the three feature PRs are
+  open as drafts. Package (crt-process-builder PR 111): slices A-C - the shared
   file-source planner and binding reader, the `email.attachments` contract, the slot writer and block, the raw-route
   guards (a Formula body reading a slot included), the order checks, describe in the stored order, the notices, the
   end-of-request Q20 sweep with the stored filter read through the platform model, parity patterns A-C and the
