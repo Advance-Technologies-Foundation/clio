@@ -33,14 +33,21 @@ namespace Clio.Command.ProcessModel;
 /// its own check: a server that predates template mode keeps the block but DISCARDS the template member, so the
 /// block lands and the element is still in the wrong mode — the block-landed check alone cannot see it.
 /// </param>
+/// <param name="SentAttachments">
+/// The <c>email.attachments</c> list each element was LAST sent, by element. A subset of <see cref="ConfiguredEmail"/>
+/// with its own checks: a server without the member keeps the block and discards the list, so the block-landed check
+/// cannot see it; and on modify the list REPLACES the element's attachments, so what it removed is reported too.
+/// </param>
 internal sealed record BlockExpectationIntent(
 	IReadOnlyList<string> ConfiguredRights,
 	IReadOnlyList<string> ConfiguredEmail,
 	IReadOnlyList<string> FilterTouched,
-	IReadOnlyList<string> TemplatedEmail) {
+	IReadOnlyList<string> TemplatedEmail,
+	IReadOnlyList<EmailBlockExpectation.SentAttachments> SentAttachments) {
 
 	/// <summary>Nothing to verify, so the caller can skip the read-back entirely.</summary>
-	// TemplatedEmail is a subset of ConfiguredEmail (a template lives inside an email block), so it adds no term here.
+	// TemplatedEmail and SentAttachments are subsets of ConfiguredEmail (both live inside an email block), so they add
+	// no term here.
 	internal bool IsEmpty =>
 		ConfiguredRights.Count == 0 && ConfiguredEmail.Count == 0 && FilterTouched.Count == 0;
 
@@ -68,12 +75,14 @@ internal sealed record BlockExpectationIntent(
 		new(AccessRightsBlockExpectation.FromDescriptor(descriptorJson),
 			EmailBlockExpectation.FromDescriptor(descriptorJson),
 			[],
-			EmailBlockExpectation.TemplateElements(descriptorJson));
+			EmailBlockExpectation.TemplateElements(descriptorJson),
+			EmailBlockExpectation.AttachmentElements(descriptorJson));
 
 	/// <summary>The modify path can do both, and can do the second WITHOUT the first.</summary>
 	internal static BlockExpectationIntent FromOperations(string operationsJson) =>
 		new(AccessRightsBlockExpectation.FromOperations(operationsJson),
 			EmailBlockExpectation.FromOperations(operationsJson),
 			AccessRightsBlockExpectation.FilterTouched(operationsJson),
-			EmailBlockExpectation.TemplateElementsFromOperations(operationsJson));
+			EmailBlockExpectation.TemplateElementsFromOperations(operationsJson),
+			EmailBlockExpectation.AttachmentElementsFromOperations(operationsJson));
 }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Clio.Common;
 
@@ -182,14 +183,23 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet TaskPerformer = new("UserTaskPerformerDescriptor", Performer,
 		"DescribeUserTaskPerformerInfo", "type contact role showPage", "roleDisplay");
 
+	// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
+	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
+	// Named on its own because email.attachments is the one LIST of this walk whose wrong shape is refused before
+	// sending (see Walk.RefusesAttachmentsShape).
+	private static readonly KeySet EmailAttachment = new("SendEmailAttachmentDescriptor", "attachment",
+		"DescribeSendEmailAttachment", "processParameter sourceElement sourceElementParameter expression value",
+		"slot bindingLevels issues");
+
 	private static readonly KeySet EmailBlock = new KeySet("SendEmailDescriptor", "email", "DescribeSendEmailInfo",
 			"messageSource template templateEntity body bodyFormat mode sender subject to cc bcc importance ignoreErrors "
-			+ Performer,
+			+ "attachments " + Performer,
 			"templateDisplay senderDisplay hasBody")
 		.With(new KeySet("SendEmailTemplateEntityDescriptor", "templateEntity", null,
 			"processParameter sourceElement sourceElementParameter expression"))
 		.With("to cc bcc", new KeySet("SendEmailRecipientDescriptor", Recipient, null,
 			"value processParameter expression referenceSchema"))
+		.With("attachments", EmailAttachment)
 		.With(TaskPerformer);
 
 	private static readonly KeySet AccessRightsEntry = new KeySet("AccessRightsEntryDescriptor", "access rights entry",
@@ -413,6 +423,18 @@ internal static class ProcessBlockKeyCheck {
 		string op = (operation["op"] as JsonValue)?.TryGetValue(out string token) == true ? token : null;
 		string target = ElementLabel(operation[ElementNameKey], null);
 		string where = $"operations[{index}] ({op}{(target is null ? "" : " " + target)})";
+		// 'element' is the addElement OBJECT on the server for every op. A name there is not dropped like an unknown
+		// key: WCF fails to read the WHOLE request and answers an error string, which used to reach the caller only
+		// as "could not read the response" - agents guessed 'element' for setElement and blamed the server.
+		if (operation[ElementKey] is JsonValue misplacedName) {
+			string value = misplacedName.ToJsonString(ReadableJson);
+			string remedy = string.Equals(op, "addElement", StringComparison.OrdinalIgnoreCase)
+				? $"Send the new element itself there, as an object with its 'name' and 'type' (\"{ElementKey}\": "
+					+ $"{{\"name\": {value}, \"type\": ...}})."
+				: $"Name an existing element with '{ElementNameKey}' (\"{ElementNameKey}\": {value}).";
+			walk.RefuseShape($"{where}: '{ElementKey}' takes the element OBJECT that addElement adds, so a name there "
+				+ $"makes the server fail the whole request. {remedy}");
+		}
 		if (string.Equals(op, "addElement", StringComparison.OrdinalIgnoreCase)
 			&& operation[ElementKey] is JsonObject element) {
 			walk.Visit(element, Element,
@@ -429,6 +451,12 @@ internal static class ProcessBlockKeyCheck {
 			walk.Visit(signal, SignalBlock, where, Signal + ".", Placement.Nested);
 		}
 	}
+
+	// The misplaced value is printed with the MCP result encoder: the default one escapes for HTML, so a non-ASCII
+	// name or an apostrophe would read as \uXXXX in the very key the caller copies back.
+	private static readonly JsonSerializerOptions ReadableJson = new() {
+		Encoder = Clio.Command.McpServer.McpResultJsonEncoder.Instance
+	};
 
 	private static string ElementLabel(JsonNode name, string fallback) =>
 		(name as JsonValue)?.TryGetValue(out string text) == true && !string.IsNullOrWhiteSpace(text)
@@ -452,7 +480,11 @@ internal static class ProcessBlockKeyCheck {
 	private sealed class Walk {
 
 		private readonly List<string> _refusals = [];
+		private readonly List<string> _shapeRefusals = [];
 		private readonly List<string> _readBacks = [];
+
+		/// <summary>Records an operation the server cannot read at all, as opposed to a key it would drop.</summary>
+		internal void RefuseShape(string sentence) => _shapeRefusals.Add(sentence);
 
 		internal void Visit(JsonObject node, KeySet set, string where, string prefix, Placement placement) {
 			Visit(node, set, where, prefix, placement, depth: 0);
@@ -509,6 +541,9 @@ internal static class ProcessBlockKeyCheck {
 			if (!set.Children.TryGetValue(key, out KeySet child)) {
 				return;
 			}
+			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
+				return;
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -520,6 +555,40 @@ internal static class ProcessBlockKeyCheck {
 					}
 				}
 			}
+		}
+
+		// email.attachments is a LIST on the server's contract. A single object there, or an entry that is not an
+		// object, is not a key the contract drops: the serializer fails to read the WHOLE request, which reached the
+		// caller only as an unreadable reply. A null list or a null entry reads fine (the package refuses an entry
+		// with no source in its own words), so neither is refused here. Returns whether the value is not a list at
+		// all, so there is nothing to walk.
+		private bool RefusesAttachmentsShape(JsonNode value, string where, string path) {
+			const string entryShape = "{\"processParameter\": ...}, {\"sourceElement\": ..., "
+				+ "\"sourceElementParameter\": ...} or {\"expression\": ...}";
+			string? sent = value switch {
+				JsonObject => "a single object",
+				JsonValue scalar => scalar.ToJsonString(ReadableJson),
+				_ => null
+			};
+			if (sent is not null) {
+				RefuseShape($"{where}: '{path}' takes a LIST of attachment entries, so {sent} there makes the server "
+					+ $"fail the whole request. Send an array, one object per attachment: \"attachments\": [{entryShape}].");
+				return true;
+			}
+			if (value is not JsonArray items) {
+				return false;
+			}
+			List<int> wrong = [.. Enumerable.Range(0, items.Count).Where(index => items[index] is JsonValue or JsonArray)];
+			if (wrong.Count == 0) {
+				return false;
+			}
+			string entries = string.Join(", ", wrong.Take(MaxReportedKeys).Select(index => $"'{path}[{index}]'"))
+				+ (wrong.Count > MaxReportedKeys ? $" (and {wrong.Count - MaxReportedKeys} more)" : string.Empty);
+			RefuseShape($"{where}: {entries} {(wrong.Count == 1 ? "is not an object" : "are not objects")}, so the "
+				+ "server fails the whole request. Each attachment entry is an object naming one source: "
+				+ $"{entryShape}.");
+			// The object entries are still walked: a key the contract drops is reported in the same refusal.
+			return false;
 		}
 
 		private static string Describe(KeySet set, int depth) =>
@@ -557,7 +626,7 @@ internal static class ProcessBlockKeyCheck {
 		}
 
 		internal ProcessBlockKeyCheckResult Result() {
-			if (_refusals.Count == 0 && _readBacks.Count == 0) {
+			if (_refusals.Count == 0 && _shapeRefusals.Count == 0 && _readBacks.Count == 0) {
 				return ProcessBlockKeyCheckResult.Clean;
 			}
 			string error = null;
@@ -569,6 +638,13 @@ internal static class ProcessBlockKeyCheck {
 				error = "Nothing was sent: the server reads its request with a contract that DROPS an undeclared key "
 					+ "without a word, so these keys would have saved a process that ignores them. "
 					+ string.Join(" ", shown) + more;
+			}
+			if (_shapeRefusals.Count > 0) {
+				string moreShapes = _shapeRefusals.Count > MaxReportedKeys
+					? $" (and {_shapeRefusals.Count - MaxReportedKeys} more)"
+					: string.Empty;
+				string shapes = string.Join(" ", _shapeRefusals.Take(MaxReportedKeys)) + moreShapes;
+				error = error is null ? "Nothing was sent: " + shapes : error + " Also: " + shapes;
 			}
 			IReadOnlyList<string> warnings = [];
 			if (_readBacks.Count > 0) {

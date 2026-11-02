@@ -70,11 +70,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>4b192c3b</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.125</c>): branch <c>feature/ENG-104758-skip-layout-non-structural</c> on top of
-	/// <c>main</c> at 1.6.6.123, so the cut carries everything 1.6.6.123 shipped. This cut took the script route:
-	/// <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and packed it, and the restamp
-	/// (<c>39bf4117</c>, same branch) was committed afterwards.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>417ae636</c>, tagged
+	/// <c>crtprocessbuilder-1.6.6.131</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
+	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
+	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
+	/// 1.6.6.131) before the cut, so the script refused a version equal to the descriptor's, and the archive was packed
+	/// from a <c>git archive</c> export of the tagged commit with the two <c>-c</c> flags, with no overlay. Every entry,
+	/// <c>descriptor.json</c> included, is therefore the producing commit's blob.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -87,20 +89,37 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.123 (ENG-104758): an edit batch with no structural operation - anything
-	/// but <c>addElement</c>, <c>removeElement</c>, <c>addFlow</c>, <c>removeFlow</c> and <c>setFlow</c>, and the empty
-	/// batch - runs no layout probe, no layout and no layout-change detector, so a hand-arranged or shipped diagram
-	/// keeps every position and is not refused as <c>diagramWasArrangedByHand</c>; and the in-place refusal says a new
-	/// version is permanent and re-drawn too. The create/modify floor stays where it is: clio advertises nothing new,
-	/// and the convergence check refuses an older package anyway. What earlier cuts carried is in this file's git history rather than here:
-	/// it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.125 (ENG-95985): <c>email.attachments</c> on the Send email block - one
+	/// designer attachment row per entry, sourced from a Process file element output, another element's file output, a
+	/// process FileCollection or a single File - with replace semantics on modify, the raw-route guards that refuse a
+	/// mapping onto an attachment slot, the order checks on the source, and describe's read-back of the list in the
+	/// write shape (plus <c>slot</c>, <c>bindingLevels</c>, <c>issues</c>), in the element's stored order - the
+	/// designer's row order, the order the email attaches them - since 1.6.6.128 (1.6.6.127 sorted it by slot number).
+	/// 1.6.6.129 adds the reuse round: a stored filter is read the way the run time reads it (its <c>$ref</c> metadata
+	/// and data-contract marker gates, <c>isNot</c> and <c>logicalOperation</c> included), a formula body may not read a
+	/// Send email attachment slot, the attachment and file-source paths are consolidated, and a DevExpress report
+	/// source is no longer told it reports on every record or generates a report from a filter it cannot read.
+	/// 1.6.6.131 adds the final review round: the Q20 sweep follows a formula that fills a Process parameter element's
+	/// Files input; a sent source that cannot be judged is refused (an Object source on a missing object, a Generated
+	/// report whose printable names no object, a printable that is not found); notices for the files handed into a
+	/// Sub-process and for an attachment whose files the caller decides; describe and the sweep walk an attachment's
+	/// sources one way; a stored attachment formula is matched in the spelling the formula check writes; a Formula
+	/// result into an attachment slot blocks the slot's removal; hand-offs inside event and expanded sub-processes
+	/// are followed; a source nested in an event or expanded sub-process is judged too and, when it is unscoped,
+	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; a save whose
+	/// nested elements cannot be read is refused when an email sends attachments; and the reachability warning states
+	/// the consequence by the entry's source kind - a single File source that has not run fails the element.
+	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128
+	/// through 1.6.6.131 changes the write contract. What earlier cuts carried is in this file's git history rather than
+	/// here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4586 passed,
-	/// 0 failed, on <c>dev-nf</c> (the script's run) -
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5152 passed,
+	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> (run by hand on the producing checkout, step 1 of the hand
+	/// cut) -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
-	/// not running it on the manual route) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The script checked the inventory: 293
+	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
+	/// security counts below exist to catch. The inventory was checked on the extracted archive: 312
 	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
 	/// that executes on install.
 	/// </para>
@@ -115,33 +134,36 @@ public class BundledProcessBuilderPackageTests {
 	/// producing repository the bytes came from.
 	/// <para>
 	/// Verify the reference rather than copying the previous one, and verify it in BOTH directions — this
-	/// paragraph has now been wrong each way round. It first named <c>e01a0ec</c>, whose descriptor carried
-	/// <c>/Date(1786026213000)/</c> and so cannot produce these bytes. It was then corrected to a commit whose
-	/// descriptor still said <c>/Date(1786075660000)/</c> while the archive shipped
-	/// <c>/Date(1786345127000)/</c>: that time the COMMIT was behind, because the restamp a rebundle performs
-	/// happens in the package checkout and was left uncommitted there. Both failures look identical to whoever
-	/// follows the reference — a different hash — so the check is the same: the <c>ModifiedOnUtc</c> pinned
-	/// below CANNOT match the descriptor at the commit named above, and expecting it to was the error in this
-	/// paragraph. The script captures <c>rev-parse HEAD</c> at step 0b and performs the restamp at step 2, so
-	/// the pin names the commit BEFORE the version moved — by design, and unavoidably, because the script does
-	/// not commit. Today's pins show it plainly: <see cref="ExpectedProducingCommit"/> resolves to a descriptor
-	/// reading a version one restamp behind the archive beside it.
-	/// <para>So reproducing the bytes is not a checkout, and not two steps either: EXPORT the pinned commit
-	/// with <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>, re-run
-	/// <c>set-pkg-version</c> with the pinned version, hand-set <c>ModifiedOnUtc</c> to
-	/// <see cref="ExpectedDescriptorModifiedOnUtc"/>, overlay that one file onto the export, then pack it. The
-	/// timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c> and takes no
-	/// timestamp argument, so re-running it stamps the present and the descriptor bytes differ every time. That
-	/// pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what removes the
-	/// host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
+	/// paragraph has been wrong each way round. It once named a commit whose descriptor carried an OLDER stamp than
+	/// any these bytes could come from, and once a commit left BEHIND because the restamp a rebundle performs was
+	/// left uncommitted in the package checkout. Both look identical to whoever follows the reference — a different
+	/// hash. What the descriptor at <see cref="ExpectedProducingCommit"/> should read depends on which route made the
+	/// cut, and the summary above says which one this cut took:
+	/// <list type="bullet">
+	/// <item>A SCRIPT cut. The script captures <c>rev-parse HEAD</c> at step 0b and restamps at step 2 without
+	/// committing, so the pin names the commit BEFORE the version moved, by design: that commit's descriptor reads one
+	/// restamp behind the archive beside it, and <see cref="ExpectedArchiveVersion"/> and
+	/// <see cref="ExpectedDescriptorModifiedOnUtc"/> do NOT match it.</item>
+	/// <item>A HAND cut from a commit that already carries the stamp (the package branch committed and tagged its own
+	/// <c>set-pkg-version</c>, so the script refuses the equal version; the route is in
+	/// <c>docs/agent-instructions/bundled-packages.md</c>). The pin names that stamp commit, and its descriptor DOES
+	/// carry the pinned version and <c>ModifiedOnUtc</c>.</item>
+	/// </list>
+	/// <para>Either way reproducing the bytes is an EXPORT, never a checkout: export the pinned commit with
+	/// <c>git -c core.autocrlf=false -c core.eol=lf archive --format=zip</c>. For a hand cut from the stamp commit,
+	/// pack the export as it is. For a script cut, first re-run <c>set-pkg-version</c> with the pinned version,
+	/// hand-set <c>ModifiedOnUtc</c> to <see cref="ExpectedDescriptorModifiedOnUtc"/>, and overlay that one file onto
+	/// the export. The timestamp step is not optional — <c>SetPackageVersionCommand</c> writes <c>DateTime.Now</c>
+	/// and takes no timestamp argument, so re-running it stamps the present and the descriptor bytes differ every
+	/// time. That pin exists for exactly this. The two <c>-c</c> flags are not optional either: they are what
+	/// removes the host from the recipe, and dropping them reproduces the old machine-dependent hash. What remains
 	/// host-dependent is the PATH SEPARATOR the archive records per entry, so cut and verify on Windows.</para>
-	/// <para>What the pin establishes is which SOURCES the
-	/// archive was built from — which is the question that actually matters, since the descriptor is the one
-	/// file the rebundle rewrites and the one whose expected content is pinned separately. Committing the
-	/// restamp afterwards is still part of every rebundle, but not for the reason first written here: the pin
-	/// names the PRE-restamp commit, which is on the branch either way. The real reasons are that the next cut's
-	/// clean-tree gate refuses a dirty tree, and that the pinned <c>ModifiedOnUtc</c> would otherwise exist in no
-	/// commit at all.</para>
+	/// <para>What the pin establishes is which SOURCES the archive was built from — which is the question that
+	/// actually matters, since the descriptor is the one file a script cut rewrites and the one whose expected
+	/// content is pinned separately. Committing the restamp afterwards is still part of every script cut, but not
+	/// for the reason first written here: the pin names the PRE-restamp commit, which is on the branch either way.
+	/// The real reasons are that the next cut's clean-tree gate refuses a dirty tree, and that the pinned
+	/// <c>ModifiedOnUtc</c> would otherwise exist in no commit at all.</para>
 	/// </para>
 	/// <para>
 	/// It was wrong a THIRD way twice, and that class is now CLOSED at the source rather than watched for. The
@@ -165,9 +187,10 @@ public class BundledProcessBuilderPackageTests {
 	/// Its reproducibility rests on the export flags above, which are what made the earlier audit come out clean;
 	/// a reviewer can repeat the audit from the producing commit alone.
 	/// The INVARIANT, which is what this paragraph is for and the only part that cannot go stale: every entry in
-	/// the archive is byte-IDENTICAL to the producing commit's blob EXCEPT <c>descriptor.json</c>, which by
-	/// contract cannot match a pre-restamp commit and is pinned separately by
-	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>.
+	/// the archive is byte-IDENTICAL to the producing commit's blob, with one exception on a SCRIPT cut only:
+	/// <c>descriptor.json</c>, which by contract cannot match a pre-restamp commit and is pinned separately by
+	/// <see cref="ExpectedArchiveVersion"/> and <see cref="ExpectedDescriptorModifiedOnUtc"/>. A hand cut from the
+	/// stamp commit has no exception.
 	/// <para>Verify it in two commands: extract with <c>clio extract-pkg-zip &lt;archive&gt; -d &lt;dir&gt;</c>, then compare every
 	/// extracted file against <c>git show &lt;ExpectedProducingCommit&gt;:packages/CrtProcessBuilder/&lt;path&gt;</c>.
 	/// The COUNT is not pinned here on purpose - it moves as the package gains sources, and an earlier revision
@@ -177,7 +200,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"3710B65CD9D3D4CA24D22A60EFC6B7C18633D6F6B6A5E34033B4C231EF56B249";
+		"148DC56F5037B242A590A523148088619A1FE54A54099D66F80ACEA490C8C99E";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -205,13 +228,14 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.125";
+	private const string ExpectedArchiveVersion = "1.6.6.131";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
-	/// commit <c>b6105d45</c>).
+	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut, and it IS the
+	/// restamp commit (the tag <c>crtprocessbuilder-1.6.6.131</c> points at it), because the package branch committed its stamp before the cut.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -219,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "4b192c3bfe441d4f8d79b4aae1608dbecf3a849e";
+	private const string ExpectedProducingCommit = "417ae636d9ce4bb1a018bbb7388587955061a4b1";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -245,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793114302000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793382997000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
