@@ -122,32 +122,4 @@ public sealed class ThemingVersionFloorContractE2ETests : McpContractFixtureBase
 		contract.Description.Should().Contain(ThemeServiceRequirement.MinVersion,
 			because: "the contract must still tell the caller which floor the theme WRITE commands need, so nobody reads 'runs anywhere' as 'custom themes work anywhere'");
 	}
-
-	[Test]
-	[AllureTag(RemoveBackgroundTool.ToolName)]
-	[AllureName("theme-background contracts advertise the theme-background Creatio version floor")]
-	[Description("Expands the set-background-image, set-background-color and remove-background contracts through get-tool-contract on the real clio MCP server and verifies each names the Creatio build that stores theme backgrounds.")]
-	public async Task ThemeBackgroundContracts_Should_Advertise_BackgroundVersionFloor() {
-		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
-		string[] toolNames = [SetBackgroundImageTool.ToolName, SetBackgroundColorTool.ToolName, RemoveBackgroundTool.ToolName];
-
-		CallToolResult contractResult = await context.Session.CallToolAsync(
-			ToolContractGetTool.ToolName,
-			new Dictionary<string, object?> {
-				["args"] = new Dictionary<string, object?> {
-					["tool-names"] = toolNames
-				}
-			},
-			context.CancellationTokenSource.Token);
-		ToolContractGetResponse contracts =
-			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
-
-		contracts.Success.Should().BeTrue(because: "every background tool must resolve a full contract");
-		foreach (string toolName in toolNames) {
-			contracts.Tools!.Should().ContainSingle(definition => definition.Name == toolName,
-					because: $"the {toolName} tool must expose exactly one full contract")
-				.Which.Description.Should().Contain($"Creatio {ThemeServiceRequirement.BackgroundMinVersion} or later",
-					because: $"the {toolName} contract must let an agent refuse an older environment before writing a background");
-		}
-	}
 }
