@@ -29,13 +29,14 @@ Rules:
   `zoneless: false`. Use `await fixture.whenStable()` and Jest fake timers, not `fakeAsync`,
   `tick` or `waitForAsync`, which need zone.js.
 - Check every change in Creatio with zoneless mode on and off: the browser console shows no
-  `NG0908` error and the component renders and updates.
+  `NG0908` error and the component renders and updates. The `EnableZoneless` feature switches the
+  mode: `clio set-feature EnableZoneless 1 -e <environment>` (or `0`), then reload the Creatio page.
 
 ### Migrating an existing remote module project
 
 1. Move to the Angular version of this template (see `package.json`): `@angular/*`, `@angular/cli`
    and `@angular-devkit/build-angular` 22.0.8, `@angular-architects/module-federation` ^22,
-   `ngx-build-plus` ^20, TypeScript ~6.0, Node.js 22.22.3 or later. Pin `webpack` to the version
+   `ngx-build-plus` ^20, TypeScript ~6.0, Node.js 22.22.3+, 24.15.0+ or 26+. Pin `webpack` to the version
    `@angular-devkit/build-angular` depends on (5.106.2): a second webpack copy breaks the Module
    Federation plugin. TypeScript 6 rejects `baseUrl` and `downlevelIteration` in `tsconfig.json`;
    remove them.
@@ -47,8 +48,8 @@ Rules:
 4. Apply the Angular 19+ defaults: `standalone: false` on components declared in an `NgModule`,
    `buildTarget` instead of `browserTarget` in `angular.json`, `provideAppInitializer` instead of
    `APP_INITIALIZER`.
-5. In `webpack.config.js`, share `@creatio-devkit/common` with `requiredVersion: 'auto'` instead of a
-   pinned version.
+5. If `webpack.config.js` shares `@creatio-devkit/common`, use `requiredVersion: 'auto'` instead of a
+   pinned version. This project shares nothing (`shared: {}`) and bundles its own copy.
 6. Apply the rules above to every component and service: find each callback that changes state a
    template reads and make that state a signal or call `markForCheck()` after it.
 7. Build, run the tests, deploy the package, and check it in Creatio with zoneless mode on and off.

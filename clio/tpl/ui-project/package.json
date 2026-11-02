@@ -24,10 +24,9 @@
     "@angular/elements": "22.0.8",
     "@angular/forms": "22.0.8",
     "@angular/platform-browser": "22.0.8",
-    "@angular/platform-browser-dynamic": "22.0.8",
     "@angular/router": "22.0.8",
-    "@creatio-devkit/common": "^0.834.0",
-    "@creatio/interface-designer": "^0.834.0",
+    "@creatio-devkit/common": "^0.1000.3",
+    "@creatio/interface-designer": "^0.1000.3",
     "lodash-es": "^4.17.21",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
@@ -37,6 +36,7 @@
     "@angular-devkit/build-angular": "22.0.8",
     "@angular/cli": "22.0.8",
     "@angular/compiler-cli": "22.0.8",
+    "@angular/platform-browser-dynamic": "22.0.8",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.14.0",
     "jest": "^30.0.0",
@@ -45,6 +45,9 @@
     "ngx-build-plus": "^20.0.0",
     "ts-node": "^10.9.2",
     "typescript": "~6.0.3",
+    "webpack": "5.106.2"
+  },
+  "overrides": {
     "webpack": "5.106.2"
   }
 }

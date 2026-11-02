@@ -51,7 +51,7 @@ A two-part version is compared as `.0`: `8.3` means `8.3.0` and selects `ui/8.0.
 
 The current template is an Angular 22.0.8 project (the version Creatio itself uses) that runs
 without zone.js (`provideZonelessChangeDetection()`), so its remote module works on a Creatio page
-with or without zone.js. It needs Node.js 22.22.3 or later. Its `AGENTS.md` carries the zoneless rules and
+with or without zone.js. It needs Node.js 22.22.3+, 24.15.0+ or 26+. Its `AGENTS.md` carries the zoneless rules and
 the steps to migrate an existing project. The legacy templates still use zone.js.
 
 Every template writes the bundle to `packages/<package-name>/Files/src/js/<name>`. On success the
@@ -59,7 +59,7 @@ command prints the template it used and the `@creatio-devkit/common` range writt
 `package.json`, for example:
 
 ```text
-UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.834.0.
+UI project template: ui-project-Empty (current template, targets Creatio 8.3.4 and later); requested Creatio version: 10.0.0; @creatio-devkit/common: ^0.1000.3.
 ```
 
 ## Aliases
