@@ -213,7 +213,7 @@ public class UiProjectCreatorIntegrationTests {
 		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
 		JsonNode testTarget = angularJson["projects"]?[ProjectName]?["architect"]?["test"];
 		string testBuilder = testTarget?["builder"]?.GetValue<string>();
-		string configPath = testTarget?["options"]?["configPath"]?.GetValue<string>();
+		string configPath = testTarget?["options"]?["config"]?.GetValue<string>();
 		string testTsConfig = testTarget?["options"]?["tsConfig"]?.GetValue<string>();
 		testBuilder.Should().Be("@angular-builders/jest:run",
 			because: "the builder must remain the single owner of Angular test-environment initialization");
@@ -245,6 +245,32 @@ public class UiProjectCreatorIntegrationTests {
 			JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json")))?["dependencies"];
 		JsonNode.DeepEquals(generatedDependencies, shippedDependencies).Should().BeTrue(
 			because: "Creatio 10.0.0 is newer than every legacy snapshot, so it must get the current template's SDK and Angular line");
+	}
+
+	[TestCase(true)]
+	[TestCase(false)]
+	[Description("Scaffolds a current-template project that bootstraps with zoneless change detection and ships no zone.js.")]
+	public void Create_ShouldScaffoldZonelessProject_WhenCurrentTemplateIsUsed(bool isEmpty) {
+		// Act
+		_creator.Create(ProjectName, PackageName, VendorPrefix, isEmpty, string.Empty, _ => false);
+
+		// Assert
+		string projectPath = Path.Combine(_tempDir, "projects", ProjectName);
+		JsonObject packageJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "package.json"))).AsObject();
+		packageJson["dependencies"]?["zone.js"].Should().BeNull(
+			because: "Creatio never loads a remote's polyfills, so a zone.js dependency would only mislead");
+		packageJson["devDependencies"]?["zone.js"].Should().BeNull(
+			because: "the generated tests run zoneless as well");
+
+		JsonObject angularJson = JsonNode.Parse(File.ReadAllText(Path.Combine(projectPath, "angular.json"))).AsObject();
+		JsonArray polyfills = angularJson["projects"]?[ProjectName]?["architect"]?["build"]?["options"]?
+			["polyfills"]?.AsArray();
+		polyfills.Should().NotBeNull().And.BeEmpty(
+			because: "the build must not bundle zone.js as a polyfill");
+
+		string remoteAppContext = File.ReadAllText(Path.Combine(projectPath, "src", "app", "remote-app-context.ts"));
+		remoteAppContext.Should().Contain("provideZonelessChangeDetection()",
+			because: "the remote module must render on a Creatio page that runs without zone.js");
 	}
 
 	[TestCase("8.0.10")]
