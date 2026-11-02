@@ -26,8 +26,8 @@ clio repository root.
 |---|---|---|---|
 | **TC-U** | package unit tests (PBT) | TC-U-01..TC-U-92, plus TC-U-78a, 78b, 78c; TC-U-42 and TC-U-48 are removed rows (Q9) | 93 live |
 | **TC-P** | package parity tests (PBT) | TC-P-01..TC-P-09 | 9 |
-| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-23 | 23 |
-| **TC-I** | clio MCP e2e (`clio.mcp.e2e/SendEmailAttachmentsToolE2ETests.cs`, on stand `Creatio`) | TC-I-01..TC-I-10 | 10 |
+| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-26 (TC-C-24..26 were added after the analysis test plan: the stand run and the final review) | 26 |
+| **TC-I** | clio MCP e2e (`clio.mcp.e2e/SendEmailAttachmentsToolE2ETests.cs`, on stand `Creatio`; TC-I-11 lives in `ModifyBusinessProcessToolE2ETests`) | TC-I-01..TC-I-11 (TC-I-11 comes from the stand run, not from the analysis test plan) | 11 |
 | **TC-K** | clio-knowledge tests and gates (`KB/automation/Clio.Knowledge.Bundle.Tests`) | TC-K-01..TC-K-13 (TC-K-12 is the fact-check gate; TC-K-13 follows EM8) | 13 |
 | **TC-01..TC-10** | manual Jira cases (business tasks given to an agent) | TC-01..TC-10 | 10 |
 | **EM0-EM15** | stand measurements (analysis measurements file) | EM6 dropped (Q17), EM12 dropped (Q9) | 14 |
@@ -50,7 +50,7 @@ of them).
 | **AC6** ordering rule | TC-U-54..58, 77 | - | - | TC-I-04 | TC-K-03 | EM10 | - |
 | **AC7** parity, tests, docs, MCP | TC-U-03, 04, 13, 69, 70, 73 | TC-P-01..09 | TC-C-04..06, 16..22 | all TC-I | TC-K-07..12 | EM1, EM2, EM3 | - |
 | **Q3** single File accepted, warned | TC-U-11, 43 | TC-P-04, 09 | - | TC-I-01 | TC-K-06 | EM8 | TC-10 |
-| **Q4** replace semantics | TC-U-21..30, 44, 45, 76 | - | TC-C-08, 12..15, 23 | TC-I-05, 06 | TC-K-04 | EM1 | TC-08 |
+| **Q4** replace semantics | TC-U-21..30, 44, 45, 76 | - | TC-C-08, 12..15, 23, 26 | TC-I-05, 06 | TC-K-04 | EM1 | TC-08 |
 | **Q5** lowest free number | TC-U-02, 25 | TC-P-06 | - | TC-I-05 | - | EM1 | - |
 | **Q6** refusals + reachability warning | TC-U-31..41, 47, 54..57, 77, 79 | - | - | TC-I-04 | TC-K-03 | EM10 | TC-09 |
 | **Q8** non-block mappings onto a slot refused | TC-U-49, 50, 52, 53, 74, 75 | - | - | TC-I-07 | - | EM9 | - |
@@ -60,6 +60,7 @@ of them).
 | **Q16** multi-instance Send email refused | TC-U-80, 81 | - | - | - | TC-K-13 | EM8, EM11 | - |
 | **Q20** unscoped Process file source refused; Sub-process hand-offs noticed | TC-U-78, 78a, 78b, 78c, 84..86, 89, 91, 92 | - | - | TC-I-04 | TC-K-06 | - | - |
 | **G3** modify-as-new-version keeps the slots owned | TC-U-71 | - | TC-C-06 | TC-I-08 | - | EM13 | - |
+| **SR** stand-run fixes: a name in `element` refused before sending; a request the server could not read reported as NOT applied | - | - | TC-C-24, 25 | TC-I-11 | - | - | - |
 
 ## TC-U - package unit tests (PBT)
 

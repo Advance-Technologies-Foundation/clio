@@ -752,7 +752,8 @@ NullReferenceException (`ProcessInstanceParametersDataReader.cs:481-487`; `Compo
 
 **Cleanup and leftovers:** CU-1, CU-2 (2 Activities), CU-3 for the three processes.
 
-**Measured 2026-10-30** on stand `Creatio` (CrtProcessBuilder 1.6.6.130, CrtProcessDesigner 7.8.0); all probes built
+**Measured 2026-10-30** on stand `Creatio` (CrtProcessBuilder 1.6.6.130, a pre-release stamp that was later burned -
+the shipped cut is 1.6.6.131; CrtProcessDesigner 7.8.0); all probes built
 with the builder (its slots equal the designer's, EM2/EM3); D1 = a contact with 2 files:
 
 | Probe | Result | Tag |

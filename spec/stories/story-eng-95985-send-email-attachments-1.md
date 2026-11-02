@@ -229,3 +229,9 @@ Plan section 9, as checkboxes. Ticked only when true.
   one case ignored by design, as it runs on net10.0 only), knowledge records. Open: CL-6 (waits for the knowledge
   generation to be published), the bundle of the final cut (CL-1), the review gates, AC sign-off and the stand
   measurements still listed in the gating table.
+- 2026-11-02 (supersedes the versions in the 2026-10-30 entry): the final package cut is CrtProcessBuilder
+  1.6.6.131 (tag `crtprocessbuilder-1.6.6.131`); 1.6.6.130 was burned once its tag had been pushed, so the
+  measurements that cite it describe a pre-release stamp. clio PR 1886 bundles 1.6.6.131 (the floors stay at
+  1.6.6.127) and carries CL-6, pinned in advance to knowledge library 1.15.176; it merges only after that library is
+  published. Review round on the clio PRs: the feature PR approved, its non-blocking notes answered; the test plan's
+  TC-C (26) and TC-I (11) counts synced with the rows added after the analysis.
