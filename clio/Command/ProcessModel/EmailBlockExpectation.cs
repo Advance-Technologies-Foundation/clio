@@ -56,7 +56,11 @@ public static class EmailBlockExpectation {
 	public const string ClearedAttachmentsNoteMarker = "removed every attachment of the Send email";
 
 	// How CrtProcessBuilder's per-slot removal notice reads around the element's name: every attachment notice starts
-	// "Send email '<name>': " and the removal one goes on "removed attachment '<slot>'".
+	// "Send email '<name>': " and the removal one goes on "removed attachment '<slot>'". The package sends no
+	// structured marker, so this English wording IS the contract for NotReportedByServer. If it drifts, clio reports
+	// every replace-rule removal a second time and no unit test here notices; the pin is the stand e2e
+	// (SendEmailAttachmentsToolE2ETests, the replace-rule case), which asserts that clio's own removal line is ABSENT
+	// next to the package's notice. Change both sides together.
 	private const string ServerNoticePrefix = "Send email '";
 	private const string ServerRemovalNoticeTail = "': removed attachment '";
 
@@ -507,9 +511,12 @@ public static class EmailBlockExpectation {
 	}
 
 	/// <summary>
-	/// The caller-facing warning for attachments that did not land. Qualitative on purpose: it names the likely
-	/// cause as a capability gap, never a package version (a version in such a message is advice the reader has
-	/// already satisfied). Returns null when every list landed.
+	/// The caller-facing warning for attachments that did not land. It states the disagreement and the check that
+	/// settles it, not a cause: the create, modify and modify-as-new-version commands require the first
+	/// CrtProcessBuilder that reads <c>email.attachments</c>, so a package without attachment support is refused
+	/// before the request is sent, and pointing the caller at a reinstall would send them the wrong way. Carries no
+	/// package version (a version in such a message is advice the reader has already satisfied). Returns null when
+	/// every list landed.
 	/// </summary>
 	public static string? BuildAttachmentWarning(IReadOnlyList<UnlandedAttachments> unlanded) {
 		if (unlanded.Count == 0) {
@@ -520,11 +527,10 @@ public static class EmailBlockExpectation {
 			$"'{item.Element}' was sent {item.Sent} and reports {item.Described}"));
 		string subject = ElementNoun(unlanded.Count);
 		return $"The operation reported success, but {UnlandedAttachmentsWarningMarker} on the Send "
-			+ $"email {subject} ({counts}). The usual cause is a deployed CrtProcessBuilder that does not support email "
-			+ "attachments: it discards the 'attachments' list while answering success, so the email goes out WITHOUT "
-			+ "those files. Do not report them as attached: install a package that supports email attachments ("
-			+ Clio.Common.BundledPackages.ProcessBuilderInstallRemedy + ") and send the list again, or add the "
-			+ "attachments in the designer.";
+			+ $"email {subject} ({counts}). The read-back disagrees with what was sent, so the email may go out "
+			+ "WITHOUT those files. Do not report them as attached: describe the element with describe-business-process, "
+			+ "compare its attachments with the list you sent, then send the list again or add the attachments in the "
+			+ "designer.";
 	}
 
 	/// <summary>

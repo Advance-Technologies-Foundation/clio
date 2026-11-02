@@ -584,7 +584,7 @@ public class EmailBlockExpectationTests {
 	}
 
 	[Test]
-	[Description("The not-landed warning names the element and both counts, states the consequence (the email goes out without the files) and the fix (a package that supports attachments, then send the list again), carries no package version - a version in a caller-facing message is advice the reader has already satisfied - and is null when every list landed.")]
+	[Description("The not-landed warning names the element and both counts, states the consequence (the email may go out without the files) and the check that settles it (describe the element and compare, then send the list again), does not send the caller to a reinstall - the attachments floor already refuses a package without attachment support - carries no package version, and is null when every list landed.")]
 	public void BuildAttachmentWarning_ShouldStateTheConsequenceAndTheFix_WithoutAVersion() {
 		// Arrange
 		EmailBlockExpectation.UnlandedAttachments unlanded = new("SE1", 3, 0);
@@ -597,9 +597,12 @@ public class EmailBlockExpectationTests {
 		warning.Should().Contain("'SE1' was sent 3 and reports 0",
 			because: "the caller must know which element lost attachments and how many");
 		warning.Should().Contain("WITHOUT those files", because: "the consequence is an email missing its files");
-		warning.Should().Contain("install-process-builder",
-			because: "the remedy is a package that supports attachments");
-		warning.Should().Contain("send the list again", because: "installing alone does not restore the list");
+		warning.Should().Contain("describe-business-process",
+			because: "the read-back disagrees with what was sent, so the next step is to describe the element and compare");
+		warning.Should().NotContain("install-process-builder",
+			because: "the attachments floor refuses a package without attachment support before sending, so a reinstall "
+				+ "is not the likely fix");
+		warning.Should().Contain("send the list again", because: "the caller restores the list once the comparison shows what is missing");
 		warning.Should().NotMatchRegex(@"\d+\.\d+\.\d+",
 			because: "no package version belongs in a caller-facing remedy");
 		none.Should().BeNull(because: "no warning is emitted when every list landed");
