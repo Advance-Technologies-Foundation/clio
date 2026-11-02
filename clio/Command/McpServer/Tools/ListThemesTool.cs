@@ -34,8 +34,7 @@ public class ListThemesTool(
 	[McpServerTool(Name = ToolName, ReadOnly = true, Destructive = false, Idempotent = true, OpenWorld = false),
 	 Description("List the custom Creatio themes available on a registered environment. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
-		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath, background? }], error? }; " +
-		"background is { mode: Image, imageId } or { mode: Color, color }, absent when the theme declares none. " +
+		"Returns { success, themes:[{ id, caption, cssClassName, cssFilePath, background?: { mode, imageId?, color? } }], error? }. " +
 		"An empty themes array means the catalog is empty or the caller lacks the CanCustomizeBranding license. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public ListThemesResult ListThemes(
