@@ -11,6 +11,7 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using NUnit.Framework;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 
 namespace Clio.Mcp.E2E;
@@ -333,9 +334,17 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	private static string OutputOf(CommandExecutionEnvelope execution) =>
 		string.Join("\n", (execution.Output ?? []).Select(message => message.Value));
 
-	// Only a regression leaves a refused build behind; skip the slow remote delete when the refusal held.
+	// Only a regression leaves a refused build behind; skip the slow remote delete when the refusal held. Called from
+	// finally, so a failed describe is reported, not thrown: it would replace the assertion the test was reporting.
 	private static async Task DeleteIfBuiltAsync(ProcessDesignerArrangeContext context, string processName) {
-		if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+		string described;
+		try {
+			described = JsonSerializer.Serialize(await DescribeAsync(context, processName));
+		} catch (Exception exception) {
+			TestContext.Progress.WriteLine($"Cleanup could not describe '{processName}': {exception.Message}");
+			return;
+		}
+		if (!described.Contains("was not found")) {
 			await DeleteProcessAsync(context.EnvironmentName!, processName);
 		}
 	}
