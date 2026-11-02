@@ -25,8 +25,11 @@ public static class ModifyBusinessProcessPrompt {
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
 		 and their names — do not paste a whole described element into setElement: its element-level fields (uid,
 		 position, size, buildType, parameters, connections) and completionMode are refused before anything is sent.
-		 A described BLOCK (readData, email, ...) may be re-applied: its read-only fields (the *Display names,
-		 *SchemaUId, outputs) are ignored and named in a warning - nothing they say is saved. A filter, signal or
+		 A described readData / addData / changeData / deleteData block may be re-applied: its read-only fields
+		 (*SchemaUId, outputs) are ignored and named in a warning - nothing they say is saved. An email, subProcess,
+		 openEditPage or fileProcessing block can carry describe fields clio refuses before sending (the email's
+		 templateObject and its recipients' described fields, subProcess.process, completionMode, files.sourceColumn) -
+		 remove them. A filter, signal or
 		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;

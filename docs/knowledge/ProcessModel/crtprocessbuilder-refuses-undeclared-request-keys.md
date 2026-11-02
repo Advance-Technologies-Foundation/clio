@@ -1,5 +1,5 @@
 ---
-description: From CrtProcessBuilder 1.6.6.133 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores"; clio's own pre-send ProcessBlockKeyCheck stays in front of it
+description: From CrtProcessBuilder 1.6.6.134 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores"; clio's own pre-send ProcessBlockKeyCheck stays in front of it
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/CreateBusinessProcessCommand.cs
@@ -10,12 +10,13 @@ ticket: ENG-95244
 date: 2026-10-31
 ---
 
-**What is true** — CrtProcessBuilder 1.6.6.133+ refuses a write whose payload carries an undeclared or wrongly-cased
+**What is true** — CrtProcessBuilder 1.6.6.134+ refuses a write whose payload carries an undeclared or wrongly-cased
 key at any level: nothing is saved, and the message names each such key's path with the key meant (or, with no near
 match, the keys valid there). Fields copied from describe are grouped once per place instead of listed as typos:
-- a field a write takes ELSEWHERE that carries a value (an element's `filter` / `signal` / `connections`, the flat
-  approval fields, a process parameter's or collection item's `sourceElement` / `sourceElementParameter` /
-  `sourceColumn`, an element's bound `parameters`) is REFUSED with where it is written (setFilter, setConnections,
+- a field a write takes ELSEWHERE that carries a value (in a `setElement` elementUpdate an element's `filter` /
+  `signal` / `connections`; an element's `connections` on a build too; the flat approval fields; a process
+  parameter's or collection item's `sourceElement` / `sourceElementParameter` / `sourceColumn`; an element's
+  `parameters` with an item that carries a binding - outputs and unbound inputs are not) is REFUSED with where it is written (setFilter, setConnections,
   `approver.type`, a mapping with `targetProcessParameter` - dotted `Parameter.Item` for an item); sent as `null` or
   `[]` it is ignored with that pointer;
 - a READ-ONLY field (`position`, `size`, `uid`, `buildType`, `templateDisplay`, `completionMode`...) is IGNORED, and
@@ -26,8 +27,10 @@ Past the message's caps the rest is counted and the next attempt names it. clio 
 (modify also names the operation when every finding sits under one). clio's own pre-send `ProcessBlockKeyCheck`
 (ENG-103085) still runs first and is STRICTER for a whole element: element-level describe fields (`uid`, `position`,
 `buildType`...) in a `setElement` elementUpdate, and an element's `parameters` / `connections`, are refused before
-anything is sent ("Nothing was sent"), so only a describe BLOCK (readData, email...) echoed back reaches the server's
-ignore-with-warning path. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
+anything is sent ("Nothing was sent"), so only a described readData-family block echoed back reaches the server's
+ignore-with-warning path; an email (`templateObject`, recipients' described fields), subProcess (`process`),
+openEditPage (`completionMode`) or fileProcessing (`files.sourceColumn`) block can carry describe fields clio refuses
+too. Two gaps remain: a key next to the `request` wrapper passes in silence, and on a host where the check reports
 itself unavailable the write goes ahead with a warning that it was not checked. Details: the package's
 `.ai/specs/ENG-95244-unknown-request-keys.md`.
 

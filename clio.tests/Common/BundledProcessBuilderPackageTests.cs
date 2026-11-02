@@ -70,11 +70,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>7e21e4fb</c>, to be tagged
-	/// <c>crtprocessbuilder-1.6.6.133</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> with
-	/// <c>main</c> at 1.6.6.131 (<c>311382da</c>, ENG-95985) merged in, so the cut carries everything 1.6.6.131 shipped.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>ab86e532</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.134</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> with
+	/// <c>main</c> at 1.6.6.131 (<c>da719366</c>, ENG-95985 and ENG-95255) merged in, so the cut carries everything 1.6.6.131 shipped.
 	/// This cut was a SCRIPT cut: <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and packed
-	/// it, and the restamp (<c>93f33518</c>, same branch) was committed afterwards.
+	/// it, and the restamp (<c>f82dfbc2</c>, same branch) was committed afterwards.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -94,7 +94,7 @@ public class BundledProcessBuilderPackageTests {
 	/// clio sends no new member. What earlier cuts carried is in this file's git history rather than here: it described
 	/// archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5262 passed,
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5266 passed,
 	/// 0 failed, on both <c>dev-nf</c> (the script's run) and <c>dev-n8</c> -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
@@ -180,7 +180,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"28520DCF20417580BDDF776385F13EE1937679D65F53079B0E2CA2DD8BB3678D";
+		"29C087CB1712F7A4655F58560166B74D8C6ACCDF965087CC79751A87FE90CFFA";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -208,13 +208,13 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.133";
+	private const string ExpectedArchiveVersion = "1.6.6.134";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
-	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.133 is a script cut
+	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.134 is a script cut
 	/// again, so it names the commit BEFORE the restamp.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
@@ -223,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "7e21e4fb46d9ef4978223ecb94e5944518387b39";
+	private const string ExpectedProducingCommit = "ab86e532e7d2875dfbd798a7f8b11f2c69f0bbdc";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -249,7 +249,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793620954000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793629173000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
