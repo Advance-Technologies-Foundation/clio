@@ -166,7 +166,7 @@ public sealed class ModifyProcessAsNewVersionService(
 		// An ABSENT operations array is a legal request — a version that is a pure snapshot of the source — so
 		// the empty case sends an empty array rather than being refused the way the in-place edit refuses it.
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
-		// ENG-103085: before anything else reads the payload. A CrtProcessBuilder before 1.6.6.135 drops an undeclared
+		// ENG-103085: before anything else reads the payload. A CrtProcessBuilder before 1.6.6.136 drops an undeclared
 		// key without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it; a
 		// current one refuses it (ENG-95244), and this check still answers first, naming where the key belongs.
 		ProcessBlockKeyCheck.Enforce(requestObject["operations"], logger);

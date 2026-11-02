@@ -25,10 +25,10 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// (ENG-103085).
 /// </summary>
 /// <remarks>
-/// <para>CrtProcessBuilder reads the request through WCF's <c>DataContractJsonSerializer</c>. Before 1.6.6.135 it
+/// <para>CrtProcessBuilder reads the request through WCF's <c>DataContractJsonSerializer</c>. Before 1.6.6.136 it
 /// DROPPED a member its contract does not declare, so a misplaced key never reached a server-side guard: a
 /// <c>filter</c> nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first
-/// record of the object. From 1.6.6.135 the server refuses an undeclared key and ignores a describe read-back with a
+/// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
 /// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
 /// and it covers a package before that version, the other package line, and a host whose server check reports itself
 /// unavailable. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
