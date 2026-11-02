@@ -74,8 +74,7 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>crtprocessbuilder-1.6.6.132</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> on
 	/// top of <c>main</c> at 1.6.6.125 (<c>389198a0</c>), so the cut carries everything 1.6.6.125 shipped. This cut took the script route:
 	/// <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and packed it, and the restamp
-	/// (<c>d1cbe0f2</c>, same branch) was committed afterwards. 1.6.6.126 to 1.6.6.128 were cut on this branch
-	/// earlier and are burned: 1.6.6.127 to 1.6.6.131 were already tagged by ENG-95985.
+	/// (<c>d1cbe0f2</c>, same branch) was committed afterwards. ENG-95985 holds the numbers just below this one.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
