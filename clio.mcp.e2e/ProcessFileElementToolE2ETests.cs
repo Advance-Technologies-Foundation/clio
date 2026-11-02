@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -20,12 +18,13 @@ using Clio.Package;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerStoredReads;
 
 namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the "Process file" element, Object attachments variant (ENG-96505, story 1 of ENG-92719)
-/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.119 or later.
+/// over the real MCP path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.127 or later.
 /// <para>What only this level can show is the wire and the platform: the <c>fileProcessing</c> block travels as JSON
 /// members a WCF contract drops in silence when they are misspelled, the attachment storage is derived from the
 /// stand's REAL entity schemas (<c>AccountFile</c>, <c>ContactFile</c>, and an object with none, which is SysFile
@@ -53,11 +52,11 @@ public sealed class ProcessFileElementToolE2ETests {
 	private const string DescribeToolName = DescribeProcessTool.ToolName;
 
 	/// <summary>
-	/// The create/modify floor (1.6.6.119): the Object attachments variant shipped in 1.6.6.103, and 1.6.6.105 registered
+	/// The create/modify floor (1.6.6.127): the Object attachments variant shipped in 1.6.6.103, and 1.6.6.105 registered
 	/// the other two, so the fixture's F2 describes as a Generated report element and the generic route is refused
 	/// for all three tasks. Named in the skip message.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.119";
+	private const string MinimumPackageVersion = "1.6.6.127";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Process file element";
@@ -1244,51 +1243,6 @@ public sealed class ProcessFileElementToolE2ETests {
 		return result;
 	}
 
-	/// <summary>The names of the environment's active cultures (<c>SysCulture.Active</c>), e.g. <c>en-US</c>.</summary>
-	private static async Task<IReadOnlySet<string>> ReadActiveCultureNamesAsync(ProcessDesignerArrangeContext context) {
-		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysCulture",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("Active", "Active")
-			],
-			[]), "the environment's cultures");
-		HashSet<string> active = rows.EnumerateArray()
-			.Where(row => row.TryGetProperty("Active", out JsonElement flag) && flag.ValueKind == JsonValueKind.True)
-			.Select(row => TextOf(row, "Name"))
-			.ToHashSet(StringComparer.Ordinal);
-		active.Should().NotBeEmpty(because: "an environment has at least one active culture, or the read saw nothing");
-		return active;
-	}
-
-	/// <summary>
-	/// The resource rows (<c>key | culture | value</c>) without the template parameter captions
-	/// (<c>BaseElements.&lt;El&gt;.Parameters.&lt;P&gt;[.&lt;Item&gt;].Caption</c>) of the cultures that are not active, in
-	/// their order: what the first builder save of a designer-built element keeps.
-	/// </summary>
-	private static IReadOnlyList<string> WithoutInactiveTemplateCaptions(IReadOnlyList<string> rows,
-			IReadOnlySet<string> activeCultures) =>
-		rows.Where(row => {
-			string[] parts = row.Split(" | ");
-			if (parts.Length < 2 || activeCultures.Contains(parts[1])) {
-				return true;
-			}
-			string key = parts[0];
-			bool templateCaption = key.StartsWith("BaseElements.", StringComparison.Ordinal)
-				&& key.Contains(".Parameters.", StringComparison.Ordinal)
-				&& key.EndsWith(".Caption", StringComparison.Ordinal);
-			return !templateCaption;
-		}).ToList();
-
-	/// <summary>
-	/// The rows <paramref name="after"/> lost and gained against <paramref name="before"/>, in full: an assertion's own
-	/// listing stops after 32 items, which hides the difference in a long resource list.
-	/// </summary>
-	private static string RowDifference(IReadOnlyList<string> before, IReadOnlyList<string> after) {
-		string removed = string.Join("; ", before.Except(after, StringComparer.Ordinal));
-		string added = string.Join("; ", after.Except(before, StringComparer.Ordinal));
-		return $"{before.Count} rows before, {after.Count} after. REMOVED: [{removed}] ADDED: [{added}]";
-	}
-
 	/// <summary><see cref="CreateAsync"/> for a SysFile case: an Ignore names the SysFile floor.</summary>
 	private static Task<CallToolResult> CreateSysFileAsync(ProcessDesignerArrangeContext context, List<string> created,
 			string processName, string descriptor) =>
@@ -1511,175 +1465,6 @@ public sealed class ProcessFileElementToolE2ETests {
 				+ "for its constant record id.");
 		}
 		return rows[0].GetProperty("Id").GetString()!;
-	}
-
-	#endregion
-
-	#region Methods: Raw database reads
-
-	/// <summary>
-	/// The raw JSON of the element with <paramref name="elementUId"/> in each stored <c>SysSchema.MetaData</c> row of
-	/// <paramref name="schemaName"/>, ordered by row id.
-	/// <para>The database and not describe, on purpose: describe is not a capture read path (serialization capture
-	/// section 1, S6), and a preservation claim is about the stored bytes. The node is located by its <c>UId</c>
-	/// and returned with <see cref="JsonElement.GetRawText"/>, so the comparison is of the stored text, not of a
-	/// re-serialization. Through <c>execute-esq-to-file</c> because a process's metadata can exceed the inline
-	/// response budget; DataService rather than SQL for the reason the caption reads give in
-	/// <c>SubProcessElementToolE2ETests</c>.</para>
-	/// </summary>
-	private static async Task<IReadOnlyList<string>> ReadElementNodesAsync(ProcessDesignerArrangeContext context,
-			string schemaName, string elementUId) {
-		JsonElement rows = await SelectToFileAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id", OrderDirection: 1, OrderPosition: 0),
-				new SelectQueryHelper.SelectQueryColumnDefinition("MetaData", "MetaData")
-			],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
-				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "ProcessSchemaManager",
-					SelectQueryHelper.TextDataValueType)
-			]), $"the SysSchema rows of '{schemaName}'");
-		List<string> nodes = [];
-		foreach (JsonElement row in rows.EnumerateArray()) {
-			string metadata = DecodeMetaData(row.GetProperty("MetaData"));
-			using JsonDocument document = JsonDocument.Parse(metadata);
-			string? node = FindNodeByUId(document.RootElement, Guid.Parse(elementUId));
-			if (node != null) {
-				nodes.Add($"{row.GetProperty("Id")}: {node}");
-			}
-		}
-		nodes.Should().NotBeEmpty(
-			because: $"the element {elementUId} must be found in the stored metadata of '{schemaName}', or the "
-				+ "comparison would compare nothing");
-		return nodes;
-	}
-
-	/// <summary>
-	/// The stored <c>SysLocalizableValue</c> rows of one element - keys <c>BaseElements.&lt;element&gt;.*</c>, every
-	/// culture - as sorted <c>key | culture | value</c> lines. Read from the database, not describe: every read
-	/// re-materializes captions, so describe can show a caption the database does not hold.
-	/// </summary>
-	private static async Task<IReadOnlyList<string>> ReadElementResourceRowsAsync(ProcessDesignerArrangeContext context,
-			string schemaName, string elementName) {
-		JsonElement rows = await SelectToFileAsync(context, SelectQueryHelper.BuildSelectQuery("SysLocalizableValue",
-			[
-				new SelectQueryHelper.SelectQueryColumnDefinition("Key", "Key"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("SysCulture.Name", "Culture"),
-				new SelectQueryHelper.SelectQueryColumnDefinition("Value", "Value")
-			],
-			[
-				new SelectQueryHelper.SelectQueryFilterDefinition("SysSchema.Name", schemaName,
-					SelectQueryHelper.TextDataValueType)
-			]), $"the resource rows of '{schemaName}'");
-		string prefix = $"BaseElements.{elementName}.";
-		return rows.EnumerateArray()
-			.Select(row => (Key: TextOf(row, "Key"), Culture: TextOf(row, "Culture"), Value: TextOf(row, "Value")))
-			.Where(row => row.Key.StartsWith(prefix, StringComparison.Ordinal))
-			.Select(row => $"{row.Key} | {row.Culture} | {row.Value}")
-			.OrderBy(line => line, StringComparer.Ordinal)
-			.ToList();
-	}
-
-	/// <summary>Runs a small SelectQuery through <c>execute-esq</c> and returns its rows array.</summary>
-	private static async Task<JsonElement> SelectInlineAsync(ProcessDesignerArrangeContext context, object query,
-			string what) {
-		CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ExecuteEsqTool.ToolName,
-			new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["query"] = JsonSerializer.SerializeToElement(query)
-			});
-		ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
-		response.Success.Should().BeTrue(because: $"{what} must be readable for this case to measure anything; the read "
-			+ "failed with: {0}", response.Error);
-		JsonElement rows = response.Rows.GetValueOrDefault();
-		rows.ValueKind.Should().Be(JsonValueKind.Array,
-			because: "a SelectQuery answers with a rows array; anything else is a shape this read cannot use");
-		return rows.Clone();
-	}
-
-	/// <summary>Runs a SelectQuery through <c>execute-esq-to-file</c> and returns the rows array the file holds.</summary>
-	private static async Task<JsonElement> SelectToFileAsync(ProcessDesignerArrangeContext context, object query,
-			string what) {
-		string directory = ScratchDirectory.CreateUnderPhysicalTemp("clio-process-file-e2e");
-		try {
-			string outputFile = Path.Combine(directory, "rows.json");
-			CallToolResult result = await ProcessDesignerE2EArrange.CallToolAsync(context, ExecuteEsqToFileTool.ToolName,
-				new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName,
-					["query"] = JsonSerializer.SerializeToElement(query),
-					["output-file"] = outputFile
-				});
-			ExecuteEsqResponse response = EntitySchemaStructuredResultParser.Extract<ExecuteEsqResponse>(result);
-			response.Success.Should().BeTrue(because: $"{what} must be readable for this case to measure anything; the "
-				+ "read failed with: {0}", response.Error);
-			using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(outputFile));
-			document.RootElement.ValueKind.Should().Be(JsonValueKind.Array,
-				because: "the file holds the rows array of the SelectQuery");
-			return document.RootElement.Clone();
-		} finally {
-			ScratchDirectory.TryDelete(directory);
-		}
-	}
-
-	/// <summary>
-	/// The metadata JSON text of a <c>SysSchema.MetaData</c> value as DataService returns a binary column: a base64
-	/// string, an array of bytes, or - tolerated - the JSON text itself. A UTF-8 byte-order mark is dropped.
-	/// </summary>
-	private static string DecodeMetaData(JsonElement value) {
-		byte[]? bytes = null;
-		if (value.ValueKind == JsonValueKind.String) {
-			string text = value.GetString() ?? string.Empty;
-			if (text.TrimStart().StartsWith('{')) {
-				return text;
-			}
-			bytes = Convert.FromBase64String(text);
-		} else if (value.ValueKind == JsonValueKind.Array) {
-			bytes = value.EnumerateArray().Select(item => item.GetByte()).ToArray();
-		}
-		bytes.Should().NotBeNull(because: "SysSchema.MetaData must come back as binary content; the value read was: {0}",
-			value.GetRawText());
-		return Encoding.UTF8.GetString(bytes!).TrimStart('﻿');
-	}
-
-	/// <summary>The raw text of the first object whose <c>UId</c> is <paramref name="uid"/>, depth first.</summary>
-	private static string? FindNodeByUId(JsonElement node, Guid uid) {
-		switch (node.ValueKind) {
-			case JsonValueKind.Object:
-				if (node.TryGetProperty("UId", out JsonElement id) && id.ValueKind == JsonValueKind.String
-						&& Guid.TryParse(id.GetString(), out Guid parsed) && parsed == uid) {
-					return node.GetRawText();
-				}
-				foreach (JsonProperty property in node.EnumerateObject()) {
-					string? found = FindNodeByUId(property.Value, uid);
-					if (found != null) {
-						return found;
-					}
-				}
-				return null;
-			case JsonValueKind.Array:
-				foreach (JsonElement item in node.EnumerateArray()) {
-					string? found = FindNodeByUId(item, uid);
-					if (found != null) {
-						return found;
-					}
-				}
-				return null;
-			default:
-				return null;
-		}
-	}
-
-	/// <summary>A row value as text: a string as is, a lookup by its display value, anything else raw.</summary>
-	private static string TextOf(JsonElement row, string column) {
-		if (!row.TryGetProperty(column, out JsonElement value)) {
-			return string.Empty;
-		}
-		return value.ValueKind switch {
-			JsonValueKind.String => value.GetString() ?? string.Empty,
-			JsonValueKind.Object when value.TryGetProperty("displayValue", out JsonElement display) => display.ToString(),
-			JsonValueKind.Null => string.Empty,
-			_ => value.GetRawText()
-		};
 	}
 
 	#endregion

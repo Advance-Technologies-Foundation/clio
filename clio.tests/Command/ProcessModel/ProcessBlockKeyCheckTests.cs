@@ -58,6 +58,121 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "the refusal lists the block's real keys");
 	}
 
+	[TestCase("setElement")]
+	[TestCase("removeElement")]
+	[Description("A name sent in 'element' - the addElement OBJECT on the server - is refused for an operation on an existing element and points to 'elementName'; the same operation naming its element by 'elementName' passes clean.")]
+	public void Check_Should_RefuseANameInElement_AndPointToElementName(string op) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckOperations($"[{{\"op\":\"{op}\",\"element\":\"Send1\"}}]");
+		ProcessBlockKeyCheckResult accepted = CheckOperations($"[{{\"op\":\"{op}\",\"elementName\":\"Send1\"}}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:", because: "the server cannot read a name in 'element'");
+		refused.Error.Should().Contain($"operations[0] ({op})", because: "the refusal names the operation");
+		refused.Error.Should().Contain("\"elementName\": \"Send1\"",
+			because: "the refusal shows the key to use, with the caller's own element name");
+		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "'elementName' is the key the server reads for an existing element");
+	}
+
+	[Test]
+	[Description("A name sent in 'element' on addElement is refused with the fix for that operation: 'element' takes the new element as an object with its name and type. It is not told to name an existing element with 'elementName', which addElement has none of.")]
+	public void Check_Should_RefuseANameInElement_OnAddElement_AndAskForTheElementObject() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckOperations("[{\"op\":\"addElement\",\"element\":\"Send1\"}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:", because: "the server cannot read a name in 'element'");
+		refused.Error.Should().Contain("operations[0] (addElement)", because: "the refusal names the operation");
+		refused.Error.Should().Contain("as an object with its 'name' and 'type'",
+			because: "addElement adds a new element, so the fix is the element object, not a reference to an existing one");
+		refused.Error.Should().Contain("\"element\": {\"name\": \"Send1\", \"type\": ...}",
+			because: "the refusal shows the object shape with the caller's own value as its name");
+		refused.Error.Should().NotContain("Name an existing element",
+			because: "addElement has no existing element to name");
+	}
+
+	private const string OneAttachmentObject = """{"processParameter":"Docs"}""";
+
+	private static ProcessBlockKeyCheckResult CheckAttachments(string route, string attachments) {
+		string email = $"{{\"subject\":\"s\",\"attachments\":{attachments}}}";
+		return route switch {
+			"create" => CheckElements($"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{email}}}"),
+			"addElement" => CheckOperations(
+				$"[{{\"op\":\"addElement\",\"element\":{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{email}}}}}]"),
+			_ => CheckOperations(
+				$"[{{\"op\":\"setElement\",\"elementName\":\"SE1\",\"elementUpdate\":{{\"email\":{email}}}}}]")
+		};
+	}
+
+	[TestCase("create")]
+	[TestCase("setElement")]
+	[TestCase("addElement")]
+	[Description("email.attachments sent as one object instead of a list is refused before sending, on create, setElement and addElement: the server's contract reads a list there and fails the whole request on an object, so the refusal says nothing was sent, names the member and shows the array shape.")]
+	public void Check_Should_RefuseAttachmentsSentAsOneObject(string route) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments(route, OneAttachmentObject);
+		ProcessBlockKeyCheckResult accepted = CheckAttachments(route, $"[{OneAttachmentObject}]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:",
+			because: "an object where the contract reads a list fails the whole request on the server");
+		refused.Error.Should().Contain("email.attachments' takes a LIST of attachment entries, so a single object",
+			because: "the refusal names the member and what was wrong with it");
+		refused.Error.Should().Contain("\"attachments\": [",
+			because: "the refusal shows the array shape to send instead");
+		accepted.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "the same entry wrapped in an array is the shape the server reads");
+	}
+
+	[TestCase("create")]
+	[TestCase("setElement")]
+	[TestCase("addElement")]
+	[Description("email.attachments whose entries are not objects - a string and a number among object entries - is refused before sending on every route, naming each wrong entry by its index; a null entry is not refused here, because the server reads it and refuses an entry with no source in its own words.")]
+	public void Check_Should_RefuseAttachmentEntriesThatAreNotObjects(string route) {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments(route, $"[{OneAttachmentObject}, \"Docs\", 7]");
+		ProcessBlockKeyCheckResult withNull = CheckAttachments(route, $"[{OneAttachmentObject}, null]");
+
+		// Assert
+		refused.Error.Should().StartWith("Nothing was sent:",
+			because: "an entry that is not an object fails the whole request on the server");
+		refused.Error.Should().Contain("email.attachments[1]', '",
+			because: "the refusal names the string entry by its index");
+		refused.Error.Should().Contain("email.attachments[2]' are not objects",
+			because: "the refusal names the number entry too, in one sentence");
+		refused.Error.Should().NotContain("attachments[0]",
+			because: "the object entry is well formed");
+		withNull.Error.Should().BeNull(because: "a null entry reaches the server, which refuses it in its own words");
+	}
+
+	[Test]
+	[Description("A wrong attachments shape and an unknown key in a well-formed entry of the same list are refused together, so one round trip fixes both.")]
+	public void Check_Should_ReportAnUnknownEntryKey_AlongsideANonObjectEntry() {
+		// Act
+		ProcessBlockKeyCheckResult refused = CheckAttachments("setElement", """[{"parameter":"Docs"}, "Doc"]""");
+
+		// Assert
+		refused.Error.Should().Contain("'elementUpdate.email.attachments[0].parameter' is not a key",
+			because: "the object entry is still walked for keys the contract drops");
+		refused.Error.Should().Contain("email.attachments[1]' is not an object",
+			because: "the non-object entry is refused in the same reply");
+	}
+
+	[Test]
+	[Description("The misplaced value is printed as the caller wrote it: a non-ASCII name and an apostrophe appear as themselves rather than as HTML-safe escapes, so the key the refusal shows can be copied back.")]
+	public void Check_Should_PrintTheMisplacedNameReadably() {
+		// Act
+		ProcessBlockKeyCheckResult refused =
+			CheckOperations("[{\"op\":\"setElement\",\"element\":\"Лист O'Brien\"}]");
+
+		// Assert
+		refused.Error.Should().Contain("\"elementName\": \"Лист O'Brien\"",
+			because: "the printed key is meant to be copied back, so its characters must appear as themselves");
+		refused.Error.Should().NotContain("\\u",
+			because: "neither a Cyrillic letter nor an apostrophe needs an escape in JSON");
+	}
+
 	[Test]
 	[Description("The repro with the filter moved to element level - the documented shape - passes without an error or a warning.")]
 	public void Check_Should_AcceptAnElementLevelFilter() {
@@ -442,6 +557,78 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean, because: "every walked key is declared by the server");
+	}
+
+	[Test]
+	[Description("An attachments list on the Send email block passes clean on every route the block travels - a create element, an addElement element, a setElement update, and an empty list (which removes every attachment) - so clio no longer refuses email.attachments before the server reads it.")]
+	public void Check_Should_AcceptAnAttachmentsList_OnEveryRoute() {
+		// Arrange
+		const string email = """
+			{ "mode": "manual", "subject": "Your invoice", "to": [ { "processParameter": "Contact" } ],
+			  "attachments": [
+			    { "sourceElement": "GenerateInvoice", "sourceElementParameter": "ReportFiles" },
+			    { "sourceElement": "ReadContractFiles", "sourceElementParameter": "ObjectFiles.File" },
+			    { "processParameter": "Documents" },
+			    { "expression": "[#Documents#]" } ] }
+			""";
+		string element = $$"""{ "name": "SE1", "type": "sendEmail", "email": {{email}} }""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "SE2", "type": "sendEmail", "email": {{email}} } },
+			  { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": {{email}} } },
+			  { "op": "setElement", "elementName": "SE3", "elementUpdate": { "email": { "attachments": [] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "SendEmailDescriptor declares attachments and every entry key is a SendEmailAttachmentDescriptor member");
+		modify.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "addElement and setElement carry the same email block, and an empty list is how every attachment is removed");
+	}
+
+	[TestCase("sourceElementParam", "Accepted attachment keys: processParameter, sourceElement, sourceElementParameter, expression, value")]
+	[TestCase("file", "Accepted attachment keys:")]
+	[TestCase("SourceElement", "keys are case-sensitive: write 'sourceElement'")]
+	[Description("An unknown key inside an attachment entry is refused naming the element and the entry's key path, with the entry's accepted keys - instead of the server dropping the key and attaching nothing from the source the caller meant.")]
+	public void Check_Should_RefuseAnUnknownAttachmentEntryKey_NamingItsPath(string key, string pointer) {
+		// Arrange
+		string element =
+			$"{{\"name\":\"SE1\",\"type\":\"sendEmail\",\"email\":{{\"subject\":\"s\",\"attachments\":[{{\"{key}\":\"OF1\"}}]}}}}";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().NotBeNull(because: "the server drops an undeclared entry key without a word");
+		result.Error.Should().Contain("'SE1'", because: "the refusal names the element");
+		result.Error.Should().Contain($"'email.attachments[0].{key}'",
+			because: "the refusal names the entry and the key inside it");
+		result.Error.Should().Contain(pointer, because: "the refusal says what an attachment entry accepts");
+	}
+
+	[Test]
+	[Description("A described attachment entry fed back verbatim - the modify recipe is describe, edit the list, send it back - keeps building: its slot, bindingLevels and issues are named in the read-back warning, never refused.")]
+	public void Check_Should_TolerateTheReadBackFields_OfADescribedEntry() {
+		// Arrange
+		string operations = """
+			[ { "op": "setElement", "elementName": "SE1", "elementUpdate": { "email": { "attachments": [
+			    { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles", "slot": "Attachments1", "bindingLevels": "both" },
+			    { "processParameter": "Doc", "slot": "Attachments3", "bindingLevels": "itemOnly",
+			      "issues": [ "'Attachments3' is empty and attaches nothing" ] } ] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
+		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+			.Which.Should().Contain("email.attachments[0].slot", because: "the stored row name is describe-only")
+			.And.Contain("email.attachments[0].bindingLevels", because: "the bound levels are describe-only")
+			.And.Contain("email.attachments[1].issues", because: "the issues are describe-only");
 	}
 
 	[Test]

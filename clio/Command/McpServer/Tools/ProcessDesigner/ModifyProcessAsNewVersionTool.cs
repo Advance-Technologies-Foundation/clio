@@ -87,7 +87,7 @@ public class ModifyProcessAsNewVersionTool(
 		 + "half-created version to clean up. A version can never be DELETED — the platform has no such "
 		 + "operation — so every version you create is permanent; take that into account before creating one "
 		 + "speculatively. Requires the ProcessDesignService (CrtProcessBuilder) package on the target "
-		 + "environment at CrtProcessBuilder 1.6.6.119 or newer — an older package is refused up front, naming the "
+		 + "environment at CrtProcessBuilder 1.6.6.127 or newer — an older package is refused up front, naming the "
 		 + "version this operation needs; install or update it with install-process-builder after user approval. (The operation itself "
 		 + "first exists in 1.6.1.0; the floor has risen with the operations vocabulary (subProcess.multiInstanceOptions, sourceColumn, the File types, itemProperties, ...), because an older "
 		 + "server silently discards or mis-applies a newer input while answering success, or refuses it as unknown, and "
