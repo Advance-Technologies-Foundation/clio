@@ -1,5 +1,5 @@
 ---
-description: A CrtProcessBuilder before 1.6.6.132 drops any request key its contract does not declare (a filter nested inside readData saved green and every Read data read the first record); 1.6.6.132+ refuses it server-side, and clio still refuses such keys before sending, from key lists held equal to the bundled archive, because it answers first and covers the packages that do not
+description: A CrtProcessBuilder before 1.6.6.133 drops any request key its contract does not declare (a filter nested inside readData saved green and every Read data read the first record); 1.6.6.133+ refuses it server-side, and clio still refuses such keys before sending, from key lists held equal to the bundled archive, because it answers first and covers the packages that do not
 applies-to:
   - clio/Command/ProcessModel/ProcessBlockKeyCheck.cs
   - clio/CrtProcessBuilder/
@@ -8,18 +8,18 @@ date: 2026-10-13
 ---
 
 **What is true** — `ProcessDesignService` binds its request through `DataContractJsonSerializer`. Before
-CrtProcessBuilder 1.6.6.132 a member the `[DataContract]` type does not declare is discarded before any server
+CrtProcessBuilder 1.6.6.133 a member the `[DataContract]` type does not declare is discarded before any server
 code runs, so no server-side guard can see it: `{"readData":{"source":"AppRequest","filter":{...}}}` built a Read data with NO filter and the call
 answered success. The only refusal the block ever gave a wrong key was indirect - `object` in place of
 `source` was stopped by "'readData' requires a 'source'", not because `object` was unknown, so `object` next
-to a valid `source` passed. From 1.6.6.132 (ENG-95244) the request contracts keep undeclared keys and the server
+to a valid `source` passed. From 1.6.6.133 (ENG-95244) the request contracts keep undeclared keys and the server
 refuses them (`crtprocessbuilder-refuses-undeclared-request-keys.md`). `ProcessBlockKeyCheck` still refuses
 undeclared element and block keys client-side, on create, modify and save-as-new-version, before the page-facts
 check.
 
 **Why it is this way** — clio was the last side that saw the caller's keys. The package fix
 (`IExtensibleDataObject` on every request contract plus a refusal when `ExtensionData` is not empty) shipped in
-1.6.6.132, but the client check stays: it answers before anything is sent ("Nothing was sent") with where the
+1.6.6.133, but the client check stays: it answers before anything is sent ("Nothing was sent") with where the
 key belongs, it covers an environment on an older package or on the other package line, and one whose host
 reports the server check unavailable. The client key lists are a copy of the
 server contracts; `ProcessBlockKeyCheckTests` holds every list equal to the `[DataMember]` names of the
