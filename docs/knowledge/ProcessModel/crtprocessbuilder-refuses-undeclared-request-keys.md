@@ -1,5 +1,5 @@
 ---
-description: From CrtProcessBuilder 1.6.6.128 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores"; clio's own pre-send ProcessBlockKeyCheck stays in front of it
+description: From CrtProcessBuilder 1.6.6.132 the SERVER refuses a build/modify/save-as-new-version payload carrying a key its contract does not declare (read-only describe fields are ignored with a warning instead), so clio must never send an optional key "an older server simply ignores"; clio's own pre-send ProcessBlockKeyCheck stays in front of it
 applies-to:
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
   - clio/Command/CreateBusinessProcessCommand.cs
@@ -10,16 +10,17 @@ ticket: ENG-95244
 date: 2026-10-31
 ---
 
-**What is true** — CrtProcessBuilder 1.6.6.128+ refuses a write whose payload carries an undeclared or wrongly-cased
+**What is true** — CrtProcessBuilder 1.6.6.132+ refuses a write whose payload carries an undeclared or wrongly-cased
 key at any level: nothing is saved, and the message names each such key's path with the key meant (or, with no near
 match, the keys valid there). Fields copied from describe are grouped once per place instead of listed as typos:
 - a field a write takes ELSEWHERE that carries a value (an element's `filter` / `signal` / `connections`, the flat
-  approval fields, a process parameter's `sourceElement` / `sourceElementParameter` / `sourceColumn`) is REFUSED
-  with where it is written (setFilter, setConnections, `approver.type`, a mapping with `targetProcessParameter`);
-  sent as `null` it is ignored;
-- a READ-ONLY field (`position`, `size`, `uid`, `buildType`, `templateDisplay`, `completionMode`, an element's
-  `parameters` list...) is IGNORED, and the saved result carries one warning naming them once per place - so a
-  described element fed back as is still saves on the server (clio is stricter, see below).
+  approval fields, a process parameter's or collection item's `sourceElement` / `sourceElementParameter` /
+  `sourceColumn`, an element's bound `parameters`) is REFUSED with where it is written (setFilter, setConnections,
+  `approver.type`, a mapping with `targetProcessParameter` - dotted `Parameter.Item` for an item); sent as `null` or
+  `[]` it is ignored with that pointer;
+- a READ-ONLY field (`position`, `size`, `uid`, `buildType`, `templateDisplay`, `completionMode`...) is IGNORED, and
+  the saved result carries one warning naming them once per place - so a described element with nothing written
+  elsewhere still saves on the server (clio is stricter, see below).
 
 Past the message's caps the rest is counted and the next attempt names it. clio relays that text as exit code 1
 (modify also names the operation when every finding sits under one). clio's own pre-send `ProcessBlockKeyCheck`

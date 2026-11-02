@@ -297,8 +297,9 @@ public sealed class ModifyBusinessProcessService(
 			requestObject["uid"] = request.ProcessUid;
 		}
 		requestObject["operations"] = ParseOperations(request.OperationsJson);
-		// ENG-103085: before anything else reads the payload - the server's contract drops an undeclared key
-		// without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it.
+		// ENG-103085: before anything else reads the payload. A CrtProcessBuilder before 1.6.6.132 drops an undeclared
+		// key without a word, so a misplaced one (a filter nested in readData) would save a process that ignores it; a
+		// current one refuses it (ENG-95244), and this check still answers first, naming where the key belongs.
 		ProcessBlockKeyCheck.Enforce(requestObject["operations"], logger);
 		// ALWAYS sent, true or false, because the server reads its ABSENCE as a third answer. A caller that
 		// omits the member is one built before the gate existed and unable to answer a refusal, so the server

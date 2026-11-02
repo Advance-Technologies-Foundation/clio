@@ -1,5 +1,5 @@
 ---
-description: CrtProcessBuilder reads BuildProcess / ModifyProcess requests through WCF's DataContractJsonSerializer, which drops any key its contract does not declare - a filter nested inside readData saved green and every Read data read the first record; clio refuses such keys before sending, from key lists held equal to the bundled archive
+description: A CrtProcessBuilder before 1.6.6.132 drops any request key its contract does not declare (a filter nested inside readData saved green and every Read data read the first record); 1.6.6.132+ refuses it server-side, and clio still refuses such keys before sending, from key lists held equal to the bundled archive, because it answers first and covers the packages that do not
 applies-to:
   - clio/Command/ProcessModel/ProcessBlockKeyCheck.cs
   - clio/CrtProcessBuilder/
@@ -7,17 +7,21 @@ ticket: ENG-103085
 date: 2026-10-13
 ---
 
-**What is true** — `ProcessDesignService` binds its request through `DataContractJsonSerializer`. A member the
-`[DataContract]` type does not declare is discarded before any server code runs, so no server-side guard can
-see it: `{"readData":{"source":"AppRequest","filter":{...}}}` built a Read data with NO filter and the call
+**What is true** — `ProcessDesignService` binds its request through `DataContractJsonSerializer`. Before
+CrtProcessBuilder 1.6.6.132 a member the `[DataContract]` type does not declare is discarded before any server
+code runs, so no server-side guard can see it: `{"readData":{"source":"AppRequest","filter":{...}}}` built a Read data with NO filter and the call
 answered success. The only refusal the block ever gave a wrong key was indirect - `object` in place of
 `source` was stopped by "'readData' requires a 'source'", not because `object` was unknown, so `object` next
-to a valid `source` passed. `ProcessBlockKeyCheck` refuses undeclared element and block keys client-side, on
-create, modify and save-as-new-version, before the page-facts check.
+to a valid `source` passed. From 1.6.6.132 (ENG-95244) the request contracts keep undeclared keys and the server
+refuses them (`crtprocessbuilder-refuses-undeclared-request-keys.md`). `ProcessBlockKeyCheck` still refuses
+undeclared element and block keys client-side, on create, modify and save-as-new-version, before the page-facts
+check.
 
-**Why it is this way** — clio is the last side that still sees the caller's keys, and fixing it in the package
-(for example `IExtensibleDataObject` on every request contract plus a refusal when `ExtensionData` is not
-empty) needs a rebundle and only protects stands that install it. The client key lists are a copy of the
+**Why it is this way** — clio was the last side that saw the caller's keys. The package fix
+(`IExtensibleDataObject` on every request contract plus a refusal when `ExtensionData` is not empty) shipped in
+1.6.6.132, but the client check stays: it answers before anything is sent ("Nothing was sent") with where the
+key belongs, it covers an environment on an older package or on the other package line, and one whose host
+reports the server check unavailable. The client key lists are a copy of the
 server contracts; `ProcessBlockKeyCheckTests` holds every list equal to the `[DataMember]` names of the
 bundled archive, and the read-back tolerance (describe-only fields such as `sourceSchemaUId`, `position`)
 to members the describe types really emit.

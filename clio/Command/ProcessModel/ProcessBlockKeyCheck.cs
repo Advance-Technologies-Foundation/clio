@@ -566,9 +566,9 @@ internal static class ProcessBlockKeyCheck {
 				string more = _refusals.Count > MaxReportedKeys
 					? $" (and {_refusals.Count - MaxReportedKeys} more)"
 					: string.Empty;
-				error = "Nothing was sent: the server reads its request with a contract that DROPS an undeclared key "
-					+ "without a word, so these keys would have saved a process that ignores them. "
-					+ string.Join(" ", shown) + more;
+				error = "Nothing was sent: these keys are not part of the request the server reads - a current "
+					+ "CrtProcessBuilder refuses them, an older one drops them without a word and saves a process "
+					+ "that ignores them. " + string.Join(" ", shown) + more;
 			}
 			IReadOnlyList<string> warnings = [];
 			if (_readBacks.Count > 0) {

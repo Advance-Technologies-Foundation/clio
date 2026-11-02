@@ -70,11 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>98025fa0</c>, to be tagged
-	/// <c>crtprocessbuilder-1.6.6.128</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> on
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>d89100f0</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.132</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> on
 	/// top of <c>main</c> at 1.6.6.125 (<c>389198a0</c>), so the cut carries everything 1.6.6.125 shipped. This cut took the script route:
 	/// <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and packed it, and the restamp
-	/// (<c>4ab5381d</c>, same branch) was committed afterwards.
+	/// (<c>d1cbe0f2</c>, same branch) was committed afterwards. 1.6.6.126 to 1.6.6.128 were cut on this branch
+	/// earlier and are burned: 1.6.6.127 to 1.6.6.131 were already tagged by ENG-95985.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -87,20 +88,19 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.123 (ENG-104758): an edit batch with no structural operation - anything
-	/// but <c>addElement</c>, <c>removeElement</c>, <c>addFlow</c>, <c>removeFlow</c> and <c>setFlow</c>, and the empty
-	/// batch - runs no layout probe, no layout and no layout-change detector, so a hand-arranged or shipped diagram
-	/// keeps every position and is not refused as <c>diagramWasArrangedByHand</c>; and the in-place refusal says a new
-	/// version is permanent and re-drawn too. The create/modify floor stays where it is: clio advertises nothing new,
-	/// and the convergence check refuses an older package anyway. What earlier cuts carried is in this file's git history rather than here:
+	/// <para>What this cut carries over 1.6.6.125 (ENG-95244): every build, modify and save-as-new-version request
+	/// contract keeps the keys it does not declare, and the server refuses a request carrying one before anything is
+	/// read or saved, naming its path and the key meant. Describe read-only fields are ignored and named in a warning;
+	/// a field a write takes elsewhere is refused when it carries a value. The create/modify floor stays where it is:
+	/// clio advertises no new argument, and the convergence check refuses an older package anyway. What earlier cuts carried is in this file's git history rather than here:
 	/// it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4586 passed,
-	/// 0 failed, on <c>dev-nf</c> (the script's run) -
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 4698 passed,
+	/// 0 failed, on <c>dev-nf</c> (the script's run; 4698 on <c>dev-n8</c> too) -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on the manual route) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The script checked the inventory: 293
+	/// security counts below exist to catch. The script checked the inventory: 302
 	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
 	/// that executes on install.
 	/// </para>
@@ -177,7 +177,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"92F35AF6D580AF860A09AC3C532B97EB8456F79C3FA5857082203C2748523377";
+		"B46946D629DC61F9A56E8CD20B8883B9E45CBBBA195C97053E660CF4389182D5";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -205,7 +205,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.128";
+	private const string ExpectedArchiveVersion = "1.6.6.132";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -219,7 +219,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "98025fa0f952dc7d1919ded77119c0843c3e6e19";
+	private const string ExpectedProducingCommit = "d89100f0f47402e9ba534ddda5f514f2389b268c";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -245,7 +245,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793432173000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793614802000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

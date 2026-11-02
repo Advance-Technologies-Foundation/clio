@@ -11,6 +11,7 @@ using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
+using static Clio.Mcp.E2E.Support.Mcp.ProcessDesignerE2ESupport;
 
 namespace Clio.Mcp.E2E;
 
@@ -21,7 +22,7 @@ namespace Clio.Mcp.E2E;
 /// </summary>
 /// <remarks>
 /// <para>The refusal lives in the PACKAGE, not in clio: clio forwards the payload and relays the server's message. So
-/// these tests need CrtProcessBuilder 1.6.6.128 or later on the stand - an older package drops such a key in silence
+/// these tests need CrtProcessBuilder 1.6.6.132 or later on the stand - an older package drops such a key in silence
 /// exactly as before - and they are ignored, with the reason, when it is behind.</para>
 /// <para>They are also the only check that a HOST really keeps undeclared keys: the package can prove its own reader
 /// works, but not that the platform binds the request with a serializer that fills the extension data. Run them on
@@ -31,9 +32,13 @@ namespace Clio.Mcp.E2E;
 /// listed as a typo - describe -> modify keeps working (decision Q4 of the package spec). It echoes the BLOCK, not the
 /// whole element: clio's own pre-send check (<c>ProcessBlockKeyCheck</c>, ENG-103085) refuses element-level describe
 /// fields in an elementUpdate before anything is sent, so a whole-element echo never reaches the server.</para>
+/// <para>The written-elsewhere case sends a process parameter carrying a decoded binding (<c>sourceElement</c>) in a
+/// create descriptor's <c>parameters</c>, which the pre-send check does not walk, so the refusal it asserts is the
+/// server's.</para>
 /// <para><c>lable</c> on a flow and on a <c>setFlow</c> operation are the misspellings the ENG-95244 stand probe
 /// measured (the operation used to answer "1 operation(s) applied" and change nothing); <c>tpye</c> is the parameter
-/// case of the package's own unit tests.</para>
+/// case of the package's own unit tests. Every process a test builds is deleted in <c>finally</c>; a test whose
+/// refusal held built none.</para>
 /// </remarks>
 [TestFixture]
 [AllureNUnit]
@@ -46,7 +51,7 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	private const string ModifyToolName = "modify-business-process";
 	private const string AsNewVersionToolName = "modify-business-process-as-new-version";
 	private const string DescribeToolName = "describe-business-process";
-	private const string MinimumPackageVersion = "1.6.6.128";
+	private const string MinimumPackageVersion = "1.6.6.132";
 	private const string Subject = "unknown request keys";
 	private const string Refused = "The request was refused and nothing was saved";
 
@@ -60,25 +65,60 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
 		string processName = $"UsrClioBpUnknownKeyE2e{Guid.NewGuid():N}";
 
-		// Act
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
-			await CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["descriptor"] = TwoElementDescriptor(processName, "lable")
-			}));
+		try {
+			// Act
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
+				await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["descriptor"] = TwoElementDescriptor(processName, "lable")
+				}));
 
-		// Assert
-		string output = OutputOf(execution);
-		execution.ExitCode.Should().Be(1, because: "the server refuses a request with an undeclared key");
-		output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
-		output.Should().Contain("flows[0].lable - did you mean 'label'?",
-			because: "the refusal names the path and the key that was meant");
-		JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
-			because: "a refused build creates no process at all");
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(1, because: "the server refuses a request with an undeclared key");
+			output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
+			output.Should().Contain("flows[0].lable - did you mean 'label'?",
+				because: "the refusal names the path and the key that was meant");
+			JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
+				because: "a refused build creates no process at all");
+		} finally {
+			await DeleteIfBuiltAsync(context, processName);
+		}
 	}
 
 	[Test]
-	[Description("The CONTROL for the test above: the same descriptor with the correctly spelled 'label' builds, so the refusal is about the key and not about the descriptor.")]
+	[Description("Over the real MCP path, a create descriptor whose process parameter carries a decoded binding (sourceElement + sourceElementParameter, what describe reports) is refused by CrtProcessBuilder with the pointer to a mapping on targetProcessParameter - a field a write takes elsewhere is refused when it carries a value, not saved without it - and no process is created.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process is refused for a parameter binding sent where a write does not take it")]
+	public async Task CreateBusinessProcess_Should_BeRefusedWithAPointer_WhenAParameterCarriesABinding() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context =
+			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
+		string processName = $"UsrClioBpUnknownKeyBindE2e{Guid.NewGuid():N}";
+
+		try {
+			// Act
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
+				await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["descriptor"] = BoundParameterDescriptor(processName)
+				}));
+
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(1, because: "the binding would be dropped from the saved parameter");
+			output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
+			output.Should().Contain("targetProcessParameter",
+				because: "the refusal says the binding is written as a mapping on the parameter");
+			JsonSerializer.Serialize(await DescribeAsync(context, processName)).Should().Contain("was not found",
+				because: "a refused build creates no process at all");
+		} finally {
+			await DeleteIfBuiltAsync(context, processName);
+		}
+	}
+
+	[Test]
+	[Description("The CONTROL for the tests above: the same descriptor with the correctly spelled 'label' builds, so the refusal is about the key and not about the descriptor.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process builds a descriptor whose keys are all declared")]
 	public async Task CreateBusinessProcess_Should_Build_WhenEveryKeyIsDeclared() {
@@ -87,18 +127,22 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
 		string processName = $"UsrClioBpUnknownKeyOkE2e{Guid.NewGuid():N}";
 
-		// Act
-		CommandExecutionEnvelope execution = await CreateAsync(context, processName, "label");
+		try {
+			// Act
+			CommandExecutionEnvelope execution = await CreateAsync(context, processName, "label");
 
-		// Assert
-		string output = OutputOf(execution);
-		execution.ExitCode.Should().Be(0, because: "a descriptor of declared keys is an ordinary build");
-		output.Should().Contain("created (UId:", because: "the build reports the schema it created");
-		output.Should().NotContain(Refused, because: "a declared key must never be refused");
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(0, because: "a descriptor of declared keys is an ordinary build");
+			output.Should().Contain("created (UId:", because: "the build reports the schema it created");
+			output.Should().NotContain(Refused, because: "a declared key must never be refused");
+		} finally {
+			await DeleteIfBuiltAsync(context, processName);
+		}
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a setFlow operation carrying 'lable' - measured to answer '1 operation(s) applied' and change nothing - is refused naming operations[0].lable, and the flow keeps its label.")]
+	[Description("Over the real MCP path, a setFlow operation carrying 'lable' - measured to answer '1 operation(s) applied' and change nothing - is refused naming operations[0].lable, and the WHOLE request is refused: the valid addParameter sent beside it does not land either, and the flow keeps its label.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process is refused for an undeclared operation key and changes nothing")]
 	public async Task ModifyBusinessProcess_Should_BeRefused_WhenAnOperationCarriesAnUndeclaredKey() {
@@ -109,27 +153,33 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		(await CreateAsync(context, processName, "label")).ExitCode.Should().Be(0,
 			because: "the process to modify must exist");
 
-		// Act
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
-			await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName,
-				["operations"] = """[{"op":"setFlow","source":"Start1","target":"End1","kind":"sequence","lable":"Renamed"}]"""
-			}));
+		try {
+			// Act
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
+				await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["operations"] = """[{"op":"setFlow","source":"Start1","target":"End1","kind":"sequence","lable":"Renamed"},{"op":"addParameter","parameter":{"name":"Amount","type":"Integer"}}]"""
+				}));
 
-		// Assert
-		string output = OutputOf(execution);
-		execution.ExitCode.Should().Be(1, because: "the server refuses an operation with an undeclared key");
-		output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
-		output.Should().Contain("operations[0].lable - did you mean 'label'?",
-			because: "the refusal names the operation key and the key that was meant");
-		JsonObject graph = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
-		graph["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Go",
-			because: "a refused edit leaves the flow label as it was");
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(1, because: "the server refuses an operation with an undeclared key");
+			output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
+			output.Should().Contain("operations[0].lable - did you mean 'label'?",
+				because: "the refusal names the operation key and the key that was meant");
+			JsonObject graph = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
+			graph["flows"]![0]!["label"]!.GetValue<string>().Should().Be("Go",
+				because: "a refused edit leaves the flow label as it was");
+			graph.ToJsonString().Should().NotContain("\"Amount\"",
+				because: "the valid operation sent with the refused one was not applied: the WHOLE request was refused");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
 	}
 
 	[Test]
-	[Description("Over the real MCP path, a Read data block copied verbatim from describe into a setElement elementUpdate is SAVED: the server ignores its read-only fields and names them in the 'Read-only fields copied from describe were ignored' warning, and nothing is refused or listed as a typo.")]
+	[Description("Over the real MCP path, a Read data block copied verbatim from describe into a setElement elementUpdate is SAVED: the server ignores its read-only fields and names them, sourceSchemaUId among them, in the 'Read-only fields copied from describe were ignored' warning, and nothing is refused or listed as a typo.")]
 	[AllureTag(ModifyToolName)]
 	[AllureTag(DescribeToolName)]
 	[AllureName("modify-business-process saves a described block fed back verbatim and names its ignored read-only fields")]
@@ -138,40 +188,45 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		await using ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion);
 		string processName = $"UsrClioBpUnknownKeyEchoE2e{Guid.NewGuid():N}";
-		McpCommandExecutionParser.Extract(await CallToolAsync(context, CreateToolName,
+		McpCommandExecutionParser.Extract(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = ReadDataDescriptor(processName)
 			})).ExitCode.Should().Be(0, because: "the process to modify must exist");
-		JsonObject described = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
-		JsonNode? readData = ElementNamed(described, "Read1")["readData"];
-		readData.Should().NotBeNull(because: "describe reports the Read data block");
-		var operations = new JsonArray {
-			new JsonObject {
-				["op"] = "setElement",
-				["elementName"] = "Read1",
-				["elementUpdate"] = new JsonObject { ["readData"] = readData!.DeepClone() }
-			}
-		};
 
-		// Act
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
-			await CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName,
-				["operations"] = operations.ToJsonString()
-			}));
+		try {
+			JsonObject described = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
+			JsonNode? readData = ElementNamed(described, "Read1")["readData"];
+			readData.Should().NotBeNull(because: "describe reports the Read data block");
+			var operations = new JsonArray {
+				new JsonObject {
+					["op"] = "setElement",
+					["elementName"] = "Read1",
+					["elementUpdate"] = new JsonObject { ["readData"] = readData!.DeepClone() }
+				}
+			};
 
-		// Assert
-		string output = OutputOf(execution);
-		execution.ExitCode.Should().Be(0, because: "a describe read-back fed back as is keeps working");
-		output.Should().NotContain(Refused, because: "read-only fields are ignored, never refused");
-		output.Should().Contain("Read-only fields copied from describe were ignored",
-			because: "the fields describe added are named in a warning, not dropped in silence");
-		output.Should().Contain("operations[].elementUpdate.readData:",
-			because: "the read-only fields are named once per place, at the block they were sent in");
-		output.Should().NotMatchRegex(@"operations\[0\]\.\S+ - ",
-			because: "a verbatim describe echo holds no misspelled key, so no key may be listed one by one with a hint");
+			// Act
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
+				await ProcessDesignerE2EArrange.CallToolAsync(context, ModifyToolName, new Dictionary<string, object?> {
+					["environment-name"] = context.EnvironmentName,
+					["process-name"] = processName,
+					["operations"] = operations.ToJsonString()
+				}));
+
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(0, because: "a describe read-back fed back as is keeps working");
+			output.Should().NotContain(Refused, because: "read-only fields are ignored, never refused");
+			output.Should().Contain("Read-only fields copied from describe were ignored",
+				because: "the fields describe added are named in a warning, not dropped in silence");
+			output.Should().MatchRegex(@"operations\[\]\.elementUpdate\.readData: [^;]*\bsourceSchemaUId\b",
+				because: "the read-only fields are named once per place, the block's sourceSchemaUId among them");
+			output.Should().NotMatchRegex(@"operations\[0\]\.\S+ - ",
+				because: "a verbatim describe echo holds no misspelled key, so no key may be listed one by one with a hint");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
 	}
 
 	[Test]
@@ -186,24 +241,29 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		(await CreateAsync(context, processName, "label")).ExitCode.Should().Be(0,
 			because: "the source process must exist");
 
-		// Act
-		CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
-			await CallToolAsync(context, AsNewVersionToolName, new Dictionary<string, object?> {
-				["environment-name"] = context.EnvironmentName,
-				["process-name"] = processName,
-				["operations"] = """[{"op":"addParameter","parameter":{"name":"Amount","tpye":"Integer"}}]"""
-			}));
+		try {
+			// Act
+			CommandExecutionEnvelope execution = McpCommandExecutionParser.Extract(
+				await ProcessDesignerE2EArrange.CallToolAsync(context, AsNewVersionToolName,
+					new Dictionary<string, object?> {
+						["environment-name"] = context.EnvironmentName,
+						["process-name"] = processName,
+						["operations"] = """[{"op":"addParameter","parameter":{"name":"Amount","tpye":"Integer"}}]"""
+					}));
 
-		// Assert
-		string output = OutputOf(execution);
-		execution.ExitCode.Should().Be(1, because: "the server refuses an operation with an undeclared key");
-		output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
-		output.Should().Contain("operations[0].parameter.tpye - did you mean 'type'?",
-			because: "the refusal names the parameter key and the key that was meant");
-		JsonObject graph = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
-		JsonArray versions = graph["versions"].Should().BeOfType<JsonArray>(
-			because: "describe reports the version family of the process").Subject;
-		versions.Count.Should().Be(1, because: "no version was persisted, so the family still holds only the source");
+			// Assert
+			string output = OutputOf(execution);
+			execution.ExitCode.Should().Be(1, because: "the server refuses an operation with an undeclared key");
+			output.Should().Contain(Refused, because: "the caller must learn that nothing happened");
+			output.Should().Contain("operations[0].parameter.tpye - did you mean 'type'?",
+				because: "the refusal names the parameter key and the key that was meant");
+			JsonObject graph = DescribedProcessGraph.Read(await DescribeAsync(context, processName));
+			JsonArray versions = graph["versions"].Should().BeOfType<JsonArray>(
+				because: "describe reports the version family of the process").Subject;
+			versions.Count.Should().Be(1, because: "no version was persisted, so the family still holds only the source");
+		} finally {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
 	}
 
 	private static JsonObject ElementNamed(JsonObject graph, string name) {
@@ -220,6 +280,27 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 		  "name": "{{processName}}",
 		  "caption": "Clio unknown keys echo E2E",
 		  "packageName": "Custom",
+		  "elements": [
+		    { "name": "Start1", "type": "startEvent" },
+		    { "name": "Read1", "type": "readData", "readData": { "source": "Contact", "mode": "first" } },
+		    { "name": "End1", "type": "endEvent" }
+		  ],
+		  "flows": [
+		    { "source": "Start1", "target": "Read1" },
+		    { "source": "Read1", "target": "End1" }
+		  ]
+		}
+		""";
+
+	private static string BoundParameterDescriptor(string processName) =>
+		$$"""
+		{
+		  "name": "{{processName}}",
+		  "caption": "Clio unknown keys binding E2E",
+		  "packageName": "Custom",
+		  "parameters": [
+		    { "name": "RecordName", "type": "Text", "sourceElement": "Read1", "sourceElementParameter": "Name" }
+		  ],
 		  "elements": [
 		    { "name": "Start1", "type": "startEvent" },
 		    { "name": "Read1", "type": "readData", "readData": { "source": "Contact", "mode": "first" } },
@@ -252,22 +333,24 @@ public sealed class ProcessRequestUnknownKeyE2ETests {
 	private static string OutputOf(CommandExecutionEnvelope execution) =>
 		string.Join("\n", (execution.Output ?? []).Select(message => message.Value));
 
+	// Only a regression leaves a refused build behind; skip the slow remote delete when the refusal held.
+	private static async Task DeleteIfBuiltAsync(ProcessDesignerArrangeContext context, string processName) {
+		if (!JsonSerializer.Serialize(await DescribeAsync(context, processName)).Contains("was not found")) {
+			await DeleteProcessAsync(context.EnvironmentName!, processName);
+		}
+	}
+
 	private static async Task<CommandExecutionEnvelope> CreateAsync(ProcessDesignerArrangeContext context,
 			string processName, string labelKey) =>
-		McpCommandExecutionParser.Extract(await CallToolAsync(context, CreateToolName,
+		McpCommandExecutionParser.Extract(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = TwoElementDescriptor(processName, labelKey)
 			}));
 
 	private static Task<CallToolResult> DescribeAsync(ProcessDesignerArrangeContext context, string processName) =>
-		CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
+		ProcessDesignerE2EArrange.CallToolAsync(context, DescribeToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName
 		});
-
-	private static async Task<CallToolResult> CallToolAsync(ProcessDesignerArrangeContext context, string toolName,
-			Dictionary<string, object?> args) =>
-		await context.Session.CallToolAsync(toolName, new Dictionary<string, object?> { ["args"] = args },
-			context.CancellationTokenSource.Token);
 }
