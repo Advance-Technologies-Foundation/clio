@@ -1,3 +1,5 @@
+using System;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
 using Clio.Theming;
@@ -37,6 +39,10 @@ public sealed record ThemeBackground
 				? null
 				: TextUtilities.SanitizeForDisplay(background.Color.Trim(), MaxColorLength)
 		};
+	}
+
+	internal static string UpdateRequest(string themeId, ThemeBackground background) {
+		return JsonSerializer.Serialize(new { id = Guid.Parse(themeId).ToString(), background });
 	}
 
 	internal string Describe() {

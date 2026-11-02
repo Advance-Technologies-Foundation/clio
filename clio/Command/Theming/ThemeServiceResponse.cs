@@ -102,6 +102,14 @@ internal static class ThemeServiceResponseParser
 	/// <param name="operation">The ThemeService operation name (e.g. <c>CreateTheme</c>) used to prefix the message.</param>
 	/// <param name="serverMessage">The server-provided failure message, if any.</param>
 	/// <returns>A single diagnostic line describing the failure.</returns>
+	internal static bool TryGetWriteFailure(string response, out string errorMessage) {
+		if (TryGetFailure(response, out errorMessage, out ThemeServiceResponse payload)) {
+			return true;
+		}
+		errorMessage = payload?.Success == true ? null : "the response did not confirm success.";
+		return errorMessage is not null;
+	}
+
 	public static string DescribeFailure(string operation, string serverMessage) {
 		return string.IsNullOrWhiteSpace(serverMessage)
 			? $"{operation} returned success=false. Check the Creatio application logs for details."

@@ -1,0 +1,28 @@
+COMMAND TYPE
+    Branding commands
+
+NAME
+    remove-background - remove the background of a custom Creatio theme
+
+DESCRIPTION
+    Removes a custom theme's own background, so its users see the site
+    background again. Requires Creatio 10.2.96 or later.
+
+SYNOPSIS
+    clio remove-background --theme <theme-id> -e <environment>
+
+OPTIONS
+    --theme                         Id (a GUID) of the custom theme whose background to remove (required)
+
+    --uri               -u          Application uri
+
+    --Password          -p          User password
+
+    --Login             -l          User login (administrator permission required)
+
+    --Environment       -e          Environment name
+
+    --Maintainer        -m          Maintainer name
+
+REPORTING BUGS
+    https://github.com/Advance-Technologies-Foundation/clio

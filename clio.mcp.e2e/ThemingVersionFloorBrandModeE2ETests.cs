@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.Branding;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -244,5 +245,30 @@ public sealed class ThemingVersionFloorBrandModeE2ETests : McpContractFixtureBas
 			await context.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
 			context.Response.Close();
 		}
+	}
+
+	[Test]
+	[AllureTag(SetBackgroundImageTool.ToolName)]
+	[AllureName("set-background-image with a theme refuses a pre-10 environment with the theme-background floor")]
+	[Description("Calls set-background-image with a theme against the registered pre-10 loopback stub and verifies the structured failure carries version-too-old and the theme-background floor, before any theme read or upload.")]
+	public async Task SetBackgroundImage_Should_RefuseWithBackgroundFloor_WhenThemeTargetsOlderEnvironment() {
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetBackgroundImageTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = EnvironmentName,
+					["image-id"] = "0b8f5c43-6f0e-4b84-9a52-0f1d2c3e4a5b",
+					["theme"] = "4ecdda0a-3f24-4d5c-9647-46b6d4fe0a51"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		SetBackgroundImageResult result = EntitySchemaStructuredResultParser.Extract<SetBackgroundImageResult>(callResult);
+
+		result.Error.Should().Contain(CreatioVersionRequirementException.VersionTooOldCode,
+			because: "the stable version-too-old code must travel in the message");
+		result.Error.Should().Contain($"requires Creatio {ThemeServiceRequirement.BackgroundMinVersion} or later",
+			because: "the theme argument must raise the floor to the theme-background build");
 	}
 }

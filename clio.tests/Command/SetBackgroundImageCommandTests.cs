@@ -942,4 +942,50 @@ public sealed class SetBackgroundImageCommandTests : BaseCommandTests<SetBackgro
 		// Assert
 		_packageDataBinder.Received(1).BindFeatureOffState("UsePanelIconBackground");
 	}
+
+	private const string ThemeId = "fb73e945-fe28-4834-838b-3986693c1a3d";
+
+	private SetBackgroundResult SetThemeBackground(string updateThemeResponse) {
+		ArrangeImageExists();
+		ArrangeGalleryState(alreadyRegistered: true);
+		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.UpdateTheme).Returns("UpdateTheme");
+		_applicationClient.ExecutePostRequest("UpdateTheme", Arg.Any<string>()).Returns(updateThemeResponse);
+		return _command.SetBackground(new SetBackgroundImageOptions { ImageId = ImageId.ToString(), Theme = ThemeId });
+	}
+
+	[Test, Category("Unit")]
+	[Description("Writes the image into the theme through UpdateTheme with only the theme id and the background, binds it under the theme's own folders, and leaves the site configuration unwritten and unbound.")]
+	public void SetBackground_ShouldUpdateThemeInsteadOfSiteConfig_WhenThemeIsPassed() {
+		SetBackgroundResult result = SetThemeBackground("{\"success\":true}");
+
+		_applicationClient.Received(1).ExecutePostRequest("UpdateTheme",
+			"{\"id\":\"" + ThemeId + "\",\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}}");
+		_sysSettingsManager.DidNotReceiveWithAnyArgs().UpdateSysSetting(default, default);
+		_packageDataBinder.Received(1).BindRow("SysImage", "ThemeBackground_" + Guid.Parse(ThemeId).ToString("N"),
+			Arg.Any<System.Collections.Generic.IReadOnlyList<string>>(), ImageId);
+		result.Bound.Should().Equal(["image", "gallery-membership", "panel-icon-off-state"],
+			because: "the theme carries the image in its own folders, while the site configuration stays as it was");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Stops after an UpdateTheme response that does not confirm success, so the panel icon feature and the package stay untouched.")]
+	public void SetBackground_ShouldStopBeforeFeatureAndBindings_WhenUpdateThemeIsNotConfirmed() {
+		SetBackgroundResult result = SetThemeBackground("{\"Message\":\"An error has occurred.\"}");
+
+		result.Error.Should().StartWith("The image is in the background gallery, but UpdateTheme failed",
+			because: "a theme write the server did not confirm is not a success");
+		_featureState.DidNotReceiveWithAnyArgs().SetFeatureState(default, default, default);
+	}
+
+	[TestCase("")]
+	[TestCase("  ")]
+	[Category("Unit")]
+	[Description("Refuses a blank theme before any upload or write, so an unset theme id never changes the site background for everyone.")]
+	public void SetBackground_ShouldFailBeforeAnyRequest_WhenThemeIsBlank(string theme) {
+		SetBackgroundResult result = _command.SetBackground(
+			new SetBackgroundImageOptions { ImageId = ImageId.ToString(), Theme = theme });
+
+		result.Error.Should().Be("Theme id is required.", because: "a present but empty theme is a mistake, not a site run");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+	}
 }

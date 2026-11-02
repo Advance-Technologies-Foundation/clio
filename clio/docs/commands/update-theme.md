@@ -18,6 +18,8 @@ This is a **full overwrite**: `--caption`, `--css-class-name`, and the theme CSS
 required. Requires Creatio 10.0.0 or later on the target environment, the
 `CanCustomizeBranding` license, and the `CanManageThemes` system operation.
 
+The theme's background is kept as stored.
+
 Provide the CSS through exactly one of `--css-content` (inline) or `--css-content-file`
 (a UTF-8 file, up to 1 MiB).
 

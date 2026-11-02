@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Allure.NUnit;
 using Allure.NUnit.Attributes;
+using Clio.Command.Branding;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Mcp;
 using Clio.Mcp.E2E.Support.Results;
@@ -183,5 +184,29 @@ public sealed class SetBackgroundImageToolE2ETests : McpContractFixtureBase {
 			because: "package names where the data that landed went, so a run that bound nothing must omit the field over the wire instead of pointing the agent at a package it never touched");
 		result.Bound.Should().BeNull(
 			because: "bound is the field an agent reads to tell what the package now carries, so a run that bound nothing must omit it over the wire instead of emitting an empty array the agent has to special-case");
+	}
+
+	[Test]
+	[AllureTag(SetBackgroundImageTool.ToolName)]
+	[AllureName("set-background-image returns a rename hint for a camelCase themeId over the wire")]
+	[Description("Calls set-background-image with a camelCase themeId field and verifies the structured rename hint names theme, so a theme-targeted call never silently changes the site background instead.")]
+	public async Task SetBackgroundImage_Should_Return_RenameHint_When_ThemeId_Is_CamelCase() {
+		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));
+
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			SetBackgroundImageTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["environment-name"] = "docker_fix2",
+					["image-id"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+					["themeId"] = "4ecdda0a-3f24-4d5c-9647-46b6d4fe0a51"
+				}
+			},
+			context.CancellationTokenSource.Token);
+		SetBackgroundImageResult result =
+			EntitySchemaStructuredResultParser.Extract<SetBackgroundImageResult>(callResult);
+
+		result.Error.Should().Contain("'themeId' -> 'theme'",
+			because: "a dropped theme would change the background of every user instead of one theme");
 	}
 }

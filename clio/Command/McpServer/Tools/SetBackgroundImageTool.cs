@@ -5,6 +5,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Command.Branding;
+using Clio.Command.Theming;
 using Clio.Common;
 using ModelContextProtocol.Server;
 
@@ -30,7 +31,10 @@ public class SetBackgroundImageTool(
 			["package_name"] = "package",
 			["package-name"] = "package",
 			["keepIconBackground"] = "keep-icon-background",
-			["keep_icon_background"] = "keep-icon-background"
+			["keep_icon_background"] = "keep-icon-background",
+			["themeId"] = "theme",
+			["theme-id"] = "theme",
+			["theme_id"] = "theme"
 		};
 
 	/// <summary>Sets the image as the shell background, binds it into the package, and returns a structured result.</summary>
@@ -48,16 +52,18 @@ public class SetBackgroundImageTool(
 		"The background changes for all users after a page refresh, replacing the currently configured " +
 		"one; the panel's own icon background is turned off so the new background is actually visible, " +
 		"unless keep-icon-background is true. When package is omitted, the environment's CurrentPackageId " +
-		"system setting decides where the bindings land. Returns { success, image-id, bound?, package, " +
+		"system setting decides where the bindings land. With theme (a theme id from list-themes, Creatio " +
+		ThemeServiceRequirement.BackgroundMinVersion + " or later) the image becomes that theme's background " +
+		"instead of the site's. Returns { success, image-id, bound?, package, " +
 		"warnings?, error? } — bound names the parts that reached the package (absent when none did, which " +
 		"can happen even on a successful apply); relay the warnings, they are the only place a delivery gap " +
 		"is reported. For the full branding flow (logos, background), read get-guidance branding first.")]
 	public SetBackgroundImageResult SetBackgroundImage(
-		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); package (optional, the environment's CurrentPackageId when omitted); keep-icon-background (optional bool).")]
+		[Description("Parameters: environment-name (required); exactly one of file (local image path) or image-id (id returned by upload-image); theme (optional theme id); package (optional, the environment's CurrentPackageId when omitted); keep-icon-background (optional bool).")]
 		[Required] SetBackgroundImageArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, file, image-id, package, keep-icon-background.");
+			"Valid: environment-name, file, image-id, theme, package, keep-icon-background.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return SetBackgroundImageResult.Failure(aliasError);
 		}
@@ -77,7 +83,8 @@ public class SetBackgroundImageTool(
 			ImageId = args.ImageId,
 			File = args.File,
 			PackageName = args.Package,
-			KeepIconBackground = args.KeepIconBackground ?? false
+			KeepIconBackground = args.KeepIconBackground ?? false,
+			Theme = args.Theme
 		};
 		return Execute(options);
 	}
@@ -120,7 +127,11 @@ public sealed record SetBackgroundImageArgs(
 
 	[property: JsonPropertyName("keep-icon-background")]
 	[property: Description("When true, leaves the panel's own icon background in place instead of turning it off (the UsePanelIconBackground feature). While it is on it can cover the shell background, so the new background may not be visible.")]
-	bool? KeepIconBackground = null
+	bool? KeepIconBackground = null,
+
+	[property: JsonPropertyName("theme")]
+	[property: Description("Id (a GUID) of a custom theme (see list-themes) to give the image to instead of the whole site. Requires Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
+	string? Theme = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]

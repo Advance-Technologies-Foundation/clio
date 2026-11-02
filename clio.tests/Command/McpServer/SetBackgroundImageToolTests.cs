@@ -436,4 +436,22 @@ public class SetBackgroundImageToolTests {
 			return _result;
 		}
 	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Forwards the theme argument into the command options, so a theme-targeted call never changes the site background instead.")]
+	public void SetBackgroundImage_ShouldForwardTheme_WhenThemeIsPassed() {
+		FakeSetBackgroundImageCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<SetBackgroundImageCommand>(Arg.Any<SetBackgroundImageOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		SetBackgroundImageTool tool = new(new FakeSetBackgroundImageCommand(), ConsoleLogger.Instance, commandResolver);
+
+		tool.SetBackgroundImage(new SetBackgroundImageArgs(EnvironmentName: "dev", ImageId: ImageId.ToString(),
+			Theme: "fb73e945-fe28-4834-838b-3986693c1a3d"));
+
+		resolvedCommand.CapturedOptions.Theme.Should().Be("fb73e945-fe28-4834-838b-3986693c1a3d",
+			because: "the theme decides whether the site or the theme background changes");
+	}
 }

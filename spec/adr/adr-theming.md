@@ -456,6 +456,19 @@ so `[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]` (10.0.0) appli
 added to the uniform-floor `ThemingVersionFloorContractE2ETests` gate. Long-tail on the MCP surface (no
 `McpCoreToolProfile` membership), no compatibility-catalog entry (new tool, not a rename).
 
+### Area F — Theme background (ENG-99181, added 2026-10-30)
+
+A theme can declare its own background (core ENG-94433, merge `07c5e28f924`), which overrides the site
+background (`CrtBackgroundConfig`) for its users. The branding commands write it, not the theme commands.
+
+| # | Decision |
+| --- | --- |
+| F-D1 | Read: `get-theme` and `list-themes` return `background`, absent when none. |
+| F-D2 | Write: `set-background-image --theme <id>` runs the site pipeline but replaces the `CrtBackgroundConfig` write with `UpdateTheme { id, background }`, unbound. `remove-background` sends `background: {}`. |
+| F-D3 | Floor `10.2.96`: class level on `remove-background`, on `set-background-image` only with `--theme` (`TargetsTheme`). |
+| F-D4 | The write is not read back: a ThemeService that predates theme backgrounds refuses an `UpdateTheme` carrying only `{ id, background }`. Only an explicit `success:true` counts, before any follow-up write. |
+| F-D5 | A theme image and its gallery membership are bound into `--package` or `CurrentPackageId` under their own folders (`..._ThemeBackground_<theme id N>`), so a theme run never replaces the site background's bindings. |
+
 ---
 
 ## Rejected / superseded alternatives
@@ -509,6 +522,10 @@ calibration at hex boundaries (banker's rounding / last-ULP) — port operator-f
 
 **Granular per-function advisor tools / batch planner (rejected).** Round-trip cost / intake inversion
 (D-D1) — one fat verdict-returning tool instead.
+
+**Background options on `create-theme` (rejected).** They made a theme-creation call turn off the
+environment-wide `UsePanelIconBackground` feature; the branding flow sets the background after the theme
+exists (F-D2).
 
 ---
 

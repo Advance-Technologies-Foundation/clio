@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Text.Json;
 using Clio.Command.McpServer.Tools;
+using Clio.Command.Theming;
 using Clio.Common;
+using Clio.Theming;
 using CommandLine;
 
 namespace Clio.Command.Branding;
@@ -11,7 +13,7 @@ namespace Clio.Command.Branding;
 /// Options for the <c>set-background-image</c> command.
 /// </summary>
 [Verb("set-background-image",
-	HelpText = "Set an image as the environment's shell background and bind it into a package as data bindings")]
+	HelpText = "Set an image as the environment's shell background, or a custom theme's background, and bind it into a package as data bindings")]
 public class SetBackgroundImageOptions : RemoteCommandOptions {
 
 	/// <summary>
@@ -43,6 +45,16 @@ public class SetBackgroundImageOptions : RemoteCommandOptions {
 		HelpText = "Keep the panel icon background feature (UsePanelIconBackground) as is instead of turning " +
 			"it off. While the feature is on, the panel's own icon background can hide the shell background.")]
 	public bool KeepIconBackground { get; set; }
+
+	[Option("theme", Required = false,
+		HelpText = "Id (a GUID) of a custom theme to give the image to instead of the whole site. Requires " +
+			"Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
+	public string Theme { get; set; }
+
+	[RequiresCreatioVersion(ThemeServiceRequirement.BackgroundMinVersion,
+		Hint = "Theme backgrounds need Creatio " + ThemeServiceRequirement.BackgroundMinVersion +
+			" or later; set the site background (without --theme) on this environment.")]
+	public bool TargetsTheme => Theme is not null;
 }
 
 /// <summary>
@@ -165,11 +177,24 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// <param name="options">Command options carrying the image source and connection settings.</param>
 	/// <returns>The outcome, carrying the applied image id or a failure message.</returns>
 	public virtual SetBackgroundResult SetBackground(SetBackgroundImageOptions options) {
+		if (options.TargetsTheme && !ThemeParameterValidator.TryValidateId(options.Theme, out string themeError)) {
+			return SetBackgroundResult.Failure(themeError);
+		}
 		if (!TryResolveOrUploadImageId(options, out Guid imageId, out string sourceError)) {
 			return SetBackgroundResult.Failure(sourceError);
 		}
 		if (!TryEnsureInBackgroundGallery(imageId, out GalleryMembership membership, out string galleryError)) {
 			return SetBackgroundResult.Failure(galleryError);
+		}
+		if (options.TargetsTheme) {
+			string response = ApplicationClient.ExecutePostRequest(
+				_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.UpdateTheme),
+				ThemeBackground.UpdateRequest(options.Theme,
+					new ThemeBackground { Mode = ThemeBackground.ImageMode, ImageId = imageId.ToString() }));
+			if (ThemeServiceResponseParser.TryGetWriteFailure(response, out string failure)) {
+				return SetBackgroundResult.Failure("The image is in the background gallery, but " +
+					ThemeServiceResponseParser.DescribeFailure("UpdateTheme", failure));
+			}
 		}
 		string configJson = JsonSerializer.Serialize(new { imageId = imageId.ToString(), mode = "Image" });
 		//Issue #1378: the setting write no longer reports an unusable acknowledgement as `false` - a
@@ -180,7 +205,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		//locally composed prose with the server excerpt kept on ServerDetail (issue #1333).
 		bool configWritten;
 		try {
-			configWritten = _sysSettingsManager.UpdateSysSetting(BackgroundConfigCode, configJson);
+			configWritten = options.TargetsTheme || _sysSettingsManager.UpdateSysSetting(BackgroundConfigCode, configJson);
 		} catch (NonJsonWriteResponseException nonJsonEx) {
 			return SetBackgroundResult.Failure(
 				$"The image is in the background gallery, but writing the {BackgroundConfigCode} setting "
@@ -197,15 +222,20 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		} else {
 			DisablePanelIconBackground(warnings);
 		}
-		return BindBackground(imageId, membership, options.PackageName, warnings);
+		string bindingSuffix = options.TargetsTheme
+			? "ThemeBackground_" + Guid.Parse(options.Theme).ToString("N")
+			: ShellBackgroundBindingSuffix;
+		return BindBackground(imageId, membership, options.PackageName, bindingSuffix, warnings);
 	}
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(SetBackgroundImageOptions options) {
 		SetBackgroundResult result = SetBackground(options);
 		if (result.Success) {
-			Logger.WriteInfo($"Image {result.ImageId} is set as the shell background. " +
-				"Users see it after a page refresh.");
+			Logger.WriteInfo(options.TargetsTheme
+				? $"Image {result.ImageId} is set as the background of theme '{options.Theme}'. Users of the " +
+					"theme see it after a page refresh."
+				: $"Image {result.ImageId} is set as the shell background. Users see it after a page refresh.");
 			Logger.WriteInfo(result.Bound.Count > 0
 				? $"Background data bound into package '{result.Package}': {string.Join(", ", result.Bound)}."
 				: $"No background data could be bound into package '{result.Package}'; the warnings name the " +
@@ -219,12 +249,12 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	}
 
 	private SetBackgroundResult BindBackground(
-		Guid imageId, GalleryMembership membership, string packageName, List<string> warnings) {
+		Guid imageId, GalleryMembership membership, string packageName, string bindingSuffix, List<string> warnings) {
 		string package = null;
 		List<string> bound = [];
 		try {
 			package = _packageDataBinder.UsePackage(packageName);
-			CreateBackgroundDataBindings(imageId, membership, bound, warnings);
+			CreateBackgroundDataBindings(imageId, membership, bindingSuffix, bound, warnings);
 			return SetBackgroundResult.Successful(imageId, package, warnings, bound);
 		} catch (Exception exception) {
 			string into = package is null ? string.Empty : $" into package '{package}'";
@@ -238,16 +268,18 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	}
 
 	private void CreateBackgroundDataBindings(
-		Guid imageId, GalleryMembership membership, List<string> bound, List<string> warnings) {
+		Guid imageId, GalleryMembership membership, string bindingSuffix, List<string> bound, List<string> warnings) {
 		PackageDataBindingOutcome image = _packageDataBinder.BindRow(
-			SysImageSchema, ShellBackgroundBindingSuffix, SysImageColumns, imageId);
+			SysImageSchema, bindingSuffix, SysImageColumns, imageId);
 		RecordOutcome(image, "image", bound, warnings);
 
-		PackageDataBindingOutcome galleryMembership = BindGalleryMembership(image.Bound, membership);
+		PackageDataBindingOutcome galleryMembership = BindGalleryMembership(image.Bound, membership, bindingSuffix);
 		RecordOutcome(galleryMembership, "gallery-membership", bound, warnings);
 
-		PackageDataBindingOutcome config = BindBackgroundConfig(image.Bound);
-		RecordOutcome(config, "background-config", bound, warnings);
+		if (bindingSuffix == ShellBackgroundBindingSuffix) {
+			PackageDataBindingOutcome config = BindBackgroundConfig(image.Bound);
+			RecordOutcome(config, "background-config", bound, warnings);
+		}
 
 		PackageDataBindingOutcome featureOffState =
 			_packageDataBinder.BindFeatureOffState(PanelIconBackgroundFeatureCode);
@@ -275,8 +307,9 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		}
 	}
 
-	private PackageDataBindingOutcome BindGalleryMembership(bool imageBound, GalleryMembership membership) {
-		string galleryFolderName = PackageDataBindingNames.For(SysImageInTagSchema, ShellBackgroundBindingSuffix);
+	private PackageDataBindingOutcome BindGalleryMembership(bool imageBound, GalleryMembership membership,
+		string bindingSuffix) {
+		string galleryFolderName = PackageDataBindingNames.For(SysImageInTagSchema, bindingSuffix);
 		if (!imageBound) {
 			IReadOnlyList<string> droppedWithImage =
 				_packageDataBinder.RemoveBinding(galleryFolderName, SysImageInTagSchema);
@@ -298,7 +331,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			]);
 		}
 		return _packageDataBinder.BindRow(
-			SysImageInTagSchema, ShellBackgroundBindingSuffix, SysImageInTagColumns, membership.RowId);
+			SysImageInTagSchema, bindingSuffix, SysImageInTagColumns, membership.RowId);
 	}
 
 	private void DisablePanelIconBackground(List<string> warnings) {

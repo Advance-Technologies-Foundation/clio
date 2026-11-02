@@ -91,6 +91,7 @@ set-user-theme:set-user-theme,apply-user-theme
 upload-file:upload-file
 upload-image:upload-image
 set-background-image:set-background-image
+remove-background:remove-background
 set-logo:set-logo
 get-build-info:get-build-info,bi,buildinfo
 get-classic-page-sources:get-classic-page-sources,classic-page-sources,get-classic-migration-bundle,classic-migration-bundle

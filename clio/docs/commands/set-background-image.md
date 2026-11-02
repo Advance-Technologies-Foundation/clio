@@ -6,7 +6,7 @@
 
 ## Name
 
-set-background-image - set an image as the environment's shell background
+set-background-image - set an image as the environment's shell background or a custom theme's background
 
 ## Description
 
@@ -46,6 +46,10 @@ reported as a warning. The command still succeeds — a warning means the packag
 expected, not that the apply failed. When the binding itself fails, the error names both the cause and
 the parts that were already bound before the failure; those stay in the package.
 
+With `--theme <theme-id>` the image becomes that one theme's background instead of the site's (Creatio
+10.2.96 or later): `UpdateTheme` replaces the `CrtBackgroundConfig` write, and the image and its gallery
+membership are bound under the theme's own folders, without the background configuration.
+
 ## Synopsis
 
 ```bash
@@ -62,6 +66,8 @@ clio set-background-image [<image-id>] [options]
 --package                       Package that receives the background data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 
 --keep-icon-background          Keep the panel's own icon background instead of turning it off. By default the command turns it off, because it can cover the shell background and leave the new background invisible.
+
+--theme                         Id (a GUID) of a custom theme to give the image to instead of the whole site. Requires Creatio 10.2.96 or later.
 
 --uri               -u          Application uri
 

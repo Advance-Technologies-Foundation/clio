@@ -832,7 +832,8 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   advisories travel verbatim, because each is static text or a locally computed value — a font advisory
   carries only a family name the build already validated against the font-family grammar.
 - `update-theme`
-  Full overwrite of an existing theme by id (caption, CSS class name, CSS content).
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content). The stored background is
+  kept.
 - `delete-theme`
   Delete a theme by id; deleting an unknown id is an error.
 - `list-themes`
@@ -884,6 +885,10 @@ take a single `args` object with kebab-case fields.
   Idempotent — re-applying the same image converges to the same state and refreshes the packaged
   snapshot. The `warnings` entries on the result are where delivery gaps (a `SecureText` setting, a
   customized gallery tag, a feature state that is not confirmed off) are surfaced.
+  With `theme` the image goes to that one theme instead of the site (Creatio 10.2.96+).
+- `remove-background`
+  Remove one theme's own background (`theme` required; Creatio 10.2.96+), so its users see the site
+  background again. A confirmed write (`Destructive=true`), idempotent.
 - `set-logo`
   Apply the product logos and the browser-tab favicon from local image files and bind them into a
   package. `logo` brands **every** slot from one file; a slot argument gives that slot its own file

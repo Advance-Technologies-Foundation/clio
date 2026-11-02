@@ -3,6 +3,7 @@ COMMAND TYPE
 
 NAME
     set-background-image - set an image as the environment's shell background
+    or a custom theme's background
 
 DESCRIPTION
     set-background-image makes an image the shell background of the target
@@ -42,6 +43,11 @@ DESCRIPTION
     package. Every part is written in place, so a later run refreshes what
     landed instead of duplicating it.
 
+    With --theme <theme-id> the image becomes that one theme's background
+    instead of the site's (Creatio 10.2.96 or later): UpdateTheme replaces
+    the CrtBackgroundConfig write, and the image and its gallery membership
+    are bound under the theme's own folders, without the configuration.
+
 SYNOPSIS
     clio set-background-image [<image-id>] [options]
 
@@ -53,6 +59,8 @@ OPTIONS
     --package                       Package that receives the background data bindings. When omitted, the package from the environment's CurrentPackageId system setting is used.
 
     --keep-icon-background          Keep the panel's own icon background instead of turning it off. By default the command turns it off. Pass this only when the panel icon background must stay.
+
+    --theme                         Id (a GUID) of a custom theme to give the image to instead of the whole site. Requires Creatio 10.2.96 or later.
 
     --uri               -u          Application uri
 
