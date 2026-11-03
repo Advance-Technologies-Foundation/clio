@@ -128,6 +128,42 @@ public class ObjectRightsReadBackVerifierTests {
 		}
 	}
 
+	private static IEnumerable<TestCaseData> LayoutReadBacks() {
+		ObjectRightsState before = State(true, Row(AllEmployees, 0, "RCED"), Row(Grantee, 1, "R"), Row(Other, 2, "R"));
+		ObjectRightsState moved = State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Other, 2, "R"));
+		yield return new TestCaseData(before, moved,
+				State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Other, 2, "RC")),
+				"[2] Other: read/create, the plan wrote read")
+			.SetName("Compare_ShouldFailTheCall_WhenARowTheMoveDidNotTouchReadsBackChanged");
+		yield return new TestCaseData(before, moved,
+				State(true, Row(Grantee, 0, "R"), Row(AllEmployees, 1, "RCED"), Row(Other, 2, "R"), Row(Other, 3, "R")),
+				"[3] Other: read is not in the plan")
+			.SetName("Compare_ShouldFailTheCall_WhenAMoveReadsBackARowThePlanDoesNotHave");
+		yield return new TestCaseData(State(false, Row(Grantee, 0, "R")), State(false),
+				State(false, Row(AllEmployees, 0, "RCED")), null)
+			.SetName("Compare_ShouldReportNothing_WhenRemovingTheLastRowOfAnObjectThatIsOffReadsBackTheSynthesizedRow");
+	}
+
+	[TestCaseSource(nameof(LayoutReadBacks))]
+	[Description("A move or a removal saves the whole row list, so any row that reads back differently fails the call — also a row the call did not move — while the row the service synthesizes for an object that is off with no stored rows is not a difference.")]
+	public void Compare_ShouldTreatEveryRowAsWritten_WhenThePlanRewritesAllRows(ObjectRightsState before,
+		ObjectRightsState planned, ObjectRightsState actual, string expectedCritical) {
+		// Arrange
+		ObjectRightsPlan plan = PlanOf(before, planned) with { RewritesAllRows = true };
+
+		// Act
+		ObjectRightsReadBackComparison comparison = _verifier.Compare(plan, Grantee, actual);
+
+		// Assert
+		if (expectedCritical is null) {
+			comparison.Critical.Should().BeEmpty(because: "the read-back shows the list the call saved");
+		} else {
+			comparison.Critical.Should().Equal(new[] { expectedCritical },
+				because: "the call saved the whole list, so every row is one it claims");
+		}
+		comparison.Differences.Should().BeEmpty(because: "after a whole-list save no difference is a mere fact");
+	}
+
 	[Test]
 	[Description("A missing plan or read-back is a caller bug, not an empty comparison.")]
 	public void Compare_ShouldThrow_WhenAnInputIsNull() {

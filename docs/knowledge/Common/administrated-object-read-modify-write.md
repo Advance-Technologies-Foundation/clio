@@ -1,5 +1,5 @@
 ---
-description: object operation rights are read/written via RightManagementService.svc GetAdministratedObject + SaveAdministratedObject - name->UId returns MULTIPLE SysSchema rows for a granted/extended schema and only the administrable one answers (the others fault with a non-JSON error page); the save is a read-modify-write that must change only the planned rows, found by grantee AND position, must null the rights collections it did not change, and must be sent ONCE (a new row has no id, so a transport retry of a committed save adds it twice)
+description: object operation rights are read/written via RightManagementService.svc GetAdministratedObject + SaveAdministratedObject - name->UId returns MULTIPLE SysSchema rows for a granted/extended schema and only the administrable one answers (the others fault with a non-JSON error page); the grant/revoke save is a read-modify-write that must change only the planned rows, found by grantee AND position (a move or removal instead sends the whole list - see object-operation-rows-save-replaces-the-list), must null the rights collections it did not change, and must be sent ONCE (a new row has no id, so a transport retry of a committed save adds it twice)
 applies-to:
   - clio/Command/ObjectRights/SetDefaultRecordRightsCommand.cs
   - clio/Common/ObjectRights/RightManagementServiceClient.cs
@@ -23,8 +23,12 @@ native `RightManagementService.svc` (`GetAdministratedObject`, `SaveAdministrate
 2. **The save is a read-modify-write with no per-right endpoint and no version.** You GET the whole object, change
    `entitySchemaOperationsRights` (rows carry `id`, `position`, `canRead`, `canAppend` (= Create), `canEdit`,
    `canDelete`, `sysAdminUnit`) and POST it back under `{"administratedObject": ...}`. One role can hold several rows,
-   so a planned row is matched to the row read by grantee AND position, and only the rows the plan changes or adds are
-   written; every other row is sent exactly as read.
+   so for a grant or revoke (`Save`) a planned row is matched to the row read by grantee AND position, and only the
+   rows the plan changes or adds are written; every other row is sent exactly as read. A move or a removal
+   (`SaveRowLayout`, ENG-104066) is different: the service replaces the whole row list, so it sends every planned row,
+   matched to a row read by grantee AND operations in read order, with only `position` rewritten, and leaves the
+   removed row out — see
+   [`object-operation-rows-save-replaces-the-list`](../platform/object-operation-rows-save-replaces-the-list.md).
 3. **The collections the save did NOT change are sent as `null`** — `entitySchemaRecordDefRights`,
    `entitySchemaColumnsRights`, `entityOperationGrantees` — as the Freedom "Object permissions" client does
    (`creatio-ui lib.studio-enterprise.administrated-object` strips unchanged collections before the save).

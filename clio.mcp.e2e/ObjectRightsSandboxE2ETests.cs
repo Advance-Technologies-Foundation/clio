@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Allure.Net.Commons;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -219,6 +220,118 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			because: "the enable adds or changes no row when an All employees row is stored");
 		enabledAgain.Success.Should().BeTrue(because: $"a re-run of a call that landed is safe. Error: {enabledAgain.Error}");
 		enabledAgain.Output.Should().Contain("(no change)", because: "the switch is already on");
+	}
+
+	[Test]
+	[Description("On a real stand: a preview of a move writes nothing and names the narrowing; a move above All employees lands and reads back first; a position past the last row is refused; a removal of the All external users row is previewed as a revoke of external access and then deletes the row; removing the last granting row is refused.")]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureTag(GetObjectRightsTool.ToolName)]
+	[AllureName("object-rights rows move and are removed on a real Creatio stand")]
+	[AllureDescription("Creates a disposable object, gives it rows for All employees, System administrators and All external users, previews and applies a move of the administrators' row above All employees, proves the out-of-range refusal, previews and applies the removal of the external row, and proves a removal that would leave no granting row is refused. The fixture package is deleted in teardown.")]
+	public async Task SetObjectRights_ShouldMoveAndRemoveRows_WhenRunOnARealStand() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
+			+ "concurrent test on the shared stand fail. Run this scenario by hand against a leased sandbox.");
+		// Arrange
+		const string administrators = "83a43ebc-f36b-1410-298d-001e8c82bcad";
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string schemaName = $"UsrOrLayout{Guid.NewGuid().ToString("N").Substring(0, 10)}";
+		Dictionary<string, object?> Call(string grantee, params (string Key, object Value)[] arguments) {
+			Dictionary<string, object?> args = new() {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity-schema-name"] = schemaName,
+				["grantee"] = grantee
+			};
+			foreach ((string key, object value) in arguments) {
+				args[key] = value;
+			}
+			return args;
+		}
+		Dictionary<string, object?> Read() => new() {
+			["environment-name"] = arrangeContext.EnvironmentName,
+			["entity-schema-name"] = schemaName
+		};
+		await AllureApi.Step("Arrange a disposable object with rows for All employees, administrators and All external users",
+			async () => {
+				CommandExecutionActResult created = await ActCommandAsync(arrangeContext, CreateEntitySchemaToolName,
+					new Dictionary<string, object?> {
+						["environment-name"] = arrangeContext.EnvironmentName,
+						["package-name"] = arrangeContext.PackageName,
+						["schema-name"] = schemaName,
+						["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Object rights layout e2e" },
+						["columns"] = new[] { new Dictionary<string, object?> { ["column-name"] = "UsrName", ["type"] = "Text" } }
+					});
+				AssertCommandExitCode(created, 0, "the disposable object must exist before its rows are changed");
+				foreach (Dictionary<string, object?> grant in new[] {
+					Call(AllEmployees, ("operations", "read,create,edit,delete"), ("enable-operation-permissions", true)),
+					Call(administrators, ("operations", "read,create,edit")),
+					Call(ExternalUsers, ("operations", "read"))
+				}) {
+					ObjectRightsToolResponse granted = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, grant);
+					granted.Success.Should().BeTrue(
+						because: $"the rows the scenario starts from must exist. Error: {granted.Error}");
+				}
+			});
+
+		// Act — preview, then apply, a move of the administrators' row above All employees
+		(ObjectRightsToolResponse preview, ObjectRightsToolResponse unchanged, ObjectRightsToolResponse moved,
+			ObjectRightsToolResponse afterMove, ObjectRightsToolResponse outOfRange) = await AllureApi.Step(
+			"Act: preview and apply a move above All employees, then ask for a position past the last row", async () => (
+				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+					Call(administrators, ("above", AllEmployees), ("preview", true))),
+				await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read()),
+				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, Call(administrators, ("above", AllEmployees))),
+				await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read()),
+				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, Call(administrators, ("position", 3)))));
+
+		// Assert — the preview wrote nothing, the move landed, the out-of-range position was refused
+		AllureApi.Step("Assert the preview names the narrowing", () =>
+			preview.Output.Should().Contain("access NARROWS",
+				because: "administrators lose delete once their row decides first"));
+		AllureApi.Step("Assert the preview wrote nothing", () =>
+			unchanged.Output.Should().Contain($"[1] System administrators ({administrators})",
+				because: "a preview writes nothing"));
+		AllureApi.Step("Assert the move succeeded", () =>
+			moved.Success.Should().BeTrue(because: $"the move is valid and its read-back matches. Error: {moved.Error}"));
+		AllureApi.Step("Assert the moved row is at position 0", () =>
+			afterMove.Output.Should().Contain($"[0] System administrators ({administrators}): read/create/edit",
+				because: "the administrators' row now has the highest priority"));
+		AllureApi.Step("Assert the other rows kept their relative order", () =>
+			afterMove.Output.Should().Contain($"[1] All employees ({AllEmployees}): read/create/edit/delete",
+				because: "the other rows keep their relative order"));
+		AllureApi.Step("Assert a position past the last row is refused", () =>
+			outOfRange.Success.Should().BeFalse(because: "three rows have positions 0..2"));
+		AllureApi.Step("Assert the out-of-range refusal names the valid range", () =>
+			outOfRange.Error.Should().Contain("0..2", because: "the refusal names the valid range"));
+
+		// Act — preview, then apply, the removal of the external row; then try to remove the last granting row
+		(ObjectRightsToolResponse removalPreview, ObjectRightsToolResponse removed, ObjectRightsToolResponse afterRemoval)
+			= await AllureApi.Step("Act: preview and apply the removal of the All external users row", async () => (
+				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+					Call(ExternalUsers, ("remove-row", true), ("preview", true))),
+				await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, Call(ExternalUsers, ("remove-row", true))),
+				await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName, Read())));
+		ObjectRightsToolResponse lastRow = await AllureApi.Step(
+			"Act: remove the administrators' row, then try to remove the last granting row", async () => {
+				ObjectRightsToolResponse administratorsRemoved = await CallRightsAsync(arrangeContext,
+					SetObjectRightsTool.ToolName, Call(administrators, ("remove-row", true)));
+				administratorsRemoved.Success.Should().BeTrue(because:
+					$"the last-row refusal needs All employees as the only granting row. Error: {administratorsRemoved.Error}");
+				return await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName, Call(AllEmployees, ("remove-row", true)));
+			});
+
+		// Assert — portal users lose read, the row is gone, and the last granting row cannot be removed
+		AllureApi.Step("Assert the removal preview names the revoke of external access", () =>
+			removalPreview.Output.Should().Contain("a revoke of external access",
+				because: "removing the All external users row takes read away from portal users"));
+		AllureApi.Step("Assert the external row removal succeeded", () =>
+			removed.Success.Should().BeTrue(because: $"the removal is valid. Error: {removed.Error}"));
+		AllureApi.Step("Assert the external row is gone", () =>
+			afterRemoval.Output.Should().NotContain($"({ExternalUsers})", because: "the service deleted the row left out"));
+		AllureApi.Step("Assert removing the last granting row is refused", () =>
+			lastRow.Success.Should().BeFalse(because: "no row would grant any operation on an administered object"));
+		AllureApi.Step("Assert the last-row refusal says why", () =>
+			lastRow.Error.Should().Contain("would leave no row", because: "the refusal says why"));
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,
