@@ -376,6 +376,7 @@ public class GetObjectRightsCommandTests : BaseCommandTests<GetObjectRightsOptio
 		exitCode.Should().Be(0, because: "the read succeeded");
 		_logger.Received().WriteInfo("    Rows above it, which decide first for a user who is also in those roles:");
 		_logger.Received().WriteInfo($"      [0] All employees ({Employees}): read/create/edit/delete");
+		_logger.Received().WriteInfo(Arg.Is<string>(line => line.Contains("set-object-rights --above")));
 	}
 
 	[Test]

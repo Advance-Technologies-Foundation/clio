@@ -1,6 +1,10 @@
 # ADR: object-rights tools — the arguments describe the whole effect
 
 - **Status:** accepted by the author (2026-09-30); to be confirmed by the PR's approver.
+  - Amended by [adr-ENG-104066-object-rights-row-layout.md](adr-ENG-104066-object-rights-row-layout.md)
+    (2026-10-27): a row moves or goes through a layout call of its own (invariants 3 and 4), and "applies
+    immediately to a session that is already logged in" gains a fallback: a user who still sees the old access logs
+    in again.
   - Decided: D1 (one object per call), D4 (host approval), D8 (grant and revoke on MCP), `remove-role` as a follow-up.
   - Decided after the self-review (2026-09-30): D5 (no separate opt-in for security/system objects), `operations`
     required on every grant and revoke (D4, invariant 8), R3 (the approval is of `clio-run`), a revoke on an object

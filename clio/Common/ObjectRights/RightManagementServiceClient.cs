@@ -57,6 +57,21 @@ public interface IObjectRightsWriter {
 	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> on success, otherwise why the save failed or was not sent, and
 	/// whether no answer came (the save may then still land).</returns>
 	ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, ObjectRightsState after, CreatioRequestOptions requestOptions);
+
+	/// <summary>
+	/// Writes the rows of <paramref name="after"/> as the object's COMPLETE row list, in their planned order: the save
+	/// replaces the stored list, so a row read but not planned is deleted, and a planned row keeps its read node — its id
+	/// and every field the projection cannot represent — with only its position replaced. A planned row is matched to a
+	/// read row by grantee and operations, in read order, so two rows of one role keep their relative order. Operations
+	/// and the switch are never changed. The record, column and entity-operation collections are sent as null.
+	/// </summary>
+	/// <param name="snapshot">The object as it was read.</param>
+	/// <param name="after">The planned state: the rows read, reordered or with one left out.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns><see cref="ObjectRightsSaveResult.Saved"/> on success, otherwise why the save failed or was not sent —
+	/// a planned row with no read row to carry it is not sent at all — and whether no answer came.</returns>
+	ObjectRightsSaveResult SaveRowLayout(ObjectRightsSnapshot snapshot, ObjectRightsState after,
+		CreatioRequestOptions requestOptions);
 }
 
 /// <summary>
@@ -95,6 +110,19 @@ public interface IGranteeLookup {
 	/// <param name="requestOptions">Timeout and retry settings.</param>
 	/// <returns>The name, or <see langword="null"/>.</returns>
 	string ResolveGranteeName(Guid grantee, CreatioRequestOptions requestOptions);
+
+	/// <summary>
+	/// Returns which of <paramref name="units"/> are for external (portal) users: <c>SysAdminUnit.ConnectionType</c> 1,
+	/// as All external users and every portal role are. One query, whatever the number of units.
+	/// </summary>
+	/// <param name="units">The SysAdminUnit ids to classify.</param>
+	/// <param name="requestOptions">Timeout, retry and deadline settings.</param>
+	/// <returns>The external ones; empty when none is, or when <paramref name="units"/> is empty (no request is
+	/// sent).</returns>
+	/// <exception cref="Exception">A service failure is thrown: an empty answer must never stand for a lookup that
+	/// failed, or an external role would be reported as internal.</exception>
+	/// <exception cref="InvalidOperationException">The answer has no row for one of <paramref name="units"/>.</exception>
+	IReadOnlySet<Guid> FindExternalUnits(IReadOnlyCollection<Guid> units, CreatioRequestOptions requestOptions);
 }
 
 /// <summary>
@@ -162,6 +190,37 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	}
 
 	/// <inheritdoc />
+	public ObjectRightsSaveResult SaveRowLayout(ObjectRightsSnapshot snapshot, ObjectRightsState after,
+		CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(snapshot);
+		ArgumentNullException.ThrowIfNull(after);
+		JsonObject payload = snapshot.Node.DeepClone().AsObject();
+		List<(JsonObject Node, RoleOperationRights Read)> unused = ReadOperationRows(payload)
+			.Select((node, index) => (node, ProjectRow(node, index)))
+			.OrderBy(entry => entry.Item2.Position)
+			.ToList();
+		JsonArray rows = new();
+		foreach (RoleOperationRights row in after.Roles.OrderBy(row => row.Position)) {
+			int read = unused.FindIndex(entry => entry.Read.GrantsSameAs(row));
+			if (read < 0) {
+				return new ObjectRightsSaveResult($"the planned row {ObjectRightsSupport.FormatRow(row)} is not one of "
+					+ "the rows read, so a move or a removal cannot carry it; nothing was sent");
+			}
+			// The node is detached from the read array before it joins the new one: a JsonNode has one parent.
+			JsonObject node = unused[read].Node;
+			unused.RemoveAt(read);
+			node.Parent?.AsArray().Remove(node);
+			node["position"] = row.Position;
+			rows.Add(node);
+		}
+		payload[OperationRowsField] = rows;
+		payload[RecordRulesField] = null;
+		payload["entitySchemaColumnsRights"] = null;
+		payload["entityOperationGrantees"] = null;
+		return SendSave(payload, requestOptions);
+	}
+
+	/// <inheritdoc />
 	public ObjectRightsSaveResult Save(ObjectRightsSnapshot snapshot, DefaultRecordRightsState after,
 		CreatioRequestOptions requestOptions) {
 		ArgumentNullException.ThrowIfNull(snapshot);
@@ -220,6 +279,38 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
 		return response.Rows?.FirstOrDefault()?.Name;
 	}
+
+	/// <inheritdoc />
+	public IReadOnlySet<Guid> FindExternalUnits(IReadOnlyCollection<Guid> units, CreatioRequestOptions requestOptions) {
+		ArgumentNullException.ThrowIfNull(units);
+		if (units.Count == 0) {
+			return new HashSet<Guid>();
+		}
+		object query = SelectQueryHelper.BuildSelectQueryWithInFilter(
+			"SysAdminUnit",
+			new[] {
+				new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id"),
+				new SelectQueryHelper.SelectQueryColumnDefinition("ConnectionType", "ConnectionType")
+			},
+			"Id",
+			units.Distinct().Select(unit => unit.ToString()).ToArray(),
+			SelectQueryHelper.GuidDataValueType,
+			units.Count);
+		CreatioRequestOptions sendOptions = requestOptions.ForNextRequest();
+		UnitConnectionSelectResponse response = SelectQueryHelper.ExecuteSelectQuery<UnitConnectionSelectResponse>(
+			_applicationClient, _urlBuilder, query, sendOptions.TimeOut, sendOptions.MaxAttempts, sendOptions.RetryDelay);
+		List<UnitConnectionRow> rows = response.Rows ?? new List<UnitConnectionRow>();
+		// A unit the answer leaves out would otherwise be taken for internal, which hides exactly the change to portal
+		// users the lookup exists to show.
+		Guid[] missing = units.Distinct().Except(rows.Select(row => row.Id)).ToArray();
+		if (missing.Length > 0) {
+			throw new InvalidOperationException(
+				$"SysAdminUnit has no row for {string.Join(", ", missing)}, so whether it is external is unknown.");
+		}
+		return rows.Where(row => row.ConnectionType == ExternalConnectionType).Select(row => row.Id).ToHashSet();
+	}
+
+	private const int ExternalConnectionType = 1;
 
 	/// <inheritdoc />
 	public IReadOnlyList<ObjectTitleMatch> FindObjectsByTitle(string title, CreatioRequestOptions requestOptions) {
@@ -575,5 +666,20 @@ public class RightManagementServiceClient : CreatioServiceClient, IObjectRightsR
 	{
 		[JsonPropertyName("Name")]
 		public string Name { get; set; }
+	}
+
+	private sealed class UnitConnectionSelectResponse : SelectQueryHelper.SelectQueryResponseBaseDto
+	{
+		[JsonPropertyName("rows")]
+		public List<UnitConnectionRow> Rows { get; set; }
+	}
+
+	private sealed class UnitConnectionRow
+	{
+		[JsonPropertyName("Id")]
+		public Guid Id { get; set; }
+
+		[JsonPropertyName("ConnectionType")]
+		public int ConnectionType { get; set; }
 	}
 }
