@@ -120,8 +120,10 @@ namespace Clio.Package
 
 		/// <summary>
 		/// Lowest Creatio version the current templates (<c>tpl/ui-project</c>, <c>tpl/ui-project-Empty</c>)
-		/// target. They implement the lazy remote-entry contract (<c>RemoteEntryDefinition</c>) introduced in
-		/// <c>@creatio-devkit/common</c> 0.834.0, which ships with Creatio 8.3.4. The snapshots under
+		/// target. They implement the lazy remote-entry contract (<c>RemoteEntryDefinition</c>), which the host
+		/// supports since Creatio 8.3.4. The templates share nothing with the host (<c>shared: {}</c>): the remote
+		/// bundles its own Angular and <c>@creatio-devkit/common</c> 0.1000.x, so the floor depends only on that
+		/// contract (checked on Creatio 8.3.4.2753 and 10.2.565). The snapshots under
 		/// <c>tpl/ui/&lt;version&gt;</c> serve only Creatio versions below this one, so a newer requested
 		/// version (10.x included) must never fall back to them.
 		/// </summary>
