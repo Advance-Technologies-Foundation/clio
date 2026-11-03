@@ -172,12 +172,26 @@ internal static class ProcessDesignerE2EArrange {
 	/// <param name="created">The result of the call that created the version.</param>
 	/// <returns>The version's schema name.</returns>
 	internal static string CreatedVersionName(CallToolResult created) {
+		bool named = TryReadCreatedVersionName(created, out string versionName);
+		named.Should().BeTrue(
+			because: "the created version's code is only knowable from the response that created it, and the "
+				+ "envelope did not carry the sentence that names it: "
+				+ string.Concat(created.Content.OfType<TextContentBlock>().Select(block => block.Text)));
+		return versionName;
+	}
+
+	/// <summary>
+	/// The schema name of the version a modify-business-process-as-new-version call created, without asserting: for
+	/// registering the version for cleanup as soon as the response arrives, before any assertion on it can throw.
+	/// </summary>
+	/// <param name="created">The result of the call that may have created a version.</param>
+	/// <param name="versionName">The version's schema name, or empty when the response names none.</param>
+	/// <returns>Whether the response names a created version.</returns>
+	internal static bool TryReadCreatedVersionName(CallToolResult created, out string versionName) {
 		string text = string.Concat(created.Content.OfType<TextContentBlock>().Select(block => block.Text));
 		Match name = Regex.Match(DecodedMessages(text), @"[Vv]ersion(?: \d+)? '(?<name>[A-Za-z0-9_]+)' created");
-		name.Success.Should().BeTrue(
-			because: "the created version's code is only knowable from the response that created it, and the "
-				+ $"envelope did not carry the sentence that names it: {text}");
-		return name.Groups["name"].Value;
+		versionName = name.Success ? name.Groups["name"].Value : string.Empty;
+		return name.Success;
 	}
 
 	// The string values of the envelope's log messages. Any other shape - text that is not one JSON document, a

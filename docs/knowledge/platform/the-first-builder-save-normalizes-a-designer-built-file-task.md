@@ -2,6 +2,8 @@
 description: a Process file element stored in the designer's form - built in the classic designer, or by the builder from CrtProcessBuilder 1.6.6.101 on - changes once on its next builder save that does not rewrite it (ConnectedObjectId retyped Lookup -> Guid, a template L9 = SysSchema added on the schema lookups, and before CrtProcessBuilder 1.6.6.125 the position relaid), because the design-session load re-syncs parameters against the user-task template; later such saves are byte-identical
 applies-to:
   - clio.mcp.e2e/ProcessFileElementToolE2ETests.cs
+  - clio.mcp.e2e/SendEmailAttachmentsToolE2ETests.cs
+  - clio.mcp.e2e/Support/Mcp/ProcessDesignerStoredReads.cs
   - clio/CrtProcessBuilder/CrtProcessBuilder.gz
 ticket: ENG-103937
 date: 2026-10-21
@@ -29,6 +31,10 @@ build): the designer writes each element's template parameter captions (`BaseEle
 in every culture - F2 had 379 rows in 28 cultures - and after the builder's first save only the stand's active
 cultures (`SysCulture.Active`: en-US, ar-SA, he-IL, ru-RU) remain, 67 rows, with no value changed and none added; F1
 the same. The mechanism is not traced (the package has no culture code; the save is the platform's `SaveSchema`).
+A builder CREATE writes those captions in every culture too, measured on a Send email element (2026-10-30,
+CrtProcessBuilder 1.6.6.129: 1356 rows in 28 cultures after `create-business-process`, 252 in the 4 active cultures
+after the first `modify-business-process`, every removed row a `Parameters.<P>.Caption`, none added or changed) - so a
+resource byte-identity check across the first re-save of a freshly created process fails the same way (TC-I-06).
 
 **Why it is this way** — the designer types `ConnectedObjectId` as a lookup only to render a record picker; the
 template declares Guid, and the run time reads it as a Guid either way (`GetGuidValue`). The package calls the

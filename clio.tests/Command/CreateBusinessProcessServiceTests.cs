@@ -304,4 +304,50 @@ public sealed class CreateBusinessProcessServiceTests {
 			because: "the parser failure is kept for whoever does want it, just not as the message");
 	}
 
+	[Test]
+	[Description("When the server answers WCF's request-deserialization error string instead of the envelope, the build is reported as having created NO process, with the server's text quoted - the request never reached the build, so the outcome is known.")]
+	public void BuildProcess_ShouldReportNothingCreated_WhenTheServerCouldNotReadTheRequest() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns(
+			"\"The formatter threw an exception while trying to deserialize the message: There was an error while "
+			+ "trying to deserialize parameter http://tempuri.org/:request.\"");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the server answered an error, not a result").Which;
+		thrown.Message.Should().Contain("could not read the request, so the process was NOT created",
+			because: "a request the server could not read ran no build, so no process exists");
+		thrown.Message.Should().Contain("get-tool-contract create-business-process",
+			because: "the caller is pointed at the contract of the tool it called");
+		thrown.Message.Should().Contain("The server said: The formatter threw an exception",
+			because: "the quoted text says what failed");
+		thrown.Message.Should().NotContain("UNKNOWN", because: "the outcome of an unread request is known");
+	}
+
+	[Test]
+	[Description("Any other bare error string keeps the build's outcome UNKNOWN - it may come after the save - and quotes the server's text, cut at 400 characters so a long fault does not flood the message.")]
+	public void BuildProcess_ShouldKeepTheOutcomeUnknown_AndQuoteTheServerCapped_WhenAnotherErrorStringComesBack() {
+		// Arrange
+		string longFault = "Object reference not set. " + new string('x', 500);
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(BuildUrl, Arg.Any<string>()).Returns($"\"{longFault}\"");
+		CreateBusinessProcessService service = CreateService(client, out _);
+
+		// Act
+		Action act = () => service.BuildProcess(Env, new CreateBusinessProcessRequest(SampleDescriptor, "MyApp"));
+
+		// Assert
+		InvalidOperationException thrown = act.Should().Throw<InvalidOperationException>(
+			because: "the body is not the result envelope").Which;
+		thrown.Message.Should().Contain("UNKNOWN",
+			because: "a failure after the save may have created the process, so only a re-read can tell");
+		thrown.Message.Should().EndWith($" The server said: {longFault[..400]}...",
+			because: "the server's text is quoted and cut at 400 characters");
+	}
+
 }

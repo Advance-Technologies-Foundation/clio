@@ -23,7 +23,15 @@ public static class ModifyBusinessProcessPrompt {
 		$"""
 		 Edit the existing business process `{process}` on Creatio environment `{environmentName}` with the
 		 `modify-business-process` tool. Steps: (1) call `describe-business-process` to inspect the current elements
-		 and their names; (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
+		 and their names — do not paste a whole described element into setElement: its element-level fields (uid,
+		 position, size, buildType, parameters, connections) and completionMode are refused before anything is sent.
+		 A described readData / addData / changeData / deleteData block may be re-applied: its read-only fields
+		 (*SchemaUId, outputs) are ignored and named in a warning - nothing they say is saved. An email, subProcess,
+		 openEditPage or fileProcessing block can carry describe fields clio refuses before sending (the email's
+		 templateObject and its recipients' described fields, subProcess.process, completionMode, files.sourceColumn) -
+		 remove them. A filter, signal or
+		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
+		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;
 		 (3) supply a JSON `operations` array (applied in order) — each item has an `op`: `addElement`,
 		 `removeElement`, `addFlow`, `removeFlow`, `setFlow`, `setFlowCondition`, `addParameter`, `addMapping`,
@@ -96,6 +104,8 @@ public static class ModifyBusinessProcessPrompt {
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
+		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
+		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights
 		 element's `accessRights` block (a partial update: a supplied `add`/`remove` REPLACES that whole collection
 		 and `[]` clears it — clearing ONE is safe only while the other still holds an entry, since an element
