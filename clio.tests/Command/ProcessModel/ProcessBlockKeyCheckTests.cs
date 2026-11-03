@@ -10,7 +10,8 @@ namespace Clio.Tests.Command.ProcessModel;
 
 /// <summary>
 /// Unit tests for <see cref="ProcessBlockKeyCheck"/> - the pre-send refusal of element and block keys the
-/// CrtProcessBuilder contract does not declare and its serializer would drop without a word (ENG-103085).
+/// CrtProcessBuilder contract does not declare: a package before 1.6.6.136 drops them without a word, a current one
+/// refuses or ignores them, and this check answers first (ENG-103085, ENG-95244).
 /// </summary>
 [TestFixture]
 [Property("Module", "ProcessModel")]

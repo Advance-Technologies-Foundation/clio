@@ -698,8 +698,10 @@ public sealed class DescribedElement {
 	/// the runtime applies stored values in either editing mode, so hiding one would hide live configuration. Drop
 	/// the one that does not belong to the reported <c>editMode</c> before re-applying. One field is also reshaped
 	/// rather than dropped: <c>completionMode</c> is reported FLAT and is written NESTED, so re-apply it as
-	/// <c>completion:{mode:…}</c>. Feeding the flat key back leaves the element on its stored mode while its filter
-	/// stays — the mismatched pair the write contract warns about.
+	/// <c>completion:{mode:…}</c>. Fed back flat, the key is refused by clio before anything is sent
+	/// (<see cref="ProcessBlockKeyCheck"/>); a payload that reached the server would have it ignored as a read-only
+	/// describe field, leaving the element on its stored mode while its filter stays - the mismatched pair the write
+	/// contract warns about.
 	/// </summary>
 	[JsonPropertyName("openEditPage")]
 	public DescribedOpenEditPage OpenEditPage { get; set; }

@@ -70,13 +70,11 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>417ae636</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.131</c>): branch <c>feature/ENG-95985-send-email-attachments</c> on top of
-	/// <c>main</c> at 1.6.6.125, so the cut carries everything 1.6.6.125 shipped. This cut was a HAND cut, and
-	/// the producing commit is the restamp itself: the package branch committed its own stamp (<c>set-pkg-version</c>,
-	/// 1.6.6.131) before the cut, so the script refused a version equal to the descriptor's, and the archive was packed
-	/// from a <c>git archive</c> export of the tagged commit with the two <c>-c</c> flags, with no overlay. Every entry,
-	/// <c>descriptor.json</c> included, is therefore the producing commit's blob.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>1308b797</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.136</c>): branch <c>feature/ENG-95244-process-descriptor-schema-graph-validator</c> with
+	/// <c>main</c> at 1.6.6.131 (<c>da719366</c>, ENG-95985 and ENG-95255) merged in, so the cut carries everything 1.6.6.131 shipped.
+	/// This cut was a SCRIPT cut: <c>rebundle-process-builder.ps1</c> restamped the clean producing commit and packed
+	/// it, and the restamp (<c>f8b07391</c>, same branch) was committed afterwards.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -89,37 +87,19 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.125 (ENG-95985): <c>email.attachments</c> on the Send email block - one
-	/// designer attachment row per entry, sourced from a Process file element output, another element's file output, a
-	/// process FileCollection or a single File - with replace semantics on modify, the raw-route guards that refuse a
-	/// mapping onto an attachment slot, the order checks on the source, and describe's read-back of the list in the
-	/// write shape (plus <c>slot</c>, <c>bindingLevels</c>, <c>issues</c>), in the element's stored order - the
-	/// designer's row order, the order the email attaches them - since 1.6.6.128 (1.6.6.127 sorted it by slot number).
-	/// 1.6.6.129 adds the reuse round: a stored filter is read the way the run time reads it (its <c>$ref</c> metadata
-	/// and data-contract marker gates, <c>isNot</c> and <c>logicalOperation</c> included), a formula body may not read a
-	/// Send email attachment slot, the attachment and file-source paths are consolidated, and a DevExpress report
-	/// source is no longer told it reports on every record or generates a report from a filter it cannot read.
-	/// 1.6.6.131 adds the final review round: the Q20 sweep follows a formula that fills a Process parameter element's
-	/// Files input; a sent source that cannot be judged is refused (an Object source on a missing object, a Generated
-	/// report whose printable names no object, a printable that is not found); notices for the files handed into a
-	/// Sub-process and for an attachment whose files the caller decides; describe and the sweep walk an attachment's
-	/// sources one way; a stored attachment formula is matched in the spelling the formula check writes; a Formula
-	/// result into an attachment slot blocks the slot's removal; hand-offs inside event and expanded sub-processes
-	/// are followed; a source nested in an event or expanded sub-process is judged too and, when it is unscoped,
-	/// refused with a remedy that points at the Process Designer, keeping its own refusal reason; a save whose
-	/// nested elements cannot be read is refused when an email sends attachments; and the reachability warning states
-	/// the consequence by the entry's source kind - a single File source that has not run fails the element.
-	/// The create/modify floor stays at 1.6.6.127, the first cut that reads the member: none of 1.6.6.128
-	/// through 1.6.6.131 changes the write contract. What earlier cuts carried is in this file's git history rather than
-	/// here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.131 (ENG-95244): every build, modify and save-as-new-version request
+	/// contract keeps the keys it does not declare, and the server refuses a request carrying one before anything is
+	/// read or saved, naming its path and the key meant. Describe read-only fields are ignored and named in a warning;
+	/// a field a write takes elsewhere is refused when it carries a value. The create/modify floor stays at 1.6.6.127:
+	/// clio sends no new member. What earlier cuts carried is in this file's git history rather than here: it described
+	/// archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5152 passed,
-	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> (run by hand on the producing checkout, step 1 of the hand
-	/// cut) -
+	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5272 passed,
+	/// 0 failed, on both <c>dev-nf</c> (the script's run) and <c>dev-n8</c> -
 	/// measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The inventory was checked on the extracted archive: 312
+	/// security counts below exist to catch. The script checked the inventory: 321
 	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
 	/// that executes on install.
 	/// </para>
@@ -200,7 +180,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"148DC56F5037B242A590A523148088619A1FE54A54099D66F80ACEA490C8C99E";
+		"7E4222FDA1A88EF1E60634810A33FBCF4D1801423E4525AF26BF6E1672BE095A";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -228,14 +208,14 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.131";
+	private const string ExpectedArchiveVersion = "1.6.6.136";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
-	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut, and it IS the
-	/// restamp commit (the tag <c>crtprocessbuilder-1.6.6.131</c> points at it), because the package branch committed its stamp before the cut.
+	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.136 is a script cut
+	/// again, so it names the commit BEFORE the restamp.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -243,7 +223,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "417ae636d9ce4bb1a018bbb7388587955061a4b1";
+	private const string ExpectedProducingCommit = "1308b79786be1879d92ccff915dee0d0cc244197";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -269,7 +249,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793382997000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793632952000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

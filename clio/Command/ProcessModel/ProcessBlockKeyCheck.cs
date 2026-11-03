@@ -25,13 +25,14 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// (ENG-103085).
 /// </summary>
 /// <remarks>
-/// <para>CrtProcessBuilder reads the request through WCF's <c>DataContractJsonSerializer</c>, which DROPS a member
-/// its contract does not declare. A misplaced key therefore never reaches a server-side guard: a <c>filter</c>
-/// nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first record of
-/// the object. The only refusal the block ever produced was indirect - <c>object</c> in place of <c>source</c> was
-/// stopped by "requires a 'source'", not because <c>object</c> was unknown - so a misplaced key next to a valid
-/// <c>source</c> had no defence at all. clio is the last side that still sees the caller's keys, which is why this
-/// check sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same payloads.</para>
+/// <para>CrtProcessBuilder reads the request through WCF's <c>DataContractJsonSerializer</c>. Before 1.6.6.136 it
+/// DROPPED a member its contract does not declare, so a misplaced key never reached a server-side guard: a
+/// <c>filter</c> nested inside <c>readData</c> instead of beside it saved green, and every Read data read the first
+/// record of the object. From 1.6.6.136 the server refuses an undeclared key and ignores a describe read-back with a
+/// warning (ENG-95244). This check still runs first: it answers before anything is sent, with where the key belongs,
+/// and it covers a package before that version, the other package line, and a host whose server check reports itself
+/// unavailable. It sits beside <see cref="IProcessPageFactsChecker"/>, the other pre-send guard of the same
+/// payloads.</para>
 /// <para>The key sets mirror the server's request contracts one type per <see cref="KeySet"/> and are held equal
 /// to the bundled CrtProcessBuilder by <c>ProcessBlockKeyCheckTests</c>, so a new server member cannot be refused
 /// here by a stale list. Fields <c>describe-business-process</c> reports but the write path does not take
@@ -408,7 +409,9 @@ internal static class ProcessBlockKeyCheck {
 	/// </summary>
 	/// <param name="payload">A create descriptor object or a modify operations array.</param>
 	/// <param name="logger">Where the read-back warnings go.</param>
-	/// <exception cref="InvalidOperationException">The payload carries a key the server would drop.</exception>
+	/// <exception cref="InvalidOperationException">
+	/// The payload carries a key the server does not read: a current package refuses or ignores it, an older one drops it.
+	/// </exception>
 	internal static void Enforce(JsonNode payload, ILogger logger) {
 		ProcessBlockKeyCheckResult result = Check(payload);
 		if (!string.IsNullOrWhiteSpace(result.Error)) {
@@ -635,9 +638,9 @@ internal static class ProcessBlockKeyCheck {
 				string more = _refusals.Count > MaxReportedKeys
 					? $" (and {_refusals.Count - MaxReportedKeys} more)"
 					: string.Empty;
-				error = "Nothing was sent: the server reads its request with a contract that DROPS an undeclared key "
-					+ "without a word, so these keys would have saved a process that ignores them. "
-					+ string.Join(" ", shown) + more;
+				error = "Nothing was sent: these keys are not part of the request the server reads - a current "
+					+ "CrtProcessBuilder refuses or ignores them, an older one drops them without a word and saves a "
+					+ "process that ignores them. " + string.Join(" ", shown) + more;
 			}
 			if (_shapeRefusals.Count > 0) {
 				string moreShapes = _shapeRefusals.Count > MaxReportedKeys
