@@ -41,7 +41,7 @@
     "@types/node": "^22.14.0",
     "jest": "^30.0.0",
     "jest-environment-jsdom": "^30.0.0",
-    "jest-preset-angular": "16.2.0",
+    "jest-preset-angular": "^17.0.3",
     "ngx-build-plus": "^20.0.0",
     "ts-node": "^10.9.2",
     "typescript": "~6.0.3",
