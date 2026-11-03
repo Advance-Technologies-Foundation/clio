@@ -86,7 +86,8 @@ public sealed class WorkspaceTemplateGuidanceDriftTests {
 		"net-framework",
 		"net-core",
 		"kebab-case",
-		"error-as-value"
+		"error-as-value",
+		"ngx-build-plus"
 	};
 
 	private static readonly Lazy<HashSet<string>> CliVerbNames = new(() => {
