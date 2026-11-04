@@ -34,7 +34,7 @@ repositories.
 |---|---|---|---|
 | **TC-U** | package unit tests | TC-U-01..TC-U-109; TC-U-49, 50, 51, 76 are dropped rows (Q7, EM9); TC-U-107 (Q11 A3), TC-U-108 (`service` without `method`) and TC-U-109 (server key check replay) are new | 105 live |
 | **TC-P** | package parity tests | TC-P-01..TC-P-14 (TC-P-05 is stand evidence read through TC-I-01/02, not a package test) | 14 |
-| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-17 | 17 |
+| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-16 | 16 |
 | **TC-I** | clio MCP e2e (`clio.mcp.e2e/WebServiceElementToolE2ETests.cs`; TC-I-13 in `clio.mcp.e2e/ListUserTasksToolE2ETests.cs`; on stand `Creatio`) | TC-I-01..TC-I-13 | 13 |
 | **TC-K** | clio-knowledge tests and gates (`KB/automation/Clio.Knowledge.Bundle.Tests`) | TC-K-01..TC-K-13 (TC-K-12 also carries the fact-check gate) | 13 |
 | **TC-01..TC-12** | manual Jira cases (business tasks given to an agent) | TC-01..TC-12 | 12 |
@@ -209,7 +209,7 @@ and read directly (TC-U-69).
 | TC-U-101 | `TypeFromElement_ShouldRefuseAWebServiceObjectListMirror` | the ObjectList mirror, silently shapeless today, refused |
 | TC-U-66 | `Map_ShouldReadResultParametersAsOrdinaryOutputs` | Success / StatusCode / Response in mappings and flows (Q7) |
 | TC-U-67 | `Map_ShouldAddressParametersByTheirStoredNames_Only` | the Tag is not an alias (Q2) |
-| TC-U-68 | `DescribeThenReapply_ShouldRoundTripNestedBindings` | described bindings re-apply unchanged (read-back-only fields stripped) |
+| TC-U-68 | `DescribeThenReapply_ShouldRoundTripNestedBindings` | described bindings re-apply unchanged (the described block sent back as is) |
 
 ### Describe (Q12, Q14, Q16, Q20) - `WebServiceElementHandlerDescribeTests` (P-C1, P-D3)
 
@@ -217,20 +217,20 @@ and read directly (TC-U-69).
 |---|---|---|
 | TC-U-69 | `Describe_ShouldReportTheWebServiceMember` | `buildType`, `webService {...}`, IX3 back in seconds |
 | TC-U-70 | `Describe_ShouldReportTheStoredTree_NotTheServicesTree` | tree read from the element, direction from the item's own L12 |
-| TC-U-71 | `Describe_ShouldFallBackToTheRawUId_WhenTheServiceIsGone` | `serviceResolved` false, raw UId, never throws |
+| TC-U-71 | `Describe_ShouldFallBackToTheRawUId_WhenTheServiceIsGone` | `serviceResolved` false, `service` null, `serviceUId` the raw UId, never throws |
 | TC-U-72 | `Describe_ShouldRaiseAnIssue_WhenTheMethodDoesNotResolve` | the issue warns of the loss on the next save |
 | TC-U-73 | `Describe_ShouldRaiseAnIssue_ForNestedDrift` | missing / extra nested item, composite without L18 |
 | TC-U-74 | `Describe_ShouldRaiseNoIssue_ForEveryShapeThePackageWrites` | no false alarm |
 | TC-U-75 | `Describe_ShouldNeverCarryAServiceDefaultOrCredential` | no planted sentinel in the reply (Q16) |
 | TC-U-77 | `Describe_ShouldReportTheTimeoutAsUnset_WhenIX3IsAbsent` | ms / 1000 as a fraction, unset when absent |
-| TC-U-78 | `DescribeThenReplay_ShouldChangeNothing` | replaying the described block (`service.name` sent as a string, the read-back-only fields `serviceResolved`, `methodResolved`, `issues`, `parameters` stripped) writes nothing |
+| TC-U-78 | `DescribeThenReplay_ShouldChangeNothing` | replaying the described block unchanged, read-back-only keys included, writes nothing |
 | TC-U-79 | `Describe_ShouldReportAMultiInstanceOrSoapElement_AsFoundWithAnIssue` | found with an issue, not an error (Q20) |
 | TC-U-80 | `Describe_ShouldReportAGenericWebServiceElement_ThatLostItsMethod_WithoutThrowing` | product elements with a lost method describe cleanly |
 | TC-U-99 | `Describe_ShouldRaiseAnIssue_ForADuplicateNestedNameOrTag` | N9 text on read-back |
 | TC-U-102 | `Describe_ShouldRaiseAnIssue_WhenTheMethodMatchesOnlyIgnoringCase` | case-only stored method reported (EM11) |
 | TC-U-103 | `Describe_ShouldRaiseAnIssue_WhenAResultParameterIsMissing` | Success / Response / StatusCode missing reported; RequestBody optional |
 | TC-U-104 | `Describe_ShouldRaiseAnIssue_WhenTheElementIsMarkedInvalid` | BL11 false reported |
-| TC-U-109 | `Describe_ShouldReplayTheWebServiceBlock_ThroughTheServerKeyCheck` | the read-back-only keys are derived automatically because the write and describe members are both keyed `webService`; nothing to register. A described block sent back with `service.name` as the `service` string and the read-back-only keys kept passes the server's undeclared-key check (`UnknownRequestKeyDetector`, from 1.6.6.136), which accepts them as read-back keys; an object-valued `service` would be refused while binding, so the test does not send one (P-B1, P-C1) |
+| TC-U-109 | `Describe_ShouldReplayTheWebServiceBlock_ThroughTheServerKeyCheck` | the read-back-only keys are derived automatically because the write and describe members are both keyed `webService`; nothing to register. A described block sent back unchanged, read-back-only keys kept, passes the server's undeclared-key check (`UnknownRequestKeyDetector`, from 1.6.6.136), which accepts them as read-back keys (P-B1, P-C1) |
 
 ### Platform probes (Q3, Q9, Q12) - `WebServicePlatformProbeTests` (P-A3), *probe*, both configurations
 
@@ -294,7 +294,7 @@ placement.
 |---|---|---|---|
 | TC-C-01 | `ProcessBlockKeyCheckTests.Check_Should_AcceptTheWebServiceBlock_OnEveryRoute` | the key set exists on create, `addElement`, `setElement` | ProcessModel |
 | TC-C-02 | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnUnknownWebServiceKey_NamingItsPath` | `webService.<key>` path and the accepted keys; `webService.multiInstanceOptions` on create is refused here, before sending (Q20) | ProcessModel |
-| TC-C-03 | `ProcessBlockKeyCheckTests.Check_Should_TolerateTheReadBackFields_OfADescribedBlock` | the read-back fields `serviceResolved`, `methodResolved`, `issues`, `parameters` warned, not refused | ProcessModel |
+| TC-C-03 | `ProcessBlockKeyCheckTests.Check_Should_TolerateTheReadBackFields_OfADescribedBlock` | the read-back fields `serviceUId`, `serviceResolved`, `methodResolved`, `issues`, `parameters` warned, not refused | ProcessModel |
 | TC-C-04 | `KeySets_Should_EqualTheMembersOfTheBundledServerContracts` (existing) | key set mirrors the server descriptor after the rebundle | ProcessModel |
 | TC-C-05 | `ReadBackFields_Should_BeDescribeOnlyMembers` (existing) | read-back keys exist on the describe type only | ProcessModel |
 | TC-C-06 | `ToolContractShortFormTests` call-shape drift + `ToolContractPayloadBudgetTests.MaxInlineWireReplyBytes` (existing) | `webService` in the short form within the wire budget | McpServer |
@@ -308,7 +308,6 @@ placement.
 | TC-C-14 | `WorkspaceTemplateGuidanceDriftTests.UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` (existing) + `curated-knowledge-names.json` re-pin | red until the fixture is re-pinned to a generation with `process-web-service`; draft-until-published is policy (Q19) | McpServer |
 | TC-C-15 | `ManagerMapResolveDataIdTests` (existing) | `webservice` still resolves to the web-service event type | ProcessModel |
 | TC-C-16 | `McpE2eSelectionCoverageTests` (existing) | the new e2e fixture is selected when its tool changes | Core |
-| TC-C-17 | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnObjectValuedService_PointingToServiceName` | an object-valued `webService.service` is refused before sending, with the pointer to send `webService.service.name` as the string | ProcessModel |
 
 ## TC-I - clio MCP e2e (stand `Creatio`)
 
@@ -329,7 +328,7 @@ stand run recorded in the clio PR body per framework with Ignored = 0.
 | TC-I-03 | `CreateBusinessProcess_Should_RefuseAndCreateNothing` | unknown service / method, `WebServiceUserTask`, block on a `userTask`: refused by the server, nothing created; `webService.multiInstanceOptions`: refused by clio's key check before sending (a key-check refusal, not the Q20 text), nothing created |
 | TC-I-04 | `CreateBusinessProcess_Should_StoreTheCanonicalMethodName` | lower-case method stored canonical, params present (EM11) |
 | TC-I-05 | `ModifyBusinessProcess_Should_ReplaceOnMethodChange_AndGuardDependents` | refused while another element (a formula) or a process parameter reads a parameter of the element other than Success / Response / StatusCode; after the reader is removed the change builds and N4 lists the dropped bindings with their values |
-| TC-I-06 | `ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedBlockIsSentBack` | describe -> replay (`service.name` as a string, read-back-only fields stripped) is byte-neutral |
+| TC-I-06 | `ModifyBusinessProcess_Should_ChangeNoStoredByte_WhenTheDescribedBlockIsSentBack` | describe -> replay of the described block unchanged is byte-neutral |
 | TC-I-07 | `DescribeBusinessProcess_Should_ReadTheDesignerBuiltFixture` | read-only on `UsrWscEm2CaptureA`; resolved flags true; no header default |
 | TC-I-08 | `RunProcess_Should_CallTheService_AndReadTheResponse` | result params of the stand's own answer land in an Activity; reduced under E4 (Q17) |
 | TC-I-09 | `RunProcess_Should_Continue_WhenTheCallFailsAndErrorsAreIgnored` | no-answer call: ignoreErrors true reaches the end, false ends in Error; a 404 only as the Success = false branch (EM7 designer half, M-28) |
@@ -345,7 +344,7 @@ Run the whole `automation/Clio.Knowledge.Bundle.Tests` project.
 | Id | Test | Intent |
 |---|---|---|
 | TC-K-01 | `WebServiceGuidanceTests.Guide_ShouldOwnTheBlock_AndTheEntryArticlesShouldRouteToIt` | `process-web-service` owns the block, the FULL-contract gate, the real floor and the stored-name rule; `element-catalog` routes to it |
-| TC-K-02 | `WebServiceGuidanceTests.Guide_ShouldStateTheReadBack` | describe member, stored tree, resolved flags, issues, replay recipe |
+| TC-K-02 | `WebServiceGuidanceTests.Guide_ShouldStateTheReadBack` | describe member, stored tree, resolved flags, issues, replay recipe (the described block sent back unchanged) |
 | TC-K-03 | `WebServiceGuidanceTests.Guide_ShouldStateTheRequestBodyRules` | nested items via mappings; when to use `RequestBody`; no JSON check, no conflict notice (Q5) |
 | TC-K-04 | `WebServiceGuidanceTests.Guide_ShouldStateTheResponseRules` | declare a Collection (<= 2 levels); mirror, scalar lists, third level not buildable yet |
 | TC-K-05 | `WebServiceGuidanceTests.Guide_ShouldStateResolutionReplaceAndRefusals` | resolution, replace rule with A3, the refusals, drift issues and the modify notice; a designer save of a process whose web-service element no longer resolves deletes every parameter of the element (result params included) and its BK15 rows and leaves it `BL11:false`, so the remedy (fix the service, or retarget the element) comes before any designer save, with `methodResolved: false` as the signal |

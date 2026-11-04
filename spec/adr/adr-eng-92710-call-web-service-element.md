@@ -307,11 +307,13 @@ nested input of the same caption).
   array inside array in web-service business process element (core #1119, fixVersion 10.1; absent in 10.1.37, M-08).
   The fix state is not readable cheaply, so N5 fires on every target and names the remedy (map the container). Its run half (EM12) is not measurable under E4 and rests on the core unit tests
   and the ENG-55920 comment.
-- **Q14 - describe read-back.** A `webService` member (service `{name, uid}`, method, `timeoutSeconds`,
-  `ignoreErrors`, `serviceResolved`, `methodResolved`, `parameters`, `issues`) with the element's stored parameter tree,
+- **Q14 - describe read-back.** A `webService` member (`service` as the write-side name string, `serviceUId`, method,
+  `timeoutSeconds`, `ignoreErrors`, `serviceResolved`, `methodResolved`, `parameters`, `issues`) with the element's stored parameter tree,
   unbound inputs and `RequestBody` included, read from the element and never re-derived from the service (design C10,
   2.5); `buildType: "webservice"`; the tree carries no value. Evidence: M-21 and M-31 (what describe returns today:
-  bound inputs only), M-16 (describe reads the synced view).
+  bound inputs only), M-16 (describe reads the synced view). Every write member keeps its write shape on read and
+  describe-only data has its own read-back key (`serviceUId`), as in the other blocks, so a described block replays
+  unchanged (the owner's decision in review, 2026-11-04; the agreed `service {name, uid}` is superseded).
 - **Q16 - no secrets (as agreed, option A).** No service-side data (service parameter default, `authInfo`, base-URI
   credential) in builder output (describe, refusals, notices, logs, test snapshots of builder output); the element's
   stored bindings (process data the caller can already read through describe, M-31), not service data, are returned

@@ -162,8 +162,9 @@ The decisions file holds options, evidence, the stand measurements and cost per 
 - **Q13** `IX4` settled by Q7; warning notice N5 on every target when an inner object list with no source of its own
   has mapped leaves (before the ENG-55920 fix, absent on 10.1.37, that inner list is sent as null), naming the version
   line and the remedy (map the container); suppression on fixed builds is decided after EM12.
-- **Q14** Describe `webService {service {name, uid}, method, timeoutSeconds, ignoreErrors, serviceResolved,
-  methodResolved, issues[]}` plus the stored parameter tree (direction, tag, type, nested items, bound state, unbound
+- **Q14** Describe `webService {service, serviceUId, method, timeoutSeconds, ignoreErrors, serviceResolved,
+  methodResolved, issues[]}` (`service` in its write shape, the name string; `serviceUId` read-back only; changed
+  in review 2026-11-04) plus the stored parameter tree (direction, tag, type, nested items, bound state, unbound
   inputs included), read from the element, never re-derived, never defaults.
 - **Q15** Swap, no ceiling raise; one pointer clause per tool description to KB `process-web-service`; catalog flip
   with a version floor; routing separates it from the configuration-webservice (C# services) guides.

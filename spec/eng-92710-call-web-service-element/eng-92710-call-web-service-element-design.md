@@ -180,7 +180,8 @@ The element gets `buildType: "webservice"` (the lowercase build token, free once
 
 ```json
 "webService": {
-  "service": { "name": "UsrWscEchoService", "uid": "<manager-item UId>" },
+  "service": "UsrWscEchoService",
+  "serviceUId": "<manager-item UId>",
   "method": "Echo",
   "timeoutSeconds": 30,
   "ignoreErrors": true,
@@ -204,7 +205,8 @@ The element gets `buildType: "webservice"` (the lowercase build token, free once
 
 | Member | Kind | Rule |
 |---|---|---|
-| `service`, `method`, `timeoutSeconds`, `ignoreErrors` | write members read back | `service` falls back to `{ "uid": <raw IX1> }` with no name when unresolved (SubProcessElementHandler.Describe precedent); `timeoutSeconds` = `ms / 1000` reported as a fraction, not rounded (Q8; e.g. 1500 ms -> 1.5; none in the corpus), absent when IX3 is 0; `ignoreErrors` read from IX4 directly (Q7), absent when false |
+| `service`, `method`, `timeoutSeconds`, `ignoreErrors` | write members read back in their write shape | `service` is the service name, the string the write side takes, and null when `IX1` resolves to no service; `timeoutSeconds` = `ms / 1000` reported as a fraction, not rounded (Q8; e.g. 1500 ms -> 1.5; none in the corpus), absent when IX3 is 0; `ignoreErrors` read from IX4 directly (Q7), absent when false |
+| `serviceUId` | read-back | the raw `IX1`, also when the service is gone (the issue then names it) |
 | `serviceResolved`, `methodResolved` | read-back | `ServiceSchemaManager.FindItemByUId(IX1) != null`; method found ORDINALLY (the run time's lookup, g4 §5); both survive the load sync, so they are reliable on every load path |
 | `parameters` | read-back | the element's own tree after load, every parameter including unbound inputs (the generic `parameters[]` filter drops them, `PB/Describe/ProcessDescriber.cs:226`), recursive `items`; per node `name`, `tag`, `direction`, `type` (DataValueType name), `required` (true only), `bound` (inputs: own or nested source defined), `result` (true only, for the four untagged params). Never `caption` values beyond what the generic projection already returns, never a value, never a service parameter default (Q16). A bound input's value (a constant, a formula, `RequestBody` text) is one of the element's stored bindings (process data the caller can already read through describe, M-31), not service data: it comes back through the generic `parameters[]` as today, which the round-trip tests need |
 | `issues` | read-back | sentences, only when a stored shape fails or surprises at run time (5.3) |
@@ -223,9 +225,9 @@ Rules:
   same day came from an older MCP clio build, not from the package.) `webService.parameters` is therefore the place
   that adds the unbound inputs and the `bound` / `result` flags, next to the tags and nested items it repeats. Items'
   `direction` comes from the stored `L12`.
-- Resubmission: `service` is a string on the write side and an object here, so the guide says to send
-  `webService.service.name` back as `service`; the read-back members are stripped before resubmitting (clio's key check
-  tolerates them as read-back fields, K2).
+- Resubmission: every write member keeps its write shape here and describe-only data sits in read-back keys, as in
+  the other blocks (`readData.sourceSchemaUId`, `subProcess.processCaption`), so a described block is sent back
+  unchanged; the read-back keys draw warnings only (clio's key check, K2; the server's `ReadBackKeys`, TC-U-109).
 
 ### 2.6 Result additions on create / modify (Q10)
 
@@ -324,7 +326,7 @@ result params. A modify of ANY element saves that state. The package does not tr
 
 | # | Component | Kind | Files (expected) | Plan |
 |---|---|---|---|---|
-| C1 | Contracts: `WebServiceDescriptor`; `ProcessElementDescriptor.WebService`, `ProcessElementUpdateDescriptor.WebService`; `DescribeWebServiceInfo`, `DescribeWebServiceService`, `DescribeWebServiceParameter`, `DescribeProcessElement.WebService` | contracts | `PB/Contracts/ProcessDescriptorContracts.cs`, `ModifyContracts.cs`, `DescribeContracts.cs` | P-B1 |
+| C1 | Contracts: `WebServiceDescriptor`; `ProcessElementDescriptor.WebService`, `ProcessElementUpdateDescriptor.WebService`; `DescribeWebServiceInfo`, `DescribeWebServiceParameter`, `DescribeProcessElement.WebService` | contracts | `PB/Contracts/ProcessDescriptorContracts.cs`, `ModifyContracts.cs`, `DescribeContracts.cs` | P-B1 |
 | C2 | Service catalog / resolver | new | `PB/WebService/IWebServiceCatalog.cs`, `WebServiceCatalog.cs`, `WebServiceResolution.cs` | P-A1 |
 | C3 | Parameter shaper (pure) + parameter writer | new | `PB/WebService/IWebServiceParameterShaper.cs`, `WebServiceParameterShaper.cs`, `WebServiceParameterPlan.cs`, `IWebServiceParameterWriter.cs`, `WebServiceParameterWriter.cs` | P-A2 |
 | C4 | Platform-sync seam | new | `PB/WebService/IWebServicePlatformSync.cs`, `WebServicePlatformSync.cs` | P-A3 |
@@ -358,8 +360,8 @@ slice A (P-A4), after a characterization commit that pins each sub-process notic
   nothing to register (at 1.6.6.136 `ReadBackKeys` is derived from `RootPairs`, which pairs both descriptors with
   `DescribeProcessElement`; TC-U-109 replays a described block through the server key check), and clio mirrors the
   key set for older servers (K2).
-- Describe: `DescribeWebServiceInfo {service, method, timeoutSeconds, ignoreErrors, serviceResolved, methodResolved,
-  parameters, issues}`, `DescribeWebServiceService {name, uid}`, `DescribeWebServiceParameter {name, tag, direction,
+- Describe: `DescribeWebServiceInfo {service, serviceUId, method, timeoutSeconds, ignoreErrors, serviceResolved,
+  methodResolved, parameters, issues}` (`service` a string, `serviceUId` a nullable Guid), `DescribeWebServiceParameter {name, tag, direction,
   type, required, bound, result, items}`; `[ExcludeFromCodeCoverage]` like the other DTOs; `EmitDefaultValue = false`
   on the optional members so `required: false` and `result: false` are absent.
 - Wire-contract test rows for every new DataMember (`PBT/EntryPoints/WebService/ProcessDesignServiceWireContractTests.cs`);
@@ -631,7 +633,7 @@ numbers are kept.
 | # | Change | Where | Guard |
 |---|---|---|---|
 | K1 | Rebundle the final cut; four PROVENANCE pins; security counts unchanged | `CLIO/clio/CrtProcessBuilder/CrtProcessBuilder.gz`, `CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs` | `BundledProcessBuilderPackageTests` |
-| K2 | `WebServiceBlock` key set (`service`, `method`, `timeoutSeconds`, `ignoreErrors`) linked into `Element` and `ElementUpdate`; describe read-back keys `serviceResolved`, `methodResolved`, `issues`, `parameters`; no child key sets (`ProcessBlockKeyCheck` walks children only under write keys, where `service` is a string); an object-valued `webService.service` (a described block sent back as is) is refused before sending with the pointer "send `webService.service.name` as the string" (TC-C-17), since the server would fail the whole request on it | `CLIO/clio/Command/ProcessModel/ProcessBlockKeyCheck.cs:327-357` | `KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (`service` is on both types with different shapes: it is a shared key, not a read-back field) |
+| K2 | `WebServiceBlock` key set (`service`, `method`, `timeoutSeconds`, `ignoreErrors`) linked into `Element` and `ElementUpdate`; describe read-back keys `serviceUId`, `serviceResolved`, `methodResolved`, `issues`, `parameters`; no child key sets (`ProcessBlockKeyCheck` walks children only under write keys, and `service` is a string on both sides) | `CLIO/clio/Command/ProcessModel/ProcessBlockKeyCheck.cs:327-357` | `KeySets_Should_EqualTheMembersOfTheBundledServerContracts`, `ReadBackFields_Should_BeDescribeOnlyMembers` (`service` is on both types with the same shape: a shared key, not a read-back field) |
 | K3 | `"webService"` in `CreateElementBlockShape` (paid inside the wire-bundle headroom, measured on the branch) | `CLIO/clio/Command/McpServer/Tools/ToolContractShortForm.cs:84-88` | `ToolContractShortFormTests:572`, `MaxInlineWireReplyBytes` |
 | K4 | Floors: `[RequiresPackage]` on create / modify / modify-as-new-version moves from the literal at `6be5dde28` (1.6.6.127, history) to the cut claimed in the claim comment; one floor-history paragraph; `webService` added to the floor-reason sentences; the capability is proven by probing the archive for `ProcessElementDescriptor.WebService` on the named type, both ways (bundled-packages.md) | `CreateBusinessProcessCommand.cs:215-293`, `ModifyBusinessProcessCommand.cs:227`, `ModifyProcessAsNewVersionCommand.cs:91`, e2e floor literals | `ProcessDesignerRequiresPackageAttributeTests` |
 | K5 | Descriptions (Q15): create type enum gains `webService`; one pointer clause in the `fileProcessing?` shape: `webService? (webService elements only - service + method of a registered REST service; get-guidance name=process-web-service owns the block)`; modify `addElement` and `setElement.elementUpdate` lists; describe read-back clause; `validate-process-graph` buildable list (`ValidateProcessGraphTool.cs:114`); generic-route refusal of `WebServiceUserTask` in `ListUserTasksTool.cs:58-60` | the four process tools + `ListUserTasksTool.cs` | `ToolContractPayloadBudgetTests:315`; e2e TC-I-13 in `ListUserTasksToolE2ETests` (the tool's contract text names `WebServiceUserTask` as refused on the generic route) |

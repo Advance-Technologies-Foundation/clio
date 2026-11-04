@@ -169,7 +169,7 @@ Read back (`describe-business-process`, the element's `webService` member; desig
 
 ```json
 "webService": {
-  "service": { "name": "UsrWscEchoService", "uid": "<manager-item UId>" },
+  "service": "UsrWscEchoService", "serviceUId": "<manager-item UId>",
   "method": "UsrWscEcho", "timeoutSeconds": 30, "ignoreErrors": true,
   "serviceResolved": true, "methodResolved": true,
   "parameters": [ { "name": "UsrWscReq_In", "tag": "UsrWscReq", "direction": "in", "type": "MaxSizeText",
@@ -178,8 +178,9 @@ Read back (`describe-business-process`, the element's `webService` member; desig
 }
 ```
 
-`serviceResolved`, `methodResolved`, `issues` and `parameters` are read-back fields clio tolerates; `service` is a
-string on write and an object here, so the guide says to send `service.name` back. From 1.6.6.136 the server refuses
+`serviceUId`, `serviceResolved`, `methodResolved`, `issues` and `parameters` are read-back fields clio tolerates;
+`service` keeps its write shape (the service name, null when the stored UId resolves to no service), so a described
+block is sent back unchanged. From 1.6.6.136 the server refuses
 undeclared request keys; the read-back-only keys are derived automatically because the write and describe members
 are both keyed `webService`; nothing to register, and a described block replays through the server key check
 (TC-U-109). The tree is read from
@@ -234,7 +235,7 @@ AC -> design -> proof -> story (plan section 9 has one Definition of Done row pe
 | AC6 | replace, `Success` / `Response` / `StatusCode` UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108; TC-P-12; TC-I-05; EM4 | 2 |
 | AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54; TC-I-06, 07; EM8 | 1 (read back), 2 (issues, N7) |
 | AC8 | catalog and describer never read defaults or auth (Q16, design 4.16) | TC-U-11, 25, 75; TC-U-35, 37, 53; TC-P-08; TC-I-07; TC-K-12 | 1, 2 |
-| AC9 | clio K1-K11, KB-1..KB-7, package docs C14 | TC-C-01..17; TC-K-01..13; all TC-I; AR-1, AR-2 | 1, 2 |
+| AC9 | clio K1-K11, KB-1..KB-7, package docs C14 | TC-C-01..16; TC-K-01..13; all TC-I; AR-1, AR-2 | 1, 2 |
 
 ## Gates and measurements
 

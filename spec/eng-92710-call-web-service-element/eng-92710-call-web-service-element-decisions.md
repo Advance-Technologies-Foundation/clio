@@ -806,7 +806,7 @@ declined by the owner: EM12's run half stays unmeasured and rests on the core un
 - Service param defaults can hold secrets (Q16).
 
 **Options.**
-- **A. A `webService` member `{service {name, uid}, method, timeoutSeconds, ignoreErrors, serviceResolved,
+- **A. A `webService` member `{service, serviceUId, method, timeoutSeconds, ignoreErrors, serviceResolved,
   methodResolved, issues[]}` plus the stored parameter tree (direction, tag, type, items, bound), unbound inputs
   included, read from the element and never re-derived from the service; never service param default values.** Cost:
   ~3-4 agent h.
@@ -850,6 +850,15 @@ issue."
 inputs only, with their value or token, source and tag (M-31); unbound inputs and an unbound `RequestBody` are
 omitted. What A adds is the unbound inputs, the `bound` / `result` flags and the
 `webService` member.
+
+**Changed in review (2026-11-04), the owner's decision.** A was agreed with `service {name, uid}`. A reviewer of the
+BMAD docs PR pointed out that every other block keeps its write shape on read and puts describe-only data in its own
+read-back key (`readData.sourceSchemaUId`, `subProcess.processCaption` beside `processName` / `processUId`), so a
+described block is fed back unchanged with warnings only; an object-valued `service` broke that and needed a clio
+shape refusal plus a rewrite step in the replay recipe. Now `service` is the same string the write side takes (the
+service name; null when `IX1` resolves to no service) and `serviceUId` is a read-back-only key holding the raw
+`IX1`. A described block replays unchanged; the clio object-shape refusal (former TC-C-17) and the rewrite step are
+gone.
 
 ---
 

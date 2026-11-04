@@ -143,8 +143,8 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
   bound, result), unbound inputs included, read from the element, never a default; `buildType: "webservice"`; the
   read-back-only keys are derived automatically because the write and describe members are both keyed `webService`;
   nothing to register; a described block replayed through the server key check (TC-U-68..70, 74, 75, 77..80, 99, 109). The replay half of the round trip (TC-U-78, TC-I-06;
-  TC-U-68 for the bindings) sends `service.name` (a string) and strips the read-back-only fields (`serviceResolved`,
-  `methodResolved`, `issues`, `parameters`); it goes through the same-pair no-op of story 2's P-D1, so it turns green
+  TC-U-68 for the bindings) sends the described block back unchanged, read-back-only keys (`serviceUId`,
+  `serviceResolved`, `methodResolved`, `issues`, `parameters`) included; it goes through the same-pair no-op of story 2's P-D1, so it turns green
   only once P-D1 lands.
 - [ ] **P-C2** C11 guards: `userTask` = `WebServiceUserTask` refused with a pointer to the block (Q1); SOAP refused;
   `setElement` with a `webService` block on a designer-built element that carries `BP6` refused (Q20; a
@@ -196,8 +196,7 @@ and `docs/knowledge/McpServer/` before any edit)
 - [ ] **CL-1** rebundle the final cut (`pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <pkg> -Version
   <claimed>`), PROVENANCE pins in the same commit, security counts unchanged (TC-C-08).
 - [ ] **CL-2** K2 `WebServiceBlock` key set in `ProcessBlockKeyCheck` (`Blocks`, `Element`, `ElementUpdate`) and the
-  describe read-back keys, no child key sets; an object-valued `webService.service` refused before sending with the
-  pointer to `service.name` (TC-C-01..05, 17). The key set and short form held equal to the bundled archive (CL-2,
+  describe read-back keys, no child key sets (TC-C-01..05). The key set and short form held equal to the bundled archive (CL-2,
   CL-3; TC-C-04..06) land in the rebundle commit, so no commit is red.
 - [ ] **CL-3** K3 `"webService"` in `CreateElementBlockShape` within the wire-bundle headroom (TC-C-06).
 - [ ] **CL-4** K4 floors: the `[RequiresPackage]` literal on create / modify / modify-as-new-version moves to the cut
