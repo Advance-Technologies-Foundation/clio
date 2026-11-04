@@ -19,7 +19,8 @@ FileCollection or File process parameter; a Generated report needs no seeding, b
 the one row the run time writes for the email itself.
 
 **What breaks if you ignore it** — a test that asserts delivery from the run status alone passes on an email sent
-without its files (`IgnoreErrors` is on by default, so a failed send does not fail the run). The `run-process`
+without its files (`IgnoreErrors` is on by default, so a failed send through a configured mailbox does not fail the
+run - with no usable sender it does, see `../platform/send-email-ignore-errors-does-not-cover-a-missing-sender.md`). The `run-process`
 watch is a before/after diff of the whole table, so it also reports activities and files other users or a mailbox
 synchronization wrote meanwhile - asserting on it, or cleaning up what it reported, touches rows that are not the
 test's. Put a unique token in the subject and find the activity, then its files, by query. Cleaning up with

@@ -39,8 +39,9 @@ prefix-less spelling of an item of THIS process, built from the element the refe
 when its record delivers it; anything else is refused naming the flow or field with the correct token handed back.
 The GUIDs inside braces are compared case-insensitively, and from 1.6.6.85 every surface the check covers stores
 an accepted reference with them lower-cased - the one rewrite the check makes. The check does NOT cover the Send
-email recipient and template-entity expressions, the performer and approver contact formulas or the access-rights
-grantee: those store a caller's formula as written, so a misspelling or an upper-case GUID there still reads empty. Only the reference's own GUIDs change: a
+email recipient and template-entity expressions, the approver contact formula or the access-rights grantee: those
+store a caller's formula as written (a user task's performer contact joined the check in 1.6.6.138, through the
+same resolver as a Formula body), so a misspelling or an upper-case GUID there still reads empty. Only the reference's own GUIDs change: a
 `Lookup` macro's record ids and GUIDs in string literals are data and keep their case.
 
 **What breaks if you ignore it** — "it saved" is not evidence a hand-written reference works: the unread-column
