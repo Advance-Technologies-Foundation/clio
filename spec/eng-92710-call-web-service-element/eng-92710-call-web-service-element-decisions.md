@@ -48,7 +48,7 @@ measurements in [measurements](eng-92710-call-web-service-element-measurements.m
 | Q8 | Timeout | whole seconds in the contract, stored as ms; 0 / absent = unset | EM2 |
 | Q9 | Resolution | service by UId, name, caption, case-insensitive, ambiguity refused; method case-insensitive; canonical spelling written; refusals list valid names; cross-package notice | EM10, EM11 (designer halves done) |
 | Q10 | Discovery | no new package operation, no clio tool in v1; tree returned by create/modify and describe; same-request mappings; the unknown-service refusal points to registration; KB "task without details"; registration = ENG-105475 "Register a REST web service through the AI Toolkit" | agent runs AR-1, AR-2 |
-| Q11 | Method/service change | A3: replace semantics, result params keep their UIds, retarget guard over every other parameter of the element, notice lists dropped bindings | EM4 (done) |
+| Q11 | Method/service change | A3: replace semantics, `Success` / `Response` / `StatusCode` keep their UIds, retarget guard over every other parameter of the element, notice lists dropped bindings | EM4 (done) |
 | Q12 | Drift / latent loss | describe issues `serviceResolved` / `methodResolved` / nested drift; notice on a modify that would prune | EM8 (current-builder half done: the loss is real) |
 | Q13 | Platform floors | IX4 direct (Q7); warning N5 on a sourceless nested object list (ENG-55920 "Unable to use array inside array in web-service business process element") on every target | EM9 (done), EM12 |
 | Q14 | Describe read-back | `webService` member + stored parameter tree, never re-derived, never defaults | EM2, EM8 |

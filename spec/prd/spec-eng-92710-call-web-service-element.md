@@ -231,7 +231,7 @@ AC -> design -> proof -> story (plan section 9 has one Definition of Done row pe
 | AC3 | item mappings and `RequestBody` (Q5), declared Collection (Q6), C13 mirror refusals | TC-U-56..66, 101; TC-P-06, 10, 11; TC-I-02, 08; EM3, EM6 | 1 |
 | AC4 | `IX4` written directly (Q7), N3, result params as ordinary outputs | TC-U-29, 66, 96; TC-I-09; EM7 | 1 |
 | AC5 | shaper port (Q3), BK15 writer (Q4), WSCR rule | TC-U-01..14, 41..45, 106; TC-P-01..11, 13, 14; EM2, EM3, EM5 | 1 |
-| AC6 | replace, result-param UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108; TC-P-12; TC-I-05; EM4 | 2 |
+| AC6 | replace, `Success` / `Response` / `StatusCode` UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108; TC-P-12; TC-I-05; EM4 | 2 |
 | AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54; TC-I-06, 07; EM8 | 1 (read back), 2 (issues, N7) |
 | AC8 | catalog and describer never read defaults or auth (Q16, design 4.16) | TC-U-11, 25, 75; TC-U-35, 37, 53; TC-P-08; TC-I-07; TC-K-12 | 1, 2 |
 | AC9 | clio K1-K11, KB-1..KB-7, package docs C14 | TC-C-01..17; TC-K-01..13; all TC-I; AR-1, AR-2 | 1, 2 |

@@ -5043,7 +5043,7 @@ stories:
     blocks: []
     note: >-
       ENG-92710 Call web service element, slice D: a service or method change replaces the element's parameters as the
-      designer does, the result parameters keep their UIds and the change is refused while anything reads another
+      designer does, Success / Response / StatusCode keep their UIds (RequestBody is regenerated) and the change is refused while anything reads another
       parameter of the element, tagged inputs, nested items and RequestBody included (Q11 A3); describe reports
       unresolved services and methods and a modify that lets the platform prune says so (Q12). Ships in the same
       package, knowledge and clio PRs as story 1; status moves with story 1.

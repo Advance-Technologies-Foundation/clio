@@ -88,7 +88,7 @@ service-save and designer halves (M-29 to M-31: a designer save of an element wh
 params and BK15 rows, decisions Q12). Measured facts: M-01 to M-31. Still to do: EM5, EM6 (reduced by E4), the
 builder halves of EM7, EM10, EM11 and EM12 (the N5 notice), EM8's claimed-cut half (the N7 notice) and EM2's
 read-back on the final cut; EM12's run half is not measurable on the stand (Q17). Q11 settled as A3 after EM4: the
-result params keep their UIds, and the guard refuses while anything reads a parameter of the element other than
+`Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated), and the guard refuses while anything reads a parameter of the element other than
 `Success` / `Response` / `StatusCode`. Stand objects created: processes
 `UsrWscBk15Probe`, `UsrWscEm3Probe`, `UsrProcess_3389428`, `UsrWscEm2CaptureA`, `UsrWscEm3CaptureB`,
 `UsrWscEm4MethodChange`, `UsrWscEm7Ignore`, `UsrWscEm7Strict`, `UsrWscEm8Drift2`, `UsrWscEm8Drift3`; package `UsrWscEm10Proc`; services `UsrWscEchoService`,
@@ -154,7 +154,7 @@ The decisions file holds options, evidence, the stand measurements and cost per 
   valid; the same service and method in any case is a no-op; refused while another element, a process parameter, a
   flow condition or a formula reads any parameter of the element other than those three (tagged inputs, nested items
   and `RequestBody` included: all regenerated with new UIds); a service change renames the element caption as the designer does
-  unless the call sets one, a method change keeps it (gate 1, 2026-11-03).
+  (always: `elementUpdate` has no `caption` member), a method change keeps it (gate 1, 2026-11-03).
 - **Q12** Describe reports `serviceResolved`, `methodResolved` and nested drift as issues; a modify that lets the
   platform prune an unresolved element gets a notice naming the element and method; not refused. A designer save of
   such an element deletes all its params and BK15 rows (M-30), so the KB article puts the remedy before any designer

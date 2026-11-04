@@ -690,7 +690,7 @@ Against the expected table: S2 matches except "the dependent element marked inva
 not mark dependents; it leaves dangling tokens that only the save-time validation reports, and saves anyway. `IX3` /
 `IX4` on a method change: kept (now measured). S3 matches, plus `IX4` survives a service change. Per "If not",
 "dependents are not marked invalid -> the retarget guard is stricter than the designer; the owner confirms Q11 stays":
-asked in decisions Q11, answered the same day: A3 (the result params keep their UIds, the guard covers tagged
+asked in decisions Q11, answered the same day: A3 (`Success` / `Response` / `StatusCode` keep their UIds, the guard covers tagged
 outputs only). Same-named bindings: none could survive (no same-named params between the methods).
 
 **Steps:**

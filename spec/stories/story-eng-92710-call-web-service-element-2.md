@@ -74,7 +74,7 @@ EM status as the measurements file records it on 2026-11-03.
 
 | Gate | What | Who | Before |
 |---|---|---|---|
-| Q11, Q12 | A3 (replace, result params keep their UIds, guard over every other parameter of the element) and A (issues + notice, no refusal) | owner | done 2026-11-03 |
+| Q11, Q12 | A3 (replace, `Success` / `Response` / `StatusCode` keep their UIds, guard over every other parameter of the element) and A (issues + notice, no refusal) | owner | done 2026-11-03 |
 | EM4 | designer capture C: a method change and a service change (what is cleared and kept, dependents, `IX3` / `IX4`) | lead in Claude in Chrome, owner logs in | done 2026-11-03 (M-20, M-26, M-27): the P-D1 oracle and parity row TC-P-12 |
 | STOP | EM5 passed on the experimental cut (story 1) | lead, owner's yes | slice C, so slice D |
 | EM8 | the latent loss: current-builder half done 2026-11-03 (M-18, the loss is real and silent); service-save and designer halves done 2026-11-03 (M-29..M-31: a service save writes nothing and evicts no cached process, a cold load prunes, a designer save deletes every parameter of the element and its BK15 rows); only the claimed-cut half (the notice N7) is open | lead, owner's yes per write | the P-D3 notice is confirmed before the PRs leave draft |

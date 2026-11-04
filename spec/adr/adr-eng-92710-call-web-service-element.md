@@ -239,7 +239,7 @@ Evidence: no EM; the designer's service list is `VwWebServiceV2` with no "new se
 decisions Q10); M-03 (the stand registers 3 services, so a refusal can list them all; the corpus has 32 service
 schemas with at most 7 methods each, decisions Q9).
 
-### D8 (Q11, A3). A method or service change replaces the generated parameters; the result parameters keep their UIds; the retarget guard covers every other parameter of the element
+### D8 (Q11, A3). A method or service change replaces the generated parameters; `Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated); the retarget guard covers every other parameter of the element
 
 `setElement` with a different method or service (after canonicalisation) runs the Update mode (design 3.2):
 resolve and shape first, so every refusal fires before a write; use the dependency snapshot the edit pipeline already

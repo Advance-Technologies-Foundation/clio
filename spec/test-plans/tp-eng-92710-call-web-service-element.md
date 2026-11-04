@@ -81,7 +81,7 @@ AC numbering is the 9 Jira AC, as in the SPEC and the plan section 9 Definition 
 | Q8 | whole seconds, stored x1000; 0 / absent unset | TC-U-28, 77; TC-P-09; TC-I-01; TC-K-06; EM2 |
 | Q9 | UId -> code -> caption, case-insensitive, ambiguity refused, canonical names, listing refusals, cross-package notice | TC-U-15..26; TC-I-03, 04; TC-K-05; EM10, EM11 |
 | Q10 | no new operation, no discovery tool; same-request references; registration pointer; "task without details" | TC-U-18, 31, 32, 88, 95, 105; TC-C-08; TC-I-01, 03; TC-K-01, 13; AR-1, AR-2 |
-| Q11 | A3: replace, result params keep their UIds, the change refused while anything reads another parameter of the element (tagged inputs, nested items and `RequestBody` included), dropped bindings listed with their values; the caption follows the designer | TC-U-33..39, 107, 108; TC-P-12; TC-I-05; TC-K-05; EM4 |
+| Q11 | A3: replace, `Success` / `Response` / `StatusCode` keep their UIds, the change refused while anything reads another parameter of the element (tagged inputs, nested items and `RequestBody` included), dropped bindings listed with their values; the caption follows the designer | TC-U-33..39, 107, 108; TC-P-12; TC-I-05; TC-K-05; EM4 |
 | Q12 | describe issues + latent-loss notice on modify, not refused | TC-U-53, 54, 71..73, 102..104; TC-I-07; TC-K-05; EM8 |
 | Q13 | N5 on a sourceless nested list, on every target | TC-U-52; TC-I-12; TC-K-06 (EM12 not measurable under E4) |
 | Q14 | `webService` member + stored tree, unbound inputs included, never re-derived, never defaults; replays through the server key check | TC-U-69..75, 77..80, 102..104, 109; TC-P-03; TC-C-10; TC-I-01, 06, 07; TC-K-02 |
@@ -152,7 +152,7 @@ harness behaviour the first CI run of the draft PR decides (fallback: EM5 / EM8 
 | TC-U-32 | `Modify_ShouldResolveGeneratedParametersInOperationOrder` | operation order decides |
 | TC-U-33 | `SetElement_ShouldTouchNothingElse_WhenOnlyTimeoutOrIgnoreErrorsChange` | BP2, resources, rows byte-identical |
 | TC-U-34 | `SetElement_ShouldBeANoOp_ForTheSameServiceAndMethod` | same service and method in any case: no write, no notice |
-| TC-U-35 | `SetElement_ShouldReplaceEveryGeneratedParameter_WhenTheMethodChanges` | tagged params regenerated, dropped bindings listed, result params keep their UIds; the caption is kept; a planted service-default sentinel is absent from N4 (Q16) |
+| TC-U-35 | `SetElement_ShouldReplaceEveryGeneratedParameter_WhenTheMethodChanges` | tagged params regenerated, dropped bindings listed, `Success` / `Response` / `StatusCode` keep their UIds; the caption is kept; a planted service-default sentinel is absent from N4 (Q16) |
 | TC-U-36 | `SetElement_ShouldReplace_WhenTheServiceChanges` | the same across services (EM4 oracle); the caption becomes `<service caption> <N>` |
 | TC-U-37 | `SetElement_ShouldRefuseAChange_ThatStrandsADependent` | anything (another element, a process parameter, a flow condition, a formula body) reading a parameter of the element other than Success / Response / StatusCode (a tagged input, a nested item, `RequestBody` included) refuses the change (`FindDependents(element, survivingParameterUIds: {Success, Response, StatusCode UIds}, includeOwner: false)`); a planted service-default sentinel is absent from the refusal (Q16) |
 | TC-U-38 | `SetElement_ShouldRefuseAChange_WhenADependentReadsASameNamedOutput` | a same-named parameter of the new method does not save a reader: references are by UId |
