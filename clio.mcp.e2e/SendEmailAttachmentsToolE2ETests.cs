@@ -52,12 +52,14 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.138,
-	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the
-	/// first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.138 is the first that reports
-	/// a source running after the email on describe, names the route of the same files through a process parameter,
-	/// and expands a name in a performer contact - but clio refuses a stand older than its bundled archive, so below
-	/// the bundled version every case would fail on that refusal instead of being Ignored. Moves with every rebundle.
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.138.
+	/// 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the first whose describe lists the rows
+	/// in stored order, which TC-I-05 asserts; 1.6.6.138 is the first that reports a source running after the email,
+	/// names the route of the same files through a process parameter, expands a name in a performer contact and
+	/// replaces a recipient through <c>addMapping</c> - the newest behaviour a case here asserts, so it is the floor.
+	/// A stand at or above it but behind the archive this clio bundles passes the arrange and is refused by clio on its
+	/// first call; the create, modify and describe helpers turn that refusal into an Ignore. Raise it when a case
+	/// starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
 	private const string MinimumPackageVersion = "1.6.6.138";
 
@@ -642,7 +644,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		List<string> created = [];
 		try {
-			string processName = NewGapsProcessName("Order");
+			string processName = NewProcessName("Order");
 			string descriptor = Descriptor(processName, FileParametersJson,
 				[("OF1", ObjectFilesElementJson("OF1")),
 					("SE1", SendEmailJson("SE1", "manual",
@@ -679,7 +681,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		List<string> created = [];
 		try {
-			string processName = NewGapsProcessName("Route");
+			string processName = NewProcessName("Route");
 			string descriptor = Descriptor(processName, RouteParametersJson,
 				[("OF1", ObjectFilesElementJson("OF1")),
 					("SE1", SendEmailJson("SE1", "manual", """
@@ -712,7 +714,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		List<string> created = [];
 		try {
-			string processName = NewGapsProcessName("Performer");
+			string processName = NewProcessName("Performer");
 			string descriptor = LinearDescriptor(processName, FileParametersJson,
 				("SE1", """
 					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
@@ -750,7 +752,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		await using ProcessDesignerArrangeContext context = await StartAsync();
 		List<string> created = [];
 		try {
-			string processName = NewGapsProcessName("Recipient");
+			string processName = NewProcessName("Recipient");
 			await ArrangeProcessAsync(context, created, processName, LinearDescriptor(processName, RecipientParametersJson,
 				("SE1", """
 					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
@@ -909,12 +911,6 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private static string NewProcessName(string caseName) => $"UsrClioBpSe{caseName}E2e{Guid.NewGuid():N}";
 
 	/// <summary>
-	/// A process code unique to this run, in the <c>UsrSe105549&lt;Case&gt;</c> family of the reachability, route,
-	/// performer and recipient cases.
-	/// </summary>
-	private static string NewGapsProcessName(string caseName) => $"UsrSe105549{caseName}{Guid.NewGuid():N}";
-
-	/// <summary>
 	/// Builds a process, recording its name for cleanup BEFORE the call: a build the server saved but whose answer
 	/// never arrived must still be removed. Ignores the test when clio refused the call because the stand's
 	/// CrtProcessBuilder is behind.
@@ -951,10 +947,16 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		return result;
 	}
 
-	/// <summary>Reads a process back in full (<c>mode=full</c>) and returns its graph.</summary>
+	/// <summary>
+	/// Reads a process back in full (<c>mode=full</c>) and returns its graph. Ignores the test when clio refused the
+	/// call because the stand's CrtProcessBuilder is behind, like a build or a modify.
+	/// </summary>
 	private static async Task<JsonObject> DescribeGraphAsync(ProcessDesignerArrangeContext context,
-			string processName) =>
-		DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+			string processName) {
+		CallToolResult result = await ProcessDesignerE2EArrange.DescribeAsync(context, processName);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		return DescribedProcessGraph.Read(result);
+	}
 
 	/// <summary>Removes every process a test built, newest first; a failed delete is reported, not thrown.</summary>
 	private static async Task DeleteProcessesAsync(ProcessDesignerArrangeContext context, List<string> created) {
