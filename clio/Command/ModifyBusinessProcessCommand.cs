@@ -224,7 +224,9 @@ namespace Clio.Command;
 // element; the rationale is recorded once, on CreateBusinessProcessOptions, and holds here unchanged.
 // Raised to 1.6.6.119 by ENG-103162 for itemProperties on addParameter, and to 1.6.6.127 by ENG-95985 for
 // email.attachments on addElement / setElement; the rationale is on CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.127",
+// Raised to 1.6.6.140 by ENG-105549 for the tightened attachment-source walk behind the unscoped-files refusal (a
+// security-character change, which takes a literal); the rationale is on CreateBusinessProcessOptions.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.140",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
