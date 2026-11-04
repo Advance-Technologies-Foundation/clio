@@ -210,7 +210,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("The process-designer lane runs exactly the category the existing lane excludes, both lanes spell it the way the compiled McpE2ECategories constant does, and the lane keeps the existing lane's other exclusions, so no ProcessDesigner test runs on neither lane or on both.")]
+	[Description("The process-designer lane runs exactly the category the existing lane excludes, both lanes spell it the way the compiled McpE2ECategories constant does, the lane keeps the existing lane's other exclusions, so every ProcessDesigner test runs on exactly one lane, and every path the lane's two lists name still exists in the tree.")]
 	public void Manifest_ShouldSplitTheProcessDesignerCategoryBetweenTheTwoLanes() {
 		// Arrange
 		JsonElement manifest = ReadManifest();
@@ -230,6 +230,12 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "the existing lane's stand has no CrtProcessBuilder, so it must exclude the category the process-designer lane runs");
 		laneClauses.Should().Contain(existingClauses.Where(clause => clause != $"TestCategory!={category}"),
 			because: "every other exclusion of the existing lane - manual and developer-local tests - holds on the process-designer lane too");
+		// The anchor is the text before the first '*', so a glob has to start at a segment boundary (clio/CrtProcessBuilder/**).
+		foreach (string entry in lane.GetProperty("exclusivePaths").EnumerateArray().Concat(lane.GetProperty("installCommandPaths").EnumerateArray()).Select(path => path.GetString()!)) {
+			string anchor = Path.Combine(RepositoryRoot, entry.Split('*')[0].TrimEnd('/').Replace('/', Path.DirectorySeparatorChar));
+			(File.Exists(anchor) || Directory.Exists(anchor)).Should().BeTrue(
+				because: $"'{entry}' must still point into the tree: a moved or renamed file silently drops rule 2a or 2b, and the lane stops running for changes to it");
+		}
 	}
 
 	[Test]
@@ -444,13 +450,17 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("A change to the install-process-builder command runs the whole ProcessDesigner category, because no fixture names that command and the process-designer lane's Prepare step is the only place it meets a live stand.")]
+	[Description("A change to the install-process-builder command runs the whole ProcessDesigner category, because no stand test names that command and the process-designer lane's Prepare step is the only place it meets a live stand.")]
 	public void Script_ShouldRunTheWholeProcessDesignerCategory_WhenTheInstallCommandChanged() {
 		// Arrange
+		// The synthetic tree: rule 2b does not stop the classification, so the file goes on into the reference graph,
+		// and over the real product that graph is the most expensive thing this fixture can build.
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		repo.WriteFile("clio/Command/InstallBundledPackageCommand.cs", "public sealed class InstallBundledPackageCommand { }");
 		string[] changed = ["clio/Command/InstallBundledPackageCommand.cs"];
 
 		// Act
-		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false, repo.Root);
 
 		// Assert
 		selection.GetProperty("pdMode").GetString().Should().Be("full",

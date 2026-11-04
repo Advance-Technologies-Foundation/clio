@@ -65,7 +65,7 @@ internal static class ProcessDesignerE2ESupport {
 				IgnoreUnlessProcessBuilderIsRequired(
 					"clio refused the call before the sandbox's CrtProcessBuilder saw it - the package is missing or "
 					+ "older than this clio requires. Install it with install-process-builder (this test was written "
-					+ $"against {writtenAgainstVersion}); it is Ignored, NOT passing.");
+					+ $"against {writtenAgainstVersion}).");
 			}
 		}
 	}
@@ -81,7 +81,7 @@ internal static class ProcessDesignerE2ESupport {
 	/// into a green build with the category skipped. On a developer stand that is merely behind, the Ignore stays.
 	/// Only reasons about the PACKAGE belong here: a missing sandbox or seed data keeps its plain Ignore.
 	/// </remarks>
-	/// <param name="reason">Why the package cannot serve the test, worded for the Ignore.</param>
+	/// <param name="reason">Why the package cannot serve the test, worded without naming the outcome: under the switch it is the failure text.</param>
 	/// <param name="settings">The loaded settings, or <see langword="null"/> to load them.</param>
 	internal static void IgnoreUnlessProcessBuilderIsRequired(string reason, McpE2ESettings? settings = null) {
 		if ((settings ?? TestConfiguration.Load()).RequireProcessBuilder) {

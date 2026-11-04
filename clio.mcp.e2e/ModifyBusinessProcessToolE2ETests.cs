@@ -1240,8 +1240,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
 			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
-				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
-				+ "meaningful.");
+				+ "1.6.2.18; the rebundle and a deploy are what make this test meaningful.");
 		}
 	}
 
@@ -1291,11 +1290,10 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		if (built.IsError is true && !payload.Contains("created (UId:")) {
 			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
-				+ "the accessRights block never reaches the read-back guard. This is expected until the "
-				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
-				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
-				+ "precondition passes while the block is still discarded. Until then "
-				+ "then this test is Ignored, NOT passing, and the modify path is unverified end to end.");
+				+ "the accessRights block never reaches the read-back guard. The package has to come from a source "
+				+ "tree that CONTAINS the element; the version precondition cannot tell, because a package can report "
+				+ "a version at or above the floor and still lack the element. On this stand the modify path is "
+				+ "unverified end to end.");
 		}
 	}
 

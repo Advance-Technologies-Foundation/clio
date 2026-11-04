@@ -7,7 +7,7 @@ applies-to:
   - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
   - clio.tests/McpE2eSelectionCoverageTests.cs
 ticket: GH-1570
-date: 2026-10-20
+date: 2026-11-04
 ---
 
 **What is true** — since 2026-09-16 the `dotnet test` step of `Team_Atf_ClioMcpE2eTests` no longer
@@ -33,9 +33,12 @@ comment says `selection: full` or `selection: subset`; the commit statuses `CLIO
 and `CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)` do not.
 
 **Why it is this way** — the full suite is ≈ 41 minutes of test time on a ≈ 48-minute build, and
-most of it cannot be affected by a one-tool pull request. One parameterized plan was chosen over
-several plans because every extra plan is another ≈ 7-minute Creatio deploy on a scarce agent. The
-default stays the full suite so trunk keeps the complete oracle.
+most of it cannot be affected by a one-tool pull request. One parameterized plan per lane was chosen
+over several plans because every extra plan is another ≈ 7-minute Creatio deploy on a scarce agent;
+ENG-97005 added the second lane only for the category whose package install does not fit the first
+(see `mcp-e2e-processdesigner-category-splits-the-suite-between-two-teamcity-lanes.md`), and the
+rest of the suite stays on the one plan. The default stays the full filter so trunk keeps the complete
+oracle on both lanes.
 
 **What breaks if you ignore it** — renaming the parameter, or changing its default, in TeamCity
 without touching `baseFilter` (or `processDesignerLane.baseFilter`) here is silent on both sides: the

@@ -1203,11 +1203,10 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		if (elementTypeRejected) {
 			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
-				+ "the accessRights block never reaches the read-back guard. This is expected until the "
-				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
-				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
-				+ "precondition passes while the block is still discarded. Until then this test is Ignored, "
-				+ "NOT passing, and the create path is unverified end to end.");
+				+ "the accessRights block never reaches the read-back guard. The package has to come from a source "
+				+ "tree that CONTAINS the element; the version precondition cannot tell, because a package can report "
+				+ "a version at or above the floor and still lack the element. On this stand the create path is "
+				+ "unverified end to end.");
 		}
 
 		callResult.IsError.Should().NotBeTrue(
