@@ -233,14 +233,15 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("Each queue chain of the trigger workflow sends its own lane's selection to its own configuration - attempt-* queue Team_Atf_ClioMcpE2eTests with filter and mode, pd-attempt-* queue TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner with pd_filter and pd_mode - and the gate waits for all six jobs.")]
+	[Description("Each queue chain of the trigger workflow sends its own lane's selection to its own configuration - attempt-* queue Team_Atf_ClioMcpE2eTests with filter and mode, pd-attempt-* queue TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner with pd_filter and pd_mode - the gate waits for all six jobs, the three attempts of a chain send one and the same TC_EXTRA_PROPERTIES, and the process-designer chain sends the existing lane's switches plus InstallProcessBuilder and env.McpE2E__RequireProcessBuilder set to true.")]
 	public void TriggerWorkflow_ShouldQueueEachLaneWithItsOwnSelection() {
 		// Arrange
 		Dictionary<object, object> jobs = ReadWorkflowJobs(TriggerWorkflowPath);
-		(string Prefix, string BuildType, string Filter, string Mode)[] lanes = [
-			("attempt-", "Team_Atf_ClioMcpE2eTests", "${{ needs.select.outputs.filter }}", "${{ needs.select.outputs.mode }}"),
-			("pd-attempt-", "TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner", "${{ needs.select.outputs.pd_filter }}", "${{ needs.select.outputs.pd_mode }}")
+		(string Prefix, string BuildType, string Filter, string Mode, string[] Switches)[] lanes = [
+			("attempt-", "Team_Atf_ClioMcpE2eTests", "${{ needs.select.outputs.filter }}", "${{ needs.select.outputs.mode }}", Array.Empty<string>()),
+			("pd-attempt-", "TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner", "${{ needs.select.outputs.pd_filter }}", "${{ needs.select.outputs.pd_mode }}", new[] { "InstallProcessBuilder", "env.McpE2E__RequireProcessBuilder" })
 		];
+		Dictionary<string, Dictionary<string, string>> switchesByLane = new();
 
 		// Act
 		string[] gateNeeds = ((List<object>)GetMap(jobs, "gate")["needs"]).Select(need => need.ToString()!).ToArray();
@@ -263,7 +264,18 @@ internal sealed class McpE2eSelectionCoverageTests {
 				gateNeeds.Should().Contain(name,
 					because: "the gate can only report a lane whose queue jobs it waits for");
 			}
+			string[] extraProperties = chain.Jobs.Select(job => job.Environment["TC_EXTRA_PROPERTIES"].ToString()!).Distinct().ToArray();
+			extraProperties.Should().ContainSingle(
+				because: $"the three attempts of {chain.Lane.Prefix}* are retries of one queue request; a switch that differs between them gives the build different parameters depending on which attempt reached TeamCity, and only the runs that fall through to that attempt would notice");
+			Dictionary<string, string> switches = JsonSerializer.Deserialize<Dictionary<string, string>>(extraProperties[0])!;
+			foreach (string key in chain.Lane.Switches) {
+				switches.Should().ContainKey(key, because: $"{chain.Lane.Prefix}* must send {key} at all; the configuration default would otherwise decide").WhoseValue.Should().Be("true",
+					because: $"{chain.Lane.Prefix}* must send {key}=true: it makes the lane install the bundled package and fail, not ignore, a test that finds it missing");
+			}
+			switchesByLane[chain.Lane.Prefix] = switches;
 		}
+		switchesByLane["pd-attempt-"].Should().Contain(switchesByLane["attempt-"],
+			because: "the process-designer lane deploys the same full Creatio and allows the same destructive tests as the existing lane; its own switches come on top");
 	}
 
 	[Test]
@@ -301,6 +313,40 @@ internal sealed class McpE2eSelectionCoverageTests {
 					condition.Should().Contain($"needs.{previous}.outputs.queued != 'true'",
 						because: $"{name} may run only when no earlier attempt of the same lane queued a build, or the lane is queued twice");
 				}
+			}
+		}
+	}
+
+	[Test]
+	[Description("Each 'Require that one attempt queued' step of the gate reads the queued output, the runner and the result of the three attempts of its own lane and skips on its own lane's mode only, so a step re-pointed at the other lane's attempts or mode fails here instead of reporting the wrong lane while the two workflow tests above stay green.")]
+	public void TriggerWorkflow_ShouldGateEachLaneOnItsOwnAttempts() {
+		// Arrange
+		List<Dictionary<object, object>> gateSteps = GetSteps(GetMap(ReadWorkflowJobs(TriggerWorkflowPath), "gate"));
+		(string StepName, string Prefix, string ModeOutput)[] lanes = [
+			("Require that one attempt queued the build", "attempt-", "needs.select.outputs.mode"),
+			("Require that one attempt queued the process-designer build", "pd-attempt-", "needs.select.outputs.pd_mode")
+		];
+
+		// Act
+		var steps = lanes.Select(lane => (Lane: lane, Step: gateSteps.Single(step => step.TryGetValue("name", out object? name) && name?.ToString() == lane.StepName))).ToArray();
+
+		// Assert
+		foreach (var (lane, step) in steps) {
+			string condition = step["if"].ToString()!;
+			Dictionary<object, object> environment = (Dictionary<object, object>)step["env"];
+			condition.Should().Contain($"{lane.ModeOutput} != 'none'",
+				because: $"the step for {lane.Prefix}* is skipped exactly when its own lane had nothing to queue");
+			foreach (string otherMode in lanes.Where(other => other.Prefix != lane.Prefix).Select(other => other.ModeOutput)) {
+				condition.Should().NotContain(otherMode,
+					because: $"the other lane's mode would skip or fail the step for {lane.Prefix}* for that lane's reasons");
+			}
+			foreach (int attempt in Enumerable.Range(1, 3)) {
+				environment[$"QUEUED_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.outputs.queued }}}}",
+					because: $"the step for {lane.Prefix}* passes or fails on the queued output of its own attempts");
+				environment[$"RUNNER_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.outputs.runner }}}}",
+					because: $"the step for {lane.Prefix}* names the runners its own attempts ran on");
+				environment[$"RESULT_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.result }}}}",
+					because: $"the step for {lane.Prefix}* reports the result of its own attempts");
 			}
 		}
 	}
@@ -409,7 +455,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 		// Assert
 		selection.GetProperty("pdMode").GetString().Should().Be("full",
 			because: "the install runs before every test of that lane, so any of them can show a broken install");
-		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("processDesignerLane.fullRunPaths"),
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("processDesignerLane.installCommandPaths"),
 			because: "the decision log must name the rule that ran the process-designer lane in full");
 	}
 

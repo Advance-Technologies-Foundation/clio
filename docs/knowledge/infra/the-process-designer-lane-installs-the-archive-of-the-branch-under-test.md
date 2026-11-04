@@ -19,7 +19,7 @@ which the build copies from `clio/CrtProcessBuilder/`, waits for the restart and
 `ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired` FAIL a test that finds the package
 missing, older than it needs, or without the capability it tests. The step exists only in the TeamCity
 configuration. It is also the only live check of the install command itself, which no fixture names:
-`processDesignerLane.fullRunPaths` in `mcp-e2e-selection.json` runs the whole category for a change to it.
+`processDesignerLane.installCommandPaths` in `mcp-e2e-selection.json` runs the whole category for a change to it.
 
 **Why it is this way** - the bundled archive is part of what a clio pull request changes, so the stand has
 to carry that archive: a rebundle is tested by its own bytes. The zip the package repository's Jenkins job

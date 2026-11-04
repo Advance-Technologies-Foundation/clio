@@ -8,7 +8,7 @@
     "  2. not under relevantPaths            -> ignored",
     "  2a. processDesignerLane.exclusivePaths -> the whole McpE2E.ProcessDesigner category on the process-designer",
     "                                           lane; the existing lane does not classify the file at all",
-    "  2b. processDesignerLane.fullRunPaths  -> the whole McpE2E.ProcessDesigner category on the process-designer",
+    "  2b. processDesignerLane.installCommandPaths -> the whole McpE2E.ProcessDesigner category on the process-designer",
     "                                           lane; the rules below still classify the file for the existing lane",
     "  3. fullRunPaths                       -> the whole suite runs (shared infrastructure)",
     "  4. clio.mcp.e2e/<Fixture>.cs          -> that fixture",
@@ -58,10 +58,11 @@
     "run here too, and a subset keeps the selected fixtures that carry a test in the category and outside the",
     "exclusions of baseFilter below. Two lists of its own run the whole category here. exclusivePaths is what only",
     "this lane can observe - the bundled archive - so the existing lane, which never installs the package, does",
-    "not classify those files. fullRunPaths is the code of the install this lane performs in its Prepare step,",
-    "which no fixture names, so without the list a change to it would run nowhere; the existing lane still",
-    "classifies those files. baseFilter below is the default of the lane's McpE2eTestFilter parameter in",
-    "TeamCity, and a full pull-request run sends it as is."
+    "not classify those files. installCommandPaths is the code of the install this lane performs in its Prepare",
+    "step (install-process-builder), which no fixture names, so without the list a change to it would run nowhere;",
+    "the existing lane still classifies those files. Neither list is a fullRunPaths of this lane: the top-level",
+    "fullRunPaths means the whole suite on the existing lane and the whole category here. baseFilter below is the",
+    "default of the lane's McpE2eTestFilter parameter in TeamCity, and a full pull-request run sends it as is."
   ],
   "processDesignerLane": {
     "category": "McpE2E.ProcessDesigner",
@@ -69,7 +70,7 @@
     "exclusivePaths": [
       "clio/CrtProcessBuilder/**"
     ],
-    "fullRunPaths": [
+    "installCommandPaths": [
       "clio/Command/InstallProcessBuilderCommand.cs",
       "clio/Command/InstallBundledPackageCommand.cs",
       "clio/Command/InstallBundledPackageOptions.cs"
@@ -120,7 +121,12 @@
     "Only genuinely global things belong here: code every MCP session executes before any tool runs,",
     "the harness itself, and artifacts the deploy installs. Everything else under clio/ is classified",
     "by the reference graph (rule 7) - putting a path here instead is a measurable cost, because every",
-    "pull request touching it pays for the whole suite."
+    "pull request touching it pays for the whole suite. A match here is a full run of both lanes: the whole suite",
+    "on the existing lane and the whole McpE2E.ProcessDesigner category on the process-designer lane. The two",
+    "registrationFiles are classified first: a diff made only of registration statements selects the fixtures",
+    "of the registered types instead (see Registration_* in the guard tests).",
+    "clio/**/*.gz does not reach clio/CrtProcessBuilder/*.gz: rule 2a (processDesignerLane.exclusivePaths) runs",
+    "first and keeps that archive on the process-designer lane alone."
   ],
   "fullRunPaths": [
     "clio/Program.cs",

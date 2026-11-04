@@ -15,9 +15,11 @@
 #   pdMode, pdFilter, pdFixtures - the same three for the process-designer lane
 #             (TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner), which runs only the
 #             McpE2E.ProcessDesigner category on a stand that carries CrtProcessBuilder.
-#             pdMode is "full" whenever mode would be full by a rule, or a
-#             file under processDesignerLane.exclusivePaths or fullRunPaths changed; otherwise the selected
-#             fixtures that carry a test in the category, or "none". pdFilter is never empty unless pdMode is "none".
+#             pdMode is "full" whenever mode would be full by a rule, a file under
+#             processDesignerLane.exclusivePaths or installCommandPaths changed, or the lane's own subset
+#             exceeds maxSubsetFixtures (the existing lane's subset size does not count here); otherwise
+#             the selected fixtures that carry a test in the category, or "none". pdFilter is never
+#             empty unless pdMode is "none".
 #
 # The rules live in clio.mcp.e2e/TestSelection/mcp-e2e-selection.json (read its _comment).
 # With -Inventory the script prints what it sees instead of a selection:
@@ -116,7 +118,7 @@ if ([string]::IsNullOrWhiteSpace($pdCategory) -or -not $pdBaseFilter.StartsWith(
 }
 $pdExcluded = @([regex]::Matches($pdBaseFilter, 'TestCategory!=([^&|()\s]+)') | ForEach-Object { $_.Groups[1].Value })
 $pdExclusivePaths = @($manifest.processDesignerLane.exclusivePaths)
-$pdFullRunPaths = @($manifest.processDesignerLane.fullRunPaths)
+$pdInstallCommandPaths = @($manifest.processDesignerLane.installCommandPaths)
 $categoryConstants = @{}
 $categoryConstantsPath = Join-Path $fixtureRoot 'Support/Configuration/McpE2ECategories.cs'
 if (Test-Path -LiteralPath $categoryConstantsPath) {
@@ -1294,7 +1296,7 @@ $fixtures = New-Object System.Collections.Generic.HashSet[string]
 $decisions = New-Object System.Collections.Generic.List[string]
 $relevantCount = 0
 $processDesignerOnlyCount = 0
-$processDesignerFullRunCount = 0
+$processDesignerInstallCommandCount = 0
 
 function Add-Decision([string] $File, [string] $Rule, [string[]] $Selected) {
     $suffix = if ($Selected.Count -gt 0) { ' -> ' + (($Selected | Sort-Object) -join ', ') } else { '' }
@@ -1313,9 +1315,9 @@ foreach ($file in $ChangedFiles) {
     }
     # Rule 2b: the code of the install the process-designer lane performs before its tests. No fixture names
     # it, so only a full run there exercises it; the rules below still classify it for the existing lane.
-    if (Test-GlobMatch $file $pdFullRunPaths) {
-        $processDesignerFullRunCount++
-        Add-Decision $file 'process-designer lane: the whole category runs there (processDesignerLane.fullRunPaths)' @()
+    if (Test-GlobMatch $file $pdInstallCommandPaths) {
+        $processDesignerInstallCommandCount++
+        Add-Decision $file 'process-designer lane: the whole category runs there (processDesignerLane.installCommandPaths)' @()
     }
     $relevantCount++
 
@@ -1466,9 +1468,9 @@ else {
 # Same per-file classification, read for the one category that lane runs. Only an explicit "yes" selects a
 # fixture here: a name the inventory never saw carries no category this script could read.
 $pdFixtures = @()
-if ($processDesignerOnlyCount -gt 0 -or $processDesignerFullRunCount -gt 0 -or $ruleFullRun) {
+if ($processDesignerOnlyCount -gt 0 -or $processDesignerInstallCommandCount -gt 0 -or $ruleFullRun) {
     $pdMode = 'full'
-    $reason = if ($processDesignerOnlyCount -gt 0 -or $processDesignerFullRunCount -gt 0) { 'a file under processDesignerLane.exclusivePaths or fullRunPaths changed' } else { 'the existing lane runs in full by a rule' }
+    $reason = if ($processDesignerOnlyCount -gt 0 -or $processDesignerInstallCommandCount -gt 0) { 'a file under processDesignerLane.exclusivePaths or installCommandPaths changed' } else { 'the existing lane runs in full by a rule' }
     $decisions.Add("process-designer lane: $reason -> the whole $pdCategory category")
 }
 else {
@@ -1489,8 +1491,9 @@ else {
     }
 }
 
-# Unlike the existing lane, a full run sends the base filter rather than an empty one, so what a pull request
-# runs here is decided by this repository and not by whatever the TeamCity default says at the time.
+# A full run sends the lane's base filter, as the existing lane does unless -IncludeNoEnvironment is set. That
+# switch has no counterpart here, so pdFilter is empty only when pdMode is "none", and what a pull request runs
+# on this lane is decided by this repository and not by whatever the TeamCity default says at the time.
 if ($pdMode -eq 'none') {
     $pdFilter = ''
 }
