@@ -842,6 +842,17 @@ public sealed class DescribedElement {
 	public DescribedFileProcessing FileProcessing { get; set; }
 
 	/// <summary>
+	/// For a Call web service element (<c>ProcessSchemaWebService</c>, <c>buildType</c> <c>webservice</c>): its
+	/// <c>webService</c> block read from the element, and the element's whole stored parameter tree. <c>null</c> for
+	/// every other element and on a server that predates the element.
+	/// <para>Every write member keeps its write shape, so the block is sent back unchanged; the describe-only members -
+	/// <c>serviceUId</c>, <c>serviceResolved</c>, <c>methodResolved</c>, <c>parameters</c> and <c>issues</c> - draw a
+	/// warning there. See <see cref="DescribedWebService"/>.</para>
+	/// </summary>
+	[JsonPropertyName("webService")]
+	public DescribedWebService WebService { get; set; }
+
+	/// <summary>
 	/// Captures every other field the server reports on an element so the description round-trips losslessly:
 	/// a newer <c>CrtProcessBuilder</c> reporting a block this build does not declare reaches the command output
 	/// verbatim instead of being discarded without a trace.
@@ -2616,6 +2627,111 @@ public sealed class DescribedFileProcessingOutput {
 	public string Item { get; set; }
 
 	/// <summary>Anything the server reports about an output that this model does not declare.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// A Call web service element read back in the <c>webService</c> block vocabulary, with the element's stored parameter
+/// tree. Mirrors the server's <c>DescribeWebServiceInfo</c> field for field. Read from the element, never re-derived
+/// from the service, and never carrying a service parameter default.
+/// </summary>
+public sealed class DescribedWebService {
+
+	/// <summary>
+	/// The called service's code, canonically spelled - the string the write side's <c>service</c> takes. <c>null</c>
+	/// when the stored UId resolves to no service (<see cref="ServiceResolved"/> is then <c>false</c>).
+	/// </summary>
+	[JsonPropertyName("service")]
+	public string Service { get; set; }
+
+	/// <summary>Describe-only: the service's manager-item UId as stored on the element, also when it no longer resolves.</summary>
+	[JsonPropertyName("serviceUId")]
+	public string ServiceUId { get; set; }
+
+	/// <summary>The stored method name, as the write side's <c>method</c> takes it.</summary>
+	[JsonPropertyName("method")]
+	public string Method { get; set; }
+
+	/// <summary>
+	/// The stored timeout in seconds - the stored milliseconds divided by 1000, a fraction when they are not whole
+	/// seconds. <c>null</c> when no timeout is stored, so the method's own timeout applies.
+	/// </summary>
+	[JsonPropertyName("timeoutSeconds")]
+	public decimal? TimeoutSeconds { get; set; }
+
+	/// <summary>The stored ignore-errors flag; <c>null</c> when it is off.</summary>
+	[JsonPropertyName("ignoreErrors")]
+	public bool? IgnoreErrors { get; set; }
+
+	/// <summary>Describe-only: whether the stored service UId resolves to a registered service.</summary>
+	[JsonPropertyName("serviceResolved")]
+	public bool? ServiceResolved { get; set; }
+
+	/// <summary>Describe-only: whether the stored method name is a method of that service, matched as run time matches it.</summary>
+	[JsonPropertyName("methodResolved")]
+	public bool? MethodResolved { get; set; }
+
+	/// <summary>
+	/// Describe-only: every parameter of the element as stored, unbound inputs included, in stored order - the request
+	/// and response parameters, then <c>Success</c>, <c>Response</c>, <c>StatusCode</c> and <c>RequestBody</c>. The
+	/// names are what a mapping addresses. A bound input's value is reported by the element's generic
+	/// <c>parameters</c>, not here.
+	/// </summary>
+	[JsonPropertyName("parameters")]
+	public List<DescribedWebServiceParameter> Parameters { get; set; }
+
+	/// <summary>Describe-only: hazards of the stored shape at run time; <c>null</c> when there are none.</summary>
+	[JsonPropertyName("issues")]
+	public List<string> Issues { get; set; }
+
+	/// <summary>
+	/// Anything the server reports inside this block that this model does not declare, so a field a later
+	/// CrtProcessBuilder adds reaches the caller instead of being dropped on re-serialization.
+	/// </summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement> AdditionalData { get; set; }
+}
+
+/// <summary>
+/// One stored parameter of a described Call web service element, nested items included. Mirrors
+/// <c>DescribeWebServiceParameter</c>; carries no value and no default.
+/// </summary>
+public sealed class DescribedWebServiceParameter {
+
+	/// <summary>The parameter name a mapping addresses (for example <c>title_In</c>, or <c>Success</c>).</summary>
+	[JsonPropertyName("name")]
+	public string Name { get; set; }
+
+	/// <summary>The service parameter the element parameter stands for; <c>null</c> for the four result parameters.</summary>
+	[JsonPropertyName("tag")]
+	public string Tag { get; set; }
+
+	/// <summary><c>in</c> or <c>out</c>.</summary>
+	[JsonPropertyName("direction")]
+	public string Direction { get; set; }
+
+	/// <summary>The stored data value type name (for example <c>MaxSizeText</c>, <c>CompositeObjectList</c>).</summary>
+	[JsonPropertyName("type")]
+	public string Type { get; set; }
+
+	/// <summary><c>true</c> for a required input; absent otherwise.</summary>
+	[JsonPropertyName("required")]
+	public bool? Required { get; set; }
+
+	/// <summary>For an input: whether it, or one of its nested items, has a source; absent for an output.</summary>
+	[JsonPropertyName("bound")]
+	public bool? Bound { get; set; }
+
+	/// <summary><c>true</c> for <c>Success</c>, <c>Response</c>, <c>StatusCode</c> and <c>RequestBody</c>; absent otherwise.</summary>
+	[JsonPropertyName("result")]
+	public bool? Result { get; set; }
+
+	/// <summary>The nested items of a collection parameter, in stored order; <c>null</c> for a scalar.</summary>
+	[JsonPropertyName("items")]
+	public List<DescribedWebServiceParameter> Items { get; set; }
+
+	/// <summary>Anything the server reports about a parameter that this model does not declare.</summary>
 	[JsonExtensionData]
 	public Dictionary<string, JsonElement> AdditionalData { get; set; }
 }

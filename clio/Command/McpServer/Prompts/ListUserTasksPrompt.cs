@@ -31,6 +31,7 @@ public static class ListUserTasksPrompt {
 		 `ReportFileProcessingUserTask` (Generated report) and `ProcessFileProcessingUserTask` (Process parameter) -
 		 each built as a `fileProcessing` element with its `fileProcessing` block (the group `attachments`, `report`
 		 or `files` selects the variant), because a generic `userTask` naming one carries no file source and is
-		 refused.
+		 refused; and except `WebServiceUserTask` (Call web service), which is refused on a `userTask` - build a
+		 `webService` element with its `webService` block (a registered service and its method) instead.
 		 """;
 }

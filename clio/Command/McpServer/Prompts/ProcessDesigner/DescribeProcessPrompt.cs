@@ -60,6 +60,16 @@ public static class DescribeProcessPrompt {
 		   resubmitting; clio warns and ignores them if sent back. `bindingLevels` other than `both` or `itemOnly`
 		   comes with an issue: `outerOnly` fails at run time, and with `none` the process cannot start.
 		   `get-guidance name=process-files` owns the block.
+		   A `webService` element (the designer's "Call web service") carries its `webService` block: the
+		   `service` it calls (its name, the string the write side takes; `serviceUId` holds the stored UId), the
+		   `method`, `timeoutSeconds` and `ignoreErrors`, and
+		   `parameters` - every parameter the element stores, unbound inputs included, with its `tag` (the service
+		   parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags. Those
+		   names are what a mapping addresses. `serviceResolved: false` or `methodResolved: false` means the call
+		   fails at run time; read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
+		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, and clio warns and
+		   ignores them.
+		   `get-guidance name=process-web-service` owns the block.
 		   A `sendEmail` element's `email.attachments` lists one entry per attachment row, in the write shape of
 		   `email.attachments` plus the describe-only `slot`, `bindingLevels` and `issues`: narrate which files each
 		   row attaches, and read its `issues`, which name a row that fails or surprises at run time.

@@ -483,6 +483,29 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("The describe contract and its prompt name the webService block a Call web service element reads back (Q14): every write member keeps its write shape, so the block is sent back unchanged, and serviceUId, serviceResolved, methodResolved, issues and parameters - the whole stored tree, unbound inputs included - are describe-only and draw a warning. A describe-then-modify round trip works only when the agent knows the block replays as is.")]
+	public void DescribeProcess_ShouldDocumentTheWebServiceBlock_WhenToolContractIsRead() {
+		// Arrange
+		string toolText = ReadDescribeToolDescription();
+
+		// Act
+		string prompt = DescribeProcessPrompt.DescribeProcessGuidance("UsrProcess_493d4c9", "dev");
+
+		// Assert
+		toolText.Should().Contain("a webService element's webService block (the describe-only serviceUId, serviceResolved, methodResolved, issues and parameters - the stored tree, unbound inputs included - draw a warning when it is sent back unchanged",
+			because: "the read-back members are describe-only and the block replays in its write shape");
+		prompt.Should().Contain("A `webService` element (the designer's \"Call web service\") carries its `webService` block",
+			because: "the prompt lists every configuration block the tool reports");
+		prompt.Should().Contain("parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags.",
+			because: "the prompt must say what one node of the stored tree carries");
+		prompt.Should().Contain("To resubmit, send the block back unchanged: `serviceUId`,",
+			because: "the prompt must match the tool contract on the resubmit rule");
+		prompt.Should().Contain("`get-guidance name=process-web-service` owns the block.",
+			because: "the prompt routes the block to the guide that owns it");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("The describe contract and its prompt name the fileProcessing block a Process file element reads back, its three groups, and the describe-only members to remove before resubmitting: the server reports actionStored, outputs, issues, bindingLevels, report.caption, report.convertToPdf and each value source's display beside the write members, and none of them is a write member, so a describe-then-modify round trip works only when the agent knows which members to drop.")]
 	public void DescribeProcess_ShouldDocumentTheFileProcessingBlock_WhenToolContractIsRead() {
 		// Arrange

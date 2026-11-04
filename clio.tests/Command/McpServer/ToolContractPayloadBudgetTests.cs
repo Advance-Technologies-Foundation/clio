@@ -312,6 +312,20 @@ public sealed class ToolContractPayloadBudgetTests {
 	// from process-send-email to the attachments guide, process-send-email-attachments (guidance 1.15.176, +12 bytes
 	// each). Re-measured by lowering the ceiling: create 35033, modify 35069, describe 35029 - 39, 3 and 43 bytes of
 	// headroom, so anything added to modify-business-process now has to be paid for by a trim.
+	//
+	// ENG-92710 (2026-11-04, the Call web service element) named the webService type and the webService block in
+	// create's element list, the block in modify's addElement and setElement lists with WebServiceUserTask among the
+	// generic-route refusals, describe's read-back clause, and the element in validate-process-graph's buildable list.
+	// Paid by SWAP, per owner decision Q15 (no ceiling raise): create dropped provenance - ", and .44 is simply the
+	// first archive carrying that AND the ENG-96325 lookup-constant contract" and "(Shared with
+	// modify-business-process.)"; modify dropped the specifics of how a quoted expression differs from what was
+	// written (a parameter reference by NAME, an 'm' suffix, a ((decimal)...) wrapper), which process-formulas owns
+	// verbatim; describe dropped the parenthesis about an older CrtProcessBuilder reporting ignoreEmailErrors: true on
+	// an unconfigured Approval, dead since clio refuses a package older than the one it ships. Re-measured by lowering
+	// the ceiling: before the change create 35033, modify 35069, describe 35029; as committed create 34999, modify
+	// 34979, describe 35006 - 73, 93 and 66 bytes of headroom. Each contract's pointer to process-web-service waits for
+	// the knowledge generation that publishes it (curated-knowledge-names.json); with the three pointers in place,
+	// measured on the branch, create 35053, modify 35026, describe 35060 - 19, 46 and 12 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -336,6 +350,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// where it was), the bundle is 18815 bytes on the wire - 185 bytes under this guard. Re-measured on 2026-10-29
 	// (ENG-95985) by lowering this guard: 18832 bytes before the Send email attachments text and 18832 after it - the
 	// additions carry no safety marker, so no short form keeps them - 168 bytes under this guard.
+	//
+	// ENG-92710 (2026-11-04) re-measured by lowering this guard: 18832 bytes with its description text, which carries no
+	// safety marker; "webService" in the create call shape's block list, which lands with the rebundle that declares the
+	// block, measured on the branch at 18845 bytes - 155 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]

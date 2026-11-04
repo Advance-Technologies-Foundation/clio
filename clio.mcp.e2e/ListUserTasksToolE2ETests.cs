@@ -9,6 +9,7 @@ using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -63,6 +64,40 @@ public sealed class ListUserTasksToolE2ETests {
 		string callResultJson = JsonSerializer.Serialize(callResult);
 		callResultJson.Should().Contain("UserTask",
 			because: "the user task palette always includes built-in *UserTask schemas (run against an environment with the ProcessDesignService package)");
+	}
+
+	[Test]
+	[Description("TC-I-13: over the real MCP path the list-user-tasks contract that get-tool-contract publishes names WebServiceUserTask as REFUSED on the generic userTask route and points to type webService with its webService block, so an agent picking a task from the palette is told before the build refuses it (hermetic).")]
+	[AllureTag(ToolName)]
+	[AllureName("list-user-tasks publishes the generic-route refusal of WebServiceUserTask")]
+	public async Task ListUserTasks_Should_PublishTheGenericRouteRefusalOfWebServiceUserTask() {
+		// Arrange
+		await using ArrangeContext context = await ArrangeAsync(requireReachableEnvironment: false);
+
+		// Act
+		CallToolResult callResult = await context.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { ToolName },
+					["detail"] = "full"
+				}
+			},
+			context.CancellationTokenSource.Token);
+
+		// Assert
+		callResult.IsError.Should().NotBeTrue(
+			because: "get-tool-contract should return a normal MCP tool result envelope for a known tool name");
+		ToolContractGetResponse response =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(callResult);
+		string description = (response.Tools ?? [])
+			.Should().ContainSingle(definition => definition.Name == ToolName,
+				because: $"the contract request named only {ToolName}")
+			.Which.Description;
+		description.Should().Contain("WebServiceUserTask (Call web service) is REFUSED on the generic route",
+			because: "the palette lists WebServiceUserTask, and the contract must say the generic route refuses it");
+		description.Should().Contain("build it as type webService with its webService block",
+			because: "the contract points to the element type that builds a Call web service element");
 	}
 
 	private static async Task<CallToolResult> CallToolAsync(ArrangeContext context, Dictionary<string, object?> args) {
