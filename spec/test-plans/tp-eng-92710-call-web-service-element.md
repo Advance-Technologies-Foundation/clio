@@ -34,7 +34,7 @@ repositories.
 |---|---|---|---|
 | **TC-U** | package unit tests | TC-U-01..TC-U-109; TC-U-49, 50, 51, 76 are dropped rows (Q7, EM9); TC-U-107 (Q11 A3), TC-U-108 (`service` without `method`) and TC-U-109 (server key check replay) are new | 105 live |
 | **TC-P** | package parity tests | TC-P-01..TC-P-14 (TC-P-05 is stand evidence read through TC-I-01/02, not a package test) | 14 |
-| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-16 | 16 |
+| **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-17 | 17 |
 | **TC-I** | clio MCP e2e (`clio.mcp.e2e/WebServiceElementToolE2ETests.cs`; TC-I-13 in `clio.mcp.e2e/ListUserTasksToolE2ETests.cs`; on stand `Creatio`) | TC-I-01..TC-I-13 | 13 |
 | **TC-K** | clio-knowledge tests and gates (`KB/automation/Clio.Knowledge.Bundle.Tests`) | TC-K-01..TC-K-13 (TC-K-12 also carries the fact-check gate) | 13 |
 | **TC-01..TC-12** | manual Jira cases (business tasks given to an agent) | TC-01..TC-12 | 12 |
@@ -308,6 +308,7 @@ placement.
 | TC-C-14 | `WorkspaceTemplateGuidanceDriftTests.UngatedMcpTools_ShouldNameOnlyUngatedGuidance_WhenDirectingAgentsToRead` (existing) + `curated-knowledge-names.json` re-pin | red until the fixture is re-pinned to a generation with `process-web-service`; draft-until-published is policy (Q19) | McpServer |
 | TC-C-15 | `ManagerMapResolveDataIdTests` (existing) | `webservice` still resolves to the web-service event type | ProcessModel |
 | TC-C-16 | `McpE2eSelectionCoverageTests` (existing) | the new e2e fixture is selected when its tool changes | Core |
+| TC-C-17 | `ProcessBlockKeyCheckTests.Check_Should_RefuseAnObjectValuedService_PointingToServiceName` | an object-valued `webService.service` is refused before sending, with the pointer to send `webService.service.name` as the string | ProcessModel |
 
 ## TC-I - clio MCP e2e (stand `Creatio`)
 

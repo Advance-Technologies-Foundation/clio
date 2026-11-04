@@ -196,7 +196,9 @@ and `docs/knowledge/McpServer/` before any edit)
 - [ ] **CL-1** rebundle the final cut (`pwsh ./rebundle-process-builder.ps1 -PackageRepoPath <pkg> -Version
   <claimed>`), PROVENANCE pins in the same commit, security counts unchanged (TC-C-08).
 - [ ] **CL-2** K2 `WebServiceBlock` key set in `ProcessBlockKeyCheck` (`Blocks`, `Element`, `ElementUpdate`) and the
-  describe read-back keys (TC-C-01..05).
+  describe read-back keys, no child key sets; an object-valued `webService.service` refused before sending with the
+  pointer to `service.name` (TC-C-01..05, 17). The key set and short form held equal to the bundled archive (CL-2,
+  CL-3; TC-C-04..06) land in the rebundle commit, so no commit is red.
 - [ ] **CL-3** K3 `"webService"` in `CreateElementBlockShape` within the wire-bundle headroom (TC-C-06).
 - [ ] **CL-4** K4 floors: the `[RequiresPackage]` literal on create / modify / modify-as-new-version moves to the cut
   claimed in the claim comment; floor-history paragraph; `webService` in the floor-reason sentences (TC-C-07).
