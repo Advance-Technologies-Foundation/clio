@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.131 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.138 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -52,13 +52,14 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.131,
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.138,
 	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the
-	/// first whose describe lists the rows in stored order, which TC-I-05 asserts - but clio refuses a stand older than
-	/// its bundled archive, so below the bundled version every case would fail on that refusal instead of being
-	/// Ignored. Moves with every rebundle.
+	/// first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.138 is the first that reports
+	/// a source running after the email on describe, names the route of the same files through a process parameter,
+	/// and expands a name in a performer contact - but clio refuses a stand older than its bundled archive, so below
+	/// the bundled version every case would fail on that refusal instead of being Ignored. Moves with every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.131";
+	private const string MinimumPackageVersion = "1.6.6.138";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
@@ -630,6 +631,154 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	#endregion
 
+	#region Methods: Tests - reachability, routes, performer and recipients
+
+	[Test]
+	[Description("An attachment source that runs AFTER the Send email element: OF1 is declared before SE1, so the declaration-order refusal does not fire, but the flow runs SE1 first. The build warns, and describe carries the same sentence as an issue on the row - the slot, the source, the email and the collection consequence (the email goes out without these files and without an error).")]
+	[AllureTag(DescribeProcessTool.ToolName)]
+	[AllureName("describe-business-process reports an attachment source that does not run before the email")]
+	public async Task DescribeBusinessProcess_Should_ReportTheRow_WhenItsSourceRunsAfterTheEmail() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewGapsProcessName("Order");
+			string descriptor = Descriptor(processName, FileParametersJson,
+				[("OF1", ObjectFilesElementJson("OF1")),
+					("SE1", SendEmailJson("SE1", "manual",
+						"""[ { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]"""))],
+				["StartEvent1", "SE1", "OF1", "EndEvent1"], "[]");
+			CallToolResult built = await CreateAsync(context, created, processName, descriptor);
+			ShouldHaveBuilt(built, "a source that runs after the email is a warning on the build, never a refusal");
+
+			// Act
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+
+			// Assert
+			LogText(built).Should().Contain("which does not lie on a path before 'SE1'",
+				because: "the build warns about the same source the describe issue names");
+			JsonObject entry = Attachments(Element(graph, "SE1")).Should().ContainSingle(
+				because: "one entry was sent").Which;
+			IReadOnlyList<string> issues = Strings(entry["issues"]);
+			issues.Should().Contain(issue => issue.Contains("'Attachments1' reads 'OF1', which does not lie on a path before 'SE1'"),
+				because: "describe names the row by its slot and the source that does not run before the email; it read: {0}",
+				string.Join(" | ", issues));
+			issues.Should().Contain(issue => issue.Contains("the email goes out without these files and without an error"),
+				because: "a collection row whose source has not run sends no files, and the issue says so");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("The same files through two routes: the Variable FileCollection Documents is filled only from OF1.ObjectFiles by a descriptor mapping, and SE1 attaches both Documents and OF1.ObjectFiles. The build lands, and its notice names the route - Documents takes its files from OF1.ObjectFiles - and says each file is attached twice.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process notices the same files reached through a process parameter")]
+	public async Task CreateBusinessProcess_Should_NoticeTheSameFilesThroughAProcessParameter() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewGapsProcessName("Route");
+			string descriptor = Descriptor(processName, RouteParametersJson,
+				[("OF1", ObjectFilesElementJson("OF1")),
+					("SE1", SendEmailJson("SE1", "manual", """
+						[ { "processParameter": "Documents" },
+						  { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]
+						"""))],
+				["StartEvent1", "OF1", "SE1", "EndEvent1"],
+				"""[ { "targetProcessParameter": "Documents", "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]""");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName, descriptor);
+
+			// Assert
+			ShouldHaveBuilt(callResult, "two routes to the same files are a notice, never a refusal");
+			LogText(callResult).Should().Contain("Send email 'SE1': email.attachments[0] reads 'Documents', which takes "
+				+ "its files from 'OF1.ObjectFiles' and [1] reads 'OF1.ObjectFiles' too, so each file is attached twice.",
+				because: "the parameter hands on the output's files, which the other entry attaches again, and the notice "
+				+ "names the route so the caller sees why two different sources send the same files");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("A manual Send email whose performer contact names a process parameter, [#ContactRef#]: the build saves (the platform's pre-save validator refuses the name stored verbatim), and describe returns the contact as the parameter's meta path - the ContactRef parameter's UId, not its name.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process expands a process parameter name in a Send email performer contact")]
+	public async Task CreateBusinessProcess_Should_ExpandAProcessParameterName_InTheManualPerformerContact() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewGapsProcessName("Performer");
+			string descriptor = LinearDescriptor(processName, FileParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e performer", "body": "<p>Performer.</p>",
+					    "to": [ { "value": "probe@example.com" } ],
+					    "performer": { "type": "user", "contact": "[#ContactRef#]" } } }
+					"""));
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName, descriptor);
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a performer contact naming a process parameter is expanded before the save");
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+			string? contact = Text(Group(Group(Element(graph, "SE1"), "email"), "performer"), "contact");
+			contact.Should().NotBeNull(because: "the manual-mode performer reports the contact it was given");
+			contact.Should().Contain("[Parameter:",
+				because: "the name is stored as the parameter's meta path, the form the platform writes; describe read: {0}",
+				contact);
+			contact.Should().NotContain("ContactRef", because: "the name itself is not what is stored");
+			Guid parameterUId = Guid.Parse(Text(ParameterNamed(graph, "ContactRef"), "uid")!);
+			GuidPattern.Matches(contact!).Select(match => Guid.Parse(match.Value)).Should().Contain(parameterUId,
+				because: "the meta path names the ContactRef parameter by its UId");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("addMapping onto an existing recipient replaces it in place: SE1 is built with Recipient1 reading the process parameter OwnerEmail, then an addMapping onto SE1.Recipient1 with a constant address lands, and describe reports ONE recipient, Recipient1, holding the new address.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process replaces a Send email recipient in place through addMapping")]
+	public async Task ModifyBusinessProcess_Should_ReplaceARecipientInPlace_WhenAddMappingTargetsIt() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewGapsProcessName("Recipient");
+			await ArrangeProcessAsync(context, created, processName, LinearDescriptor(processName, RecipientParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e recipient", "body": "<p>Recipient.</p>",
+					    "to": [ { "processParameter": "OwnerEmail" } ] } }
+					""")), "the one-recipient process");
+
+			// Act
+			CallToolResult replaced = await ModifyAsync(context, processName, """
+				[ { "op": "addMapping", "mapping": { "elementName": "SE1", "elementParameter": "Recipient1", "value": "replaced@example.com" } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(replaced, "a mapping onto an existing recipient is an ordinary in-place write");
+			JsonObject email = Group(Element(await DescribeGraphAsync(context, processName), "SE1"), "email");
+			JsonObject recipient = ((email["to"] as JsonArray)?.OfType<JsonObject>().ToList() ?? []).Should().ContainSingle(
+				because: "the mapping rewrites Recipient1 instead of adding a second recipient; describe read: {0}",
+				email.ToJsonString()).Which;
+			Text(recipient, "name").Should().Be("Recipient1", because: "the recipient keeps its parameter");
+			Text(recipient, "value").Should().Be("replaced@example.com",
+				because: "the recipient's value is replaced by the mapped constant");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	#endregion
+
 	#region Methods: Descriptors
 
 	// The process parameters most cases read: a Contact by Lookup, a FileCollection and a single File.
@@ -639,6 +788,20 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		  { "name": "Docs", "type": "FileCollection", "direction": "In" },
 		  { "name": "Doc", "type": "File", "direction": "In" }
 		]
+		""";
+
+	// The contact Object attachments reads, and the Variable FileCollection a descriptor mapping fills from OF1.ObjectFiles:
+	// Variable rather than In, because a caller could pass other files into an In parameter.
+	private const string RouteParametersJson = """
+		[
+		  { "name": "ContactRef", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
+		  { "name": "Documents", "type": "FileCollection", "direction": "Variable" }
+		]
+		""";
+
+	// The text parameter a recipient reads before an addMapping replaces it.
+	private const string RecipientParametersJson = """
+		[ { "name": "OwnerEmail", "type": "Text", "direction": "Variable" } ]
 		""";
 
 	// The invoice a Generated report is made for.
@@ -703,8 +866,17 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>Start -> the elements in the order given -> End, with the given descriptor-level mappings.</summary>
 	private static string LinearDescriptor(string processName, string parametersJson,
-			(string Name, string Json)[] elements, string mappingsJson) {
-		List<string> names = ["StartEvent1", .. elements.Select(element => element.Name), "EndEvent1"];
+			(string Name, string Json)[] elements, string mappingsJson) =>
+		Descriptor(processName, parametersJson, elements,
+			["StartEvent1", .. elements.Select(element => element.Name), "EndEvent1"], mappingsJson);
+
+	/// <summary>
+	/// The elements DECLARED in the order given, with Start and End, joined by one flow from each name of
+	/// <paramref name="flowOrder"/> to the next - so the declaration order and the run order can differ.
+	/// </summary>
+	private static string Descriptor(string processName, string parametersJson,
+			(string Name, string Json)[] elements, string[] flowOrder, string mappingsJson) {
+		List<string> names = [.. flowOrder];
 		string elementsJson = string.Join(",\n", new[] {
 				"""{ "name": "StartEvent1", "type": "startEvent" }"""
 			}
@@ -735,6 +907,12 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>A process code unique to this run, in the <c>UsrClioBpSe&lt;Case&gt;E2e</c> family.</summary>
 	private static string NewProcessName(string caseName) => $"UsrClioBpSe{caseName}E2e{Guid.NewGuid():N}";
+
+	/// <summary>
+	/// A process code unique to this run, in the <c>UsrSe105549&lt;Case&gt;</c> family of the reachability, route,
+	/// performer and recipient cases.
+	/// </summary>
+	private static string NewGapsProcessName(string caseName) => $"UsrSe105549{caseName}{Guid.NewGuid():N}";
 
 	/// <summary>
 	/// Builds a process, recording its name for cleanup BEFORE the call: a build the server saved but whose answer
@@ -1182,6 +1360,15 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		JsonObject? found = (graph["elements"] as JsonArray)?.OfType<JsonObject>()
 			.SingleOrDefault(candidate => Text(candidate, "name") == name);
 		found.Should().NotBeNull(because: $"the element '{name}' must be described; what was read: {{0}}",
+			graph.ToJsonString());
+		return found!;
+	}
+
+	/// <summary>The described process parameter with that name, failing the test with what was read when absent.</summary>
+	private static JsonObject ParameterNamed(JsonObject graph, string name) {
+		JsonObject? found = (graph["parameters"] as JsonArray)?.OfType<JsonObject>()
+			.SingleOrDefault(candidate => Text(candidate, "name") == name);
+		found.Should().NotBeNull(because: $"the parameter '{name}' must be described; what was read: {{0}}",
 			graph.ToJsonString());
 		return found!;
 	}
