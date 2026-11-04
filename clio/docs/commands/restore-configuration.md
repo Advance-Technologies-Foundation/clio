@@ -8,6 +8,11 @@ restore-configuration - Restore configuration from last backup
 
 Restores Creatio configuration from the latest available backup package.
 
+The command prints the installation log written by the restore and exits with `1` when the service does not
+report success. The service message for a failed restore is generic ("Errors occured during configuration
+restoring from backup"), so the reason is in the installation log. The request is sent once: a repeated
+restore after a failed one reports success while the database structure stays in the newer state.
+
 ## Synopsis
 
 ```bash
@@ -18,7 +23,7 @@ clio restore-configuration [OPTIONS]
 
 ```bash
 -d
-Restore configuration without rollback data
+Also install the data bound to the packages in the backup. Data is rolled back with or without this flag
 
 -f
 Restore configuration without SQL backward-compatibility check
