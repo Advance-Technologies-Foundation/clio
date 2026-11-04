@@ -34,7 +34,7 @@ only; stand addresses are not written here.
 
 - **ENG-95244 is no longer pending.** It merged into the package `main` as 1.6.6.136, and clio `master` already bundles
   1.6.6.136. No combined rebundle with it is needed. ENG-92710 "Call web service element" has claimed 1.6.6.137 (stamped
-  locally, not pushed). This task's cut is therefore the next free number at stamp time, expected 1.6.6.138.
+  locally, not pushed). This task's cut is therefore the next free number at stamp time: 1.6.6.138 was cut and burned, the shipped cut is 1.6.6.139.
 - **Behaviour 7b is unreachable through the build contract today.** The build path's declaration index is built from
   `elements[]` placed at the TOP LEVEL (`ProcessBuildHandler.DeclarationIndex`), and an element descriptor has no field
   that places an element inside an event or expanded sub-process. A nested element is never "declared" by a build

@@ -40,7 +40,7 @@ when its record delivers it; anything else is refused naming the flow or field w
 The GUIDs inside braces are compared case-insensitively, and from 1.6.6.85 every surface the check covers stores
 an accepted reference with them lower-cased - the one rewrite the check makes. The check does NOT cover the Send
 email recipient and template-entity expressions, the approver contact formula or the access-rights grantee: those
-store a caller's formula as written (a user task's performer contact joined the check in 1.6.6.138, through the
+store a caller's formula as written (a user task's performer contact joined the check in 1.6.6.139, through the
 same resolver as a Formula body), so a misspelling or an upper-case GUID there still reads empty. Only the reference's own GUIDs change: a
 `Lookup` macro's record ids and GUIDs in string literals are data and keep their case.
 

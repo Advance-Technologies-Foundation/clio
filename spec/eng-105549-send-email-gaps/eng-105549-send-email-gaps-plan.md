@@ -25,7 +25,7 @@ the open questions (section 4).
    - S4: behaviour 4 (performer expansion).
    - S5: behaviour 8 code, only if M8 shows the source or value changes; behaviour 5 code, only if the owner picks B.
    - Review gate: 3-lens parallel review over the whole diff; Blocker/High fixed before the stamp.
-3. **Cut.** Claim the next free number (expected 1.6.6.138: highest of remote tags and remote branches'
+3. **Cut.** Claim the next free number (1.6.6.138 was cut and then burned by the recipient record-id fixes; the shipped cut is 1.6.6.139: highest of remote tags and remote branches'
    `descriptor.json` + 1; 1.6.6.137 is ENG-92710's) by pushing the tag at stamp time; `clio set-pkg-version`; never reuse
    a pushed number. A Jira claim comment only with the owner's yes.
 4. **Stand install + run-time checks** - only with the owner's yes for each step. Before asking: the installed
