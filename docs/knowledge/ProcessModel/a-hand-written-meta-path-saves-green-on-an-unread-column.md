@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
 ticket: ENG-102114
-date: 2026-10-07
+date: 2026-11-04
 ---
 
 **What is true** — measured on a .NET Framework stand (Creatio 10.1.37, CrtProcessBuilder 1.6.6.75) with every
