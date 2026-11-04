@@ -4999,3 +4999,51 @@ stories:
       EM3) after slice B, and EM7 (real delivery) once the owner says mail sending on stand Creatio works. Merge order
       (human merges): package -> knowledge -> clio. Cut numbers are claimed in a claim comment on ENG-95985 (Q13), not
       here.
+  # --- eng-92710-call-web-service-element (ENG-92710 Call web service element) - added 2026-11-03 ---
+  - id: story-eng-92710-call-web-service-element-1
+    title: "Call web service element: build and describe through the process builder"
+    feature: "eng-92710-call-web-service-element"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: L
+    # in-progress set in the BMAD PR: implementation starts before it merges, so ready-for-dev is never true.
+    status: in-progress
+    jira: ENG-92710
+    file: spec/stories/story-eng-92710-call-web-service-element-1.md
+    prd: spec/prd/spec-eng-92710-call-web-service-element.md
+    adr: spec/adr/adr-eng-92710-call-web-service-element.md
+    test_plan: spec/test-plans/tp-eng-92710-call-web-service-element.md
+    depends_on: []
+    blocks:
+      - story-eng-92710-call-web-service-element-2
+    note: >-
+      ENG-92710 Call web service element. Owner questions Q1-Q20 were agreed on 2026-11-03 (Q11 re-agreed as A3 after
+      the EM4 measurement the same day); the analysis is spec/eng-92710-call-web-service-element/. Registered REST
+      services only: registering a service is ENG-105475 Register a REST web service through the AI Toolkit, and the
+      mirror, ObjectList and three-level shapes are ENG-92730 Complex / structured parameter types; neither has a
+      story row here. blocks names story 2: slice D follows slice C and the EM5 STOP gate. Story 1's rows whose
+      replay or retarget half needs story 2's P-D1 (TC-U-19, 23, 68, 78, 95, 98 and TC-I-06) close together with
+      story 2. Status convention: review when the clio feature PR opens; done in the next clio PR that touches this
+      file after the last merge, with only the really ticked Definition of Done boxes.
+      Merge order (human merges): package -> knowledge -> clio. Cut numbers are claimed in a claim comment on
+      ENG-92710 (Q19), not here.
+  - id: story-eng-92710-call-web-service-element-2
+    title: "Call web service element: modify semantics and drift"
+    feature: "eng-92710-call-web-service-element"
+    repo: "crt-process-builder + clio-knowledge + clio"
+    size: M
+    # in-progress set in the BMAD PR, same convention as story 1.
+    status: in-progress
+    jira: ENG-92710
+    file: spec/stories/story-eng-92710-call-web-service-element-2.md
+    prd: spec/prd/spec-eng-92710-call-web-service-element.md
+    adr: spec/adr/adr-eng-92710-call-web-service-element.md
+    test_plan: spec/test-plans/tp-eng-92710-call-web-service-element.md
+    depends_on:
+      - story-eng-92710-call-web-service-element-1
+    blocks: []
+    note: >-
+      ENG-92710 Call web service element, slice D: a service or method change replaces the element's parameters as the
+      designer does, Success / Response / StatusCode keep their UIds (RequestBody is regenerated) and the change is refused while anything reads another
+      parameter of the element, tagged inputs, nested items and RequestBody included (Q11 A3); describe reports
+      unresolved services and methods and a modify that lets the platform prune says so (Q12). Ships in the same
+      package, knowledge and clio PRs as story 1; status moves with story 1.
