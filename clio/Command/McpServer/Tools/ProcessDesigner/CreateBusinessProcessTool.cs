@@ -221,7 +221,7 @@ public class CreateBusinessProcessTool(
 		 + "attachments? (files the email SENDS, one row per entry, each exactly one of processParameter | "
 		 + "sourceElement+sourceElementParameter | expression; read get-guidance name=process-send-email-attachments), "
 		 + "performer? (manual mode only — who performs the task: "
-		 + "{type:user|manager|role, contact? (a formula; defaults to the current user's contact), role? (a "
+		 + "{type:user|manager|role, contact? (a formula, [#Param#]/[#Element.Output#] by name; defaults to the current user), role? (a "
 		 + "SysAdminUnit role name or record id, required for type:role), showPage?})}), "
 		 + "performer? (performTask elements only — WHO PERFORMS the task, the same {type:user|manager|role, "
 		 + "contact?, role?, showPage?} block as email.performer but TOP-LEVEL on the element: role is the honest "

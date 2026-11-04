@@ -103,7 +103,8 @@ public static class ModifyBusinessProcessPrompt {
 		 `useBackgroundMode` on an element kind that offers it (it takes effect only on a start event and an
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
-		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended),
+		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended;
+		 to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place),
 		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
 		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights

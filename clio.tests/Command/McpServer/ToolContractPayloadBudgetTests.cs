@@ -312,6 +312,13 @@ public sealed class ToolContractPayloadBudgetTests {
 	// from process-send-email to the attachments guide, process-send-email-attachments (guidance 1.15.176, +12 bytes
 	// each). Re-measured by lowering the ceiling: create 35033, modify 35069, describe 35029 - 39, 3 and 43 bytes of
 	// headroom, so anything added to modify-business-process now has to be paid for by a trim.
+	//
+	// ENG-105549 (2026-11-04, CrtProcessBuilder 1.6.6.138) paid by SWAP, no ceiling raise. Modify's recipient clause
+	// stopped saying a recipient cannot be replaced - addMapping onto its slot now does, decided and pinned by a package
+	// test - and lost "genuinely" to fit (-8 bytes). Create's email.performer contact names the by-name forms the server
+	// now expands and drops "'s contact" (an apostrophe the serializer escapes to six bytes), +23 bytes. The attachments
+	// list order rule (kept rows stay, new rows go last) did not fit create's 16 bytes and stays in the guide. Re-measured
+	// by lowering the ceiling: modify 35061, create 35056, describe 35029 - 11, 16 and 43 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
