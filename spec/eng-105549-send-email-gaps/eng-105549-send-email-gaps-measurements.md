@@ -58,3 +58,25 @@ survives the save (step 1) and resolves (this run).
 Processes `UsrSe105549IgnoreNoSender`, `UsrSe105549IgnoreBadSender`, `UsrSe105549IgnoreNoRecipient`,
 `UsrSe105549RecipientType` (package Custom), the three process-log rows of the M6 runs, and the M8b run (a running
 process instance waiting on its manual email activity "M8 recipients").
+
+## Isolated test-case run on 1.6.6.139 (2026-11-04)
+
+Each Jira test case ran as its own headless agent session (no memory, no user settings, clio MCP only; smoke turns
+confirmed no memory file was loaded), on the clio build of this branch and the clio-knowledge branch guides (library
+1.15.180, swapped in locally). Server-side checks by describe, OData and the Process Designer.
+
+| TC | Verdict | Note |
+|---|---|---|
+| TC-01 | PASS | build warning and describe row issue carry the same sentence; a fresh agent found the order problem and asked before changing |
+| TC-02 | PASS | branch merging before the email: no warning, no issue |
+| TC-03 | PASS | single File after the email: "the element fails, as the file is empty" |
+| TC-04 | PASS | routed "attached twice" notice returned and relayed to the user |
+| TC-05 | PASS | `[#Param#]` performer expanded; the run's activity is owned by the parameter's contact |
+| TC-06 | PASS | recipient replaced in place through `addMapping`; direct calls: contact id onto a contact recipient stored as `[#Lookup...#]`, onto a text recipient refused |
+| TC-07 | PASS | no sender + `ignoreErrors`: the run failed as the guide states |
+| TC-08 | N/A | needs a failing nested-element read; unit tests only |
+| TC-09 | PASS | designer save kept the recipient's type, source and value; re-send added nothing; a fresh agent added a second contact without duplicating the first |
+| Regression | PASS | a plain email with one attachment row builds, runs, renders and saves in the designer unchanged |
+
+Measured during the run and fed back into the guide: `ignoreErrors` does not keep the run alive when a single-File
+attachment is empty (the run fails with it on); an `email.to` record-id `value` the line already holds is left as it is.
