@@ -269,6 +269,30 @@ public class ModifyBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping of the same kind onto its slot, and the prompt says a fixed contact goes in as a Lookup expression rather than a bare contact id - a constant contact id is retyped to text by a designer save and then read as a literal address.")]
+	public void ModifyBusinessProcessTool_ShouldStateTheRecipientReplacementRoute_InTheContractAndThePrompt() {
+		// Arrange
+		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
+			nameof(ModifyBusinessProcessTool.ModifyBusinessProcess));
+
+		// Act
+		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
+
+		// Assert
+		description.Should().Contain("(replace one by same-kind addMapping onto its slot, e.g. Recipient1; no removal)",
+			because: "match-or-append never replaces a recipient, so the contract names the route that does and that it keeps the recipient's kind");
+		description.Should().NotContain("cannot be replaced or removed through modify",
+			because: "addMapping onto a recipient slot replaces it, so the retired claim would steer the agent away from the route");
+		prompt.Should().Contain("to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place and the",
+			because: "the prompt names the replacement route beside match-or-append");
+		prompt.Should().Contain("recipient KEEPS its type, so map a source of the same kind (check describe's `type`/`referenceSchema`)",
+			because: "the mapping keeps the slot's type, which is how the run reads the value");
+		prompt.Should().Contain("contact map `expression` `[#Lookup.<Contact UId>.<id>#]`, never a bare contact id `value`",
+			because: "a fixed contact must survive a designer save and resolve to the contact's email at run time");
+	}
+
+	[Test]
 	[Description("Forwards a setElement operation carrying a changeData block verbatim — the tool is an opaque pass-through, so the target source, every value-source kind (constant, processParameter, sourceElement pair, expression) and the whole block ride through to the command unmodified. Guards the one thing this repo CAN assert about the changeData contract: that clio does not reshape it on the way to the server.")]
 	[Category("Unit")]
 	public void ModifyBusinessProcess_Should_Forward_ChangeData_SetElement_Verbatim() {

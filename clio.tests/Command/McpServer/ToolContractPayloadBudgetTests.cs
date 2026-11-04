@@ -319,6 +319,9 @@ public sealed class ToolContractPayloadBudgetTests {
 	// now expands and drops "'s contact" (an apostrophe the serializer escapes to six bytes), +23 bytes. The attachments
 	// list order rule (kept rows stay, new rows go last) did not fit create's 16 bytes and stays in the guide. Re-measured
 	// by lowering the ceiling: modify 35061, create 35056, describe 35029 - 11, 16 and 43 bytes of headroom.
+	// Review fixes then made modify's replacement route say the mapping keeps the recipient's kind ("same-kind", +10
+	// bytes); the fixed-contact Lookup-expression advice did not fit and is carried by the prompt. Re-measured
+	// by lowering the ceiling: modify 35071, create 35056, describe 35029 - 1, 16 and 43 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

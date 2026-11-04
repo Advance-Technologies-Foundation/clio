@@ -264,7 +264,7 @@ public class ModifyBusinessProcessTool(
 		 + "to template it clears Body and a constant Subject not re-sent (get-guidance "
 		 + "name=process-send-email-template owns switching). "
 		 + "to/cc/bcc recipients MATCH-OR-APPEND: an existing entry (same resolved source AND value) is a no-op, a "
-		 + "new address is appended (replace one by addMapping onto its slot, e.g. Recipient1; no removal). "
+		 + "new address is appended (replace one by same-kind addMapping onto its slot, e.g. Recipient1; no removal). "
 		 + "attachments REPLACES the list: to add one, send the described list plus the new one; [] removes them "
 		 + "all (read get-guidance name=process-send-email-attachments). "
 		 + "Switching mode to auto stops describe reporting a performer, though the element keeps the assignment; "

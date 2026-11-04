@@ -208,6 +208,24 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("The create contract says a Send email performer contact takes a process parameter or an element output by name - the server expands the name before the save - so an agent does not hand-write a meta path it can misspell.")]
+	public void CreateBusinessProcessTool_ShouldNameTheByNameForms_OfTheEmailPerformerContact() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute attribute = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!;
+
+		// Act
+		string toolDescription = attribute.Description;
+
+		// Assert
+		toolDescription.Should().Contain(
+			"contact? (a formula, [#Param#]/[#Element.Output#] by name; defaults to the current user)",
+			because: "the email shape is where an agent learns which spelling the performer contact accepts and its default");
+	}
+
+	[Test]
 	[Description("Forwards a descriptor that contains an openEditPage element with its full block verbatim - the tool is an opaque pass-through, so the new element type and every field (page, recordType, editMode, defaultValues, recordId, recommendation, hint, performer, logActivity, resultsByColumn, completion) rides through to the command byte-for-byte. EDIT mode with a record is used deliberately: the add-mode path is what every describer fixture already pins, so the mode that carries a record is the one whose pass-through was unproven.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Forward_OpenEditPage_Descriptor_Verbatim() {

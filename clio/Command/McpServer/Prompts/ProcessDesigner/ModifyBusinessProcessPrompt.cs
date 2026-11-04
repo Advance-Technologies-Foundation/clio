@@ -104,7 +104,10 @@ public static class ModifyBusinessProcessPrompt {
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended;
-		 to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place),
+		 to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place and the
+		 recipient KEEPS its type, so map a source of the same kind (check describe's `type`/`referenceSchema`); for a fixed
+		 contact map `expression` `[#Lookup.<Contact UId>.<id>#]`, never a bare contact id `value`, which a designer save
+		 retypes to text and the run then reads as a literal address),
 		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
 		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights
