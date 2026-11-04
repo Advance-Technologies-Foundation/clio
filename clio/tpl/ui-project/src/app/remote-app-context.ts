@@ -1,4 +1,4 @@
-import { Injector, NgModuleRef, Type, createNgModule } from '@angular/core';
+import { Injector, NgModuleRef, Type, createNgModule, provideZonelessChangeDetection } from '@angular/core';
 import { platformBrowser } from '@angular/platform-browser';
 
 import { RemoteAppModule } from './remote-app.module';
@@ -14,10 +14,15 @@ const featureModuleRefs = new Map<Type<unknown>, NgModuleRef<unknown>>();
 /**
  * Bootstraps the root remote application module and exposes the injector-based runtime context.
  *
+ * The module runs with zoneless change detection: Creatio loads only the remote entry, never the
+ * remote's polyfills, and the host page may run without zone.js.
+ *
  * @returns A remote application context that contains the root injector and module reference.
  */
 async function bootstrapRemoteApp(): Promise<RemoteAppContext> {
-  const moduleRef = await platformBrowser().bootstrapModule(RemoteAppModule);
+  const moduleRef = await platformBrowser().bootstrapModule(RemoteAppModule, {
+    applicationProviders: [provideZonelessChangeDetection()],
+  });
   const injector = moduleRef.injector;
 
   return {

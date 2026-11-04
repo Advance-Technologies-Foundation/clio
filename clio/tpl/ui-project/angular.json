@@ -21,9 +21,7 @@
             "outputPath": "<%distPath%>",
             "index": "src/index.html",
             "main": "src/main.ts",
-            "polyfills": [
-              "zone.js"
-            ],
+            "polyfills": [],
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "assets": [
@@ -69,11 +67,11 @@
           "builder": "ngx-build-plus:dev-server",
           "configurations": {
             "production": {
-              "browserTarget": "<%projectName%>:build:production",
+              "buildTarget": "<%projectName%>:build:production",
               "extraWebpackConfig": "webpack.prod.config.js"
             },
             "development": {
-              "browserTarget": "<%projectName%>:build:development"
+              "buildTarget": "<%projectName%>:build:development"
             }
           },
           "defaultConfiguration": "development",
@@ -86,7 +84,7 @@
         "extract-i18n": {
           "builder": "ngx-build-plus:extract-i18n",
           "options": {
-            "browserTarget": "<%projectName%>:build",
+            "buildTarget": "<%projectName%>:build",
             "extraWebpackConfig": "webpack.config.js"
           }
         },
@@ -94,7 +92,7 @@
           "builder": "@angular-builders/jest:run",
           "options": {
             "tsConfig": "tsconfig.spec.json",
-            "configPath": "jest.config.ts"
+            "config": "jest.config.ts"
           }
         }
       }
