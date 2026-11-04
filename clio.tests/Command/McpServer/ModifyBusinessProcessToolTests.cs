@@ -270,7 +270,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping of the same kind onto its slot, and the prompt says a fixed contact goes in as a Lookup expression onto a recipient that references Contact, that a bare contact id there is stored as the same formula, and that a record id onto a text recipient or as an email.to value is refused.")]
+	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping onto its slot; the prompt says a plain mapping keeps the recipient's type, a single Lookup record macro or a bare record id onto a recipient that references an object ends as a Lookup recipient of that object and repairs a designer-retyped one, a record id onto a recipient with no reference object or as an email.to value is refused naming the route, and an entry naming what the recipient holds changes nothing.")]
 	public void ModifyBusinessProcessTool_ShouldStateTheRecipientReplacementRoute_InTheContractAndThePrompt() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -281,19 +281,27 @@ public class ModifyBusinessProcessToolTests {
 
 		// Assert
 		description.Should().Contain("(replace one by same-kind addMapping onto its slot, e.g. Recipient1; no removal)",
-			because: "match-or-append never replaces a recipient, so the contract names the route that does and that it keeps the recipient's kind");
+			because: "match-or-append never replaces a recipient, so the contract names the route that does");
 		description.Should().NotContain("cannot be replaced or removed through modify",
 			because: "addMapping onto a recipient slot replaces it, so the retired claim would steer the agent away from the route");
-		prompt.Should().Contain("to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place and the",
+		prompt.Should().Contain("to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place.",
 			because: "the prompt names the replacement route beside match-or-append");
-		prompt.Should().Contain("recipient KEEPS its type, so map a source of the same kind (check describe's `type`/`referenceSchema`)",
-			because: "the mapping keeps the slot's type, which is how the run reads the value");
-		prompt.Should().Contain("contact map `expression` `[#Lookup.<Contact UId>.<id>#]` onto a recipient that references Contact",
-			because: "a fixed contact must survive a designer save and resolve to the contact's email at run time");
-		prompt.Should().Contain("`value` there is stored as that same formula, which a designer save keeps",
-			because: "the package stores a record id mapped onto such a recipient in the formula form, so the prompt must not call a bare id broken");
-		prompt.Should().Contain("recipient, or as an `email.to`/`cc`/`bcc` `value`, is refused: add the contact through `email.to` with that",
-			because: "a record id onto a text recipient or as an email.to value is refused, and the prompt names the route that is accepted");
+		prompt.Should().Contain("mapping keeps the recipient's type, so map a source of the same kind (check describe's `type`/`referenceSchema`)",
+			because: "a plain mapping keeps the slot's type, which is how the run reads the value");
+		prompt.Should().NotContain("recipient KEEPS its type",
+			because: "a record formula or a record id onto a recipient that references an object retypes it to Lookup, so the blanket claim is false");
+		prompt.Should().Contain("A mapping whose `expression` or `value` is exactly one `[#Lookup.<object UId>.<record id>#]` macro, or a bare record",
+			because: "both shapes of a fixed record are stored as the Lookup formula of the record's object");
+		prompt.Should().Contain("ends as a Lookup recipient of that object (the record is",
+			because: "the server types the recipient Lookup to the record's object and checks the record exists");
+		prompt.Should().Contain("checked) and so also repairs a recipient a designer save retyped",
+			because: "a designer save retypes a constant contact recipient, and the record route is the repair");
+		prompt.Should().Contain("A record id onto a recipient with no reference object, or as an",
+			because: "a record id has no object to resolve against on a recipient without a reference object");
+		prompt.Should().Contain("`email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact through `email.to` with that",
+			because: "the refusal names the accepted route, and the prompt names the same one");
+		prompt.Should().Contain("An entry naming what the recipient already holds changes nothing",
+			because: "a held recipient is a no-op before any refusal, so re-sending a described recipient is safe");
 		prompt.Should().NotContain("never a bare contact id `value`",
 			because: "a bare contact id onto a recipient that references Contact is stored as the formula, so the retired claim is false");
 	}

@@ -21,7 +21,7 @@ consult `IgnoreErrors`; a resolved From goes through `TrySendEmailWithRetry`, wh
 mailbox, shared with another task) - source only.
 
 **Consequence for the guide:** `ignoreErrors` does not keep the process alive when the email has no usable sender (none
-set, or one that names no mailbox); it does when there is no recipient and, per the source, when a configured mailbox
+set, or one that names no mailbox) and no default sender resolves; it does when there is no recipient and, per the source, when a configured mailbox
 fails to send.
 
 ## M8 recipients after a designer save (2026-11-04)

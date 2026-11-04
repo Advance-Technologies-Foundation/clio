@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.139 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.140 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -52,18 +52,18 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.139.
-	/// 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the first whose describe lists the rows
-	/// in stored order, which TC-I-05 asserts; 1.6.6.138 is the first that reports a source running after the email,
-	/// names the route of the same files through a process parameter, expands a name in a performer contact and
-	/// replaces a recipient through <c>addMapping</c>; 1.6.6.139 is the first that stores a contact id mapped onto a
-	/// recipient referencing Contact as the <c>[#Lookup...#]</c> formula - the newest behaviour a case here asserts, so
-	/// it is the floor.
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.140,
+	/// which is also the create and modify floor. 1.6.6.127 is the first that reads <c>email.attachments</c> and
+	/// 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
+	/// released archive that reports a source running after the email, names the route of the same files through a
+	/// process parameter, expands a name in a performer contact, and stores a record id mapped onto a recipient that
+	/// references an object as the <c>[#Lookup...#]</c> formula of that object - the newest behaviour a case here
+	/// asserts, so it is the floor (1.6.6.138 and 1.6.6.139 were cuts of that work that were never released).
 	/// A stand at or above it but behind the archive this clio bundles passes the arrange and is refused by clio on its
 	/// first call; the create, modify and describe helpers turn that refusal into an Ignore. Raise it when a case
 	/// starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.139";
+	private const string MinimumPackageVersion = "1.6.6.140";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";

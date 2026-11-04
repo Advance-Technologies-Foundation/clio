@@ -21,20 +21,20 @@ only; stand addresses are not written here.
 | 2 | Removal notice level in the guide | guide `process-send-email-attachments` | State that each removed row is a Warning, `[]` included | No (observed in the ENG-95985 manual run) |
 | 3 | Duplicate files through two routes | `SendEmailAttachmentNotices`, `ElementConfigurationLedger` | Extend the same-files notice to a parameter whose only stored writer is the same element output | No (duplicate delivery already observed: 6 files = 3 x 2) |
 | 4 | `performer.contact` = `[#ParameterName#]` refused | `UserTaskPerformerApplier` | Expand names through `ProcessExpressionNames.Resolve`, the formula-body and condition resolver | Yes, after install: TC-05 run |
-| 5 | Recipient replacement through `addMapping` | guide `process-send-email` (+ package if refused) | **Owner's decision** (section 3.5) | Already measured (works in place) |
+| 5 | Recipient replacement through `addMapping` | guide `process-send-email`; `SendEmailApplier`, `ProcessMappingService` | **Owner's decision** (section 3.5): A; the record-id route it exposed is a package change (3.9) | Already measured (works in place) |
 | 6 | `ignoreErrors` with no sending mailbox | guide `process-send-email` | State what it covers, from the platform source and a stand run | Yes: two runs (section 3.6) |
 | 7a | Nested read failure + nested email passes | `EmailAttachmentSources`, `FileProcessingFilterLedger` | Fail closed on any file source or slot-bearing element | No (unit seam) |
 | 7b | Forward-reference check uses the top level only | `SendEmailApplier.Attachments` | Declared set from the all-depth list | No |
 | 7c | `Mapping` value that decodes to nothing | `EmailAttachmentSources.Walk` | Count it as undecodable | No |
 | 7d | Static test seam `BaseElementSource` | `ProcessSchemaAllFlowElements` + callers | Pass the element reader per request | No |
 | 7e | Replace-rule order not pinned | package tests + contract doc | Test + one contract sentence | No |
-| 8 | Recipient type after a designer save | `SendEmailApplier.HasRecipient`, `SendEmailElementHandler.DescribeRecipients` | Measure first; matching already ignores the type | Yes: TC-09 designer save |
+| 8 | Recipient type after a designer save | `SendEmailApplier.HasRecipient`, `SendEmailElementHandler.DescribeRecipients` | Matching ignores the type; a retyped constant is repaired by the record-id route (3.9) | Yes: TC-09 designer save |
 
 ## 2. Findings that change the ticket's assumptions
 
 - **ENG-95244 is no longer pending.** It merged into the package `main` as 1.6.6.136, and clio `master` already bundles
   1.6.6.136. No combined rebundle with it is needed. ENG-92710 "Call web service element" has claimed 1.6.6.137 (stamped
-  locally, not pushed). This task's cut is therefore the next free number at stamp time: 1.6.6.138 was cut and burned, the shipped cut is 1.6.6.139.
+  locally, not pushed). This task's cut is therefore the next free number at stamp time: 1.6.6.138 and 1.6.6.139 were cut and burned, the shipped cut is 1.6.6.140.
 - **Behaviour 7b is unreachable through the build contract today.** The build path's declaration index is built from
   `elements[]` placed at the TOP LEVEL (`ProcessBuildHandler.DeclarationIndex`), and an element descriptor has no field
   that places an element inside an event or expanded sub-process. A nested element is never "declared" by a build
@@ -150,6 +150,8 @@ only; stand addresses are not written here.
 - **Why A.** It is the only replace path agents have, it already works, and refusing it removes a capability users
   asked for (TC-09 "change the recipient"). The open risk - a value of the wrong kind for the recipient's type - is the
   same as for any mapping and is checked by the platform's pre-save validator.
+- **Outcome.** The in-place replacement itself needed no package change. A record id written this way did: it is the
+  constant a designer save retypes (3.8), so 1.6.6.140 routes record ids through the record-id rules of 3.9.
 
 ### 3.6 `ignoreErrors` with no sending mailbox (behaviour 6, TC-07)
 
@@ -207,6 +209,32 @@ only; stand addresses are not written here.
   same entry before and after.
 - **Tests.** Package: a designer-shaped recipient (MaxSizeText typed, Lookup value) is matched by the same entry;
   describe reports the same recipient for both shapes.
+- **Outcome.** Only the type changes (measurements M8), so matching stays type-independent. But the retyped constant
+  runs as a literal address, the bare id (M8b), so the fix moved to the write side: 3.9.
+
+### 3.9 Recipient record ids (behaviours 5 and 8, shipped in CrtProcessBuilder 1.6.6.140)
+
+- **Write.** A mapping onto a Send email recipient whose `expression` or `value` is exactly one
+  `[#Lookup.<object>.<record>#]` macro, or a bare record id `value` onto a recipient that references an object (typed
+  Lookup, or the MaxSizeText a designer save left with its `referenceSchema`), is stored as that Lookup formula under
+  Script and typed Lookup to the object, after the record is read; this also repairs a retyped recipient. An
+  `email.to`/`cc`/`bcc` `expression` that is one such macro without `referenceSchema` takes the macro's object.
+- **Refused, naming the route.** A record id onto a recipient with no reference object, a record id as an
+  `email.to`/`cc`/`bcc` `value` (the route: `expression` `[#Lookup.<object UId>.<id>#]` + `referenceSchema`), a macro of
+  another object than the recipient's reference, any other macro text in a `value` onto a recipient not typed Lookup,
+  and a record macro naming a record that does not exist.
+- **Never refused, never rewritten.** An entry naming what a recipient already holds (value, formula, or the record a
+  Lookup recipient holds) is a no-op, decided before any refusal; a recipient typed Lookup is never rewritten; objects
+  are compared resolved (same schema, root UId, or a reference that is a parent of the macro's object) and refused only
+  when both resolve and clearly differ.
+- **Reported.** At the end of a request, for the elements it touched: a recipient still holding a constant id, a held
+  recipient whose repair could not run (with the reason), and a recipient whose record is gone (the remedy names
+  another recipient, never the same id).
+- **Also in 1.6.6.140 (behaviour 7).** The attachment-source walk follows a `Mapping` map path as both platform
+  readers read it, so the unscoped-files refusal sees a source it used to miss. It tightens a refusal, so clio raises
+  the create, modify and modify-as-new-version `[RequiresPackage]` floors to 1.6.6.140.
+- **Tests.** Package suite 5545/5545 on `dev-nf` and `dev-n8`. clio: the modify prompt states the route (pinned by
+  `ModifyBusinessProcessToolTests`); MCP e2e covers the in-place replacement and a contact id stored as the formula.
 
 ## 4. Acceptance criteria mapping
 
@@ -223,4 +251,8 @@ only; stand addresses are not written here.
 | Nested forward reference refused like top level | 3.7b (vacuous through the build contract; unit-pinned) |
 | `Mapping` that decodes to nothing is undecodable | 3.7c |
 | Recipient matching and describe stable across a designer save | 3.8 |
+| A record id or a single `[#Lookup…#]` macro onto a recipient that references an object is stored as the Lookup formula, record checked, a retyped recipient repaired | 3.9 |
+| A record id with no object to resolve against is refused naming the route | 3.9 |
+| An entry naming what a recipient holds is a no-op; a Lookup recipient is never rewritten | 3.9 |
+| A constant-id recipient, a skipped repair and a gone record are reported | 3.9 |
 | ENG-95985 tests stay green | full package suite on both configurations |

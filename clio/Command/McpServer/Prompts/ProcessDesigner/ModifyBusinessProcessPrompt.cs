@@ -104,12 +104,14 @@ public static class ModifyBusinessProcessPrompt {
 		 element that waits — `process-element-catalog`), a `sendEmail` element's `email` block, where the fields you
 		 pass (`mode`, `sender`, `subject`, `body`, `importance`, `ignoreErrors`, `performer`) replace the current
 		 value but `to`/`cc`/`bcc` recipients match-or-append (an address the line already carries is a no-op, a new one is appended;
-		 to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place and the
-		 recipient KEEPS its type, so map a source of the same kind (check describe's `type`/`referenceSchema`); for a fixed
-		 contact map `expression` `[#Lookup.<Contact UId>.<id>#]` onto a recipient that references Contact - a bare contact id
-		 `value` there is stored as that same formula, which a designer save keeps - while a record id onto a text
-		 recipient, or as an `email.to`/`cc`/`bcc` `value`, is refused: add the contact through `email.to` with that
-		 `expression` and `referenceSchema` `Contact`),
+		 to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place. A plain
+		 mapping keeps the recipient's type, so map a source of the same kind (check describe's `type`/`referenceSchema`).
+		 A mapping whose `expression` or `value` is exactly one `[#Lookup.<object UId>.<record id>#]` macro, or a bare record
+		 id `value` onto a recipient that references an object, ends as a Lookup recipient of that object (the record is
+		 checked) and so also repairs a recipient a designer save retyped; for a fixed contact map `expression`
+		 `[#Lookup.<Contact UId>.<id>#]`. A record id onto a recipient with no reference object, or as an
+		 `email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact through `email.to` with that
+		 `expression` and `referenceSchema` `Contact`. An entry naming what the recipient already holds changes nothing),
 		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
 		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights
