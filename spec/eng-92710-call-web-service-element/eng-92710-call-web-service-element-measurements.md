@@ -774,6 +774,46 @@ run); `UsrProcess_3389428` goes with EM10 (section 7).
 **Artifacts:** `CAP/em5/` (twin and copy metadata before and after each step, diffs, the notices). **Cleanup:** the
 twin stays for the final-cut re-run, then CU-1; `UsrWscEm5OracleCopy` goes with CU-1 after step 5.
 
+**Measured 2026-11-04, experimental cut 1.6.6.137 (STOP gate: passed for steps 1-3 and 6; step 5 not run; `CAP/em5/`,
+`PROVENANCE.md` there; owner's yes for steps 1, 2 and 3 of the EM5 run).** Cut: crt-process-builder branch
+`feature/ENG-92710-call-web-service-element`, stamp commit `11f90c64` (slices A and B, not pushed), claimed in the ENG-92710
+claim comment as experimental, stand-only, superseded; installed with `push-pkg` (the install-log fetch answered an IIS 500
+page; `SysPackage` records 1.6.6.137 and the site answered ping). Builder calls went straight to the package
+(`clio call-service` -> `rest/ProcessDesignService/BuildProcess` / `ModifyProcess`), because clio's key check does not know the
+`webService` block yet; reads RB-1 / RB-2 through DataService SelectQuery.
+
+- Step 1: `UsrWscEm5Twin` (`060da1eb-5f49-4034-ae4d-1f21ce493637`, `Custom`), EM2's parameters, elements and three of its
+  four bindings in one `BuildProcess`; success, no warnings. The fourth binding (the formula `PCount + 1` on
+  `UsrWscIds_In.UsrWscIdsItemValue_In`) needed a second call (`addMapping`): a mapping `expression` accepts a process parameter
+  only as its meta-path UId (`namesAccepted: false`), which exists only after the build.
+- Step 2 (vs EM2 S1, UIds compared by role): the element node has 0 differing paths (BP2 order, names, tags, types, `L6`,
+  `L18`, `ItemValue` children, Boolean `L8`, result params, IX1-IX4) and the 4 BK15 rows are equal (key set, Success `GT1`
+  without `GS5`); the element caption "WSC echo service 1" equal. Differences, all known: `BL8` absent on every builder
+  element (generic, W12); a bound process parameter's `.DisplayValue` is `PText` where the designer writes `[#PText#]` (AD3);
+  the formula's `.DisplayValue` row is not written (AD3). Captions after the build: "Status - Input" / "Status - Output"
+  as EM2; after the second (formula) call both read "Status" (the load sync, below).
+- Step 3 (designer opened, element card opened and closed, Save; "Successfully saved"): element node and BK15 rows
+  byte-identical to before (same parameter and row UIds, same `GT5`, same key order); Success `L8` kept; no duplicate or
+  rewritten row. The designer rewrote resources only: the suffix put back ("Status - Input" / "Status - Output") and the two
+  display values in its own form (`[#PText#]`, `[#PCount#] + 1`).
+- Step 4 (optional): not run.
+- Step 5: not run. The designer's Save menu offers "Save new version" and "Save current version" only; no copy route was
+  found that does not open the read-only oracle `UsrWscEm2CaptureA` for editing (rule 10). `UsrWscEm2CaptureA` checked
+  unchanged afterwards (ModifiedOn 2026-11-03 16:28:42.523). Owner's call whether to run it.
+- Step 6 (unrelated builder modify of the twin): `setElement` carries no caption member, so the End-event caption change
+  was replaced by `addParameter UsrWscEm5Marker` (Text), the unrelated modify EM8 used. Element node and BK15 rows
+  byte-identical to step 3; the captions dropped the suffix again ("Status").
+
+Verdict: the STOP conditions (a rewrite, a duplicate BK15 row, a lost Success `L8`) did not occur; Q3 and Q4 hold for a
+builder-made element. r3 open 4 is answered: every server load of the process (any builder modify) removes the " - Input" /
+" - Output" suffix from top-level captions and every designer save puts it back, so the stored caption flips with the last
+writer. Per the "If not" table (steps 5-6 drop the suffix) the owner decides: the shaper writes what the load leaves, or the
+suffix is excluded from the oracle rule.
+
+**Owner's decision 2026-11-04:** the suffix is excluded from the oracle rule (serialization 8.3 AD1, now permanent for
+stand captures too); the shaper keeps writing the designer's suffixed form, so a fresh builder build equals a fresh
+designer save.
+
 ### EM6 Run time: a builder-made process calling `UsrWscEcho`
 
 | | |
@@ -1125,7 +1165,7 @@ estimate's as they stand.
 | EM2 | 1 / 1.25 / 2 | S1 **spent** 2026-11-03 | the final-cut read-back (step 9) is left |
 | EM3 | 0.5 / 0.75 / 1.25 | **spent** 2026-11-03 | route (b) on `UsrWscDriftService.UsrWscOrders2` |
 | EM4 | 0.25 / 0.5 / 0.75 | **spent** 2026-11-03 | four saves (S1 twice, M-27) |
-| EM5 | 0.5 / 0.75 / 1.25 | to do | install wait; the STOP decision if it fails; the designer copy of step 5 included |
+| EM5 | 0.5 / 0.75 / 1.25 | experimental cut done 2026-11-04 (steps 1-3, 6; step 5 not run); final-cut re-run to do | install wait; the STOP decision if it fails; the designer copy of step 5 included |
 | EM6 | 0.75 / 1.25 / 2 | to do, reduced by E4 | one create and one run; no request half |
 | EM7 | 0.25 / 0.5 / 0.75 | designer half **spent** 2026-11-03 | two processes, two rounds of two runs (the first round had no 404, M-28) |
 | EM8 | 0.5 / 0.75 / 1.25 | day-0 halves **spent** 2026-11-03 | the feature-build half (step 8) is left |
@@ -1169,12 +1209,13 @@ Created so far (2026-11-03):
 | EM8 | process | `UsrWscEm8Drift2` (`ae6dfe62-faec-4303-9bfd-b6bd186c05df`, `Custom`) | 2026-11-03, lead | CU-1 | | stored bytes still the pre-drift set (never re-saved); kept for step 8 (claimed cut); never run |
 | EM8 | process | `UsrWscEm8Drift3` (`8bfe02dc-1e5a-4732-a28c-efa861b41804`, `Custom`) | 2026-11-03, lead | CU-1 | | re-saved by the designer after the drift: both elements without parameters, `BL11:false`, schema errors; never run |
 | EM8 | web service change | `UsrWscDriftService`: method code `UsrWscDrift` -> `UsrWscDriftGone` | 2026-11-03, lead | with the service (CU-2) | | drifts `UsrWscEm8Drift2`, `UsrWscEm8Drift3` and `UsrWscEm4MethodChange` on purpose; manual TC-12 uses `UsrWscTc12` |
+| EM5 | process | `UsrWscEm5Twin` (`060da1eb-5f49-4034-ae4d-1f21ce493637`, `Custom`) | 2026-11-04, package session | CU-1 after the final-cut re-run | | builder-made; designer re-saved once; process parameter `UsrWscEm5Marker` added by step 6; never run |
+| EM5 | install | CrtProcessBuilder 1.6.6.137 (experimental, stand-only) | 2026-11-04, package session | not removed | | replaced the stand's 1.6.6.131; superseded by the claimed cut |
 
 Planned:
 
 | EM | Kind | Name or id | Created (date, by) | Removal | Removed (date) | Note |
 |---|---|---|---|---|---|---|
-| EM5 | process | `UsrWscEm5Twin` | | CU-1 after the final-cut re-run | | |
 | EM5 | process | `UsrWscEm5OracleCopy` (designer copy of `UsrWscEm2CaptureA`, step 5) | | CU-1 after EM5 | | step 5's modify target; `UsrWscEm2CaptureA` is never modified (rule 10) |
 | EM6 | process | `UsrWscEm6Run` | | CU-1 | | run history stays (CU-6) |
 | EM7 | processes | `UsrWscEm7IgnoreB`, `UsrWscEm7StrictB` (builder twins) | | CU-1 | | claimed cut |

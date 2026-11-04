@@ -510,7 +510,7 @@ element name, against the same service. Each step says what may differ; anything
 
 | # | Difference | Why tolerated | Removed or confirmed by |
 |---|---|---|---|
-| AD1 | top-level caption with vs without the ` - Input`/` - Output` suffix | stored corpus is inconsistent (4); a fresh designer save suffixes a top-level pair (EM2, M-24), so the builder writes it | confirmed for corpus sides by EM2; on a stand capture only if EM5 shows a re-save strips it |
+| AD1 | top-level caption with vs without the ` - Input`/` - Output` suffix | stored corpus is inconsistent (4); a fresh designer save suffixes a top-level pair (EM2, M-24), so the builder writes it | confirmed for corpus sides by EM2; confirmed for stand captures by EM5 (2026-11-04: every server load of the process drops the suffix, every designer save restores it). Owner's decision 2026-11-04: excluded from the oracle, permanent; the builder keeps writing the designer's suffixed form |
 | AD2 | `BK15` `A2` = an older element name on a corpus side | the client never renames rows (10/212 stale); the package writes the name at creation and does not rewrite it either (Q4) | none: permanent for corpus pairs |
 | AD3 | `.DisplayValue` of a top-level source: bare caption vs `[#<element>.<param>#]` | existing mapping-service behaviour (4); the designer forms are measured (EM2, EM3, M-24, M-25) | removed if the source re-check on `da719366` shows the package writes the designer form |
 | AD4 | resource culture (Russian text under en-US on a corpus side) | the designer writes the user's culture | none: compare the authoring culture (the stand captures are en-US, M-22) |
