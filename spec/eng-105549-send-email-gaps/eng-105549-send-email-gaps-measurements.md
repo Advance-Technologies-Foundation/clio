@@ -42,7 +42,19 @@ writes; the `email` block never writes it) and keeps its source, value and refer
 and value only, and describe reports the stored type with the same value and display, so neither depends on the type:
 no code change; a package test pins the type-independent match.
 
+### M8b run time of the retyped recipient (2026-11-04)
+
+The same process, after step 4, run once (manual mode, so nothing is sent; the prepared email activity shows the
+addresses the run resolved). The activity's recipient field read
+`<Supervisor's email>;<the bare contact id>;nobody@example.invalid`: the Script `[#Lookup...#]` recipient resolved to
+the contact's email, while the retyped constant (MaxSizeText, ConstValue = contact id) went out as the literal id.
+
+**Consequence:** replacing a contact recipient through `addMapping` with a bare contact id works only until the next
+designer save, which silently turns it into an undeliverable address. The `[#Lookup.<Contact>.<id>#]` expression form
+survives the save (step 1) and resolves (this run).
+
 ## Created objects (cleanup on the owner's word)
 
 Processes `UsrSe105549IgnoreNoSender`, `UsrSe105549IgnoreBadSender`, `UsrSe105549IgnoreNoRecipient`,
-`UsrSe105549RecipientType` (package Custom) and the three process-log rows of the M6 runs.
+`UsrSe105549RecipientType` (package Custom), the three process-log rows of the M6 runs, and the M8b run (a running
+process instance waiting on its manual email activity "M8 recipients").
