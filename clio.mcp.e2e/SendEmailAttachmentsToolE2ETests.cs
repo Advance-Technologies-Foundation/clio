@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.138 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.139 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -52,16 +52,18 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.138.
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.139.
 	/// 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the first whose describe lists the rows
 	/// in stored order, which TC-I-05 asserts; 1.6.6.138 is the first that reports a source running after the email,
 	/// names the route of the same files through a process parameter, expands a name in a performer contact and
-	/// replaces a recipient through <c>addMapping</c> - the newest behaviour a case here asserts, so it is the floor.
+	/// replaces a recipient through <c>addMapping</c>; 1.6.6.139 is the first that stores a contact id mapped onto a
+	/// recipient referencing Contact as the <c>[#Lookup...#]</c> formula - the newest behaviour a case here asserts, so
+	/// it is the floor.
 	/// A stand at or above it but behind the archive this clio bundles passes the arrange and is refused by clio on its
 	/// first call; the create, modify and describe helpers turn that refusal into an Ignore. Raise it when a case
 	/// starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.138";
+	private const string MinimumPackageVersion = "1.6.6.139";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
@@ -779,6 +781,46 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		}
 	}
 
+	[Test]
+	[Description("addMapping a contact id onto a recipient that references Contact stores the lookup formula: SE1 is built with Recipient1 reading the Contact-lookup process parameter ContactRef, then an addMapping onto SE1.Recipient1 with the bare id of an existing contact lands, and describe reports ONE recipient, Recipient1, sourced Script with the value [#Lookup.<Contact UId>.<id>#] - the form a Process Designer save keeps, not a constant id.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process stores a contact id mapped onto a Contact recipient as the lookup formula")]
+	public async Task ModifyBusinessProcess_Should_StoreTheLookupFormula_WhenAContactIdIsMappedOntoAContactRecipient() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string contactId = await ReadFirstRecordIdAsync(context, "Contact");
+			Guid contactObjectUId = await ReadRootEntitySchemaUIdAsync(context, "Contact");
+			string processName = NewProcessName("ContactRecipient");
+			await ArrangeProcessAsync(context, created, processName, LinearDescriptor(processName, FileParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e contact recipient", "body": "<p>Contact.</p>",
+					    "to": [ { "processParameter": "ContactRef" } ] } }
+					""")), "the process whose recipient references Contact");
+
+			// Act
+			CallToolResult mapped = await ModifyAsync(context, processName, $$"""
+				[ { "op": "addMapping", "mapping": { "elementName": "SE1", "elementParameter": "Recipient1", "value": "{{contactId}}" } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(mapped, "a contact id onto a recipient that references Contact is a record, not text");
+			JsonObject email = Group(Element(await DescribeGraphAsync(context, processName), "SE1"), "email");
+			JsonObject recipient = ((email["to"] as JsonArray)?.OfType<JsonObject>().ToList() ?? []).Should().ContainSingle(
+				because: "the mapping rewrites Recipient1 instead of adding a second recipient; describe read: {0}",
+				email.ToJsonString()).Which;
+			Text(recipient, "name").Should().Be("Recipient1", because: "the recipient keeps its parameter");
+			Text(recipient, "source").Should().Be("Script",
+				because: "the id is stored as a formula, which a Process Designer save keeps, not as a constant");
+			Text(recipient, "value").Should().BeEquivalentTo($"[#Lookup.{contactObjectUId}.{contactId}#]",
+				because: "the formula names the Contact object by its UId and the mapped contact by its id");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
 	#endregion
 
 	#region Methods: Descriptors
@@ -1039,6 +1081,25 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			Assert.Ignore($"{Subject} MCP E2E needs at least one {schemaName} record on '{context.EnvironmentName}'.");
 		}
 		return rows[0].GetProperty("Id").GetString()!;
+	}
+
+	/// <summary>
+	/// The UId of the ROOT entity schema <paramref name="schemaName"/> - the row that does not extend a parent, whose
+	/// UId the object segment of a <c>[#Lookup.{object}.{record}#]</c> formula carries.
+	/// </summary>
+	private static async Task<Guid> ReadRootEntitySchemaUIdAsync(ProcessDesignerArrangeContext context,
+			string schemaName) {
+		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager",
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ExtendParent", false, BooleanDataValueType)
+			], rowCount: 1), $"the root {schemaName} entity schema");
+		rows.GetArrayLength().Should().Be(1,
+			because: $"arrange: every stand carries the root {schemaName} entity schema, whose UId the formula names");
+		return Guid.Parse(rows[0].GetProperty("UId").GetString()!);
 	}
 
 	/// <summary>

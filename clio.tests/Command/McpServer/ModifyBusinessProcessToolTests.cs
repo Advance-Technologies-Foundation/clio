@@ -270,7 +270,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping of the same kind onto its slot, and the prompt says a fixed contact goes in as a Lookup expression rather than a bare contact id - a constant contact id is retyped to text by a designer save and then read as a literal address.")]
+	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping of the same kind onto its slot, and the prompt says a fixed contact goes in as a Lookup expression onto a recipient that references Contact, that a bare contact id there is stored as the same formula, and that a record id onto a text recipient or as an email.to value is refused.")]
 	public void ModifyBusinessProcessTool_ShouldStateTheRecipientReplacementRoute_InTheContractAndThePrompt() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -288,8 +288,14 @@ public class ModifyBusinessProcessToolTests {
 			because: "the prompt names the replacement route beside match-or-append");
 		prompt.Should().Contain("recipient KEEPS its type, so map a source of the same kind (check describe's `type`/`referenceSchema`)",
 			because: "the mapping keeps the slot's type, which is how the run reads the value");
-		prompt.Should().Contain("contact map `expression` `[#Lookup.<Contact UId>.<id>#]`, never a bare contact id `value`",
+		prompt.Should().Contain("contact map `expression` `[#Lookup.<Contact UId>.<id>#]` onto a recipient that references Contact",
 			because: "a fixed contact must survive a designer save and resolve to the contact's email at run time");
+		prompt.Should().Contain("`value` there is stored as that same formula, which a designer save keeps",
+			because: "the package stores a record id mapped onto such a recipient in the formula form, so the prompt must not call a bare id broken");
+		prompt.Should().Contain("recipient, or as an `email.to`/`cc`/`bcc` `value`, is refused: add the contact through `email.to` with that",
+			because: "a record id onto a text recipient or as an email.to value is refused, and the prompt names the route that is accepted");
+		prompt.Should().NotContain("never a bare contact id `value`",
+			because: "a bare contact id onto a recipient that references Contact is stored as the formula, so the retired claim is false");
 	}
 
 	[Test]

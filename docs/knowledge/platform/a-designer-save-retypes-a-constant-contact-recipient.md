@@ -22,12 +22,19 @@ bare contact id (measured once in manual mode: the prepared activity's recipient
 `[#Lookup…#]` recipient beside it resolved to the contact's email). Measured on a .NET Framework stand with
 CrtProcessBuilder 1.6.6.137.
 
+From CrtProcessBuilder 1.6.6.139 the mapping route no longer writes the constant: a contact id mapped onto a recipient
+that references an object - Lookup, or the retyped MaxSizeText that kept its `referenceSchema` - is stored as the
+`[#Lookup.<object UId>.<id>#]` formula under Script and typed Lookup again, so mapping the same id once more repairs a
+recipient a save already retyped; and every request ends with a warning for each recipient still holding a constant
+id. Recipients written by an older package keep the constant until that happens.
+
 **Why it is this way** — inference, not traced in the designer's client code: its recipient editor appears to
 store a constant as text, so it re-types what it loads.
 
-**What breaks if you ignore it** — a fixed contact replaced through `addMapping` with a bare contact id `value`
-becomes an undeliverable address the next time anyone saves the process in the designer, silently: map it as
-`expression` `[#Lookup.<Contact UId>.<id>#]`, which survives the save and resolves. And a check that compares a
+**What breaks if you ignore it** — against a package older than 1.6.6.139, a fixed contact replaced through
+`addMapping` with a bare contact id `value` becomes an undeliverable address the next time anyone saves the process in
+the designer, silently: map it as `expression` `[#Lookup.<Contact UId>.<id>#]`, which survives the save and resolves
+on every version. And a check that compares a
 recipient by its stored data type (a read-back expectation in clio, an E2E assertion on describe's `type`, a "same
 recipient" match) reports a change, or a missing recipient, after nothing but a designer save; a match by type would
 append a duplicate on the next `email.to`. CrtProcessBuilder matches by source and value only (pinned by a package
