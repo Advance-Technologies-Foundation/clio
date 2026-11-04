@@ -344,7 +344,7 @@ A pull request that changes `clio/CrtProcessBuilder/**` queues the TeamCity conf
 ENG-97005). It installs the archive from that branch's own build output and runs the whole
 `McpE2E.ProcessDesigner` category, which makes it the only automated check of the bytes against a live Creatio:
 the unit lane proves the pins match the archive, not that the archive works. Do not merge a rebundle before its
-status `CLIO MCP e2e process designer (CLIO MCP Test)` is green. Read a red one the way
+status `CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)` is green. Read a red one the way
 `docs/knowledge/Tests/the-atf-mcp-e2e-check-goes-green-on-its-own.md` says: take a second reading before blaming
 the archive, and never lower a `[RequiresPackage]` floor to turn it green.
 
