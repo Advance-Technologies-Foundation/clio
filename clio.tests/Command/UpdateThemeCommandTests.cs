@@ -200,13 +200,13 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 			because: "null content fields are kept by the platform, null keeps the background, and {} removes it");
 	}
 
-	[TestCase(ThemeId, true, 1)]
-	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", true, 0)]
-	[TestCase(ThemeId, false, 0)]
+	[TestCase(ThemeId, true, 1, 0)]
+	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", true, 0, 1)]
+	[TestCase(ThemeId, false, 0, 0)]
 	[Category("Unit")]
-	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list or an image the environment does not have.")]
+	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
 	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, bool imageFound,
-		int expectedCalls) {
+		int expectedCalls, int expectedMissingThemeErrors) {
 		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(imageFound);
 		IReadOnlyList<ThemeDescriptor> themes = [
 			new ThemeDescriptor {
@@ -229,5 +229,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
+		_logger.Received(expectedMissingThemeErrors)
+			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
 	}
 }

@@ -153,16 +153,21 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			return false;
 		}
 		Guid themeId = Guid.Parse(options.Id);
-		Match match = ThemePackagePattern.Match(themes.FirstOrDefault(theme =>
-			Guid.TryParse(theme.Id, out Guid id) && id == themeId)?.CssFilePath ?? string.Empty);
+		ThemeDescriptor theme = themes.FirstOrDefault(candidate =>
+			Guid.TryParse(candidate.Id, out Guid id) && id == themeId);
+		if (theme is null) {
+			string caveat = themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty;
+			error = $"No theme with id '{options.Id}' is on the environment (see list-themes); nothing was changed." + caveat;
+			return false;
+		}
+		Match match = ThemePackagePattern.Match(theme.CssFilePath ?? string.Empty);
 		if (match.Success) {
 			packageName = match.Groups["package"].Value;
 			error = null;
 			return true;
 		}
-		string caveat = themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty;
-		error = $"Theme '{options.Id}' is not in the catalog with a package in its cssFilePath, " +
-			"so its background image cannot be bound; nothing was changed." + caveat;
+		error = $"Theme '{options.Id}' has no package in its cssFilePath, so its background image cannot be bound; " +
+			"nothing was changed.";
 		return false;
 	}
 }
