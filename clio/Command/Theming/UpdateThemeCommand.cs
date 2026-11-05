@@ -20,9 +20,7 @@ public class UpdateThemeOptions : RemoteCommandOptions
 	public string Id { get; set; }
 
 	/// <summary>Human-readable theme caption (required, ≤250).</summary>
-	[Option("caption", Required = false,
-		HelpText = "Human-readable theme caption (max 250). Caption, css-class-name and the CSS are required without a " +
-			"background argument; with one, the omitted ones are kept")]
+	[Option("caption", Required = false, HelpText = "Human-readable theme caption (max 250)")]
 	public string Caption { get; set; }
 
 	/// <summary>CSS class applied when the theme is active (required, <c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100).</summary>
@@ -98,25 +96,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
 		ThemeBackgroundArguments background = options.GetBackgroundArguments();
-		bool partial = background.IsPresent;
-		bool hasCss = options.CssContent is not null || !string.IsNullOrWhiteSpace(options.CssContentFile);
-		string cssContent = null;
-		if (!background.TryValidate(out string error)
-			|| ((!partial || hasCss) && !ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent,
-				options.CssContentFile, out cssContent, out error))) {
-			Fail(error);
-			return;
-		}
-		ThemeRequest request = new() {
-			Id = options.Id,
-			Caption = partial && string.IsNullOrWhiteSpace(options.Caption) ? null : options.Caption,
-			CssClassName = partial && string.IsNullOrWhiteSpace(options.CssClassName) ? null : options.CssClassName,
-			CssContent = cssContent,
-			Background = background.ToBackground()
-		};
-		string packageName = null;
-		if (!ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			|| (background.HasImageId && !TryResolveThemePackage(options, out packageName, out error))) {
+		if (!TryBuildRequest(options, background, out ThemeRequest request, out string packageName, out string error)) {
 			Fail(error);
 			return;
 		}
@@ -127,12 +107,35 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Fail(ThemeServiceResponseParser.DescribeFailure("UpdateTheme", failure));
 			return;
 		}
-		if (partial) {
+		if (background.IsPresent) {
 			Logger.WriteInfo(background.Remove
 				? "Removed the theme background."
 				: $"Theme background: {request.Background.Describe()}.");
 			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.Id, packageName));
 		}
+	}
+
+	private bool TryBuildRequest(UpdateThemeOptions options, ThemeBackgroundArguments background,
+		out ThemeRequest request, out string packageName, out string error) {
+		request = null;
+		packageName = null;
+		bool partial = background.IsPresent;
+		bool hasCss = options.CssContent is not null || !string.IsNullOrWhiteSpace(options.CssContentFile);
+		string cssContent = null;
+		if (!background.TryValidate(out error)
+			|| ((!partial || hasCss) && !ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent,
+				options.CssContentFile, out cssContent, out error))) {
+			return false;
+		}
+		request = new ThemeRequest {
+			Id = options.Id,
+			Caption = partial && string.IsNullOrWhiteSpace(options.Caption) ? null : options.Caption,
+			CssClassName = partial && string.IsNullOrWhiteSpace(options.CssClassName) ? null : options.CssClassName,
+			CssContent = cssContent,
+			Background = background.ToBackground()
+		};
+		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
+			&& (!background.HasImageId || TryResolveThemePackage(options, out packageName, out error));
 	}
 
 	private void Fail(string error) {
@@ -150,10 +153,14 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		Guid themeId = Guid.Parse(options.Id);
 		Match match = ThemePackagePattern.Match(themes.FirstOrDefault(theme =>
 			Guid.TryParse(theme.Id, out Guid id) && id == themeId)?.CssFilePath ?? string.Empty);
-		packageName = match.Success ? match.Groups["package"].Value : null;
-		error = match.Success ? null : $"Theme '{options.Id}' is not in the catalog with a package in its cssFilePath, " +
-			"so its background image cannot be bound; nothing was changed." +
-			(themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty);
-		return match.Success;
+		if (match.Success) {
+			packageName = match.Groups["package"].Value;
+			error = null;
+			return true;
+		}
+		string caveat = themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty;
+		error = $"Theme '{options.Id}' is not in the catalog with a package in its cssFilePath, " +
+			"so its background image cannot be bound; nothing was changed." + caveat;
+		return false;
 	}
 }
