@@ -80,3 +80,14 @@ confirmed no memory file was loaded), on the clio build of this branch and the c
 
 Measured during the run and fed back into the guide: `ignoreErrors` does not keep the run alive when a single-File
 attachment is empty (the run fails with it on); an `email.to` record-id `value` the line already holds is left as it is.
+
+## Isolated test-case re-run on 1.6.6.140 (2026-11-05)
+
+Same harness, on the clio build of this branch (bundling 1.6.6.140) and the clio-knowledge branch guides. Every Jira
+case passed again (TC-08 N/A), with no product regression against the 1.6.6.139 run. Direct checks of what 1.6.6.140
+changed: a `[#Lookup...#]` formula mapped onto a designer-retyped text recipient types it Lookup; an `email.to`
+formula without `referenceSchema` becomes a Lookup recipient of its object; a compound formula as a `value` is refused;
+a non-existent record id is refused with the reason. A Contact and an Account picked in the Process Designer are stored
+as Script `[#Lookup.<object>.<record>#]` with the object's own root schema UId, not a view UId. Found and fed back into
+the guides: the routing line did not lead an agent asked about `ignoreErrors` to `process-send-email`, and the
+attachments guide did not say an empty file fails the element with `ignoreErrors` on.
