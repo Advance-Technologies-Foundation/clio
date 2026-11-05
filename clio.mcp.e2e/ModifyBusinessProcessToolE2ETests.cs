@@ -979,7 +979,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
 		});
-		SkipWhenPackagePredatesTheElement(built);
+		RequireBareElementCreated(built);
 
 		// Act - configure the block and its record filter in one batch.
 		CallToolResult edited = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -1033,7 +1033,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
 		});
-		SkipWhenPackagePredatesTheElement(built);
+		RequireBareElementCreated(built);
 		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -1232,16 +1232,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// The version gate, and it is a NEGATIVE one - see the test's Description for what that does and does not
 	// establish. It sits after a successful build deliberately: on a process that failed to build, the
-	// operation is refused for not finding the process and this would never match.
+	// operation is refused for not finding the process and this would never match. Read from the envelope's exit
+	// code and the server's log: IsError is the transport's flag, which a refused operation never sets.
 	private static void SkipWhenTheOperationIsUnknown(CallToolResult result) {
-		string payload = JsonSerializer.Serialize(result);
-		if (result.IsError is true
-				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
-					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
-			Assert.Ignore(
+		string modifyLog = LogText(result);
+		if (McpCommandExecutionParser.Extract(result).ExitCode != 0
+				&& (modifyLog.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+					|| modifyLog.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
-				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
-				+ "meaningful.");
+				+ "1.6.2.18; the rebundle and a deploy are what make this test meaningful.");
 		}
 	}
 
@@ -1281,21 +1281,33 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		}
 		""";
 
-	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
+	// The gate, in one place so both tests read the same way, named for what it does on every path: the bare
+	// element has to exist before the modify path is exercised. A CrtProcessBuilder predating the element rejects
 	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
-	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
-	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
-		string payload = JsonSerializer.Serialize(built);
-		if (built.IsError is true && !payload.Contains("created (UId:")) {
-			Assert.Ignore(
+	// coverage: the rebundle is the follow-up that makes these two tests meaningful. The process-designer lane,
+	// which installs the bundled package itself, fails it instead (McpE2E:RequireProcessBuilder).
+	// Matched on the package's OWN refusal text (ProcessElementFactory: "Element type '<type>' is not supported
+	// yet"), as the create fixture does, not on "the create failed somehow": a bare exit-code gate would report a
+	// malformed descriptor, an auth failure or a regression in this very block as the package predating the
+	// element, and on the lane that text is the failure text, which sends triage to a rebundle. The signal is the
+	// envelope's exit code, as ShouldHaveBuilt reads it: IsError is the transport's flag, which a refused command
+	// never sets. Every other outcome fails right here, with the server's log in the message.
+	private static void RequireBareElementCreated(CallToolResult built) {
+		string createLog = LogText(built);
+		bool elementTypeRejected = McpCommandExecutionParser.Extract(built).ExitCode != 0
+			&& createLog.Contains("is not supported yet")
+			&& createLog.Contains("changeAccessRights");
+		if (elementTypeRejected) {
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
-				+ "the accessRights block never reaches the read-back guard. This is expected until the "
-				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
-				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
-				+ "precondition passes while the block is still discarded. Until then "
-				+ "then this test is Ignored, NOT passing, and the modify path is unverified end to end.");
+				+ "the accessRights block never reaches the read-back guard. The package has to come from a source "
+				+ "tree that CONTAINS the element; the version precondition cannot tell, because a package can report "
+				+ "a version at or above the floor and still lack the element. On this stand the modify path is "
+				+ "unverified end to end.");
 		}
+		ShouldHaveBuilt(built,
+			"the arrange create of the bare Change access rights element has to land before the modify path is exercised");
 	}
 
 	// A Change access rights element with NO accessRights block yet: the modify path configures it. Kept separate

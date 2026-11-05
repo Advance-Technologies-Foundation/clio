@@ -6,6 +6,10 @@
     "guarded by clio.tests/McpE2eSelectionCoverageTests.cs. Rules, in order, per changed file:",
     "  1. ignoredPaths                       -> ignored (documentation, other projects)",
     "  2. not under relevantPaths            -> ignored",
+    "  2a. processDesignerLane.exclusivePaths -> the whole McpE2E.ProcessDesigner category on the process-designer",
+    "                                           lane; the existing lane does not classify the file at all",
+    "  2b. processDesignerLane.installCommandPaths -> the whole McpE2E.ProcessDesigner category on the process-designer",
+    "                                           lane; the rules below still classify the file for the existing lane",
     "  3. fullRunPaths                       -> the whole suite runs (shared infrastructure)",
     "  4. clio.mcp.e2e/<Fixture>.cs          -> that fixture",
     "  5. explicitMappings                   -> the listed fixtures",
@@ -41,9 +45,44 @@
     "still needs TeamCity. A subset in which no test survives the pull-request TeamCity filter - every test",
     "is NoEnvironment or a category baseFilter excludes (McpE2E.ProcessDesigner, McpE2E.Manual) - is mode",
     "'none' too: the build would deploy a Creatio and execute nothing. The TeamCity step's default",
-    "filter is baseFilter; a full pull-request run sends baseFilter plus TestCategory!=McpE2E.NoEnvironment."
+    "filter is baseFilter; a full pull-request run sends baseFilter plus TestCategory!=McpE2E.NoEnvironment.",
+    "The same rules also select for the process-designer lane - see _processDesignerLane."
   ],
   "baseFilter": "TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+  "_processDesignerLane": [
+    "The second TeamCity lane, TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner (project \"CLIO MCP ProcessDesigner\" under ATF).",
+    "It deploys its own stand, installs",
+    "CrtProcessBuilder from the clio build under test (install-process-builder in its Prepare step) and runs only",
+    "the category below, in parallel with Team_Atf_ClioMcpE2eTests, whose baseFilter excludes that category.",
+    "Its selection is derived from the same per-file rules: a full run of the existing lane by a rule is a full",
+    "run here too, and a subset keeps the selected fixtures that carry a test in the category and outside the",
+    "exclusions of baseFilter below. Two lists of its own run the whole category here. exclusivePaths is what only",
+    "this lane can observe - the bundled archive - so the existing lane, which never installs the package, does",
+    "not classify those files. installCommandPaths is the code of the install this lane performs in its Prepare",
+    "step (install-process-builder) and the clio/Common services that install runs through: the bundled-archive",
+    "catalog, the required-package checker and the readiness wait. No fixture exercises the install itself: the",
+    "reference graph reaches those services only through other commands (the readiness wait through restart, on",
+    "the existing lane), so on this lane it selects for them a subset that shares a type with them or, for the",
+    "readiness wait, no fixture of the category at all. The list runs the whole category here, and the existing",
+    "lane still classifies those files. Neither list is a fullRunPaths of this lane: the top-level",
+    "fullRunPaths means the whole suite on the existing lane and the whole category here. baseFilter below is the",
+    "default of the lane's McpE2eTestFilter parameter in TeamCity, and a full pull-request run sends it as is."
+  ],
+  "processDesignerLane": {
+    "category": "McpE2E.ProcessDesigner",
+    "baseFilter": "TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+    "exclusivePaths": [
+      "clio/CrtProcessBuilder/**"
+    ],
+    "installCommandPaths": [
+      "clio/Command/InstallProcessBuilderCommand.cs",
+      "clio/Command/InstallBundledPackageCommand.cs",
+      "clio/Command/InstallBundledPackageOptions.cs",
+      "clio/Common/BundledPackageCatalog.cs",
+      "clio/Common/RequiredPackageChecker.cs",
+      "clio/Common/ServerReadinessWaiter.cs"
+    ]
+  },
   "noEnvironmentCategory": "McpE2E.NoEnvironment",
   "fixtureNamespace": "Clio.Mcp.E2E",
   "fixtureRoot": "clio.mcp.e2e/",
@@ -89,7 +128,12 @@
     "Only genuinely global things belong here: code every MCP session executes before any tool runs,",
     "the harness itself, and artifacts the deploy installs. Everything else under clio/ is classified",
     "by the reference graph (rule 7) - putting a path here instead is a measurable cost, because every",
-    "pull request touching it pays for the whole suite."
+    "pull request touching it pays for the whole suite. A match here is a full run of both lanes: the whole suite",
+    "on the existing lane and the whole McpE2E.ProcessDesigner category on the process-designer lane. The two",
+    "registrationFiles are classified first: a diff made only of registration statements selects the fixtures",
+    "of the registered types instead (see Registration_* in the guard tests).",
+    "clio/**/*.gz does not reach clio/CrtProcessBuilder/*.gz: rule 2a (processDesignerLane.exclusivePaths) runs",
+    "first and keeps that archive on the process-designer lane alone."
   ],
   "fullRunPaths": [
     "clio/Program.cs",

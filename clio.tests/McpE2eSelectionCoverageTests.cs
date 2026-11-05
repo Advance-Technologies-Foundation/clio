@@ -210,7 +210,202 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("Changing one tool source file selects a subset that contains the fixture named after it, excludes the NoEnvironment tier and keeps the base exclusions.")]
+	[Description("The process-designer lane runs exactly the category the existing lane excludes, both lanes spell it the way the compiled McpE2ECategories constant does, the lane keeps the existing lane's other exclusions, so every ProcessDesigner test runs on exactly one lane, and every path the lane's two lists name still exists in the tree.")]
+	public void Manifest_ShouldSplitTheProcessDesignerCategoryBetweenTheTwoLanes() {
+		// Arrange
+		JsonElement manifest = ReadManifest();
+		JsonElement lane = manifest.GetProperty("processDesignerLane");
+		string category = lane.GetProperty("category").GetString()!;
+		string[] existingClauses = manifest.GetProperty("baseFilter").GetString()!.Split('&');
+
+		// Act
+		string[] laneClauses = lane.GetProperty("baseFilter").GetString()!.Split('&');
+
+		// Assert
+		category.Should().Be(Clio.Mcp.E2E.Support.Configuration.McpE2ECategories.ProcessDesigner,
+			because: "the fixtures carry the compiled constant, and a manifest that spells the category differently selects none of them");
+		string.Join('&', laneClauses).Should().Be("TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+			because: "this is the default of the McpE2eTestFilter parameter of TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner; changing one side without the other changes what that lane's master builds run");
+		existingClauses.Should().Contain($"TestCategory!={category}",
+			because: "the existing lane's stand has no CrtProcessBuilder, so it must exclude the category the process-designer lane runs");
+		laneClauses.Should().Contain(existingClauses.Where(clause => clause != $"TestCategory!={category}"),
+			because: "every other exclusion of the existing lane - manual and developer-local tests - holds on the process-designer lane too");
+		// The anchor is the text before the first '*', so a glob has to start at a segment boundary (clio/CrtProcessBuilder/**).
+		foreach (string entry in lane.GetProperty("exclusivePaths").EnumerateArray().Concat(lane.GetProperty("installCommandPaths").EnumerateArray()).Select(path => path.GetString()!)) {
+			string anchor = Path.Combine(RepositoryRoot, entry.Split('*')[0].TrimEnd('/').Replace('/', Path.DirectorySeparatorChar));
+			(File.Exists(anchor) || Directory.Exists(anchor)).Should().BeTrue(
+				because: $"'{entry}' must still point into the tree: a moved or renamed file silently drops rule 2a or 2b, and the lane stops running for changes to it");
+		}
+	}
+
+	[Test]
+	[Description("Each queue chain of the trigger workflow sends its own lane's selection to its own configuration - attempt-* queue Team_Atf_ClioMcpE2eTests with filter and mode, pd-attempt-* queue TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner with pd_filter and pd_mode - the gate waits for all six jobs, the three attempts of a chain send one and the same TC_EXTRA_PROPERTIES, and the process-designer chain sends the existing lane's switches plus InstallProcessBuilder and env.McpE2E__RequireProcessBuilder set to true.")]
+	public void TriggerWorkflow_ShouldQueueEachLaneWithItsOwnSelection() {
+		// Arrange
+		Dictionary<object, object> jobs = ReadWorkflowJobs(TriggerWorkflowPath);
+		(string Prefix, string BuildType, string Filter, string Mode, string[] Switches)[] lanes = [
+			("attempt-", "Team_Atf_ClioMcpE2eTests", "${{ needs.select.outputs.filter }}", "${{ needs.select.outputs.mode }}", Array.Empty<string>()),
+			("pd-attempt-", "TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner", "${{ needs.select.outputs.pd_filter }}", "${{ needs.select.outputs.pd_mode }}", new[] { "InstallProcessBuilder", "env.McpE2E__RequireProcessBuilder" })
+		];
+		Dictionary<string, Dictionary<string, string>> switchesByLane = new();
+
+		// Act
+		string[] gateNeeds = ((List<object>)GetMap(jobs, "gate")["needs"]).Select(need => need.ToString()!).ToArray();
+		var chains = lanes.Select(lane => (Lane: lane, Jobs: jobs.Keys.Select(key => key.ToString()!)
+			.Where(name => name.StartsWith(lane.Prefix, StringComparison.Ordinal))
+			.Select(name => (Name: name, Environment: GetQueueStepEnvironment(GetMap(jobs, name))))
+			.ToArray())).ToArray();
+
+		// Assert
+		foreach (var chain in chains) {
+			chain.Jobs.Should().HaveCount(3,
+				because: $"each lane is queued by a chain of three attempts ({chain.Lane.Prefix}1..3) that stops at its first success");
+			foreach ((string name, Dictionary<object, object> environment) in chain.Jobs) {
+				environment["BUILD_TYPE"].Should().Be(chain.Lane.BuildType,
+					because: $"{name} must queue the configuration of its own lane");
+				environment["TEST_FILTER"].Should().Be(chain.Lane.Filter,
+					because: $"{name} must send its own lane's filter; the other lane's would run the wrong category");
+				environment["TEST_SELECTION_MODE"].Should().Be(chain.Lane.Mode,
+					because: $"{name} must record its own lane's selection mode in the build comment");
+				gateNeeds.Should().Contain(name,
+					because: "the gate can only report a lane whose queue jobs it waits for");
+			}
+			string[] extraProperties = chain.Jobs.Select(job => job.Environment["TC_EXTRA_PROPERTIES"].ToString()!).Distinct().ToArray();
+			extraProperties.Should().ContainSingle(
+				because: $"the three attempts of {chain.Lane.Prefix}* are retries of one queue request; a switch that differs between them gives the build different parameters depending on which attempt reached TeamCity, and only the runs that fall through to that attempt would notice");
+			Dictionary<string, string> switches = JsonSerializer.Deserialize<Dictionary<string, string>>(extraProperties[0])!;
+			foreach (string key in chain.Lane.Switches) {
+				switches.Should().ContainKey(key, because: $"{chain.Lane.Prefix}* must send {key} at all; the configuration default would otherwise decide").WhoseValue.Should().Be("true",
+					because: $"{chain.Lane.Prefix}* must send {key}=true: it makes the lane install the bundled package and fail, not ignore, a test that finds it missing");
+			}
+			switchesByLane[chain.Lane.Prefix] = switches;
+		}
+		switchesByLane["pd-attempt-"].Should().Contain(switchesByLane["attempt-"],
+			because: "the process-designer lane deploys the same full Creatio and allows the same destructive tests as the existing lane; its own switches come on top");
+	}
+
+	[Test]
+	[Description("Each queue chain keeps the fork guard and the order of the existing one: its first attempt runs only for a same-repo pull request or a manual dispatch and only when its lane's mode is not none, and every later attempt needs and checks only the earlier attempts of its own lane.")]
+	public void TriggerWorkflow_ShouldChainEachLaneBehindTheForkGuard() {
+		// Arrange
+		Dictionary<object, object> jobs = ReadWorkflowJobs(TriggerWorkflowPath);
+		(string Prefix, string ModeOutput)[] lanes = [
+			("attempt-", "needs.select.outputs.mode"),
+			("pd-attempt-", "needs.select.outputs.pd_mode")
+		];
+		const string forkGuard = "github.event.pull_request.head.repo.full_name == github.repository";
+
+		// Act
+		var chains = lanes.Select(lane => (Lane: lane, Jobs: Enumerable.Range(1, 3)
+			.Select(attempt => (Attempt: attempt, Job: GetMap(jobs, $"{lane.Prefix}{attempt}")))
+			.ToArray())).ToArray();
+
+		// Assert
+		foreach (var chain in chains) {
+			foreach ((int attempt, Dictionary<object, object> job) in chain.Jobs) {
+				string name = $"{chain.Lane.Prefix}{attempt}";
+				string condition = job["if"].ToString()!;
+				string[] needs = ((List<object>)job["needs"]).Select(need => need.ToString()!).ToArray();
+				string[] earlier = Enumerable.Range(1, attempt - 1).Select(previous => $"{chain.Lane.Prefix}{previous}").ToArray();
+				needs.Should().Equal(new[] { "select" }.Concat(earlier),
+					because: $"{name} must run after the earlier attempts of its own lane and nothing else");
+				if (attempt == 1) {
+					condition.Should().Contain(forkGuard,
+						because: $"{name} runs on a self-hosted runner inside the corporate network, which a fork pull request must never reach");
+					condition.Should().Contain($"{chain.Lane.ModeOutput} != 'none'",
+						because: $"{name} must not deploy a Creatio for a lane with nothing selected");
+				}
+				foreach (string previous in earlier) {
+					condition.Should().Contain($"needs.{previous}.outputs.queued != 'true'",
+						because: $"{name} may run only when no earlier attempt of the same lane queued a build, or the lane is queued twice");
+				}
+			}
+		}
+	}
+
+	[Test]
+	[Description("Each 'Require that one attempt queued' step of the gate reads the queued output, the runner and the result of the three attempts of its own lane and skips on its own lane's mode only, so a step re-pointed at the other lane's attempts or mode fails here instead of reporting the wrong lane while the two workflow tests above stay green.")]
+	public void TriggerWorkflow_ShouldGateEachLaneOnItsOwnAttempts() {
+		// Arrange
+		List<Dictionary<object, object>> gateSteps = GetSteps(GetMap(ReadWorkflowJobs(TriggerWorkflowPath), "gate"));
+		(string StepName, string Prefix, string ModeOutput)[] lanes = [
+			("Require that one attempt queued the build", "attempt-", "needs.select.outputs.mode"),
+			("Require that one attempt queued the process-designer build", "pd-attempt-", "needs.select.outputs.pd_mode")
+		];
+
+		// Act
+		var steps = lanes.Select(lane => (Lane: lane, Step: gateSteps.Single(step => step.TryGetValue("name", out object? name) && name?.ToString() == lane.StepName))).ToArray();
+
+		// Assert
+		foreach (var (lane, step) in steps) {
+			string condition = step["if"].ToString()!;
+			Dictionary<object, object> environment = (Dictionary<object, object>)step["env"];
+			condition.Should().Contain($"{lane.ModeOutput} != 'none'",
+				because: $"the step for {lane.Prefix}* is skipped exactly when its own lane had nothing to queue");
+			foreach (string otherMode in lanes.Where(other => other.Prefix != lane.Prefix).Select(other => other.ModeOutput)) {
+				condition.Should().NotContain(otherMode,
+					because: $"the other lane's mode would skip or fail the step for {lane.Prefix}* for that lane's reasons");
+			}
+			foreach (int attempt in Enumerable.Range(1, 3)) {
+				environment[$"QUEUED_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.outputs.queued }}}}",
+					because: $"the step for {lane.Prefix}* passes or fails on the queued output of its own attempts");
+				environment[$"RUNNER_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.outputs.runner }}}}",
+					because: $"the step for {lane.Prefix}* names the runners its own attempts ran on");
+				environment[$"RESULT_{attempt}"].Should().Be($"${{{{ needs.{lane.Prefix}{attempt}.result }}}}",
+					because: $"the step for {lane.Prefix}* reports the result of its own attempts");
+			}
+		}
+	}
+
+	[Test]
+	[NonParallelizable] // sets BASE_SHA, HEAD_SHA, KEEP_NOENVIRONMENT and GITHUB_OUTPUT on the process while the step runs
+	[Description("A manual run (workflow_dispatch) has no diff to classify, and the select step then sends the manifest's base filter for the process-designer lane instead of leaving the configuration's McpE2eTestFilter default to decide, while the existing lane keeps the TeamCity default (the full suite); the step's own code is run here with no base commit and its outputs are read back.")]
+	public void TriggerWorkflow_ShouldPinTheProcessDesignerFilter_OnAManualRun() {
+		// Arrange
+		Dictionary<object, object> selectJob = GetMap(ReadWorkflowJobs(TriggerWorkflowPath), "select");
+		string run = GetSteps(selectJob)
+			.Single(step => step.TryGetValue("id", out object? id) && id?.ToString() == "select")["run"].ToString()!;
+		string expectedPdFilter = ReadManifest().GetProperty("processDesignerLane").GetProperty("baseFilter").GetString()!;
+		string outputPath = Path.Combine(Path.GetTempPath(), $"mcp-e2e-dispatch-{Guid.NewGuid():N}.txt");
+		string[] stepVariables = ["BASE_SHA", "HEAD_SHA", "KEEP_NOENVIRONMENT", "GITHUB_OUTPUT"];
+		Dictionary<string, string?> savedVariables = stepVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+		// The step reads the manifest relative to the checkout and appends its outputs to the file GITHUB_OUTPUT
+		// names; BASE_SHA is empty on a workflow_dispatch event, which is the branch under test here. The $env:
+		// writes are process-wide, hence [NonParallelizable] and the restore below; no other fixture reads these
+		// four names and the selection script reads no environment variable, so nothing else observes them.
+		using PowerShell powerShell = PowerShell.Create();
+		powerShell.AddScript($"Set-Location -LiteralPath '{RepositoryRoot.Replace("'", "''")}'")
+			.AddStatement().AddScript($"$env:BASE_SHA = ''; $env:HEAD_SHA = ''; $env:KEEP_NOENVIRONMENT = ''; $env:GITHUB_OUTPUT = '{outputPath.Replace("'", "''")}'")
+			.AddStatement().AddScript(run);
+
+		try {
+			// Act
+			powerShell.Invoke();
+
+			// Assert
+			powerShell.HadErrors.Should().BeFalse(because: "the step must run as written: {0}",
+				string.Join(Environment.NewLine, powerShell.Streams.Error.Select(error => error.ToString())));
+			Dictionary<string, string> outputs = File.ReadAllLines(outputPath)
+				.Select(line => line.Split('=', 2))
+				.ToDictionary(parts => parts[0], parts => parts.Length > 1 ? parts[1] : "", StringComparer.Ordinal);
+			outputs.Should().ContainKey("pd_filter", because: "the process-designer attempts read their filter from this output").WhoseValue
+				.Should().Be(expectedPdFilter, because: "a manual run must send the manifest's base filter for the lane; an empty value hands the choice to the TeamCity default, whose drift this repository cannot see");
+			outputs.Should().ContainKey("pd_mode", because: "the attempts and the gate branch on this output").WhoseValue
+				.Should().Be("full", because: "there is no diff to narrow the category on a manual run");
+			outputs.Should().ContainKey("mode", because: "the existing lane's attempts branch on this output").WhoseValue
+				.Should().Be("full", because: "the existing lane runs in full on a manual run");
+			outputs.Should().ContainKey("filter", because: "the existing lane's attempts read their filter from this output").WhoseValue
+				.Should().BeEmpty(because: "the existing lane keeps the TeamCity default on a manual run - the full suite with the NoEnvironment tier - as the workflow header documents");
+		} finally {
+			File.Delete(outputPath);
+			foreach (KeyValuePair<string, string?> variable in savedVariables) {
+				Environment.SetEnvironmentVariable(variable.Key, variable.Value);
+			}
+		}
+	}
+
+	[Test]
+	[Description("Changing one tool source file selects a subset that contains the fixture named after it, excludes the NoEnvironment tier and keeps the base exclusions; a page tool queues nothing on the process-designer lane.")]
 	public void Script_ShouldSelectSubset_WhenOnlyOneToolFileChanged() {
 		// Arrange
 		string[] changed = ["clio/Command/McpServer/Tools/PageSyncTool.cs", "clio/docs/commands/sync-pages.md"];
@@ -230,10 +425,14 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "the NoEnvironment tier runs on GitHub and must not be repeated on TeamCity");
 		filter.Should().EndWith("TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a subset must keep the exclusions the full run has");
+		selection.GetProperty("pdMode").GetString().Should().Be("none",
+			because: "no fixture of a page tool carries a McpE2E.ProcessDesigner test, so the process-designer lane would install the package for nothing");
+		selection.GetProperty("pdFilter").GetString().Should().BeEmpty(
+			because: "mode none must not hand the process-designer lane any filter");
 	}
 
 	[Test]
-	[Description("Changing shared infrastructure forces a full run even when a tool file changed alongside it.")]
+	[Description("Changing shared infrastructure forces a full run on both lanes even when a tool file changed alongside it.")]
 	public void Script_ShouldSelectFullRun_WhenSharedInfrastructureChanged() {
 		// Arrange
 		string[] changed = ["clio/BindingsModule.cs", "clio/Command/McpServer/Tools/PageSyncTool.cs"];
@@ -247,6 +446,75 @@ internal sealed class McpE2eSelectionCoverageTests {
 		selection.GetProperty("filter").GetString().Should().Be(
 			"TestCategory!=McpE2E.NoEnvironment&TestCategory!=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
 			because: "a full pull-request run still hands the NoEnvironment tier to GitHub");
+		selection.GetProperty("pdMode").GetString().Should().Be("full",
+			because: "a rule that runs the whole suite on the existing lane cannot leave the process-designer fixtures out either");
+		selection.GetProperty("pdFilter").GetString().Should().Be("TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+			because: "a full process-designer run sends the lane's base filter, so what it runs is decided here and not by the TeamCity default");
+	}
+
+	[Test]
+	[Description("A change to the bundled CrtProcessBuilder archive alone runs the whole ProcessDesigner category on the lane that installs it and queues nothing on the existing lane, whose stand never carries the package.")]
+	public void Script_ShouldRunOnlyTheProcessDesignerLane_WhenOnlyTheBundledArchiveChanged() {
+		// Arrange
+		string[] changed = ["clio/CrtProcessBuilder/CrtProcessBuilder.gz", "clio.tests/Common/BundledProcessBuilderPackageTests.cs"];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+
+		// Assert
+		selection.GetProperty("mode").GetString().Should().Be("none",
+			because: "no fixture of the existing lane can observe an archive its stand never installs, so a full run there would deploy a Creatio to prove nothing");
+		selection.GetProperty("pdMode").GetString().Should().Be("full",
+			because: "every process-designer test exercises the bundled archive, so a rebundle has to run all of them");
+		selection.GetProperty("pdFilter").GetString().Should().Be("TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+			because: "a full process-designer run sends the lane's base filter");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("process-designer lane only"),
+			because: "the decision log must name the rule that sent the archive to the process-designer lane alone");
+	}
+
+	[Test]
+	[Description("A change to one process-designer tool queues the process-designer lane with the selected fixtures that carry a ProcessDesigner test, the fixture named after the tool among them, under the lane's base filter.")]
+	public void Script_ShouldSelectAProcessDesignerSubset_WhenAProcessDesignerToolChanged() {
+		// Arrange
+		string[] changed = ["clio/Command/McpServer/Tools/ProcessDesigner/ValidateProcessGraphTool.cs"];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false);
+
+		// Assert
+		selection.GetProperty("pdMode").GetString().Should().Be("subset",
+			because: "a single process-designer tool resolves to the fixtures that exercise it");
+		string[] pdFixtures = selection.GetProperty("pdFixtures").EnumerateArray().Select(f => f.GetString()!).ToArray();
+		pdFixtures.Should().Contain("ValidateProcessGraphToolE2ETests",
+			because: "the fixture named after the tool carries the ProcessDesigner category and must run on that lane");
+		pdFixtures.Should().NotContain("InstallProcessBuilderContractToolE2ETests",
+			because: "that fixture is selected by the tool too but is NoEnvironment-only, and the process-designer lane runs only its own category");
+		string pdFilter = selection.GetProperty("pdFilter").GetString()!;
+		pdFilter.Should().Contain("FullyQualifiedName~Clio.Mcp.E2E.ValidateProcessGraphToolE2ETests",
+			because: "the filter has to name the fixture with its namespace to stay exact");
+		pdFilter.Should().EndWith("TestCategory=McpE2E.ProcessDesigner&TestCategory!=McpE2E.Manual",
+			because: "a subset keeps the lane's base filter, so a selected fixture's other tests stay on the existing lane");
+	}
+
+	[TestCase("clio/Command/InstallBundledPackageCommand.cs", "InstallBundledPackageCommand")]
+	[TestCase("clio/Common/ServerReadinessWaiter.cs", "ServerReadinessWaiter")]
+	[Description("A change to the install-process-builder command, or to a clio/Common service the install runs through, runs the whole ProcessDesigner category by rule 2b: no stand test names the install, the reference graph reaches those services only through other commands (the readiness wait through restart, on the existing lane), and the process-designer lane's Prepare step is the only place such a change meets the install. The synthetic tree proves the rule, not the real graph.")]
+	public void Script_ShouldRunTheWholeProcessDesignerCategory_WhenTheInstallCommandChanged(string path, string typeName) {
+		// Arrange
+		// The synthetic tree: rule 2b does not stop the classification, so the file goes on into the reference graph,
+		// and over the real product that graph is the most expensive thing this fixture can build.
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		repo.WriteFile(path, $"public sealed class {typeName} {{ }}");
+		string[] changed = [path];
+
+		// Act
+		JsonElement selection = RunSelection(changed, includeNoEnvironment: false, repo.Root);
+
+		// Assert
+		selection.GetProperty("pdMode").GetString().Should().Be("full",
+			because: "the install runs before every test of that lane, so any of them can show a broken install");
+		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("processDesignerLane.installCommandPaths"),
+			because: "the decision log must name the rule that ran the process-designer lane in full");
 	}
 
 	[Test]
@@ -360,6 +628,85 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a subset made only of these fixtures queues no TeamCity build, so none of them may hold a test the pull-request filter keeps");
 	}
 
+	[Test]
+	[Description("In a synthetic repository, the process-designer lane verdict is read per fixture from Category attributes only: a class-level or method-level ProcessDesigner test runs there, a fixture whose only ProcessDesigner test is also Manual does not, a commented-out category changes nothing, and a class-level category with no visible test counts because the inherited tests carry it.")]
+	public void Inventory_ShouldClassifyTheProcessDesignerLanePerFixture_FromCategoryAttributesOnly() {
+		// Arrange
+		using SyntheticRepository repo = SyntheticRepository.Create();
+		repo.WriteFile("clio.mcp.e2e/SigmaProcessE2ETests.cs",
+			"[TestFixture]\n[Category(\"McpE2E.ProcessDesigner\")]\npublic sealed class SigmaClassE2ETests {\n" +
+			"\t[Test] public void Builds() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class SigmaMethodE2ETests {\n" +
+			"\t[Test, Category(\"McpE2E.ProcessDesigner\")] public void Builds() => Call(\"alpha-run\");\n" +
+			"\t[Test] public void Plain() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class SigmaManualE2ETests {\n" +
+			"\t[Test]\n\t[Category(\"McpE2E.ProcessDesigner\")]\n\t[Category(\"McpE2E.Manual\")]\n\tpublic void CompilesTheStand() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\npublic sealed class SigmaCommentE2ETests {\n" +
+			"\t// [Category(\"McpE2E.ProcessDesigner\")]\n\t[Test] public void Plain() => Call(\"alpha-run\");\n}\n\n" +
+			"[TestFixture]\n[Category(\"McpE2E.ProcessDesigner\")]\npublic sealed class SigmaInheritedE2ETests : SigmaBase {\n}\n");
+
+		// Act
+		JsonElement verdicts = RunScript(ps => ps.AddParameter("Inventory"), repo.Root).GetProperty("survivesProcessDesignerLane");
+
+		// Assert
+		verdicts.GetProperty("SigmaClassE2ETests").GetBoolean().Should().BeTrue(
+			because: "a class-level McpE2E.ProcessDesigner covers every test of the fixture");
+		verdicts.GetProperty("SigmaMethodE2ETests").GetBoolean().Should().BeTrue(
+			because: "one method-level McpE2E.ProcessDesigner test is enough for the lane to run the fixture");
+		verdicts.GetProperty("SigmaManualE2ETests").GetBoolean().Should().BeFalse(
+			because: "the lane's base filter excludes McpE2E.Manual, so a manual process-designer test runs on no lane automatically");
+		verdicts.GetProperty("SigmaCommentE2ETests").GetBoolean().Should().BeFalse(
+			because: "a commented-out Category attribute is not a category");
+		verdicts.GetProperty("SigmaInheritedE2ETests").GetBoolean().Should().BeTrue(
+			because: "the inherited tests carry the class-level category, so the lane runs them although this file shows none");
+	}
+
+	[Test]
+	[Description("Every fixture's process-designer lane verdict agrees with reflection over the compiled e2e assembly in both directions, so a pull request never queues that lane for a fixture with nothing to run there and never leaves out a fixture that has a ProcessDesigner test.")]
+	public void ProcessDesignerLaneVerdicts_ShouldAgreeWithCompiledCategories() {
+		// Arrange
+		JsonElement lane = ReadManifest().GetProperty("processDesignerLane");
+		string category = lane.GetProperty("category").GetString()!;
+		string[] excluded = lane.GetProperty("baseFilter").GetString()!.Split('&')
+			.Where(clause => clause.StartsWith("TestCategory!=", StringComparison.Ordinal))
+			.Select(clause => clause["TestCategory!=".Length..])
+			.ToArray();
+		Dictionary<string, Type> compiled = GetFixtureTypes().ToDictionary(fixture => fixture.Name, StringComparer.Ordinal);
+		Dictionary<string, bool> claimed = Inventory.Value.GetProperty("survivesProcessDesignerLane").EnumerateObject()
+			.ToDictionary(verdict => verdict.Name, verdict => verdict.Value.GetBoolean(), StringComparer.Ordinal);
+
+		// Act
+		string[] wrong = claimed
+			.Where(verdict => compiled.TryGetValue(verdict.Key, out Type? fixture)
+				&& GetProcessDesignerLaneTests(fixture, category, excluded).Any() != verdict.Value)
+			.Select(verdict => $"{verdict.Key} (the script says {verdict.Value})")
+			.OrderBy(name => name, StringComparer.Ordinal)
+			.ToArray();
+
+		// Assert
+		claimed.Values.Should().Contain(true,
+			because: "the guard is meaningless if the script finds no fixture for the process-designer lane");
+		wrong.Should().BeEmpty(
+			because: "a misjudged fixture either queues the lane to deploy a stand for nothing or, worse, never runs its ProcessDesigner tests on a pull request");
+	}
+
+	/// <summary>
+	/// Test methods of the fixture whose effective categories (class and method, inherited included) contain the
+	/// process-designer lane's category and none of its exclusions, i.e. the tests that lane executes.
+	/// </summary>
+	private static IEnumerable<string> GetProcessDesignerLaneTests(Type fixture, string category, string[] excluded) {
+		HashSet<string> classCategories = fixture.GetCustomAttributes<CategoryAttribute>(inherit: true)
+			.Select(attribute => attribute.Name).ToHashSet(StringComparer.Ordinal);
+		return fixture.GetMethods(BindingFlags.Public | BindingFlags.Instance)
+			.Where(method => method.GetCustomAttributes(inherit: true).Any(attribute => attribute is ITestBuilder or ISimpleTestBuilder))
+			.Where(method => {
+				HashSet<string> categories = new(classCategories, StringComparer.Ordinal);
+				categories.UnionWith(method.GetCustomAttributes<CategoryAttribute>(inherit: true).Select(attribute => attribute.Name));
+				return categories.Contains(category) && !categories.Overlaps(excluded);
+			})
+			.Select(method => method.Name);
+	}
+
 	/// <summary>
 	/// Test methods of the fixture whose effective categories (class and method, inherited included) pass
 	/// <c>TestCategory!=McpE2E.NoEnvironment&amp;&lt;baseFilter&gt;</c>, i.e. the tests a TeamCity subset run executes.
@@ -394,7 +741,7 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
-	[Description("A diff of nothing but documentation and generated help runs no e2e build at all, because none of it is compiled into clio or read by the harness.")]
+	[Description("A diff of nothing but documentation and generated help runs no e2e build at all, on either lane, because none of it is compiled into clio or read by the harness.")]
 	public void Script_ShouldRunNothing_WhenOnlyDocumentationChanged() {
 		// Arrange
 		string[] changed = ["README.md", "clio/docs/commands/ping.md", "clio/Commands.md", "clio/help/en/ping.txt", "clio/Wiki/WikiAnchors.txt", "clio.mcp.e2e/AGENTS.md"];
@@ -405,6 +752,8 @@ internal sealed class McpE2eSelectionCoverageTests {
 		// Assert
 		selection.GetProperty("mode").GetString().Should().Be("none",
 			because: "no fixture can observe a change to text that is never compiled or loaded, so deploying a Creatio for it is pure waste");
+		selection.GetProperty("pdMode").GetString().Should().Be("none",
+			because: "the same holds for the process-designer lane, which would also deploy a Creatio and install the package for it");
 		selection.GetProperty("filter").GetString().Should().BeEmpty(
 			because: "mode none must not hand TeamCity any filter");
 		selection.GetProperty("decisions").EnumerateArray().Select(d => d.GetString()).Should().Contain(d => d!.Contains("ignored (documentation"),
@@ -914,6 +1263,11 @@ internal sealed class McpE2eSelectionCoverageTests {
 
 	private static List<Dictionary<object, object>> GetSteps(Dictionary<object, object> job) =>
 		((List<object>)job["steps"]).Cast<Dictionary<object, object>>().ToList();
+
+	/// <summary>The environment of a queue job's step <c>id: queue</c>, where the lane-specific values live.</summary>
+	private static Dictionary<object, object> GetQueueStepEnvironment(Dictionary<object, object> job) =>
+		(Dictionary<object, object>)GetSteps(job)
+			.Single(step => step.TryGetValue("id", out object? id) && id?.ToString() == "queue")["env"];
 
 	private static string GetSourceDirectory([CallerFilePath] string sourcePath = "") =>
 		Path.GetDirectoryName(sourcePath)!;

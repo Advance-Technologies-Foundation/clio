@@ -56,17 +56,44 @@ internal static class ProcessDesignerE2ESupport {
 	/// command's floor, or older than the archive this clio bundles. Keyed on those refusals' own wording, so any
 	/// other failure - including the regression a test exists to catch - still goes red instead of being reported
 	/// as an old environment. Call it BEFORE any cleanup is scheduled: nothing was built when it fires.
+	/// Under <c>McpE2E:RequireProcessBuilder</c> the same refusal fails the test, see
+	/// <see cref="IgnoreUnlessProcessBuilderIsRequired"/>.
 	/// </summary>
 	internal static void IgnoreWhenProcessBuilderIsBehind(string toolText, string writtenAgainstVersion) {
 		foreach (string marker in PackageNotUsableMarkers) {
 			if (toolText.Contains(marker, StringComparison.Ordinal)) {
-				Assert.Ignore(
+				IgnoreUnlessProcessBuilderIsRequired(
 					"clio refused the call before the sandbox's CrtProcessBuilder saw it - the package is missing or "
 					+ "older than this clio requires. Install it with install-process-builder (this test was written "
-					+ $"against {writtenAgainstVersion}); it is Ignored, NOT passing.");
+					+ $"against {writtenAgainstVersion}).");
 			}
 		}
 	}
+
+	/// <summary>
+	/// Ignores the test for a reason that says the sandbox's CrtProcessBuilder cannot serve it - missing, older than
+	/// the test needs, or without the capability under test - or FAILS it with the same reason when
+	/// <see cref="McpE2ESettings.RequireProcessBuilder"/> is set.
+	/// </summary>
+	/// <remarks>
+	/// The ProcessDesigner TeamCity lane sets the switch because it installs the package from the clio build under
+	/// test: there a package that cannot serve a test is a broken install or archive, and an Ignore would turn it
+	/// into a green build with the category skipped. On a developer stand that is merely behind, the Ignore stays.
+	/// Only reasons about the PACKAGE belong here: a missing sandbox or seed data keeps its plain Ignore.
+	/// </remarks>
+	/// <param name="reason">Why the package cannot serve the test, worded without naming the outcome: under the switch it is the failure text.</param>
+	/// <param name="settings">The loaded settings, or <see langword="null"/> to load them.</param>
+	internal static void IgnoreUnlessProcessBuilderIsRequired(string reason, McpE2ESettings? settings = null) {
+		if ((settings ?? TestConfiguration.Load()).RequireProcessBuilder) {
+			Assert.Fail(reason + Environment.NewLine + RequiredProcessBuilderNote);
+		}
+		Assert.Ignore(reason);
+	}
+
+	/// <summary>What a failure under <see cref="McpE2ESettings.RequireProcessBuilder"/> adds to the reason.</summary>
+	internal const string RequiredProcessBuilderNote =
+		"McpE2E:RequireProcessBuilder is set: this lane installs CrtProcessBuilder from the clio build under test, so a "
+		+ "package that cannot serve the test fails it instead of ignoring it.";
 
 	/// <summary>The line only a genuinely successful build logs.</summary>
 	internal const string CreatedLine = "created (UId:";
