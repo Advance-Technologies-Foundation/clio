@@ -611,6 +611,12 @@ http.createServer((request, response) => {
       sendText(response, 404, "Not Found");
       return;
     }
+    if (config.ThemeWriteResponseJson && request.method === "POST"
+      && (url === "/ServiceModel/ThemeService.svc/CreateTheme" || url === "/ServiceModel/ThemeService.svc/UpdateTheme")) {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(config.ThemeWriteResponseJson);
+      return;
+    }
     if (request.method === "GET" && config.ThemeCssPath && url === config.ThemeCssPath) {
       response.writeHead(200, { "Content-Type": "text/css" });
       response.end(config.ThemeCssContent || "");
@@ -883,7 +889,8 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 	string? DesignerSchemaName = null,
 	string? PackageSynchronizationResponse = null,
 	bool NonJsonSysSettingsWriteEnabled = false,
-	string? ShellPageHtml = null);
+	string? ShellPageHtml = null,
+	string? ThemeWriteResponseJson = null);
 
 /// <summary>
 /// One request served by <see cref="RuntimeDetectionStubServer"/>, as reported by

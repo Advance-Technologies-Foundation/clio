@@ -539,7 +539,8 @@ public class CreateThemeToolTests {
 			nameof(CreateThemeArgs.EnvironmentName), nameof(CreateThemeArgs.CssContent),
 			nameof(CreateThemeArgs.CssClassName), nameof(CreateThemeArgs.Caption),
 			nameof(CreateThemeArgs.Id), nameof(CreateThemeArgs.PackageName),
-			nameof(CreateThemeArgs.ExtensionData)
+			nameof(CreateThemeArgs.BackgroundImageId), nameof(CreateThemeArgs.BackgroundColor),
+			nameof(CreateThemeArgs.KeepIconBackground), nameof(CreateThemeArgs.ExtensionData)
 		];
 		System.Reflection.PropertyInfo[] declaredBrandProperties = typeof(CreateThemeArgs)
 			.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance
@@ -1812,13 +1813,33 @@ public class CreateThemeToolTests {
 		return (properties, required);
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Redacts the background warnings before they reach the MCP transcript, because a binding failure can carry a server message.")]
+	public void CreateTheme_ShouldRedactTheBackgroundWarnings() {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
+			warnings: ["binding failed at http://admin:hunter2@proxy.internal.example:8080/trace"]));
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			CssContent: ".x{}", Caption: "Ocean", BackgroundColor: "#123"));
+
+		result.Warnings.Should().ContainSingle(warning => !warning.Contains("hunter2"),
+			because: "a credential in a server message must not reach the model transcript");
+	}
+
 	private sealed class ThrowingCreateThemeCommand(string failureMessage) : CreateThemeCommand(
 		Substitute.For<IApplicationClient>(),
 		new EnvironmentSettings(),
 		Substitute.For<IServiceUrlBuilder>(),
-		Substitute.For<IFileSystem>()) {
+		Substitute.For<IFileSystem>(),
+		Substitute.For<IThemeBackgroundWriter>()) {
 
-		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage) {
+		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
+			out IReadOnlyList<string> warnings) {
 			throw new InvalidOperationException(failureMessage);
 		}
 	}
@@ -1827,24 +1848,30 @@ public class CreateThemeToolTests {
 		private readonly bool _success;
 		private readonly string _createdId;
 		private readonly string _error;
+		private readonly IReadOnlyList<string> _warnings;
 
 		public CreateThemeOptions CapturedOptions { get; private set; }
 
-		public FakeCreateThemeCommand(string createdId = "auto-id", bool success = true, string error = null)
+		public FakeCreateThemeCommand(string createdId = "auto-id", bool success = true, string error = null,
+			IReadOnlyList<string> warnings = null)
 			: base(
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<IFileSystem>()) {
+				Substitute.For<IFileSystem>(),
+				Substitute.For<IThemeBackgroundWriter>()) {
 			_createdId = createdId;
 			_success = success;
 			_error = error;
+			_warnings = warnings ?? [];
 		}
 
-		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage) {
+		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
+			out IReadOnlyList<string> warnings) {
 			CapturedOptions = options;
 			createdId = _success ? _createdId : null;
 			errorMessage = _error;
+			warnings = _warnings;
 			return _success;
 		}
 	}

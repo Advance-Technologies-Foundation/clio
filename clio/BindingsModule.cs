@@ -1063,6 +1063,7 @@ public class BindingsModule {
 		services.AddTransient<IThemeCatalog, ListThemesCommand>();
 		services.AddTransient<GetThemeCommand>();
 		services.AddTransient<CreateThemeCommand>();
+		services.AddTransient<IThemeBackgroundWriter, ThemeBackgroundWriter>();
 		services.AddTransient<UpdateThemeCommand>();
 		services.AddTransient<DeleteThemeCommand>();
 		services.AddTransient<IUserThemeApplier, UserThemeApplier>();

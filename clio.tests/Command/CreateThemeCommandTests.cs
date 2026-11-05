@@ -1,6 +1,7 @@
 namespace Clio.Tests.Command;
 
 using System;
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -12,7 +13,12 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOptions>
 {
+	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
+	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
 	private IApplicationClient _applicationClient;
+	private IFeatureStateService _featureState;
+	private IPackageDataBinder _binder;
 	private ILogger _logger;
 	private CreateThemeCommand _command;
 
@@ -31,7 +37,11 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_featureState = Substitute.For<IFeatureStateService>();
+		_binder = Substitute.For<IPackageDataBinder>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
+		containerBuilder.AddTransient(_ => _featureState);
+		containerBuilder.AddTransient(_ => _binder);
 	}
 
 	private static CreateThemeOptions ValidOptions() => new() {
@@ -90,7 +100,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			.Returns(ci => { capturedBody = ci.ArgAt<string>(1); return "{\"success\":true}"; });
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "a success=true response means the theme was created");
@@ -117,7 +127,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		options.Id = "d53a816b-65ed-4b5b-ad3b-f739280add45";
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(options, out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "a valid explicit id is created successfully");
@@ -332,11 +342,54 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			.Returns(string.Empty);
 
 		// Act
-		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _);
+		bool succeeded = _command.TryCreateTheme(ValidOptions(), out string createdId, out _, out _);
 
 		// Assert
 		succeeded.Should().BeTrue(because: "an empty body is the contract default for a successful create");
 		createdId.Should().NotBeNullOrWhiteSpace(
 			because: "the client-generated id is reported even when the server echoes an empty body");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Sends the background in the CreateTheme body, then turns the panel icon background off and binds the image into the theme's package.")]
+	public void TryCreateTheme_ShouldWriteTheBackgroundThenTurnOffThePanelIconAndBindTheImage() {
+		string body = null;
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				body = call.ArgAt<string>(1);
+				return "{\"success\":true}";
+			});
+		_binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
+		CreateThemeOptions options = ValidOptions();
+		options.Id = ThemeId;
+		options.BackgroundImageId = ImageId;
+
+		_command.TryCreateTheme(options, out _, out _, out _);
+
+		body.Should().Contain($"\"background\":{{\"mode\":\"Image\",\"imageId\":\"{ImageId}\"}}",
+			because: "the theme and its background are written by one CreateTheme call");
+		Received.InOrder(() => {
+			_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+			_featureState.SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
+			_binder.BindRow("SysImage", "ThemeBackground_d53a816b65ed4b5bad3bf739280add45",
+				Arg.Any<IReadOnlyList<string>>(), Guid.Parse(ImageId));
+		});
+	}
+
+	[Test, Category("Unit")]
+	[Description("Stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
+	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails() {
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"id already exists\"}}");
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = ImageId;
+
+		_command.TryCreateTheme(options, out _, out _, out _);
+
+		_featureState.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created gets no follow-ups");
+		_binder.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created has no package to bind into");
 	}
 }

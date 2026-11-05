@@ -19,4 +19,8 @@ internal record ThemeRequest
 
 	[JsonPropertyName("cssContent")]
 	public string CssContent { get; init; }
+
+	[JsonPropertyName("background")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ThemeBackground Background { get; init; }
 }
