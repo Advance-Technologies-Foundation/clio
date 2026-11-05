@@ -51,6 +51,14 @@ So the rule to carry is one sentence with three faces: **the resource set is rew
 graph on every save**, and rename, clear and delete all fall out of that rather than being implemented
 anywhere.
 
+**Platform 10.1 only.** The measurements above are from 10.1. From the platform trunk of 2026-08-15 (all of
+10.2) a save rewrites only the keys it carries and never judges a `BaseElements.*` key obsolete
+(`a-10-2-save-keeps-a-removed-element-parameters-resource-rows.md`). By the same path, on 10.2 the old
+`BaseElements.<OldName>.Caption` row of a re-kinded flow and the row of a removed flow stay as orphans; the
+label under the current name and the clear by an empty caption still work. Measured on 10.2 for Send email
+attachment slots, not for flows. An orphan is harmless until a later flow takes the old name and carries no
+caption of its own.
+
 **Why it is this way** — the label is text a human reads, so the platform made it localizable, and
 localizable members are extracted from the schema into per-culture resources at save time. Nothing in
 `metadata.json` hints that the field exists, and nothing in the rename code mentions labels, because

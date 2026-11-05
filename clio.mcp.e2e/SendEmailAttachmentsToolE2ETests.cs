@@ -386,7 +386,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the package already reported each removed row, so clio does not report the removal again");
 			WarningText(replaced).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
 				because: "both entries of the replacing list landed");
-			ShouldHaveLanded(reused, "dropping a collection row and adding a single File reuses the freed number");
+			ShouldHaveLanded(reused, "dropping a collection row and adding two single Files reuses the freed numbers");
 			WarningText(reused).Should().Contain(RemovalNotice,
 				because: "the dropped collection row is a removal the package reports");
 			WarningText(reused).Should().NotContain(EmailBlockExpectation.RemovedAttachmentsWarningMarker,
@@ -398,10 +398,13 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the re-added single File takes the freed lowest number, Attachments1");
 			Text(reusedSlot, "bindingLevels").Should().Be("itemOnly",
 				because: "the slot now holds a single File, which binds its item only");
-			Text(Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
-					entry => Text(entry, "slot") == "Attachments3",
-					because: "the third entry takes the next free number, Attachments3, removed by the previous save").Which,
-				"processParameter").Should().Be("Doc", because: "the reused Attachments3 holds the single File it was sent");
+			JsonObject laterReusedSlot = Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
+				entry => Text(entry, "slot") == "Attachments3",
+				because: "the third entry takes the next free number, Attachments3, removed by the previous save").Which;
+			Text(laterReusedSlot, "processParameter").Should().Be("Doc",
+				because: "the reused Attachments3 holds the single File it was sent");
+			Text(laterReusedSlot, "bindingLevels").Should().Be("itemOnly",
+				because: "the slot that held a collection now holds a single File, which binds its item only");
 			Attachments(Element(afterReuse, "SE1")).Select(entry => Text(entry, "slot")).Should().Equal(
 				["Attachments2", "Attachments1", "Attachments3"],
 				because: "describe lists the rows in the designer's order: the re-added rows are appended after the kept one, "
