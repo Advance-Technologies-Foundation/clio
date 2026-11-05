@@ -108,10 +108,10 @@ public static class ModifyBusinessProcessPrompt {
 		 mapping keeps the recipient's type, so map a source of the same kind (check describe's `type`/`referenceSchema`).
 		 A mapping whose `expression` or `value` is exactly one `[#Lookup.<object UId>.<record id>#]` macro, or a bare record
 		 id `value` onto a recipient that references an object, ends as a Lookup recipient of that object (the record is
-		 checked) and so also repairs a recipient a designer save retyped; for a fixed contact map `expression`
-		 `[#Lookup.<Contact UId>.<id>#]`. A record id onto a recipient with no reference object, or as an
-		 `email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact through `email.to` with that
-		 `expression` and `referenceSchema` `Contact`. An entry naming what the recipient already holds changes nothing),
+		 checked) and so also repairs a recipient a designer save retyped; for a fixed contact or account map `expression`
+		 `[#Lookup.<Contact or Account UId>.<id>#]`. A record id onto a recipient with no reference object, or as an
+		 `email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact or account through `email.to` with that
+		 `expression` and `referenceSchema` `Contact` or `Account`. An entry naming what the recipient already holds changes nothing),
 		 and `attachments` REPLACES the element's attachment list: describe the element immediately before, then send
 		 the described list plus the new entry (`[]` removes them all; `get-guidance name=process-send-email-attachments`),
 		 a Change access rights

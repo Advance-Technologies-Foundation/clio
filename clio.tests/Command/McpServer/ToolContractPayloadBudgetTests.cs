@@ -322,6 +322,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Review fixes then made modify's replacement route say the mapping keeps the recipient's kind ("same-kind", +10
 	// bytes); the fixed-contact Lookup-expression advice did not fit and is carried by the prompt. Re-measured
 	// by lowering the ceiling: modify 35071, create 35056, describe 35029 - 1, 16 and 43 bytes of headroom.
+	// PR review then replaced "same-kind" with the record route (a record id or one [#Lookup#] macro makes the
+	// recipient Lookup, which is how a designer-retyped recipient is repaired; +46 bytes), paid by turning eleven
+	// em dashes of modify's email, approval and performer clauses into ':', ';' or ',' (each escapes to six bytes).
+	// Re-measured by lowering the ceiling: modify 35051, create 35056, describe 35029 - 21, 16 and 43 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

@@ -270,7 +270,7 @@ public class ModifyBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping onto its slot; the prompt says a plain mapping keeps the recipient's type, a single Lookup record macro or a bare record id onto a recipient that references an object ends as a Lookup recipient of that object and repairs a designer-retyped one, a record id onto a recipient with no reference object or as an email.to value is refused naming the route, and an entry naming what the recipient holds changes nothing.")]
+	[Description("The modify contract and prompt say a Send email recipient is replaced by an addMapping onto its slot; the prompt says a plain mapping keeps the recipient's type, a single Lookup record macro or a bare record id onto a recipient that references an object ends as a Lookup recipient of that object and repairs a designer-retyped one, a record id onto a recipient with no reference object or as an email.to value is refused naming the Contact or Account route, and an entry naming what the recipient holds changes nothing.")]
 	public void ModifyBusinessProcessTool_ShouldStateTheRecipientReplacementRoute_InTheContractAndThePrompt() {
 		// Arrange
 		string description = ReadToolDescription(typeof(ModifyBusinessProcessTool),
@@ -280,8 +280,10 @@ public class ModifyBusinessProcessToolTests {
 		string prompt = ModifyBusinessProcessPrompt.PromptByProcess("sandbox", "UsrSampleProcess");
 
 		// Assert
-		description.Should().Contain("(replace one by same-kind addMapping onto its slot, e.g. Recipient1; no removal)",
-			because: "match-or-append never replaces a recipient, so the contract names the route that does");
+		description.Should().Contain("(replace one by addMapping onto its slot, e.g. Recipient1: same kind, or a record id/[#Lookup#] to make it Lookup; no removal)",
+			because: "match-or-append never replaces a recipient, so the contract names the route that does, including the record route that retypes it Lookup");
+		description.Should().NotContain("same-kind addMapping",
+			because: "a record id or a single Lookup macro onto a recipient retypes it Lookup, so a same-kind-only rule would steer the agent off the repair route");
 		description.Should().NotContain("cannot be replaced or removed through modify",
 			because: "addMapping onto a recipient slot replaces it, so the retired claim would steer the agent away from the route");
 		prompt.Should().Contain("to REPLACE one, `addMapping` onto its slot - `Recipient1`, `CopyRecipient1`, … - rewrites it in place.",
@@ -298,8 +300,12 @@ public class ModifyBusinessProcessToolTests {
 			because: "a designer save retypes a constant contact recipient, and the record route is the repair");
 		prompt.Should().Contain("A record id onto a recipient with no reference object, or as an",
 			because: "a record id has no object to resolve against on a recipient without a reference object");
-		prompt.Should().Contain("`email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact through `email.to` with that",
+		prompt.Should().Contain("`email.to`/`cc`/`bcc` `value`, is refused naming the route: add the contact or account through `email.to` with that",
 			because: "the refusal names the accepted route, and the prompt names the same one");
+		prompt.Should().Contain("`[#Lookup.<Contact or Account UId>.<id>#]`",
+			because: "the server looks a record id up in Contact and Account, so advice naming only Contact sends an Account id into a second refusal");
+		prompt.Should().Contain("`referenceSchema` `Contact` or `Account`",
+			because: "the refusal names Contact or Account as the reference object of the accepted route");
 		prompt.Should().Contain("An entry naming what the recipient already holds changes nothing",
 			because: "a held recipient is a no-op before any refusal, so re-sending a described recipient is safe");
 		prompt.Should().NotContain("never a bare contact id `value`",
