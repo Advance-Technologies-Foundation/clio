@@ -73,6 +73,10 @@ public sealed record GetThemeResponse
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public int? CssContentLength { get; init; }
 
+	[JsonPropertyName("background")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ThemeBackground Background { get; init; }
+
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -150,7 +154,8 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				Caption = theme.Caption,
 				CssClassName = theme.CssClassName,
 				CssFilePath = TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty),
-				CssContentLength = cssContent.Length
+				CssContentLength = cssContent.Length,
+				Background = theme.Background
 			};
 			if (resolvedOutputPath != null) {
 				OutputPathConfinement.WriteAtomic(_ioFileSystem, resolvedOutputPath, cssContent);
