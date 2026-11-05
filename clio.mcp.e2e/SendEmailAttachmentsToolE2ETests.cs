@@ -321,7 +321,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the package's warnings carry each removed entry in the write shape while clio adds no removal line of its own. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value, and describe lists the re-added row last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
+	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone from the element, the new entry is Attachments2 and shows nothing of the row it replaced, and the package's warnings carry each removed entry in the write shape while clio adds no removal line of its own. A setElement that drops a collection entry and adds single Files reuses the number freed in the same save and the number an earlier save freed, neither showing a stale display value, and describe lists the re-added rows last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process replaces and then removes the attachments of a Send email element")]
 	public async Task ModifyBusinessProcess_Should_ReplaceThenRemoveAttachments() {
@@ -350,7 +350,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			string replaceNode = await ReadLastElementNodeAsync(context, processName, elementUId);
 			IReadOnlyList<string> replaceResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
 			CallToolResult reused = await ModifyAsync(context, processName, SetAttachments("SE1", """
-				[ { "processParameter": "Doc" }, { "processParameter": "Doc" } ]
+				[ { "processParameter": "Doc" }, { "processParameter": "Doc" }, { "processParameter": "Doc" } ]
 				"""));
 			JsonObject afterReuse = await DescribeGraphAsync(context, processName);
 			IReadOnlyList<string> reuseResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
@@ -370,8 +370,14 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "a row the list still names is kept as it is, not rebuilt with new UIds");
 			StoredSlots(replaceNode).Select(slot => Text(slot, "A2")).Should().BeEquivalentTo(
 				["Attachments1", "Attachments2"], because: "the rows the list no longer names are removed");
-			replaceResources.Should().NotContain(row => row.Contains(".Attachments3"),
-				because: "a removed row's resource keys go with it");
+			// Whether the save deletes a removed row's SysLocalizableValue rows is the platform's, not the package's:
+			// a 10.1 save rewrites every row of the schema, a 10.2 save rewrites only the keys it carries and keeps
+			// the rows of a parameter the schema no longer declares (its obsolete-key clean-up does not judge
+			// BaseElements keys). So Attachments3's rows are gone or orphaned here; what must hold on both is that no
+			// slot SHOWS a removed row's value - the number reused in this save below, and in a later save in the
+			// reuse step.
+			replaceResources.Should().NotContain(row => row.Contains(".Attachments2.") && row.Contains("[#PF1"),
+				because: "Attachments2 was freed and reused in the same save, so it shows nothing of the PF1 row it replaced");
 			WarningText(replaced).Should().Contain(RemovalNotice,
 				because: "the replace rule says which rows it removed");
 			WarningText(replaced).Should().Contain("\"sourceElement\": \"PF1\"",
@@ -392,11 +398,23 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the re-added single File takes the freed lowest number, Attachments1");
 			Text(reusedSlot, "bindingLevels").Should().Be("itemOnly",
 				because: "the slot now holds a single File, which binds its item only");
+			Text(Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
+					entry => Text(entry, "slot") == "Attachments3",
+					because: "the third entry takes the next free number, Attachments3, removed by the previous save").Which,
+				"processParameter").Should().Be("Doc", because: "the reused Attachments3 holds the single File it was sent");
 			Attachments(Element(afterReuse, "SE1")).Select(entry => Text(entry, "slot")).Should().Equal(
-				["Attachments2", "Attachments1"],
-				because: "describe lists the rows in the designer's order: the re-added row is appended after the kept one");
+				["Attachments2", "Attachments1", "Attachments3"],
+				because: "describe lists the rows in the designer's order: the re-added rows are appended after the kept one, "
+					+ "in the order they were created");
 			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments1.DisplayValue") && row.Contains("[#OF1"),
 				because: "a reused single-File slot carries no stale display value of the collection it replaced");
+			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments3.") && row.Contains("[#Docs"),
+				because: "a number removed by an EARLIER save and reused now shows nothing of the Docs collection it held, "
+					+ "even where that save left the removed row's resource rows in place");
+			reuseResources.Should().Contain(
+				row => row.StartsWith("BaseElements.SE1.Parameters.Attachments3.Attachments3FileLocator.DisplayValue |",
+					StringComparison.Ordinal) && row.EndsWith("| [#Doc#]", StringComparison.Ordinal),
+				because: "the reused slot's item shows the single File it now holds");
 			ShouldHaveLanded(cleared, "an empty list removes every row");
 			WarningText(cleared).Should().Contain(RemovalNotice,
 				because: "the package reports every row an empty list removed");
