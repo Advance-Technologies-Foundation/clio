@@ -5,7 +5,7 @@ commits on the package branch (P-D4 in progress; nothing pushed); the stories st
 2026-11-05 by the owner: Q20 is D (SOAP built like REST, notice N10, after the SOAP capture EM2 S2-S4), N7 covers
 every unresolved web service element, configured in the request or not, and a Boolean constant is checked on a stand
 on the final cut (plan section 6). The text below was written in Phase 1: research,
-design and plan. No product code has been written; this folder was pushed to the clio branch
+design and plan. This folder was pushed to the clio branch
 `feature/ENG-92710-call-web-service-element-plan` on 2026-11-03 and goes into the repository with the BMAD docs PR. **All twenty decisions
 were agreed by the owner on 2026-11-03**, one at a time; each Q in the decisions file ends with its "Agreed" line, which
 wins where it differs from the recommendation above it (Q3, Q5, Q7, Q10, Q13, Q17). Stand `Creatio` holds the

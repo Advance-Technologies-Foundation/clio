@@ -14,7 +14,8 @@ holds the evidence and the source anchors.
 Q13 and Q17 differ from the first recommendation. The description of ENG-92710 Call web service element and its 9 acceptance criteria were written
 to the issue on 2026-11-03 after the owner's yes and read back
 ([jira-description-draft](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-jira-description-draft.md),
-decisions Q18); the checklist field was not touched.
+decisions Q18); the checklist field was not touched. The SOAP lines of the draft changed on 2026-11-05 (decisions Q20
+D) are pending the owner's approval and are not yet in Jira.
 **Created**: 2026-11-03
 **Size estimate**: two stories, delivered as one feature PR per repository (crt-process-builder, then clio-knowledge,
 then clio) after this docs-only clio PR. The /bmad-spec form is used because the ticket has fewer than 5 stories
@@ -110,6 +111,8 @@ In scope (the CrtProcessBuilder package, clio, clio-knowledge):
   any other parameter of the element, tagged inputs, nested items and `RequestBody` included, because all of them are
   regenerated with new UIds (`IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds: {Success,
   Response, StatusCode UIds}, includeOwner: false)`; Q11 A3).
+- SOAP services: built exactly like REST, with notice N10 naming the element (Q20 D, 2026-11-05; the SOAP capture EM2
+  S2-S4 showed the designer's REST shape).
 - Refusals and notices of design section 5; no service-side data (service parameter default, `authInfo`, base-URI
   credential) in builder output; the element's stored bindings are returned by design (Q16).
 - clio: key check, short-form block, floors, descriptions and prompts (paid by swaps, Q15), typed describe, capability
@@ -124,8 +127,7 @@ Out of scope (deliberately not built, design section 8):
   structured parameter types". In v1 the two web-service mirror cases refuse with a pointer to a declared Collection
   (Q6, design C13).
 - A discovery tool or a new package operation (Q10); the security pins stay 8 operations / 6 gate call sites.
-- Multi-instance Call web service elements: refused with a message (Q20). SOAP services are in scope: built exactly
-  like REST, with notice N10 (Q20 D, 2026-11-05; the SOAP capture EM2 S2-S4 showed the designer's REST shape).
+- Multi-instance Call web service elements: refused with a message (Q20).
 - A JSON check of a constant `RequestBody` and a `RequestBody`-vs-Body notice (Q5); the feature gate on nested items
   and its notice N11 (Q3); a reflection guard for `IX4` (Q7).
 - Adding the package dependency on save like the designer (Q9 C, a separate ticket for every element); refusing an
@@ -234,21 +236,23 @@ AC -> design -> proof -> story (plan section 9 has one Definition of Done row pe
 | AC4 | `IX4` written directly (Q7), N3, result params as ordinary outputs | TC-U-29, 66, 96; TC-I-09; EM7 | 1 |
 | AC5 | shaper port (Q3), BK15 writer (Q4), WSCR rule | TC-U-01..14, 41..45, 106; TC-P-01..11, 13..15; EM2 (S1, S2), EM3, EM5 | 1 |
 | AC6 | replace, `Success` / `Response` / `StatusCode` UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108, 112, 113; TC-P-12, 16; TC-I-05; EM4 | 2 |
-| AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54; TC-I-06, 07; EM8 | 1 (read back), 2 (issues, N7) |
+| AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54, 114; TC-I-06, 07; EM8 | 1 (read back), 2 (issues, N7) |
 | AC8 | catalog and describer never read defaults or auth (Q16, design 4.16) | TC-U-11, 25, 75; TC-U-35, 37, 53; TC-P-08; TC-I-07; TC-K-12 | 1, 2 |
 | AC9 | clio K1-K11, KB-1..KB-7, package docs C14 | TC-C-01..16; TC-K-01..13; all TC-I; AR-1, AR-2 | 1, 2 |
 
 ## Gates and measurements
 
-EM status as the measurements file records it on 2026-11-03 (its section 0 bullets "Status later on 2026-11-03" and,
-later still, "EM8's service-save and designer halves: done 2026-11-03", and the gate table, section 4).
+EM status as the measurements file records it on 2026-11-05 (its section 0 bullets "Status later on 2026-11-03",
+"EM8's service-save and designer halves: done 2026-11-03" and "EM2 S2-S4 (SOAP): done 2026-11-05", and the gate
+table, section 4).
 
 - **No package code before this SPEC and the ADR exist on the BMAD branch** (AGENTS.md); they need not be merged for
   slice A. This docs PR merges before the package PR leaves draft (Q19).
 - **Done, 2026-11-03:** EM0 (M-22), EM1 (M-19, M-23: `UsrWscEchoService`, `UsrWscDriftService`, `UsrWscDeadService`),
   EM2 S1 (M-24, the AC5 oracle), EM3 routes (a) and (b) (M-15, M-25), EM4 (M-20, M-26, M-27), EM9 (local, M-14), and
   the designer halves of EM7 (M-28), EM10 (M-17) and EM11 (M-16); EM8's current-builder half (M-18) and its
-  service-save and designer halves (M-29, M-30, M-31); the Q4 BK15 probe (M-13). Measured facts M-01..M-35.
+  service-save and designer halves (M-29, M-30, M-31); the Q4 BK15 probe (M-13). **Done, 2026-11-05:** EM2 S2-S4, the
+  SOAP capture (M-32..M-35, decisions Q20 D). Measured facts M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05.
 - **STOP gate (EM5)** right after slice B, on an experimental cut: the designer opens and re-saves a builder-made
   element with no byte change. On failure work stops, the diff goes to the owner, Q4 (and possibly Q3) is re-opened
   and the estimate is redone before slice C. Re-run on the final cut.

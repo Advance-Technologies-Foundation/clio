@@ -178,11 +178,11 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-28 | EM7 designer half: a 404 completes the element with Success false, StatusCode 404 and the process continues, whether IX4 is true or false; a refused connection with IX4 true completes with Success false, StatusCode 0 and the process continues; with IX4 false it fails the element and the process (status Error, `System.Net.WebException` in `SysProcessLog.ErrorDescription`); under E4 an unauthenticated call to an unknown stand-root route answers 302 -> login page (200), a static path (`/UsrWscNoSuchRoute.js`) answers 404 | measured 2026-11-03 | EM7 block; `CAP/em7/` |
 | M-29 | EM8: a service save that removes a method (its code renamed `UsrWscDrift` -> `UsrWscDriftGone`) writes nothing to the processes that call it (stored bytes identical) and does not evict a process already in the cache: describe of `UsrWscEm8Drift2`, described once before the save, still returns both elements' tagged params after it (twice); a process first loaded after the save (`UsrWscEm8Drift3`, `UsrWscEm4MethodChange`) describes with only Success / Response / StatusCode, no issue and no flag | measured 2026-11-03 | EM8 block; `CAP/em8/` |
 | M-30 | EM8: the designer shows an element whose method is gone with an empty method field, no parameters and no timeout field; its save warns "Required fields ... are not filled in" for both elements (not for the Formula task), then "Schema has errors: The "FormulaTask1" element has an invalid value for the parameter "Body"" and stores: EVERY parameter of both elements deleted (the tagged ones AND Success / Response / StatusCode / RequestBody), all 8 BK15 rows deleted, both elements `BL11:false`, `IX1` / `IX2` unchanged (`UsrWscDrift`), the Formula token dangling with no flag; the caption resources of the deleted params are gone too | measured 2026-11-03 | EM8 block; `CAP/em8/` |
+| M-31 | Describe on 1.6.6.131 returns a bound input (`UsrWscA_In` with its value / token, `sourceElement`, `tag`), not only outputs; an unbound RequestBody is not returned (a bound RequestBody is returned: `IsSetInThisSchema`, seen on the Gemini element by a raw describe, facts §6); an element with no parameters left returns none and no issue | measured 2026-11-03 | EM8 block (corrects M-21's "no input" for bound inputs) |
 | M-32 | EM2 step 0 (SOAP): no `Feature` row has the code `DontUseSoap` or any code containing `Soap`, so the flag is off; Studio's "New web service" menu offers "SOAP service"; nothing changed | measured 2026-11-05 | EM2 S2-S4 block; `CAP/em2-soap/` |
 | M-33 | EM2 S2 (OF-16): on `UsrWscSoapService` (SOAP 1.1, entered by hand: the WSDL wizard did not load, and the SOAP card forces every Object parameter to an array), the designer element on `UsrWscSoapEcho` has the same element keys as S1, the same tree (names, `L17` tags incl. `<code>ItemValue`, `L18` nesting, `L1` types, `L6` from `IU7`, `L12`), the same result params and 4 BK15 rows, caption "WSC SOAP service 1"; no `IQ7`, `IR5`, `IT1`, `IU1` or `IU8` value reaches the element. `BL11:false` comes from an unbound required input (AD10). A Boolean constant "True" is stored as Script `L8 {GS1: 3, GS2: "[#BooleanValue.True#]"}` with DisplayValue `[#Boolean value.True#]`; S1 never captured a Boolean constant (its `{GS2: "false"}` is the unbound default) | measured 2026-11-05 | EM2 S2-S4 block; `CAP/em2-soap/` |
 | M-34 | EM2 S3: a timeout-only designer save of the SOAP element changes only `IX3` (7000 -> 9000); every parameter, UId, value, BK15 row and resource byte-identical. Outside the element, the schema's `BK34` went `en-US` -> `null` on this first re-save | measured 2026-11-05 | EM2 S2-S4 block |
 | M-35 | EM2 S4: switching the SOAP element to `UsrWscEchoService.UsrWscEcho` ("Are you sure you want to change element schema? All parameters will be lost.") removes all 14 parameters (result params included) and creates the 32 of the REST tree with new UIds, re-creates the 4 BK15 rows with the same `GT5`, drops `IX3`, keeps `IX4` and the element UId and name, renames the caption to "WSC echo service 1"; no SOAP leftover (no SOAP service UId, key, parameter or resource); the new tree equals S1 apart from UIds | measured 2026-11-05 | EM2 S2-S4 block |
-| M-31 | Describe on 1.6.6.131 returns a bound input (`UsrWscA_In` with its value / token, `sourceElement`, `tag`), not only outputs; an unbound RequestBody is not returned (a bound RequestBody is returned: `IsSetInThisSchema`, seen on the Gemini element by a raw describe, facts §6); an element with no parameters left returns none and no issue | measured 2026-11-03 | EM8 block (corrects M-21's "no input" for bound inputs) |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
@@ -501,7 +501,7 @@ the manual Jira cases no longer need them (plan CL-9 is Ignored when they are ab
 | Settles | Q3 (the shape the package-owned generator must produce, nested items always emitted), Q4 (the BK15 rows on this service; the row shape is measured, M-13), Q8 (`IX3` = seconds x 1000: already settled by source, verdict r7-A3; recorded as confirmation), IX4 storage, the " - Input"/" - Output" suffix, the default element caption; AC5 pattern B |
 | Gate | day 0, before slice A's shaper (P-A2); the read-back (step 9) re-runs on the final cut |
 | Preconditions | EM0 (client `ProcessParameterCollections` on, so the designer's nested rows are an oracle; IX4 checkbox visible), EM1 |
-| Writes | 1 designer save (S1); S2-S4 (SOAP, the owner's request of 2026-11-05): one SOAP service, one process, three saves |
+| Writes | 1 designer save (S1); S2-S4 (SOAP, the owner's request of 2026-11-05): one SOAP service, one process, three saves. Side effect of that session: an owner-approved `clio compile-configuration --all` ended with build result 1 (CS0006 in `UsrSrvVisitA1` / `UsrSrvVisitA2`, not ENG-92710 objects) and the stand header shows "Compilation error" since; later installs and runs must not blame a package cut for it |
 | Owner | logs in; approves the save |
 
 **Measured 2026-11-03, S1 (M-24; `CAP/em2/`).** Process `UsrWscEm2CaptureA` (`0ca3d151-afdb-482c-ab97-3e479eedc21e`),
@@ -878,6 +878,38 @@ designer save.
 **Pass:** the run as expected. **Artifacts:** `CAP/em6/` (process metadata, run id, result values, the response text,
 RB-5/RB-6 reads). **Cleanup:** CU-1 for the process; logs stay (CU-6).
 
+### EM6-B Final cut: a Boolean constant at run time (owner, 2026-11-05)
+
+| | |
+|---|---|
+| Question | Does a Boolean input bound by the builder's `value: "true"` (stored ConstValue `{GS1: 1, GS2: "true"}`) hold `true` at run time, as the designer's Script form `[#BooleanValue.True#]` (M-33) does? |
+| Settles | whether web service elements keep the shared ConstValue encoding for a Boolean constant (decisions, "Boolean constant at run time", owner 2026-11-05: A + B) |
+| Gate | final cut, one run, with the EM2 / EM5 re-run |
+| Preconditions | the final cut installed; `UsrWscEchoService` (`UsrWscEcho` has the Boolean body input `UsrWscFlag`) |
+| Writes | 1 builder create, 1 user-property write (tracing on for the run's user: `SysSchemaUserProperty` `IsTracing`), 1 run |
+| Owner | approves each write and the run |
+
+Why a stand run: none of the 66 web service elements of the PackageStore corpus (38 files) has a Boolean input
+parameter, so the corpus cannot answer it [measured: corpus]; under EP option E4 there is no echo (section 3.2), so the
+request bytes are not read directly.
+
+**Steps:**
+1. (A) Builder create `UsrWscEm6Bool`: element `WebService1` on `UsrWscEchoService.UsrWscEcho` with
+   `UsrWscFlag_In` <- `value: "true"`; after it a conditional flow on `[#WebService1.UsrWscFlag_In#] == true` to a
+   marker element, and a default flow to another marker element. RB-1: `UsrWscFlag_In` `L8` is `{GS1: 1, GS2: "true"}`.
+2. (B) Tracing on for the run's user (`IsTracing`) in the same session.
+3. Run once (RB-5, RB-6).
+
+**Oracle:**
+- A: `SysProcessElementLog` shows which marker completed: the conditional one means the element held `true` at run time.
+- B: the trace shows the element's parameter values and, if it records one, the request body. If the trace shows no
+  body, the value-to-JSON step (`JsonRequestBodyRenderer`) is closed by a source trace and labelled [traced].
+
+**If not:** only if A shows a value other than `true` do web service elements write the designer's Script form for a
+Boolean constant; until then there is no code change (package test TC-P-15 pins the one-binding difference).
+
+**Artifacts:** `CAP/em6b/`. **Cleanup:** CU-1 for the process; tracing switched back off; logs stay (CU-6).
+
 ### EM7 Run time: `ignoreErrors` true vs false
 
 | | |
@@ -1236,6 +1268,7 @@ Created so far (2026-11-03):
 | EM5 | process | `UsrWscEm5Twin` (`060da1eb-5f49-4034-ae4d-1f21ce493637`, `Custom`) | 2026-11-04, package session | CU-1 after the final-cut re-run | | builder-made; designer re-saved once; process parameter `UsrWscEm5Marker` added by step 6; never run |
 | EM5 | install | CrtProcessBuilder 1.6.6.137 (experimental, stand-only) | 2026-11-04, package session | not removed | | replaced the stand's 1.6.6.131; superseded by the claimed cut |
 | EM2 S2 | web service | `UsrWscSoapService` ("WSC SOAP service", `197ff0c0-f168-4bbf-9db9-81f86102e40f`, `Custom`; method `UsrWscSoapEcho` `d9def665-c857-4101-ae5e-97c7f681c570`) | 2026-11-05, lead | CU-2 after `UsrWscEm2SoapS2` | | SOAP 1.1, entered by hand; endpoint `http://localhost/UsrWscSoap`; never called |
+| EM2 S2-S4 | stand state | "Compilation error" in the header after the owner-approved `clio compile-configuration --all` of 2026-11-05 (build result 1, CS0006 in `UsrSrvVisitA1` / `UsrSrvVisitA2`) | 2026-11-05, measurements session | not ours to fix; left as is on the owner's word | | pre-existing configuration errors, not ENG-92710 objects; do not attribute a later install or run failure to a package cut without checking it |
 | EM2 S2-S4 | process | `UsrWscEm2SoapS2` ("WSC EM2 SOAP S2", `dbc77d7c-8f37-446b-8a07-d77c767804e4`, `Custom`; element `WebService1` `c4c5c167-d18c-4f14-9402-502f55d21bed`) | 2026-11-05, lead | CU-1 | | saved three times (S2-S4); now on `UsrWscEchoService.UsrWscEcho`, `BL11:false`; never run |
 
 Planned:

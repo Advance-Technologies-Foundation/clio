@@ -40,7 +40,7 @@ read the element back in the shape I write it
 
 ## So that
 
-a process can call a registered REST service and use its result without the Process Designer, and the stored element
+a process can call a registered web service (REST or SOAP) and use its result without the Process Designer, and the stored element
 is the one the designer would have saved
 
 ---
@@ -146,10 +146,11 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
   TC-U-68 for the bindings) sends the described block back unchanged, read-back-only keys (`serviceUId`,
   `serviceResolved`, `methodResolved`, `issues`, `parameters`) included; it goes through the same-pair no-op of story 2's P-D1, so it turns green
   only once P-D1 lands.
-- [ ] **P-C2** C11 guards: `userTask` = `WebServiceUserTask` refused with a pointer to the block (Q1); a SOAP service built like REST with notice N10 (Q20 D; TC-U-24, 110, 111);
+- [ ] **P-C2** C11 guards: `userTask` = `WebServiceUserTask` refused with a pointer to the block (Q1);
   `setElement` with a `webService` block on a designer-built element that carries `BP6` refused (Q20; a
   `webService.multiInstanceOptions` key on create is clio's key-check refusal, TC-C-02); nothing written after a
-  refusal (TC-U-24, 47, 48, 110, 111).
+  refusal (TC-U-47, 48). Not a guard: a SOAP service is built like REST, with notice N10 naming the element (Q20 D;
+  build and notice tests TC-U-24, 110, 111).
 - [ ] **P-C3** C12 notices: N1 generated names, N2 canonicalised method name, N3 feature gate (one single-purpose
   reader of `DisableIgnoreErrorsInWebServiceUserTask` with a test fake, as `FileProcessingFeatureReader`), N5 nested
   array-in-array on every target (Q13), N6 cross-package service (Q9), N8 required input without a source, N9
@@ -256,7 +257,8 @@ owns AC6 and the drift half of AC7). Ticked only when true.
 - [ ] **AC4** `IX4` written and read back; Success / StatusCode / Response usable in conditions and mappings; run time
   proven on stand `Creatio` by EM6 as far as EP option E4 shows (result params, StatusCode, Success) and by EM7's
   builder half matching its designer half (M-28).
-- [ ] **AC5** parity patterns A (corpus pairs), B (EM2 / EM3 captures; the EM4 capture is story 2's TC-P-12) and C (writer diff) green; the 4 BK15
+- [ ] **AC5** parity patterns A (corpus pairs), B (EM2 S1 / EM2 S2 (SOAP, TC-P-15) / EM3 captures; the EM4 capture
+  is story 2's TC-P-12 and the EM2 S4 capture is story 2's TC-P-16) and C (writer diff) green; the 4 BK15
   rows written (Q4); a builder-made element survives a designer re-save with no diff (EM5, re-run on the final cut).
 - [ ] **AC7 (describe)** describe returns the `webService` member and the stored parameter tree, unbound inputs
   included (Q14).

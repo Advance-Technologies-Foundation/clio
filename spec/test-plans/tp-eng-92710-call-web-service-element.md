@@ -17,7 +17,7 @@ rule, the e2e fixture rules, the manual case steps) are in that file and in
 not duplicated here. A row changes there first.
 **Status**: Draft (the cases follow the owner-agreed answers Q1-Q20 of 2026-11-03,
 [decisions](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-decisions.md); measurement
-status as the measurements file records it on 2026-11-03, measured facts M-01..M-35, EM8's service-save and designer
+status as the measurements file records it on 2026-11-05, measured facts M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, EM8's service-save and designer
 halves included)
 **Created**: 2026-11-03
 
@@ -32,7 +32,7 @@ repositories.
 
 | Class | Where | Ids | Count |
 |---|---|---|---|
-| **TC-U** | package unit tests | TC-U-01..TC-U-113; TC-U-49, 50, 51, 76 are dropped rows (Q7, EM9); TC-U-107 (Q11 A3), TC-U-108 (`service` without `method`), TC-U-109 (server key check replay) and TC-U-110..113 (SOAP built like REST, Q20 D) are new | 109 live |
+| **TC-U** | package unit tests | TC-U-01..TC-U-114; TC-U-49, 50, 51, 76 are dropped rows (Q7, EM9); TC-U-107 (Q11 A3), TC-U-108 (`service` without `method`), TC-U-109 (server key check replay), TC-U-110..113 (SOAP built like REST, Q20 D) and TC-U-114 (wide N7) are new | 110 live |
 | **TC-P** | package parity tests | TC-P-01..TC-P-16 (TC-P-05 is stand evidence read through TC-I-01/02, not a package test) | 16 |
 | **TC-C** | clio unit tests (`clio.tests`) | TC-C-01..TC-C-16 | 16 |
 | **TC-I** | clio MCP e2e (`clio.mcp.e2e/WebServiceElementToolE2ETests.cs`; TC-I-13 in `clio.mcp.e2e/ListUserTasksToolE2ETests.cs`; on stand `Creatio`) | TC-I-01..TC-I-13 | 13 |
@@ -45,7 +45,7 @@ TC-U, TC-P, TC-C and TC-K are this plan's unit level and TC-I its integration le
 classes is a mandatory exit criterion (AGENTS.md "all TC-U-* and TC-I-* test cases must be implemented" applies to all
 of them). "Existing" means the test is already in the tree and is only re-run or extended with rows.
 
-Story 2 (plan slice D, P-D1..P-D4) owns TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108, 112, 113, TC-P-12, TC-P-16, TC-I-05,
+Story 2 (plan slice D, P-D1..P-D4) owns TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108, 112..114, TC-P-12, TC-P-16, TC-I-05,
 TC-I-10 and manual TC-07, 08, 12; TC-K-05, TC-C-11 and TC-C-13 are shared by both stories; every other row is story 1,
 TC-U-109 and TC-I-13 included. Story 1's rows whose replay or retarget half needs story 2's P-D1 stay story 1 but close
 together with story 2: TC-U-19, 23, 68, 78, 95, 98 and TC-I-06.
@@ -57,15 +57,15 @@ AC numbering is the 9 Jira AC, as in the SPEC and the plan section 9 Definition 
 | Item | Package unit | Parity | clio unit | e2e | KB | Stand | Manual |
 |---|---|---|---|---|---|---|---|
 | **AC1** `webService` block on create, `addElement`, `setElement`; request values incl. composite body and `RequestBody` through the mapping surface by stored names; timeout in whole seconds | TC-U-27, 28, 30..32, 52, 56..62, 67, 87, 90, 97 | TC-P-06, 09, 10 | TC-C-01..05, 09 | TC-I-01, 06, 12 | TC-K-01, 03 | EM1, EM2, EM6 | TC-01, 02, 04 |
-| **AC2** unknown / ambiguous service or method refused with the list; registration pointer; case-insensitive, canonical spelling | TC-U-15..26, 105 | - | - | TC-I-03, 04 | TC-K-05, 13 | EM10, EM11 | TC-09, 10; AR-1, AR-2 |
+| **AC2** unknown / ambiguous service or method refused with the list; registration pointer; case-insensitive, canonical spelling | TC-U-15..26, 105, 110, 111 | - | - | TC-I-03, 04 | TC-K-05, 13 | EM10, EM11 | TC-09, 10; AR-1, AR-2 |
 | **AC3** inputs mapped in; response read into a declared Collection (<= 2 levels) with item mappings | TC-U-56..68, 101 | TC-P-06, 11 | - | TC-I-01, 02, 08 | TC-K-03, 04 | EM3, EM6 | TC-01..03 |
 | **AC4** ignore-errors stored; Success, Http status code, Response body as outputs | TC-U-09, 29, 66, 96 | - | - | TC-I-01, 08, 09 | TC-K-06 | EM0, EM7, EM9 | TC-05, 06 |
-| **AC5** serialization equals a designer-built capture, mapping rows included | TC-U-01..14, 40..45, 81..86, 91, 94, 98, 100, 106 | TC-P-01..05, 07..09, 13, 14 | - | TC-I-01 (stored bytes), 07 | - | EM2, EM4, EM5, Q4 probe | TC-11 |
-| **AC6** service / method change replaces, lists dropped bindings, refused while anything reads a parameter of the element other than Success / Response / StatusCode | TC-U-33..39, 46, 95, 107, 108 | TC-P-12 | - | TC-I-05 | TC-K-05 | EM4 | TC-07, 08 |
-| **AC7** describe returns the block and the full stored tree; unresolved service / method as issues; latent-loss notice on modify | TC-U-53..55, 68..75, 77..80, 99, 102..104, 109 | TC-P-03 | TC-C-03, 10 | TC-I-06, 07, 11 | TC-K-02, 05 | EM2, EM8 | TC-11, 12 |
+| **AC5** serialization equals a designer-built capture, mapping rows included | TC-U-01..14, 40..45, 81..86, 91, 94, 98, 100, 106 | TC-P-01..05, 07..09, 13..15 | - | TC-I-01 (stored bytes), 07 | - | EM2, EM4, EM5, Q4 probe | TC-11 |
+| **AC6** service / method change replaces, lists dropped bindings, refused while anything reads a parameter of the element other than Success / Response / StatusCode | TC-U-33..39, 46, 95, 107, 108, 112, 113 | TC-P-12, 16 | - | TC-I-05 | TC-K-05 | EM4 | TC-07, 08 |
+| **AC7** describe returns the block and the full stored tree; unresolved service / method as issues; latent-loss notice on modify | TC-U-53..55, 68..75, 77..80, 99, 102..104, 109, 114 | TC-P-03 | TC-C-03, 10 | TC-I-06, 07, 11 | TC-K-02, 05 | EM2, EM8 | TC-11, 12 |
 | **AC8** no service-side data (service parameter default, `authInfo`, base-URI credential) in builder output; the element's stored bindings are returned by design; corpus fixtures carry no credential | TC-U-11, 25, 35, 37, 53, 75 | TC-P-08 | - | TC-I-07 and every reply-reading TC-I (fixture rule) | TC-K-12 | EM1 | TC-11 |
 | **AC9** tests, docs, guidance article, MCP surface | TC-U-87..93 | TC-P-01 | TC-C-06..08, 11..16 | all TC-I (stand run, Ignored = 0, net10 and net8) | TC-K-01, 07..12 | - | - |
-| **Scope refusals**: `WebServiceUserTask` on the generic route (Q1), multi-instance (Q20); SOAP built like REST with N10 (Q20 D) | TC-U-24, 47, 48, 79, 110..113 | - | TC-C-02 (`webService.multiInstanceOptions`), 11, 13 | TC-I-03, 13 | TC-K-05 | EM2 S2-S4 | - |
+| **Scope refusals and SOAP**: `WebServiceUserTask` on the generic route (Q1) and multi-instance (Q20) refused (TC-U-47, 48, 79); SOAP built like REST with N10, build and notice tests (Q20 D: TC-U-24, 110..113, TC-P-15, 16) | TC-U-24, 47, 48, 79, 110..113 | TC-P-15, 16 | TC-C-02 (`webService.multiInstanceOptions`), 11, 13 | TC-I-03, 13 | TC-K-05 | EM2 S2-S4 | - |
 
 ## Decision coverage (Q1-Q20, agreed 2026-11-03)
 
@@ -82,7 +82,7 @@ AC numbering is the 9 Jira AC, as in the SPEC and the plan section 9 Definition 
 | Q9 | UId -> code -> caption, case-insensitive, ambiguity refused, canonical names, listing refusals, cross-package notice | TC-U-15..26; TC-I-03, 04; TC-K-05; EM10, EM11 |
 | Q10 | no new operation, no discovery tool; same-request references; registration pointer; "task without details" | TC-U-18, 31, 32, 88, 95, 105; TC-C-08; TC-I-01, 03; TC-K-01, 13; AR-1, AR-2 |
 | Q11 | A3: replace, `Success` / `Response` / `StatusCode` keep their UIds, the change refused while anything reads another parameter of the element (tagged inputs, nested items and `RequestBody` included), dropped bindings listed with their values; the caption follows the designer | TC-U-33..39, 107, 108; TC-P-12; TC-I-05; TC-K-05; EM4 |
-| Q12 | describe issues + latent-loss notice on modify, not refused | TC-U-53, 54, 71..73, 102..104; TC-I-07; TC-K-05; EM8 |
+| Q12 | describe issues + latent-loss notice on any modify that leaves an element unresolved (a settings-only change of that element included, owner 2026-11-05), not refused | TC-U-53, 54, 71..73, 102..104, 114; TC-I-07; TC-K-05; EM8 |
 | Q13 | N5 on a sourceless nested list, on every target | TC-U-52; TC-I-12; TC-K-06 (EM12 not measurable under E4) |
 | Q14 | `webService` member + stored tree, unbound inputs included, never re-derived, never defaults; replays through the server key check | TC-U-69..75, 77..80, 102..104, 109; TC-P-03; TC-C-10; TC-I-01, 06, 07; TC-K-02 |
 | Q15 | text budgets by swap; KB `process-web-service`; catalog flip; routing split | TC-C-06, 11, 12, 14; TC-K-07..11 |
@@ -153,7 +153,7 @@ harness behaviour the first CI run of the draft PR decides (fallback: EM5 / EM8 
 | TC-U-33 | `SetElement_ShouldTouchNothingElse_WhenOnlyTimeoutOrIgnoreErrorsChange` | BP2, resources, rows byte-identical |
 | TC-U-34 | `SetElement_ShouldBeANoOp_ForTheSameServiceAndMethod` | same service and method in any case: no write, no notice |
 | TC-U-35 | `SetElement_ShouldReplaceEveryGeneratedParameter_WhenTheMethodChanges` | tagged params regenerated, dropped bindings listed, `Success` / `Response` / `StatusCode` keep their UIds; the caption is kept, as the designer keeps it; a planted service-default sentinel is absent from N4 (Q16) |
-| TC-U-36 | `SetElement_ShouldReplace_WhenTheServiceChanges` | the same across services (EM4 oracle); the caption becomes `<service caption> <N>`, as the designer renames it, unless the same call sets one |
+| TC-U-36 | `SetElement_ShouldReplace_WhenTheServiceChanges` | the same across services (EM4 oracle); the caption becomes `<service caption> <N>`, as the designer renames it (`setElement` has no caption member) |
 | TC-U-37 | `SetElement_ShouldRefuseAChange_ThatStrandsADependent` | anything (another element, a process parameter, a flow condition, a formula body) reading a parameter of the element other than Success / Response / StatusCode (a tagged input, a nested item, `RequestBody` included) refuses the change (`FindDependents(element, survivingParameterUIds: {Success, Response, StatusCode UIds}, includeOwner: false)`); a planted service-default sentinel is absent from the refusal (Q16) |
 | TC-U-38 | `SetElement_ShouldRefuseAChange_WhenADependentReadsASameNamedOutput` | a same-named parameter of the new method does not save a reader: references are by UId |
 | TC-U-39 | `Apply_ShouldWriteNothing_WhenAnyMemberIsRefused` | validate all before write |
@@ -180,8 +180,9 @@ harness behaviour the first CI run of the draft PR decides (fallback: EM5 / EM8 
 | TC-U-47 | `UserTaskRoute_ShouldRefuseWebServiceUserTask_PointingToTheBlock` | generic `userTask` route refuses `WebServiceUserTask` (Q1) |
 | TC-U-48 | `MultiInstance_ShouldBeRefused_OnAWebServiceElement` | `setElement` with a `webService` block on a designer-built element that carries `BP6` refused, nothing written (Q20); the describe issue is TC-U-79 |
 | TC-U-52 | `NestedListRequestBinding_ShouldRaiseAPlatformNotice` | N5 on the sourceless nested-list predicate, every target (Q13) |
-| TC-U-53 | `ModifyOfAnotherElement_ShouldNotice_WhenTheMethodNoLongerResolves` | latent-loss notice on an unrelated modify (Q12, EM8); a planted service-default sentinel is absent from N7 (Q16) |
+| TC-U-53 | `ModifyOfAnotherElement_ShouldNotice_WhenTheMethodNoLongerResolves` | latent-loss notice on a modify that leaves an element unresolved, unrelated or not (Q12, EM8; TC-U-114 covers the element itself); a planted service-default sentinel is absent from N7 (Q16) |
 | TC-U-54 | `ModifyOfAnotherElement_ShouldNotice_WhenTheServiceIsMissing` | the same for a missing service |
+| TC-U-114 | `ModifyOfTheElement_ShouldNotice_OnlyWhenItStillDoesNotResolve` | N7 also on the unresolved element configured in the request: a settings-only change gets it, a resolving retarget does not (P-D3, owner 2026-11-05) |
 | TC-U-55 | `Notices_ShouldBeWarningsOfTheSavedEdit_Only` | a refused request carries no notice |
 | TC-U-95 | `CreateAndRetarget_ShouldListTheGeneratedParameters` | N1 lists every generated param by stored name (Q10) |
 | TC-U-96 | `IgnoreErrors_ShouldBeSavedWithANotice_WhenTheFeatureGateIsOn` | N3: saved, not refused, while the feature is on; one single-purpose reader of `DisableIgnoreErrorsInWebServiceUserTask` with a test fake, as `FileProcessingFeatureReader` |
@@ -406,7 +407,8 @@ Procedures, gates and cleanup: the measurements file. Every stand write waits fo
 | EM3 | routes (a) and (b) done (M-15, M-25) | TC-P-05, 11; ENG-92730 "Complex / structured parameter types" input |
 | EM4 | done (M-20, M-26, M-27) | TC-P-12; TC-U-35, 36, 107 |
 | EM5 | to do: STOP gate after slice B, re-run on the final cut | TC-P-13; final Q4; fallback of TC-U-81..86 |
-| EM6 | to do on the claimed cut, reduced under E4; on the final cut also the Boolean-constant check (a builder-made `value: "true"` Boolean input run against `UsrWscEchoService`; a wrong value switches web service elements to the designer's Script form) | TC-I-08; TC-K-03, 06; TC-P-15 |
+| EM6 | to do on the claimed cut, reduced under E4 | TC-I-08; TC-K-03, 06 |
+| EM6-B | final cut, one run: the Boolean constant, A (a conditional flow on the input, `SysProcessElementLog`) + B (tracing, `IsTracing`); only a value other than `true` switches web service elements to the Script form | TC-P-15 |
 | EM7 | designer half done (M-28); builder half on the claimed cut | TC-I-09; TC-K-06; TC-06 |
 | EM8 | current-builder half done (M-18); service-save and designer halves done (M-29..M-31); the claimed-cut half (notice N7) to do | TC-U-53, 72; TC-K-05; TC-12 |
 | EM9 | done (local, M-14) | TC-U-29; TC-U-49, 50, 51, 76 dropped |

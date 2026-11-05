@@ -14,14 +14,15 @@ Q9, Q12, Q13, Q14, Q16 and Q20.
 question below with its sources, the [design file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-design.md)
 holds the package components C1-C14 and the clio changes K1-K11, the
 [measurements file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-measurements.md) owns
-EM0-EM12 and the measured facts M-01..M-35 and C-01..C-09.
+EM0-EM12 and the measured facts M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, and C-01..C-09.
 
 `CLIO/` = the clio repository root. Sources outside the public repositories (the
 CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are
 cited by file or type name, or by the platform PR number; no repository paths of non-public repositories. Options
 are compared on clean-slate cost and platform constraints; existing prototype or draft code is not an argument for or
 against any option (owner rule). Every stand measurement below was taken on stand `Creatio` (Creatio 10.1.37, .NET
-Framework, CrtProcessBuilder 1.6.6.131) on 2026-11-02 or 2026-11-03.
+Framework, CrtProcessBuilder 1.6.6.131) on 2026-11-02 or 2026-11-03, except the SOAP capture EM2 S2-S4 (M-32..M-35),
+taken on 2026-11-05 with an experimental stand-only cut installed (designer saves; the builder was not involved).
 
 ---
 

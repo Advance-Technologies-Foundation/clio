@@ -747,6 +747,11 @@ and a warm cache shows the stored set.
 issues; a modify that lets the platform prune an unresolved web-service element carries a notice naming the element and
 the method; the modify is not refused). B stays a follow-up option.
 
+**Agreed by the owner on 2026-11-05 (within A): N7 widened.** N7 is raised for every web service element whose
+service or method does not resolve, configured in the request or not: a `setElement` that changes only settings does
+not resolve the method, and the save still runs the platform's load sync. Package test
+`ModifyOfTheElement_ShouldNotice_OnlyWhenItStillDoesNotResolve` (TC-U-114).
+
 **Settled at gate 1 (2026-11-03), the lead's clarification within A.** KB-1 (its modify part) and TC-K-05 state
 that a designer save of a process whose web-service element no longer resolves deletes every parameter of the element
 (result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (fix the
@@ -1046,6 +1051,8 @@ r3); stand `Creatio` has no SOAP service (r9).
 - **A. Refuse multi-instance on `webService`; build SOAP only if EM2 shows an identical parameter shape, else refuse
   SOAP with a notice.** ~1 agent h.
 - B. Support both. No corpus case and no stand service to capture from; the parity claim would be unproven.
+- D (added 2026-11-05, after the SOAP capture). Refuse multi-instance; build SOAP exactly like REST on every path, with
+  notice N10 naming the element. Evidence: EM2 S2-S4 (M-32..M-35).
 
 **Recommendation (PROPOSED): A.** EM2 as planned captures a REST method on EM1's service, so unless a SOAP capture is
 added with the owner's word, the default outcome of A is the refusal.
@@ -1068,6 +1075,22 @@ shaper's existing non-array-object refusal covers it for SOAP as for REST.
 every path: create, a retarget onto a SOAP service, and `setElement` of a stored SOAP element (settings or retarget).
 Create and retarget onto SOAP raise notice N10, which names the element; a settings-only change does not.
 Multi-instance stays refused. Describe reports a SOAP element as an ordinary element.
+
+---
+
+## Boolean constant at run time (owner, 2026-11-05)
+
+**Agreed by the owner on 2026-11-05: a Boolean constant is checked at run time, A + B in one run on the final cut**
+(measurements EM6-B). The designer stores a Boolean constant as Script `[#BooleanValue.True#]` (M-33); the builder's
+`value: "true"` goes through the shared mapping and stores ConstValue `{GS1: 1, GS2: "true"}`. None of the 66 web
+service elements of the PackageStore corpus (38 files) has a Boolean input parameter, so the corpus cannot answer it.
+- A: the builder creates a web service element with `value: "true"`; a downstream conditional flow on
+  `[#WebService1.<flag>#] == true` shows the run-time value through `SysProcessElementLog`.
+- B: process tracing on for the user (`IsTracing`) in the same run, to see the parameter values and the request body.
+  If the trace shows no body, the value-to-JSON step (`JsonRequestBodyRenderer`) is closed by a source trace, labelled
+  traced.
+- Only if A shows a value other than `true` do web service elements write the designer's Script form. No code change
+  before that.
 
 ---
 
