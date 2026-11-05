@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System.Collections.Generic;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -11,7 +12,11 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 {
+	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
+
 	private IApplicationClient _applicationClient;
+	private IThemeBackgroundWriter _backgroundWriter;
+	private IThemeCatalog _themeCatalog;
 	private ILogger _logger;
 	private UpdateThemeCommand _command;
 
@@ -30,7 +35,11 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
+		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
+		containerBuilder.AddTransient(_ => _backgroundWriter);
+		containerBuilder.AddTransient(_ => _themeCatalog);
 	}
 
 	private static UpdateThemeOptions ValidOptions() => new() {
@@ -164,5 +173,53 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		// Assert
 		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful update");
+	}
+
+	[TestCase("#1A2B3C", false, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[TestCase(null, true, "{}")]
+	[Category("Unit")]
+	[Description("Sends only the id and the background when no content field is given, so the stored caption, class name and CSS are kept; a removal sends an empty background.")]
+	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string color, bool remove,
+		string expectedBackground) {
+		string body = null;
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				body = call.ArgAt<string>(1);
+				return "{\"success\":true}";
+			});
+
+		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundColor = color, RemoveBackground = remove });
+
+		body.Should().Be($"{{\"id\":\"{ThemeId}\",\"background\":{expectedBackground}}}",
+			because: "null content fields are kept by the platform, null keeps the background, and {} removes it");
+	}
+
+	[TestCase(ThemeId, 1)]
+	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", 0)]
+	[Category("Unit")]
+	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list.")]
+	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, int expectedCalls) {
+		IReadOnlyList<ThemeDescriptor> themes = [
+			new ThemeDescriptor {
+				Id = catalogThemeId,
+				CssFilePath = $"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{catalogThemeId}/theme.css?hash=abc"
+			}
+		];
+		_themeCatalog.TryGetAvailableThemes(Arg.Any<ListThemesOptions>(), out Arg.Any<IReadOnlyList<ThemeDescriptor>>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = themes;
+				return true;
+			});
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true}");
+
+		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81" });
+
+		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
 	}
 }

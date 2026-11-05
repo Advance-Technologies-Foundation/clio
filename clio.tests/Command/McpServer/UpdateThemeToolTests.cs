@@ -329,7 +329,9 @@ public class UpdateThemeToolTests {
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(),
-				Substitute.For<IFileSystem>()) {
+				Substitute.For<IFileSystem>(),
+				Substitute.For<IThemeBackgroundWriter>(),
+				Substitute.For<IThemeCatalog>()) {
 		}
 
 		public override int Execute(UpdateThemeOptions options) {

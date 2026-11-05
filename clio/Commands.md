@@ -662,7 +662,7 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="apply-user-theme"></a>
 - [`set-user-theme`](docs/commands/set-user-theme.md) - Apply a theme to the current user's profile on an environment (Creatio 10.0.0+), `apply-user-theme`
 <a id="update-theme"></a>
-- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment (Creatio 10.0.0+)
+- [`update-theme`](docs/commands/update-theme.md) - Overwrite an existing custom Creatio theme on an environment, or change its background (Creatio 10.0.0+)
 
 ## Branding
 

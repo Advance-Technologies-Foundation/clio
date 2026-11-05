@@ -12,12 +12,15 @@ internal record ThemeRequest
 	public string Id { get; init; }
 
 	[JsonPropertyName("caption")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Caption { get; init; }
 
 	[JsonPropertyName("cssClassName")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string CssClassName { get; init; }
 
 	[JsonPropertyName("cssContent")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string CssContent { get; init; }
 
 	[JsonPropertyName("background")]

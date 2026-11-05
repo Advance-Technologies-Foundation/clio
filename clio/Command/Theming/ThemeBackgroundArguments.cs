@@ -7,7 +7,8 @@ namespace Clio.Command.Theming;
 public sealed record ThemeBackgroundArguments(
 	string ImageId = null,
 	string Color = null,
-	bool KeepIconBackground = false) {
+	bool KeepIconBackground = false,
+	bool Remove = false) {
 
 	private const int MaxEchoLength = 64;
 
@@ -17,11 +18,11 @@ public sealed record ThemeBackgroundArguments(
 
 	public bool SetsBackground => HasImageId || HasColor;
 
-	public bool IsPresent => SetsBackground;
+	public bool IsPresent => SetsBackground || Remove;
 
 	public bool TryValidate(out string error) {
 		string[] sources = new (bool Given, string Name)[] {
-			(HasImageId, "background-image-id"), (HasColor, "background-color")
+			(HasImageId, "background-image-id"), (HasColor, "background-color"), (Remove, "remove-background")
 		}.Where(source => source.Given).Select(source => source.Name).ToArray();
 		error = null;
 		if (sources.Length > 1) {
@@ -37,6 +38,9 @@ public sealed record ThemeBackgroundArguments(
 		if (HasImageId) {
 			return new ThemeBackground { Mode = ThemeBackground.ImageMode, ImageId = Guid.Parse(ImageId.Trim()).ToString() };
 		}
-		return HasColor ? new ThemeBackground { Mode = ThemeBackground.ColorMode, Color = Color.Trim() } : null;
+		if (HasColor) {
+			return new ThemeBackground { Mode = ThemeBackground.ColorMode, Color = Color.Trim() };
+		}
+		return Remove ? new ThemeBackground() : null;
 	}
 }

@@ -41,14 +41,21 @@ public class UpdateThemeTool(
 	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
 		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
 		" or later on the target environment. Only inline CSS content is accepted. " +
+		"A background argument is at most one of background-image-id (an image from upload-image), background-color " +
+		"or remove-background, and needs Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later, " +
+		"checked before any write. Without one, caption, css-class-name and css-content are all required; with one, " +
+		"they are optional and the omitted ones are kept. An image or a color turns the environment-wide " +
+		"UsePanelIconBackground feature off for All employees unless keep-icon-background is true, and an image is " +
+		"bound into the theme's package; problems after the write come back as warnings in the log. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
-		[Description("Parameters: environment-name (required), id (required), caption (required), " +
-			"css-class-name (required), css-content (required).")]
+		[Description("Parameters: environment-name (required), id (required), caption, css-class-name, css-content, " +
+			"background-image-id, background-color, remove-background, keep-icon-background.")]
 		[Required] UpdateThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".",
-			"Valid: environment-name, id, caption, css-class-name, css-content.");
+			"Valid: environment-name, id, caption, css-class-name, css-content, background-image-id, " +
+			"background-color, remove-background, keep-icon-background.");
 		if (!string.IsNullOrWhiteSpace(aliasError)) {
 			return CommandExecutionResult.FromValidationError(aliasError);
 		}
@@ -58,13 +65,15 @@ public class UpdateThemeTool(
 		if (string.IsNullOrWhiteSpace(args.Id)) {
 			return CommandExecutionResult.FromValidationError("id is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.Caption)) {
+		ThemeBackgroundArguments background = new(args.BackgroundImageId, args.BackgroundColor,
+			args.KeepIconBackground ?? false, args.RemoveBackground ?? false);
+		if (!background.IsPresent && string.IsNullOrWhiteSpace(args.Caption)) {
 			return CommandExecutionResult.FromValidationError("caption is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.CssClassName)) {
+		if (!background.IsPresent && string.IsNullOrWhiteSpace(args.CssClassName)) {
 			return CommandExecutionResult.FromValidationError("css-class-name is required and cannot be empty.");
 		}
-		if (string.IsNullOrWhiteSpace(args.CssContent)) {
+		if (!background.IsPresent && string.IsNullOrWhiteSpace(args.CssContent)) {
 			return CommandExecutionResult.FromValidationError("css-content is required and cannot be empty.");
 		}
 		UpdateThemeOptions options = new() {
@@ -72,7 +81,11 @@ public class UpdateThemeTool(
 			Id = args.Id,
 			Caption = args.Caption,
 			CssClassName = args.CssClassName,
-			CssContent = args.CssContent
+			CssContent = args.CssContent,
+			BackgroundImageId = args.BackgroundImageId,
+			BackgroundColor = args.BackgroundColor,
+			RemoveBackground = background.Remove,
+			KeepIconBackground = background.KeepIconBackground
 		};
 		return InternalExecute<UpdateThemeCommand>(options);
 	}
@@ -94,18 +107,31 @@ public sealed record UpdateThemeArgs(
 
 	[property: JsonPropertyName("caption")]
 	[property: Description("Human-readable theme caption (max 250).")]
-	[property: Required]
 	string? Caption = null,
 
 	[property: JsonPropertyName("css-class-name")]
 	[property: Description("CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100).")]
-	[property: Required]
 	string? CssClassName = null,
 
 	[property: JsonPropertyName("css-content")]
 	[property: Description("Inline theme CSS content (max 1 MiB); must not be empty.")]
-	[property: Required]
-	string? CssContent = null
+	string? CssContent = null,
+
+	[property: JsonPropertyName("background-image-id")]
+	[property: Description("Id of an image uploaded with upload-image, set as the theme background.")]
+	string? BackgroundImageId = null,
+
+	[property: JsonPropertyName("background-color")]
+	[property: Description("Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]
+	string? BackgroundColor = null,
+
+	[property: JsonPropertyName("remove-background")]
+	[property: Description("When true, removes the theme's own background, so its users see the site background again.")]
+	bool? RemoveBackground = null,
+
+	[property: JsonPropertyName("keep-icon-background")]
+	[property: Description("When true, leaves the UsePanelIconBackground feature as is, although the panel's icon background can hide the theme background.")]
+	bool? KeepIconBackground = null
 ) {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
