@@ -15,7 +15,7 @@ public interface IThemeBackgroundWriter {
 }
 
 internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, IPackageDataBinder packageDataBinder,
-	IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder) : IThemeBackgroundWriter {
+	IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) : IThemeBackgroundWriter {
 
 	private const string PanelIconBackgroundFeatureCode = "UsePanelIconBackground";
 
@@ -44,9 +44,12 @@ internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, I
 
 	public IReadOnlyList<string> Complete(ThemeBackgroundArguments background, string themeId, string packageName) {
 		List<string> warnings = [];
-		if (background.SetsBackground && !background.KeepIconBackground) {
+		if (background.SetsBackground && background.KeepIconBackground) {
+			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} was left as it is (keep-icon-background).");
+		} else if (background.SetsBackground) {
 			try {
 				featureState.SetFeatureState(PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
+				logger.WriteInfo($"{PanelIconBackgroundFeatureCode} is off for All employees.");
 			} catch (Exception exception) {
 				warnings.Add($"The theme background was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
 					$"feature failed, so the panel may still hide it: {exception.Message}");
@@ -56,9 +59,13 @@ internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, I
 			return warnings;
 		}
 		try {
-			packageDataBinder.UsePackage(packageName);
-			warnings.AddRange(packageDataBinder.BindRow("SysImage", "ThemeBackground_" + Guid.Parse(themeId).ToString("N"),
-				SysImageColumns, Guid.Parse(background.ImageId.Trim())).Warnings);
+			string boundPackage = packageDataBinder.UsePackage(packageName);
+			PackageDataBindingOutcome outcome = packageDataBinder.BindRow("SysImage",
+				"ThemeBackground_" + Guid.Parse(themeId).ToString("N"), SysImageColumns, Guid.Parse(background.ImageId.Trim()));
+			warnings.AddRange(outcome.Warnings);
+			if (outcome.Bound) {
+				logger.WriteInfo($"Bound the background image into package '{boundPackage}'.");
+			}
 		} catch (Exception exception) {
 			warnings.Add($"The theme background was applied, but binding image {background.ImageId.Trim()} into the " +
 				$"theme's package failed: {exception.Message}");

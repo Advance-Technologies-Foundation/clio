@@ -25,7 +25,8 @@ Pass at most one background argument: `--background-image-id` (an image uploaded
 [`upload-image`](upload-image.md)), `--background-color` or `--remove-background`. It needs Creatio 10.2.96 or
 later, checked before any write. With one, `--caption`, `--css-class-name` and the CSS are optional and the
 omitted ones are kept. After an image or a color is written, the `UsePanelIconBackground` feature is turned off for
-All employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package.
+All employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package. The output says whether
+`UsePanelIconBackground` is off or was kept and names the package the image was bound into.
 
 ## Synopsis
 

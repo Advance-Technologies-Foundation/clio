@@ -27,7 +27,8 @@ Provide the CSS through exactly one of `--css-content` (inline) or `--css-conten
 The theme can carry its own background, written by the same `CreateTheme` call: `--background-image-id`
 (an image uploaded with [`upload-image`](upload-image.md)) or `--background-color`. It needs Creatio 10.2.96 or
 later, checked before any write. After the create, the `UsePanelIconBackground` feature is turned off for All
-employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package.
+employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package. The output says whether
+`UsePanelIconBackground` is off or was kept and names the package the image was bound into.
 
 ## Synopsis
 

@@ -203,7 +203,6 @@ public sealed class DurableInvocationGateCompletenessTests {
 			"create-client-unit-schema",
 			"create-schema",
 			"create-sql-schema",
-			"create-theme",
 			"upload-image",
 			"upload-file"
 		];
