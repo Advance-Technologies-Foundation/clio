@@ -2195,6 +2195,17 @@ public sealed class DescribedParameter {
 	public string Tag { get; set; }
 
 	/// <summary>
+	/// For a PROCESS parameter that takes the record Id of whichever of several signal starts fired: the starts, as
+	/// <c>"&lt;StartName&gt;.RecordId"</c> in the order they appear in the process. <see cref="Source"/> and
+	/// <see cref="Value"/> are then null, so the list feeds straight back into <c>addParameter</c> /
+	/// <c>setParameter</c>. Declared here because this type carries no extension-data bag - without the property the
+	/// field is dropped on the way to the caller. Omitted when the server (a <c>CrtProcessBuilder</c> older than
+	/// 1.6.6.141) does not report it; such a server describes the merge as its raw formula.
+	/// </summary>
+	[JsonPropertyName("mergeFrom")]
+	public List<string> MergeFrom { get; set; }
+
+	/// <summary>
 	/// The per-item shape of a collection parameter (<c>CompositeObjectList</c>): one entry per member the
 	/// collection carries, each a parameter in its own right. This is the DESIGN-TIME contract a consumer binds
 	/// against — a collection without it is an opaque list. Null for a scalar and for a bare, shapeless

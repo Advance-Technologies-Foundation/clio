@@ -74,7 +74,7 @@ public class ProcessParameterBindingWarningsTests {
 	#region Methods: ForDescriptor
 
 	[Test]
-	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and point at formulaTask + formula.resultProcessParameter as the per-branch assignment. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
+	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and point at mergeFrom as the remedy (ENG-103990) - no longer a formulaTask per branch. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
 	public void ForDescriptor_ShouldWarn_WhenTwoMappingsBindTheSameProcessParameter() {
 		// Arrange
 		string descriptor = Descriptor(TwoStartElements, ReadAName, ReadBName);
@@ -86,8 +86,8 @@ public class ProcessParameterBindingWarningsTests {
 		warnings.Should().ContainSingle(w => w.Contains("binds process parameter 'PName' 2 times"),
 			because: "a second binding of one parameter silently replaces the first");
 		warnings.Should().Contain(w => w.Contains("only the last one listed (ReadB.ResultEntity.Name) is saved")
-				&& w.Contains("formula.resultProcessParameter 'PName'"),
-			because: "the caller must learn which binding survived and how to assign per branch instead");
+				&& w.Contains("mergeFrom [") && !w.Contains("formulaTask"),
+			because: "the caller must learn which binding survived and that merging the starts is the remedy");
 	}
 
 	[Test]
@@ -105,6 +105,8 @@ public class ProcessParameterBindingWarningsTests {
 			because: "the warning has to name the start whose runs read the default value");
 		warnings[0].Should().NotContain("'SigA'",
 			because: "the start that does reach the element is not a problem and must not be named as one");
+		warnings[0].Should().Contain("process-multi-start").And.NotContain("formulaTask",
+			because: "every warning recommends mergeFrom, not a Formula per branch (ENG-103990 D7)");
 	}
 
 	[Test]
@@ -222,8 +224,9 @@ public class ProcessParameterBindingWarningsTests {
 
 		// Assert
 		warnings.Should().ContainSingle(w => w.Contains("replaced the existing binding of process parameter 'PName'")
-				&& w.Contains("was ReadA.ResultEntity.Name, now ReadB.ResultEntity.Name"),
-			because: "the caller must see which binding the edit dropped");
+				&& w.Contains("was ReadA.ResultEntity.Name, now ReadB.ResultEntity.Name")
+				&& w.Contains("mergeFrom [") && !w.Contains("formulaTask"),
+			because: "the caller must see which binding the edit dropped, and the one remedy every warning names");
 	}
 
 	[Test]

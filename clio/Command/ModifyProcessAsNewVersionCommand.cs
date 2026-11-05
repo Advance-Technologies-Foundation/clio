@@ -90,7 +90,9 @@ namespace Clio.Command;
 // email.attachments on addElement / setElement; the rationale is on CreateBusinessProcessOptions.
 // Raised to 1.6.6.140 by ENG-105549 for the tightened attachment-source walk behind the unscoped-files refusal (a
 // security-character change, which takes a literal); the rationale is on CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.140",
+// Raised to 1.6.6.141 by ENG-103990 for mergeFrom on addParameter / setParameter; the rationale is on
+// CreateBusinessProcessOptions.
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.141",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyProcessAsNewVersionOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) of the SOURCE. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>
