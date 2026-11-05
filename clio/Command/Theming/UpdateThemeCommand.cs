@@ -19,11 +19,11 @@ public class UpdateThemeOptions : RemoteCommandOptions
 	[Option("id", Required = true, HelpText = "Id (a GUID) of the existing theme to overwrite")]
 	public string Id { get; set; }
 
-	/// <summary>Human-readable theme caption (required, ≤250).</summary>
+	/// <summary>Human-readable theme caption (≤250), required without a background argument.</summary>
 	[Option("caption", Required = false, HelpText = "Human-readable theme caption (max 250)")]
 	public string Caption { get; set; }
 
-	/// <summary>CSS class applied when the theme is active (required, <c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100).</summary>
+	/// <summary>CSS class applied when the theme is active (<c>^[A-Za-z][A-Za-z0-9_-]*$</c>, ≤100), required without a background argument.</summary>
 	[Option("css-class-name", Required = false,
 		HelpText = "CSS class applied when the theme is active (^[A-Za-z][A-Za-z0-9_-]*$, max 100)")]
 	public string CssClassName { get; set; }
@@ -65,7 +65,8 @@ public class UpdateThemeOptions : RemoteCommandOptions
 /// Overwrites an existing custom Creatio theme on the target environment by calling the native
 /// <c>ThemeService.svc/UpdateTheme</c> endpoint. The theme is located by <c>id</c> and rewritten in its
 /// current package (the package cannot be changed). Requires the <c>CanCustomizeBranding</c> license and the
-/// <c>CanManageThemes</c> system operation. This is a full overwrite — caption, css-class-name, and CSS are all required.
+/// <c>CanManageThemes</c> system operation. Without a background argument this is a full overwrite — caption,
+/// css-class-name, and CSS are all required; with one, the omitted fields are kept.
 /// </summary>
 public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 {
@@ -120,7 +121,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		request = null;
 		packageName = null;
 		bool partial = background.IsPresent;
-		bool hasCss = options.CssContent is not null || !string.IsNullOrWhiteSpace(options.CssContentFile);
+		bool hasCss = !string.IsNullOrWhiteSpace(options.CssContent) || !string.IsNullOrWhiteSpace(options.CssContentFile);
 		string cssContent = null;
 		if (!background.TryValidate(out error)
 			|| ((!partial || hasCss) && !ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent,
@@ -135,7 +136,8 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Background = background.ToBackground()
 		};
 		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			&& (!background.HasImageId || TryResolveThemePackage(options, out packageName, out error));
+			&& (!background.HasImageId || TryResolveThemePackage(options, out packageName, out error))
+			&& _backgroundWriter.TryConfirmImage(background, out error);
 	}
 
 	private void Fail(string error) {

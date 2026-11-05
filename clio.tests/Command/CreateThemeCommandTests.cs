@@ -57,6 +57,12 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			.Returns("{\"success\":true}");
 	}
 
+	private void StubImageLookup(bool found) {
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(found ? $"{{\"success\":true,\"rows\":[{{\"Id\":\"{ImageId}\"}}]}}" : "{\"success\":true,\"rows\":[]}");
+	}
+
 	[Test, Category("Unit")]
 	[Description("Posts CreateTheme to the WebApp-prefixed ThemeService path when the environment runs under .NET Framework.")]
 	public void CreateTheme_ShouldFormCorrectApplicationRequest_WhenApplicationRunsUnderNetFramework() {
@@ -361,6 +367,7 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 				return "{\"success\":true}";
 			});
 		_binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
+		StubImageLookup(found: true);
 		CreateThemeOptions options = ValidOptions();
 		options.Id = ThemeId;
 		options.BackgroundImageId = ImageId;
@@ -378,17 +385,22 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 		});
 	}
 
-	[Test, Category("Unit")]
-	[Description("Stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
-	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails() {
+	[TestCase(false, 0)]
+	[TestCase(true, 1)]
+	[Category("Unit")]
+	[Description("Writes nothing for an image the environment does not have, and stops after a CreateTheme that does not confirm success, so neither the panel icon feature nor the package changes.")]
+	public void TryCreateTheme_ShouldChangeNothingElse_WhenTheCreateFails(bool imageFound, int expectedCreates) {
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns("{\"success\":false,\"errorInfo\":{\"message\":\"id already exists\"}}");
+		StubImageLookup(imageFound);
 		CreateThemeOptions options = ValidOptions();
 		options.BackgroundImageId = ImageId;
 
 		_command.TryCreateTheme(options, out _, out _, out _);
 
+		_applicationClient.Received(expectedCreates).ExecutePostRequest(Arg.Is<string>(u => u.Contains("CreateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_featureState.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created gets no follow-ups");
 		_binder.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created has no package to bind into");
 	}

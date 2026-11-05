@@ -29,7 +29,7 @@ public class CreateThemeToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Declares the FR-12 safety flags on the create-theme tool method: a write that is not destructive, not idempotent, and open-world (brand mode probes Google Fonts through the shared build engine).")]
+	[Description("Declares the FR-12 safety flags on the create-theme tool method: a destructive write (a background turns an environment-wide feature off), not idempotent, and open-world (brand mode probes Google Fonts through the shared build engine).")]
 	public void CreateThemeTool_ShouldDeclareCreateSafetyFlags_WhenInspectingMcpServerToolAttribute() {
 		// Arrange & Act
 		McpServerToolAttribute attribute = (McpServerToolAttribute)typeof(CreateThemeTool)
@@ -40,7 +40,7 @@ public class CreateThemeToolTests {
 		// Assert
 		attribute.Name.Should().Be(CreateThemeTool.ToolName, because: "the tool must be published under its canonical kebab-case name");
 		attribute.ReadOnly.Should().BeFalse(because: "creating a theme writes to the environment");
-		attribute.Destructive.Should().BeFalse(because: "create adds a new theme without destroying existing state");
+		attribute.Destructive.Should().BeTrue(because: "with a background, create also turns the environment-wide UsePanelIconBackground feature off");
 		attribute.Idempotent.Should().BeFalse(because: "a repeated create yields a different theme (new auto-id) rather than the same end state");
 		attribute.OpenWorld.Should().BeTrue(
 			because: "brand mode probes Google Fonts over the open network through the shared build engine, exactly like build-theme — the inline css-content path stays tenant-only, but the attribute describes the tool's whole surface");

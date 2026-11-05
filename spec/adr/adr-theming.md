@@ -137,7 +137,8 @@ or `[ResolvedDynamically]`.
   `--package-name` optional → resolved to UId via `PageSchemaMetadataHelper.QueryPackageUId`, and when
   omitted the `packageUId` key is dropped entirely so the server falls back to `CurrentPackageId`. No
   client-side "id exists" pre-check.
-- `update-theme` specifics: full overwrite — `--id`, `--caption`, `--css-class-name`, CSS all required;
+- `update-theme` specifics: full overwrite — `--id`, `--caption`, `--css-class-name`, CSS all required
+  (without a background argument; see F-D2);
   **no** `--package-name` (cannot re-home; `GetAvailableThemes` returns `cssFilePath` not `cssContent`,
   so read-modify-write is infeasible). No read-before-write.
   *(The "read-modify-write is infeasible" clause is superseded by Area E below (ENG-93991): `get-theme`
@@ -467,8 +468,8 @@ stored background, and `{}` removes it.
 | --- | --- |
 | F-D1 | `get-theme` and `list-themes` return `background`, absent when the theme has none. |
 | F-D2 | The theme tools write and bind the background. `create-theme` and `update-theme` take at most one of `background-image-id` and `background-color` (`update-theme` also `remove-background`) and send it in the same ThemeService call. An image's `SysImage` row is bound into the theme's package under `ThemeBackground_<theme id N>`; `update-theme` reads that package from the catalog's `cssFilePath`. With a background argument, the omitted content fields of `update-theme` are kept. |
-| F-D3 | No upload in the theme tools: the image comes from `upload-image`, and it joins no gallery. |
-| F-D4 | After a successful write that sets an image or a color, `UsePanelIconBackground` is turned off for All employees, as `set-background-image` does, unless `keep-icon-background` is set. A failure of that step or of the binding is a warning. |
+| F-D3 | No upload in the theme tools: the image comes from `upload-image`, and it joins no gallery. A `background-image-id` with no `SysImage` row is refused before any write. |
+| F-D4 | After a successful write that sets an image or a color, `UsePanelIconBackground` is turned off for All employees, as `set-background-image` does, unless `keep-icon-background` is set. A failure of that step or of the binding is a warning. Unlike `set-background-image`, the off state is not bound into the theme's package: installing a theme package does not switch an environment-wide feature. |
 | F-D5 | `set-background-image` stays the site-only tool, unchanged. The `create-theme` result keeps `{ success, id, warnings?, error? }`, and `update-theme` keeps its command execution envelope with the report in the log. |
 | F-D6 | Floor `10.2.96`, a property-level `[RequiresCreatioVersion]` on `HasBackgroundArgument`, checked before any write: an older ThemeService drops an unknown `background` and still reports success. |
 

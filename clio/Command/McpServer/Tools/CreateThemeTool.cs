@@ -66,8 +66,8 @@ public class CreateThemeTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true),
-	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true),
+	 Description("Create a custom Creatio theme (background optional) on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
 		"Returns { success, id, warnings?, error? } where id is the created theme's id, auto-generated when omitted. " +
 		"The theme CSS is supplied inline via css-content, OR built server-side from brand colours and fonts " +

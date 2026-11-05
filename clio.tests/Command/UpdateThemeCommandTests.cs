@@ -36,6 +36,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(true);
 		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _backgroundWriter);
@@ -175,12 +176,13 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful update");
 	}
 
-	[TestCase("#1A2B3C", false, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
-	[TestCase(null, true, "{}")]
+	[TestCase("#1A2B3C", false, null, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[TestCase(null, true, null, "{}")]
+	[TestCase("#1A2B3C", false, "", "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
 	[Category("Unit")]
-	[Description("Sends only the id and the background when no content field is given, so the stored caption, class name and CSS are kept; a removal sends an empty background.")]
+	[Description("Sends only the id and the background when no content field is given or a given one is empty, so the stored caption, class name and CSS are kept; a removal sends an empty background.")]
 	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string color, bool remove,
-		string expectedBackground) {
+		string content, string expectedBackground) {
 		string body = null;
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
@@ -189,17 +191,23 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 				return "{\"success\":true}";
 			});
 
-		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundColor = color, RemoveBackground = remove });
+		_command.Execute(new UpdateThemeOptions {
+			Id = ThemeId, BackgroundColor = color, RemoveBackground = remove,
+			Caption = content, CssClassName = content, CssContent = content
+		});
 
 		body.Should().Be($"{{\"id\":\"{ThemeId}\",\"background\":{expectedBackground}}}",
 			because: "null content fields are kept by the platform, null keeps the background, and {} removes it");
 	}
 
-	[TestCase(ThemeId, 1)]
-	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", 0)]
+	[TestCase(ThemeId, true, 1)]
+	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", true, 0)]
+	[TestCase(ThemeId, false, 0)]
 	[Category("Unit")]
-	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list.")]
-	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, int expectedCalls) {
+	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list or an image the environment does not have.")]
+	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, bool imageFound,
+		int expectedCalls) {
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(imageFound);
 		IReadOnlyList<ThemeDescriptor> themes = [
 			new ThemeDescriptor {
 				Id = catalogThemeId,

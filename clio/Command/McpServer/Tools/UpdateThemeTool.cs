@@ -12,7 +12,7 @@ namespace Clio.Command.McpServer.Tools;
 
 /// <summary>
 /// MCP tool that overwrites an existing custom Creatio theme on a target environment via the native
-/// <c>ThemeService</c> (a full overwrite by theme id).
+/// <c>ThemeService</c> (a full overwrite by theme id), or changes only its background and keeps the omitted fields.
 /// </summary>
 public class UpdateThemeTool(
 	UpdateThemeCommand command,
@@ -29,7 +29,7 @@ public class UpdateThemeTool(
 			["css_class_name"] = "css-class-name"
 		};
 
-	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content.</summary>
+	/// <summary>Overwrites the addressed theme on the target environment with the supplied caption, CSS class name, and CSS content, or changes its background.</summary>
 	[McpToolExecution(
 		Location = McpToolExecutionLocation.Worker,
 		Lifetime = McpToolExecutionLifetime.PerCall,
@@ -38,8 +38,8 @@ public class UpdateThemeTool(
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = true, OpenWorld = false),
-	 Description("Overwrite an existing custom Creatio theme on a registered environment via the native ThemeService " +
-		"(full overwrite by id; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
+	 Description("Update a custom Creatio theme or its background on a registered environment via the native ThemeService " +
+		"(full overwrite by id without a background argument; the package cannot be changed). Requires Creatio " + ThemeServiceRequirement.MinVersion +
 		" or later on the target environment. Only inline CSS content is accepted. " +
 		"A background argument is at most one of background-image-id (an image from upload-image), background-color " +
 		"or remove-background, and needs Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later, " +

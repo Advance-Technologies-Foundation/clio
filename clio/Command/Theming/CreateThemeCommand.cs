@@ -125,7 +125,8 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 		if (!ThemeRequestBuilder.TryValidateRequest(request, out errorMessage)) {
 			return false;
 		}
-		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)) {
+		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)
+			|| !_backgroundWriter.TryConfirmImage(background, out errorMessage)) {
 			return false;
 		}
 		string requestData = JsonSerializer.Serialize(request with {
