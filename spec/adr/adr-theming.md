@@ -14,6 +14,7 @@ and `adr-theming-agent-advisor.md`. It is the single design-rationale document f
 | Native build engine | ENG-90636 (continuation) | **Live** — `build-theme`; `[FeatureToggle("theming")]` removed at go-live (2026-07-08), colour-math parity gate verified |
 | Agent advisor | theming-agent | **Live** — renamed `theme-color-advisor` → `advise-theme-palette`; reachable (toggle removed at go-live); advisor story still in progress |
 | Area E — read theme content | ENG-93991 | **In progress** — `get-theme` CLI verb + MCP tool over the catalog + `cssFilePath` static-file fetch |
+| Area F — theme background | ENG-99181 | **In progress** — background group on `create-theme` / `update-theme` |
 
 **Go-live (2026-07-08).** `[FeatureToggle("theming")]` has been removed from the entire theming
 surface (verbs, MCP tools, resources, prompts); the feature is live on all four surfaces and the
@@ -456,6 +457,21 @@ so `[RequiresCreatioVersion(ThemeServiceRequirement.MinVersion)]` (10.0.0) appli
 added to the uniform-floor `ThemingVersionFloorContractE2ETests` gate. Long-tail on the MCP surface (no
 `McpCoreToolProfile` membership), no compatibility-catalog entry (new tool, not a rename).
 
+### Area F — Theme background (ENG-99181, added 2026-11-05)
+
+A theme can carry its own background (core merge `07c5e28f924`): `{ mode: Image, imageId }` or
+`{ mode: Color, color }`. In `UpdateTheme`, null content fields keep their values, `background: null` keeps the
+stored background, and `{}` removes it.
+
+| # | Decision |
+| --- | --- |
+| F-D1 | `get-theme` and `list-themes` return `background`, absent when the theme has none. |
+| F-D2 | The theme tools write and bind the background. `create-theme` and `update-theme` take at most one of `background-image-id` and `background-color` (`update-theme` also `remove-background`) and send it in the same ThemeService call. An image's `SysImage` row is bound into the theme's package under `ThemeBackground_<theme id N>`; `update-theme` reads that package from the catalog's `cssFilePath`. With a background argument, the omitted content fields of `update-theme` are kept. |
+| F-D3 | No upload in the theme tools: the image comes from `upload-image`, and it joins no gallery. |
+| F-D4 | After a successful write that sets an image or a color, `UsePanelIconBackground` is turned off for All employees, as `set-background-image` does, unless `keep-icon-background` is set. A failure of that step or of the binding is a warning. |
+| F-D5 | `set-background-image` stays the site-only tool, unchanged. The `create-theme` result keeps `{ success, id, warnings?, error? }`, and `update-theme` keeps its command execution envelope with the report in the log. |
+| F-D6 | Floor `10.2.96`, a property-level `[RequiresCreatioVersion]` on `HasBackgroundArgument`, checked before any write: an older ThemeService drops an unknown `background` and still reports success. |
+
 ---
 
 ## Rejected / superseded alternatives
@@ -509,6 +525,10 @@ calibration at hex boundaries (banker's rounding / last-ULP) — port operator-f
 
 **Granular per-function advisor tools / batch planner (rejected).** Round-trip cost / intake inversion
 (D-D1) — one fat verdict-returning tool instead.
+
+**Separate tools for a theme background (rejected).** `set-background-image --theme`, `set-background-color` and
+`remove-background` would keep the background off the theme tools. Rejected for F-D2: the platform stores the
+background in the theme, so the theme write carries it in one call.
 
 ---
 
