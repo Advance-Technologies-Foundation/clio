@@ -6,8 +6,11 @@ applies-to:
   - clio.mcp.e2e/Support/Configuration/McpE2ESettings.cs
   - clio/Command/InstallProcessBuilderCommand.cs
   - clio/Command/InstallBundledPackageCommand.cs
+  - clio/Common/BundledPackageCatalog.cs
+  - clio/Common/RequiredPackageChecker.cs
+  - clio/Common/ServerReadinessWaiter.cs
 ticket: ENG-97005
-date: 2026-10-20
+date: 2026-11-05
 ---
 
 **What is true** - the process-designer lane's step "Prepare site" builds `clio.mcp.e2e` from the branch
@@ -19,7 +22,11 @@ which the build copies from `clio/CrtProcessBuilder/`, waits for the restart and
 `ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired` FAIL a test that finds the package
 missing, older than it needs, or without the capability it tests. The step exists only in the TeamCity
 configuration. It is also the only live check of the install command itself, which no fixture names:
-`processDesignerLane.installCommandPaths` in `mcp-e2e-selection.json` runs the whole category for a change to it.
+`processDesignerLane.installCommandPaths` in `mcp-e2e-selection.json` runs the whole category for a change to it
+and to the clio/Common services the install runs through (`BundledPackageCatalog`, `RequiredPackageChecker`,
+`ServerReadinessWaiter`). The reference graph reaches those services only through other commands - the waiter
+through restart, on the existing lane - so without the list a change to them met the install on no pull request:
+a graph-chosen subset for the first two, and for the waiter no fixture of the category at all.
 
 **Why it is this way** - the bundled archive is part of what a clio pull request changes, so the stand has
 to carry that archive: a rebundle is tested by its own bytes. The zip the package repository's Jenkins job

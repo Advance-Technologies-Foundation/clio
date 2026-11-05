@@ -358,6 +358,53 @@ internal sealed class McpE2eSelectionCoverageTests {
 	}
 
 	[Test]
+	[NonParallelizable] // sets BASE_SHA, HEAD_SHA, KEEP_NOENVIRONMENT and GITHUB_OUTPUT on the process while the step runs
+	[Description("A manual run (workflow_dispatch) has no diff to classify, and the select step then sends the manifest's base filter for the process-designer lane instead of leaving the configuration's McpE2eTestFilter default to decide, while the existing lane keeps the TeamCity default (the full suite); the step's own code is run here with no base commit and its outputs are read back.")]
+	public void TriggerWorkflow_ShouldPinTheProcessDesignerFilter_OnAManualRun() {
+		// Arrange
+		Dictionary<object, object> selectJob = GetMap(ReadWorkflowJobs(TriggerWorkflowPath), "select");
+		string run = GetSteps(selectJob)
+			.Single(step => step.TryGetValue("id", out object? id) && id?.ToString() == "select")["run"].ToString()!;
+		string expectedPdFilter = ReadManifest().GetProperty("processDesignerLane").GetProperty("baseFilter").GetString()!;
+		string outputPath = Path.Combine(Path.GetTempPath(), $"mcp-e2e-dispatch-{Guid.NewGuid():N}.txt");
+		string[] stepVariables = ["BASE_SHA", "HEAD_SHA", "KEEP_NOENVIRONMENT", "GITHUB_OUTPUT"];
+		Dictionary<string, string?> savedVariables = stepVariables.ToDictionary(name => name, Environment.GetEnvironmentVariable);
+		// The step reads the manifest relative to the checkout and appends its outputs to the file GITHUB_OUTPUT
+		// names; BASE_SHA is empty on a workflow_dispatch event, which is the branch under test here. The $env:
+		// writes are process-wide, hence [NonParallelizable] and the restore below; no other fixture reads these
+		// four names and the selection script reads no environment variable, so nothing else observes them.
+		using PowerShell powerShell = PowerShell.Create();
+		powerShell.AddScript($"Set-Location -LiteralPath '{RepositoryRoot.Replace("'", "''")}'")
+			.AddStatement().AddScript($"$env:BASE_SHA = ''; $env:HEAD_SHA = ''; $env:KEEP_NOENVIRONMENT = ''; $env:GITHUB_OUTPUT = '{outputPath.Replace("'", "''")}'")
+			.AddStatement().AddScript(run);
+
+		try {
+			// Act
+			powerShell.Invoke();
+
+			// Assert
+			powerShell.HadErrors.Should().BeFalse(because: "the step must run as written: {0}",
+				string.Join(Environment.NewLine, powerShell.Streams.Error.Select(error => error.ToString())));
+			Dictionary<string, string> outputs = File.ReadAllLines(outputPath)
+				.Select(line => line.Split('=', 2))
+				.ToDictionary(parts => parts[0], parts => parts.Length > 1 ? parts[1] : "", StringComparer.Ordinal);
+			outputs.Should().ContainKey("pd_filter", because: "the process-designer attempts read their filter from this output").WhoseValue
+				.Should().Be(expectedPdFilter, because: "a manual run must send the manifest's base filter for the lane; an empty value hands the choice to the TeamCity default, whose drift this repository cannot see");
+			outputs.Should().ContainKey("pd_mode", because: "the attempts and the gate branch on this output").WhoseValue
+				.Should().Be("full", because: "there is no diff to narrow the category on a manual run");
+			outputs.Should().ContainKey("mode", because: "the existing lane's attempts branch on this output").WhoseValue
+				.Should().Be("full", because: "the existing lane runs in full on a manual run");
+			outputs.Should().ContainKey("filter", because: "the existing lane's attempts read their filter from this output").WhoseValue
+				.Should().BeEmpty(because: "the existing lane keeps the TeamCity default on a manual run - the full suite with the NoEnvironment tier - as the workflow header documents");
+		} finally {
+			File.Delete(outputPath);
+			foreach (KeyValuePair<string, string?> variable in savedVariables) {
+				Environment.SetEnvironmentVariable(variable.Key, variable.Value);
+			}
+		}
+	}
+
+	[Test]
 	[Description("Changing one tool source file selects a subset that contains the fixture named after it, excludes the NoEnvironment tier and keeps the base exclusions; a page tool queues nothing on the process-designer lane.")]
 	public void Script_ShouldSelectSubset_WhenOnlyOneToolFileChanged() {
 		// Arrange
@@ -449,15 +496,16 @@ internal sealed class McpE2eSelectionCoverageTests {
 			because: "a subset keeps the lane's base filter, so a selected fixture's other tests stay on the existing lane");
 	}
 
-	[Test]
-	[Description("A change to the install-process-builder command runs the whole ProcessDesigner category, because no stand test names that command and the process-designer lane's Prepare step is the only place it meets a live stand.")]
-	public void Script_ShouldRunTheWholeProcessDesignerCategory_WhenTheInstallCommandChanged() {
+	[TestCase("clio/Command/InstallBundledPackageCommand.cs", "InstallBundledPackageCommand")]
+	[TestCase("clio/Common/ServerReadinessWaiter.cs", "ServerReadinessWaiter")]
+	[Description("A change to the install-process-builder command, or to a clio/Common service the install runs through, runs the whole ProcessDesigner category by rule 2b: no stand test names the install, the reference graph reaches those services only through other commands (the readiness wait through restart, on the existing lane), and the process-designer lane's Prepare step is the only place such a change meets the install. The synthetic tree proves the rule, not the real graph.")]
+	public void Script_ShouldRunTheWholeProcessDesignerCategory_WhenTheInstallCommandChanged(string path, string typeName) {
 		// Arrange
 		// The synthetic tree: rule 2b does not stop the classification, so the file goes on into the reference graph,
 		// and over the real product that graph is the most expensive thing this fixture can build.
 		using SyntheticRepository repo = SyntheticRepository.Create();
-		repo.WriteFile("clio/Command/InstallBundledPackageCommand.cs", "public sealed class InstallBundledPackageCommand { }");
-		string[] changed = ["clio/Command/InstallBundledPackageCommand.cs"];
+		repo.WriteFile(path, $"public sealed class {typeName} {{ }}");
+		string[] changed = [path];
 
 		// Act
 		JsonElement selection = RunSelection(changed, includeNoEnvironment: false, repo.Root);

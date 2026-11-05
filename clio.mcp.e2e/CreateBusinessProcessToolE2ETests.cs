@@ -1190,16 +1190,18 @@ public sealed class CreateBusinessProcessToolE2ETests {
 		// either direction, so Ignore it instead of reporting a red that means "environment too old".
 		//
 		// Matched on the package's OWN refusal text (ProcessElementFactory: "Element type '<type>' is not
-		// supported yet"), not on "the create failed somehow". A bare IsError gate swallows every other create
+		// supported yet"), not on "the create failed somehow". A bare exit-code gate swallows every other create
 		// failure too - a malformed descriptor, an auth failure, a genuine regression in this very block - and
 		// reports each of them as "environment too old", so the test could never go red for the thing it exists
-		// to catch.
+		// to catch. The signal is the envelope's exit code, as ShouldHaveBuilt reads it: IsError is the
+		// transport's flag, which a refused command never sets.
 		string payload = JsonSerializer.Serialize(callResult);
+		string createLog = LogText(callResult);
 		// The process-designer lane, which installs the bundled package itself, fails it instead
 		// (McpE2E:RequireProcessBuilder): there the package is the one this branch ships.
-		bool elementTypeRejected = callResult.IsError is true
-			&& payload.Contains("is not supported yet")
-			&& payload.Contains("changeAccessRights");
+		bool elementTypeRejected = McpCommandExecutionParser.Extract(callResult).ExitCode != 0
+			&& createLog.Contains("is not supported yet")
+			&& createLog.Contains("changeAccessRights");
 		if (elementTypeRejected) {
 			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
@@ -1209,12 +1211,10 @@ public sealed class CreateBusinessProcessToolE2ETests {
 				+ "unverified end to end.");
 		}
 
-		callResult.IsError.Should().NotBeTrue(
-			because: "once the element type is accepted, the build must succeed whether or not the deployed "
-				+ "package understands the BLOCK - a server that cannot deserialize it discards it and still "
-				+ "answers success, which is the whole reason the read-back guard exists");
-		payload.Should().Contain("created (UId:",
-			because: "only a genuinely successful build logs the created-schema line");
+		ShouldHaveBuilt(callResult,
+			"once the element type is accepted, the build must succeed whether or not the deployed package "
+			+ "understands the BLOCK - a server that cannot deserialize it discards it and still answers success, "
+			+ "which is the whole reason the read-back guard exists");
 
 		DescribeProcessResult graph = ParseDescribeGraph(await DescribeAsync(context, processName));
 		DescribedElement element = graph.Elements.Single(e => e.Name == "GrantRights1");

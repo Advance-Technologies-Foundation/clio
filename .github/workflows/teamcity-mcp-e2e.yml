@@ -151,8 +151,9 @@ jobs:
   # runs the whole suite on both lanes.
   # McpE2E.NoEnvironment tests are excluded here because build.yml runs them on hosted runners
   # (job "MCP e2e NoEnvironment"); set the repository variable MCP_E2E_KEEP_NOENVIRONMENT_ON_TEAMCITY
-  # to `true` to keep them on TeamCity as well. A manual run (workflow_dispatch) has no diff and
-  # keeps the TeamCity default: the full suite.
+  # to `true` to keep them on TeamCity as well. A manual run (workflow_dispatch) has no diff: the
+  # existing lane keeps the TeamCity default (the full suite) and the process-designer lane gets the
+  # manifest's base filter, so the category it runs is pinned by this repository on a manual run too.
   # Hosted runner on purpose: this job needs the full checkout and no corporate network.
   select:
     name: Select MCP e2e fixtures
@@ -171,6 +172,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          # A manual run reads the manifest, so it has to come from the branch TeamCity builds (inputs.branch),
+          # not from the branch the workflow file was taken from; a pull request keeps its merge ref.
+          ref: ${{ inputs.branch || github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Select fixtures for the changed files
@@ -183,28 +187,37 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:BASE_SHA)) {
-            Write-Host 'Manual run: no diff to classify, the TeamCity default filters (full suite, whole process-designer category) apply.'
+            # Manual run: no diff to classify. The existing lane keeps the TeamCity default filter (the full
+            # suite); the process-designer lane gets the manifest's base filter rather than the configuration's
+            # default, so what it runs is pinned by this repository here too (McpE2eSelectionCoverageTests).
+            $manifest = Get-Content -LiteralPath ./clio.mcp.e2e/TestSelection/mcp-e2e-selection.json -Raw | ConvertFrom-Json
+            $pdFilter = $manifest.processDesignerLane.baseFilter
+            if ($pdFilter -isnot [string] -or $pdFilter -notmatch '^[A-Za-z0-9_.~=!&|()]+$') {
+              throw "processDesignerLane.baseFilter in the manifest is not a dotnet test filter: '$pdFilter'"
+            }
+            Write-Host "Manual run: existing lane -> TeamCity default (full suite); process-designer lane -> $pdFilter"
             "mode=full" >> $env:GITHUB_OUTPUT
             "filter=" >> $env:GITHUB_OUTPUT
             "pd_mode=full" >> $env:GITHUB_OUTPUT
-            "pd_filter=" >> $env:GITHUB_OUTPUT
-            exit 0
+            "pd_filter=$pdFilter" >> $env:GITHUB_OUTPUT
           }
-          $arguments = @{ BaseRef = $env:BASE_SHA; HeadRef = $env:HEAD_SHA }
-          if ($env:KEEP_NOENVIRONMENT -eq 'true') { $arguments.IncludeNoEnvironment = $true }
-          $json = & ./.github/scripts/Select-McpE2eTestFilter.ps1 @arguments
-          $selection = $json | ConvertFrom-Json
-          Write-Host "Selection mode: $($selection.mode)"
-          foreach ($line in $selection.decisions) { Write-Host "  $line" }
-          if ($selection.mode -eq 'subset') { Write-Host "Fixtures: $($selection.fixtures -join ', ')" }
-          Write-Host "Filter: $($selection.filter)"
-          Write-Host "Process-designer lane: $($selection.pdMode)"
-          if ($selection.pdMode -eq 'subset') { Write-Host "Process-designer fixtures: $($selection.pdFixtures -join ', ')" }
-          Write-Host "Process-designer filter: $($selection.pdFilter)"
-          "mode=$($selection.mode)" >> $env:GITHUB_OUTPUT
-          "filter=$($selection.filter)" >> $env:GITHUB_OUTPUT
-          "pd_mode=$($selection.pdMode)" >> $env:GITHUB_OUTPUT
-          "pd_filter=$($selection.pdFilter)" >> $env:GITHUB_OUTPUT
+          else {
+            $arguments = @{ BaseRef = $env:BASE_SHA; HeadRef = $env:HEAD_SHA }
+            if ($env:KEEP_NOENVIRONMENT -eq 'true') { $arguments.IncludeNoEnvironment = $true }
+            $json = & ./.github/scripts/Select-McpE2eTestFilter.ps1 @arguments
+            $selection = $json | ConvertFrom-Json
+            Write-Host "Selection mode: $($selection.mode)"
+            foreach ($line in $selection.decisions) { Write-Host "  $line" }
+            if ($selection.mode -eq 'subset') { Write-Host "Fixtures: $($selection.fixtures -join ', ')" }
+            Write-Host "Filter: $($selection.filter)"
+            Write-Host "Process-designer lane: $($selection.pdMode)"
+            if ($selection.pdMode -eq 'subset') { Write-Host "Process-designer fixtures: $($selection.pdFixtures -join ', ')" }
+            Write-Host "Process-designer filter: $($selection.pdFilter)"
+            "mode=$($selection.mode)" >> $env:GITHUB_OUTPUT
+            "filter=$($selection.filter)" >> $env:GITHUB_OUTPUT
+            "pd_mode=$($selection.pdMode)" >> $env:GITHUB_OUTPUT
+            "pd_filter=$($selection.pdFilter)" >> $env:GITHUB_OUTPUT
+          }
 
   attempt-1:
     name: Queue TeamCity MCP e2e (attempt 1)

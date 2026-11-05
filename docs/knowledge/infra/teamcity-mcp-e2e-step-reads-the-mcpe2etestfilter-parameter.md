@@ -7,7 +7,7 @@ applies-to:
   - clio.mcp.e2e/TestSelection/mcp-e2e-selection.json
   - clio.tests/McpE2eSelectionCoverageTests.cs
 ticket: GH-1570
-date: 2026-11-04
+date: 2026-11-05
 ---
 
 **What is true** — since 2026-09-16 the `dotnet test` step of `Team_Atf_ClioMcpE2eTests` no longer
@@ -28,7 +28,9 @@ Pull-request builds queued by `.github/workflows/teamcity-mcp-e2e.yml` send the 
 gets a list of `FullyQualifiedName~Clio.Mcp.E2E.<Fixture>` terms plus `TestCategory!=McpE2E.NoEnvironment`
 plus the base filter (`filter`). The process-designer lane gets the selected fixtures that carry a
 ProcessDesigner test plus its own base filter, or that base filter alone on a full run (`pdFilter`).
-VCS-triggered master builds and `workflow_dispatch` runs send nothing and get the defaults. The build
+VCS-triggered master builds send nothing and get the defaults; a `workflow_dispatch` run sends nothing for
+the existing lane and the manifest's `processDesignerLane.baseFilter` for the process-designer lane, read by
+the select step itself, so the category that lane runs is pinned here on a manual run too. The build
 comment says `selection: full` or `selection: subset`; the commit statuses `CLIO MCP e2e tests (ATF)`
 and `CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)` do not.
 

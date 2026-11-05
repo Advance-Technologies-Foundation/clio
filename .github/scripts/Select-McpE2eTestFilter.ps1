@@ -1493,7 +1493,9 @@ else {
 
 # A full run sends the lane's base filter, as the existing lane does unless -IncludeNoEnvironment is set. That
 # switch has no counterpart here, so pdFilter is empty only when pdMode is "none", and what a pull request runs
-# on this lane is decided by this repository and not by whatever the TeamCity default says at the time.
+# on this lane is decided by this repository and not by whatever the TeamCity default says at the time. A manual
+# run (workflow_dispatch) never reaches this script; the workflow's select step sends the same base filter for
+# this lane itself, read from the manifest, so a manual run is pinned the same way.
 if ($pdMode -eq 'none') {
     $pdFilter = ''
 }

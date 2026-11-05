@@ -59,8 +59,12 @@
     "exclusions of baseFilter below. Two lists of its own run the whole category here. exclusivePaths is what only",
     "this lane can observe - the bundled archive - so the existing lane, which never installs the package, does",
     "not classify those files. installCommandPaths is the code of the install this lane performs in its Prepare",
-    "step (install-process-builder), which no fixture names, so without the list a change to it would run nowhere;",
-    "the existing lane still classifies those files. Neither list is a fullRunPaths of this lane: the top-level",
+    "step (install-process-builder) and the clio/Common services that install runs through: the bundled-archive",
+    "catalog, the required-package checker and the readiness wait. No fixture exercises the install itself: the",
+    "reference graph reaches those services only through other commands (the readiness wait through restart, on",
+    "the existing lane), so on this lane it selects for them a subset that shares a type with them or, for the",
+    "readiness wait, no fixture of the category at all. The list runs the whole category here, and the existing",
+    "lane still classifies those files. Neither list is a fullRunPaths of this lane: the top-level",
     "fullRunPaths means the whole suite on the existing lane and the whole category here. baseFilter below is the",
     "default of the lane's McpE2eTestFilter parameter in TeamCity, and a full pull-request run sends it as is."
   ],
@@ -73,7 +77,10 @@
     "installCommandPaths": [
       "clio/Command/InstallProcessBuilderCommand.cs",
       "clio/Command/InstallBundledPackageCommand.cs",
-      "clio/Command/InstallBundledPackageOptions.cs"
+      "clio/Command/InstallBundledPackageOptions.cs",
+      "clio/Common/BundledPackageCatalog.cs",
+      "clio/Common/RequiredPackageChecker.cs",
+      "clio/Common/ServerReadinessWaiter.cs"
     ]
   },
   "noEnvironmentCategory": "McpE2E.NoEnvironment",
