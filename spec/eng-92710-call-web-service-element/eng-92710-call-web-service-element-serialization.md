@@ -519,7 +519,7 @@ element name, against the same service. Each step says what may differ; anything
 | AD7 | Success `L8` `{}` instead of `{"GS2":"false","GS5":<process>}` on a capture side | 5 ProcessTests elements store it (61/66 carry the Boolean default, 2.4) | none: corpus sweep only, in no committed pair |
 | AD8 | a stale CompositeObjectList without `L18` on a capture side | `UsrUpdateLabelsCopy_In` (55/56 carry `L18`, 2.5) | none: corpus sweep only |
 | AD9 | a parameter type drifted from its service on a capture side | `UpdateBsfNotification` `Chatid`: Text in the service, Integer in the process (484/486 type pairs match, verdict r6-C3) | none: corpus sweep only |
-| AD10 | element `BL11:false` on a capture side | the designer marks an element invalid while a required input is unbound: the EM4 S2 element after the method change (`UsrWscId_In` unbound, M-26); the package never writes `IsValid` | none: TC-P-12 (EM4 S2) |
+| AD10 | element `BL11:false` on a capture side | the designer marks an element invalid while a required input is unbound: the EM4 S2 element after the method change (`UsrWscId_In` unbound, M-26), the EM2 S2 and S4 elements (a required input unbound, M-33, M-35); the package never writes `IsValid` | none: TC-P-12 (EM4 S2), TC-P-15 (EM2 S2), TC-P-16 (EM2 S4) |
 
 AD1-AD5 and AD10 may apply to a committed test; AD7-AD9 apply only to the corpus sweep (test plan 3.1), whose
 committed pairs need W10, AD2 and AD5 only.

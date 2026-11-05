@@ -57,7 +57,7 @@ measurements in [measurements](eng-92710-call-web-service-element-measurements.m
 | Q17 | Stand captures and runs | lead in Claude in Chrome on stand `Creatio`; test services `UsrWsc*` with the stand root as base URI (EP option E4, no echo); cleanup list | EM0, EM1 |
 | Q18 | Jira description corrections | Task 22, Task 37 / ENG-92730, element identity, estimate unit; owner approves the text first | - |
 | Q19 | PR split and order | BMAD docs PR, package, clio-knowledge, clio; cuts in a claim comment; merge package -> KB -> clio, human merges | - |
-| Q20 | Legacy / edge | refuse multi-instance; SOAP built only if shown identical, else refused with a notice | EM2 |
+| Q20 | Legacy / edge | refuse multi-instance; SOAP built exactly like REST, with notice N10 (D, 2026-11-05: the SOAP capture showed the same shape) | EM2 S2-S4 |
 
 ---
 
@@ -1055,6 +1055,20 @@ added with the owner's word, the default outcome of A is the refusal.
 **Agreed by the owner on 2026-11-03: A** (multi-instance refused; SOAP refused with a notice unless an owner-requested
 SOAP capture shows the same parameter shape). Stand `Creatio` has 3 service schemas, all REST (measured 2026-11-03).
 
+**Measured 2026-11-05 (EM2 S2-S4, M-32..M-35, `CAP/em2-soap/`).** The owner asked for the SOAP capture, A's condition.
+On a SOAP 1.1 service entered by hand on stand `Creatio`, the designer builds the element exactly as for REST (OF-16):
+the same element keys, the same tree (names, tags, nesting, types, `L6` from `IU7`, directions), the same result
+parameters and the same 4 BK15 rows. No SOAP-only service field (`IQ7`, `IR5`, `IT1`, `IU1`, `IU8`) reaches the
+element; only the service `IX1` points at tells the protocol. A timeout-only save changes `IX3` alone. A switch to a
+REST service is a full rebuild with no SOAP leftover. Caveat: the WSDL wizard did not load, so the service was entered
+in the SOAP card, which forces every Object parameter to an array; a non-array complex type is unmeasured, and the
+shaper's existing non-array-object refusal covers it for SOAP as for REST.
+
+**Agreed by the owner on 2026-11-05: D** (the condition of A is met). SOAP services are built exactly like REST on
+every path: create, a retarget onto a SOAP service, and `setElement` of a stored SOAP element (settings or retarget).
+Create and retarget onto SOAP raise notice N10, which names the element; a settings-only change does not.
+Multi-instance stays refused. Describe reports a SOAP element as an ordinary element.
+
 ---
 
 ## Decisions table
@@ -1080,4 +1094,4 @@ SOAP capture shows the same parameter shape). Stand `Creatio` has 3 service sche
 | Q17 | lead in Chrome, same-stand test services, EP option E4 (stand root, no echo) | day 0: plan 0.5, 0.7, 0.8 (EM0-EM4); 0.9 session 2, optional | in base, estimate §2.5: 3.25 / 4.5 / 7 agent h for EM1-EM4 (before batching); owner Chrome sessions and stand-write approvals, estimate §3; no on-stand endpoint +1.5-3 h (estimate §6.1 row 7) |
 | Q18 | lead edits description after approval | Jira, after answers | in base: draft in day 0 (estimate §2.5), owner 0.2 / 0.3 / 0.4 h (estimate §3) |
 | Q19 | 4 PRs, claim comment, package -> KB -> clio | every cut and merge | in base (estimate §4; cut cycles in §2.5) |
-| Q20 | refuse multi-instance; SOAP refused unless shown identical | package: handler | in base, WP C (P-C2) |
+| Q20 | refuse multi-instance; SOAP built like REST with N10 (D) | package: handler, notices | in base, WP C (P-C2) |

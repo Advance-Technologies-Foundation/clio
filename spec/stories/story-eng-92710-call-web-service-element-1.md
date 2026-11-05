@@ -146,17 +146,17 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
   TC-U-68 for the bindings) sends the described block back unchanged, read-back-only keys (`serviceUId`,
   `serviceResolved`, `methodResolved`, `issues`, `parameters`) included; it goes through the same-pair no-op of story 2's P-D1, so it turns green
   only once P-D1 lands.
-- [ ] **P-C2** C11 guards: `userTask` = `WebServiceUserTask` refused with a pointer to the block (Q1); SOAP refused;
+- [ ] **P-C2** C11 guards: `userTask` = `WebServiceUserTask` refused with a pointer to the block (Q1); a SOAP service built like REST with notice N10 (Q20 D; TC-U-24, 110, 111);
   `setElement` with a `webService` block on a designer-built element that carries `BP6` refused (Q20; a
   `webService.multiInstanceOptions` key on create is clio's key-check refusal, TC-C-02); nothing written after a
-  refusal (TC-U-24, 47, 48).
+  refusal (TC-U-24, 47, 48, 110, 111).
 - [ ] **P-C3** C12 notices: N1 generated names, N2 canonicalised method name, N3 feature gate (one single-purpose
   reader of `DisableIgnoreErrorsInWebServiceUserTask` with a test fake, as `FileProcessingFeatureReader`), N5 nested
   array-in-array on every target (Q13), N6 cross-package service (Q9), N8 required input without a source, N9
   duplicate nested name; when each fires and when it does not (TC-U-19 notice half, 23, 52, 55, 95..98).
 - [ ] **P-C4** parity suite: pattern A (corpus pairs under `Fixtures/WebService/`, `PROVENANCE.md` SHA pins, a
-  `.gitattributes` `-text` line), pattern B (EM2 and EM3 captures, committed redacted), pattern C (writer JSON);
-  every exclusion named in WSCR (TC-P-01..11, 13, 14). The pattern-A corpus pairs are copied verbatim from the shipped
+  `.gitattributes` `-text` line), pattern B (EM2 S1, EM2 S2 (SOAP) and EM3 captures, committed redacted), pattern C (writer JSON);
+  every exclusion named in WSCR (TC-P-01..11, 13, 14, 15). The pattern-A corpus pairs are copied verbatim from the shipped
   corpus and not redacted (SHA pins); they may carry the shipped services' non-credential defaults, and TC-P-08
   asserts no credential (no `IQ5` value with `IV2` 1, no constant `Authorization` default).
 - [ ] **P-C5** C14 docs: `docs/web-service-element-capture.md` with the EM results; the handler list in

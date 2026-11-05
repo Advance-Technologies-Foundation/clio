@@ -1,6 +1,10 @@
 # ENG-92710 Call web service element: implementation plan
 
-Written 2026-11-02, updated 2026-11-03. Phase 1 only: research,
+Written 2026-11-02, updated 2026-11-03 and 2026-11-05. Status 2026-11-05: package slices A-D are implemented as local
+commits on the package branch (P-D4 in progress; nothing pushed); the stories stay in-progress. Decisions changed on
+2026-11-05 by the owner: Q20 is D (SOAP built like REST, notice N10, after the SOAP capture EM2 S2-S4), N7 covers
+every unresolved web service element, configured in the request or not, and a Boolean constant is checked on a stand
+on the final cut (plan section 6). The text below was written in Phase 1: research,
 design and plan. No product code has been written; this folder was pushed to the clio branch
 `feature/ENG-92710-call-web-service-element-plan` on 2026-11-03 and goes into the repository with the BMAD docs PR. **All twenty decisions
 were agreed by the owner on 2026-11-03**, one at a time; each Q in the decisions file ends with its "Agreed" line, which
@@ -62,7 +66,7 @@ and the local compile-floor run (EM9) of 2026-11-03. Research notes (local, not 
 - **New:** a service/method resolver (case-insensitive, canonical spelling written, refusals listing codes and
   captions, never a default value: secrets), the parameter shaper, the `webService` block and handler with a direct
   `IX4` write, the first package-authored BK15 rows, describe read-back, refusals (legacy user task, multi-instance,
-  SOAP, an unknown service, an environment with no registered service), notices, modify replace semantics, the KB
+  an unknown service, an environment with no registered service), SOAP services built like REST, notices, modify replace semantics, the KB
   article `process-web-service` and the clio surface.
 - **The Task-5 boundary:** request bodies live on the element's own parameters and need no new process-parameter
   type; a composite response is read into a declared Collection (<= 2 levels). The `typeFromElement` mirror of a WS
@@ -85,14 +89,15 @@ one GET method and a header default, the Q16 part); EM4 partial (a service chang
 Q14 read of today's describe. Later the same day: EM0, EM1 (three services), EM2, EM3 route (b), EM4's method and
 service change and EM7's designer half (measurements M-22 to M-28; decisions Q4, Q6, Q7, Q8, Q11); then EM8's
 service-save and designer halves (M-29 to M-31: a designer save of an element whose method is gone deletes all its
-params and BK15 rows, decisions Q12). Measured facts: M-01 to M-31. Still to do: EM5, EM6 (reduced by E4), the
+params and BK15 rows, decisions Q12). EM2 S2-S4 (SOAP) on 2026-11-05 (M-32 to M-35, decisions Q20). Measured facts: M-01 to M-35. Still to do: EM5, EM6 (reduced by E4), the
 builder halves of EM7, EM10, EM11 and EM12 (the N5 notice), EM8's claimed-cut half (the N7 notice) and EM2's
 read-back on the final cut; EM12's run half is not measurable on the stand (Q17). Q11 settled as A3 after EM4: the
 `Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated), and the guard refuses while anything reads a parameter of the element other than
 `Success` / `Response` / `StatusCode`. Stand objects created: processes
 `UsrWscBk15Probe`, `UsrWscEm3Probe`, `UsrProcess_3389428`, `UsrWscEm2CaptureA`, `UsrWscEm3CaptureB`,
 `UsrWscEm4MethodChange`, `UsrWscEm7Ignore`, `UsrWscEm7Strict`, `UsrWscEm8Drift2`, `UsrWscEm8Drift3`; package `UsrWscEm10Proc`; services `UsrWscEchoService`,
-`UsrWscDriftService`, `UsrWscDeadService` (measurements section 7). Details: decisions Q4, Q6, Q7, Q9, Q11, Q12, Q14, Q16 and
+`UsrWscDriftService`, `UsrWscDeadService`; on 2026-11-05 the SOAP service `UsrWscSoapService` and process
+`UsrWscEm2SoapS2` (measurements section 7). Details: decisions Q4, Q6, Q7, Q9, Q11, Q12, Q14, Q16 and
 [measurements](eng-92710-call-web-service-element-measurements.md).
 
 ## 2. Files
@@ -180,8 +185,8 @@ The decisions file holds options, evidence, the stand measurements and cost per 
   the description only.
 - **Q19** BMAD docs PR first; package, clio-knowledge, clio PRs; cut numbers in a claim comment on ENG-92710; merge
   package -> KB (published) -> clio; merges are human.
-- **Q20** Refuse multi-instance on `webService`; SOAP refused with a notice unless an owner-requested SOAP capture
-  shows the same shape (stand `Creatio` has no SOAP service).
+- **Q20** Refuse multi-instance on `webService`; SOAP built exactly like REST, with notice N10 (D, 2026-11-05: the
+  SOAP capture EM2 S2-S4 showed the designer's REST shape, M-33..M-35).
 
 ## 5. Estimate (headline)
 

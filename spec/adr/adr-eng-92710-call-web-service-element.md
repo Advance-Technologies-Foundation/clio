@@ -14,7 +14,7 @@ Q9, Q12, Q13, Q14, Q16 and Q20.
 question below with its sources, the [design file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-design.md)
 holds the package components C1-C14 and the clio changes K1-K11, the
 [measurements file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-measurements.md) owns
-EM0-EM12 and the measured facts M-01..M-31 and C-01..C-09.
+EM0-EM12 and the measured facts M-01..M-35 and C-01..C-09.
 
 `CLIO/` = the clio repository root. Sources outside the public repositories (the
 CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are
@@ -296,8 +296,8 @@ nested input of the same caption).
   load and fails the run), M-17 (EM10: the designer adds the dependency; the builder half is traced, measured on the
   claimed cut).
 - **Q12 - drift and latent loss: notice, no refusal.** Describe reports `serviceResolved`, `methodResolved` and nested
-  drift as issues; at the end of every modify, each web-service element not configured in the request whose service
-  or method does not resolve gets notice N7 saying the platform load prunes its parameters. A refusal with a confirm
+  drift as issues; at the end of every modify, each web-service element whose service or method does not resolve,
+  configured in the request or not (owner, 2026-11-05), gets notice N7 saying the platform load prunes its parameters. A refusal with a confirm
   flag (Q12 B) is a follow-up. Evidence: M-18 (EM8 current-builder half: the loss is real and silent); M-29, M-30
   (EM8 service-save and designer halves: a service save writes nothing and evicts no cached process; a designer save
   of the process deletes every parameter of the unresolved element, result params included, and its BK15 rows, and
@@ -325,8 +325,10 @@ nested input of the same caption).
   and may carry the shipped services' non-credential `IU5` defaults; they are not redacted (their SHA pins), and
   TC-P-08 asserts that they carry no credential (no `IQ5` value with `IV2` 1, no constant `Authorization` default).
   Evidence: M-19 (the designer element carries no service default; the default lives only in the service schema).
-- **Q20 - multi-instance and SOAP refused.** 0 multi-instance and 0 SOAP calls in the corpus (C-09), none on the stand
-  (M-03); SOAP would be built only if an owner-requested SOAP capture shows the same parameter shape. The package
+- **Q20 - multi-instance refused; SOAP built like REST (D, 2026-11-05).** 0 multi-instance and 0 SOAP calls in the
+  corpus (C-09). The owner-requested SOAP capture (EM2 S2-S4) showed the designer builds a SOAP element with the REST
+  shape and no SOAP-only field, so SOAP services take every path as REST does, with notice N10 naming the element
+  (evidence: M-33..M-35; a non-array complex type is unmeasured and the shaper refuses it anyway). The package
   refuses `setElement` with a `webService` block on a designer-built element that carries `BP6` and describes such
   an element with an issue; a `webService.multiInstanceOptions` key on create never reaches the server, because
   clio's key check refuses it.

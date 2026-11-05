@@ -2,7 +2,7 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-31. Every other expected result is a hypothesis until its EM runs.
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-35 (M-32 to M-35: EM2 S2-S4, 2026-11-05). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -58,6 +58,8 @@ compared under; "the oracle rule" below means WSCR) ·
 - **EM8's service-save and designer halves: done 2026-11-03 (session 2; M-29, M-30, M-31).** The designer's prune of an
   element whose method is gone is harsher than the builder's (M-18): it also deletes the result params and the BK15
   rows (decisions Q12). Only EM8's claimed-cut half (the N7 notice) stays open.
+- **EM2 S2-S4 (SOAP): done 2026-11-05 (M-32..M-35).** Run on the owner's request: the designer builds a SOAP element
+  with the REST shape, so decisions Q20 is D (SOAP built like REST, notice N10).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -176,6 +178,10 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-28 | EM7 designer half: a 404 completes the element with Success false, StatusCode 404 and the process continues, whether IX4 is true or false; a refused connection with IX4 true completes with Success false, StatusCode 0 and the process continues; with IX4 false it fails the element and the process (status Error, `System.Net.WebException` in `SysProcessLog.ErrorDescription`); under E4 an unauthenticated call to an unknown stand-root route answers 302 -> login page (200), a static path (`/UsrWscNoSuchRoute.js`) answers 404 | measured 2026-11-03 | EM7 block; `CAP/em7/` |
 | M-29 | EM8: a service save that removes a method (its code renamed `UsrWscDrift` -> `UsrWscDriftGone`) writes nothing to the processes that call it (stored bytes identical) and does not evict a process already in the cache: describe of `UsrWscEm8Drift2`, described once before the save, still returns both elements' tagged params after it (twice); a process first loaded after the save (`UsrWscEm8Drift3`, `UsrWscEm4MethodChange`) describes with only Success / Response / StatusCode, no issue and no flag | measured 2026-11-03 | EM8 block; `CAP/em8/` |
 | M-30 | EM8: the designer shows an element whose method is gone with an empty method field, no parameters and no timeout field; its save warns "Required fields ... are not filled in" for both elements (not for the Formula task), then "Schema has errors: The "FormulaTask1" element has an invalid value for the parameter "Body"" and stores: EVERY parameter of both elements deleted (the tagged ones AND Success / Response / StatusCode / RequestBody), all 8 BK15 rows deleted, both elements `BL11:false`, `IX1` / `IX2` unchanged (`UsrWscDrift`), the Formula token dangling with no flag; the caption resources of the deleted params are gone too | measured 2026-11-03 | EM8 block; `CAP/em8/` |
+| M-32 | EM2 step 0 (SOAP): no `Feature` row has the code `DontUseSoap` or any code containing `Soap`, so the flag is off; Studio's "New web service" menu offers "SOAP service"; nothing changed | measured 2026-11-05 | EM2 S2-S4 block; `CAP/em2-soap/` |
+| M-33 | EM2 S2 (OF-16): on `UsrWscSoapService` (SOAP 1.1, entered by hand: the WSDL wizard did not load, and the SOAP card forces every Object parameter to an array), the designer element on `UsrWscSoapEcho` has the same element keys as S1, the same tree (names, `L17` tags incl. `<code>ItemValue`, `L18` nesting, `L1` types, `L6` from `IU7`, `L12`), the same result params and 4 BK15 rows, caption "WSC SOAP service 1"; no `IQ7`, `IR5`, `IT1`, `IU1` or `IU8` value reaches the element. `BL11:false` comes from an unbound required input (AD10). A Boolean constant "True" is stored as Script `L8 {GS1: 3, GS2: "[#BooleanValue.True#]"}` with DisplayValue `[#Boolean value.True#]`; S1 never captured a Boolean constant (its `{GS2: "false"}` is the unbound default) | measured 2026-11-05 | EM2 S2-S4 block; `CAP/em2-soap/` |
+| M-34 | EM2 S3: a timeout-only designer save of the SOAP element changes only `IX3` (7000 -> 9000); every parameter, UId, value, BK15 row and resource byte-identical. Outside the element, the schema's `BK34` went `en-US` -> `null` on this first re-save | measured 2026-11-05 | EM2 S2-S4 block |
+| M-35 | EM2 S4: switching the SOAP element to `UsrWscEchoService.UsrWscEcho` ("Are you sure you want to change element schema? All parameters will be lost.") removes all 14 parameters (result params included) and creates the 32 of the REST tree with new UIds, re-creates the 4 BK15 rows with the same `GT5`, drops `IX3`, keeps `IX4` and the element UId and name, renames the caption to "WSC echo service 1"; no SOAP leftover (no SOAP service UId, key, parameter or resource); the new tree equals S1 apart from UIds | measured 2026-11-05 | EM2 S2-S4 block |
 | M-31 | Describe on 1.6.6.131 returns a bound input (`UsrWscA_In` with its value / token, `sourceElement`, `tag`), not only outputs; an unbound RequestBody is not returned (a bound RequestBody is returned: `IsSetInThisSchema`, seen on the Gemini element by a raw describe, facts §6); an element with no parameters left returns none and no issue | measured 2026-11-03 | EM8 block (corrects M-21's "no input" for bound inputs) |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
@@ -303,7 +309,7 @@ CU-5 (removing an E2 echo endpoint) is dropped with E2 (Q17, 2026-11-03); the id
 | EM0 | **done 2026-11-03** (M-22) | every EM; plan 0.5 | feature states the captures and runs stand on; versions recorded with every capture; whether the IX4 checkbox is visible (Q7) | r9 §4, §6; g2 (b); g5 open 1 |
 | EM9 | **done 2026-11-03** (local) | nothing now: P-B3 writes IX4 directly | Q7 / Q13: the package floor is already about 8.3.2, so a direct `IsIgnoreErrors` reference adds none (M-14) | g2 design consequence 1 |
 | EM1 | **done 2026-11-03** (M-19, M-23) | EM2-EM8, EM12's builder half | the service the captures use; what Studio stores for each shape (IU1-IU7) | r9 §6; r3 open 1 |
-| EM2 | **S1 done 2026-11-03** (M-24); read-back re-run on the final cut | slice A shaper (P-A2), slice B (P-B3, P-B4); parity pattern B; AC5 | Q3 byte shape; Q4 BK15 rows on this service (shape measured on another, M-13); Q8 (IX3 = s x 1000, confirmation only); IX4 storage; caption suffix; constant/formula/item-level mapping bytes | r3 open 1; g1 port checklist; verdict r7-A3 |
+| EM2 | **S1 done 2026-11-03** (M-24); **S2-S4 (SOAP) done 2026-11-05** (M-32..M-35); read-back re-run on the final cut | slice A shaper (P-A2), slice B (P-B3, P-B4); parity pattern B; AC5 | Q3 byte shape; Q4 BK15 rows on this service (shape measured on another, M-13); Q8 (IX3 = s x 1000, confirmation only); IX4 storage; caption suffix; constant/formula/item-level mapping bytes | r3 open 1; g1 port checklist; verdict r7-A3 |
 | EM3 | route (a) **done 2026-11-03** (M-15); route (b) **done 2026-11-03** (M-25) | describe of response mappings; parity pattern B | Q6 scope (settled by route (a)); a hand-made Collection's item mappings, route (b) on `UsrWscDriftService.UsrWscOrders2` | r9 §6; r2 §7; g3 §1, §4 |
 | EM4 | **done 2026-11-03** (M-20, M-26, M-27) | slice D replace semantics (P-D1) | Q11: what a method change clears and keeps; what a service change does to bindings, dependents and `IX3` | r2 §6 |
 | EM5 | STOP gate after slice B (experimental cut); re-run on the final cut | slice C start; AC5 "survives a designer re-save" | Q3 (platform sync a no-op), Q4 (rows not duplicated or rewritten), Success L8 kept; r3 open 4 (suffix overwritten by a server load?) | g1 (c) "verify once on a stand"; g4 Q3, M3 |
@@ -495,12 +501,12 @@ the manual Jira cases no longer need them (plan CL-9 is Ignored when they are ab
 | Settles | Q3 (the shape the package-owned generator must produce, nested items always emitted), Q4 (the BK15 rows on this service; the row shape is measured, M-13), Q8 (`IX3` = seconds x 1000: already settled by source, verdict r7-A3; recorded as confirmation), IX4 storage, the " - Input"/" - Output" suffix, the default element caption; AC5 pattern B |
 | Gate | day 0, before slice A's shaper (P-A2); the read-back (step 9) re-runs on the final cut |
 | Preconditions | EM0 (client `ProcessParameterCollections` on, so the designer's nested rows are an oracle; IX4 checkbox visible), EM1 |
-| Writes | 1 designer save (S1); optional S2 (SOAP, only on the owner's request) |
+| Writes | 1 designer save (S1); S2-S4 (SOAP, the owner's request of 2026-11-05): one SOAP service, one process, three saves |
 | Owner | logs in; approves the save |
 
 **Measured 2026-11-03, S1 (M-24; `CAP/em2/`).** Process `UsrWscEm2CaptureA` (`0ca3d151-afdb-482c-ab97-3e479eedc21e`),
 element `WebService1` (`08ce0f5e-91e9-4e84-8444-3f4eb60679c2`); all parameter UIds in `CAP/em2/UsrWscEm2CaptureA-uids.md`.
-Saved once, as the steps say (S2, SOAP, not done). Every row of the table below matched; the open rows settle so:
+Saved once, as the steps say (S2-S4, SOAP, ran 2026-11-05, see below). Every row of the table below matched; the open rows settle so:
 - Element keys `BL1 BL3 BL7 BL8 BN2 BO2 BO3 IL2 IX1 IX2 IX3 IX4 BP2`, `IX3` 7000, `IX4` true, no `BP6`; the method
   was not auto-selected (three methods); the timeout field shows "Default (5 sec)" (the method's `IR3`) until set.
 - `UsrWscFlag_In` (unbound Boolean In) is `L8 {"GS2":"false","GS5":<P>}`: SQ5 settled as inferred.
@@ -532,9 +538,9 @@ Nothing in "If not" applies; the serialization file's oracle rule needs the Text
 5. Open the element card again (rule 6), close it, save (S1).
 6. RB-1 and RB-2; save to `CAP/em2/UsrWscEm2CaptureA-metadata.json` and `-resources.json`, redacted.
 7. Record the element's UId, every parameter UId, and the process UId once.
-8. Optional S2, only if the owner wants SOAP in v1 (Q20): a SOAP service from a hand-written WSDL file (Studio
+8. S2-S4 (SOAP, Q20; run on the owner's request of 2026-11-05, results below): a SOAP service from a hand-written WSDL file (Studio
    accepts a WSDL file, r7 §3), one method, one element in a second process; compare the parameter shape with S1.
-   Without it, Q20's default holds (refuse SOAP with a notice; 0 SOAP calls in the corpus, C-09).
+   S3: change only the timeout and save; S4: switch the element to `UsrWscEchoService.UsrWscEcho` and save.
 9. Final cut only, read-only: RB-9 on `UsrWscEm2CaptureA`: the `webService` member and the stored parameter tree
    come back as Q14 says; the header default `wsc-probe` appears nowhere in the reply (Q14, Q16).
 
@@ -572,6 +578,24 @@ Nothing in "If not" applies; the serialization file's oracle rule needs the Text
 rule. **Artifacts:** `CAP/em2/` (metadata, resources, UIds, `PROVENANCE.md` with date, versions, saving login,
 culture, redacted keys). **Cleanup:** kept (rule 10) until the clio e2e evidence run (TC-I-07) and manual TC-11 no
 longer need it; then CU-1.
+
+**Measured 2026-11-05, S2-S4 (SOAP; M-32..M-35; `CAP/em2-soap/`).** Run on the owner's request (Q20).
+- Step 0, read only: `DontUseSoap` has no `Feature` row, so it is off; Studio offers "SOAP service" (M-32).
+- The service `UsrWscSoapService` (`197ff0c0-f168-4bbf-9db9-81f86102e40f`, SOAP 1.1, `Custom`, endpoint
+  `http://localhost/UsrWscSoap`, never called) was entered by hand in the SOAP card: the WSDL wizard did not load. The
+  card forces every Object parameter to an array, so a non-array complex type is unmeasured. Method `UsrWscSoapEcho`:
+  in a Text, a required Integer, a required Boolean, a Text array and an Object array with a nested Text; out a Text
+  and an Object array with a nested Text.
+- S2 (OF-16), process `UsrWscEm2SoapS2` (`dbc77d7c-8f37-446b-8a07-d77c767804e4`): the element equals S1 under WSCR on
+  every point of the S1 table (keys, `IX1`-`IX4`, names, tags, nesting, types, `L6`, `L12`, result params, BK15 rows,
+  default caption, parameter captions, "Item value"); `BL11:false` is AD10 (the required Integer left unbound). Side
+  findings: a Boolean constant "True" is Script `{GS1: 3, GS2: "[#BooleanValue.True#]"}`, and a formula on a Text
+  item needs `.ToString()` (M-33).
+- S3: timeout 7 -> 9 changes `IX3` alone; the schema's `BK34` went `en-US` -> `null` on this first re-save (M-34).
+- S4: the switch to `UsrWscEchoService.UsrWscEcho` is a full rebuild: every parameter and row replaced, `IX3`
+  dropped, `IX4` and `GT5` kept, caption renamed, no SOAP leftover; the new tree equals S1 apart from UIds (M-35).
+- Consequence: decisions Q20 D (SOAP built like REST, N10). The package's create (S2) and switch (S4) are compared with
+  these captures in its parity suite (test plan TC-P-15, TC-P-16).
 
 ### EM3 Designer capture B: the response read into a process Collection
 
@@ -1211,6 +1235,8 @@ Created so far (2026-11-03):
 | EM8 | web service change | `UsrWscDriftService`: method code `UsrWscDrift` -> `UsrWscDriftGone` | 2026-11-03, lead | with the service (CU-2) | | drifts `UsrWscEm8Drift2`, `UsrWscEm8Drift3` and `UsrWscEm4MethodChange` on purpose; manual TC-12 uses `UsrWscTc12` |
 | EM5 | process | `UsrWscEm5Twin` (`060da1eb-5f49-4034-ae4d-1f21ce493637`, `Custom`) | 2026-11-04, package session | CU-1 after the final-cut re-run | | builder-made; designer re-saved once; process parameter `UsrWscEm5Marker` added by step 6; never run |
 | EM5 | install | CrtProcessBuilder 1.6.6.137 (experimental, stand-only) | 2026-11-04, package session | not removed | | replaced the stand's 1.6.6.131; superseded by the claimed cut |
+| EM2 S2 | web service | `UsrWscSoapService` ("WSC SOAP service", `197ff0c0-f168-4bbf-9db9-81f86102e40f`, `Custom`; method `UsrWscSoapEcho` `d9def665-c857-4101-ae5e-97c7f681c570`) | 2026-11-05, lead | CU-2 after `UsrWscEm2SoapS2` | | SOAP 1.1, entered by hand; endpoint `http://localhost/UsrWscSoap`; never called |
+| EM2 S2-S4 | process | `UsrWscEm2SoapS2` ("WSC EM2 SOAP S2", `dbc77d7c-8f37-446b-8a07-d77c767804e4`, `Custom`; element `WebService1` `c4c5c167-d18c-4f14-9402-502f55d21bed`) | 2026-11-05, lead | CU-1 | | saved three times (S2-S4); now on `UsrWscEchoService.UsrWscEcho`, `BL11:false`; never run |
 
 Planned:
 
@@ -1236,7 +1262,6 @@ Planned:
 | A duplicate Name/Tag at two nesting levels throws at run time | r3 open 5; g3 §6 | needs a deliberately broken service; the builder mirrors the service tree; recorded as a KB note candidate |
 | Whether the package harness resolves the internal parameter provider; whether `ServiceSchema.ReadMetaData` reads a PackageStore capture | r8 open B3, B6 | local unit-test probes, owned by the [test plan](eng-92710-call-web-service-element-test-plan.md) |
 | A multi-instance web-service element | C-09 | 0 in the corpus; v1 refuses it (Q20); unit-tested |
-| A SOAP capture | C-09; Q20 | optional EM2 S2 only on the owner's request |
 | The stand copy of corpus pair 2 (`ActionGeminiSearch` / `GeminiApiSearch`) diffed against its PackageStore capture | serialization §8.1 | optional read-only RB-1 / RB-3, not a step of EM0; pattern A compares the PackageStore bytes, which do not depend on the stand |
 
 ## 9. Research corrections this file depends on

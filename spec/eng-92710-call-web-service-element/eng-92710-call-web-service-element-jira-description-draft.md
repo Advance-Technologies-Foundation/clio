@@ -10,7 +10,7 @@
 
 * Registering a web service (base URI, methods, authentication): ENG-105475 "Register a REST web service through the AI Toolkit". The Process Designer also works only with registered services.
 * Mirroring a web-service output into a new parameter, scalar-array (ObjectList) parameters, three or more nesting levels and the designer's "Create from element" grouping: ENG-92730 "Complex / structured parameter types".
-* SOAP services and multi-instance Call web service elements: refused with a message.
+* Multi-instance Call web service elements: refused with a message. (SOAP services are built like REST services, with a notice.)
 
 **Technical:** the builder generates the element's parameters the way the Process Designer does (nested items always) and writes the designer's mapping rows; server serialization is verified against designer-built captures; values are mapped through the existing mapping surface (Task 6); composite types beyond two levels are ENG-92730 (this replaces the earlier reference to Task 5).
 

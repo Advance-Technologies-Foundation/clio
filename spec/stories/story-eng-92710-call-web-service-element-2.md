@@ -103,7 +103,8 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   before the S2 save), equals the S2 capture under WSCR for the element node and its BK15 rows; the S2 capture's
   dangling Formula token is outside the comparison, and the designer's `BL11:false` on the S2 element (unbound
   required `UsrWscId`) is the named allowed difference AD10 (serialization §8.3); the package never writes `IsValid`
-  (TC-U-33..36, 46, 108; TC-P-12).
+  (TC-U-33..36, 46, 108, 112, 113; TC-P-12, 16; a retarget onto or away from a SOAP service as for REST, N10 only
+  onto SOAP, Q20 D).
 - [ ] **P-D2** C7 retarget guard: `IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds:
   {Success, Response, StatusCode UIds}, includeOwner: false)`; the change is refused when anything (another element,
   a process parameter, a flow condition, a formula body) reads ANY parameter of the element other than `Success` /
@@ -115,7 +116,7 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   are still read by ..."); nothing written (TC-U-37..39, 107).
 - [ ] **P-D3** C10 / C12 drift (Q12): describe reports `serviceResolved` / `methodResolved` false, a case-only method
   match, nested drift, a missing result param and `IsValid` false as issues; at the end of every modify, notice N7 on
-  each web-service element not configured in the request whose service or method does not resolve, saying that the
+  each web-service element whose service or method does not resolve, configured in the request or not, saying that the
   platform load prunes its tagged params; the modify is not refused (TC-U-53, 54, 71..73, 102..104). EM8's builder
   half confirms the notice on the claimed cut.
 - [ ] **P-D4** `modify-business-process-as-new-version`: the clone keeps the element, its params and its BK15 rows owned
@@ -170,8 +171,8 @@ true.
   `StatusCode` (tagged inputs, nested items and `RequestBody` included), with nothing written (TC-U-37..39; TC-I-05).
 - [ ] Drift issues and the latent-loss notice N7 tested (Q12); EM8's builder half recorded in the measurements file.
 - [ ] The version clone keeps the element, its params and BK15 rows (TC-U-92; TC-I-10).
-- [ ] Every TC row this story owns implemented and green (TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108;
-  TC-P-12; TC-I-05, 10; shared with story 1: TC-K-05, TC-C-11, TC-C-13) on dev-nf and dev-n8, in the clio unit suite,
+- [ ] Every TC row this story owns implemented and green (TC-U-33..39, 46, 53, 54, 71..73, 92, 102..104, 107, 108, 112, 113;
+  TC-P-12, 16; TC-I-05, 10; shared with story 1: TC-K-05, TC-C-11, TC-C-13) on dev-nf and dev-n8, in the clio unit suite,
   the KB test project and the e2e run with Ignored = 0.
 - [ ] Review gates 1-3 passed and their tiers stated; KB fact-check passed for the modify section.
 - [ ] The CL-10 record in the clio PR, every knowledge record whose `applies-to` path is touched updated or deleted,
