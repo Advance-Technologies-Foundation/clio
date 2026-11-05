@@ -371,11 +371,11 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			StoredSlots(replaceNode).Select(slot => Text(slot, "A2")).Should().BeEquivalentTo(
 				["Attachments1", "Attachments2"], because: "the rows the list no longer names are removed");
 			// Whether the save deletes a removed row's SysLocalizableValue rows is the platform's, not the package's:
-			// a 10.1 save rewrites every row of the schema, a 10.2 save rewrites only the keys it carries and keeps
-			// the rows of a parameter the schema no longer declares (its obsolete-key clean-up does not judge
-			// BaseElements keys). So Attachments3's rows are gone or orphaned here; what must hold on both is that no
-			// slot SHOWS a removed row's value - the number reused in this save below, and in a later save in the
-			// reuse step.
+			// before platform build 10.1.409 a save rewrote every row of the schema; from it, a save rewrites only the
+			// keys it carries and keeps the rows of a parameter the schema no longer declares (its obsolete-key clean-up
+			// does not judge BaseElements keys). So Attachments3's rows are gone or orphaned here; what must hold on
+			// both is that no slot SHOWS a removed row's value - the number reused in this save below, and in a later
+			// save in the reuse step.
 			replaceResources.Should().NotContain(row => row.Contains(".Attachments2.") && row.Contains("[#PF1"),
 				because: "Attachments2 was freed and reused in the same save, so it shows nothing of the PF1 row it replaced");
 			WarningText(replaced).Should().Contain(RemovalNotice,
