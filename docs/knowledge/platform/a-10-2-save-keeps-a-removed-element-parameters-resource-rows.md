@@ -19,7 +19,9 @@ CrtProcessBuilder's and, by the same `SchemaManager` path, the designer's (by co
 A key the save carries with an EMPTY value is still deleted, which is why a reused slot whose outer display value is
 written explicitly empty shows nothing of the row it replaced. Measured on TeamCity, Studio 10.2.984 PostgreSQL: after a
 Send email replace removed `Attachments3`, its four rows (`Caption`, `DisplayValue [#Docs#]`, item `Caption`, item
-`DisplayValue`) were still stored.
+`DisplayValue`) were still stored; the same on the dev stand built from trunk 10.2.996 (2026-11-05). On that stand a
+LATER request that reused `Attachments3` for a single File left no `[#Docs` row under it: the explicit-empty outer
+`DisplayValue` deleted the orphan, and the other three keys were rewritten (TC-I-05, passed).
 
 **Why it is this way** — the platform keeps a deleted value only where the localization change log records it, and it
 cannot tell a removed element parameter from a value a parameter skipped (a formula, a complex type), so it never calls
