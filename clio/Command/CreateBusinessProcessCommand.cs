@@ -298,9 +298,13 @@ namespace Clio.Command;
 // `webService` block (service, method, timeoutSeconds, ignoreErrors). An older server knows neither, so it refuses the
 // type and the block as unknown, in a message that does not say the package is behind; the literal turns that into
 // the install hint before anything is sent. 1.6.6.146-1.6.6.149 were cuts of this work that were never released.
+// Raised to 1.6.6.151 by ENG-103990: `mergeFrom` on a process parameter (build parameters[], addParameter,
+// setParameter). The member rides a KNOWN descriptor, so an older server's serializer drops it and answers success:
+// the parameter saves unbound, every start but one reaches the shared chain with an empty Id, and the run completes
+// changing nothing. This clio's contract names the member, so the floor is the first archive that reads it.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.150",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.151",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

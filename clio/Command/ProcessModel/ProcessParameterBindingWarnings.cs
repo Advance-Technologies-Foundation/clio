@@ -17,6 +17,11 @@ namespace Clio.Command.ProcessModel;
 /// first start reads the parameter EMPTY, because the surviving binding points at the other branch's element,
 /// which never ran. A Formula element with <c>resultProcessParameter</c> on each branch assigns per run, and wins
 /// over a binding that is still stored.</para>
+/// <para>The remedy every warning names is <c>mergeFrom</c> (ENG-103990, CrtProcessBuilder 1.6.6.141+): when the
+/// branches are starts on one object feeding one shared chain, a Guid parameter with <c>mergeFrom</c> takes the record
+/// Id of whichever start fired, so ONE chain reads the record and no branch needs its own binding or Formula. A
+/// Formula per branch still assigns correctly, and is still honoured below, but it is no longer recommended: it adds
+/// an element per start for what one parameter does.</para>
 /// <para>Two warnings follow from that, and only those two, because each is true whenever it fires:</para>
 /// <list type="bullet">
 /// <item>the same process parameter is bound more than once - in one payload, or on a modify over a binding the
@@ -51,6 +56,12 @@ public static class ProcessParameterBindingWarnings {
 	private static readonly string[] NonBindingSources = ["None", "ConstValue"];
 
 	private const int MaxRenderedTextLength = 120;
+
+	// One sentence for every warning, so the remedy reads the same wherever it is met and matches the server's own
+	// naive-join warning (CrtProcessBuilder ParameterMergeNotices).
+	private const string MergeRemedy = "When the branches are starts on one object, merge the starts instead: give a "
+		+ "Guid parameter mergeFrom [\"<Start>.RecordId\", ...] and let ONE shared chain read the record by it "
+		+ "(get-guidance name=process-multi-start).";
 
 	// A whole element output as the platform stores it when the server cannot name a column: the element and its
 	// parameter by UId. Resolved back to names so re-applying an identical binding is not reported as a change.
@@ -182,9 +193,7 @@ public static class ProcessParameterBindingWarnings {
 					+ $"({string.Join("; ", group.Select(binding => binding.Source))}). A process parameter keeps ONE "
 					+ $"binding, so only the last one listed ({kept.Source}) is saved. A targetProcessParameter "
 					+ "mapping is the value source the parameter is read through, not an assignment made when a "
-					+ "branch runs: to set it per branch (e.g. one shared parameter fed by each start of a "
-					+ "multi-start process) add a formulaTask on each branch with formula.resultProcessParameter "
-					+ $"{Quote(kept.Parameter)}.";
+					+ $"branch runs. {MergeRemedy}";
 			});
 
 	// Only a stored binding to an ELEMENT output is reported as replaced: that is the binding a branch relies on.
@@ -205,9 +214,7 @@ public static class ProcessParameterBindingWarnings {
 
 			yield return $"addMapping replaced the existing binding of process parameter {Quote(binding.Parameter)} "
 				+ $"(was {previous.Render()}, now {binding.Source}): a process parameter keeps ONE binding. If both "
-				+ "were meant to apply - e.g. one per branch - bind neither and add a formulaTask on each branch with "
-				+ $"formula.resultProcessParameter {Quote(binding.Parameter)}; a Formula assignment also wins over "
-				+ "a binding that stays stored.";
+				+ $"were meant to apply - one per start - bind neither. {MergeRemedy}";
 		}
 	}
 
@@ -232,8 +239,7 @@ public static class ProcessParameterBindingWarnings {
 			yield return $"Process parameter {Quote(binding.Parameter)} is bound to {binding.Source}, which a run "
 				+ $"started by {string.Join(", ", missed.Select(Quote))} does not reach: on such a run "
 				+ $"{Quote(binding.SourceElement)} never executes and {Quote(binding.Parameter)} reads its "
-				+ "default (empty) value. If that branch reads it too, assign it there with a formulaTask "
-				+ $"(formula.resultProcessParameter {Quote(binding.Parameter)}).";
+				+ $"default (empty) value. If that run reads it too: {MergeRemedy}";
 		}
 	}
 

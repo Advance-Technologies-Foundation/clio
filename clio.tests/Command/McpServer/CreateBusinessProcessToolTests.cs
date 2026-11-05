@@ -429,7 +429,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route a flow-time assignment to formulaTask + formula.resultProcessParameter (ENG-103081). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
+	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route starts that share a chain to mergeFrom (ENG-103081, ENG-103990). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
 	public void ProcessWriteTools_ShouldStateTheBindingSemanticsOfAProcessParameterMapping() {
 		// Arrange
 		string create = typeof(CreateBusinessProcessTool)
@@ -444,12 +444,12 @@ public class CreateBusinessProcessToolTests {
 			because: "the build contract must say a mapping is not an assignment made when a branch runs");
 		create.Should().Contain("last per parameter wins (warned)",
 			because: "a second mapping silently replaced the first");
-		create.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
-			because: "the contract must name the flow-time assignment");
+		create.Should().Contain("starts sharing a chain use mergeFrom",
+			because: "the contract must name the one way to feed a shared chain from several starts (ENG-103990)");
 		modify.Should().Contain("A targetProcessParameter mapping is a BINDING, read live, not a flow-time assignment",
 			because: "addMapping shares the semantics and must state them too");
-		modify.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
-			because: "modify has no removeMapping, so the caller needs the flow-time route");
+		modify.Should().Contain("starts sharing a chain use mergeFrom",
+			because: "modify has no removeMapping, so the caller needs the route that replaces a binding per branch");
 	}
 
 	[Test]
@@ -530,7 +530,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.150 (for webService, email.attachments, itemProperties, isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.151 (for mergeFrom, webService, email.attachments, itemProperties, isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");

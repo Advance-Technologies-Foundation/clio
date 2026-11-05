@@ -34,7 +34,8 @@ public static class DescribeProcessPrompt {
 		   configuration block for a configured element - `email`, `readData`, `changeData`, `addData`,
 		   `deleteData`, `openEditPage`),
 		   `flows` (name, source, target, kind, `label`, `geometry`, and on a branch its `condition` plus
-		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` — not raw
+		   `branchesOnActivityResult`, `results` and `resultsActivity`), and process `parameters` (a merged one
+		   reports `mergeFrom` instead of its formula, and replays as is) — not raw
 		   metadata. A graph whose reply would exceed 18000 bytes comes back as `mode: summary` (elements, flows as
 		   `from -> to`, start signals, parameters, version, checksum) unless you pass `mode: full`; ask
 		   `element: <name>` for one element in full, which is usually what a narration step needs.
