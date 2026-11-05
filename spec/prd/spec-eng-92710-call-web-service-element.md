@@ -15,7 +15,7 @@ Q13 and Q17 differ from the first recommendation. The description of ENG-92710 C
 to the issue on 2026-11-03 after the owner's yes and read back
 ([jira-description-draft](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-jira-description-draft.md),
 decisions Q18); the checklist field was not touched. The SOAP lines of the draft changed on 2026-11-05 (decisions Q20
-D) are pending the owner's approval and are not yet in Jira.
+D) were written to the issue on 2026-11-05 after the owner's yes and read back.
 **Created**: 2026-11-03
 **Size estimate**: two stories, delivered as one feature PR per repository (crt-process-builder, then clio-knowledge,
 then clio) after this docs-only clio PR. The /bmad-spec form is used because the ticket has fewer than 5 stories

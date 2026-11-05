@@ -1,4 +1,4 @@
-<!-- Written to ENG-92710 "Call web service element" description on 2026-11-03 after the owner's yes; read back the same day.  AC6 and AC8 rewritten at gate 1 on 2026-11-03 after the owner's yes; read back the same day. The 2026-11-05 SOAP lines (Scope, Not in scope) follow decisions Q20 D and are pending the owner's approval: NOT yet in Jira, which still says "REST only." and lists SOAP as refused. -->
+<!-- Written to ENG-92710 "Call web service element" description on 2026-11-03 after the owner's yes; read back the same day.  AC6 and AC8 rewritten at gate 1 on 2026-11-03 after the owner's yes; read back the same day. The 2026-11-05 SOAP lines (Scope, Not in scope) follow decisions Q20 D; written to the issue on 2026-11-05 after the owner's yes, read back the same day (only those two lines changed). -->
 
 **Goal:** Support the **Call web service** element: call a web service registered in Studio > Web services, pass a request, receive the response. The element is the core `ProcessSchemaWebService` (manager item `652b598d-cdd5-49d5-a86d-aafac88213f3`), not a user task; the legacy `WebServiceUserTask` is an unused SOAP stub and is not built.
 
