@@ -254,7 +254,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
+	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be lost when its key moves; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]
 	public async Task ModifyBusinessProcess_Should_WriteKeepAndClearAFlowLabelWithSetFlow() {
@@ -310,9 +310,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "from under the label, and without this assertion the next one proves nothing");
 		toA.Label.Should().Be("Take this branch",
 			because: "an omitted label means the caller said nothing about it, so the row has to be "
-				+ "re-materialised under the NEW name rather than orphaned under the old one. What this "
-				+ "asserts is the round trip through the real server; the ROW-level proof - that nothing "
-				+ "lingers under the old key - was taken by hand and is recorded in "
+				+ "re-materialised under the NEW name rather than lost under the old one. What this "
+				+ "asserts is the round trip through the real server; what happens to the row under the old "
+				+ "key is the platform build's and is recorded in "
 				+ "docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md, because describe reads "
 				+ "the manager's runtime instance in the same warm app pool that just wrote through the design "
 				+ "instance and a cached instance could satisfy this without touching storage");
