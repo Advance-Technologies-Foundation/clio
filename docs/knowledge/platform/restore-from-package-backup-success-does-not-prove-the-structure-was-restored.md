@@ -16,11 +16,13 @@ data is not reverted. The same restore run again saves nothing, reverts only the
 
 **Why it is this way** — `ZipPackageBackupManager.RestoreFromBackup` saves the packages and updates the
 structure first, with `continueIfError`, and reverts the data only when that step succeeded. The second
-run finds no packages to save, so the structure step has nothing to fail on. The Core fix (all-or-nothing
-restore) is tracked in the same ticket.
+run finds no packages to save, so the structure step has nothing to fail on. The Core fix, a pre-check that
+refuses a restore which would truncate text data, is tracked in the same ticket; other structure-update
+failures are not covered.
 
 **What breaks if you ignore it** — exit code `0` is read as proof that the environment is back on the
-backup's version. After a restore that failed once, a second run exits `0` while the DB keeps the newer
-columns. A retried request is such a second run, so `restore-configuration` sends the restore once.
-Verify the DB structure after a failed restore; clio cannot see the mismatch, and the next release that
-narrows the column again fails with HTTP 500 `column ... does not exist`.
+backup's version. On Creatio versions without that pre-check, after a restore that failed once, a second run
+exits `0` while the DB keeps the newer columns. A retried request is such a second run, so
+`restore-configuration` sends the restore once. Verify the DB structure after a failed restore; clio cannot
+see the mismatch, and the next release that narrows the column again fails with HTTP 500
+`column ... does not exist`.

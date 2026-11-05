@@ -1,5 +1,6 @@
 namespace Clio.Tests.Command;
 
+using System;
 using Clio;
 using Clio.Command;
 using Clio.Common;
@@ -77,6 +78,20 @@ internal class RestoreFromPackageBackupCommandTests : BaseCommandTests<RestoreFr
 			Arg.Any<int>(), 1, Arg.Any<int>());
 		_logger.Received(1).WriteInfo("Done restore-configuration");
 		_logger.DidNotReceive().WriteError(Arg.Any<string>());
+	}
+
+	[Test]
+	[Description("Defaults the request timeout to 60 minutes, because the restore is sent once and the service saves the packages, updates the DB structure and compiles inside that one request")]
+	public void TimeOut_DefaultsTo60Minutes() {
+		// Arrange
+		RestoreFromPackageBackupOptions options = new();
+
+		// Act
+		int timeOut = options.TimeOut;
+
+		// Assert
+		timeOut.Should().Be((int)TimeSpan.FromMinutes(60).TotalMilliseconds,
+			because: "with a single attempt the 100 s default would report a slow but successful restore as failed");
 	}
 
 	[Test]

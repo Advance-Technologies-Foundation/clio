@@ -36,8 +36,9 @@ namespace Clio.Command
         private int GetTimeOut() {
             string commandName = this.GetType().GetCustomAttribute<VerbAttribute>()?.Name ?? "undefined-command";
             int timeout =  commandName switch {
-                               "generate-source-code" 
-                                   or "compile-configuration" => 
+                               "generate-source-code"
+                                   or "compile-configuration"
+                                   or "restore-configuration" =>
                                    (int)TimeSpan.FromMinutes(60).TotalMilliseconds,
                                "compile-package" => (int)TimeSpan.FromMinutes(10).TotalMilliseconds,
                                "call-service" => (int)TimeSpan.FromMinutes(1).TotalMilliseconds,

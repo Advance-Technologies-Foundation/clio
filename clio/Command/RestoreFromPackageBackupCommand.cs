@@ -18,11 +18,11 @@
 		/// Gets or sets whether the restore also installs the data bound to the packages in the backup.
 		/// </summary>
 		/// <remarks>
-		/// The option keeps its historical name <c>skip-rollback-data</c>, but the service rolls the data back
-		/// with or without it.
+		/// The option keeps its historical name <c>skip-rollback-data</c>, but whether the service rolls the data
+		/// back does not depend on it.
 		/// </remarks>
 		[Option('d', "skip-rollback-data", Required = false,
-			HelpText = "Also install the data bound to the packages in the backup. Data is rolled back with or without this flag",
+			HelpText = "Also install the data bound to the packages in the backup. Whether data is rolled back does not depend on this flag",
 			Default = false)]
 		public bool InstallPackageData {
 			get; set;
@@ -50,8 +50,8 @@
 	/// <remarks>
 	/// The service answers a failed restore with HTTP 200, <c>success:false</c> and a generic message, so the
 	/// reason is only in the installation log; the command prints the part of that log written by this run.
-	/// The request is sent once: a repeated restore of the same backup answers <c>success:true</c>, so a retry
-	/// would report a failed restore as done.
+	/// The request is sent once: on Creatio versions that do not check the backup before restoring, a repeated
+	/// restore of the same backup answers <c>success:true</c>, so a retry would report a failed restore as done.
 	/// </remarks>
 	internal class RestoreFromPackageBackupCommand : RemoteCommand<RestoreFromPackageBackupOptions>
 	{
@@ -93,8 +93,8 @@
 			_applicationLogProvider.GetInstallationLog(ApplicationClient, EnvironmentSettings) ?? string.Empty;
 
 		// The log keeps every installation since the node started, so only the part after the log read before
-		// the restore is this run's. When the log does not continue that read (the read failed, or the node
-		// restarted), it is printed in full.
+		// the restore is this run's. When the log does not continue that read (the read failed, there was no log
+		// yet, or the node restarted), it is printed in full.
 		private void WriteInstallationLogOfThisRun() {
 			string completeLog = ReadInstallationLog();
 			if (string.IsNullOrWhiteSpace(completeLog)) {
@@ -105,7 +105,7 @@
 				&& completeLog.StartsWith(_initialInstallationLog, StringComparison.Ordinal);
 			string logOfThisRun = isLogOfThisRun ? completeLog.Substring(_initialInstallationLog.Length) : completeLog;
 			if (!isLogOfThisRun) {
-				Logger.WriteWarning("The installation log could not be attributed to this run, so it is printed in full.");
+				Logger.WriteWarning("The installation log may include entries of earlier operations, so it is printed in full.");
 			} else if (string.IsNullOrWhiteSpace(logOfThisRun)) {
 				Logger.WriteWarning("The installation log has no entries for this run.");
 				return;

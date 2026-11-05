@@ -10,8 +10,10 @@ Restores Creatio configuration from the latest available backup package.
 
 The command prints the installation log written by the restore and exits with `1` when the service does not
 report success. The service message for a failed restore is generic ("Errors occured during configuration
-restoring from backup"), so the reason is in the installation log. The request is sent once: a repeated
-restore after a failed one reports success while the database structure stays in the newer state.
+restoring from backup"), so the reason is in the installation log. The request is sent once: on Creatio
+versions that do not check the backup before restoring, a repeated restore after a failed one reports success
+while the database structure stays in the newer state. The request waits up to 60 minutes by default; use
+`--timeout` (milliseconds) to change it.
 
 ## Synopsis
 
@@ -23,7 +25,7 @@ clio restore-configuration [OPTIONS]
 
 ```bash
 -d
-Also install the data bound to the packages in the backup. Data is rolled back with or without this flag
+Also install the data bound to the packages in the backup. Whether data is rolled back does not depend on this flag
 
 -f
 Restore configuration without SQL backward-compatibility check
