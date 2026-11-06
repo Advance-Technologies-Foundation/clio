@@ -3,7 +3,7 @@ description: with Create activity off, the run-time evidence that a Send email e
 applies-to:
   - clio.mcp.e2e/SendEmailAttachmentsToolE2ETests.cs
 ticket: ENG-95985
-date: 2026-10-29
+date: 2026-11-04
 ---
 
 **What is true** — with Create activity off, an automatic Send email element sends straight to the mail server
@@ -19,8 +19,9 @@ FileCollection or File process parameter; a Generated report needs no seeding, b
 the one row the run time writes for the email itself.
 
 **What breaks if you ignore it** — a test that asserts delivery from the run status alone passes on an email sent
-without its files (`IgnoreErrors` is on by default, so a failed send does not fail the run). The `run-process`
-watch is a before/after diff of the whole table, so it also reports activities and files other users or a mailbox
+without its files (`IgnoreErrors` is on by default, so a failed send through a configured mailbox does not fail the
+run - per the source, not measured; with no usable sender and no default sender it does, measured, see
+`../platform/send-email-ignore-errors-does-not-cover-a-missing-sender.md`). The `run-process` watch is a before/after diff of the whole table, so it also reports activities and files other users or a mailbox
 synchronization wrote meanwhile - asserting on it, or cleaning up what it reported, touches rows that are not the
 test's. Put a unique token in the subject and find the activity, then its files, by query. Cleaning up with
 `run-process cleanup: true` deletes through OData DELETE, which some stands answer with 405, leaving the parked

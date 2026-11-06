@@ -288,9 +288,15 @@ namespace Clio.Command;
 // as configuring nothing, in a message that does not name attachments. This clio's contract names the member (and its
 // replace rule on modify), so the floor is the first archive that reads it. 1.6.6.126 was an experimental cut of this
 // work that never left the stand.
+// Raised to 1.6.6.140 by ENG-105549, and for a different kind of reason: clio sends no new member, but that archive
+// TIGHTENS a refusal. The attachment-source walk behind the unscoped-files refusal now follows a map path the way both
+// platform readers do, so an older server lets an email send, unscoped, a file source its walk did not reach, and
+// answers success. A server-side change with a security character takes a literal rather than being left to
+// convergence, which warns and proceeds when it cannot read the archive. 1.6.6.138 and 1.6.6.139 were cuts of this
+// work that were never released.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.127",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.140",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

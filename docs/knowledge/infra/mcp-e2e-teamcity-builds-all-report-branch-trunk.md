@@ -1,13 +1,14 @@
 ---
-description: every Team_Atf_ClioMcpE2eTests build reports branchName trunk because the branch under test travels in the BranchNameClio parameter, so the TeamCity branch column cannot tell a PR build from a baseline one
+description: every Team_Atf_ClioMcpE2eTests and TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner build reports branchName trunk because the branch under test travels in the BranchNameClio parameter, so the TeamCity branch column cannot tell a PR build from a baseline one
 applies-to:
   - .github/workflows/teamcity-mcp-e2e.yml
   - .github/scripts/queue-teamcity-build.ps1
 ticket: ENG-92669
-date: 2026-08-19
+date: 2026-10-20
 ---
 
-**What is true** — `Team_Atf_ClioMcpE2eTests` checks clio out from
+**What is true** — `Team_Atf_ClioMcpE2eTests`, and the process-designer lane
+`TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner` copied from it, check clio out from
 `refs/heads/%BranchNameClio%` rather than through TeamCity branch tracking (stated in the header of
 `.github/workflows/teamcity-mcp-e2e.yml`; the parameter itself is set by
 `.github/scripts/queue-teamcity-build.ps1`, which that workflow runs). The build's own logical

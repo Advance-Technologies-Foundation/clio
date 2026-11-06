@@ -254,7 +254,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be orphaned under the old key; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
+	[Description("Over the real MCP path, setFlow's `label` covers the four outcomes that can only be proven against a real server, because a flow's caption is a LocalizableString and lives in the schema RESOURCES rather than in metadata — nothing in-memory shows whether the row was written, moved or deleted. (1) THE TRAP: a re-kind re-derives a generated flow's NAME and the resource key is built from that name, so a label the caller never mentioned could be lost when its key moves; it is not. (2) a supplied label replaces the old one across the same re-kind. (3) an EMPTY label clears it, which is the only way to remove one. (4) a label applied while the KIND does not change still lands — `kind` is mandatory on setFlow, so relabelling alone takes the no-op early return, and returning before the label would report success and write nothing.")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process writes, keeps and clears a flow label with setFlow")]
 	public async Task ModifyBusinessProcess_Should_WriteKeepAndClearAFlowLabelWithSetFlow() {
@@ -310,9 +310,9 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				+ "from under the label, and without this assertion the next one proves nothing");
 		toA.Label.Should().Be("Take this branch",
 			because: "an omitted label means the caller said nothing about it, so the row has to be "
-				+ "re-materialised under the NEW name rather than orphaned under the old one. What this "
-				+ "asserts is the round trip through the real server; the ROW-level proof - that nothing "
-				+ "lingers under the old key - was taken by hand and is recorded in "
+				+ "re-materialised under the NEW name rather than lost under the old one. What this "
+				+ "asserts is the round trip through the real server; what happens to the row under the old "
+				+ "key is the platform build's and is recorded in "
 				+ "docs/knowledge/platform/a-flow-rekind-does-not-orphan-its-label.md, because describe reads "
 				+ "the manager's runtime instance in the same warm app pool that just wrote through the design "
 				+ "instance and a cached instance could satisfy this without touching storage");
@@ -979,7 +979,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
 		});
-		SkipWhenPackagePredatesTheElement(built);
+		RequireBareElementCreated(built);
 
 		// Act - configure the block and its record filter in one batch.
 		CallToolResult edited = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
@@ -1033,7 +1033,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildBareAccessRightsDescriptor(processName)
 		});
-		SkipWhenPackagePredatesTheElement(built);
+		RequireBareElementCreated(built);
 		await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -1157,7 +1157,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildOpenEditPageResultBranchDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.140");
 		ShouldHaveBuilt(created, $"the arrange must actually create '{processName}', or the test measures nothing");
 
 		try {
@@ -1232,16 +1232,16 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	// The version gate, and it is a NEGATIVE one - see the test's Description for what that does and does not
 	// establish. It sits after a successful build deliberately: on a process that failed to build, the
-	// operation is refused for not finding the process and this would never match.
+	// operation is refused for not finding the process and this would never match. Read from the envelope's exit
+	// code and the server's log: IsError is the transport's flag, which a refused operation never sets.
 	private static void SkipWhenTheOperationIsUnknown(CallToolResult result) {
-		string payload = JsonSerializer.Serialize(result);
-		if (result.IsError is true
-				&& (payload.Contains("not supported", StringComparison.OrdinalIgnoreCase)
-					|| payload.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
-			Assert.Ignore(
+		string modifyLog = LogText(result);
+		if (McpCommandExecutionParser.Extract(result).ExitCode != 0
+				&& (modifyLog.Contains("not supported", StringComparison.OrdinalIgnoreCase)
+					|| modifyLog.Contains("Unknown operation", StringComparison.OrdinalIgnoreCase))) {
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not offer setFlowResults, so it predates "
-				+ "1.6.2.18. This test is Ignored, NOT passing; the rebundle and a deploy are what make it "
-				+ "meaningful.");
+				+ "1.6.2.18; the rebundle and a deploy are what make this test meaningful.");
 		}
 	}
 
@@ -1281,21 +1281,33 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 		}
 		""";
 
-	// The gate, in one place so both tests read the same way. A CrtProcessBuilder predating the element rejects
+	// The gate, in one place so both tests read the same way, named for what it does on every path: the bare
+	// element has to exist before the modify path is exercised. A CrtProcessBuilder predating the element rejects
 	// the element TYPE outright, before anything this fixture is about, so such an environment can exercise
 	// neither direction. It is Ignored rather than failed - but named, so an ignored run is not mistaken for
-	// coverage: the rebundle is the follow-up that makes these two tests meaningful.
-	private static void SkipWhenPackagePredatesTheElement(CallToolResult built) {
-		string payload = JsonSerializer.Serialize(built);
-		if (built.IsError is true && !payload.Contains("created (UId:")) {
-			Assert.Ignore(
+	// coverage: the rebundle is the follow-up that makes these two tests meaningful. The process-designer lane,
+	// which installs the bundled package itself, fails it instead (McpE2E:RequireProcessBuilder).
+	// Matched on the package's OWN refusal text (ProcessElementFactory: "Element type '<type>' is not supported
+	// yet"), as the create fixture does, not on "the create failed somehow": a bare exit-code gate would report a
+	// malformed descriptor, an auth failure or a regression in this very block as the package predating the
+	// element, and on the lane that text is the failure text, which sends triage to a rebundle. The signal is the
+	// envelope's exit code, as ShouldHaveBuilt reads it: IsError is the transport's flag, which a refused command
+	// never sets. Every other outcome fails right here, with the server's log in the message.
+	private static void RequireBareElementCreated(CallToolResult built) {
+		string createLog = LogText(built);
+		bool elementTypeRejected = McpCommandExecutionParser.Extract(built).ExitCode != 0
+			&& createLog.Contains("is not supported yet")
+			&& createLog.Contains("changeAccessRights");
+		if (elementTypeRejected) {
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
 				"The sandbox's deployed CrtProcessBuilder does not accept a 'changeAccessRights' element type, so "
-				+ "the accessRights block never reaches the read-back guard. This is expected until the "
-				+ "bundled archive is rebuilt from a source tree that CONTAINS the element - note the floors are "
-				+ "already at 1.4.0.40 and the bundled archive already reports that version, so the version "
-				+ "precondition passes while the block is still discarded. Until then "
-				+ "then this test is Ignored, NOT passing, and the modify path is unverified end to end.");
+				+ "the accessRights block never reaches the read-back guard. The package has to come from a source "
+				+ "tree that CONTAINS the element; the version precondition cannot tell, because a package can report "
+				+ "a version at or above the floor and still lack the element. On this stand the modify path is "
+				+ "unverified end to end.");
 		}
+		ShouldHaveBuilt(built,
+			"the arrange create of the bare Change access rights element has to land before the modify path is exercised");
 	}
 
 	// A Change access rights element with NO accessRights block yet: the modify path configures it. Kept separate
@@ -3424,7 +3436,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: addElement with a generic userTask naming PreconfiguredPageUserTask is REFUSED with the dedicated preconfiguredPage route in the message, and the aborted edit leaves no element behind (ENG-102112). Before CrtProcessBuilder 1.6.6.88 the element was added with no page and failed at run time. Needs CrtProcessBuilder 1.6.6.127 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.88).")]
+	[Description("Over the real MCP path: addElement with a generic userTask naming PreconfiguredPageUserTask is REFUSED with the dedicated preconfiguredPage route in the message, and the aborted edit leaves no element behind (ENG-102112). Before CrtProcessBuilder 1.6.6.88 the element was added with no page and failed at run time. Needs CrtProcessBuilder 1.6.6.140 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.88).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses addElement of a generic userTask Pre-configured page")]
 	public async Task ModifyBusinessProcess_Should_RefuseAddingAGenericUserTaskPreconfiguredPage() {
@@ -3437,7 +3449,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.140");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3471,7 +3483,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 
 	[TestCase("AutoGeneratedPageUserTask", "Auto-generated page")]
 	[TestCase("UserQuestionUserTask", "User dialog")]
-	[Description("Over the real MCP path: addElement with a generic userTask naming AutoGeneratedPageUserTask or UserQuestionUserTask is REFUSED, naming the element types that do the job, and the aborted edit leaves no element behind (ENG-102537). Nothing in CrtProcessBuilder can configure either task, so before 1.6.6.90 the element was added and the process then waited forever on a step no user could complete. Needs CrtProcessBuilder 1.6.6.127 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.90).")]
+	[Description("Over the real MCP path: addElement with a generic userTask naming AutoGeneratedPageUserTask or UserQuestionUserTask is REFUSED, naming the element types that do the job, and the aborted edit leaves no element behind (ENG-102537). Nothing in CrtProcessBuilder can configure either task, so before 1.6.6.90 the element was added and the process then waited forever on a step no user could complete. Needs CrtProcessBuilder 1.6.6.140 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.90).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process refuses addElement of a user task it cannot configure")]
 	public async Task ModifyBusinessProcess_Should_RefuseAddingAUserTaskItCannotConfigure(string userTaskName,
@@ -3483,7 +3495,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.140");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3577,7 +3589,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 				"""
 		});
 		string setText = SerializeToolText(setResult);
-		IgnoreWhenProcessBuilderIsBehind(setText, "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(setText, "1.6.6.140");
 		CallToolResult addResult = await CallToolAsync(context, ToolName, new Dictionary<string, object?> {
 			["environment-name"] = context.EnvironmentName,
 			["process-name"] = processName,
@@ -3611,7 +3623,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 	}
 
 	[Test]
-	[Description("Over the real MCP path: one modify request adds two Read data elements without their block and finishes ONE of them with setElement.readData in the same request. Only the one still unconfigured at the END of the request is reported (ENG-102537): the check is judged on the final schema, so the documented addElement -> setElement flow raises nothing for the element it completed, and the edit itself is not refused. Needs CrtProcessBuilder 1.6.6.127 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.90).")]
+	[Description("Over the real MCP path: one modify request adds two Read data elements without their block and finishes ONE of them with setElement.readData in the same request. Only the one still unconfigured at the END of the request is reported (ENG-102537): the check is judged on the final schema, so the documented addElement -> setElement flow raises nothing for the element it completed, and the edit itself is not refused. Needs CrtProcessBuilder 1.6.6.140 on the stand (the create and modify floor; the behaviour arrived in 1.6.6.90).")]
 	[AllureTag(ToolName)]
 	[AllureName("modify-business-process warns only about elements left unconfigured at the end of the request")]
 	public async Task ModifyBusinessProcess_Should_WarnOnlyAboutElementsLeftUnconfigured() {
@@ -3622,7 +3634,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.140");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
@@ -3665,7 +3677,7 @@ public sealed class ModifyBusinessProcessToolE2ETests {
 			["environment-name"] = context.EnvironmentName,
 			["descriptor"] = BuildPerformTaskWithIntegerParameterDescriptor(processName)
 		});
-		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.127");
+		IgnoreWhenProcessBuilderIsBehind(SerializeToolText(created), "1.6.6.140");
 		SerializeToolText(created).Should().Contain("created (UId:",
 			because: $"the arrange must actually create '{processName}', or the test measures nothing");
 		try {
