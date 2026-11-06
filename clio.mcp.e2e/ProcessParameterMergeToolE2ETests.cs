@@ -8,8 +8,10 @@ using Allure.NUnit;
 using Allure.NUnit.Attributes;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
+using Clio.Common;
 using Clio.Mcp.E2E.Support.Configuration;
 using Clio.Mcp.E2E.Support.Mcp;
+using Clio.Mcp.E2E.Support.Results;
 using FluentAssertions;
 using ModelContextProtocol.Protocol;
 
@@ -41,7 +43,7 @@ public sealed class ProcessParameterMergeToolE2ETests {
 	#region Methods: Tests
 
 	[Test]
-	[Description("Two signal starts on Contact flow straight into one shared Read data filtered by a mergeFrom parameter. The build raises no binding warning and the run started by the 'added' signal reads the triggering record - the measured fix for the naive join, which completes and changes nothing. The 'added' start is SigB, the SECOND source in the stored formula (schema order), so a merge that only ever reads the first start's Id fails here.")]
+	[Description("Two signal starts on Contact flow straight into one shared Read data filtered by a mergeFrom parameter. The build raises no warning at all and the run started by the 'added' signal reads the triggering record - the measured fix for the naive join, which completes and changes nothing. The 'added' start is SigB, the SECOND source in the stored formula (schema order), so a merge that only ever reads the first start's Id fails here.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("a mergeFrom parameter feeds one shared chain from two signal starts")]
 	public async Task CreateBusinessProcess_Should_ReadTheTriggeringRecord_ThroughAMergedParameter() {
@@ -52,17 +54,22 @@ public sealed class ProcessParameterMergeToolE2ETests {
 		string processName = $"UsrClioBpMerge{Guid.NewGuid():N}";
 
 		// Act
-		string built = ToolText(await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
+		CallToolResult buildCall = await ProcessDesignerE2EArrange.CallToolAsync(context, CreateToolName,
 			new Dictionary<string, object?> {
 				["environment-name"] = context.EnvironmentName,
 				["descriptor"] = MergedDescriptor(processName, token)
-			}));
+			});
+		string built = ToolText(buildCall);
 		JsonElement run = await TriggerAsync(context, processName, token);
 
 		// Assert
 		built.Should().Contain("created (UId:", because: "the merge build must succeed: {0}", built);
-		built.Should().NotContain("reads the record Id of",
-			because: "the shared chain reads the merged parameter, so the naive-join warning must not fire: {0}", built);
+		(McpCommandExecutionParser.Extract(buildCall).Output ?? [])
+			.Where(message => message.MessageType == LogDecoratorType.Warning)
+			.Select(message => message.Value)
+			.Should().BeEmpty(because: "a correct merge earns no warning at all - neither the server's (a shared element "
+				+ "reading one start's RecordId, a start reaching a reader of the merged parameter without being in "
+				+ "mergeFrom) nor clio's binding warnings, and nothing else in this descriptor warns: {0}", built);
 		CreatedTitle(run).Should().Be($"{token}:{token} Alice",
 			because: "the 'added' run reads its record through the merged Id: {0}", run.ToString());
 	}
