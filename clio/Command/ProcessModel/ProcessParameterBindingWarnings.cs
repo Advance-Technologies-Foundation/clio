@@ -20,8 +20,9 @@ namespace Clio.Command.ProcessModel;
 /// <para>The remedy every warning names is <c>mergeFrom</c> (ENG-103990, CrtProcessBuilder 1.6.6.141+): when the
 /// branches are starts on one object feeding one shared chain, a Guid parameter with <c>mergeFrom</c> takes the record
 /// Id of whichever start fired, so ONE chain reads the record and no branch needs its own binding or Formula. A
-/// Formula per branch still assigns correctly, and is still honoured below, but it is no longer recommended: it adds
-/// an element per start for what one parameter does.</para>
+/// Formula per branch still assigns correctly, and is still honoured below. The remedy names it only as the fallback
+/// for starts mergeFrom cannot merge (signal starts on different objects, a timer or message start): for starts on
+/// one object it adds an element per start for what one parameter does.</para>
 /// <para>Two warnings follow from that, and only those two, because each is true whenever it fires:</para>
 /// <list type="bullet">
 /// <item>the same process parameter is bound more than once - in one payload, or on a modify over a binding the
@@ -57,11 +58,15 @@ public static class ProcessParameterBindingWarnings {
 
 	private const int MaxRenderedTextLength = 120;
 
-	// One sentence for every warning, so the remedy reads the same wherever it is met and matches the server's own
-	// naive-join warning (CrtProcessBuilder ParameterMergeNotices).
+	// One remedy for every warning, so it reads the same wherever it is met. Its first sentence matches the server's
+	// own naive-join warning (CrtProcessBuilder ParameterMergeNotices), which fires only for signal starts on one
+	// object. These warnings also fire for starts mergeFrom cannot merge - signal starts on different objects, or a
+	// timer or message start - so the second sentence keeps the per-branch Formula for exactly those.
 	private const string MergeRemedy = "When the branches are starts on one object, merge the starts instead: give a "
 		+ "Guid parameter mergeFrom [\"<Start>.RecordId\", ...] and let ONE shared chain read the record by it "
-		+ "(get-guidance name=process-multi-start).";
+		+ "(get-guidance name=process-multi-start). Otherwise (signal starts on different objects, or a start that "
+		+ "is not a record signal) assign it on each branch: a formulaTask whose formula.resultProcessParameter "
+		+ "names it.";
 
 	// A whole element output as the platform stores it when the server cannot name a column: the element and its
 	// parameter by UId. Resolved back to names so re-applying an identical binding is not reported as a change.
@@ -229,7 +234,8 @@ public static class ProcessParameterBindingWarnings {
 			}
 
 			// A start whose path assigns the parameter with a Formula is covered: the assignment wins over the
-			// binding, which is the remedy these warnings recommend, so warning there would be false.
+			// binding, so warning there would be false. The Formula path is still honoured, but the remedy names it
+			// only for starts mergeFrom cannot merge; for signal starts on one object it recommends mergeFrom.
 			List<string> missed = [.. graph.Starts.Where(start => !graph.Reaches(start, binding.SourceElement)
 				&& !graph.FormulaWriters(binding.Parameter).Any(writer => graph.Reaches(start, writer)))];
 			if (missed.Count == 0) {
