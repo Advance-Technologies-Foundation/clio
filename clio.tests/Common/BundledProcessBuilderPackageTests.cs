@@ -198,7 +198,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"CB69FC2EA261A90418954EA4F9394AF322889AFA73EE95E65D4E29E2AEA7EDD8";
+		"D3D512A5DE2410A71B37B6950020D7EDC03020F13F2FFE810A137968DBA98439";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -226,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.140";
+	private const string ExpectedArchiveVersion = "1.6.6.142";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -242,7 +242,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d6a314a81db8d7be561c05948659747d6eeb2893";
+	private const string ExpectedProducingCommit = "6a1c1c1bc7efbe4281dd94a84cbe6b66549bc3bd";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -268,7 +268,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793829279000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794128390000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1075,7 +1075,7 @@ public class BundledProcessBuilderPackageTests {
 			because: "clio reads the wrapped answer as CompileProcessResult, named after this operation");
 		foreach (string member in new[] {
 				"success", "errorMessage", "processName", "packageName", "packageType", "compileRequired", "compiled",
-				"durationMs", "errors", "errorCount" }) {
+				"durationMs", "errors", "errorCount", "restartRequired" }) {
 			DeclaresMemberOn(archive, "CompileProcessResponse", member).Should().BeTrue(
 				because: $"CompileBusinessProcessService reads '{member}' off the compile answer");
 		}

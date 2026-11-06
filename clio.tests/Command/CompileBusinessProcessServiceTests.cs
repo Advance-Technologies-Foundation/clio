@@ -27,8 +27,10 @@ public sealed class CompileBusinessProcessServiceTests {
 	private const string Env = "sandbox";
 	private const string CompileUrl = "http://sandbox/0/rest/ProcessDesignService/CompileProcess";
 
-	private static CompileBusinessProcessService CreateService(IApplicationClient client) {
-		EnvironmentSettings env = new() { Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor" };
+	private static CompileBusinessProcessService CreateService(IApplicationClient client, bool isNetCore = false) {
+		EnvironmentSettings env = new() {
+			Uri = "http://sandbox", Login = "Supervisor", Password = "Supervisor", IsNetCore = isNetCore
+		};
 		ISettingsRepository settings = Substitute.For<ISettingsRepository>();
 		settings.FindEnvironment(Env).Returns(env);
 		IApplicationClientFactory factory = Substitute.For<IApplicationClientFactory>();
@@ -312,6 +314,49 @@ public sealed class CompileBusinessProcessServiceTests {
 			.WithMessage("*UNKNOWN*last-compilation-log*",
 				because: "the caller is told what is unknown and where to find out");
 	}
+
+	[Test]
+	[Description("When the server says whether the compiled code waits for a restart, its answer wins over the environment's registration, either way.")]
+	[TestCase(true, false, true)]
+	[TestCase(false, true, false)]
+	public void Compile_ShouldRelayTheServersRestartAnswer(bool serverSays, bool registeredAsNetCore, bool expected) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(
+			"{\"CompileProcessResult\":{\"success\":true,\"compileRequired\":true,\"compiled\":true,"
+			+ "\"errorCount\":0,\"restartRequired\":" + (serverSays ? "true" : "false") + "}}");
+		CompileBusinessProcessService service = CreateService(client, registeredAsNetCore);
+
+		// Act
+		CompileBusinessProcessResult result = service.Compile(Env, new CompileBusinessProcessRequest("UsrProc"));
+
+		// Assert
+		result.RestartRequired.Should().Be(expected,
+			because: "the package knows the host it runs on; the registration is only a fallback");
+	}
+
+	[Test]
+	[Description("A package older than 1.6.6.142 does not say whether a restart is needed: then a successful compile on an environment registered as .NET Core requires one, and nothing else does.")]
+	[TestCase(true, true, true, true)]
+	[TestCase(true, true, false, false)]
+	[TestCase(false, true, true, false)]
+	[TestCase(true, false, true, false)]
+	public void Compile_ShouldFallBackToTheRegistration_WhenTheServerDoesNotSay(bool success, bool compiled,
+			bool registeredAsNetCore, bool expected) {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(
+			"{\"CompileProcessResult\":{\"success\":" + (success ? "true" : "false") + ",\"compileRequired\":true,"
+			+ "\"compiled\":" + (compiled ? "true" : "false") + ",\"errorCount\":0}}");
+		CompileBusinessProcessService service = CreateService(client, registeredAsNetCore);
+
+		// Act
+		CompileBusinessProcessResult result = service.Compile(Env, new CompileBusinessProcessRequest("UsrProc"));
+
+		// Assert
+		result.RestartRequired.Should().Be(expected,
+			because: "only new compiled code on a .NET (Core) host waits for a restart");
+	}
 }
 
 /// <summary>
@@ -341,9 +386,9 @@ public sealed class CompileBusinessProcessCommandTests {
 
 	private static CompileBusinessProcessResult Result(bool success, bool compileRequired = true,
 			IReadOnlyList<CompileBusinessProcessError> errors = null, int errorCount = 0,
-			string errorMessage = null, bool? compiled = null) =>
+			string errorMessage = null, bool? compiled = null, bool restartRequired = false) =>
 		new(success, errorMessage, "UsrProc", "Custom", "general", compileRequired, compiled ?? compileRequired,
-			201000, errors ?? [], errorCount);
+			201000, errors ?? [], errorCount, restartRequired);
 
 	[Test]
 	[Description("A failure where no compile ran - the process was not found, say - does not tell the caller to ask again before 'the next compile': no consent was spent, and the line would read as if a compile had happened.")]
@@ -361,7 +406,7 @@ public sealed class CompileBusinessProcessCommandTests {
 	}
 
 	[Test]
-	[Description("A clean compile exits 0 and says which package was compiled and how long it took, and asks for a run to verify it rather than promising activation: a reload without restart was measured on .NET Framework only.")]
+	[Description("A clean compile on a host that loads the new assembly itself (.NET Framework) exits 0, says which package was compiled and how long it took, and asks for a run to verify it, with no restart in the answer.")]
 	public void Execute_ShouldReportTheCompiledPackage_OnSuccess() {
 		// Arrange
 		CompileBusinessProcessResult result = Result(success: true);
@@ -371,10 +416,31 @@ public sealed class CompileBusinessProcessCommandTests {
 
 		// Assert
 		exitCode.Should().Be(0, because: "the compile succeeded");
-		// Activation without a restart is not promised for a .NET host, where it was never measured.
 		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("Compiled package 'Custom'")
 			&& message.Contains("3:21") && message.Contains("Verify on a run")
-			&& message.Contains("restart the application")));
+			&& !message.Contains("restart")));
+		_logger.DidNotReceiveWithAnyArgs().WriteWarning(default);
+	}
+
+	[Test]
+	[Description("A clean compile on a .NET (Core) host exits 0 but warns that the process does not run the compiled code until the application restarts, names restart-by-environment-name for this environment with its cost, and says what a start before the restart does.")]
+	public void Execute_ShouldWarnThatARestartIsNeeded_OnANetCoreHost() {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: true, restartRequired: true);
+
+		// Act
+		int exitCode = Execute(result);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the compile itself succeeded");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("Compiled package 'Custom'")
+			&& message.Contains("does NOT run the compiled code yet")
+			&& message.Contains("restart-by-environment-name for 'sandbox'")
+			&& message.Contains("Ask the user")
+			&& message.Contains("left Running in the process log")
+			&& message.Contains("runs its PREVIOUS code")
+			&& message.Contains("proves nothing")));
+		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("Compiled package")));
 	}
 
 	[Test]

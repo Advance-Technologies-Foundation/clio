@@ -3,6 +3,7 @@ description: on Creatio 10.x a process saved server-side (create/modify-business
 applies-to:
   - clio/Command/CompileBusinessProcessCommand.cs
   - clio/Command/McpServer/Tools/CompileCreatioTool.cs
+  - clio/Command/McpServer/Prompts/FsmAndCompilePrompt.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyProcessAsNewVersionTool.cs
@@ -41,7 +42,16 @@ is a source reading, not measured on an 8.3 stand.
 On a .NET 8 stand (10.1.38, 2026-09-28) the same `CompileProcess` compiled `Custom` only (`force=False;
 packagesNamesToCompile=[Custom]`) in 1 min 27 s – 1 min 36 s. The compiled process then kept answering
 `Publish the "<name>" process before starting it` until the application was restarted: the reload that is
-enough on .NET Framework is not enough on a .NET host.
+enough on .NET Framework is not enough on a .NET host. The cause is the host, not the compile: a .NET host loads
+the configuration assembly once, at startup (`AppConnection.LoadWorkspaceAssembly`), and its
+`WorkspaceAssemblyChanged` handler (`Terrasoft.WebHost/Application.OnWorkspaceAssemblyChanged`) only notifies the
+web-farm orchestrator, while the .NET Framework one unloads the AppDomain. Measured again on a 10.2.1024 .NET 8
+stand on 2026-11-06 (ENG-105744): a NEW process started by a signal before the restart failed only in the server's
+`Error.log` (`ConsumerInvocationActor`) and its process-log instance was left Running (platform bug ENG-105872);
+after the restart the same process completed. A process loaded at startup passes the start check and keeps running
+its previous code until the restart. CrtProcessBuilder 1.6.6.142 answers `restartRequired`, and clio's
+`compile-creatio process-name` then warns that the process does NOT run the compiled code yet (for a package that
+does not say, clio falls back to the environment's `IsNetCore` registration).
 
 A package is marked by other events too: deleting a schema from it (`PackageSchemaDeleted`) and a designer's
 entity save both did on this stand. That is why the first `Build` after a create DID pick a new process up
