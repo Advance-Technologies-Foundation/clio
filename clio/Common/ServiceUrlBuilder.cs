@@ -424,7 +424,14 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>parentColumnValue</c> from the query string; it answers HTTP 200 with
 		///     <c>{"success":false,"errorInfo":{...}}</c> on a rejection.
 		/// </summary>
-		FileApiUploadFile = 121
+		FileApiUploadFile = 121,
+
+		/// <summary>
+		///     Reads the runtime appearance settings of a page (<c>AppearanceSettingsService.GetAppearanceSettings</c>):
+		///     the <c>AppearanceSettings</c> add-on merged across every package layer, as the window opens. The body is
+		///     <c>{"schemaName":"&lt;page&gt;"}</c>; the response is <c>{"value":{"modalSettings":{"size":N}}}</c>.
+		/// </summary>
+		GetAppearanceSettings = 122
 
 	}
 
@@ -542,6 +549,7 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.FileApiUploadFile, "/rest/FileApiService/UploadFile"},
+		{KnownRoute.GetAppearanceSettings, "/ServiceModel/AppearanceSettingsService.svc/GetAppearanceSettings"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},

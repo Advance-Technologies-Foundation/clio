@@ -1,0 +1,45 @@
+COMMAND TYPE
+    Development commands
+
+NAME
+    set-page-modal-size - Set the modal window size of a Freedom UI modal page
+
+DESCRIPTION
+    Sets the window size of a Freedom UI modal page (a page inheriting BaseMiniPageTemplate) by
+    writing modalSettings.size to the page's AppearanceSettings add-on in the given package. The
+    add-on is created when the page has none in that package; every other add-on field is kept. The
+    page body is not changed: layoutConfig.width of 'Main', inner container widths and CSS do not set
+    the window size.
+
+    --size takes the options the Page Designer offers: small (S), medium (M), large (L) or
+    extra-large (XL). Any other value is refused with the accepted list and nothing is written.
+
+    The result names the previous size (absent when none was set, so the window opened small), its raw
+    value, the package it came from, and the new size. When a package
+    above the given one still overrides the size, a warning says the window opens with that size.
+
+SYNOPSIS
+    clio set-page-modal-size -e ENVIRONMENT --page-schema-name NAME --package-name NAME --size SIZE
+
+OPTIONS
+    -e, --environment NAME
+        Registered Creatio environment to target.
+
+    --page-schema-name NAME
+        Required. Modal page schema name, e.g. 'UsrOrder_MiniPage'.
+
+    --package-name NAME
+        Required. Editable package the AppearanceSettings add-on is written to, e.g. 'Custom'. For a
+        vendor page this is the package that customizes it.
+
+    --size SIZE
+        Required. small (S), medium (M), large (L) or extra-large (XL).
+
+EXAMPLES
+    # Make a modal window large.
+    clio set-page-modal-size -e dev --page-schema-name UsrOrder_MiniPage --package-name Custom --size large
+
+NOTES
+    Aliases: page-modal-size.
+
+    Read the current size with get-page-modal-size first.

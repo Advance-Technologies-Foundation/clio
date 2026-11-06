@@ -177,6 +177,8 @@ create-page:create-page,page-create
 list-page-templates:list-page-templates,page-templates,page-templates-list
 create-related-page-addon:create-related-page-addon,related-page-addon,set-related-pages
 get-related-page-addon:get-related-page-addon,related-page-addon-get,get-related-pages
+get-page-modal-size:get-page-modal-size,page-modal-size-get
+set-page-modal-size:set-page-modal-size,page-modal-size
 ping-app:ping-app,ping
 pkg-hotfix:pkg-hotfix,hf,hotfix
 pkg-to-db:pkg-to-db,2db,todb
