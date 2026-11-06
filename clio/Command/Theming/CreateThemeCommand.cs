@@ -43,6 +43,25 @@ public class CreateThemeOptions : RemoteCommandOptions
 	[Option("package-name", Required = false,
 		HelpText = "Owning package name. When omitted, the environment's CurrentPackageId system setting is used.")]
 	public string PackageName { get; set; }
+
+	[Option("background-image-id", Required = false,
+		HelpText = "Id of an image uploaded with upload-image, set as the theme background. Pass at most one of " +
+			"--background-image-id and --background-color; a background needs Creatio " +
+			ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
+	public string BackgroundImageId { get; set; }
+
+	[Option("background-color", Required = false, HelpText = "Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]
+	public string BackgroundColor { get; set; }
+
+	[Option("keep-icon-background", Required = false,
+		HelpText = "Keep the UsePanelIconBackground feature as is; without it, a background turns it off for All employees.")]
+	public bool KeepIconBackground { get; set; }
+
+	[RequiresCreatioVersion(ThemeServiceRequirement.BackgroundMinVersion, Hint = ThemeServiceRequirement.BackgroundHint)]
+	public bool HasBackgroundArgument => GetBackgroundArguments().IsPresent;
+
+	internal ThemeBackgroundArguments GetBackgroundArguments() =>
+		new(BackgroundImageId, BackgroundColor, KeepIconBackground);
 }
 
 /// <summary>
@@ -54,15 +73,17 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 {
 	private readonly IServiceUrlBuilder _urlBuilder;
 	private readonly IFileSystem _fileSystem;
+	private readonly IThemeBackgroundWriter _backgroundWriter;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="CreateThemeCommand"/> class.
 	/// </summary>
 	public CreateThemeCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
-		IServiceUrlBuilder urlBuilder, IFileSystem fileSystem)
+		IServiceUrlBuilder urlBuilder, IFileSystem fileSystem, IThemeBackgroundWriter backgroundWriter)
 		: base(applicationClient, settings) {
 		_urlBuilder = urlBuilder;
 		_fileSystem = fileSystem;
+		_backgroundWriter = backgroundWriter;
 	}
 
 	/// <inheritdoc />
@@ -76,9 +97,14 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 	/// <param name="createdId">On success, the effective theme id (supplied or auto-generated).</param>
 	/// <param name="errorMessage">On failure, the validation or server-provided message.</param>
 	/// <returns><c>true</c> when the theme was created; otherwise <c>false</c>.</returns>
-	public virtual bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage) {
+	public virtual bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
+		out ThemeBackgroundOutcome backgroundOutcome) {
 		createdId = null;
-		errorMessage = null;
+		backgroundOutcome = ThemeBackgroundOutcome.None;
+		ThemeBackgroundArguments background = options.GetBackgroundArguments();
+		if (!background.TryValidate(out errorMessage)) {
+			return false;
+		}
 		string id = string.IsNullOrWhiteSpace(options.Id) ? Guid.NewGuid().ToString("D") : options.Id;
 		if (!ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent, options.CssContentFile,
 				out string cssContent, out errorMessage)) {
@@ -99,10 +125,13 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 		if (!ThemeRequestBuilder.TryValidateRequest(request, out errorMessage)) {
 			return false;
 		}
-		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)) {
+		if (!TryResolvePackageUId(options.PackageName, out string packageUId, out errorMessage)
+			|| !_backgroundWriter.TryConfirmImage(background, out errorMessage)) {
 			return false;
 		}
-		string requestData = JsonSerializer.Serialize(request with { PackageUId = packageUId });
+		string requestData = JsonSerializer.Serialize(request with {
+			PackageUId = packageUId, Background = background.ToBackground()
+		});
 		string response = ApplicationClient.ExecutePostRequest(ServiceUri, requestData,
 			options.TimeOut, options.MaxAttempts, options.RetryDelay);
 		if (ThemeServiceResponseParser.TryGetFailure(response, out string failure)) {
@@ -110,13 +139,16 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		createdId = id;
+		backgroundOutcome = _backgroundWriter.Complete(background, id, options.PackageName);
 		return true;
 	}
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(CreateThemeOptions options) {
-		if (TryCreateTheme(options, out string createdId, out string errorMessage)) {
+		if (TryCreateTheme(options, out string createdId, out string errorMessage,
+				out ThemeBackgroundOutcome backgroundOutcome)) {
 			Logger.WriteInfo($"Created theme '{createdId}'.");
+			Logger.WriteWarnings(backgroundOutcome.Warnings);
 			return;
 		}
 		CommandSuccess = false;

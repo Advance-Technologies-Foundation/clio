@@ -73,6 +73,10 @@ public sealed record GetThemeResponse
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public int? CssContentLength { get; init; }
 
+	[JsonPropertyName("background")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public ThemeBackground Background { get; init; }
+
 	/// <summary>The failure message; omitted on success.</summary>
 	[JsonPropertyName("error")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -150,7 +154,8 @@ public class GetThemeCommand : Command<GetThemeOptions>
 				Caption = theme.Caption,
 				CssClassName = theme.CssClassName,
 				CssFilePath = TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty),
-				CssContentLength = cssContent.Length
+				CssContentLength = cssContent.Length,
+				Background = theme.Background
 			};
 			if (resolvedOutputPath != null) {
 				OutputPathConfinement.WriteAtomic(_ioFileSystem, resolvedOutputPath, cssContent);
@@ -189,10 +194,7 @@ public class GetThemeCommand : Command<GetThemeOptions>
 		// format Guid.TryParse does (braced, "N", "B", ...), while the catalog always publishes the canonical
 		// "D" spelling. Comparing the raw strings would therefore report "not found" for a valid GUID that is
 		// merely spelled differently than the catalog — compare parsed values instead.
-		Guid requestedId = Guid.Parse(options.Id);
-		List<ThemeDescriptor> matchingThemes = themes
-			.Where(descriptor => Guid.TryParse(descriptor.Id, out Guid catalogId) && catalogId == requestedId)
-			.ToList();
+		List<ThemeDescriptor> matchingThemes = ThemeCatalogLookup.FindById(themes, options.Id);
 		if (matchingThemes.Count > 1) {
 			error = $"Theme id '{options.Id}' matches more than one theme on the environment; " +
 				"the catalog is inconsistent. Run 'clio list-themes' to inspect it.";

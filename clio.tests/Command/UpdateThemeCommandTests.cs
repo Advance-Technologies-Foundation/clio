@@ -1,5 +1,7 @@
 namespace Clio.Tests.Command;
 
+using System.Collections.Generic;
+using System.Linq;
 using Clio.Command;
 using Clio.Command.Theming;
 using Clio.Common;
@@ -11,7 +13,13 @@ using NUnit.Framework;
 [Property("Module", "Command")]
 public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOptions>
 {
+	private const string ThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
+
+	private const string ImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
 	private IApplicationClient _applicationClient;
+	private IThemeBackgroundWriter _backgroundWriter;
+	private IThemeCatalog _themeCatalog;
 	private ILogger _logger;
 	private UpdateThemeCommand _command;
 
@@ -30,7 +38,13 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	protected override void AdditionalRegistrations(IServiceCollection containerBuilder) {
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
+		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(true);
+		_backgroundWriter.Complete(default, default, default).ReturnsForAnyArgs(ThemeBackgroundOutcome.None);
+		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
+		containerBuilder.AddTransient(_ => _backgroundWriter);
+		containerBuilder.AddTransient(_ => _themeCatalog);
 	}
 
 	private static UpdateThemeOptions ValidOptions() => new() {
@@ -164,5 +178,132 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		// Assert
 		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful update");
+	}
+
+	[TestCase("#1A2B3C", false, null, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[TestCase(null, true, null, "{}")]
+	[TestCase("#1A2B3C", false, "", "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[Category("Unit")]
+	[Description("Sends only the id and the background when no content field is given or a given one is empty, so the stored caption, class name and CSS are kept; a removal sends an empty background.")]
+	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string color, bool remove,
+		string content, string expectedBackground) {
+		string body = null;
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns(call => {
+				body = call.ArgAt<string>(1);
+				return "{\"success\":true}";
+			});
+
+		_command.Execute(new UpdateThemeOptions {
+			Id = ThemeId, BackgroundColor = color, RemoveBackground = remove,
+			Caption = content, CssClassName = content, CssContent = content
+		});
+
+		body.Should().Be($"{{\"id\":\"{ThemeId}\",\"background\":{expectedBackground}}}",
+			because: "null content fields are kept by the platform, null keeps the background, and {} removes it");
+	}
+
+	[TestCase(ThemeId, true, 1, 0)]
+	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", true, 0, 1)]
+	[TestCase(ThemeId, false, 0, 0)]
+	[Category("Unit")]
+	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
+	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, bool imageFound,
+		int expectedCalls, int expectedMissingThemeErrors) {
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(imageFound);
+		IReadOnlyList<ThemeDescriptor> themes = [
+			new ThemeDescriptor {
+				Id = catalogThemeId,
+				CssFilePath = $"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{catalogThemeId}/theme.css?hash=abc"
+			}
+		];
+		_themeCatalog.TryGetAvailableThemes(Arg.Any<ListThemesOptions>(), out Arg.Any<IReadOnlyList<ThemeDescriptor>>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = themes;
+				return true;
+			});
+		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
+			.Returns("{\"success\":true}");
+
+		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81" });
+
+		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
+		_logger.Received(expectedMissingThemeErrors)
+			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses a full overwrite that has no caption before any HTTP call.")]
+	public void UpdateTheme_ShouldFailFastWithoutHttp_WhenCaptionIsMissingWithoutABackground() {
+		UpdateThemeOptions options = ValidOptions();
+		options.Caption = null;
+
+		int exitCode = _command.Execute(options);
+
+		exitCode.Should().Be(1, because: "without a background argument the update is a full overwrite, which needs a caption");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		_logger.Received(1).WriteError("Theme caption is required.");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Still checks a given css-class-name in a background update, before any HTTP call.")]
+	public void UpdateTheme_ShouldFailFastWithoutHttp_WhenABackgroundUpdateGivesAnInvalidCssClassName() {
+		int exitCode = _command.Execute(new UpdateThemeOptions {
+			Id = ThemeId, BackgroundColor = "#1A2B3C", CssClassName = "1bad"
+		});
+
+		exitCode.Should().Be(1, because: "a content field given with a background is written, so it must be valid");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m != null && m.StartsWith("css-class-name must match")));
+	}
+
+	[TestCase(false, 0, null, "GetAvailableThemes failed: catalog unavailable")]
+	[TestCase(true, 0, null, "No theme with id '" + ThemeId + "' is on the environment (see list-themes); nothing was changed. "
+		+ ThemeCatalogMessages.EmptyCatalogLicenseCaveat)]
+	[TestCase(true, 1, "themes/" + ThemeId + "/theme.css", "Theme '" + ThemeId + "' has no package in its cssFilePath")]
+	[TestCase(true, 2, "Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/" + ThemeId + "/theme.css",
+		"Theme id '" + ThemeId + "' matches more than one theme")]
+	[Category("Unit")]
+	[Description("Refuses an image background before any write when the theme's package cannot be read from the catalog: the catalog read fails, the catalog is empty, the cssFilePath names no package, or the id matches more than one theme.")]
+	public void Execute_ShouldNotPostUpdateTheme_WhenTheThemePackageCannotBeResolved(bool catalogRead, int listedCopies,
+		string cssFilePath, string expectedError) {
+		StubCatalog(catalogRead, Enumerable.Repeat(new ThemeDescriptor { Id = ThemeId, CssFilePath = cssFilePath },
+			listedCopies).ToArray());
+
+		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
+
+		exitCode.Should().Be(1, because: "an image needs the theme's package, so the theme is not written without one");
+		_applicationClient.DidNotReceive().ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+		_logger.Received(1).WriteError(Arg.Is<string>(m => m != null && m.StartsWith(expectedError)));
+	}
+
+	[Test, Category("Unit")]
+	[Description("Reads the theme's package from a catalog cssFilePath that starts with a slash.")]
+	public void Execute_ShouldBindIntoThePackage_WhenTheCssFilePathStartsWithASlash() {
+		StubCatalog(true, new ThemeDescriptor {
+			Id = ThemeId, CssFilePath = $"/Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{ThemeId}/theme.css"
+		});
+		StubUpdateThemeSuccess();
+
+		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
+
+		exitCode.Should().Be(0, because: "the package is read from the catalog path with or without a leading slash");
+		_backgroundWriter.Received(1).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
+	}
+
+	private void StubCatalog(bool read, params ThemeDescriptor[] themes) {
+		_themeCatalog.TryGetAvailableThemes(Arg.Any<ListThemesOptions>(), out Arg.Any<IReadOnlyList<ThemeDescriptor>>(),
+				out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = themes;
+				call[2] = read ? null : "catalog unavailable";
+				return read;
+			});
 	}
 }

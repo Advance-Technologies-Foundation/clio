@@ -77,15 +77,16 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>, IThemeCatalog
 			return;
 		}
 		IList<string[]> table = new List<string[]> {
-			new[] { "Id", "Caption", "CssClassName", "CssFilePath" },
-			new[] { string.Empty, string.Empty, string.Empty, string.Empty }
+			new[] { "Id", "Caption", "CssClassName", "CssFilePath", "Background" },
+			new[] { string.Empty, string.Empty, string.Empty, string.Empty, string.Empty }
 		};
 		foreach (ThemeDescriptor theme in themes) {
 			table.Add(new[] {
 				TextUtilities.SanitizeForDisplay(theme.Id ?? string.Empty, ThemeParameterValidator.MaxIdLength),
 				TextUtilities.SanitizeForDisplay(theme.Caption ?? string.Empty, ThemeParameterValidator.MaxCaptionLength),
 				TextUtilities.SanitizeForDisplay(theme.CssClassName ?? string.Empty, ThemeParameterValidator.MaxCssClassNameLength),
-				TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty)
+				TextUtilities.SanitizeForDisplay(theme.CssFilePath ?? string.Empty),
+				theme.Background?.Describe() ?? string.Empty
 			});
 		}
 		Logger.WriteLine();
@@ -102,6 +103,7 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>, IThemeCatalog
 		}
 		themes = (parsed?.Values ?? new List<ThemeDescriptor>())
 			.Where(theme => theme is not null)
+			.Select(theme => theme with { Background = ThemeBackground.FromCatalog(theme.Background) })
 			.ToList();
 		return true;
 	}
@@ -129,4 +131,6 @@ public sealed record ThemeDescriptor
 
 	/// <summary>Relative path to the theme's compiled CSS file.</summary>
 	public string CssFilePath { get; init; }
+
+	public ThemeBackground Background { get; init; }
 }

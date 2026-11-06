@@ -67,17 +67,20 @@ internal static class ThemeRequestBuilder
 	/// <param name="request">The theme request whose contract fields are validated.</param>
 	/// <param name="error">On failure, a user-friendly diagnostic; otherwise <c>null</c>.</param>
 	/// <returns><c>true</c> when every field satisfies the contract.</returns>
-	public static bool TryValidateRequest(ThemeRequest request, out string error) {
+	public static bool TryValidateRequest(ThemeRequest request, out string error, bool partial = false) {
 		if (!ThemeParameterValidator.TryValidateId(request.Id, out error)) {
 			return false;
 		}
-		if (!ThemeParameterValidator.TryValidateCssClassName(request.CssClassName, out error)) {
+		if ((!partial || request.CssClassName is not null)
+			&& !ThemeParameterValidator.TryValidateCssClassName(request.CssClassName, out error)) {
 			return false;
 		}
-		if (!ThemeParameterValidator.TryValidateCaption(request.Caption, out error)) {
+		if ((!partial || request.Caption is not null)
+			&& !ThemeParameterValidator.TryValidateCaption(request.Caption, out error)) {
 			return false;
 		}
-		if (!ThemeParameterValidator.TryValidateCssContent(request.CssContent, out error)) {
+		if ((!partial || request.CssContent is not null)
+			&& !ThemeParameterValidator.TryValidateCssContent(request.CssContent, out error)) {
 			return false;
 		}
 		error = null;

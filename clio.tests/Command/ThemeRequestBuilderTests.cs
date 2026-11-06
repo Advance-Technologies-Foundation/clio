@@ -108,6 +108,24 @@ public sealed class ThemeRequestBuilderTests
 
 	[Test]
 	[Category("Unit")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", null, null, null, true, TestName = "TryValidateRequest partial accepts no content field")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", "Ocean", null, null, true, TestName = "TryValidateRequest partial accepts a caption alone")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", null, "1bad", null, false, TestName = "TryValidateRequest partial rejects a given cssClassName not starting with a letter")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", "", null, null, false, TestName = "TryValidateRequest partial rejects a given empty caption")]
+	[TestCase("d53a816b-65ed-4b5b-ad3b-f739280add45", null, null, "", false, TestName = "TryValidateRequest partial rejects a given empty cssContent")]
+	[TestCase("not-a-guid", null, null, null, false, TestName = "TryValidateRequest partial rejects a non-GUID id")]
+	[Description("In a partial update, checks the id and only the content fields that are given, so a background-only update needs none of them.")]
+	public void TryValidateRequest_ShouldCheckOnlyTheGivenFields_WhenPartial(string id, string caption, string cssClassName,
+		string cssContent, bool expected) {
+		ThemeRequest request = new() { Id = id, Caption = caption, CssClassName = cssClassName, CssContent = cssContent };
+
+		bool ok = ThemeRequestBuilder.TryValidateRequest(request, out _, partial: true);
+
+		ok.Should().Be(expected, because: "an omitted field is kept by the platform, while a given one is written and must be valid");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Rejects an explicitly empty CSS content string.")]
 	public void TryValidateRequest_ShouldFail_WhenCssContentIsEmptyString() {
 		// Arrange

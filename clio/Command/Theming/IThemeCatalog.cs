@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Clio.Command.Theming;
 
@@ -35,4 +37,12 @@ internal static class ThemeCatalogMessages
 	internal const string EmptyCatalogLicenseCaveat =
 		"This can also mean the CanCustomizeBranding license is missing (list-themes returns an empty " +
 		"catalog in that case) — verify access with check-theming-access.";
+}
+
+internal static class ThemeCatalogLookup
+{
+	internal static List<ThemeDescriptor> FindById(IReadOnlyList<ThemeDescriptor> themes, string id) {
+		Guid requestedId = Guid.Parse(id);
+		return themes.Where(theme => Guid.TryParse(theme.Id, out Guid catalogId) && catalogId == requestedId).ToList();
+	}
 }

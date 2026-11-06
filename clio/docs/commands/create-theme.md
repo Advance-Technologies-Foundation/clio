@@ -24,6 +24,13 @@ is omitted, the environment's `CurrentPackageId` system setting owns the new the
 Provide the CSS through exactly one of `--css-content` (inline) or `--css-content-file`
 (a UTF-8 file). Prefer `--css-content-file` for large or multi-line CSS (up to 1 MiB).
 
+The theme can carry its own background, written by the same `CreateTheme` call: `--background-image-id`
+(an image uploaded with [`upload-image`](upload-image.md)) or `--background-color`. It needs Creatio 10.2.96 or
+later, checked before any write. After the create, the `UsePanelIconBackground` feature is turned off for All
+employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package. The output says whether
+`UsePanelIconBackground` is off or was kept and names the package the image was bound into; the MCP tool returns
+them as `panel-icon-background` (`off` or `kept`) and `background-image-package`.
+
 ## Synopsis
 
 ```bash
@@ -45,6 +52,12 @@ clio create-theme [options]
 
 --package-name                  Owning package name; the CurrentPackageId system setting when omitted
 
+--background-image-id           Id of an image uploaded with upload-image, set as the theme background
+
+--background-color              Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA
+
+--keep-icon-background          Keep the UsePanelIconBackground feature as is
+
 --uri               -u          Application uri
 
 --Password          -p          User password
@@ -64,6 +77,9 @@ create a theme with inline CSS on the environment registered as myapp
 
 clio create-theme --caption "Ocean" --css-class-name ocean-theme --css-content-file ./theme.css -e myapp
 create a theme reading the CSS from a file
+
+clio create-theme --caption "Ocean" --css-content-file ./theme.css --background-color "#0A2540" -e myapp
+create a theme with a solid background color
 ```
 
 ## Notes

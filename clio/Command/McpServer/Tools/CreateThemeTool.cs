@@ -40,7 +40,7 @@ public class CreateThemeTool(
 	/// <summary>The argument roster returned when a caller sends an unrecognised field name.</summary>
 	internal const string ValidArgumentNames =
 		"Valid: environment-name, css-content, css-class-name, caption, id, package-name, "
-		+ BrandParameterNames + ".";
+		+ BrandParameterNames + ", background-image-id, background-color, keep-icon-background.";
 
 	private static readonly Dictionary<string, string> LegacyAliases =
 		new(McpToolArgumentSupport.EnvironmentNameAliases, StringComparer.Ordinal) {
@@ -66,21 +66,29 @@ public class CreateThemeTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = false, Idempotent = false, OpenWorld = true),
-	 Description("Create a custom Creatio theme on a registered environment via the native ThemeService. " +
+	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true),
+	 Description("Create a custom Creatio theme (background optional) on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
-		"Returns { success, id, warnings?, error? } where id is the created theme's id, auto-generated when omitted. " +
+		"Returns { success, id, background-image-package?, panel-icon-background?, warnings?, error? } where id is " +
+		"the created theme's id, auto-generated when omitted. " +
 		"The theme CSS is supplied inline via css-content, OR built server-side from brand colours and fonts " +
 		"(primary, secondary, accent, success, error, heading-font, body-font, font-weights) and created " +
 		"in one call — provide exactly one of css-content / primary. In brand mode custom font families are " +
 		"checked against Google Fonts over the network (a short bounded probe): a family the catalog does not " +
 		"publish gets no @import plus a warning, and an unverifiable probe keeps the import plus a warning. " +
 		"The inline css-content path stays tenant-only (no Google Fonts probe) — OpenWorld reflects the brand-mode probe only. " +
+		"An optional theme background is at most one of background-image-id (an image from upload-image) or " +
+		"background-color, and needs Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later, checked " +
+		"before any write. It turns the environment-wide UsePanelIconBackground feature off for All employees " +
+		"unless keep-icon-background is true, and an image is bound into the theme's package. " +
+		"background-image-package names the package the image was bound into, and panel-icon-background is off or " +
+		"kept when a background was set; problems after the create come back in warnings. " +
 		"This description is authoritative for create-theme's CSS sources, font-name contract, and error codes; " +
 		"get-guidance theming covers the surrounding workflow (apply, default theme, deletion).")]
 	public CreateThemeResult CreateTheme(
 		[Description("Parameters: environment-name (required), css-content (inline mode) or primary (brand mode) — exactly one of the two, " +
-			"css-class-name, caption, id, package-name, secondary, accent, success, error, heading-font, body-font, font-weights (all optional).")]
+			"css-class-name, caption, id, package-name, secondary, accent, success, error, heading-font, body-font, font-weights, " +
+			"background-image-id, background-color, keep-icon-background (all optional).")]
 		[Required] CreateThemeArgs args) {
 		string? aliasError = McpToolArgumentSupport.BuildLegacyAliasError(
 			args.ExtensionData, LegacyAliases, ".", ValidArgumentNames);
@@ -110,7 +118,10 @@ public class CreateThemeTool(
 			CssClassName = args.CssClassName,
 			CssContent = args.CssContent,
 			Id = args.Id,
-			PackageName = args.PackageName
+			PackageName = args.PackageName,
+			BackgroundImageId = args.BackgroundImageId,
+			BackgroundColor = args.BackgroundColor,
+			KeepIconBackground = args.KeepIconBackground ?? false
 		};
 		return brandMode ? ExecuteBrandMode(options, args) : ExecuteInlineMode(options);
 	}
@@ -142,14 +153,17 @@ public class CreateThemeTool(
 	private static CreateThemeResult CreateTheme(CreateThemeCommand command, CreateThemeOptions options,
 		IReadOnlyList<string> buildWarnings) {
 
-		if (!command.TryCreateTheme(options, out string createdId, out string errorMessage)) {
+		if (!command.TryCreateTheme(options, out string createdId, out string errorMessage,
+				out ThemeBackgroundOutcome backgroundOutcome)) {
 			return CreateThemeResult.Failure(
 				string.IsNullOrWhiteSpace(errorMessage)
 					? "CreateTheme returned success=false."
 					: SensitiveErrorTextRedactor.Redact(errorMessage),
 				buildWarnings);
 		}
-		return CreateThemeResult.Successful(createdId, buildWarnings);
+		return CreateThemeResult.Successful(createdId,
+			[.. buildWarnings ?? [], .. SensitiveErrorTextRedactor.RedactAll(backgroundOutcome.Warnings)],
+			backgroundOutcome);
 	}
 
 	private static bool HasAnyBrandParameter(CreateThemeArgs args) {
@@ -220,7 +234,19 @@ public sealed record CreateThemeArgs(
 
 	[property: JsonPropertyName("primary")]
 	[property: Description("Brand primary colour (#rrggbb, #rgb, rgb(), hsl(), or a named colour); enables the brand mode — clio builds the theme CSS server-side and creates it in one call, so the CSS never enters the agent context. Mutually exclusive with css-content.")]
-	string? Primary = null
+	string? Primary = null,
+
+	[property: JsonPropertyName("background-image-id")]
+	[property: Description("Id of an image uploaded with upload-image, set as the theme background.")]
+	string? BackgroundImageId = null,
+
+	[property: JsonPropertyName("background-color")]
+	[property: Description("Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]
+	string? BackgroundColor = null,
+
+	[property: JsonPropertyName("keep-icon-background")]
+	[property: Description("When true, leaves the UsePanelIconBackground feature as is, although the panel's icon background can hide the theme background.")]
+	bool? KeepIconBackground = null
 ) : ThemeBrandArgs {
 	/// <summary>Overflow bag for unknown JSON fields; drives the legacy-alias rename hints.</summary>
 	[JsonExtensionData]
@@ -240,7 +266,15 @@ public sealed record CreateThemeResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Id { get; init; }
 
-	/// <summary>Non-fatal advisories raised while building the CSS in the brand mode; omitted when there are none.</summary>
+	[JsonPropertyName("background-image-package")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string BackgroundImagePackage { get; init; }
+
+	[JsonPropertyName("panel-icon-background")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string PanelIconBackground { get; init; }
+
+	/// <summary>Non-fatal advisories from the brand-mode CSS build and the background steps; omitted when there are none.</summary>
 	[JsonPropertyName("warnings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public IReadOnlyList<string> Warnings { get; init; }
@@ -251,10 +285,13 @@ public sealed record CreateThemeResult {
 	public string Error { get; init; }
 
 	/// <summary>Creates a success result carrying the effective theme id and any non-fatal build advisories.</summary>
-	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null) {
+	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null,
+		ThemeBackgroundOutcome background = null) {
 		return new CreateThemeResult {
 			Success = true,
 			Id = id,
+			BackgroundImagePackage = background?.ImagePackage,
+			PanelIconBackground = background?.PanelIconBackground,
 			Warnings = warnings is { Count: > 0 } ? warnings : null
 		};
 	}
