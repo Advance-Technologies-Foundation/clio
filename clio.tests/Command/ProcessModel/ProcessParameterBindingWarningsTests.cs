@@ -69,12 +69,23 @@ public class ProcessParameterBindingWarningsTests {
 
 	private static string AddMapping(string mapping) => $$"""{"op":"addMapping","mapping":{{mapping}}}""";
 
+	// mergeFrom covers only signal starts on one object, so a remedy that named it alone would leave a process with
+	// a timer start, or starts on two objects, no remedy at all; the Formula per branch stays, after the merge and
+	// conditioned on the case the merge cannot take.
+	private static bool RecommendsMergeFirst(string warning) {
+		int merge = warning.IndexOf("mergeFrom [", System.StringComparison.Ordinal);
+		int fallback = warning.IndexOf("Otherwise (signal starts on different objects", System.StringComparison.Ordinal);
+		int formula = warning.IndexOf("formulaTask", System.StringComparison.Ordinal);
+		return merge >= 0 && warning.Contains("process-multi-start", System.StringComparison.Ordinal)
+			&& fallback > merge && formula > fallback;
+	}
+
 	#endregion
 
 	#region Methods: ForDescriptor
 
 	[Test]
-	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and point at mergeFrom as the remedy (ENG-103990) - no longer a formulaTask per branch. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
+	[Description("Two mappings onto one process parameter in a build warn once, naming both sources and the one that is saved (the last listed, measured), and point at mergeFrom as the remedy (ENG-103990), naming a formulaTask per branch only for starts mergeFrom cannot merge. This is the ENG-103081 scenario: the build used to succeed in silence and the shared parameter read empty on the run.")]
 	public void ForDescriptor_ShouldWarn_WhenTwoMappingsBindTheSameProcessParameter() {
 		// Arrange
 		string descriptor = Descriptor(TwoStartElements, ReadAName, ReadBName);
@@ -86,7 +97,7 @@ public class ProcessParameterBindingWarningsTests {
 		warnings.Should().ContainSingle(w => w.Contains("binds process parameter 'PName' 2 times"),
 			because: "a second binding of one parameter silently replaces the first");
 		warnings.Should().Contain(w => w.Contains("only the last one listed (ReadB.ResultEntity.Name) is saved")
-				&& w.Contains("mergeFrom [") && !w.Contains("formulaTask"),
+				&& RecommendsMergeFirst(w),
 			because: "the caller must learn which binding survived and that merging the starts is the remedy");
 	}
 
@@ -105,8 +116,9 @@ public class ProcessParameterBindingWarningsTests {
 			because: "the warning has to name the start whose runs read the default value");
 		warnings[0].Should().NotContain("'SigA'",
 			because: "the start that does reach the element is not a problem and must not be named as one");
-		warnings[0].Should().Contain("process-multi-start").And.NotContain("formulaTask",
-			because: "every warning recommends mergeFrom, not a Formula per branch (ENG-103990 D7)");
+		RecommendsMergeFirst(warnings[0]).Should().BeTrue(
+			because: "every warning recommends mergeFrom first and keeps a Formula per branch only for starts it cannot "
+				+ "merge (ENG-103990 D7, review of clio#1899)");
 	}
 
 	[Test]
@@ -225,7 +237,7 @@ public class ProcessParameterBindingWarningsTests {
 		// Assert
 		warnings.Should().ContainSingle(w => w.Contains("replaced the existing binding of process parameter 'PName'")
 				&& w.Contains("was ReadA.ResultEntity.Name, now ReadB.ResultEntity.Name")
-				&& w.Contains("mergeFrom [") && !w.Contains("formulaTask"),
+				&& RecommendsMergeFirst(w),
 			because: "the caller must see which binding the edit dropped, and the one remedy every warning names");
 	}
 

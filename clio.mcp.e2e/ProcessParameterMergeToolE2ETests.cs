@@ -41,7 +41,7 @@ public sealed class ProcessParameterMergeToolE2ETests {
 	#region Methods: Tests
 
 	[Test]
-	[Description("Two signal starts on Contact flow straight into one shared Read data filtered by a mergeFrom parameter. The build raises no binding warning and the run started by the 'added' signal reads the triggering record - the measured fix for the naive join, which completes and changes nothing.")]
+	[Description("Two signal starts on Contact flow straight into one shared Read data filtered by a mergeFrom parameter. The build raises no binding warning and the run started by the 'added' signal reads the triggering record - the measured fix for the naive join, which completes and changes nothing. The 'added' start is SigB, the SECOND source in the stored formula (schema order), so a merge that only ever reads the first start's Id fails here.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("a mergeFrom parameter feeds one shared chain from two signal starts")]
 	public async Task CreateBusinessProcess_Should_ReadTheTriggeringRecord_ThroughAMergedParameter() {
@@ -173,12 +173,12 @@ public sealed class ProcessParameterMergeToolE2ETests {
 			["elements"] = new object[] {
 				new Dictionary<string, object> {
 					["name"] = "SigA", ["type"] = "signalStart",
-					["signal"] = new Dictionary<string, object> { ["entity"] = "Contact", ["on"] = "added" },
+					["signal"] = new Dictionary<string, object> { ["entity"] = "Contact", ["on"] = "modified" },
 					["filter"] = byToken
 				},
 				new Dictionary<string, object> {
 					["name"] = "SigB", ["type"] = "signalStart",
-					["signal"] = new Dictionary<string, object> { ["entity"] = "Contact", ["on"] = "modified" },
+					["signal"] = new Dictionary<string, object> { ["entity"] = "Contact", ["on"] = "added" },
 					["filter"] = byToken
 				},
 				new Dictionary<string, object> {
