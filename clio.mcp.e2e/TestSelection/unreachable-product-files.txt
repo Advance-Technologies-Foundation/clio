@@ -169,8 +169,6 @@ clio/Common/StringParser.cs
 clio/Common/UpdateCheckCache.cs
 clio/Common/WebServiceManager.cs
 clio/CreatioModel/AppHubInfo.cs
-clio/CreatioModel/SysWorkspace.cs
-clio/CreatioModel/VwWebServiceV2.cs
 clio/HelpSystem/CommandHelpCatalog.cs
 clio/HelpSystem/CommandHelpRenderer.cs
 clio/HelpSystem/HelpArtifactExporter.cs
