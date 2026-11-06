@@ -351,6 +351,15 @@ public sealed class ToolContractPayloadBudgetTests {
 	// process-web-service; create paid by dropping 'usings[], methods' from its floor clause (they shipped with
 	// scriptTask, which the clause still names; -19 bytes). Re-measured by lowering the ceiling: create 35069, modify
 	// 35020, describe 35060 - 3, 52 and 12 bytes of headroom.
+	//
+	// ENG-103990 (2026-11-06, mergeFrom) re-measured first by lowering the ceiling: create 35067, modify 35063, describe
+	// 35056 - 5, 9 and 16 bytes of headroom after the first cut named mergeFrom in both write contracts. Review fixes then
+	// stated the decision on both (signal starts on one object use mergeFrom, other branches a formulaTask each) and the
+	// direction hint (omit direction: a merged parameter is always Internal), and paid by SWAP, no ceiling raise: create
+	// dropped "Below .41 a refused formula still fails, with the package's own wording." and modify "(from CrtProcessBuilder
+	// 1.3.1.1)" - provenance for servers the 1.6.6.141 floor refuses up front - and modify turned ten em dashes of its
+	// parameter, filter and retarget clauses into ' - ' (five bytes each). Re-measured by lowering the ceiling: create
+	// 35062, describe 35056, modify 35054 - 10, 16 and 18 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
