@@ -251,12 +251,14 @@ public static partial class WebServiceSchemaView {
 		return uri.Replace(parsed.UserInfo + "@", "[redacted]@", StringComparison.Ordinal);
 	}
 
-	public static string Localized(Dictionary<string, string> captions) =>
-		captions is null || captions.Count == 0
-			? null
-			: captions.TryGetValue("en-US", out string english) && !string.IsNullOrEmpty(english)
-				? english
-				: captions.Values.FirstOrDefault(v => !string.IsNullOrEmpty(v));
+	public static string Localized(Dictionary<string, string> captions) {
+		if (captions is null || captions.Count == 0) {
+			return null;
+		}
+		return captions.TryGetValue("en-US", out string english) && !string.IsNullOrEmpty(english)
+			? english
+			: captions.Values.FirstOrDefault(v => !string.IsNullOrEmpty(v));
+	}
 
 	private static WebServiceAuthView Auth(ServiceAuthInfoDto auth) {
 		if (auth is null || auth.AuthType == ServiceSchemaCodes.AuthNone) {

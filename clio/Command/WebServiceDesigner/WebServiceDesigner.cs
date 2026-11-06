@@ -26,6 +26,8 @@ public sealed class WebServiceDesigner(
 	internal const int UsageScanPageSize = 50;
 	internal const int MaxResponseBodyLength = 20_000;
 	private const string ManageSolutionOperation = "CanManageSolution";
+	private const string CaptionColumn = "Caption";
+	private const string PackageNameColumn = "SysPackage.Name";
 
 	private sealed record ServiceRow(Guid UId, Guid PackageUId, string Name, string Caption, string Type, string Package);
 
@@ -131,24 +133,28 @@ public sealed class WebServiceDesigner(
 	internal IReadOnlyList<WebServiceUsage> FindUsages(Guid serviceUId) {
 		string uid = serviceUId.ToString();
 		var usages = new List<WebServiceUsage>();
-		string[] columns = ["Id", "Name", "Caption", "SysPackage.Name", "MetaData"];
+		string[] columns = ["Id", "Name", CaptionColumn, PackageNameColumn, "MetaData"];
 		var filter = new Dictionary<string, string> { ["ManagerName"] = ServiceSchemaCodes.ProcessManagerName };
-		for (int offset = 0; ; offset += UsageScanPageSize) {
+		int offset = 0;
+		int pageCount;
+		do {
 			IReadOnlyList<JsonObject> page = client.Select("SysSchema", columns, filter, UsageScanPageSize, offset, "Id");
 			foreach (JsonObject row in page) {
-				string metadata = Text(row, "MetaData");
-				if (metadata is null || metadata.IndexOf(uid, StringComparison.OrdinalIgnoreCase) < 0) {
-					continue;
-				}
-				foreach ((string element, string method) in FindElements(metadata, uid)) {
-					usages.Add(new WebServiceUsage(Text(row, "Name"), Text(row, "Caption"),
-						Text(row, "SysPackage.Name"), element, method));
-				}
+				usages.AddRange(UsagesInRow(row, uid));
 			}
-			if (page.Count < UsageScanPageSize) {
-				return usages;
-			}
+			pageCount = page.Count;
+			offset += UsageScanPageSize;
+		} while (pageCount == UsageScanPageSize);
+		return usages;
+	}
+
+	private static IEnumerable<WebServiceUsage> UsagesInRow(JsonObject row, string uid) {
+		string metadata = Text(row, "MetaData");
+		if (metadata is null || metadata.IndexOf(uid, StringComparison.OrdinalIgnoreCase) < 0) {
+			return [];
 		}
+		return FindElements(metadata, uid).Select(found => new WebServiceUsage(Text(row, "Name"),
+			Text(row, CaptionColumn), Text(row, PackageNameColumn), found.Element, found.Method));
 	}
 
 	internal static IEnumerable<(string Element, string Method)> FindElements(string metadata, string uid) {
@@ -161,25 +167,24 @@ public sealed class WebServiceDesigner(
 		var pending = new Stack<JsonNode>();
 		pending.Push(root);
 		while (pending.Count > 0) {
-			switch (pending.Pop()) {
-				case JsonObject node:
-					if (node["IX1"] is JsonValue ix1 && string.Equals(ix1.ToString(), uid, StringComparison.OrdinalIgnoreCase)) {
-						yield return (node["A2"]?.ToString(), node["IX2"]?.ToString());
-					}
-					foreach (KeyValuePair<string, JsonNode> child in node) {
-						if (child.Value is not null) {
-							pending.Push(child.Value);
-						}
-					}
-					break;
-				case JsonArray array:
-					foreach (JsonNode item in array.Where(item => item is not null)) {
-						pending.Push(item);
-					}
-					break;
+			JsonNode current = pending.Pop();
+			if (current is JsonObject node && IsElementOf(node, uid)) {
+				yield return (node["A2"]?.ToString(), node["IX2"]?.ToString());
+			}
+			foreach (JsonNode child in Children(current)) {
+				pending.Push(child);
 			}
 		}
 	}
+
+	private static bool IsElementOf(JsonObject node, string uid) =>
+		node["IX1"] is JsonValue ix1 && string.Equals(ix1.ToString(), uid, StringComparison.OrdinalIgnoreCase);
+
+	private static IEnumerable<JsonNode> Children(JsonNode node) => node switch {
+		JsonObject obj => obj.Select(child => child.Value).Where(child => child is not null),
+		JsonArray array => array.Where(item => item is not null),
+		_ => []
+	};
 
 	private void Apply(ServiceSchemaDto schema, WebServiceOperationArg operation, ISet<string> changedMethods,
 		WebServiceDefinitionBuilder.Errors errors) {
@@ -229,7 +234,7 @@ public sealed class WebServiceDesigner(
 	private static void AddMethod(ServiceSchemaDto schema, WebServiceMethodArg arg,
 		WebServiceDefinitionBuilder.Errors errors) {
 		if (FindMethod(schema, arg?.Code) is not null) {
-			errors.Add($"method code '{arg.Code}' is used twice.");
+			errors.Add($"method code '{arg?.Code}' is used twice.");
 			return;
 		}
 		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(arg, null, HasAuth(schema), errors);
@@ -264,11 +269,11 @@ public sealed class WebServiceDesigner(
 	}
 
 	private IReadOnlyList<ServiceRow> ReadServiceRows(string code) {
-		string[] columns = ["UId", "Name", "Caption", "TypeName", "PackageUId", "SysPackage.Name"];
+		string[] columns = ["UId", "Name", CaptionColumn, "TypeName", "PackageUId", PackageNameColumn];
 		Dictionary<string, string> filter = code is null ? null : new() { ["Name"] = code };
 		return client.Select("VwWebServiceV2", columns, filter, orderColumn: "Name")
 			.Select(row => new ServiceRow(Guid.Parse(Text(row, "UId")), Guid.Parse(Text(row, "PackageUId")),
-				Text(row, "Name"), Text(row, "Caption"), Text(row, "TypeName"), Text(row, "SysPackage.Name")))
+				Text(row, "Name"), Text(row, CaptionColumn), Text(row, "TypeName"), Text(row, PackageNameColumn)))
 			.ToList();
 	}
 
@@ -328,6 +333,6 @@ public sealed class WebServiceDesigner(
 			null => null,
 			JsonValue value => value.ToString(),
 			JsonObject lookup => lookup["displayValue"]?.ToString(),
-			JsonNode other => other.ToJsonString()
+			var other => other.ToJsonString()
 		};
 }

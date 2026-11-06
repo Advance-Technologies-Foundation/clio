@@ -34,23 +34,21 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	private static readonly CreatioRequestOptions RequestOptions = new() { TimeOut = 300_000, MaxAttempts = 1 };
 
 	public ServiceSchemaDto ReadSchema(Guid uId, Guid packageUId) {
-		SchemaReadResponse response = PostAndDeserialize<SchemaReadResponse>(
-			ServiceUrlBuilder.KnownRoute.ServiceSchemaRead, new { uId, packageUId }, RequestOptions);
-		ThrowIfFailed(response?.Success, response?.ErrorInfo, "read the web service");
+		SchemaReadResponse response = EnsureSucceeded(PostAndDeserialize<SchemaReadResponse>(
+			ServiceUrlBuilder.KnownRoute.ServiceSchemaRead, new { uId, packageUId }, RequestOptions),
+			"read the web service");
 		return response.Schema ?? throw new InvalidOperationException("The platform returned no web service schema.");
 	}
 
 	public void SaveSchema(ServiceSchemaDto schema) {
-		SaveResponse response = PostAndDeserialize<SaveResponse>(
-			ServiceUrlBuilder.KnownRoute.ServiceSchemaSave, schema, RequestOptions);
-		ThrowIfFailed(response?.Success, response?.ErrorInfo, "save the web service");
+		EnsureSucceeded(PostAndDeserialize<PlatformResponse>(
+			ServiceUrlBuilder.KnownRoute.ServiceSchemaSave, schema, RequestOptions), "save the web service");
 	}
 
 	public bool IsSchemaNameUnique(string managerName, string schemaName) {
-		UniqueNameResponse response = PostAndDeserialize<UniqueNameResponse>(
+		UniqueNameResponse response = EnsureSucceeded(PostAndDeserialize<UniqueNameResponse>(
 			ServiceUrlBuilder.KnownRoute.CheckUniqueSchemaName,
-			new { managerName, schemaName, excludeUId = Guid.Empty }, RequestOptions);
-		ThrowIfFailed(response?.Success, response?.ErrorInfo, "check the web service code");
+			new { managerName, schemaName, excludeUId = Guid.Empty }, RequestOptions), "check the web service code");
 		return response.Value;
 	}
 
@@ -92,9 +90,8 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 				["isEnabled"] = true, ["items"] = filters
 			}
 		};
-		SelectResponse response = PostAndDeserialize<SelectResponse>(
-			ServiceUrlBuilder.KnownRoute.Select, query, RequestOptions);
-		ThrowIfFailed(response?.Success, response?.ErrorInfo, $"read {rootSchemaName}");
+		SelectResponse response = EnsureSucceeded(PostAndDeserialize<SelectResponse>(
+			ServiceUrlBuilder.KnownRoute.Select, query, RequestOptions), $"read {rootSchemaName}");
 		return response.Rows?.OfType<JsonObject>().ToList() ?? [];
 	}
 
@@ -115,12 +112,12 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
 	public static string ColumnAlias(string columnPath) => columnPath.Replace(".", string.Empty);
 
-	private static void ThrowIfFailed(bool? success, PlatformErrorInfo errorInfo, string action) {
-		if (success == true) {
-			return;
+	private static T EnsureSucceeded<T>(T response, string action) where T : PlatformResponse {
+		if (response is { Success: true }) {
+			return response;
 		}
 		// The platform's errorInfo carries a stack trace and, for a failed save, can echo request values.
-		string message = errorInfo?.Message;
+		string message = response?.ErrorInfo?.Message;
 		throw new InvalidOperationException(string.IsNullOrWhiteSpace(message)
 			? $"The platform refused to {action}."
 			: $"The platform refused to {action}: {SensitiveErrorTextRedactor.Redact(message)}");
@@ -130,26 +127,20 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		[JsonPropertyName("message")] public string Message { get; init; }
 	}
 
-	private sealed class SchemaReadResponse {
+	private class PlatformResponse {
 		[JsonPropertyName("success")] public bool Success { get; init; }
 		[JsonPropertyName("errorInfo")] public PlatformErrorInfo ErrorInfo { get; init; }
+	}
+
+	private sealed class SchemaReadResponse : PlatformResponse {
 		[JsonPropertyName("schema")] public ServiceSchemaDto Schema { get; init; }
 	}
 
-	private sealed class SaveResponse {
-		[JsonPropertyName("success")] public bool Success { get; init; }
-		[JsonPropertyName("errorInfo")] public PlatformErrorInfo ErrorInfo { get; init; }
-	}
-
-	private sealed class UniqueNameResponse {
-		[JsonPropertyName("success")] public bool Success { get; init; }
-		[JsonPropertyName("errorInfo")] public PlatformErrorInfo ErrorInfo { get; init; }
+	private sealed class UniqueNameResponse : PlatformResponse {
 		[JsonPropertyName("value")] public bool Value { get; init; }
 	}
 
-	private sealed class SelectResponse {
-		[JsonPropertyName("success")] public bool Success { get; init; }
-		[JsonPropertyName("errorInfo")] public PlatformErrorInfo ErrorInfo { get; init; }
+	private sealed class SelectResponse : PlatformResponse {
 		[JsonPropertyName("rows")] public JsonArray Rows { get; init; }
 	}
 

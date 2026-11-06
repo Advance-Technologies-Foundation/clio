@@ -138,9 +138,10 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		[Required]
 		TestWebServiceMethodArgs args) {
 		try {
-			WebServiceToolRunner.RejectUnknownArguments(args?.ExtensionData,
+			ArgumentNullException.ThrowIfNull(args);
+			WebServiceToolRunner.RejectUnknownArguments(args.ExtensionData,
 				"Valid: environment-name, code, method, parameters.");
-			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args?.EnvironmentName);
+			IWebServiceDesigner designer = WebServiceToolRunner.Resolve(commandResolver, args.EnvironmentName);
 			return designer.TestMethod(args.Code, args.Method, args.Parameters);
 		} catch (Exception exception) {
 			return new WebServiceTestResult(false, WebServiceToolRunner.Describe(exception));

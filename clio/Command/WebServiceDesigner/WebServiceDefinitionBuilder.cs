@@ -236,8 +236,11 @@ public static partial class WebServiceDefinitionBuilder {
 				+ "reference a system setting with default-sys-setting and let the user fill its value.");
 			return Empty();
 		}
-		return hasSetting ? SysSettingValue(arg.DefaultSysSetting)
-			: hasConstant ? new ServiceParameterValueDto { Value = arg.DefaultValue, Source = ServiceSchemaCodes.ValueSourceConst }
+		if (hasSetting) {
+			return SysSettingValue(arg.DefaultSysSetting);
+		}
+		return hasConstant
+			? new ServiceParameterValueDto { Value = arg.DefaultValue, Source = ServiceSchemaCodes.ValueSourceConst }
 			: Empty();
 	}
 
