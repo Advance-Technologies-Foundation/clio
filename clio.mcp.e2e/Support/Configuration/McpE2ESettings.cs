@@ -19,6 +19,18 @@ internal sealed class McpE2ESettings {
 
 	public bool AllowDestructiveMcpTests { get; set; }
 
+	/// <summary>
+	/// Makes a process-designer test FAIL instead of being ignored when the sandbox's CrtProcessBuilder cannot serve
+	/// it: missing, older than the test needs, or without the capability under test.
+	/// </summary>
+	/// <remarks>
+	/// Set by the ProcessDesigner TeamCity lane (<c>McpE2E__RequireProcessBuilder=true</c>), which installs the package
+	/// from the clio build under test. There such a package means a broken install or archive, and an Ignore would
+	/// report the whole category as skipped on a green build. Off by default, so a developer stand that is merely
+	/// behind still skips. Read through <see cref="Mcp.ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired"/>.
+	/// </remarks>
+	public bool RequireProcessBuilder { get; set; }
+
 	public string? ClioProcessPath { get; set; }
 
 	public Dictionary<string, string?> ProcessEnvironmentVariables { get; set; } = new();

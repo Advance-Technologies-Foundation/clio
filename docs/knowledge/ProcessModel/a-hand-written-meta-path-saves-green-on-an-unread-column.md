@@ -5,7 +5,7 @@ applies-to:
   - clio/Command/McpServer/Tools/ProcessDesigner/ModifyBusinessProcessTool.cs
   - clio/Command/McpServer/Tools/ProcessDesigner/CreateBusinessProcessTool.cs
 ticket: ENG-102114
-date: 2026-10-07
+date: 2026-11-04
 ---
 
 **What is true** — measured on a .NET Framework stand (Creatio 10.1.37, CrtProcessBuilder 1.6.6.75) with every
@@ -38,9 +38,15 @@ From 1.6.6.77 the package checks a hand-written meta path itself (`MetaPathToken
 prefix-less spelling of an item of THIS process, built from the element the reference names, and a column only
 when its record delivers it; anything else is refused naming the flow or field with the correct token handed back.
 The GUIDs inside braces are compared case-insensitively, and from 1.6.6.85 every surface the check covers stores
-an accepted reference with them lower-cased - the one rewrite the check makes. The check does NOT cover the Send
-email recipient and template-entity expressions, the performer and approver contact formulas or the access-rights
-grantee: those store a caller's formula as written, so a misspelling or an upper-case GUID there still reads empty. Only the reference's own GUIDs change: a
+an accepted reference with them lower-cased - the one rewrite the check makes. The check does NOT cover meta paths in
+the Send email recipient and template-entity expressions, the approver contact formula or the access-rights
+grantee: those store a caller's formula as written, so a misspelling or an upper-case GUID there still reads empty.
+A user task's performer contact joined the check in 1.6.6.140, through the same resolver as a Formula body. From
+the same cut a recipient expression that is exactly one `[#Lookup.<object>.<record>#]` macro is no longer taken
+unchecked either: the package parses it, refuses a record its object does not have and a `referenceSchema` naming
+another object, and types the recipient Lookup
+(`../platform/a-designer-save-retypes-a-constant-contact-recipient.md`). A recipient formula holding a meta path
+is still not checked. Only the reference's own GUIDs change: a
 `Lookup` macro's record ids and GUIDs in string literals are data and keep their case.
 
 **What breaks if you ignore it** — "it saved" is not evidence a hand-written reference works: the unread-column

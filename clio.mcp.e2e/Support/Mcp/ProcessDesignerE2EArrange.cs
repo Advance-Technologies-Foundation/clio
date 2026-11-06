@@ -39,7 +39,8 @@ internal static class ProcessDesignerE2EArrange {
 	/// The CrtProcessBuilder the environment must carry. This is a GATE, not only message text: the installed
 	/// version is read and a lower one IGNORES the test. A stand that is merely behind should not look like a
 	/// broken feature — without the read, an older package fails inside the build with a descriptor error and
-	/// sends the developer to the test instead of to the stand.
+	/// sends the developer to the test instead of to the stand. Under <c>McpE2E:RequireProcessBuilder</c> a lower
+	/// one fails the test instead, because there the lane itself installed the package.
 	/// </param>
 	internal static async Task<ProcessDesignerArrangeContext> StartAsync(string subject,
 			string minimumPackageVersion, TimeSpan? sessionTimeout = null) {
@@ -62,7 +63,8 @@ internal static class ProcessDesignerE2EArrange {
 	}
 
 	/// <summary>
-	/// Ignores the test when the environment's CrtProcessBuilder is older than the feature under test.
+	/// Ignores the test when the environment's CrtProcessBuilder is older than the feature under test, or fails it
+	/// under <c>McpE2E:RequireProcessBuilder</c> (<see cref="ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired"/>).
 	/// </summary>
 	/// <remarks>
 	/// Fails OPEN on purpose. A version that cannot be read — an older clio whose <c>list-packages</c> shape
@@ -86,8 +88,9 @@ internal static class ProcessDesignerE2EArrange {
 			return;
 		}
 		if (installed < required) {
-			Assert.Ignore($"{subject} MCP E2E needs {PackageName} {minimumPackageVersion} or later on "
-				+ $"'{environmentName}'; it carries {installed}. Install it with install-process-builder.");
+			ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
+				$"{subject} MCP E2E needs {PackageName} {minimumPackageVersion} or later on "
+				+ $"'{environmentName}'; it carries {installed}. Install it with install-process-builder.", settings);
 		}
 	}
 

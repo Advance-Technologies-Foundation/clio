@@ -14,6 +14,11 @@ namespace Clio.Mcp.E2E;
 /// ENG-103024: trigger-smoke creates a record, reports the signal-started run and what it created, and cleans up -
 /// against the configured sandbox stand.
 /// </summary>
+/// <remarks>
+/// The two stand tests build their signal process with <c>create-business-process</c>, so they need CrtProcessBuilder
+/// and carry <see cref="McpE2ECategories.ProcessDesigner"/>: they run on the process-designer lane, the one stand that
+/// installs it.
+/// </remarks>
 [TestFixture]
 [AllureNUnit]
 [AllureFeature(TriggerSmokeTool.ToolName)]
@@ -48,6 +53,7 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.Sandbox")]
+	[Category(McpE2ECategories.ProcessDesigner)]
 	[Description("A Contact whose name the signal process matches starts one run; the answer names it as completed, lists the Activity it added, and cleanup deletes the Activity and the Contact.")]
 	[AllureTag(ToolName)]
 	[AllureName("trigger-smoke reports the signal-started run and cleans up")]
@@ -127,6 +133,7 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[Category("McpE2E.Sandbox")]
+	[Category(McpE2ECategories.ProcessDesigner)]
 	[Description("A record the signal filter does not match starts no run of the named process: the check fails with an error that says so, processes is empty, and the trigger is still cleaned up.")]
 	[AllureTag(ToolName)]
 	[AllureName("trigger-smoke explains a record that starts nothing")]
@@ -218,7 +225,8 @@ public sealed class TriggerSmokeToolE2ETests : McpContractFixtureBase {
 		if (text.Contains("created (UId:") || text.Contains("already exists", StringComparison.OrdinalIgnoreCase)) {
 			return;
 		}
-		Assert.Ignore($"The signal process could not be prepared on '{environmentName}' (CrtProcessBuilder missing or "
+		ProcessDesignerE2ESupport.IgnoreUnlessProcessBuilderIsRequired(
+			$"The signal process could not be prepared on '{environmentName}' (CrtProcessBuilder missing or "
 			+ $"outdated?): {text}");
 	}
 }
