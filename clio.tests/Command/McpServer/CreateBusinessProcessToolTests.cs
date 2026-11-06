@@ -398,7 +398,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route a flow-time assignment to formulaTask + formula.resultProcessParameter (ENG-103081). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
+	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, route signal starts on one object to mergeFrom and every other branch to a formulaTask each, and say a merged parameter takes no direction (ENG-103081, ENG-103990). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
 	public void ProcessWriteTools_ShouldStateTheBindingSemanticsOfAProcessParameterMapping() {
 		// Arrange
 		string create = typeof(CreateBusinessProcessTool)
@@ -413,12 +413,18 @@ public class CreateBusinessProcessToolTests {
 			because: "the build contract must say a mapping is not an assignment made when a branch runs");
 		create.Should().Contain("last per parameter wins (warned)",
 			because: "a second mapping silently replaced the first");
-		create.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
-			because: "the contract must name the flow-time assignment");
+		create.Should().Contain("signal starts on one object use mergeFrom, other branches a formulaTask each",
+			because: "mergeFrom merges only signal starts on one object, so the contract must also name the route for "
+				+ "every other branch - the same decision the binding warnings apply (ENG-103990)");
+		create.Should().Contain("mergeFrom (process-multi-start; omit direction: always Internal)",
+			because: "the server refuses any other direction on a merged parameter, so a first attempt with Variable "
+				+ "would cost a round trip");
 		modify.Should().Contain("A targetProcessParameter mapping is a BINDING, read live, not a flow-time assignment",
 			because: "addMapping shares the semantics and must state them too");
-		modify.Should().Contain("per-branch values need a formulaTask with formula.resultProcessParameter",
-			because: "modify has no removeMapping, so the caller needs the flow-time route");
+		modify.Should().Contain("signal starts on one object use mergeFrom, other branches a formulaTask each",
+			because: "modify has no removeMapping, so the caller needs the route that replaces a binding per branch");
+		modify.Should().Contain("mergeFrom (omit direction: always Internal)",
+			because: "addParameter takes the same member, and the server refuses a direction on it");
 	}
 
 	[Test]
@@ -499,7 +505,7 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.140 (for email.attachments, itemProperties, isTracing,",
+		toolDescription.Should().Contain("this clio requires 1.6.6.141 (for mergeFrom, email.attachments, itemProperties, isTracing,",
 			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");

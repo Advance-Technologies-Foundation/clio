@@ -448,6 +448,26 @@ public sealed class ServerProcessDescriberTests {
 	}
 
 	[Test]
+	[Description("Deserializes a process parameter's mergeFrom (ENG-103990). DescribedParameter has no extension-data bag, so without the declared property the list was dropped here and describe -> modify lost the merge.")]
+	public void Describe_ShouldReadProcessParameterMergeFrom_WhenServerReportsIt() {
+		// Arrange
+		IApplicationClient client = ClientReturning(
+			"{\"DescribeProcessResult\":{\"success\":true,\"name\":\"UsrProc\",\"elements\":[],\"flows\":[],"
+			+ "\"parameters\":[{\"name\":\"ContactId\",\"uid\":\"p1\",\"type\":\"Guid\",\"direction\":\"Internal\","
+			+ "\"mergeFrom\":[\"OnAdded.RecordId\",\"OnChanged.RecordId\"]}]}}");
+		ServerProcessDescriber describer = CreateDescriber(client);
+
+		// Act
+		ErrorOr<DescribeProcessResult> result = describer.Describe(new ProcessIdentity("UsrProc", null, null), null);
+
+		// Assert
+		result.IsError.Should().BeFalse(because: "the response is a valid graph");
+		result.Value.Parameters[0].MergeFrom.Should().Equal(new[] { "OnAdded.RecordId", "OnChanged.RecordId" },
+			because: "DescribedParameter has no extension-data bag, so mergeFrom must be a typed property that keeps "
+				+ "the server's order, or describe -> modify loses the merge");
+	}
+
+	[Test]
 	[Description("Deserializes a collection parameter's provenance tag and its per-item shape (itemProperties, each a parameter with name/type/tag) into the DescribedParameter DTO - the design-time contract a consumer binds against - so the shape the server reports is not dropped by the client the way an untyped field would be (ENG-96230).")]
 	public void Describe_ShouldReadParameterTagAndItemProperties_WhenServerReportsThem() {
 		// Arrange — a process-level collection mirrored from a read element's shaped output, plus a scalar beside it

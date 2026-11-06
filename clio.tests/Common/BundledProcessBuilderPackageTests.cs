@@ -198,7 +198,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"CB69FC2EA261A90418954EA4F9394AF322889AFA73EE95E65D4E29E2AEA7EDD8";
+		"366A6FC50A608265C7482D42348E19FFDA8A8D55BC2236749221DE0EC6A36394";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -226,15 +226,16 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.140";
+	private const string ExpectedArchiveVersion = "1.6.6.141";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
 	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.136 was a script cut
-	/// again; 1.6.6.138, 1.6.6.139 and 1.6.6.140 are hand cuts from the stamp commit, so it names that commit and its descriptor
-	/// carries the pinned version and stamp.
+	/// again; 1.6.6.138, 1.6.6.139, 1.6.6.140 and 1.6.6.141 are hand cuts from the stamp commit, so it names that commit and its
+	/// descriptor carries the pinned version and stamp. 1.6.6.141 is a same-version re-cut before its first release (ENG-103990):
+	/// the earlier 1.6.6.141 stamp never left the package branch as a clio archive, so only <c>ModifiedOnUtc</c> moved.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
 	/// times, all recorded on <see cref="ExpectedArchiveSha256"/>: a hand-written reference that was stale,
@@ -242,7 +243,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d6a314a81db8d7be561c05948659747d6eeb2893";
+	private const string ExpectedProducingCommit = "60b09ae49b093a970a5a6bebe5d50f729f3c455e";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -268,7 +269,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793829279000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793974119000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

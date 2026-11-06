@@ -294,9 +294,15 @@ namespace Clio.Command;
 // answers success. A server-side change with a security character takes a literal rather than being left to
 // convergence, which warns and proceeds when it cannot read the archive. 1.6.6.138 and 1.6.6.139 were cuts of this
 // work that were never released.
+// Raised to 1.6.6.141 by ENG-103990: `mergeFrom` on a process parameter (build parameters[], addParameter,
+// setParameter). Unlike the members above, it is NOT dropped in silence by any server this clio could otherwise
+// reach: from 1.6.6.136 (ENG-95244) the server refuses an undeclared ProcessParameterDescriptor key, so a
+// 1.6.6.140 one answers `mergeFrom` with an unknown-key refusal that does not say an update cures it. The raise is
+// for the advertisement: this clio's contract names the member, so the floor is the first archive that reads it, and
+// an older environment is refused up front with the install hint instead.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.140",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.141",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>
