@@ -281,6 +281,43 @@ public sealed class DescribeProcessCommandTests {
 
 	[Test]
 	[Category("Unit")]
+	[Description("Writes a merged parameter's mergeFrom into the graph JSON in the server's order and omits the key on a parameter without one (ENG-103990). The describe output is RE-SERIALIZED from clio's own model, so this is the step where a later projection or serializer change would drop the merge, and describe -> modify would then lose it; the e2e that also covers it is manual.")]
+	public void Execute_ShouldWriteMergeFrom_OnlyOnAMergedParameter() {
+		// Arrange
+		_describer.Describe(Arg.Any<ProcessIdentity>(), Arg.Any<string>())
+			.Returns(new DescribeProcessResult {
+				Name = "UsrMergedProcess",
+				SchemaUId = "uid",
+				Elements = [],
+				Flows = [],
+				Parameters = [
+					new DescribedParameter {
+						Name = "RecordId", UId = "u1", Type = "Guid", Direction = "Internal",
+						MergeFrom = ["OnAdded.RecordId", "OnChanged.RecordId"]
+					},
+					new DescribedParameter { Name = "Plain", UId = "u2", Type = "Integer", Source = "None" }
+				]
+			});
+		DescribeProcessOptions options = new() { Environment = "dev", ProcessName = "UsrMergedProcess" };
+		string written = null;
+		_logger.WriteInfo(Arg.Do<string>(value => written = value));
+
+		// Act
+		int result = _command.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "a found process is described successfully");
+		written.Should().Contain("\"mergeFrom\":[\"OnAdded.RecordId\",\"OnChanged.RecordId\"]",
+			because: "the merge must survive the clio DTO re-serialization, in the order the server lists the starts");
+		JsonObject[] parameters = [.. JsonNode.Parse(written)!["parameters"]!.AsArray().OfType<JsonObject>()];
+		parameters.Single(parameter => parameter["name"]!.GetValue<string>() == "RecordId").ContainsKey("mergeFrom")
+			.Should().BeTrue(because: "the key belongs to the merged parameter itself");
+		parameters.Single(parameter => parameter["name"]!.GetValue<string>() == "Plain").ContainsKey("mergeFrom")
+			.Should().BeFalse(because: "a parameter that merges nothing carries no mergeFrom, not a null");
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Writes each element parameter's direction and isResult into the graph JSON (regression: the clio DescribedParameter DTO previously dropped these server fields on re-serialization, so callers could not tell an element's outputs — mappable as a source — from its plain inputs).")]
 	public void Execute_ShouldWriteParameterDirectionAndIsResult_WhenPresent() {
 		// Arrange — a user-task element exposing an output (IsResult true while Direction is Variable) and a plain input

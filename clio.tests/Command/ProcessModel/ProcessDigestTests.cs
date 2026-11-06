@@ -89,6 +89,36 @@ public sealed class ProcessDigestTests {
 	}
 
 	[Test]
+	[Description("A merged parameter keeps its mergeFrom in the summary, in the server's order, and a parameter without one carries no mergeFrom key (ENG-103990): summary mode is the default for a large graph, and a merge it hid would invite the addMapping onto the parameter that the server refuses.")]
+	public void BuildSummary_ShouldReportMergeFrom_OnlyOnAMergedParameter() {
+		// Arrange
+		DescribeProcessResult process = new() {
+			Name = "UsrMerged",
+			Elements = [],
+			Flows = [],
+			Parameters = [
+				new DescribedParameter {
+					Name = "RecordId", Type = "Guid", Direction = "Internal",
+					MergeFrom = ["OnAdded.RecordId", "OnChanged.RecordId"]
+				},
+				new DescribedParameter { Name = "Plain", Type = "Text", Direction = "Variable" }
+			]
+		};
+
+		// Act
+		JsonObject summary = ProcessDigest.BuildSummary(process, "abc123");
+
+		// Assert
+		JsonObject[] parameters = [.. summary["parameters"]!.AsArray().OfType<JsonObject>()];
+		parameters.Single(parameter => parameter["name"]!.GetValue<string>() == "RecordId")["mergeFrom"]!.AsArray()
+			.Select(source => source!.GetValue<string>())
+			.Should().Equal(new[] { "OnAdded.RecordId", "OnChanged.RecordId" },
+				because: "the summary must show the merge, in the order the server reports the starts");
+		parameters.Single(parameter => parameter["name"]!.GetValue<string>() == "Plain").ContainsKey("mergeFrom")
+			.Should().BeFalse(because: "a parameter that merges nothing must not carry an empty or null mergeFrom");
+	}
+
+	[Test]
 	[Description("Cuts a process too large for the budget down to it - captions first, then list tails - and says how much it left out instead of exceeding the budget.")]
 	public void BuildSummary_ShouldTruncateAndReportOmissions_WhenTheProcessIsTooLarge() {
 		// Arrange

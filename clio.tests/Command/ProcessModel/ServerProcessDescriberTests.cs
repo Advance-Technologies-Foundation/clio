@@ -462,7 +462,9 @@ public sealed class ServerProcessDescriberTests {
 
 		// Assert
 		result.IsError.Should().BeFalse(because: "the response is a valid graph");
-		result.Value.Parameters[0].MergeFrom.Should().Equal("OnAdded.RecordId", "OnChanged.RecordId");
+		result.Value.Parameters[0].MergeFrom.Should().Equal(new[] { "OnAdded.RecordId", "OnChanged.RecordId" },
+			because: "DescribedParameter has no extension-data bag, so mergeFrom must be a typed property that keeps "
+				+ "the server's order, or describe -> modify loses the merge");
 	}
 
 	[Test]
