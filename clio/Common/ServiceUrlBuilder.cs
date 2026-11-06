@@ -424,7 +424,34 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		///     <c>parentColumnValue</c> from the query string; it answers HTTP 200 with
 		///     <c>{"success":false,"errorInfo":{...}}</c> on a rejection.
 		/// </summary>
-		FileApiUploadFile = 121
+		FileApiUploadFile = 121,
+
+		/// <summary>
+		///     Reads a web service schema the way the Studio web service designer does
+		///     (<c>ServiceManagerService</c>, contract <c>ServiceSchemaRequest</c>). The response carries the
+		///     service's authentication values, so callers must strip them before returning anything.
+		/// </summary>
+		ServiceSchemaRead = 122,
+
+		/// <summary>
+		///     Creates or replaces a web service schema (<c>ServiceManagerService</c>, contract
+		///     <c>ServiceDataContract</c>). The platform validates nothing on this path and finds an existing
+		///     schema by name first, so callers check name uniqueness themselves.
+		/// </summary>
+		ServiceSchemaSave = 123,
+
+		/// <summary>
+		///     Checks that no schema of a manager already uses a name, case-insensitively
+		///     (<c>EntitySchemaDesignerService.CheckUniqueSchemaName</c>; requires <c>CanManageSolution</c>).
+		/// </summary>
+		CheckUniqueSchemaName = 124,
+
+		/// <summary>
+		///     Sends a test request through a registered web service method
+		///     (<c>CallServiceSchemaService.Execute</c> of the ServiceDesigner package; requires
+		///     <c>CanManageSolution</c>).
+		/// </summary>
+		CallServiceSchemaMethod = 125
 
 	}
 
@@ -542,6 +569,10 @@ public class ServiceUrlBuilder : IServiceUrlBuilder
 		{KnownRoute.RightsApplyChanges, "/rest/RightsService/ApplyChanges"},
 		{KnownRoute.ImageApiUpload, "/ImageAPIService/upload"},
 		{KnownRoute.FileApiUploadFile, "/rest/FileApiService/UploadFile"},
+		{KnownRoute.ServiceSchemaRead, "DataService/json/SyncReply/ServiceSchemaRequest"},
+		{KnownRoute.ServiceSchemaSave, "DataService/json/SyncReply/ServiceDataContract"},
+		{KnownRoute.CheckUniqueSchemaName, "ServiceModel/EntitySchemaDesignerService.svc/CheckUniqueSchemaName"},
+		{KnownRoute.CallServiceSchemaMethod, "rest/CallServiceSchemaService/Execute"},
 		{KnownRoute.GetEntitySchemaDesignItem, "ServiceModel/EntitySchemaDesignerService.svc/GetSchemaDesignItem"},
 		{KnownRoute.GetClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/GetSchema"},
 		{KnownRoute.SaveClientUnitDesignerSchema, "/ServiceModel/ClientUnitSchemaDesignerService.svc/SaveSchema"},
