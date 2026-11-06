@@ -16,8 +16,9 @@ public sealed class ThemeBackgroundArgumentsTests {
 	[TestCase(null, "blue", "background-color 'blue' is not a hex color")]
 	[Description("Rejects two background sources, a background-image-id that is not an image id, and a background-color that is not #RGB, #RRGGBB or #RRGGBBAA.")]
 	public void TryValidate_Should_Reject_An_Invalid_Background(string imageId, string color, string expected) {
-		new ThemeBackgroundArguments(imageId, color).TryValidate(out string error);
+		bool valid = new ThemeBackgroundArguments(imageId, color).TryValidate(out string error);
 
+		valid.Should().BeFalse(because: "an invalid background must stop the command before any write");
 		error.Should().Contain(expected, because: "the caller must learn what to fix before any write");
 	}
 

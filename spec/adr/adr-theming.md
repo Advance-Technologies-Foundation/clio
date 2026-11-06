@@ -159,8 +159,10 @@ instance), taking **inline `cssContent` only** (no file variant). They fall thro
   `ListThemesCommand.TryGetAvailableThemes` pattern) and returns a **structured `CreateThemeResult
   { success, id, error? }`** so the agent learns the generated id. `update`/`delete` use the standard log
   envelope (`CommandExecutionResult`) — the id is caller-supplied.
-- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/false/false`; update `false/false/true`;
-  delete `false/**true**/false`. `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
+- Safety flags (`ReadOnly/Destructive/Idempotent`): create `false/**true**/false` (a background turns the
+  environment-wide `UsePanelIconBackground` feature off, F-D4); update `false/**true**/true` (a full overwrite
+  replaces the stored content); delete `false/**true**/false`.
+  `OpenWorld` was `false` on all three; _amended (ENG-93989)_ —
   `create-theme` is `OpenWorld=true` because its brand mode reaches Google Fonts through the shared build
   engine (see the amendment below); `update`/`delete` stay `false`. Auto-discovered via
   `McpFeatureToggleFilter.RegisterEnabledPrimitives`.
@@ -467,7 +469,7 @@ stored background, and `{}` removes it.
 | # | Decision |
 | --- | --- |
 | F-D1 | `get-theme` and `list-themes` return `background`, absent when the theme has none. |
-| F-D2 | The theme tools write and bind the background. `create-theme` and `update-theme` take at most one of `background-image-id` and `background-color` (`update-theme` also `remove-background`) and send it in the same ThemeService call. An image's `SysImage` row is bound into the theme's package under `ThemeBackground_<theme id N>`; `update-theme` reads that package from the catalog's `cssFilePath`. With a background argument, the omitted content fields of `update-theme` are kept. |
+| F-D2 | The theme tools write and bind the background. `create-theme` and `update-theme` take at most one of `background-image-id` and `background-color` (`update-theme` also `remove-background`) and send it in the same ThemeService call. An image's `SysImage` row is bound into the theme's package under `ThemeBackground_<theme id N>`; `update-theme` reads that package from the catalog's `cssFilePath`. Removing the background or switching it to a color leaves that binding in the package: the theme no longer references the image, so the delivered row is unused, and a later image for the same theme replaces the folder's single row. With a background argument, the omitted content fields of `update-theme` are kept. |
 | F-D3 | No upload in the theme tools: the image comes from `upload-image`, and it joins no gallery. A `background-image-id` with no `SysImage` row is refused before any write. |
 | F-D4 | After a successful write that sets an image or a color, `UsePanelIconBackground` is turned off for All employees, as `set-background-image` does, unless `keep-icon-background` is set. A failure of that step or of the binding is a warning. Unlike `set-background-image`, the off state is not bound into the theme's package: installing a theme package does not switch an environment-wide feature. |
 | F-D5 | `set-background-image` stays the site-only tool, unchanged. The `create-theme` result keeps `{ success, id, warnings?, error? }` and adds `background-image-package?` and `panel-icon-background?`, and `update-theme` keeps its command execution envelope with the report in the log. |

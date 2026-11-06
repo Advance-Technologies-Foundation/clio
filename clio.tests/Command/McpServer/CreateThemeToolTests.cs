@@ -1850,6 +1850,50 @@ public class CreateThemeToolTests {
 			because: "an MCP client reads where the image went and the panel icon state only from the result");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Maps background-image-id into the create options in brand mode and leaves keep-icon-background false when it is omitted.")]
+	public void CreateTheme_ShouldMapTheBackgroundImage_WhenBrandModeSupplied() {
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		BuildThemeCommandHarness build = new();
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		commandResolver.Resolve<BuildThemeCommand>(Arg.Any<EnvironmentOptions>()).Returns(build.Command);
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", Caption: "Ocean", Primary: "#004fd6",
+			BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
+
+		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
+			BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81",
+			BackgroundColor = (string)null,
+			KeepIconBackground = false
+		}, because: "the default branding flow creates the theme in brand mode, and an omitted keep-icon-background means off");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Maps background-color and keep-icon-background into the create options in inline mode.")]
+	public void CreateTheme_ShouldMapTheBackgroundColorAndKeepIconBackground_WhenInlineModeSupplied() {
+		FakeCreateThemeCommand resolvedCommand = new(createdId: "generated-id");
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2", CssContent: ".x{}", Caption: "Ocean",
+			BackgroundColor: "#1A2B3C", KeepIconBackground: true));
+
+		resolvedCommand.CapturedOptions.Should().BeEquivalentTo(new {
+			BackgroundImageId = (string)null,
+			BackgroundColor = "#1A2B3C",
+			KeepIconBackground = true
+		}, because: "losing keep-icon-background would turn the panel icon background off against the caller's request");
+	}
+
 	private sealed class ThrowingCreateThemeCommand(string failureMessage) : CreateThemeCommand(
 		Substitute.For<IApplicationClient>(),
 		new EnvironmentSettings(),

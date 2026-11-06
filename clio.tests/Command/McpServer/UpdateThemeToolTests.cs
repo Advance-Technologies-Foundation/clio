@@ -17,6 +17,10 @@ namespace Clio.Tests.Command.McpServer;
 [Property("Module", "McpServer")]
 public class UpdateThemeToolTests {
 
+	private const string BackgroundThemeId = "d53a816b-65ed-4b5b-ad3b-f739280add45";
+
+	private const string BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81";
+
 	[Test]
 	[Category("Unit")]
 	[Description("Declares the FR-12 safety flags on the update-theme tool method: a destructive, idempotent write (full overwrite by id), and closed-world.")]
@@ -319,6 +323,81 @@ public class UpdateThemeToolTests {
 		resolvedCommand.CapturedOptions.Should().BeNull(
 			because: "the theme must never be overwritten when the environment does not satisfy the version floor");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Resolves the command for a remove-background call that has no caption, css-class-name or css-content, and leaves those fields unset so the stored ones are kept.")]
+	[Category("Unit")]
+	public void UpdateTheme_ShouldMapRemoveBackground_WhenNoContentFieldIsGiven() {
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
+		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
+			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, RemoveBackground: true));
+
+		result.ExitCode.Should().Be(0, because: "a background argument makes caption, css-class-name and css-content optional");
+		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
+			options.Id == BackgroundThemeId &&
+			options.RemoveBackground &&
+			options.Caption == null &&
+			options.CssClassName == null &&
+			options.CssContent == null &&
+			options.BackgroundImageId == null &&
+			options.BackgroundColor == null &&
+			!options.KeepIconBackground));
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Maps background-image-id and keep-icon-background into the update-theme options.")]
+	[Category("Unit")]
+	public void UpdateTheme_ShouldMapTheBackgroundImageAndKeepIconBackground() {
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
+		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
+			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, BackgroundImageId: BackgroundImageId,
+			KeepIconBackground: true));
+
+		result.ExitCode.Should().Be(0, because: "an image background alone is a valid update");
+		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
+			options.BackgroundImageId == BackgroundImageId &&
+			options.KeepIconBackground &&
+			!options.RemoveBackground &&
+			options.BackgroundColor == null &&
+			options.Caption == null));
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Still requires a caption when keep-icon-background is the only background-related argument, because it sets no background.")]
+	[Category("Unit")]
+	public void UpdateTheme_ShouldStillRequireCaption_WhenOnlyKeepIconBackgroundIsGiven() {
+		ConsoleLogger.Instance.ClearMessages();
+		FakeUpdateThemeCommand resolvedCommand = new();
+		IToolCommandResolver commandResolver = ResolverFor(resolvedCommand);
+		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
+			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, CssClassName: "ocean-theme",
+			CssContent: ".ocean-theme{}", KeepIconBackground: true));
+
+		result.Output.Should().ContainSingle(message =>
+			message.GetType() == typeof(ErrorMessage) &&
+			Equals(message.Value, "caption is required and cannot be empty."),
+			because: "without a background argument the call is a full overwrite, which needs a caption");
+		resolvedCommand.CapturedOptions.Should().BeNull(because: "a refused call must not run the command");
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	private static IToolCommandResolver ResolverFor(UpdateThemeCommand resolvedCommand) {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<UpdateThemeCommand>(Arg.Any<UpdateThemeOptions>()).Returns(resolvedCommand);
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		return commandResolver;
 	}
 
 	private sealed class FakeUpdateThemeCommand : UpdateThemeCommand {

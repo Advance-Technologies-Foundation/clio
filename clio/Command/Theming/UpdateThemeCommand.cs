@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Clio.Common;
@@ -40,7 +39,8 @@ public class UpdateThemeOptions : RemoteCommandOptions
 
 	[Option("background-image-id", Required = false,
 		HelpText = "Id of an image uploaded with upload-image, set as the theme background. Pass at most one of " +
-			"--background-image-id, --background-color and --remove-background; each needs Creatio 10.2.96 or later.")]
+			"--background-image-id, --background-color and --remove-background; each needs Creatio " +
+			ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
 	public string BackgroundImageId { get; set; }
 
 	[Option("background-color", Required = false, HelpText = "Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]
@@ -152,15 +152,18 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			error = ThemeServiceResponseParser.DescribeFailure("GetAvailableThemes", error);
 			return false;
 		}
-		Guid themeId = Guid.Parse(options.Id);
-		ThemeDescriptor theme = themes.FirstOrDefault(candidate =>
-			Guid.TryParse(candidate.Id, out Guid id) && id == themeId);
-		if (theme is null) {
+		List<ThemeDescriptor> matchingThemes = ThemeCatalogLookup.FindById(themes, options.Id);
+		if (matchingThemes.Count > 1) {
+			error = $"Theme id '{options.Id}' matches more than one theme on the environment, so the package to bind " +
+				"its background image into is ambiguous; nothing was changed. Run 'clio list-themes' to inspect it.";
+			return false;
+		}
+		if (matchingThemes.Count == 0) {
 			string caveat = themes.Count == 0 ? " " + ThemeCatalogMessages.EmptyCatalogLicenseCaveat : string.Empty;
 			error = $"No theme with id '{options.Id}' is on the environment (see list-themes); nothing was changed." + caveat;
 			return false;
 		}
-		Match match = ThemePackagePattern.Match(theme.CssFilePath ?? string.Empty);
+		Match match = ThemePackagePattern.Match(matchingThemes[0].CssFilePath ?? string.Empty);
 		if (match.Success) {
 			packageName = match.Groups["package"].Value;
 			error = null;

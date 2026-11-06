@@ -46,7 +46,8 @@ public class CreateThemeOptions : RemoteCommandOptions
 
 	[Option("background-image-id", Required = false,
 		HelpText = "Id of an image uploaded with upload-image, set as the theme background. Pass at most one of " +
-			"--background-image-id and --background-color; a background needs Creatio 10.2.96 or later.")]
+			"--background-image-id and --background-color; a background needs Creatio " +
+			ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
 	public string BackgroundImageId { get; set; }
 
 	[Option("background-color", Required = false, HelpText = "Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]

@@ -207,7 +207,7 @@ internal sealed class RuntimeDetectionStubServer : IAsyncDisposable {
 
 	/// <summary>
 	/// Path of the stub's own introspection endpoint. A GET returns a JSON array of
-	/// <c>{ "method": ..., "url": ... }</c> for every request the stub has served, letting a test prove
+	/// <c>{ "method": ..., "url": ..., "body": ... }</c> for every request the stub has served, letting a test prove
 	/// which URL the pre-write validation actually requested and that no PATCH was issued.
 	/// </summary>
 	public const string RecordedRequestsPath = "/__stub/requests";
@@ -309,7 +309,7 @@ http.createServer((request, response) => {
       sendJson(response, 200, recordedRequests);
       return;
     }
-    recordedRequests.push({ method: request.method, url: url });
+    recordedRequests.push({ method: request.method, url: url, body: body });
     // A stopped or recycling application pool answers 503 on every route, including the auth endpoint.
     // It goes FIRST on purpose: the whole point of the switch is that no route answers normally.
     if (config.AllRoutesUnavailable) {
@@ -898,4 +898,6 @@ internal sealed record RuntimeDetectionStubServerConfiguration(
 /// </summary>
 /// <param name="Method">HTTP method of the request.</param>
 /// <param name="Url">Request URL, path and query, as the stub received it.</param>
-internal sealed record RecordedStubRequest(string Method, string Url);
+internal sealed record RecordedStubRequest(string Method, string Url) {
+	public string? Body { get; init; }
+}

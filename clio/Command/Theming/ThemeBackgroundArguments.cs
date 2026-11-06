@@ -24,6 +24,8 @@ public sealed record ThemeBackgroundArguments(
 
 	public bool IsPresent => SetsBackground || Remove;
 
+	internal Guid ImageGuid => Guid.Parse(ImageId.Trim());
+
 	public bool TryValidate(out string error) {
 		string[] sources = new (bool Given, string Name)[] {
 			(HasImageId, "background-image-id"), (HasColor, "background-color"), (Remove, "remove-background")
@@ -43,7 +45,7 @@ public sealed record ThemeBackgroundArguments(
 
 	internal ThemeBackground ToBackground() {
 		if (HasImageId) {
-			return new ThemeBackground { Mode = ThemeBackground.ImageMode, ImageId = Guid.Parse(ImageId.Trim()).ToString() };
+			return new ThemeBackground { Mode = ThemeBackground.ImageMode, ImageId = ImageGuid.ToString() };
 		}
 		if (HasColor) {
 			return new ThemeBackground { Mode = ThemeBackground.ColorMode, Color = Color.Trim() };

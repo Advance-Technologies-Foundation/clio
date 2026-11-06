@@ -9,7 +9,9 @@ public sealed record ThemeBackground
 	internal const string ImageMode = "Image";
 	internal const string ColorMode = "Color";
 
-	private const int MaxValueLength = 20;
+	private const int MaxModeLength = 20;
+
+	private const int MaxColorLength = 64;
 
 	[JsonPropertyName("mode")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -28,9 +30,9 @@ public sealed record ThemeBackground
 			return null;
 		}
 		return new ThemeBackground {
-			Mode = Clean(background.Mode, MaxValueLength),
+			Mode = Clean(background.Mode, MaxModeLength),
 			ImageId = Clean(background.ImageId, ThemeParameterValidator.MaxIdLength),
-			Color = Clean(background.Color, MaxValueLength)
+			Color = Clean(background.Color, MaxColorLength)
 		};
 	}
 
