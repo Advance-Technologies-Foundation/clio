@@ -17,12 +17,13 @@ namespace Clio.Command.ProcessModel;
 /// first start reads the parameter EMPTY, because the surviving binding points at the other branch's element,
 /// which never ran. A Formula element with <c>resultProcessParameter</c> on each branch assigns per run, and wins
 /// over a binding that is still stored.</para>
-/// <para>The remedy every warning names is <c>mergeFrom</c> (ENG-103990, CrtProcessBuilder 1.6.6.141+): when the
-/// branches are starts on one object feeding one shared chain, a Guid parameter with <c>mergeFrom</c> takes the record
-/// Id of whichever start fired, so ONE chain reads the record and no branch needs its own binding or Formula. A
-/// Formula per branch still assigns correctly, and is still honoured below. The remedy names it only as the fallback
-/// for starts mergeFrom cannot merge (signal starts on different objects, a timer or message start): for starts on
-/// one object it adds an element per start for what one parameter does.</para>
+/// <para>The remedy depends on the graph (ENG-103990, CrtProcessBuilder 1.6.6.141+). When it holds two signal starts
+/// on one object, the remedy names <c>mergeFrom</c> first: a NEW Guid parameter with <c>mergeFrom</c> takes the record
+/// Id of whichever start fired, so ONE shared chain reads the record and no branch needs its own binding or Formula.
+/// It must be a new parameter, because the server refuses <c>mergeFrom</c> on one that already takes a value and
+/// modify has no removeMapping. Everything <c>mergeFrom</c> cannot merge - signal starts on different objects, a timer
+/// or message start, gateway branches after a single start - is answered by a Formula per branch, which assigns per
+/// run and wins over the stored binding; a graph without two such signal starts gets that remedy alone.</para>
 /// <para>Two warnings follow from that, and only those two, because each is true whenever it fires:</para>
 /// <list type="bullet">
 /// <item>the same process parameter is bound more than once - in one payload, or on a modify over a binding the
@@ -58,16 +59,6 @@ public static class ProcessParameterBindingWarnings {
 
 	private const int MaxRenderedTextLength = 120;
 
-	// One remedy for every warning, so it reads the same wherever it is met. Its first sentence matches the server's
-	// own naive-join warning (CrtProcessBuilder ParameterMergeNotices), which fires only for signal starts on one
-	// object. These warnings also fire for starts mergeFrom cannot merge - signal starts on different objects, or a
-	// timer or message start - so the second sentence keeps the per-branch Formula for exactly those.
-	private const string MergeRemedy = "When the branches are starts on one object, merge the starts instead: give a "
-		+ "Guid parameter mergeFrom [\"<Start>.RecordId\", ...] and let ONE shared chain read the record by it "
-		+ "(get-guidance name=process-multi-start). Otherwise (signal starts on different objects, or a start that "
-		+ "is not a record signal) assign it on each branch: a formulaTask whose formula.resultProcessParameter "
-		+ "names it.";
-
 	// A whole element output as the platform stores it when the server cannot name a column: the element and its
 	// parameter by UId. Resolved back to names so re-applying an identical binding is not reported as a change.
 	private static readonly Regex ElementParameterMetaPath = new(
@@ -101,8 +92,8 @@ public static class ProcessParameterBindingWarnings {
 			return [];
 		}
 
-		List<string> warnings = [.. DuplicateWarnings(bindings, "mappings[]")];
 		BindingGraph graph = BindingGraph.FromDescriptor(descriptor);
+		List<string> warnings = [.. DuplicateWarnings(bindings, "mappings[]", graph)];
 		warnings.AddRange(UnreachedSourceWarnings(LastPerParameter(bindings), graph));
 		return warnings;
 	}
@@ -146,11 +137,16 @@ public static class ProcessParameterBindingWarnings {
 			return [];
 		}
 
-		List<string> warnings = [.. DuplicateWarnings(bindings, "this addMapping batch")];
+		// The remedy is picked on the saved graph; without a read-back the one taken before the edit still names the
+		// starts, and without either the remedy can only be the one that fits every graph.
+		BindingGraph? savedGraph = after is null ? null : BindingGraph.FromDescribed(after);
+		BindingGraph remedyGraph = savedGraph
+			?? (before is null ? new BindingGraph() : BindingGraph.FromDescribed(before));
+		List<string> warnings = [.. DuplicateWarnings(bindings, "this addMapping batch", remedyGraph)];
 		List<Binding> saved = [.. LastPerParameter(bindings).Where(binding => IsStillBound(binding, after))];
-		warnings.AddRange(ReplacedBindingWarnings(saved, before));
-		if (after is not null) {
-			warnings.AddRange(UnreachedSourceWarnings(saved, BindingGraph.FromDescribed(after)));
+		warnings.AddRange(ReplacedBindingWarnings(saved, before, remedyGraph));
+		if (savedGraph is not null) {
+			warnings.AddRange(UnreachedSourceWarnings(saved, savedGraph));
 		}
 		return warnings;
 	}
@@ -188,7 +184,7 @@ public static class ProcessParameterBindingWarnings {
 		return stored is null || !NonBindingSources.Contains(stored.Source, StringComparer.OrdinalIgnoreCase);
 	}
 
-	private static IEnumerable<string> DuplicateWarnings(List<Binding> bindings, string where) =>
+	private static IEnumerable<string> DuplicateWarnings(List<Binding> bindings, string where, BindingGraph graph) =>
 		bindings
 			.GroupBy(binding => binding.Parameter, StringComparer.OrdinalIgnoreCase)
 			.Where(group => group.Count() > 1)
@@ -198,14 +194,28 @@ public static class ProcessParameterBindingWarnings {
 					+ $"({string.Join("; ", group.Select(binding => binding.Source))}). A process parameter keeps ONE "
 					+ $"binding, so only the last one listed ({kept.Source}) is saved. A targetProcessParameter "
 					+ "mapping is the value source the parameter is read through, not an assignment made when a "
-					+ $"branch runs. {MergeRemedy}";
+					+ $"branch runs. {Remedy(kept.Parameter, graph)}";
 			});
+
+	// See the type's remarks for why the merge names a NEW parameter and why the Formula covers the rest. A graph
+	// mergeFrom cannot apply to is never pointed at it: the server would refuse that merge.
+	private static string Remedy(string parameter, BindingGraph graph) {
+		string perBranch = $"a formulaTask on each branch whose formula.resultProcessParameter is {Quote(parameter)}: "
+			+ "its assignment wins over the stored binding (get-guidance name=process-parameters)";
+		return graph.HasMergeableSignalStarts
+			? "If the branches are signal starts on one object, merge them instead: give a NEW Guid parameter "
+				+ "mergeFrom [\"<Start>.RecordId\", ...] (omit direction: a merged parameter is Internal), let ONE "
+				+ $"shared chain read the record by it, and read that parameter instead of {Quote(parameter)} "
+				+ "(get-guidance name=process-multi-start). Otherwise (signal starts on different objects, a timer or "
+				+ $"message start, gateway branches) set it with {perBranch}."
+			: $"To give each branch its own value, set it with {perBranch}.";
+	}
 
 	// Only a stored binding to an ELEMENT output is reported as replaced: that is the binding a branch relies on.
 	// A stored formula, process-parameter or system-value source is a default the edit may well mean to replace,
 	// and its read-back cannot be compared with the request reliably, so it is left alone rather than guessed at.
 	private static IEnumerable<string> ReplacedBindingWarnings(List<Binding> bindings,
-		DescribeProcessResult? before) {
+		DescribeProcessResult? before, BindingGraph graph) {
 		if (before?.Parameters is null) {
 			yield break;
 		}
@@ -219,7 +229,8 @@ public static class ProcessParameterBindingWarnings {
 
 			yield return $"addMapping replaced the existing binding of process parameter {Quote(binding.Parameter)} "
 				+ $"(was {previous.Render()}, now {binding.Source}): a process parameter keeps ONE binding. If both "
-				+ $"were meant to apply - one per start - bind neither. {MergeRemedy}";
+				+ "were meant to apply - one per branch - no single binding carries both. "
+				+ Remedy(binding.Parameter, graph);
 		}
 	}
 
@@ -234,8 +245,7 @@ public static class ProcessParameterBindingWarnings {
 			}
 
 			// A start whose path assigns the parameter with a Formula is covered: the assignment wins over the
-			// binding, so warning there would be false. The Formula path is still honoured, but the remedy names it
-			// only for starts mergeFrom cannot merge; for signal starts on one object it recommends mergeFrom.
+			// binding, so warning there would be false.
 			List<string> missed = [.. graph.Starts.Where(start => !graph.Reaches(start, binding.SourceElement)
 				&& !graph.FormulaWriters(binding.Parameter).Any(writer => graph.Reaches(start, writer)))];
 			if (missed.Count == 0) {
@@ -245,7 +255,7 @@ public static class ProcessParameterBindingWarnings {
 			yield return $"Process parameter {Quote(binding.Parameter)} is bound to {binding.Source}, which a run "
 				+ $"started by {string.Join(", ", missed.Select(Quote))} does not reach: on such a run "
 				+ $"{Quote(binding.SourceElement)} never executes and {Quote(binding.Parameter)} reads its "
-				+ $"default (empty) value. If that run reads it too: {MergeRemedy}";
+				+ $"default (empty) value, which matters if that run reads it. {Remedy(binding.Parameter, graph)}";
 		}
 	}
 
@@ -318,15 +328,33 @@ public static class ProcessParameterBindingWarnings {
 		private readonly Dictionary<string, List<string>> _next = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, string> _uidToName = new(StringComparer.OrdinalIgnoreCase);
 		private readonly Dictionary<string, List<string>> _formulaWriters = new(StringComparer.OrdinalIgnoreCase);
+		private readonly List<string?> _signalStartObjects = [];
 
 		internal List<string> Starts { get; } = [];
+
+		/// <summary>
+		/// Whether two signal starts may sit on one object, the only starts <c>mergeFrom</c> merges. A start whose
+		/// object the data does not name could be on any, so it pairs with every other signal start.
+		/// </summary>
+		internal bool HasMergeableSignalStarts {
+			get {
+				int unnamed = _signalStartObjects.Count(entity => entity is null);
+				int largestOnOneObject = _signalStartObjects.OfType<string>()
+					.GroupBy(entity => entity, StringComparer.OrdinalIgnoreCase)
+					.Select(group => group.Count())
+					.DefaultIfEmpty(0)
+					.Max();
+				return unnamed + largestOnOneObject >= 2;
+			}
+		}
 
 		internal static BindingGraph FromDescriptor(JsonObject descriptor) {
 			BindingGraph graph = new();
 			if (descriptor[ElementsKey] is JsonArray elements) {
 				foreach (JsonObject element in elements.OfType<JsonObject>()) {
 					string? name = BlockExpectationJson.ReadText(element["name"]);
-					graph.AddElement(name, null, BlockExpectationJson.ReadText(element["type"]));
+					graph.AddElement(name, null, BlockExpectationJson.ReadText(element["type"]),
+						BlockExpectationJson.ReadText((element["signal"] as JsonObject)?["entity"]));
 					graph.AddFormulaWriter(name,
 						BlockExpectationJson.ReadText((element["formula"] as JsonObject)?["resultProcessParameter"]));
 				}
@@ -343,7 +371,7 @@ public static class ProcessParameterBindingWarnings {
 		internal static BindingGraph FromDescribed(DescribeProcessResult described) {
 			BindingGraph graph = new();
 			foreach (DescribedElement element in described.Elements ?? []) {
-				graph.AddElement(element?.Name, element?.Uid, element?.BuildType);
+				graph.AddElement(element?.Name, element?.Uid, element?.BuildType, element?.Signal?.Entity);
 				graph.AddFormulaWriter(element?.Name, element?.Formula?.Target?.ResultProcessParameter);
 			}
 			foreach (DescribedFlow flow in described.Flows ?? []) {
@@ -374,7 +402,7 @@ public static class ProcessParameterBindingWarnings {
 		}
 
 		// The build token and the describe buildType resolve through the same table the graph validator uses.
-		private void AddElement(string? name, string? uid, string? type) {
+		private void AddElement(string? name, string? uid, string? type, string? signalObject) {
 			if (string.IsNullOrWhiteSpace(name)) {
 				return;
 			}
@@ -383,8 +411,12 @@ public static class ProcessParameterBindingWarnings {
 			if (!string.IsNullOrWhiteSpace(uid)) {
 				_uidToName[uid.Trim()] = trimmed;
 			}
-			if (ManagerMap.ResolveRole(ManagerMap.ResolveDataId(type)) == ManagerMap.ProcessElementRole.Start) {
+			ManagerMap.EventType kind = ManagerMap.ResolveDataId(type);
+			if (ManagerMap.ResolveRole(kind) == ManagerMap.ProcessElementRole.Start) {
 				Starts.Add(trimmed);
+			}
+			if (kind == ManagerMap.EventType.StartSignalEvent) {
+				_signalStartObjects.Add(string.IsNullOrWhiteSpace(signalObject) ? null : signalObject.Trim());
 			}
 		}
 

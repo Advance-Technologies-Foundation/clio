@@ -226,14 +226,22 @@ public sealed class CreateBusinessProcessCommandTests {
 		};
 		_createBusinessProcessService.BuildProcess("sandbox", Arg.Any<CreateBusinessProcessRequest>())
 			.Returns(BuildResult());
+		List<string> warnings = [];
+		_logger.When(logger => logger.WriteWarning(Arg.Any<string>()))
+			.Do(call => warnings.Add(call.Arg<string>()));
 
 		// Act
 		int result = _command.Execute(options);
 
 		// Assert
 		result.Should().Be(0, because: "the binding warning is a caveat on a build that succeeded");
-		_logger.Received(1).WriteWarning(Arg.Is<string>(text =>
-			text.Contains("binds process parameter 'PName' 2 times") && text.Contains("formula.resultProcessParameter")));
+		string warning = warnings
+			.Should().ContainSingle(text => text.Contains("binds process parameter 'PName' 2 times"),
+				because: "the build path runs the duplicate-binding analysis on the descriptor it sent").Subject;
+		warning.Should().Contain("formula.resultProcessParameter is 'PName'",
+			because: "the remedy names the parameter the per-branch Formula sets");
+		warning.Should().NotContain("mergeFrom",
+			because: "a descriptor without two signal starts on one object has nothing mergeFrom could merge");
 	}
 
 	[Test]
