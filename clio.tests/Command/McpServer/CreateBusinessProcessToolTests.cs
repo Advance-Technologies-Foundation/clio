@@ -398,7 +398,7 @@ public class CreateBusinessProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, and route starts that share a chain to mergeFrom (ENG-103081, ENG-103990). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
+	[Description("Both process-write contracts state what a targetProcessParameter mapping is - a binding read whenever the parameter is read, one per parameter - rather than an assignment made when a branch runs, route signal starts on one object to mergeFrom and every other branch to a formulaTask each, and say a merged parameter takes no direction (ENG-103081, ENG-103990). Without it a multi-start process mapped each branch into one shared parameter and read it empty.")]
 	public void ProcessWriteTools_ShouldStateTheBindingSemanticsOfAProcessParameterMapping() {
 		// Arrange
 		string create = typeof(CreateBusinessProcessTool)
@@ -413,12 +413,18 @@ public class CreateBusinessProcessToolTests {
 			because: "the build contract must say a mapping is not an assignment made when a branch runs");
 		create.Should().Contain("last per parameter wins (warned)",
 			because: "a second mapping silently replaced the first");
-		create.Should().Contain("starts sharing a chain use mergeFrom",
-			because: "the contract must name the one way to feed a shared chain from several starts (ENG-103990)");
+		create.Should().Contain("signal starts on one object use mergeFrom, other branches a formulaTask each",
+			because: "mergeFrom merges only signal starts on one object, so the contract must also name the route for "
+				+ "every other branch - the same decision the binding warnings apply (ENG-103990)");
+		create.Should().Contain("mergeFrom (process-multi-start; omit direction: always Internal)",
+			because: "the server refuses any other direction on a merged parameter, so a first attempt with Variable "
+				+ "would cost a round trip");
 		modify.Should().Contain("A targetProcessParameter mapping is a BINDING, read live, not a flow-time assignment",
 			because: "addMapping shares the semantics and must state them too");
-		modify.Should().Contain("starts sharing a chain use mergeFrom",
+		modify.Should().Contain("signal starts on one object use mergeFrom, other branches a formulaTask each",
 			because: "modify has no removeMapping, so the caller needs the route that replaces a binding per branch");
+		modify.Should().Contain("mergeFrom (omit direction: always Internal)",
+			because: "addParameter takes the same member, and the server refuses a direction on it");
 	}
 
 	[Test]
