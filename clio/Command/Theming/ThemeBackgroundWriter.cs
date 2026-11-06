@@ -7,11 +7,21 @@ using Clio.Package;
 
 namespace Clio.Command.Theming;
 
+public sealed record ThemeBackgroundOutcome(IReadOnlyList<string> Warnings, string ImagePackage = null,
+	string PanelIconBackground = null) {
+
+	public const string PanelIconOff = "off";
+
+	public const string PanelIconKept = "kept";
+
+	public static ThemeBackgroundOutcome None { get; } = new([]);
+}
+
 public interface IThemeBackgroundWriter {
 
 	bool TryConfirmImage(ThemeBackgroundArguments background, out string error);
 
-	IReadOnlyList<string> Complete(ThemeBackgroundArguments background, string themeId, string packageName);
+	ThemeBackgroundOutcome Complete(ThemeBackgroundArguments background, string themeId, string packageName);
 }
 
 internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, IPackageDataBinder packageDataBinder,
@@ -42,22 +52,26 @@ internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, I
 		return false;
 	}
 
-	public IReadOnlyList<string> Complete(ThemeBackgroundArguments background, string themeId, string packageName) {
+	public ThemeBackgroundOutcome Complete(ThemeBackgroundArguments background, string themeId, string packageName) {
 		List<string> warnings = [];
+		string panelIconBackground = null;
 		if (background.SetsBackground && background.KeepIconBackground) {
 			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} was left as it is (keep-icon-background).");
+			panelIconBackground = ThemeBackgroundOutcome.PanelIconKept;
 		} else if (background.SetsBackground) {
 			try {
 				featureState.SetFeatureState(PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
 				logger.WriteInfo($"{PanelIconBackgroundFeatureCode} is off for All employees.");
+				panelIconBackground = ThemeBackgroundOutcome.PanelIconOff;
 			} catch (Exception exception) {
 				warnings.Add($"The theme background was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
 					$"feature failed, so the panel may still hide it: {exception.Message}");
 			}
 		}
 		if (!background.HasImageId) {
-			return warnings;
+			return new ThemeBackgroundOutcome(warnings, PanelIconBackground: panelIconBackground);
 		}
+		string imagePackage = null;
 		try {
 			string boundPackage = packageDataBinder.UsePackage(packageName);
 			PackageDataBindingOutcome outcome = packageDataBinder.BindRow("SysImage",
@@ -65,12 +79,13 @@ internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, I
 			warnings.AddRange(outcome.Warnings);
 			if (outcome.Bound) {
 				logger.WriteInfo($"Bound the background image into package '{boundPackage}'.");
+				imagePackage = boundPackage;
 			}
 		} catch (Exception exception) {
 			warnings.Add($"The theme background was applied, but binding image {background.ImageId.Trim()} into the " +
 				$"theme's package failed: {exception.Message}");
 		}
-		return warnings;
+		return new ThemeBackgroundOutcome(warnings, imagePackage, panelIconBackground);
 	}
 
 	private sealed class ImageRows : SelectQueryHelper.SelectQueryResponseBaseDto {

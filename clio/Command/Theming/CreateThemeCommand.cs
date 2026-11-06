@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Clio.Common;
@@ -98,9 +97,9 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 	/// <param name="errorMessage">On failure, the validation or server-provided message.</param>
 	/// <returns><c>true</c> when the theme was created; otherwise <c>false</c>.</returns>
 	public virtual bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
-		out IReadOnlyList<string> warnings) {
+		out ThemeBackgroundOutcome backgroundOutcome) {
 		createdId = null;
-		warnings = [];
+		backgroundOutcome = ThemeBackgroundOutcome.None;
 		ThemeBackgroundArguments background = options.GetBackgroundArguments();
 		if (!background.TryValidate(out errorMessage)) {
 			return false;
@@ -139,15 +138,16 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		createdId = id;
-		warnings = _backgroundWriter.Complete(background, id, options.PackageName);
+		backgroundOutcome = _backgroundWriter.Complete(background, id, options.PackageName);
 		return true;
 	}
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(CreateThemeOptions options) {
-		if (TryCreateTheme(options, out string createdId, out string errorMessage, out IReadOnlyList<string> warnings)) {
+		if (TryCreateTheme(options, out string createdId, out string errorMessage,
+				out ThemeBackgroundOutcome backgroundOutcome)) {
 			Logger.WriteInfo($"Created theme '{createdId}'.");
-			Logger.WriteWarnings(warnings);
+			Logger.WriteWarnings(backgroundOutcome.Warnings);
 			return;
 		}
 		CommandSuccess = false;

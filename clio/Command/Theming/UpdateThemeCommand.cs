@@ -112,7 +112,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Logger.WriteInfo(background.Remove
 				? "Removed the theme background."
 				: $"Theme background: {request.Background.Describe()}.");
-			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.Id, packageName));
+			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.Id, packageName).Warnings);
 		}
 	}
 

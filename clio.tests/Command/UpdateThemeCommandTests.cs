@@ -37,6 +37,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
 		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(true);
+		_backgroundWriter.Complete(default, default, default).ReturnsForAnyArgs(ThemeBackgroundOutcome.None);
 		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _backgroundWriter);

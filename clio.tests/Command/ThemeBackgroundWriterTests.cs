@@ -12,36 +12,39 @@ namespace Clio.Tests.Command;
 [Property("Module", "Command")]
 public sealed class ThemeBackgroundWriterTests {
 
-	[TestCase(false, 1, "UsePanelIconBackground is off for All employees.")]
-	[TestCase(true, 0, "UsePanelIconBackground was left as it is (keep-icon-background).")]
-	[Description("Turns the panel icon background off for All employees after a background is written, unless the caller keeps it, and says which.")]
-	public void Complete_Should_Turn_The_Panel_Icon_Off_Unless_Kept(bool keep, int expectedWrites, string expectedLine) {
+	[TestCase(false, 1, "UsePanelIconBackground is off for All employees.", ThemeBackgroundOutcome.PanelIconOff)]
+	[TestCase(true, 0, "UsePanelIconBackground was left as it is (keep-icon-background).", ThemeBackgroundOutcome.PanelIconKept)]
+	[Description("Turns the panel icon background off for All employees after a background is written, unless the caller keeps it, and says which in the log and the outcome.")]
+	public void Complete_Should_Turn_The_Panel_Icon_Off_Unless_Kept(bool keep, int expectedWrites, string expectedLine,
+		string expectedState) {
 		IFeatureStateService featureState = Substitute.For<IFeatureStateService>();
 		ILogger logger = Substitute.For<ILogger>();
 
-		new ThemeBackgroundWriter(featureState, Substitute.For<IPackageDataBinder>(), Substitute.For<IApplicationClient>(),
-			Substitute.For<IServiceUrlBuilder>(), logger).Complete(
+		ThemeBackgroundOutcome outcome = new ThemeBackgroundWriter(featureState, Substitute.For<IPackageDataBinder>(),
+			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), logger).Complete(
 			new ThemeBackgroundArguments(Color: "#123", KeepIconBackground: keep), "d53a816b-65ed-4b5b-ad3b-f739280add45",
 			null);
 
 		featureState.Received(expectedWrites).SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
 		logger.Received(1).WriteInfo(expectedLine);
+		outcome.PanelIconBackground.Should().Be(expectedState);
 	}
 
 	[Test]
-	[Description("Names the package the background image was bound into.")]
+	[Description("Names the package the background image was bound into, in the log and the outcome.")]
 	public void Complete_Should_Name_The_Package_It_Binds_The_Image_Into() {
 		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
 		binder.UsePackage("UsrThemes").Returns("UsrThemes");
 		binder.BindRow(default, default, default, default).ReturnsForAnyArgs(PackageDataBindingOutcome.Success());
 		ILogger logger = Substitute.For<ILogger>();
 
-		new ThemeBackgroundWriter(Substitute.For<IFeatureStateService>(), binder, Substitute.For<IApplicationClient>(),
-			Substitute.For<IServiceUrlBuilder>(), logger).Complete(
+		ThemeBackgroundOutcome outcome = new ThemeBackgroundWriter(Substitute.For<IFeatureStateService>(), binder,
+			Substitute.For<IApplicationClient>(), Substitute.For<IServiceUrlBuilder>(), logger).Complete(
 			new ThemeBackgroundArguments(ImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81", KeepIconBackground: true),
 			"d53a816b-65ed-4b5b-ad3b-f739280add45", "UsrThemes");
 
 		logger.Received(1).WriteInfo("Bound the background image into package 'UsrThemes'.");
+		outcome.ImagePackage.Should().Be("UsrThemes");
 	}
 
 	[TestCase("{\"success\":true,\"rows\":[{\"Id\":\"6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81\"}]}", true)]

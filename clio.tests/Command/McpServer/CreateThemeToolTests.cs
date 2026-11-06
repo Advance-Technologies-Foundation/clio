@@ -1831,6 +1831,25 @@ public class CreateThemeToolTests {
 			because: "a credential in a server message must not reach the model transcript");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Returns the package the background image was bound into and whether the panel icon background is off or kept.")]
+	public void CreateTheme_ShouldReturnTheImagePackageAndThePanelIconState() {
+		IToolCommandResolver commandResolver = Substitute.For<IToolCommandResolver>();
+		commandResolver.Resolve<CreateThemeCommand>(Arg.Any<CreateThemeOptions>()).Returns(new FakeCreateThemeCommand(
+			imagePackage: "UsrBranding", panelIconBackground: ThemeBackgroundOutcome.PanelIconOff));
+		commandResolver.Resolve<ICreatioVersionChecker>(Arg.Any<EnvironmentOptions>())
+			.Returns(Substitute.For<ICreatioVersionChecker>());
+		CreateThemeTool tool = new(new FakeCreateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		CreateThemeResult result = tool.CreateTheme(new CreateThemeArgs(EnvironmentName: "docker_fix2",
+			CssContent: ".x{}", Caption: "Ocean", BackgroundImageId: "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81"));
+
+		JsonSerializer.Serialize(result).Should().Contain(
+			"\"background-image-package\":\"UsrBranding\",\"panel-icon-background\":\"off\"",
+			because: "an MCP client reads where the image went and the panel icon state only from the result");
+	}
+
 	private sealed class ThrowingCreateThemeCommand(string failureMessage) : CreateThemeCommand(
 		Substitute.For<IApplicationClient>(),
 		new EnvironmentSettings(),
@@ -1839,7 +1858,7 @@ public class CreateThemeToolTests {
 		Substitute.For<IThemeBackgroundWriter>()) {
 
 		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
-			out IReadOnlyList<string> warnings) {
+			out ThemeBackgroundOutcome backgroundOutcome) {
 			throw new InvalidOperationException(failureMessage);
 		}
 	}
@@ -1848,12 +1867,12 @@ public class CreateThemeToolTests {
 		private readonly bool _success;
 		private readonly string _createdId;
 		private readonly string _error;
-		private readonly IReadOnlyList<string> _warnings;
+		private readonly ThemeBackgroundOutcome _backgroundOutcome;
 
 		public CreateThemeOptions CapturedOptions { get; private set; }
 
 		public FakeCreateThemeCommand(string createdId = "auto-id", bool success = true, string error = null,
-			IReadOnlyList<string> warnings = null)
+			IReadOnlyList<string> warnings = null, string imagePackage = null, string panelIconBackground = null)
 			: base(
 				Substitute.For<IApplicationClient>(),
 				new EnvironmentSettings(),
@@ -1863,15 +1882,15 @@ public class CreateThemeToolTests {
 			_createdId = createdId;
 			_success = success;
 			_error = error;
-			_warnings = warnings ?? [];
+			_backgroundOutcome = new ThemeBackgroundOutcome(warnings ?? [], imagePackage, panelIconBackground);
 		}
 
 		public override bool TryCreateTheme(CreateThemeOptions options, out string createdId, out string errorMessage,
-			out IReadOnlyList<string> warnings) {
+			out ThemeBackgroundOutcome backgroundOutcome) {
 			CapturedOptions = options;
 			createdId = _success ? _createdId : null;
 			errorMessage = _error;
-			warnings = _warnings;
+			backgroundOutcome = _backgroundOutcome;
 			return _success;
 		}
 	}

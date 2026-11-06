@@ -69,7 +69,8 @@ public class CreateThemeTool(
 	[McpServerTool(Name = ToolName, ReadOnly = false, Destructive = true, Idempotent = false, OpenWorld = true),
 	 Description("Create a custom Creatio theme (background optional) on a registered environment via the native ThemeService. " +
 		"Requires Creatio " + ThemeServiceRequirement.MinVersion + " or later on the target environment. " +
-		"Returns { success, id, warnings?, error? } where id is the created theme's id, auto-generated when omitted. " +
+		"Returns { success, id, background-image-package?, panel-icon-background?, warnings?, error? } where id is " +
+		"the created theme's id, auto-generated when omitted. " +
 		"The theme CSS is supplied inline via css-content, OR built server-side from brand colours and fonts " +
 		"(primary, secondary, accent, success, error, heading-font, body-font, font-weights) and created " +
 		"in one call — provide exactly one of css-content / primary. In brand mode custom font families are " +
@@ -79,8 +80,9 @@ public class CreateThemeTool(
 		"An optional theme background is at most one of background-image-id (an image from upload-image) or " +
 		"background-color, and needs Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later, checked " +
 		"before any write. It turns the environment-wide UsePanelIconBackground feature off for All employees " +
-		"unless keep-icon-background is true, and an image is bound into the theme's package; problems after the " +
-		"create come back in warnings. " +
+		"unless keep-icon-background is true, and an image is bound into the theme's package. " +
+		"background-image-package names the package the image was bound into, and panel-icon-background is off or " +
+		"kept when a background was set; problems after the create come back in warnings. " +
 		"This description is authoritative for create-theme's CSS sources, font-name contract, and error codes; " +
 		"get-guidance theming covers the surrounding workflow (apply, default theme, deletion).")]
 	public CreateThemeResult CreateTheme(
@@ -152,7 +154,7 @@ public class CreateThemeTool(
 		IReadOnlyList<string> buildWarnings) {
 
 		if (!command.TryCreateTheme(options, out string createdId, out string errorMessage,
-				out IReadOnlyList<string> warnings)) {
+				out ThemeBackgroundOutcome backgroundOutcome)) {
 			return CreateThemeResult.Failure(
 				string.IsNullOrWhiteSpace(errorMessage)
 					? "CreateTheme returned success=false."
@@ -160,7 +162,8 @@ public class CreateThemeTool(
 				buildWarnings);
 		}
 		return CreateThemeResult.Successful(createdId,
-			[.. buildWarnings ?? [], .. SensitiveErrorTextRedactor.RedactAll(warnings)]);
+			[.. buildWarnings ?? [], .. SensitiveErrorTextRedactor.RedactAll(backgroundOutcome.Warnings)],
+			backgroundOutcome);
 	}
 
 	private static bool HasAnyBrandParameter(CreateThemeArgs args) {
@@ -263,6 +266,14 @@ public sealed record CreateThemeResult {
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
 	public string Id { get; init; }
 
+	[JsonPropertyName("background-image-package")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string BackgroundImagePackage { get; init; }
+
+	[JsonPropertyName("panel-icon-background")]
+	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	public string PanelIconBackground { get; init; }
+
 	/// <summary>Non-fatal advisories from the brand-mode CSS build and the background steps; omitted when there are none.</summary>
 	[JsonPropertyName("warnings")]
 	[JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -274,10 +285,13 @@ public sealed record CreateThemeResult {
 	public string Error { get; init; }
 
 	/// <summary>Creates a success result carrying the effective theme id and any non-fatal build advisories.</summary>
-	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null) {
+	public static CreateThemeResult Successful(string id, IReadOnlyList<string> warnings = null,
+		ThemeBackgroundOutcome background = null) {
 		return new CreateThemeResult {
 			Success = true,
 			Id = id,
+			BackgroundImagePackage = background?.ImagePackage,
+			PanelIconBackground = background?.PanelIconBackground,
 			Warnings = warnings is { Count: > 0 } ? warnings : null
 		};
 	}
