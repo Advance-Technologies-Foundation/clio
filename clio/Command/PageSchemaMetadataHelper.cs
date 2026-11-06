@@ -42,6 +42,7 @@ namespace Clio.Command {
 		private const string SysSchemaName = "SysSchema";
 		private const string ManagerNameColumnPath = "ManagerName";
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
+		private const string AddonSchemaManagerName = "AddonSchemaManager";
 		private const int ComparisonTypeEqual = 3;
 
 		/// <summary>
@@ -467,6 +468,41 @@ namespace Clio.Command {
 			if (rows.Count == 0)
 				return (null, $"Schema '{schemaUId}' not found");
 			return (rows[0], null);
+		}
+
+		/// <summary>
+		/// Returns the package name of a persisted add-on schema (<c>AddonSchemaManager</c>) by its UId, or
+		/// <c>null</c> when no such add-on row exists — the case for the unsaved add-on the add-on designer hands out
+		/// for a package that has no layer of its own yet.
+		/// </summary>
+		/// <param name="applicationClient">Client of the target environment.</param>
+		/// <param name="serviceUrlBuilder">URL builder of the target environment.</param>
+		/// <param name="addonSchemaUId">The add-on schema UId (GUID string).</param>
+		/// <returns>The package name or <c>null</c>, and a non-empty error when the query itself failed.</returns>
+		internal static (string packageName, string error) QueryAddonSchemaPackageName(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string addonSchemaUId) {
+			var query = new JObject {
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byUId", BuildEqFilter("UId", 0, addonSchemaUId)),
+					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
+				[ColumnsKey] = new JObject {
+					[ItemsKey] = new JObject {
+						["PackageName"] = new JObject {
+							[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name" }
+						}
+					}
+				},
+				[RowCountKey] = 1
+			};
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return (null, transportError);
+			if (!success)
+				return (null, "Failed to query add-on schema metadata");
+			return (rows.Count == 0 ? null : rows[0]["PackageName"]?.ToString(), null);
 		}
 
 		internal static (JToken row, string error) QuerySysSchemaRow(
