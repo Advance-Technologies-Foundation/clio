@@ -12,7 +12,13 @@ DESCRIPTION
     returns EVERY schema in its replacing (designer) chain in a single response,
     ordered root first (by hierarchy level) — the same order the deterministic
     page-bundle merge consumes. Each entry carries the schema name, UId, package
-    name/UId, schema version, schema type, and its own raw body.
+    name/UId, whether that package is locked, schema version, schema type, and
+    its own raw body.
+
+    packageLocked is read from SysPackage.InstallType: true when the package
+    cannot receive design-time writes, false when it can, null when the lock
+    state could not be read (the response warning then names the cause). Use it
+    to see which layers of the page an edit could land in.
 
     Use this instead of calling get-page / get-client-unit-schema once per schema
     when you need to inspect a whole chain (for example Classic->Freedom migration
@@ -41,7 +47,8 @@ OPTIONS
                                        --offset onward
 
     --metadata-only                    Return chain metadata only (names, UIds,
-                                       versions) without the raw bodies
+                                       package lock state, versions) without the
+                                       raw bodies
 
     --uri                    -u       Application uri
 

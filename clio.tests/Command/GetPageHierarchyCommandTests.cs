@@ -541,4 +541,129 @@ public class GetPageHierarchyCommandTests {
 		response.Error.Should().Be("designer service unavailable",
 			because: "the catch branch surfaces the client exception message");
 	}
+
+	// ---- ENG-105680: package lock state per chain entry ----------------------------------------
+
+	[Test]
+	[Category("Unit")]
+	[Description("BuildResponse reports each entry's package lock state from the lock map, and null for a package the map does not carry.")]
+	public void BuildResponse_Should_Report_PackageLocked_Per_Entry() {
+		// Arrange
+		GetPageHierarchyOptions options = new() { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true };
+		Dictionary<string, bool?> locks = new(StringComparer.OrdinalIgnoreCase) {
+			["ROOTBASE_FORMPAGE-PKG-UID"] = true,
+			["UsrLeaf_FormPage-pkg-uid"] = false
+		};
+
+		// Act
+		GetPageHierarchyResponse response = GetPageHierarchyCommand.BuildResponse(options, EffectiveFirstChain(), locks);
+
+		// Assert
+		response.Schemas.Single(s => s.SchemaName == "RootBase_FormPage").PackageLocked.Should().BeTrue(
+			because: "the root package is locked, and the UId lookup ignores case like the platform does");
+		response.Schemas.Single(s => s.SchemaName == "UsrLeaf_FormPage").PackageLocked.Should().BeFalse(
+			because: "the leaf package is editable");
+		response.Schemas.Single(s => s.SchemaName == "MidBase_FormPage").PackageLocked.Should().BeNull(
+			because: "a package the lock read did not return is unknown, never assumed editable or locked");
+		response.Warning.Should().BeNull(because: "the lock read succeeded and bodies were not omitted");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("BuildResponse keeps the chain and surfaces the lock-read failure in warning when the lock state could not be read.")]
+	public void BuildResponse_Should_Surface_Lock_Read_Failure_In_Warning() {
+		// Arrange
+		GetPageHierarchyOptions options = new() { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true };
+
+		// Act
+		GetPageHierarchyResponse response = GetPageHierarchyCommand.BuildResponse(
+			options, EffectiveFirstChain(), null, "Package lock state could not be read: boom");
+
+		// Assert
+		response.Success.Should().BeTrue(because: "a failed lock read must not hide the chain itself");
+		response.Schemas.Should().OnlyContain(s => s.PackageLocked == null,
+			because: "without a lock answer every entry's lock state is unknown");
+		response.Warning.Should().Be("Package lock state could not be read: boom",
+			because: "the caller must learn why packageLocked is null instead of reading it as 'not locked'");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy reads SysPackage.InstallType for the chain's packages and maps 0 to unlocked and any other value to locked.")]
+	public void TryGetHierarchy_Should_Read_Package_Lock_State_From_SysPackage() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.ArgAt<string>(1).Contains("\"rootSchemaName\":\"SysPackage\"")
+				? "{\"success\":true,\"rows\":[{\"UId\":\"UsrLeaf_FormPage-pkg-uid\",\"InstallType\":0},"
+					+ "{\"UId\":\"MidBase_FormPage-pkg-uid\",\"InstallType\":1}]}"
+				: ResolvedMetadataJson);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => EffectiveFirstChain());
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the chain resolved");
+		response.Schemas.Single(s => s.SchemaName == "UsrLeaf_FormPage").PackageLocked.Should().BeFalse(
+			because: "InstallType 0 is the editable package state");
+		response.Schemas.Single(s => s.SchemaName == "MidBase_FormPage").PackageLocked.Should().BeTrue(
+			because: "any InstallType other than 0 is locked, the flag cliogate lock/unlock sets");
+		response.Schemas.Single(s => s.SchemaName == "RootBase_FormPage").PackageLocked.Should().BeNull(
+			because: "a package SysPackage did not return is unknown");
+		response.Warning.Should().Be(
+			"Package lock state is unknown (packageLocked is null) for packages: RootBase_FormPage-pkg-uid.",
+			because: "every null packageLocked must come with a warning that names the package");
+		applicationClient.Received(1).ExecutePostRequest(Arg.Any<string>(),
+			Arg.Is<string>(body => body.Contains("\"rootSchemaName\":\"SysPackage\"")));
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy still returns the chain, with packageLocked null and a warning, when the SysPackage lock read fails.")]
+	public void TryGetHierarchy_Should_Return_Chain_When_Lock_Read_Fails() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.ArgAt<string>(1).Contains("\"rootSchemaName\":\"SysPackage\"")
+				? "{\"success\":false,\"errorInfo\":{\"message\":\"Access denied to SysPackage\"}}"
+				: ResolvedMetadataJson);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => EffectiveFirstChain());
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the lock state is extra information; its failure must not fail the chain read");
+		response.Schemas.Should().HaveCount(3, because: "the whole chain is still returned");
+		response.Schemas.Should().OnlyContain(s => s.PackageLocked == null,
+			because: "no lock answer means the lock state is unknown for every entry");
+		response.Warning.Should().Contain("Package lock state could not be read")
+			.And.Contain("Access denied to SysPackage",
+				because: "the warning must name the cause so the caller does not treat null as unlocked");
+	}
+
+	[TestCase(0, false)]
+	[TestCase(1, true)]
+	[TestCase(2, true)]
+	[TestCase(null, null)]
+	[Category("Unit")]
+	[Description("IsLockedInstallType treats InstallType 0 as editable, any other value as locked, and a missing value as unknown.")]
+	public void IsLockedInstallType_Should_Map_InstallType(int? installType, bool? expected) {
+		// Arrange / Act
+		bool? locked = PackageTargetResolver.IsLockedInstallType(installType);
+
+		// Assert
+		locked.Should().Be(expected, because: "InstallType 0 is the only editable package state");
+	}
 }
