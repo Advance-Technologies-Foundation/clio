@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using Clio.Common;
 using Clio.Common.ObjectRights;
@@ -129,6 +130,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
+	[SuppressMessage("Major Code Smell", "S107:Methods should not have too many parameters",
+		Justification = "The command composes independent DI collaborators (reader, writer, planner, grantee lookup, "
+			+ "read-back verifier, package binder, console, logger); grouping them into a parameter object would hide the "
+			+ "injected contract without changing behaviour.")]
 	public SetObjectRightsCommand(IObjectRightsReader reader, IObjectRightsWriter writer, IObjectRightsPlanner planner,
 		IGranteeLookup granteeLookup, IObjectRightsReadBackVerifier readBackVerifier, IObjectRightsPackageBinder binder,
 		IInteractiveConsole console, ILogger logger) {

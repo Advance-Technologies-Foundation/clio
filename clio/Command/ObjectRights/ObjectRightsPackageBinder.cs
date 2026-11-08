@@ -116,14 +116,17 @@ internal sealed class ObjectRightsPackageBinder(
 
 	internal const string RightsSchema = "SysEntitySchemaOperationRight";
 
+	private const string SubjectSchemaUIdColumn = "SubjectSchemaUId";
+	private const string PositionColumn = "Position";
+
 	// Id is the key: the rows are created here, so their ids reach the target with them. The operations and the position
 	// are force-updated, so a later install of the package carries a changed row onto a site that already has it.
 	internal static readonly IReadOnlyList<string> BoundColumns = [
-		"Id", "SubjectSchemaUId", "SysAdminUnit", "CanRead", "CanAppend", "CanEdit", "CanDelete", "Position"
+		"Id", SubjectSchemaUIdColumn, "SysAdminUnit", "CanRead", "CanAppend", "CanEdit", "CanDelete", PositionColumn
 	];
 
 	private static readonly DataBindingColumnPolicy ColumnPolicy = new(
-		["Id"], ["SubjectSchemaUId", "SysAdminUnit", "CanRead", "CanAppend", "CanEdit", "CanDelete", "Position"]);
+		["Id"], [SubjectSchemaUIdColumn, "SysAdminUnit", "CanRead", "CanAppend", "CanEdit", "CanDelete", PositionColumn]);
 
 	private const int EditableInstallType = 0;
 
@@ -254,12 +257,12 @@ internal sealed class ObjectRightsPackageBinder(
 	private IReadOnlyList<Guid> ReadStoredRowIds(Guid schemaUId, CreatioRequestOptions requestOptions) {
 		RightRowResponse response = Select<RightRowResponse>(SelectQueryHelper.BuildSelectQuery(RightsSchema,
 				[
-					new SelectQueryHelper.SelectQueryColumnDefinition("Position", "Position",
+					new SelectQueryHelper.SelectQueryColumnDefinition(PositionColumn, PositionColumn,
 						OrderDirection: 1, OrderPosition: 0),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")
 				],
 				[
-					new SelectQueryHelper.SelectQueryFilterDefinition("SubjectSchemaUId", schemaUId.ToString(),
+					new SelectQueryHelper.SelectQueryFilterDefinition(SubjectSchemaUIdColumn, schemaUId.ToString(),
 						SelectQueryHelper.GuidDataValueType)
 				]), requestOptions);
 		return (response.Rows ?? []).Select(row => row.Id).Where(id => id != Guid.Empty).ToArray();
@@ -268,7 +271,7 @@ internal sealed class ObjectRightsPackageBinder(
 	// The SysEntitySchemaOperationRight bindings of editable packages. A locked package is not where the caller's own
 	// binding would be, and reading every product binding would cost a request each.
 	private IReadOnlyList<BindingRow> ReadRightsBindings(CreatioRequestOptions requestOptions) {
-		BindingResponse response = Select<BindingResponse>(SelectQueryHelper.BuildSelectQuery("SysPackageSchemaData",
+		SchemaDataBindingResponse response = Select<SchemaDataBindingResponse>(SelectQueryHelper.BuildSelectQuery("SysPackageSchemaData",
 				[
 					new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId"),
 					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
@@ -303,7 +306,7 @@ internal sealed class ObjectRightsPackageBinder(
 		}
 		HashSet<Guid> rowIds = ReadStoredRowIds(schemaUId, requestOptions).ToHashSet();
 		BindingRow holder = byHand.FirstOrDefault(row => bindingWriter.FetchBoundRows(row.UId).Any(bound =>
-			ReadGuid(bound, "SubjectSchemaUId") == schemaUId || rowIds.Contains(ReadGuid(bound, "Id"))));
+			ReadGuid(bound, SubjectSchemaUIdColumn) == schemaUId || rowIds.Contains(ReadGuid(bound, "Id"))));
 		return holder is null ? null : new ExistingObjectRightsBinding(holder.Name, holder.PackageName);
 	}
 
@@ -342,7 +345,7 @@ internal sealed class ObjectRightsPackageBinder(
 		public Guid Id { get; init; }
 	}
 
-	private sealed class BindingResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+	private sealed class SchemaDataBindingResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
 		[JsonPropertyName("rows")]
 		public List<BindingRow> Rows { get; init; }
 	}
