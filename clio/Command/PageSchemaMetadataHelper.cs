@@ -43,6 +43,7 @@ namespace Clio.Command {
 		private const string ManagerNameColumnPath = "ManagerName";
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 		private const string AddonSchemaManagerName = "AddonSchemaManager";
+		private const string ByManagerFilterKey = "byManager";
 		private const int ComparisonTypeEqual = 3;
 
 		/// <summary>
@@ -237,7 +238,7 @@ namespace Clio.Command {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, schemaName)),
-					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName)),
+					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName)),
 					("byPackage", BuildEqFilter("SysPackage.UId", 0, packageUId))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
@@ -349,7 +350,7 @@ namespace Clio.Command {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byName", BuildEqFilter("Name", 1, entitySchemaName)),
-					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, "EntitySchemaManager"))),
+					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, "EntitySchemaManager"))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
@@ -456,7 +457,7 @@ namespace Clio.Command {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byUId", BuildEqFilter("UId", 0, schemaUId)),
-					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName))),
+					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName))),
 				[ColumnsKey] = new JObject { [ItemsKey] = columnsItems },
 				[RowCountKey] = 1
 			};
@@ -487,7 +488,7 @@ namespace Clio.Command {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
 					("byUId", BuildEqFilter("UId", 0, addonSchemaUId)),
-					("byManager", BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
+					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
 				[ColumnsKey] = new JObject {
 					[ItemsKey] = new JObject {
 						["PackageName"] = new JObject {

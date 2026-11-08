@@ -131,6 +131,15 @@ public sealed class SetPageModalSizeTool(
 	}
 }
 
+/// <summary>
+/// Connection args and the unknown-field bag shared by the page modal size tools.
+/// </summary>
+public abstract record PageModalSizeArgsBase : ConnectionArgsBase {
+	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
+	[JsonExtensionData]
+	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
+}
+
 /// <summary>Arguments of <c>get-page-modal-size</c>.</summary>
 public sealed record GetPageModalSizeArgs(
 	[property: JsonPropertyName("page-schema-name")]
@@ -141,28 +150,8 @@ public sealed record GetPageModalSizeArgs(
 	[property: JsonPropertyName("package-name")]
 	[property: Description("Package the page is read from — the app's editable package.")]
 	[property: Required]
-	string PackageName,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password = null
-) {
-	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
-	[JsonExtensionData]
-	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
-}
+	string PackageName
+) : PageModalSizeArgsBase;
 
 /// <summary>Arguments of <c>set-page-modal-size</c>.</summary>
 public sealed record SetPageModalSizeArgs(
@@ -179,25 +168,5 @@ public sealed record SetPageModalSizeArgs(
 	[property: JsonPropertyName("size")]
 	[property: Description("Window size: small (S), medium (M), large (L) or extra-large (XL).")]
 	[property: Required]
-	string Size,
-
-	[property: JsonPropertyName("environment-name")]
-	[property: Description("Registered clio environment name, e.g. 'local'. Preferred for normal MCP work.")]
-	string? EnvironmentName = null,
-
-	[property: JsonPropertyName("uri")]
-	[property: Description("Direct Creatio URL. Use only when bootstrap is broken or before the environment can be registered through reg-web-app.")]
-	string? Uri = null,
-
-	[property: JsonPropertyName("login")]
-	[property: Description("Direct Creatio login paired with `uri`. Emergency fallback only.")]
-	string? Login = null,
-
-	[property: JsonPropertyName("password")]
-	[property: Description("Direct Creatio password paired with `uri`. Emergency fallback only.")]
-	string? Password = null
-) {
-	/// <summary>Overflow bag for unknown JSON fields; a non-empty bag refuses the call.</summary>
-	[JsonExtensionData]
-	public Dictionary<string, JsonElement>? ExtensionData { get; init; }
-}
+	string Size
+) : PageModalSizeArgsBase;

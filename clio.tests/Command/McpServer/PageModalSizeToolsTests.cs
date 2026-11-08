@@ -72,7 +72,7 @@ public sealed class PageModalSizeToolsTests {
 	public void GetPageModalSize_ShouldReturnSize_WhenEnvironmentProvided() {
 		// Act
 		GetPageModalSizeResponse response = _getTool.GetPageModalSize(
-			new GetPageModalSizeArgs("UsrOrder_MiniPage", "Custom", "dev"));
+			new GetPageModalSizeArgs("UsrOrder_MiniPage", "Custom") { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the read succeeded");
@@ -88,7 +88,7 @@ public sealed class PageModalSizeToolsTests {
 	public void SetPageModalSize_ShouldMapArgsAndReturnSizes() {
 		// Act
 		SetPageModalSizeResponse response = _setTool.SetPageModalSize(
-			new SetPageModalSizeArgs("UsrOrder_MiniPage", "Custom", "L", "dev"));
+			new SetPageModalSizeArgs("UsrOrder_MiniPage", "Custom", "L") { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeTrue(because: "the write succeeded");
@@ -104,7 +104,7 @@ public sealed class PageModalSizeToolsTests {
 	public void SetPageModalSize_ShouldListAvailableSizes_WhenSizeIsUnsupported() {
 		// Act
 		SetPageModalSizeResponse response = _setTool.SetPageModalSize(
-			new SetPageModalSizeArgs("UsrOrder_MiniPage", "Custom", "huge", "dev"));
+			new SetPageModalSizeArgs("UsrOrder_MiniPage", "Custom", "huge") { EnvironmentName = "dev" });
 
 		// Assert
 		response.Success.Should().BeFalse(because: "the platform does not support that size");
@@ -117,7 +117,8 @@ public sealed class PageModalSizeToolsTests {
 	[Description("set-page-modal-size refuses a misspelled argument instead of dropping it, and writes nothing.")]
 	public void SetPageModalSize_ShouldRefuseUnknownArgument() {
 		// Arrange
-		SetPageModalSizeArgs args = new("UsrOrder_MiniPage", "Custom", "large", "dev") {
+		SetPageModalSizeArgs args = new("UsrOrder_MiniPage", "Custom", "large") {
+			EnvironmentName = "dev",
 			ExtensionData = new Dictionary<string, JsonElement> {
 				["window-size"] = JsonSerializer.SerializeToElement("large")
 			}
@@ -136,7 +137,8 @@ public sealed class PageModalSizeToolsTests {
 	[Description("get-page-modal-size refuses a misspelled argument instead of reading another page.")]
 	public void GetPageModalSize_ShouldRefuseUnknownArgument() {
 		// Arrange
-		GetPageModalSizeArgs args = new("UsrOrder_MiniPage", "Custom", "dev") {
+		GetPageModalSizeArgs args = new("UsrOrder_MiniPage", "Custom") {
+			EnvironmentName = "dev",
 			ExtensionData = new Dictionary<string, JsonElement> {
 				["page-name"] = JsonSerializer.SerializeToElement("Other")
 			}

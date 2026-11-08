@@ -1,6 +1,5 @@
 namespace Clio.Command {
 	using System;
-	using System.Collections.Generic;
 	using System.Runtime.Serialization;
 	using Clio.Command.PageModalSize;
 	using Clio.Common;
@@ -78,23 +77,7 @@ namespace Clio.Command {
 
 	/// <summary>The <c>set-page-modal-size</c> response envelope.</summary>
 	[DataContract]
-	public sealed class SetPageModalSizeResponse {
-		[DataMember(Name = "success")]
-		[JsonProperty("success")]
-		[JsonPropertyName("success")]
-		public bool Success { get; set; }
-
-		[DataMember(Name = "pageSchemaName")]
-		[JsonProperty("pageSchemaName", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("pageSchemaName")]
-		public string PageSchemaName { get; set; }
-
-		/// <summary>The package the add-on was written to.</summary>
-		[DataMember(Name = "packageName")]
-		[JsonProperty("packageName", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("packageName")]
-		public string PackageName { get; set; }
-
+	public sealed class SetPageModalSizeResponse : PageModalSizeResponseBase {
 		/// <summary>The size name stored before the write; absent when none was set (the window opened small).</summary>
 		[DataMember(Name = "previousSize")]
 		[JsonProperty("previousSize", NullValueHandling = NullValueHandling.Ignore)]
@@ -107,30 +90,10 @@ namespace Clio.Command {
 		[JsonPropertyName("previousSizeValue")]
 		public int? PreviousSizeValue { get; set; }
 
+		/// <summary>The package of the add-on layer the previous size came from; absent when none was set.</summary>
 		[DataMember(Name = "previousSourcePackageName")]
 		[JsonProperty("previousSourcePackageName", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonPropertyName("previousSourcePackageName")]
 		public string PreviousSourcePackageName { get; set; }
-
-		[DataMember(Name = "size")]
-		[JsonProperty("size", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("size")]
-		public string Size { get; set; }
-
-		/// <summary>The accepted sizes; set only when the requested size was refused.</summary>
-		[DataMember(Name = "availableSizes")]
-		[JsonProperty("availableSizes", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("availableSizes")]
-		public IReadOnlyList<string> AvailableSizes { get; set; }
-
-		[DataMember(Name = "warning")]
-		[JsonProperty("warning", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("warning")]
-		public string Warning { get; set; }
-
-		[DataMember(Name = "error")]
-		[JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("error")]
-		public string Error { get; set; }
 	}
 }

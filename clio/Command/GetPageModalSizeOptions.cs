@@ -1,6 +1,5 @@
 namespace Clio.Command {
 	using System;
-	using System.Collections.Generic;
 	using System.Runtime.Serialization;
 	using Clio.Command.PageModalSize;
 	using Clio.Common;
@@ -71,28 +70,7 @@ namespace Clio.Command {
 
 	/// <summary>The <c>get-page-modal-size</c> response envelope.</summary>
 	[DataContract]
-	public sealed class GetPageModalSizeResponse {
-		[DataMember(Name = "success")]
-		[JsonProperty("success")]
-		[JsonPropertyName("success")]
-		public bool Success { get; set; }
-
-		[DataMember(Name = "pageSchemaName")]
-		[JsonProperty("pageSchemaName", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("pageSchemaName")]
-		public string PageSchemaName { get; set; }
-
-		[DataMember(Name = "packageName")]
-		[JsonProperty("packageName", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("packageName")]
-		public string PackageName { get; set; }
-
-		/// <summary>The stored size name; absent when no size is set.</summary>
-		[DataMember(Name = "size")]
-		[JsonProperty("size", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("size")]
-		public string Size { get; set; }
-
+	public sealed class GetPageModalSizeResponse : PageModalSizeResponseBase {
 		/// <summary>The raw stored <c>modalSettings.size</c>; absent when no size is set.</summary>
 		[DataMember(Name = "sizeValue")]
 		[JsonProperty("sizeValue", NullValueHandling = NullValueHandling.Ignore)]
@@ -110,21 +88,5 @@ namespace Clio.Command {
 		[JsonProperty("effectiveSize", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonPropertyName("effectiveSize")]
 		public string EffectiveSize { get; set; }
-
-		[DataMember(Name = "availableSizes")]
-		[JsonProperty("availableSizes", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("availableSizes")]
-		public IReadOnlyList<string> AvailableSizes { get; set; }
-
-		/// <summary>Set when a layer above the package overrides the size the package sees.</summary>
-		[DataMember(Name = "warning")]
-		[JsonProperty("warning", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("warning")]
-		public string Warning { get; set; }
-
-		[DataMember(Name = "error")]
-		[JsonProperty("error", NullValueHandling = NullValueHandling.Ignore)]
-		[JsonPropertyName("error")]
-		public string Error { get; set; }
 	}
 }
