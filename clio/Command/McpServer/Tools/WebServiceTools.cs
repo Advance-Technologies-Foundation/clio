@@ -132,7 +132,7 @@ public sealed class TestWebServiceMethodTool(IToolCommandResolver commandResolve
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Sends one real request through a registered web service method, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
+	[Description("Sends one real request through a registered web service method, as Studio's Send test request does, and returns the HTTP status and the response body (request and response headers are never returned; values sent from system settings or in Authorization are masked in the body). The call reaches the external API, so a POST, PUT, PATCH or DELETE method changes data there: confirm with the user first. The caller needs CanManageSolution.")]
 	public WebServiceTestResult TestWebServiceMethod(
 		[Description("Parameters: environment-name, code, method (required); parameters (optional map of top-level parameter code to value)")]
 		[Required]

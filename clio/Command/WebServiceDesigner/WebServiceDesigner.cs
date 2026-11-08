@@ -123,11 +123,16 @@ public sealed class WebServiceDesigner(
 			?? throw new ArgumentException(
 				$"method '{methodCode}' not found; methods: {string.Join(", ", schema.Methods.Items.Values.Select(m => m.Name))}.");
 		ServiceMethodCallResult result = client.CallMethod(schema.Name, method.Name, values);
-		string body = result.ResponseBody;
+		IReadOnlyList<string> secrets =
+			WebServiceResponseMasker.SentSecrets(method, result.RequestRawData, result.RequestBody);
+		// Masked before truncation, so a value cut at the boundary cannot survive half-visible.
+		string body = WebServiceResponseMasker.Apply(result.ResponseBody, secrets, out bool bodyMasked);
+		string error = WebServiceResponseMasker.Apply(result.Error, secrets, out bool errorMasked);
 		bool truncated = body is { Length: > MaxResponseBodyLength };
 		return new WebServiceTestResult(result.Success,
-			result.Error is null ? null : SensitiveErrorTextRedactor.Redact(result.Error),
-			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated);
+			error is null ? null : SensitiveErrorTextRedactor.Redact(error),
+			result.StatusCode, truncated ? body[..MaxResponseBodyLength] : body, truncated,
+			bodyMasked || errorMasked);
 	}
 
 	internal IReadOnlyList<WebServiceUsage> FindUsages(Guid serviceUId) {
@@ -310,7 +315,9 @@ public sealed class WebServiceDesigner(
 			if (!exists) {
 				// A default bound to a missing setting is dropped from the request without any error at
 				// run time (measured on 10.2.565), so the reference is refused here instead.
-				errors.Add($"system setting '{code}' does not exist; ask the user to create it (the agent never sets its value).");
+				errors.Add($"system setting '{code}' does not exist; create it with create-sys-setting and no value "
+					+ "(value-type-name SecureText for a key, token or password), then ask the user to fill it. "
+					+ "The agent never sets its value.");
 			}
 		}
 		return codes;

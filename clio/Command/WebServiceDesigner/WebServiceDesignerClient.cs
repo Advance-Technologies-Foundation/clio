@@ -25,7 +25,9 @@ public interface IWebServiceDesignerClient {
 }
 
 /// <summary>What a test call returned; request and response headers are deliberately not modelled.</summary>
-public sealed record ServiceMethodCallResult(bool Success, int? StatusCode, string ResponseBody, string Error);
+/// <summary>The outcome of a test call. The request fields stay inside clio: they are read only to mask secrets.</summary>
+public sealed record ServiceMethodCallResult(bool Success, int? StatusCode, string ResponseBody, string Error,
+	string RequestRawData = null, string RequestBody = null);
 
 public sealed class WebServiceDesignerClient(IApplicationClient applicationClient, IServiceUrlBuilder urlBuilder)
 	: CreatioServiceClient(applicationClient, urlBuilder), IWebServiceDesignerClient {
@@ -106,7 +108,7 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		CallMethodResponse result = envelope?.Result
 			?? throw new InvalidOperationException("The test call returned no result.");
 		return new ServiceMethodCallResult(result.Success, result.StatusCode, result.ResponseBody,
-			result.ErrorInfo?.Message);
+			result.ErrorInfo?.Message, result.RequestRawData, result.RequestBody);
 	}
 
 	/// <summary>The row key a selected column comes back under: a column path without its dots.</summary>
@@ -153,5 +155,7 @@ public sealed class WebServiceDesignerClient(IApplicationClient applicationClien
 		[JsonPropertyName("errorInfo")] public PlatformErrorInfo ErrorInfo { get; init; }
 		[JsonPropertyName("StatusCode")] public int? StatusCode { get; init; }
 		[JsonPropertyName("ResponseBody")] public string ResponseBody { get; init; }
+		[JsonPropertyName("RequestRawData")] public string RequestRawData { get; init; }
+		[JsonPropertyName("RequestBody")] public string RequestBody { get; init; }
 	}
 }

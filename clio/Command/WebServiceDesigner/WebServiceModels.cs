@@ -215,7 +215,8 @@ public sealed record WebServiceTestResult(
 	[property: JsonPropertyName("error")] string Error = null,
 	[property: JsonPropertyName("status-code")] int? StatusCode = null,
 	[property: JsonPropertyName("response-body")] string ResponseBody = null,
-	[property: JsonPropertyName("response-body-truncated")] bool ResponseBodyTruncated = false);
+	[property: JsonPropertyName("response-body-truncated")] bool ResponseBodyTruncated = false,
+	[property: JsonPropertyName("sent-secrets-masked")] bool SentSecretsMasked = false);
 
 #endregion
 

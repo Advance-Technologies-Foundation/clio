@@ -156,6 +156,33 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("A test call never hands back a key the platform filled in from a system setting, even when the API echoes it.")]
+	public void TestMethod_Should_Mask_A_Setting_Value_The_Api_Echoes() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		ServiceMethodDto method = WebServiceDefinitionBuilder.BuildMethod(
+			new WebServiceMethodArg("Search", "GET", "search", RequestParameters: [
+				new WebServiceParameterArg("XApiKey", "header", Path: "X-Api-Key", DefaultSysSetting: "UsrBingKey")
+			]), null, false, errors);
+		ServiceSchemaDto schema = BingSchema();
+		schema.Methods.Items.Clear();
+		schema.Methods.Items[method.UId.ToString()] = method;
+		GivenRegisteredService(schema);
+		_client.CallMethod("BingSearchApiCall", "Search", Arg.Any<IReadOnlyDictionary<string, string>>())
+			.Returns(new ServiceMethodCallResult(false, 401, """{"error":"key sk-live-0042 is not valid"}""", null,
+				"GET https://api.bing.example/search HTTPS/1.1\r\nX-Api-Key: sk-live-0042\r\nHost: api.bing.example"));
+
+		// Act
+		WebServiceTestResult result = _sut.TestMethod("BingSearchApiCall", "Search", null);
+
+		// Assert
+		result.ResponseBody.Should().NotContain("sk-live-0042", because: "an error body that quotes the key must not reach the agent");
+		result.ResponseBody.Should().Contain(WebServiceResponseMasker.Mask, because: "the reader sees where a value was hidden");
+		result.SentSecretsMasked.Should().BeTrue(because: "the result says that something was masked");
+		result.StatusCode.Should().Be(401, because: "masking changes the body only");
+	}
+
+	[Test]
 	[Description("Every tool that reads or writes a service refuses a user without CanManageSolution.")]
 	public void Describe_Should_Require_CanManageSolution() {
 		// Arrange
