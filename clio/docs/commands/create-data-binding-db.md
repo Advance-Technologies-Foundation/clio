@@ -19,8 +19,9 @@ clio create-data-binding-db -e <ENVIRONMENT_NAME> --package <PACKAGE_NAME> --sch
 --package                  Target package name (required)
 --schema                   Entity schema name (required)
 --binding-name             Binding folder name (defaults to <schema>)
---rows                     JSON array of row objects, each with a 'values' key:
-[{"values":{"Col":"Value"}}]
+--rows                     JSON array of row objects, each with a 'values' key and an
+optional 'localizations' key (culture -> column -> text):
+[{"values":{"Col":"Value"},"localizations":{"uk-UA":{"Col":"..."}}}]
 -H, --help                 Show this help
 ```
 
@@ -36,6 +37,33 @@ A requested row that already exists in the table is adopted into the binding ins
 re-inserted — matched by Name when the schema has a Name column, otherwise by its Id. This
 lets you bind an existing keyed row (e.g. a `SysSchemaAdminUnitRight` grant) by passing its Id
 without creating a duplicate.
+
+### Translations
+
+A row may carry `localizations` next to `values`: an object keyed by culture (for example `uk-UA`),
+then column name, with text values.
+
+```json
+[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове","Description":"Новий ремонт"}}}]
+```
+
+A plain insert writes a localizable column in the connected user's culture only. The other cultures
+are written per record through DataService `UpdateLocalizationQuery` before the binding is saved, so
+the package carries every culture and an install on another site brings them along.
+
+- Before any write the command refuses the whole call when a culture is not active on the site, a
+  column is not localizable, or a value is longer than its column (ShortText 50, MediumText 250,
+  LongText 500). The message names every failure.
+- After the write it reads each culture back and fails with "saved, but NOT verified" on any difference.
+  The rows and the binding are saved even then, so run the same call again to retry the translations.
+- The output prints one `Localized row` line per record and culture.
+- To translate records that already exist, run the command again with the same rows. Pass the record's
+  `Id` or its exact `Name` in the connected user's culture; a row that matches neither is inserted as a new
+  record. A row matched by Name or Id is not rewritten; only its translations are added, and its Id and other column values stay
+  as they are. A record bound in another package (for example a base lookup the app extends) stays in
+  that package and is also added to this binding, so its translations ship with this package; the other
+  package's binding keeps its previous translations until it is saved again.
+
 After remote mutation, read back from Creatio instead of treating the request payload
 or install log as proof.
 To sync the result to a local workspace, use restore-workspace separately.
@@ -57,6 +85,9 @@ clio create-data-binding-db -e dev --package Custom --schema SysSettings
 clio create-data-binding-db -e dev --package Custom --schema SysSettings \
 --binding-name UsrMyBinding \
 --rows "[{\"values\":{\"Name\":\"Row\",\"Code\":\"UsrRow\"}}]"
+
+clio create-data-binding-db -e dev --package UsrRepairJob --schema UsrRepairStatus \
+--rows "[{\"values\":{\"Name\":\"New\"},\"localizations\":{\"uk-UA\":{\"Name\":\"Нове\"}}}]"
 ```
 
 - [Clio Command Reference](../../Commands.md#create-data-binding-db)

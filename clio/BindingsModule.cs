@@ -1002,6 +1002,7 @@ public class BindingsModule {
 		services.AddTransient<AddDataBindingRowCommand>();
 		services.AddTransient<RemoveDataBindingRowCommand>();
 		services.AddTransient<IDataBindingDbService, DataBindingDbService>();
+		services.AddTransient<IDataBindingDbLocalizer, DataBindingDbLocalizer>();
 		services.AddTransient<CreateDataBindingDbCommand>();
 		services.AddTransient<UpsertDataBindingRowDbCommand>();
 		services.AddTransient<RemoveDataBindingRowDbCommand>();

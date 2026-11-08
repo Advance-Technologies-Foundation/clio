@@ -25,7 +25,7 @@ public class CreateDataBindingDbOptions : EnvironmentOptions {
 	[Option("binding-name", Required = false, HelpText = "Binding folder name; defaults to <schema>")]
 	public string? BindingName { get; set; }
 
-	[Option("rows", Required = false, HelpText = "JSON array of row objects, each with a 'values' key containing column values")]
+	[Option("rows", Required = false, HelpText = "JSON array of row objects, each with a 'values' key containing column values and an optional 'localizations' key (culture -> column -> text)")]
 	public string? RowsJson { get; set; }
 }
 
@@ -96,6 +96,17 @@ public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbServi
 						.Where(kv => !string.Equals(kv.Key, "Id", StringComparison.OrdinalIgnoreCase))
 						.Select(kv => $"{kv.Key}={kv.Value}"));
 				logger.WriteInfo($"Skipped existing row: {row.Id} ({valuesPreview})");
+			}
+			foreach (DataBindingLocalizationWrite localization in result.Localizations) {
+				logger.WriteInfo(
+					$"Localized row: {localization.RowId} ({localization.RowLabel}) [{localization.Culture}]: "
+					+ string.Join(", ", localization.Columns));
+			}
+			if (result.Localizations.Count > 0) {
+				logger.WriteInfo(
+					$"Translations are stored on the records and in the per-culture data of binding "
+					+ $"'{result.BindingName}' of package '{options.PackageName}'. A binding of another package that "
+					+ "also carries these records keeps its previous translations until that binding is saved again.");
 			}
 			logger.WriteInfo("Done");
 			return 0;
@@ -471,7 +482,8 @@ internal sealed class LookupRegistrationService(
 internal sealed class DataBindingDbService(
 	IApplicationClient applicationClient,
 	IServiceUrlBuilder serviceUrlBuilder,
-	IPackageDataBindingWriter bindingWriter) : IDataBindingDbService {
+	IPackageDataBindingWriter bindingWriter,
+	IDataBindingDbLocalizer localizer) : IDataBindingDbService {
 
 	/// <summary>Creatio runtime <c>dataValueType</c> of a native Color column.</summary>
 	private const int ColorRuntimeDataValueType = 18;
@@ -486,8 +498,12 @@ internal sealed class DataBindingDbService(
 			: options.BindingName.Trim();
 
 		DataBindingDbSchema schema = bindingWriter.FetchSchema(options.SchemaName);
-		List<Dictionary<string, JsonNode?>>? rows = ParseRowsJson(options.RowsJson);
+		List<DataBindingDbRowInput>? rowInputs = ParseRowsJson(options.RowsJson);
+		List<Dictionary<string, JsonNode?>>? rows = rowInputs?.Select(input => input.Values).ToList();
 		ValidateRequestedBindingColumnsSupported(schema, rows);
+		List<DataBindingRowLocalization> localizations = rowInputs?.Select(input => input.Localization).ToList() ?? [];
+		DataBindingLocalizationPlan? localizationPlan = localizer.Validate(
+			options.SchemaName, packageRef.UId, schema.SchemaColumns, localizations);
 
 		Guid? existingBindingUId = bindingWriter.FindBinding(packageRef.UId, bindingName)?.UId;
 		List<Dictionary<string, JsonNode?>> existingBoundRows = existingBindingUId.HasValue
@@ -499,14 +515,63 @@ internal sealed class DataBindingDbService(
 			? FetchExistingEntityNameToId(options.SchemaName)
 			: new(StringComparer.OrdinalIgnoreCase);
 
-		(List<DataBindingCreatedRow> createdRows, List<DataBindingCreatedRow> skippedRows) =
+		(List<DataBindingCreatedRow> createdRows, List<DataBindingCreatedRow> skippedRows, List<string> rowIds) =
 			ProcessRows(options.SchemaName, rows, schema, existingNameToId, boundRecordIds);
-		DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(schema, existingBoundRows, rows);
+		// Written before the binding is saved: the save takes the per-culture snapshot the package ships.
+		IReadOnlyList<DataBindingLocalizationWrite> localizationWrites = [];
+		Exception? localizationFailure = null;
+		if (localizationPlan is not null) {
+			try {
+				localizationWrites = localizer.Write(localizationPlan, options.SchemaName, PairRowIds(rowIds, localizations));
+			}
+			catch (Exception exception) when (exception is not OperationCanceledException) {
+				// The rows are already in the table. Saving the binding anyway keeps them in the package, so a
+				// failed translation never leaves inserted rows that no package ships.
+				localizationFailure = exception;
+			}
+		}
+		DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(
+			schema, existingBoundRows, rows, LocalizedColumnRowSet(localizations));
 
 		bindingWriter.SaveBinding(
 			packageRef, bindingName, options.SchemaName, bindingSchema, boundRecordIds, existingBindingUId);
 
-		return new DataBindingResult(bindingName, createdRows, skippedRows);
+		if (localizationFailure is not null) {
+			throw new InvalidOperationException(
+				$"{localizationFailure.Message} The rows and binding '{bindingName}' of package "
+				+ $"'{options.PackageName}' were saved; run the same call again to retry the translations.",
+				localizationFailure);
+		}
+
+		return new DataBindingResult(bindingName, createdRows, skippedRows, localizationWrites);
+	}
+
+	/// <summary>
+	/// Pairs each requested row's translations with the record identifier <see cref="ProcessRows"/> resolved for it.
+	/// </summary>
+	private static List<(string RowId, DataBindingRowLocalization Localization)> PairRowIds(
+		List<string> rowIds,
+		List<DataBindingRowLocalization> localizations) {
+		if (rowIds.Count != localizations.Count) {
+			throw new InvalidOperationException(
+				$"Resolved {rowIds.Count} record identifiers for {localizations.Count} requested rows.");
+		}
+
+		return rowIds.Zip(localizations).ToList();
+	}
+
+	/// <summary>
+	/// A localized column ships only when the binding carries it, so a column that appears only in
+	/// <c>localizations</c> joins the projection as if a row had referenced it.
+	/// </summary>
+	private static IEnumerable<Dictionary<string, JsonNode?>> LocalizedColumnRowSet(
+		IEnumerable<DataBindingRowLocalization> localizations) {
+		Dictionary<string, JsonNode?> columns = localizations
+			.SelectMany(localization => localization.Cultures.Values)
+			.SelectMany(values => values.Keys)
+			.Distinct(StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(column => column, _ => (JsonNode?)null, StringComparer.OrdinalIgnoreCase);
+		return SingleRowSet(columns);
 	}
 
 	private static bool ShouldFetchExistingNames(DataBindingDbSchema schema, List<Dictionary<string, JsonNode?>>? rows) {
@@ -519,7 +584,9 @@ internal sealed class DataBindingDbService(
 		return schemaHasNameColumn && hasNamedRows;
 	}
 
-	private (List<DataBindingCreatedRow> CreatedRows, List<DataBindingCreatedRow> SkippedRows) ProcessRows(
+	/// <returns>The created and the skipped rows, and the record identifier of every requested row, in request
+	/// order.</returns>
+	private (List<DataBindingCreatedRow> CreatedRows, List<DataBindingCreatedRow> SkippedRows, List<string> RowIds) ProcessRows(
 		string schemaName,
 		List<Dictionary<string, JsonNode?>>? rows,
 		DataBindingDbSchema schema,
@@ -527,15 +594,18 @@ internal sealed class DataBindingDbService(
 		List<string> boundRecordIds) {
 		List<DataBindingCreatedRow> createdRows = [];
 		List<DataBindingCreatedRow> skippedRows = [];
+		List<string> rowIds = [];
 		if (rows is not { Count: > 0 }) {
-			return (createdRows, skippedRows);
+			return (createdRows, skippedRows, rowIds);
 		}
 		foreach (Dictionary<string, JsonNode?> row in rows) {
 			string rowId = EnsureRowId(row);
+			rowIds.Add(rowId);
 			string? rowName = row.TryGetValue("Name", out JsonNode? nameNode)
 				? nameNode?.ToString()
 				: null;
 			if (rowName is not null && existingNameToId.TryGetValue(rowName, out string? existingId)) {
+				rowIds[^1] = existingId;
 				AddToBoundIds(boundRecordIds, existingId);
 				Dictionary<string, string?> skippedValues = row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString());
 				skippedValues["Id"] = existingId;
@@ -562,7 +632,7 @@ internal sealed class DataBindingDbService(
 					row.ToDictionary(kv => kv.Key, kv => kv.Value?.ToString())));
 			}
 		}
-		return (createdRows, skippedRows);
+		return (createdRows, skippedRows, rowIds);
 	}
 
 	private static void AddToBoundIds(List<string> boundRecordIds, string id) {
@@ -1049,7 +1119,7 @@ internal sealed class DataBindingDbService(
 		return Guid.TryParse(rowId, out Guid parsedRowId) && bindingWriter.RowExists(schemaName, parsedRowId);
 	}
 
-	private static List<Dictionary<string, JsonNode?>>? ParseRowsJson(string? json) {
+	private static List<DataBindingDbRowInput>? ParseRowsJson(string? json) {
 		if (string.IsNullOrWhiteSpace(json)) {
 			return null;
 		}
@@ -1066,16 +1136,72 @@ internal sealed class DataBindingDbService(
 			throw new InvalidOperationException("--rows must be a JSON array.");
 		}
 
-		List<Dictionary<string, JsonNode?>> result = [];
+		List<DataBindingDbRowInput> result = [];
 		foreach (JsonNode? item in array) {
 			if (item is JsonObject rowObj &&
 				rowObj.TryGetPropertyValue("values", out JsonNode? valuesNode) &&
 				valuesNode is JsonObject valuesObj) {
-				result.Add(valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value));
+				Dictionary<string, JsonNode?> values = valuesObj.ToDictionary(kv => kv.Key, kv => kv.Value);
+				string rowLabel = DescribeRow(values, result.Count);
+				rowObj.TryGetPropertyValue("localizations", out JsonNode? localizationsNode);
+				result.Add(new DataBindingDbRowInput(
+					values,
+					new DataBindingRowLocalization(rowLabel, ParseRowLocalizations(localizationsNode, rowLabel))));
 			}
 		}
 
 		return result;
+	}
+
+	private static string DescribeRow(Dictionary<string, JsonNode?> values, int index) {
+		foreach (string column in new[] { "Name", "Id" }) {
+			if (values.TryGetValue(column, out JsonNode? node) && !string.IsNullOrWhiteSpace(node?.ToString())) {
+				return node!.ToString();
+			}
+		}
+
+		return $"#{index + 1}";
+	}
+
+	/// <summary>
+	/// Parses a row's <c>localizations</c>: culture → column → text value, the shape <c>create-data-binding</c>
+	/// takes for its single row.
+	/// </summary>
+	private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> ParseRowLocalizations(
+		JsonNode? node,
+		string rowLabel) {
+		Dictionary<string, IReadOnlyDictionary<string, string>> cultures = new(StringComparer.OrdinalIgnoreCase);
+		if (node is null) {
+			return cultures;
+		}
+
+		if (node is not JsonObject cultureObject) {
+			throw new InvalidOperationException(
+				$"Row '{rowLabel}': 'localizations' must be a JSON object keyed by culture, then column name.");
+		}
+
+		foreach ((string culture, JsonNode? columnsNode) in cultureObject) {
+			if (string.IsNullOrWhiteSpace(culture) || columnsNode is not JsonObject columnObject) {
+				throw new InvalidOperationException(
+					$"Row '{rowLabel}': 'localizations' entry '{culture}' must be a JSON object keyed by column name.");
+			}
+
+			Dictionary<string, string> values = new(StringComparer.OrdinalIgnoreCase);
+			foreach ((string column, JsonNode? valueNode) in columnObject) {
+				if (valueNode is not JsonValue jsonValue || !jsonValue.TryGetValue(out string? text)) {
+					throw new InvalidOperationException(
+						$"Row '{rowLabel}': the '{culture}' value of column '{column}' must be a string.");
+				}
+
+				values[column] = text;
+			}
+
+			if (values.Count > 0) {
+				cultures[culture.Trim()] = values;
+			}
+		}
+
+		return cultures;
 	}
 
 	private static Dictionary<string, JsonNode?> ParseValues(string json) {
@@ -1146,7 +1272,15 @@ internal sealed record DataBindingColumnPolicy(
 public sealed record DataBindingResult(
 	string BindingName,
 	IReadOnlyList<DataBindingCreatedRow> CreatedRows,
-	IReadOnlyList<DataBindingCreatedRow> SkippedRows);
+	IReadOnlyList<DataBindingCreatedRow> SkippedRows,
+	IReadOnlyList<DataBindingLocalizationWrite> Localizations);
+
+/// <summary>
+/// One requested row of <c>create-data-binding-db</c>: its column values and its translations.
+/// </summary>
+internal sealed record DataBindingDbRowInput(
+	Dictionary<string, JsonNode?> Values,
+	DataBindingRowLocalization Localization);
 
 /// <summary>
 /// Represents a single row created by <see cref="DataBindingDbService.CreateBinding"/>.

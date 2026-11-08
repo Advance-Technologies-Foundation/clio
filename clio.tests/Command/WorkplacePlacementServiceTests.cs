@@ -1115,7 +1115,7 @@ public sealed class WorkplacePlacementServiceTests {
 			}
 			Bindings[options.BindingName] = (options.SchemaName, new());
 			CreatedBindings.Add(options.BindingName);
-			return new DataBindingResult(options.BindingName, [], []);
+			return new DataBindingResult(options.BindingName, [], [], []);
 		}
 
 		public void UpsertRow(UpsertDataBindingRowDbOptions options) {
