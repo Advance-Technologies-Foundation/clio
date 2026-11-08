@@ -74,7 +74,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 
 	private SetObjectRightsCommand SetCommand() =>
 		new(_reader, _writer, new ObjectRightsPlanner(), Granted(), new ObjectRightsReadBackVerifier(),
-			Substitute.For<IInteractiveConsole>(), _logger);
+			Clio.Tests.Command.ObjectRights.ObjectRightsBinderStub.Binding(), Substitute.For<IInteractiveConsole>(), _logger);
 
 	private SetObjectRightsTool SetTool() => new(SetCommand(), _logger, _resolver);
 

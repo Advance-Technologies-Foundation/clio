@@ -72,6 +72,20 @@ back and compared with the plan, row by row. A move or a removal saves the whole
 service replaces the stored list, so a row left out is deleted — and any difference in the read-back fails the call.
 It does **not** change column or record permissions.
 
+**Package binding.** After every successful call — a re-run that changes no row included — the object's stored rows
+are bound to a package, so they install with it on another site: the binding
+`SysEntitySchemaOperationRight_<object code>` holds exactly the rows stored for the object, in priority order, keyed
+on `Id`, with every other column — the object, the role, the operations and the position — force-updated on install. A row removed with `--remove-row` leaves the
+binding; an object with no stored rows has its binding removed. `--package` names the package; without it, the
+package of the object's base schema is used. A package that does not exist or is locked is refused before any
+write, naming a package to use (the `CurrentPackageId` package when it is editable). Rows already bound in another
+editable package or under another name are reported, and no second binding is written. The "Use operation
+permissions" switch is part of the object's schema and travels with it; the result says whether the schema is in
+the binding's package. Package install adds and updates rows but never deletes them, so a site that already
+installed a removed row keeps it; and a row names its role by id, so it applies only where that role exists with
+the same id — ship a role created on this site too. In file system development mode the binding reaches the
+database only; `pkg-to-file-system` writes it into the package folder.
+
 **Destructive.** In a non-interactive run it refuses to apply unless `--confirm` is passed; in an interactive run
 it shows the planned change and asks for a `y/n` confirmation. `--preview` writes nothing and shows the planned
 change. On MCP the call applies the change: the host's approval of the call is the confirmation, and the
@@ -86,9 +100,9 @@ code — `'Creatio functionality' (Feature)` — so the developer sees which obj
 ## Synopsis
 
 ```bash
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--confirm | --preview] -e <environment>
-clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> (--position <n> | --above <SysAdminUnitId> | --remove-row) [--confirm | --preview] -e <environment>
-clio set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--confirm | --preview] -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--package <name>] [--confirm | --preview] -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> (--position <n> | --above <SysAdminUnitId> | --remove-row) [--package <name>] [--confirm | --preview] -e <environment>
+clio set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--package <name>] [--confirm | --preview] -e <environment>
 ```
 
 ## Options
@@ -131,6 +145,10 @@ that would start to decide. Alone it turns them on with the stored rows as they 
 Turn the object's operation permissions OFF, keeping every row as it is, operations included: the object becomes
 available to ALL internal users, and the rows apply again if operation permissions are turned back on. A call of its
 own: not valid with --grantee, --operations, --revoke or --enable-operation-permissions.
+
+--package NAME
+Package the object's operation permission rows are bound to. Default: the package of the object's base schema.
+Must exist and be editable; otherwise the call is refused before any write and names a package to use.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid with --preview.
@@ -195,6 +213,12 @@ Remove a role's row (its members fall through to the next matching row):
 clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --remove-row --confirm -e production
 ```
 
+Grant and bind the rows to a package other than the object's own:
+
+```bash
+clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read --package UsrOrderRights --confirm -e production
+```
+
 Turn an object's operation permissions off — available to all internal users — keeping every row as it is:
 
 ```bash
@@ -240,7 +264,8 @@ clio set-object-rights --entity-schema-name UsrOrder --enable-operation-permissi
   not a GUID or names the grantee); a missing `--confirm` in a non-interactive run; an object that is not found or
   cannot be read; a title lookup that fails (when the name is a code no object has, the error says that too); a grantee that does not exist in `SysAdminUnit`; a refused plan (among them a move or a removal
   for a grantee with no row, a move above a role with no row or several, a position past the last row, a removal
-  that would leave no granting row); external roles among the rows that cannot be looked up; a failed save whose
+  that would leave no granting row); a binding package that does not exist, is locked or cannot be read; rights that
+  were saved but could not be bound (run the same call again: it changes no row and binds them); external roles among the rows that cannot be looked up; a failed save whose
   read-back does not show the plan; a successful save whose read-back fails; a read-back that does not show a row
   this call writes, or the planned switch, or — after a move or a removal — any row that differs from the plan.
 - A re-run that changes nothing says which row already is in the requested state, or that the grantee has no row to

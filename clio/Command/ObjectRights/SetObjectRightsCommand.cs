@@ -84,6 +84,14 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 		+ "on. A call of its own: not with --grantee, --operations or --revoke.")]
 	public bool DisableOperationPermissions { get; set; }
 
+	/// <summary>The package the object's operation permission rows are bound to; blank for the object's own package.</summary>
+	[Option("package", Required = false, HelpText =
+		"Package the object's operation permission rows are bound to, so they install with it on another site. Default: "
+		+ "the package of the object's schema. A package that does not exist or is locked is refused before any write. "
+		+ "After every successful call the binding SysEntitySchemaOperationRight_<object code> holds exactly the rows "
+		+ "stored for the object, in priority order.")]
+	public string Package { get; set; }
+
 	/// <summary>Apply the change without a prompt.</summary>
 	[Option("confirm", Required = false, HelpText =
 		"Confirm the destructive change without a prompt (required in non-interactive runs)")]
@@ -116,18 +124,20 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 	private readonly IObjectRightsPlanner _planner;
 	private readonly IGranteeLookup _granteeLookup;
 	private readonly IObjectRightsReadBackVerifier _readBackVerifier;
+	private readonly IObjectRightsPackageBinder _binder;
 	private readonly IInteractiveConsole _console;
 	private readonly ILogger _logger;
 
 	/// <summary>Creates the command.</summary>
 	public SetObjectRightsCommand(IObjectRightsReader reader, IObjectRightsWriter writer, IObjectRightsPlanner planner,
-		IGranteeLookup granteeLookup, IObjectRightsReadBackVerifier readBackVerifier, IInteractiveConsole console,
-		ILogger logger) {
+		IGranteeLookup granteeLookup, IObjectRightsReadBackVerifier readBackVerifier, IObjectRightsPackageBinder binder,
+		IInteractiveConsole console, ILogger logger) {
 		_reader = reader;
 		_writer = writer;
 		_planner = planner;
 		_granteeLookup = granteeLookup;
 		_readBackVerifier = readBackVerifier;
+		_binder = binder;
 		_console = console;
 		_logger = logger;
 	}
@@ -169,14 +179,30 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 			_logger.WriteError($"Error: {RefusalMessage(change)} Nothing was changed.");
 			return 1;
 		}
+		// The package is checked before any write: a call whose rows could not be bound changes nothing. A preview
+		// writes nothing, so it shows the refusal instead of failing on it.
+		ObjectRightsBindingTarget target = _binder.ResolveTarget(schemaName, before.SchemaUId, options.Package,
+			requestOptions);
+		if (target.Refused && !options.Preview) {
+			_logger.WriteError($"Error: {change.Label}: {target.Refusal}");
+			return 1;
+		}
 		if (!plan.Changes) {
 			_logger.WriteInfo($"{change.Label}: {NoChangeReason(change)} (no change).");
-			return 0;
+			// A call that changes no row still brings the binding in step, so a binding that a failed earlier call left
+			// behind is repaired by running the same call again — a write, so only a confirmed call makes it.
+			if (options.Preview || !options.Confirm) {
+				_logger.WriteInfo($"  {DescribeBindingPreview(target)}"
+					+ (options.Preview ? "" : " Run the call with --confirm to bring the binding in step."));
+				return 0;
+			}
+			return BindRows(change, target, before.SchemaUId, before.State);
 		}
 		IReadOnlyList<string> facts = DescribePlan(change);
 		if (options.Preview) {
 			_logger.WriteInfo($"PREVIEW — nothing was changed. {change.Summary}");
 			WriteFacts(facts);
+			_logger.WriteInfo($"  {DescribeBindingPreview(target)}");
 			return 0;
 		}
 		switch (ObjectRightsCommandInput.Confirm(options.Confirm, _console, _logger, new ConfirmRequest(
@@ -197,9 +223,10 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		// still arrives within the call's budget.
 		ObjectRightsInfo actual = _reader.GetObjectRights(schemaName,
 			save.Succeeded ? requestOptions : requestOptions with { MaxAttempts = 1 });
-		return save.Succeeded
+		int saved = save.Succeeded
 			? ReportSaved(change, facts, actual)
 			: ReportFailedSave(change, facts, save, actual);
+		return saved == 0 ? BindRows(change, target, before.SchemaUId, actual.State) : saved;
 	}
 
 	// Everything the output of one call is rendered from.
@@ -712,6 +739,78 @@ public class SetObjectRightsCommand : Command<SetObjectRightsOptions> {
 		foreach (string difference in comparison.Differences) {
 			_logger.WriteWarning($"  Differs from the plan: {difference} — another client may have changed the object "
 				+ "meanwhile.");
+		}
+	}
+
+	private static string DescribeBindingPreview(ObjectRightsBindingTarget target) {
+		if (target.Refused) {
+			return $"The rows could not be bound, so the call would be refused: {target.Refusal}";
+		}
+		return target.Existing is null
+			? $"The rows would be bound to package '{target.PackageName}' (binding '{target.BindingName}')."
+			: $"The rows are already bound in binding '{target.Existing.BindingName}' of package "
+				+ $"'{target.Existing.PackageName}', so no second binding would be written.";
+	}
+
+	// Binds the rows stored now; the rows themselves are already saved and verified, so a failed binding says so and
+	// names the re-run that completes it.
+	private int BindRows(Change change, ObjectRightsBindingTarget target, Guid schemaUId, ObjectRightsState state) {
+		ObjectRightsBindingResult result = _binder.Bind(target, change.SchemaName, schemaUId);
+		string package = $"package '{target.PackageName}'";
+		switch (result.Status) {
+			case ObjectRightsBindingStatus.Failed:
+				_logger.WriteError($"Error: {change.Label}: the operation permissions are in place, but they are NOT "
+					+ $"bound to {package}: {result.Error}. Run the same call again: it changes no row and binds them.");
+				return 1;
+			case ObjectRightsBindingStatus.LeftToExisting:
+				_logger.WriteWarning($"  The rows are already bound in binding '{target.Existing.BindingName}' of package "
+					+ $"'{target.Existing.PackageName}', so no second binding was written to {package}. That binding is "
+					+ "not updated by this call: keep it in step with get-object-rights, or remove it and run the call "
+					+ "again to bind the rows here."
+					+ (change.Request.Layout is { Kind: RowLayoutKind.Remove }
+						? " It still ships the removed row, so a site that installs it gets that row back."
+						: ""));
+				return 0;
+			case ObjectRightsBindingStatus.NothingToBind:
+				_logger.WriteInfo($"  The object has no stored rows, so there is nothing to bind to {package}.");
+				return 0;
+			case ObjectRightsBindingStatus.Removed:
+				_logger.WriteInfo($"  The object has no stored rows, so binding '{target.BindingName}' was removed from "
+					+ $"{package}.");
+				break;
+			default:
+				_logger.WriteInfo($"  Bound to {package}: binding '{target.BindingName}' holds the {result.RowCount} "
+					+ "stored row(s) in priority order.");
+				break;
+		}
+		WriteBindingNotes(change, target, state);
+		return 0;
+	}
+
+	// What travels with the binding and what does not.
+	private void WriteBindingNotes(Change change, ObjectRightsBindingTarget target, ObjectRightsState state) {
+		string switchPackages = string.Join("', '", target.SchemaPackages);
+		_logger.WriteInfo(target.SwitchInSamePackage
+			? $"  The 'Use operation permissions' switch is part of the object's schema, which package "
+				+ $"'{target.PackageName}' also holds, so it travels with the binding."
+			: $"  The 'Use operation permissions' switch is part of the object's schema, in package(s) "
+				+ $"'{switchPackages}', not in '{target.PackageName}': it travels with that schema, so install both.");
+		if (!state.AdministratedByOperations) {
+			_logger.WriteInfo("  Operation permissions are OFF: the bound rows decide nothing until they are turned on.");
+		}
+		string[] localRoles = state.Roles
+			.Where(row => row.GranteeId != SysAdminUnitIds.AllEmployees && row.GranteeId != SysAdminUnitIds.AllPortalUsers)
+			.Select(row => $"'{ObjectRightsSupport.Display(row.GranteeName)}' ({row.GranteeId})")
+			.Distinct()
+			.ToArray();
+		if (localRoles.Length > 0) {
+			_logger.WriteInfo($"  The rows name their roles by id, so on another site they apply only where these roles "
+				+ $"exist with the same id: {string.Join(", ", localRoles)}. A role created on this site must be "
+				+ "shipped too.");
+		}
+		if (change.Request.Layout is { Kind: RowLayoutKind.Remove }) {
+			_logger.WriteInfo("  The removed row left the binding. A site that already installed the package keeps it: "
+				+ "package install adds and updates rows, it never deletes them.");
 		}
 	}
 
