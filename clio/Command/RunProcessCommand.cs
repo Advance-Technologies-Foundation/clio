@@ -256,11 +256,13 @@ public class RunProcessCommand(
 			// .NET (Core) host, and then only the compile's own warning tells - a real .NET Framework host never
 			// prints it, so the sentence is safe there.
 			return cause + " If that compile said the process "
-				+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}, the host is .NET (Core) whatever its "
-				+ "registration says: do not compile again - ask the user, then run restart-by-environment-name."
-				+ " If a process-name compile of it succeeded only minutes ago, the runtime may still be "
-				+ "reloading: run again in about two minutes before compiling again. Otherwise ask the user, then run "
-				+ $"compile-creatio with process-name set to '{processCode}'.";
+				+ $"{CompileBusinessProcessCommand.RestartRequiredMarker} and no restart followed it, the host is "
+				+ ".NET (Core) whatever its registration says: do not compile again - ask the user, then run "
+				+ "restart-by-environment-name. If a process-name compile of it succeeded only minutes ago, the runtime "
+				+ "may still be reloading: run again in about two minutes before compiling again. Otherwise ask the "
+				+ $"user, then run compile-creatio with process-name set to '{processCode}'. If the application "
+				+ "already restarted after a compile that said so and the process has not changed since, do not "
+				+ "compile or restart again: tell the user that the restart did not make the compiled code run.";
 		}
 		// The last sentence is the stop: a restart is necessary on this host but was not proven sufficient (two
 		// stands kept failing after one), and without it the hint would send the agent round compile and restart.
