@@ -70,13 +70,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>d6a314a8</c>, tagged
-	/// <c>crtprocessbuilder-1.6.6.140</c>): branch <c>feature/ENG-105549-send-email-gaps</c> from <c>main</c> at 1.6.6.136
-	/// (<c>0f68ccfe</c>), so the cut carries everything 1.6.6.136 shipped. 1.6.6.137 is claimed by ENG-92710 and is not in it;
-	/// 1.6.6.138 and 1.6.6.139 were cut on this branch and superseded before release.
-	/// This cut was a HAND cut from the stamp commit: the package branch committed and tagged its own
-	/// <c>set-pkg-version</c>, so the stamp commit was exported with the two <c>-c</c> flags and packed as it is, with no
-	/// <c>descriptor.json</c> overlay.
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>da1a7ee2</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.145</c>): branch <c>feature/ENG-105744-net8-restart-required</c> from <c>main</c> at 1.6.6.140
+	/// (<c>a3f58852</c>), so the cut carries everything 1.6.6.140 shipped. 1.6.6.141 is claimed by ENG-103990 and 1.6.6.143
+	/// by ENG-105558, and neither is in it; 1.6.6.142, an earlier 1.6.6.143 and 1.6.6.144 were cut on this branch and superseded
+	/// before release.
+	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit is the one before the restamp,
+	/// so its descriptor reads 1.6.6.144 - one restamp behind the archive, by design (see the remarks below).
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -89,37 +89,21 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.136 (ENG-105549): describe reports an attachment row whose source element
-	/// does not run before the email; the same-files notice also catches a process parameter whose file item reads the
-	/// same element output; a performer contact expands <c>[#ParameterName#]</c> and <c>[#Element.Output#]</c>; a failed
-	/// nested read refuses a save that holds attachments or a Process file; a <c>Mapping</c> attachment value that names
-	/// nothing counts as undecodable. Send email recipients take record ids: a record id mapped onto a recipient that
-	/// references an object is stored as the <c>[#Lookup.&lt;object&gt;.&lt;id&gt;#]</c> formula; a record id mapped onto a
-	/// text recipient, or sent as an <c>email.to</c>/<c>cc</c>/<c>bcc</c> <c>value</c>, is refused naming Contact and
-	/// Account; an <c>expression</c> with <c>referenceSchema</c> naming a held constant-id recipient rewrites it in place;
-	/// re-sending a held recipient is a no-op; an <c>expression</c> record macro must name an existing record; and the
-	/// request ends with a warning for each recipient that holds a constant id. Over 1.6.6.139, 1.6.6.140 adds: one
-	/// anchored <c>[#Lookup...#]</c> record reader; a record formula on a Send email recipient always ends as a Lookup
-	/// recipient of its object (an <c>addMapping</c> <c>expression</c> or <c>value</c>, or an <c>email.to</c>/<c>cc</c>/<c>bcc</c>
-	/// <c>expression</c> without <c>referenceSchema</c>), and a Lookup recipient is never rewritten; an entry naming what a
-	/// recipient already holds is a no-op before any refusal; objects are compared by their resolved root/parent
-	/// schema; a macro-text value onto a non-Lookup recipient is refused; a held repair that cannot run is reported; a
-	/// recipient whose record is gone is reported without a re-map remedy; and the map-path walk follows a path the way
-	/// both platform readers do. The service surface is unchanged (8 operations, 6 gate call sites, checked against the
-	/// sources). The create/modify floor rises to 1.6.6.140 even though clio sends no new member: this cut also
-	/// tightens the unscoped-files guard, and a server-side change with a security character takes a
-	/// <c>[RequiresPackage]</c> literal rather than being left to convergence. What earlier
-	/// cuts carried is in this file's git history rather than here: it described archives that are no longer
-	/// shipped.</para>
+	/// <para>What this cut carries over 1.6.6.140 (ENG-105744): <c>CompileProcess</c> answers <c>restartRequired</c> - true
+	/// after a clean compile on a host that keeps the configuration assembly it loaded at startup (a .NET (Core) host,
+	/// told by the core library's name) - and a <c>warnings</c> entry naming the three states a process is in until the
+	/// restart; every compile demand (a save with C#, the activation warnings, the not-interpretable version save) ends
+	/// with a notice that on such a host the compiled code runs only after a restart the user agrees to (once per answer), and names the
+	/// compile's cost per host. The service surface is unchanged (8 operations, 6 design-gate call sites and 1 compile
+	/// gate, counted in the archive). No <c>[RequiresPackage]</c> literal moves: for a package that does not answer
+	/// <c>restartRequired</c>, clio falls back to the environment's <c>IsNetCore</c> registration. What earlier cuts
+	/// carried is in this file's git history rather than here: it described archives that are no longer shipped.</para>
 	/// <para>
-	/// This cut did NOT skip the package suite: it passed on the producing sources before the cut - 5545 passed,
-	/// 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> -
-	/// measured on this cut, not carried over from a
+	/// This cut did NOT skip the package suite: it passed on the producing sources -
+	/// 5553 passed, 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
-	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two
-	/// security counts below exist to catch. The inventory was checked by hand: 326
-	/// entries, exactly 2 DLLs, both under <c>Files/Libs</c>, the compile marker present, no own assembly, and nothing
-	/// that executes on install; every entry is byte-identical to the stamp commit's blob.
+	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two security counts below
+	/// exist to catch.
 	/// </para>
 	/// Provenance rules live in <c>docs/agent-instructions/bundled-packages.md</c>.
 	/// </summary>
@@ -198,7 +182,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"CB69FC2EA261A90418954EA4F9394AF322889AFA73EE95E65D4E29E2AEA7EDD8";
+		"5A60B50965AADDD4A4E37B6E5AC538EC68CE34532B58AC05F24FA1A35AF47FC7";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -226,7 +210,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.140";
+	private const string ExpectedArchiveVersion = "1.6.6.145";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -242,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "d6a314a81db8d7be561c05948659747d6eeb2893";
+	private const string ExpectedProducingCommit = "da1a7ee228108e6d12728b571578497279967d16";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -268,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1793829279000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794219274000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -1075,7 +1059,7 @@ public class BundledProcessBuilderPackageTests {
 			because: "clio reads the wrapped answer as CompileProcessResult, named after this operation");
 		foreach (string member in new[] {
 				"success", "errorMessage", "processName", "packageName", "packageType", "compileRequired", "compiled",
-				"durationMs", "errors", "errorCount" }) {
+				"durationMs", "errors", "errorCount", "restartRequired" }) {
 			DeclaresMemberOn(archive, "CompileProcessResponse", member).Should().BeTrue(
 				because: $"CompileBusinessProcessService reads '{member}' off the compile answer");
 		}
