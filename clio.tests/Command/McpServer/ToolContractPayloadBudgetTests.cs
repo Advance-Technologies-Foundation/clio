@@ -313,6 +313,20 @@ public sealed class ToolContractPayloadBudgetTests {
 	// each). Re-measured by lowering the ceiling: create 35033, modify 35069, describe 35029 - 39, 3 and 43 bytes of
 	// headroom, so anything added to modify-business-process now has to be paid for by a trim.
 	//
+	// ENG-105549 (2026-11-04) paid by SWAP, no ceiling raise. Modify's recipient clause stopped saying a recipient
+	// cannot be replaced - addMapping onto its slot does, which a package test pins - and lost "genuinely" to fit
+	// (-8 bytes). Create's email.performer contact names the by-name forms the server
+	// now expands and drops "'s contact" (an apostrophe the serializer escapes to six bytes), +23 bytes. The attachments
+	// list order rule (kept rows stay, new rows go last) did not fit create's 16 bytes and stays in the guide. Re-measured
+	// by lowering the ceiling: modify 35061, create 35056, describe 35029 - 11, 16 and 43 bytes of headroom.
+	// Review fixes then made modify's replacement route say the mapping keeps the recipient's kind ("same-kind", +10
+	// bytes); the fixed-contact Lookup-expression advice did not fit and is carried by the prompt. Re-measured
+	// by lowering the ceiling: modify 35071, create 35056, describe 35029 - 1, 16 and 43 bytes of headroom.
+	// PR review then replaced "same-kind" with the record route (a record id or one [#Lookup#] macro makes the
+	// recipient Lookup, which is how a designer-retyped recipient is repaired; +46 bytes), paid by turning eleven
+	// em dashes of modify's email, approval and performer clauses into ':', ';' or ',' (each escapes to six bytes).
+	// Re-measured by lowering the ceiling: modify 35051, create 35056, describe 35029 - 21, 16 and 43 bytes of headroom.
+	//
 	// ENG-92710 (2026-11-04, the Call web service element) named the webService type and the webService block in
 	// create's element list, the block in modify's addElement and setElement lists with WebServiceUserTask among the
 	// generic-route refusals, describe's read-back clause, and the element in validate-process-graph's buildable list.

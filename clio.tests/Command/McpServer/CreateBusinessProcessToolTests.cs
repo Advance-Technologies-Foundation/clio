@@ -239,6 +239,24 @@ public class CreateBusinessProcessToolTests {
 	}
 
 	[Test]
+	[Category("Unit")]
+	[Description("The create contract says a Send email performer contact takes a process parameter or an element output by name - the server expands the name before the save - so an agent does not hand-write a meta path it can misspell.")]
+	public void CreateBusinessProcessTool_ShouldNameTheByNameForms_OfTheEmailPerformerContact() {
+		// Arrange
+		System.ComponentModel.DescriptionAttribute attribute = typeof(CreateBusinessProcessTool)
+			.GetMethod(nameof(CreateBusinessProcessTool.CreateBusinessProcess))!
+			.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!;
+
+		// Act
+		string toolDescription = attribute.Description;
+
+		// Assert
+		toolDescription.Should().Contain(
+			"contact? (a formula, [#Param#]/[#Element.Output#] by name; defaults to the current user)",
+			because: "the email shape is where an agent learns which spelling the performer contact accepts and its default");
+	}
+
+	[Test]
 	[Description("Forwards a descriptor that contains an openEditPage element with its full block verbatim - the tool is an opaque pass-through, so the new element type and every field (page, recordType, editMode, defaultValues, recordId, recommendation, hint, performer, logActivity, resultsByColumn, completion) rides through to the command byte-for-byte. EDIT mode with a record is used deliberately: the add-mode path is what every describer fixture already pins, so the mode that carries a record is the one whose pass-through was unproven.")]
 	[Category("Unit")]
 	public void CreateBusinessProcess_Should_Forward_OpenEditPage_Descriptor_Verbatim() {
@@ -512,8 +530,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("isTracing:true (process tracing: a traced run logs every parameter value) by name=process-tracing",
 			because: "the always-loaded description must name the field and the guide that explains its costs");
-		toolDescription.Should().Contain("this clio requires 1.6.6.127 (for email.attachments, itemProperties, isTracing,",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments)");
+		toolDescription.Should().Contain("this clio requires 1.6.6.140 (for email.attachments, itemProperties, isTracing,",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by isTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal)");
 		prompt.Should().Contain("Add `isTracing: true` only when the user wants runs traced",
 			because: "the prompt must keep tracing a diagnostic, never a default");
 	}

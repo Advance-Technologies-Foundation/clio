@@ -27,6 +27,13 @@
 #   3. Repo setting Actions -> "Require approval for all external contributors"
 #      (authoritative fork control; the in-file `if:` guard below is only
 #      defense-in-depth). To be confirmed by a repo admin.
+#   4. ENG-97005: TeamCity configuration
+#      TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner (see below) - created
+#      2026-10-21 in "CLIO MCP Test" and moved on 2026-11-04 into "CLIO MCP ProcessDesigner"
+#      (Team_Atf_ClioMcpProcessDesigner), a subproject of ATF, keeping its ID. There the
+#      TEAMCITY_TOKEN account queues it like any ATF configuration, its Commit Status
+#      Publisher is a copy of the one on Team_Atf_ClioMcpE2eTests (GitHub App "TeamCity
+#      ATF"), and its VCS trigger is a copy as well - DONE.
 #
 # Fixture selection (see the `select` job): the build runs only the fixtures the pull request
 # can affect, chosen by .github/scripts/Select-McpE2eTestFilter.ps1 from the rules in
@@ -34,6 +41,20 @@
 # property. The TeamCity step reads it as --filter "%McpE2eTestFilter%"; its default is the full
 # suite, which is what the VCS-triggered master builds and manual dispatches still run. The
 # McpE2E.NoEnvironment tier is not sent to TeamCity at all: build.yml runs it on hosted runners.
+#
+# ENG-97005 - THE PROCESS-DESIGNER LANE. The McpE2E.ProcessDesigner category needs a stand that
+# carries CrtProcessBuilder, and Team_Atf_ClioMcpE2eTests never installs it (its default filter
+# excludes the category). A second configuration,
+# TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner in the TeamCity project "CLIO MCP ProcessDesigner" under ATF,
+# deploys its own stand, installs the archive bundled in the clio build under test
+# (install-process-builder in its Prepare step) and runs only that category, in parallel with the
+# existing lane and under its own commit status, "CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)".
+# The `select` job derives that lane's selection from the same rules (pd_mode / pd_filter), the
+# pd-attempt-* chain queues it exactly the way attempt-* queues the existing lane, and the gate
+# checks both. A rebundle
+# (clio/CrtProcessBuilder/**) runs the whole category there and nothing on the existing lane, which
+# cannot observe the archive; a change to the install-process-builder command runs the whole category
+# there as well. A manual dispatch queues both lanes in full.
 #
 # Note (advisory accuracy): only BranchNameClio (a branch name) is passed, so
 # TeamCity resolves the branch tip at build time. If a newer commit lands while a
@@ -68,8 +89,8 @@
 # THE PROPER FIX IS ONE LINE AND NEEDS A RUNNER ADMIN: label the in-network runners
 # (e.g. `teamcity-net`) and replace `runs-on: self-hosted` with
 # `runs-on: [self-hosted, teamcity-net]`. Once that label exists, delete attempts 2
-# and 3 and the gate - keep the preflight, which is a credential-safety control and
-# not a workaround.
+# and 3 of both chains and the gate - keep the preflight, which is a credential-safety
+# control and not a workaround.
 name: TeamCity MCP e2e
 
 # GITHUB_TOKEN is unused here; drop all scopes so an in-network runner never
@@ -123,14 +144,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Decides WHAT the TeamCity build runs before anything is queued. Rules and their order live in
+  # Decides WHAT the TeamCity builds run before anything is queued. Rules and their order live in
   # clio.mcp.e2e/TestSelection/mcp-e2e-selection.json; the outcome is one `dotnet test --filter`
-  # expression handed to TeamCity as the McpE2eTestFilter property. A pull request that only touches
-  # one MCP tool runs the fixtures that exercise it; shared infrastructure runs the whole suite.
+  # expression per lane, handed to TeamCity as that configuration's McpE2eTestFilter property. A pull
+  # request that only touches one MCP tool runs the fixtures that exercise it; shared infrastructure
+  # runs the whole suite on both lanes.
   # McpE2E.NoEnvironment tests are excluded here because build.yml runs them on hosted runners
   # (job "MCP e2e NoEnvironment"); set the repository variable MCP_E2E_KEEP_NOENVIRONMENT_ON_TEAMCITY
-  # to `true` to keep them on TeamCity as well. A manual run (workflow_dispatch) has no diff and
-  # keeps the TeamCity default: the full suite.
+  # to `true` to keep them on TeamCity as well. A manual run (workflow_dispatch) has no diff: the
+  # existing lane keeps the TeamCity default (the full suite) and the process-designer lane gets the
+  # manifest's base filter, so the category it runs is pinned by this repository on a manual run too.
   # Hosted runner on purpose: this job needs the full checkout and no corporate network.
   select:
     name: Select MCP e2e fixtures
@@ -144,9 +167,14 @@ jobs:
     outputs:
       mode: ${{ steps.select.outputs.mode }}
       filter: ${{ steps.select.outputs.filter }}
+      pd_mode: ${{ steps.select.outputs.pd_mode }}
+      pd_filter: ${{ steps.select.outputs.pd_filter }}
     steps:
       - uses: actions/checkout@v5
         with:
+          # A manual run reads the manifest, so it has to come from the branch TeamCity builds (inputs.branch),
+          # not from the branch the workflow file was taken from; a pull request keeps its merge ref.
+          ref: ${{ inputs.branch || github.ref }}
           fetch-depth: 0
           persist-credentials: false
       - name: Select fixtures for the changed files
@@ -159,21 +187,37 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:BASE_SHA)) {
-            Write-Host 'Manual run: no diff to classify, the TeamCity default filter (full suite) applies.'
+            # Manual run: no diff to classify. The existing lane keeps the TeamCity default filter (the full
+            # suite); the process-designer lane gets the manifest's base filter rather than the configuration's
+            # default, so what it runs is pinned by this repository here too (McpE2eSelectionCoverageTests).
+            $manifest = Get-Content -LiteralPath ./clio.mcp.e2e/TestSelection/mcp-e2e-selection.json -Raw | ConvertFrom-Json
+            $pdFilter = $manifest.processDesignerLane.baseFilter
+            if ($pdFilter -isnot [string] -or $pdFilter -notmatch '^[A-Za-z0-9_.~=!&|()]+$') {
+              throw "processDesignerLane.baseFilter in the manifest is not a dotnet test filter: '$pdFilter'"
+            }
+            Write-Host "Manual run: existing lane -> TeamCity default (full suite); process-designer lane -> $pdFilter"
             "mode=full" >> $env:GITHUB_OUTPUT
             "filter=" >> $env:GITHUB_OUTPUT
-            exit 0
+            "pd_mode=full" >> $env:GITHUB_OUTPUT
+            "pd_filter=$pdFilter" >> $env:GITHUB_OUTPUT
           }
-          $arguments = @{ BaseRef = $env:BASE_SHA; HeadRef = $env:HEAD_SHA }
-          if ($env:KEEP_NOENVIRONMENT -eq 'true') { $arguments.IncludeNoEnvironment = $true }
-          $json = & ./.github/scripts/Select-McpE2eTestFilter.ps1 @arguments
-          $selection = $json | ConvertFrom-Json
-          Write-Host "Selection mode: $($selection.mode)"
-          foreach ($line in $selection.decisions) { Write-Host "  $line" }
-          if ($selection.mode -eq 'subset') { Write-Host "Fixtures: $($selection.fixtures -join ', ')" }
-          Write-Host "Filter: $($selection.filter)"
-          "mode=$($selection.mode)" >> $env:GITHUB_OUTPUT
-          "filter=$($selection.filter)" >> $env:GITHUB_OUTPUT
+          else {
+            $arguments = @{ BaseRef = $env:BASE_SHA; HeadRef = $env:HEAD_SHA }
+            if ($env:KEEP_NOENVIRONMENT -eq 'true') { $arguments.IncludeNoEnvironment = $true }
+            $json = & ./.github/scripts/Select-McpE2eTestFilter.ps1 @arguments
+            $selection = $json | ConvertFrom-Json
+            Write-Host "Selection mode: $($selection.mode)"
+            foreach ($line in $selection.decisions) { Write-Host "  $line" }
+            if ($selection.mode -eq 'subset') { Write-Host "Fixtures: $($selection.fixtures -join ', ')" }
+            Write-Host "Filter: $($selection.filter)"
+            Write-Host "Process-designer lane: $($selection.pdMode)"
+            if ($selection.pdMode -eq 'subset') { Write-Host "Process-designer fixtures: $($selection.pdFixtures -join ', ')" }
+            Write-Host "Process-designer filter: $($selection.pdFilter)"
+            "mode=$($selection.mode)" >> $env:GITHUB_OUTPUT
+            "filter=$($selection.filter)" >> $env:GITHUB_OUTPUT
+            "pd_mode=$($selection.pdMode)" >> $env:GITHUB_OUTPUT
+            "pd_filter=$($selection.pdFilter)" >> $env:GITHUB_OUTPUT
+          }
 
   attempt-1:
     name: Queue TeamCity MCP e2e (attempt 1)
@@ -350,9 +394,137 @@ jobs:
           $ErrorActionPreference = 'Stop'
           . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
 
+  # The process-designer lane (see ENG-97005 at the top): the same three-attempt chain, trigger script and
+  # restrictions as attempt-1..3 above - read their comments - pointed at the configuration that installs
+  # CrtProcessBuilder and runs only the McpE2E.ProcessDesigner category. It is a chain of its own because a
+  # chain stops at its first success, and the two lanes have to be queued independently.
+  pd-attempt-1:
+    name: Queue TeamCity MCP e2e process designer (attempt 1)
+    needs: [select]
+    runs-on: self-hosted
+    timeout-minutes: 10
+    # pd_mode `none`: no selected fixture carries a McpE2E.ProcessDesigner test, so this lane would deploy a
+    # Creatio and install the package for zero tests. Fork pull requests are excluded as for attempt-1.
+    if: >-
+      needs.select.outputs.pd_mode != 'none' &&
+      (github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
+          BUILD_LABEL: MCP e2e process designer
+          # The existing lane's switches plus this lane's own: install the bundled CrtProcessBuilder in Prepare,
+          # and fail rather than ignore a test that finds the package missing or too old. Both are the
+          # configuration's defaults as well; sending them keeps a pull-request run right if a default drifts.
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio","InstallProcessBuilder":"true","env.McpE2E__RequireProcessBuilder":"true"}'
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.pd_filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.pd_mode }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
+
+  pd-attempt-2:
+    name: Queue TeamCity MCP e2e process designer (attempt 2)
+    needs: [select, pd-attempt-1]
+    if: needs.pd-attempt-1.outputs.queued != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
+          BUILD_LABEL: MCP e2e process designer
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio","InstallProcessBuilder":"true","env.McpE2E__RequireProcessBuilder":"true"}'
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.pd_filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.pd_mode }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
+
+  pd-attempt-3:
+    name: Queue TeamCity MCP e2e process designer (attempt 3)
+    needs: [select, pd-attempt-1, pd-attempt-2]
+    if: >-
+      needs.pd-attempt-1.outputs.queued != 'true' &&
+      needs.pd-attempt-2.outputs.queued != 'true'
+    runs-on: self-hosted
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      queued: ${{ steps.queue.outputs.queued }}
+      runner: ${{ steps.queue.outputs.runner }}
+    steps:
+      - name: Check out the trigger script
+        uses: actions/checkout@v4
+        with:
+          path: .teamcity-trigger
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+          sparse-checkout-cone-mode: false
+      - name: Queue TeamCity build for the PR branch
+        id: queue
+        shell: powershell
+        env:
+          TC_URL: https://teamcity-rnd.bpmonline.com
+          TC_TOKEN: ${{ secrets.TEAMCITY_TOKEN }}
+          BUILD_TYPE: TestLab_LoadTesting_ClioMcpTest_ClioMcpE2eProcessDesigner
+          BUILD_LABEL: MCP e2e process designer
+          TC_EXTRA_PROPERTIES: '{"DeployCreatioBuild":"true","env.McpE2E__AllowDestructiveMcpTests":"true","ProductName":"Studio","InstallProcessBuilder":"true","env.McpE2E__RequireProcessBuilder":"true"}'
+          HEAD_REF: ${{ github.event.pull_request.head.ref || inputs.branch }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
+          PR_NUMBER: ${{ github.event.pull_request.number || '(manual)' }}
+          RUNNER_LABEL: ${{ runner.name }}
+          TEST_FILTER: ${{ needs.select.outputs.pd_filter }}
+          TEST_SELECTION_MODE: ${{ needs.select.outputs.pd_mode }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          . "$env:GITHUB_WORKSPACE\.teamcity-trigger\.github\scripts\queue-teamcity-build.ps1"
+
   gate:
     name: TeamCity MCP e2e trigger
-    needs: [select, attempt-1, attempt-2, attempt-3]
+    needs: [select, attempt-1, attempt-2, attempt-3, pd-attempt-1, pd-attempt-2, pd-attempt-3]
     runs-on: ubuntu-latest
     if: >-
       always() && (github.event_name == 'workflow_dispatch' ||
@@ -367,13 +539,22 @@ jobs:
           echo "::error::The fixture selection job ended with '$SELECT_RESULT', so nothing was queued."
           echo "This is a repository problem (Select-McpE2eTestFilter.ps1 or the selection manifest), not a runner one."
           exit 1
-      - name: Accept that nothing needed to run on TeamCity
-        if: needs.select.outputs.mode == 'none'
+      - name: Report the lanes with nothing to run
+        if: needs.select.outputs.mode == 'none' || needs.select.outputs.pd_mode == 'none'
         shell: bash
+        env:
+          MODE: ${{ needs.select.outputs.mode }}
+          PD_MODE: ${{ needs.select.outputs.pd_mode }}
         run: |
-          echo "No fixture in clio.mcp.e2e can observe this pull request: see the decision log in the"
-          echo "'Select MCP e2e fixtures' job for the rule that discarded each changed file."
-          echo "No TeamCity build was queued and no 'CLIO MCP e2e tests (ATF)' status will appear."
+          if [ "$MODE" = "none" ]; then
+            echo "Existing lane: no fixture it runs can observe this pull request. No build was queued and no"
+            echo "'CLIO MCP e2e tests (ATF)' status will appear."
+          fi
+          if [ "$PD_MODE" = "none" ]; then
+            echo "Process-designer lane: no selected fixture carries a McpE2E.ProcessDesigner test. No build was"
+            echo "queued and no 'CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)' status will appear."
+          fi
+          echo "The 'Select MCP e2e fixtures' job logs the rule that classified each changed file."
       - name: Require that one attempt queued the build
         if: needs.select.outputs.mode != 'none'
         shell: bash
@@ -403,4 +584,33 @@ jobs:
           echo "teamcity-rnd.bpmonline.com only resolves to the TeamCity server from inside the"
           echo "corporate network. Label the in-network runners and pin runs-on to that label"
           echo "(see the comment at the top of this workflow), or bring an in-network runner online."
+          exit 1
+      - name: Require that one attempt queued the process-designer build
+        # always(): reported even when the existing lane's step above failed, so one run names both lanes.
+        if: always() && needs.select.result == 'success' && needs.select.outputs.pd_mode != 'none'
+        shell: bash
+        env:
+          QUEUED_1: ${{ needs.pd-attempt-1.outputs.queued }}
+          QUEUED_2: ${{ needs.pd-attempt-2.outputs.queued }}
+          QUEUED_3: ${{ needs.pd-attempt-3.outputs.queued }}
+          RUNNER_1: ${{ needs.pd-attempt-1.outputs.runner }}
+          RUNNER_2: ${{ needs.pd-attempt-2.outputs.runner }}
+          RUNNER_3: ${{ needs.pd-attempt-3.outputs.runner }}
+          RESULT_1: ${{ needs.pd-attempt-1.result }}
+          RESULT_2: ${{ needs.pd-attempt-2.result }}
+          RESULT_3: ${{ needs.pd-attempt-3.result }}
+        run: |
+          set -euo pipefail
+          echo "pd-attempt-1: result=$RESULT_1 queued=${QUEUED_1:-unset} runner=${RUNNER_1:-unknown}"
+          echo "pd-attempt-2: result=$RESULT_2 queued=${QUEUED_2:-unset} runner=${RUNNER_2:-unknown}"
+          echo "pd-attempt-3: result=$RESULT_3 queued=${QUEUED_3:-unset} runner=${RUNNER_3:-unknown}"
+          if [ "${QUEUED_1:-}" = "true" ] || [ "${QUEUED_2:-}" = "true" ] || [ "${QUEUED_3:-}" = "true" ]; then
+            echo "A TeamCity process-designer build is queued. Its result is published onto the PR head commit"
+            echo "by TeamCity's Commit Status Publisher as 'CLIO MCP e2e process designer (CLIO MCP ProcessDesigner)'."
+            exit 0
+          fi
+          echo "::error::No attempt could reach TeamCity, so no process-designer e2e build was queued."
+          echo "Runners tried: ${RUNNER_1:-unknown}, ${RUNNER_2:-unknown}, ${RUNNER_3:-unknown}."
+          echo "This is a runner/network problem, not a problem with the pull request - see the step above"
+          echo "and the comment at the top of this workflow."
           exit 1

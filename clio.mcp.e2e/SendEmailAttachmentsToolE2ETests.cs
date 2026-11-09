@@ -28,7 +28,7 @@ namespace Clio.Mcp.E2E;
 
 /// <summary>
 /// End-to-end coverage for the attachments of the Send email element (<c>email.attachments</c>) over the real MCP
-/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.131 or later, one framework at a
+/// path. NOT in CI - run manually against a stand carrying CrtProcessBuilder 1.6.6.140 or later, one framework at a
 /// time (<c>-f net10.0</c>, then <c>-f net8.0</c>).
 /// <para>What only this level can show is the wire and the platform: the list travels as JSON members a WCF
 /// contract drops in silence when they are misspelled, each entry becomes a designer attachment row the platform's
@@ -52,13 +52,18 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.131,
-	/// the archive this clio bundles. 1.6.6.127 is the first that reads <c>email.attachments</c> and 1.6.6.128 the
-	/// first whose describe lists the rows in stored order, which TC-I-05 asserts - but clio refuses a stand older than
-	/// its bundled archive, so below the bundled version every case would fail on that refusal instead of being
-	/// Ignored. Moves with every rebundle.
+	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.140,
+	/// which is also the create and modify floor. 1.6.6.127 is the first that reads <c>email.attachments</c> and
+	/// 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
+	/// released archive that reports a source running after the email, names the route of the same files through a
+	/// process parameter, expands a name in a performer contact, and stores a record id mapped onto a recipient that
+	/// references an object as the <c>[#Lookup...#]</c> formula of that object - the newest behaviour a case here
+	/// asserts, so it is the floor (1.6.6.138 and 1.6.6.139 were cuts of that work that were never released).
+	/// A stand at or above it but behind the archive this clio bundles passes the arrange and is refused by clio on its
+	/// first call; the create, modify and describe helpers turn that refusal into an Ignore. Raise it when a case
+	/// starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.131";
+	private const string MinimumPackageVersion = "1.6.6.140";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Send email attachments";
@@ -316,7 +321,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 	#region Methods: Tests - modify
 
 	[Test]
-	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone and their resource rows with them, the new entry is Attachments2, and the package's warnings carry each removed entry in the write shape while clio adds no removal line of its own. A setElement that drops a collection entry and adds a single File reuses the freed number with no stale display value, and describe lists the re-added row last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
+	[Description("TC-I-05: the replace rule over the wire. A Send email element built with three entries is sent [entry 1, a new source]: slot 1 keeps its stored UIds, slots 2 and 3 are gone from the element, the new entry is Attachments2 and shows nothing of the row it replaced, and the package's warnings carry each removed entry in the write shape while clio adds no removal line of its own. A setElement that drops a collection entry and adds single Files reuses the number freed in the same save and the number an earlier save freed, neither showing a stale display value, and describe lists the re-added rows last, in the designer's order. A setElement with [] leaves no Attachments parameter, and a subject-only setElement afterwards changes nothing else on the element.")]
 	[AllureTag(ModifyToolName)]
 	[AllureName("modify-business-process replaces and then removes the attachments of a Send email element")]
 	public async Task ModifyBusinessProcess_Should_ReplaceThenRemoveAttachments() {
@@ -345,7 +350,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			string replaceNode = await ReadLastElementNodeAsync(context, processName, elementUId);
 			IReadOnlyList<string> replaceResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
 			CallToolResult reused = await ModifyAsync(context, processName, SetAttachments("SE1", """
-				[ { "processParameter": "Doc" }, { "processParameter": "Doc" } ]
+				[ { "processParameter": "Doc" }, { "processParameter": "Doc" }, { "processParameter": "Doc" } ]
 				"""));
 			JsonObject afterReuse = await DescribeGraphAsync(context, processName);
 			IReadOnlyList<string> reuseResources = await ReadElementResourceRowsAsync(context, processName, "SE1");
@@ -365,8 +370,14 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "a row the list still names is kept as it is, not rebuilt with new UIds");
 			StoredSlots(replaceNode).Select(slot => Text(slot, "A2")).Should().BeEquivalentTo(
 				["Attachments1", "Attachments2"], because: "the rows the list no longer names are removed");
-			replaceResources.Should().NotContain(row => row.Contains(".Attachments3"),
-				because: "a removed row's resource keys go with it");
+			// Whether the save deletes a removed row's SysLocalizableValue rows is the platform's, not the package's:
+			// before platform build 10.1.409 a save rewrote every row of the schema; from it, a save rewrites only the
+			// keys it carries and keeps the rows of a parameter the schema no longer declares (its obsolete-key clean-up
+			// does not judge BaseElements keys). So Attachments3's rows are gone or orphaned here; what must hold on
+			// both is that no slot SHOWS a removed row's value - the number reused in this save below, and in a later
+			// save in the reuse step.
+			replaceResources.Should().NotContain(row => row.Contains(".Attachments2.") && row.Contains("[#PF1"),
+				because: "Attachments2 was freed and reused in the same save, so it shows nothing of the PF1 row it replaced");
 			WarningText(replaced).Should().Contain(RemovalNotice,
 				because: "the replace rule says which rows it removed");
 			WarningText(replaced).Should().Contain("\"sourceElement\": \"PF1\"",
@@ -375,7 +386,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the package already reported each removed row, so clio does not report the removal again");
 			WarningText(replaced).Should().NotContain(EmailBlockExpectation.UnlandedAttachmentsWarningMarker,
 				because: "both entries of the replacing list landed");
-			ShouldHaveLanded(reused, "dropping a collection row and adding a single File reuses the freed number");
+			ShouldHaveLanded(reused, "dropping a collection row and adding two single Files reuses the freed numbers");
 			WarningText(reused).Should().Contain(RemovalNotice,
 				because: "the dropped collection row is a removal the package reports");
 			WarningText(reused).Should().NotContain(EmailBlockExpectation.RemovedAttachmentsWarningMarker,
@@ -387,11 +398,26 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 				because: "the re-added single File takes the freed lowest number, Attachments1");
 			Text(reusedSlot, "bindingLevels").Should().Be("itemOnly",
 				because: "the slot now holds a single File, which binds its item only");
+			JsonObject laterReusedSlot = Attachments(Element(afterReuse, "SE1")).Should().ContainSingle(
+				entry => Text(entry, "slot") == "Attachments3",
+				because: "the third entry takes the next free number, Attachments3, removed by the previous save").Which;
+			Text(laterReusedSlot, "processParameter").Should().Be("Doc",
+				because: "the reused Attachments3 holds the single File it was sent");
+			Text(laterReusedSlot, "bindingLevels").Should().Be("itemOnly",
+				because: "the slot that held a collection now holds a single File, which binds its item only");
 			Attachments(Element(afterReuse, "SE1")).Select(entry => Text(entry, "slot")).Should().Equal(
-				["Attachments2", "Attachments1"],
-				because: "describe lists the rows in the designer's order: the re-added row is appended after the kept one");
+				["Attachments2", "Attachments1", "Attachments3"],
+				because: "describe lists the rows in the designer's order: the re-added rows are appended after the kept one, "
+					+ "in the order they were created");
 			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments1.DisplayValue") && row.Contains("[#OF1"),
 				because: "a reused single-File slot carries no stale display value of the collection it replaced");
+			reuseResources.Should().NotContain(row => row.Contains("Parameters.Attachments3.") && row.Contains("[#Docs"),
+				because: "a number removed by an EARLIER save and reused now shows nothing of the Docs collection it held, "
+					+ "even where that save left the removed row's resource rows in place");
+			reuseResources.Should().Contain(
+				row => row.StartsWith("BaseElements.SE1.Parameters.Attachments3.Attachments3FileLocator.DisplayValue |",
+					StringComparison.Ordinal) && row.EndsWith("| [#Doc#]", StringComparison.Ordinal),
+				because: "the reused slot's item shows the single File it now holds");
 			ShouldHaveLanded(cleared, "an empty list removes every row");
 			WarningText(cleared).Should().Contain(RemovalNotice,
 				because: "the package reports every row an empty list removed");
@@ -630,6 +656,194 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	#endregion
 
+	#region Methods: Tests - reachability, routes, performer and recipients
+
+	[Test]
+	[Description("An attachment source that runs AFTER the Send email element: OF1 is declared before SE1, so the declaration-order refusal does not fire, but the flow runs SE1 first. The build warns, and describe carries the same sentence as an issue on the row - the slot, the source, the email and the collection consequence (the email goes out without these files and without an error).")]
+	[AllureTag(DescribeProcessTool.ToolName)]
+	[AllureName("describe-business-process reports an attachment source that does not run before the email")]
+	public async Task DescribeBusinessProcess_Should_ReportTheRow_WhenItsSourceRunsAfterTheEmail() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("Order");
+			string descriptor = Descriptor(processName, FileParametersJson,
+				[("OF1", ObjectFilesElementJson("OF1")),
+					("SE1", SendEmailJson("SE1", "manual",
+						"""[ { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]"""))],
+				["StartEvent1", "SE1", "OF1", "EndEvent1"], "[]");
+			CallToolResult built = await CreateAsync(context, created, processName, descriptor);
+			ShouldHaveBuilt(built, "a source that runs after the email is a warning on the build, never a refusal");
+
+			// Act
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+
+			// Assert
+			LogText(built).Should().Contain("which does not lie on a path before 'SE1'",
+				because: "the build warns about the same source the describe issue names");
+			JsonObject entry = Attachments(Element(graph, "SE1")).Should().ContainSingle(
+				because: "one entry was sent").Which;
+			IReadOnlyList<string> issues = Strings(entry["issues"]);
+			issues.Should().Contain(issue => issue.Contains("'Attachments1' reads 'OF1', which does not lie on a path before 'SE1'"),
+				because: "describe names the row by its slot and the source that does not run before the email; it read: {0}",
+				string.Join(" | ", issues));
+			issues.Should().Contain(issue => issue.Contains("the email goes out without these files and without an error"),
+				because: "a collection row whose source has not run sends no files, and the issue says so");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("The same files through two routes: the Variable FileCollection Documents is filled only from OF1.ObjectFiles by a descriptor mapping, and SE1 attaches both Documents and OF1.ObjectFiles. The build lands, and its notice names the route - Documents takes its files from OF1.ObjectFiles - and says each file is attached twice.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process notices the same files reached through a process parameter")]
+	public async Task CreateBusinessProcess_Should_NoticeTheSameFilesThroughAProcessParameter() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("Route");
+			string descriptor = Descriptor(processName, RouteParametersJson,
+				[("OF1", ObjectFilesElementJson("OF1")),
+					("SE1", SendEmailJson("SE1", "manual", """
+						[ { "processParameter": "Documents" },
+						  { "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]
+						"""))],
+				["StartEvent1", "OF1", "SE1", "EndEvent1"],
+				"""[ { "targetProcessParameter": "Documents", "sourceElement": "OF1", "sourceElementParameter": "ObjectFiles" } ]""");
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName, descriptor);
+
+			// Assert
+			ShouldHaveBuilt(callResult, "two routes to the same files are a notice, never a refusal");
+			LogText(callResult).Should().Contain("Send email 'SE1': email.attachments[0] reads 'Documents', which takes "
+				+ "its files from 'OF1.ObjectFiles' and [1] reads 'OF1.ObjectFiles' too, so each file is attached twice.",
+				because: "the parameter hands on the output's files, which the other entry attaches again, and the notice "
+				+ "names the route so the caller sees why two different sources send the same files");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("A manual Send email whose performer contact names a process parameter, [#ContactRef#]: the build saves (the platform's pre-save validator refuses the name stored verbatim), and describe returns the contact as the parameter's meta path - the ContactRef parameter's UId, not its name.")]
+	[AllureTag(CreateToolName)]
+	[AllureName("create-business-process expands a process parameter name in a Send email performer contact")]
+	public async Task CreateBusinessProcess_Should_ExpandAProcessParameterName_InTheManualPerformerContact() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("Performer");
+			string descriptor = LinearDescriptor(processName, FileParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e performer", "body": "<p>Performer.</p>",
+					    "to": [ { "value": "probe@example.com" } ],
+					    "performer": { "type": "user", "contact": "[#ContactRef#]" } } }
+					"""));
+
+			// Act
+			CallToolResult callResult = await CreateAsync(context, created, processName, descriptor);
+
+			// Assert
+			ShouldHaveBuilt(callResult, "a performer contact naming a process parameter is expanded before the save");
+			JsonObject graph = await DescribeGraphAsync(context, processName);
+			string? contact = Text(Group(Group(Element(graph, "SE1"), "email"), "performer"), "contact");
+			contact.Should().NotBeNull(because: "the manual-mode performer reports the contact it was given");
+			contact.Should().Contain("[Parameter:",
+				because: "the name is stored as the parameter's meta path, the form the platform writes; describe read: {0}",
+				contact);
+			contact.Should().NotContain("ContactRef", because: "the name itself is not what is stored");
+			Guid parameterUId = Guid.Parse(Text(ParameterNamed(graph, "ContactRef"), "uid")!);
+			GuidPattern.Matches(contact!).Select(match => Guid.Parse(match.Value)).Should().Contain(parameterUId,
+				because: "the meta path names the ContactRef parameter by its UId");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("addMapping onto an existing recipient replaces it in place: SE1 is built with Recipient1 reading the process parameter OwnerEmail, then an addMapping onto SE1.Recipient1 with a constant address lands, and describe reports ONE recipient, Recipient1, holding the new address.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process replaces a Send email recipient in place through addMapping")]
+	public async Task ModifyBusinessProcess_Should_ReplaceARecipientInPlace_WhenAddMappingTargetsIt() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string processName = NewProcessName("Recipient");
+			await ArrangeProcessAsync(context, created, processName, LinearDescriptor(processName, RecipientParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e recipient", "body": "<p>Recipient.</p>",
+					    "to": [ { "processParameter": "OwnerEmail" } ] } }
+					""")), "the one-recipient process");
+
+			// Act
+			CallToolResult replaced = await ModifyAsync(context, processName, """
+				[ { "op": "addMapping", "mapping": { "elementName": "SE1", "elementParameter": "Recipient1", "value": "replaced@example.com" } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(replaced, "a mapping onto an existing recipient is an ordinary in-place write");
+			JsonObject email = Group(Element(await DescribeGraphAsync(context, processName), "SE1"), "email");
+			JsonObject recipient = ((email["to"] as JsonArray)?.OfType<JsonObject>().ToList() ?? []).Should().ContainSingle(
+				because: "the mapping rewrites Recipient1 instead of adding a second recipient; describe read: {0}",
+				email.ToJsonString()).Which;
+			Text(recipient, "name").Should().Be("Recipient1", because: "the recipient keeps its parameter");
+			Text(recipient, "value").Should().Be("replaced@example.com",
+				because: "the recipient's value is replaced by the mapped constant");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	[Test]
+	[Description("addMapping a contact id onto a recipient that references Contact stores the lookup formula: SE1 is built with Recipient1 reading the Contact-lookup process parameter ContactRef, then an addMapping onto SE1.Recipient1 with the bare id of an existing contact lands, and describe reports ONE recipient, Recipient1, sourced Script with the value [#Lookup.<Contact UId>.<id>#] - the form a Process Designer save keeps, not a constant id.")]
+	[AllureTag(ModifyToolName)]
+	[AllureName("modify-business-process stores a contact id mapped onto a Contact recipient as the lookup formula")]
+	public async Task ModifyBusinessProcess_Should_StoreTheLookupFormula_WhenAContactIdIsMappedOntoAContactRecipient() {
+		// Arrange
+		await using ProcessDesignerArrangeContext context = await StartAsync();
+		List<string> created = [];
+		try {
+			string contactId = await ReadFirstRecordIdAsync(context, "Contact");
+			Guid contactObjectUId = await ReadRootEntitySchemaUIdAsync(context, "Contact");
+			string processName = NewProcessName("ContactRecipient");
+			await ArrangeProcessAsync(context, created, processName, LinearDescriptor(processName, FileParametersJson,
+				("SE1", """
+					{ "name": "SE1", "type": "sendEmail", "caption": "SE1",
+					  "email": { "mode": "manual", "subject": "Clio e2e contact recipient", "body": "<p>Contact.</p>",
+					    "to": [ { "processParameter": "ContactRef" } ] } }
+					""")), "the process whose recipient references Contact");
+
+			// Act
+			CallToolResult mapped = await ModifyAsync(context, processName, $$"""
+				[ { "op": "addMapping", "mapping": { "elementName": "SE1", "elementParameter": "Recipient1", "value": "{{contactId}}" } } ]
+				""");
+
+			// Assert
+			ShouldHaveLanded(mapped, "a contact id onto a recipient that references Contact is a record, not text");
+			JsonObject email = Group(Element(await DescribeGraphAsync(context, processName), "SE1"), "email");
+			JsonObject recipient = ((email["to"] as JsonArray)?.OfType<JsonObject>().ToList() ?? []).Should().ContainSingle(
+				because: "the mapping rewrites Recipient1 instead of adding a second recipient; describe read: {0}",
+				email.ToJsonString()).Which;
+			Text(recipient, "name").Should().Be("Recipient1", because: "the recipient keeps its parameter");
+			Text(recipient, "source").Should().Be("Script",
+				because: "the id is stored as a formula, which a Process Designer save keeps, not as a constant");
+			Text(recipient, "value").Should().BeEquivalentTo($"[#Lookup.{contactObjectUId}.{contactId}#]",
+				because: "the formula names the Contact object by its UId and the mapped contact by its id");
+		} finally {
+			await DeleteProcessesAsync(context, created);
+		}
+	}
+
+	#endregion
+
 	#region Methods: Descriptors
 
 	// The process parameters most cases read: a Contact by Lookup, a FileCollection and a single File.
@@ -639,6 +853,20 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		  { "name": "Docs", "type": "FileCollection", "direction": "In" },
 		  { "name": "Doc", "type": "File", "direction": "In" }
 		]
+		""";
+
+	// The contact Object attachments reads, and the Variable FileCollection a descriptor mapping fills from OF1.ObjectFiles:
+	// Variable rather than In, because a caller could pass other files into an In parameter.
+	private const string RouteParametersJson = """
+		[
+		  { "name": "ContactRef", "type": "Lookup", "referenceSchema": "Contact", "direction": "In" },
+		  { "name": "Documents", "type": "FileCollection", "direction": "Variable" }
+		]
+		""";
+
+	// The text parameter a recipient reads before an addMapping replaces it.
+	private const string RecipientParametersJson = """
+		[ { "name": "OwnerEmail", "type": "Text", "direction": "Variable" } ]
 		""";
 
 	// The invoice a Generated report is made for.
@@ -703,8 +931,17 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>Start -> the elements in the order given -> End, with the given descriptor-level mappings.</summary>
 	private static string LinearDescriptor(string processName, string parametersJson,
-			(string Name, string Json)[] elements, string mappingsJson) {
-		List<string> names = ["StartEvent1", .. elements.Select(element => element.Name), "EndEvent1"];
+			(string Name, string Json)[] elements, string mappingsJson) =>
+		Descriptor(processName, parametersJson, elements,
+			["StartEvent1", .. elements.Select(element => element.Name), "EndEvent1"], mappingsJson);
+
+	/// <summary>
+	/// The elements DECLARED in the order given, with Start and End, joined by one flow from each name of
+	/// <paramref name="flowOrder"/> to the next - so the declaration order and the run order can differ.
+	/// </summary>
+	private static string Descriptor(string processName, string parametersJson,
+			(string Name, string Json)[] elements, string[] flowOrder, string mappingsJson) {
+		List<string> names = [.. flowOrder];
 		string elementsJson = string.Join(",\n", new[] {
 				"""{ "name": "StartEvent1", "type": "startEvent" }"""
 			}
@@ -773,10 +1010,16 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		return result;
 	}
 
-	/// <summary>Reads a process back in full (<c>mode=full</c>) and returns its graph.</summary>
+	/// <summary>
+	/// Reads a process back in full (<c>mode=full</c>) and returns its graph. Ignores the test when clio refused the
+	/// call because the stand's CrtProcessBuilder is behind, like a build or a modify.
+	/// </summary>
 	private static async Task<JsonObject> DescribeGraphAsync(ProcessDesignerArrangeContext context,
-			string processName) =>
-		DescribedProcessGraph.Read(await ProcessDesignerE2EArrange.DescribeAsync(context, processName));
+			string processName) {
+		CallToolResult result = await ProcessDesignerE2EArrange.DescribeAsync(context, processName);
+		IgnoreWhenProcessBuilderIsBehind(ToolText(result), MinimumPackageVersion);
+		return DescribedProcessGraph.Read(result);
+	}
 
 	/// <summary>Removes every process a test built, newest first; a failed delete is reported, not thrown.</summary>
 	private static async Task DeleteProcessesAsync(ProcessDesignerArrangeContext context, List<string> created) {
@@ -859,6 +1102,25 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 			Assert.Ignore($"{Subject} MCP E2E needs at least one {schemaName} record on '{context.EnvironmentName}'.");
 		}
 		return rows[0].GetProperty("Id").GetString()!;
+	}
+
+	/// <summary>
+	/// The UId of the ROOT entity schema <paramref name="schemaName"/> - the row that does not extend a parent, whose
+	/// UId the object segment of a <c>[#Lookup.{object}.{record}#]</c> formula carries.
+	/// </summary>
+	private static async Task<Guid> ReadRootEntitySchemaUIdAsync(ProcessDesignerArrangeContext context,
+			string schemaName) {
+		JsonElement rows = await SelectInlineAsync(context, SelectQueryHelper.BuildSelectQuery("SysSchema",
+			[new SelectQueryHelper.SelectQueryColumnDefinition("UId", "UId")],
+			[
+				new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName, SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager",
+					SelectQueryHelper.TextDataValueType),
+				new SelectQueryHelper.SelectQueryFilterDefinition("ExtendParent", false, BooleanDataValueType)
+			], rowCount: 1), $"the root {schemaName} entity schema");
+		rows.GetArrayLength().Should().Be(1,
+			because: $"arrange: every stand carries the root {schemaName} entity schema, whose UId the formula names");
+		return Guid.Parse(rows[0].GetProperty("UId").GetString()!);
 	}
 
 	/// <summary>
@@ -1182,6 +1444,15 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 		JsonObject? found = (graph["elements"] as JsonArray)?.OfType<JsonObject>()
 			.SingleOrDefault(candidate => Text(candidate, "name") == name);
 		found.Should().NotBeNull(because: $"the element '{name}' must be described; what was read: {{0}}",
+			graph.ToJsonString());
+		return found!;
+	}
+
+	/// <summary>The described process parameter with that name, failing the test with what was read when absent.</summary>
+	private static JsonObject ParameterNamed(JsonObject graph, string name) {
+		JsonObject? found = (graph["parameters"] as JsonArray)?.OfType<JsonObject>()
+			.SingleOrDefault(candidate => Text(candidate, "name") == name);
+		found.Should().NotBeNull(because: $"the parameter '{name}' must be described; what was read: {{0}}",
 			graph.ToJsonString());
 		return found!;
 	}
