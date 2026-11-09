@@ -216,7 +216,8 @@ public class BundledProcessBuilderPackageTests {
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
 	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.136 was a script cut
-	/// again; 1.6.6.138, 1.6.6.139, 1.6.6.140 and 1.6.6.149 are hand cuts from the stamp commit, so it names that commit and its descriptor
+	/// again; 1.6.6.138, 1.6.6.139 and 1.6.6.140 are hand cuts from the stamp commit, 1.6.6.145 a script cut, and 1.6.6.149 a
+	/// hand cut from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three

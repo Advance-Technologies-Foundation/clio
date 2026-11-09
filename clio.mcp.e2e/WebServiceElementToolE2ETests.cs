@@ -51,7 +51,7 @@ public sealed class WebServiceElementToolE2ETests {
 
 	/// <summary>
 	/// The CrtProcessBuilder the fixture runs against: 1.6.6.149, the first cut that ships the <c>webService</c> block
-	/// and the create and modify floor (1.6.6.146-1.6.6.148 were cuts of this work that were never released). Below it
+	/// and the create and modify floor when it was set (1.6.6.146-1.6.6.148 were cuts of this work that were never released). Below it
 	/// every case is Ignored, because an older package does not declare the block and refuses it as an unknown key.
 	/// Raise it when a case starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
@@ -140,10 +140,11 @@ public sealed class WebServiceElementToolE2ETests {
 			string processUId = Text(graph, "schemaUId")!;
 			string elementUId = UId(element);
 			string node = await ReadLastElementNodeAsync(context, processName, elementUId);
-			node.Should().Contain("\"IX2\":\"UsrWscEcho\"", because: "IX2 stores the canonical method name");
-			node.Should().Contain("\"IX3\":7000", because: "IX3 stores the timeout in milliseconds");
-			node.Should().Contain("\"IX4\":true", because: "IX4 stores the ignore-errors flag directly");
-			node.Should().Contain("\"IX1\":\"" + Text(block, "serviceUId"),
+			JsonObject stored = StoredNode(node);
+			stored["IX2"]?.GetValue<string>().Should().Be(EchoMethod, because: "IX2 stores the canonical method name");
+			stored["IX3"]?.GetValue<int>().Should().Be(7000, because: "IX3 stores the timeout in milliseconds");
+			stored["IX4"]?.GetValue<bool>().Should().BeTrue(because: "IX4 stores the ignore-errors flag directly");
+			stored["IX1"]?.GetValue<string>().Should().Be(Text(block, "serviceUId"),
 				because: "IX1 stores the service's manager-item UId that describe reports");
 			node.Should().Contain("\"L18\"", because: "nested items are stored the way the designer stores them");
 			node.Should().Contain("UsrWscIdsItemValue_In", because: "a scalar array carries its item value child");
@@ -260,8 +261,8 @@ public sealed class WebServiceElementToolE2ETests {
 			block["methodResolved"]!.GetValue<bool>().Should().BeTrue(because: "the stored name matches ordinally");
 			Parameters(block).Should().Contain(parameter => Text(parameter, "name") == "UsrWscText_In",
 				because: "the canonical name keeps the generated parameters, which a wrong-case name loses on load");
-			(await ReadLastElementNodeAsync(context, processName, UId(element))).Should().Contain("\"IX2\":\"UsrWscEcho\"",
-				because: "IX2 holds the canonical spelling");
+			StoredNode(await ReadLastElementNodeAsync(context, processName, UId(element)))["IX2"]?.GetValue<string>()
+				.Should().Be(EchoMethod, because: "IX2 holds the canonical spelling");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -514,7 +515,7 @@ public sealed class WebServiceElementToolE2ETests {
 				"the process that calls the service");
 
 			// Act
-			RunProcessEnvelope run = await RunAsync(context, processName);
+			RunProcessEnvelope run = await RunAsync(context, processName, "CallSucceeded", "CallStatus", "CallResponse");
 
 			// Assert
 			run.Error.Should().BeNull(because: "the call reaches the stand and the element completes: {0}", run.Error);
@@ -549,9 +550,9 @@ public sealed class WebServiceElementToolE2ETests {
 
 			// Assert
 			run.Status.Should().Be(expectedStatus,
-				because: ignoreErrors
+				because: (ignoreErrors
 					? "an ignored transport failure lets the instance reach the end event"
-					: "an unignored transport failure ends the instance in Error");
+					: "an unignored transport failure ends the instance in Error") + " (run error: {0})", run.Error);
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -753,20 +754,33 @@ public sealed class WebServiceElementToolE2ETests {
 	}
 
 	/// <summary>Runs the process through clio-run and waits for it, with no record watch.</summary>
-	private static async Task<RunProcessEnvelope> RunAsync(ProcessDesignerArrangeContext context, string processName) {
+	/// <summary>
+	/// Runs the process and waits for it. <paramref name="resultParameters"/> must be parameters the process declares:
+	/// run-process refuses an unknown one before starting anything, which would read as a run with no status.
+	/// </summary>
+	private static async Task<RunProcessEnvelope> RunAsync(ProcessDesignerArrangeContext context, string processName,
+			params string[] resultParameters) {
+		Dictionary<string, object?> args = new() {
+			["environment-name"] = context.EnvironmentName,
+			["process-name"] = processName,
+			["wait-timeout"] = 60
+		};
+		if (resultParameters.Length > 0) {
+			args["result-parameters"] = resultParameters;
+		}
 		CallToolResult result = await context.Session.CallToolAsync(ClioRunTool.ToolName,
-			new Dictionary<string, object?> {
-				["command"] = RunProcessTool.ToolName,
-				["args"] = new Dictionary<string, object?> {
-					["environment-name"] = context.EnvironmentName,
-					["process-name"] = processName,
-					["result-parameters"] = new[] { "CallSucceeded", "CallStatus", "CallResponse" },
-					["wait-timeout"] = 60
-				}
-			},
+			new Dictionary<string, object?> { ["command"] = RunProcessTool.ToolName, ["args"] = args },
 			context.CancellationTokenSource.Token);
 		return EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(result);
 	}
+
+	/// <summary>
+	/// Parses a stored element node. The platform stores process metadata indented, so a member is compared by value,
+	/// never by searching the text for its compact form.
+	/// </summary>
+	private static JsonObject StoredNode(string node) =>
+		JsonNode.Parse(node) as JsonObject
+		?? throw new InvalidOperationException("A stored element node is a JSON object.");
 
 	/// <summary>The metadata JSON of the LAST stored <c>SysSchema</c> row of <paramref name="schemaName"/>.</summary>
 	private static async Task<JsonObject> ReadLastMetaDataAsync(ProcessDesignerArrangeContext context,

@@ -371,8 +371,8 @@ public sealed class ToolContractPayloadBudgetTests {
 	// additions carry no safety marker, so no short form keeps them - 168 bytes under this guard.
 	//
 	// ENG-92710 (2026-11-04) re-measured by lowering this guard: 18832 bytes with its description text, which carries no
-	// safety marker; "webService" in the create call shape's block list, which lands with the rebundle that declares the
-	// block, measured on the branch at 18845 bytes - 155 under this guard.
+	// safety marker; "webService" in the create call shape's block list landed with the 1.6.6.149 rebundle that declares
+	// the block: re-measured then, 18845 bytes - 155 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
