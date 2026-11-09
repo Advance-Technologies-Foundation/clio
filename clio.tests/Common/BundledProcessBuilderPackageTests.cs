@@ -70,13 +70,13 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>15ef8af6</c>, to be tagged
-	/// <c>crtprocessbuilder-1.6.6.144</c>): branch <c>feature/ENG-105744-net8-restart-required</c> from <c>main</c> at 1.6.6.140
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>da1a7ee2</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.145</c>): branch <c>feature/ENG-105744-net8-restart-required</c> from <c>main</c> at 1.6.6.140
 	/// (<c>a3f58852</c>), so the cut carries everything 1.6.6.140 shipped. 1.6.6.141 is claimed by ENG-103990 and 1.6.6.143
-	/// by ENG-105558, and neither is in it; 1.6.6.142 and an earlier 1.6.6.143 were cut on this branch and superseded
+	/// by ENG-105558, and neither is in it; 1.6.6.142, an earlier 1.6.6.143 and 1.6.6.144 were cut on this branch and superseded
 	/// before release.
 	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit is the one before the restamp,
-	/// so its descriptor reads 1.6.6.143 - one restamp behind the archive, by design (see the remarks below).
+	/// so its descriptor reads 1.6.6.144 - one restamp behind the archive, by design (see the remarks below).
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -93,7 +93,7 @@ public class BundledProcessBuilderPackageTests {
 	/// after a clean compile on a host that keeps the configuration assembly it loaded at startup (a .NET (Core) host,
 	/// told by the core library's name) - and a <c>warnings</c> entry naming the three states a process is in until the
 	/// restart; every compile demand (a save with C#, the activation warnings, the not-interpretable version save) ends
-	/// with a notice that on such a host the compiled code runs only after a restart the user agrees to, and names the
+	/// with a notice that on such a host the compiled code runs only after a restart the user agrees to (once per answer), and names the
 	/// compile's cost per host. The service surface is unchanged (8 operations, 6 design-gate call sites and 1 compile
 	/// gate, counted in the archive). No <c>[RequiresPackage]</c> literal moves: for a package that does not answer
 	/// <c>restartRequired</c>, clio falls back to the environment's <c>IsNetCore</c> registration. What earlier cuts
@@ -182,7 +182,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"00EA37C43859EE7F9EBB74B25941752B44AFE50F05709E82D3778A54FB790EB7";
+		"5A60B50965AADDD4A4E37B6E5AC538EC68CE34532B58AC05F24FA1A35AF47FC7";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -210,7 +210,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.144";
+	private const string ExpectedArchiveVersion = "1.6.6.145";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
@@ -226,7 +226,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "15ef8af6f6e5595b13b69f843854bfc890209619";
+	private const string ExpectedProducingCommit = "da1a7ee228108e6d12728b571578497279967d16";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +252,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794218562000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794219274000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.

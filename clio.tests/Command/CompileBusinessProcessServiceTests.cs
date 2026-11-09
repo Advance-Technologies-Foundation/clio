@@ -336,7 +336,7 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
-	[Description("A package older than 1.6.6.144 does not say whether a restart is needed: then a successful compile on an environment registered as .NET Core requires one, and nothing else does.")]
+	[Description("A package older than 1.6.6.145 does not say whether a restart is needed: then a successful compile on an environment registered as .NET Core requires one, and nothing else does.")]
 	[TestCase(true, true, true, true)]
 	[TestCase(true, true, false, false)]
 	[TestCase(false, true, true, false)]

@@ -22,7 +22,7 @@ DESCRIPTION
     - compile-creatio in its process-name mode, the compile a script task or
       process methods need (CrtProcessBuilder 1.6.6.33 or later). On a .NET
       (Core) host the compiled code runs only after the application restarts,
-      and a successful compile says so (CrtProcessBuilder 1.6.6.144 or later;
+      and a successful compile says so (CrtProcessBuilder 1.6.6.145 or later;
       for a package that does not say, clio goes by whether the environment
       is registered as .NET Core)
 

@@ -184,7 +184,7 @@ public sealed class CompileBusinessProcessService(
 	private static bool IsRestartUnknown(ResultDto result, EnvironmentSettings environmentSettings) =>
 		result.RestartRequired is null && result.Success && result.Compiled && !environmentSettings.IsNetCore;
 
-	// CrtProcessBuilder 1.6.6.144+ says it. A package that does not - rarely reached, since the package requirement
+	// CrtProcessBuilder 1.6.6.145+ says it. A package that does not - rarely reached, since the package requirement
 	// refuses one older than the bundled version before the compile runs, but possible for a cut of a parallel branch
 	// stamped at or above it - leaves the environment's registration to decide: on a .NET (Core) host the running application keeps the configuration assembly it loaded at startup
 	// whatever the package version (measured on a 10.2.1024 .NET 8 stand, ENG-105744), so the fallback is the same
@@ -280,7 +280,7 @@ public sealed class CompileBusinessProcessService(
 		[JsonPropertyName("errorCount")]
 		public int ErrorCount { get; set; }
 
-		// Nullable: absent from the answer of a package older than 1.6.6.144, which is not the same as false.
+		// Nullable: absent from the answer of a package older than 1.6.6.145, which is not the same as false.
 		[JsonPropertyName("restartRequired")]
 		public bool? RestartRequired { get; set; }
 	}
@@ -483,7 +483,7 @@ public sealed record CompileBusinessProcessError(string? FileName, int Line, int
 /// <param name="Errors">The compiler errors reported, the process's own first; capped by the server.</param>
 /// <param name="ErrorCount">The total number of errors, including any past the cap.</param>
 /// <param name="RestartRequired">True when the compile succeeded but the compiled code runs only after the
-/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.144+, and derived from the
+/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.145+, and derived from the
 /// environment's <c>IsNetCore</c> registration when the package does not say.</param>
 /// <param name="RestartUnknown">True when the package did not say whether a restart is needed and the
 /// environment is not registered as .NET (Core): the fallback answered "no restart" without knowing the host.</param>
