@@ -6,6 +6,7 @@ using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Allure.NUnit.Attributes;
+using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.McpServer.Tools.ProcessDesigner;
 using Clio.Mcp.E2E.Support.Configuration;
@@ -125,14 +126,14 @@ public sealed class ScriptTaskCompileLifecycleE2ETests {
 			secondCompile.Succeeded.Should().BeTrue(
 				because: "the alias names the one SysSettings the body means: {0}", secondCompile.Text);
 			if (restart is not null) {
-				secondCompile.Text.Should().Contain("does NOT run the compiled code yet",
+				secondCompile.Text.Should().Contain(CompileBusinessProcessCommand.RestartRequiredMarker,
 						because: "on a .NET host the compile answer itself must say the code waits for a restart")
 					.And.Contain(RestartTool.RestartByEnvironmentNameToolName,
 						because: "the answer names the step that makes the code run");
 				restart.Should().Contain(ExitCodeZero,
 					because: "a .NET host runs the newly compiled code only after a restart: {0}", restart);
 			} else {
-				secondCompile.Text.Should().NotContain("does NOT run the compiled code yet",
+				secondCompile.Text.Should().NotContain(CompileBusinessProcessCommand.RestartRequiredMarker,
 					because: "on .NET Framework the compile's own reload runs the new code, so no restart is asked for");
 			}
 			AssertRunReturnsTheComputedValues(ran);

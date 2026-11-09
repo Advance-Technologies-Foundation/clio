@@ -336,7 +336,7 @@ public sealed class CompileBusinessProcessServiceTests {
 	}
 
 	[Test]
-	[Description("A package older than 1.6.6.142 does not say whether a restart is needed: then a successful compile on an environment registered as .NET Core requires one, and nothing else does.")]
+	[Description("A package older than 1.6.6.143 does not say whether a restart is needed: then a successful compile on an environment registered as .NET Core requires one, and nothing else does.")]
 	[TestCase(true, true, true, true)]
 	[TestCase(true, true, false, false)]
 	[TestCase(false, true, true, false)]
@@ -434,11 +434,13 @@ public sealed class CompileBusinessProcessCommandTests {
 		// Assert
 		exitCode.Should().Be(0, because: "the compile itself succeeded");
 		_logger.Received(1).WriteWarning(Arg.Is<string>(message => message.Contains("Compiled package 'Custom'")
-			&& message.Contains("does NOT run the compiled code yet")
+			&& message.Contains(CompileBusinessProcessCommand.RestartRequiredMarker)
 			&& message.Contains("restart-by-environment-name for 'sandbox'")
 			&& message.Contains("Ask the user")
 			&& message.Contains("left Running in the process log")
 			&& message.Contains("runs its PREVIOUS code")
+			&& message.Contains("fails at a script task added since")
+			&& message.Contains("reloads the application for every user")
 			&& message.Contains("proves nothing")));
 		_logger.DidNotReceive().WriteInfo(Arg.Is<string>(message => message.Contains("Compiled package")));
 	}

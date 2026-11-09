@@ -960,8 +960,14 @@ public sealed class RunProcessToolTests {
 		response.Error.Should().Contain("compile-creatio with process-name",
 				because: "a script task saved since the last compile is the usual cause")
 			.And.Contain("may already have run", "the elements before the failing one ran before it stopped")
+			.And.Contain("On .NET Framework, if that compile succeeded only minutes ago",
+				"only that host reloads after a compile, so only there can the runtime still be reloading")
 			.And.Contain("run again in about two minutes before compiling again",
-				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing");
+				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing")
+			.And.Contain(CompileBusinessProcessCommand.RestartRequiredMarker,
+				"the agent recognises the .NET case by the warning the compile gave it")
+			.And.Contain("do not compile again - ask the user, then run restart-by-environment-name",
+				"on a .NET (Core) host the compiled code runs only after a restart, and another compile changes nothing");
 		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
 	}
 

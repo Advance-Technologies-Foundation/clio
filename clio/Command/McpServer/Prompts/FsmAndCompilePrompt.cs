@@ -84,7 +84,7 @@ public static class FsmAndCompilePrompt
 			  On a .NET (Core) host a successful compile WARNS that the process does not run the compiled code until the
 			  application restarts: the running application keeps the assembly it loaded at startup, so until then the
 			  process runs its previous code or, if it was never loaded, refuses to start (a signal start is left Running
-			  in the process log). Then ask the user - a restart drops every user's session - call
+			  in the process log). Then ask the user - a restart reloads the application for every user - call
 			  `{Tools.RestartTool.RestartByEnvironmentNameToolName}`, and only after it verify on a run.
 			  If the tool returns exit-code 0 with an in-progress note, the compile has not finished —
 			  poll `{Tools.CompileStatusTool.CompileStatusToolName}` instead of retrying. The same holds if your client stops waiting first (for example `Request timed out`): never compile again to check.

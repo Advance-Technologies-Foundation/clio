@@ -247,9 +247,12 @@ public class RunProcessCommand(
 		$" This is most often a script task saved since '{processCode}' was last compiled, so the compiled code "
 		+ "does not have it "
 		+ "yet: the run stops when it reaches that element, and the elements before it may already have run. If a "
-		+ "process-name compile of it succeeded only minutes ago, the runtime may still be reloading: run again in "
-		+ "about two minutes before compiling again. Otherwise ask the user, then run compile-creatio with "
-		+ $"process-name set to '{processCode}'.";
+		+ "process-name compile of it already succeeded and its answer said the process "
+		+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}, this .NET (Core) host still runs the assembly it "
+		+ "loaded at startup: do not compile again - ask the user, then run restart-by-environment-name (it reloads "
+		+ "the application for every user). On .NET Framework, if that compile succeeded only minutes ago, the "
+		+ "runtime may still be reloading: run again in about two minutes before compiling again. Otherwise ask "
+		+ $"the user, then run compile-creatio with process-name set to '{processCode}'.";
 
 	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one
 	// runs as asked - and a caller who meant "the process" must hear that the environment itself runs another.

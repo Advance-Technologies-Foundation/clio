@@ -869,7 +869,9 @@ public sealed class CompileCreatioToolTests
 			text.Should().Contain(RestartTool.RestartByEnvironmentNameToolName,
 				because: "the agent must be told the step that makes the compiled code run");
 			text.Should().Contain("ask the user",
-				because: "a restart drops every user's session, so it needs consent like the compile");
+				because: "a restart reloads the application for every user, so it needs consent like the compile");
+			text.Should().NotContain("drops every user",
+				because: "whether a restart ends the users' sessions was not measured, so the text does not claim it");
 		}
 	}
 

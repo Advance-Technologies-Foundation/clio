@@ -173,7 +173,7 @@ public sealed class CompileBusinessProcessService(
 			IsRestartRequired(result, environmentSettings));
 	}
 
-	// CrtProcessBuilder 1.6.6.142+ says it. A package that does not - rarely reached, since the package requirement
+	// CrtProcessBuilder 1.6.6.143+ says it. A package that does not - rarely reached, since the package requirement
 	// refuses one older than the bundled version before the compile runs, but possible for a cut of a parallel branch
 	// stamped at or above it - leaves the environment's registration to decide: on a .NET (Core) host the running application keeps the configuration assembly it loaded at startup
 	// whatever the package version (measured on a 10.2.1024 .NET 8 stand, ENG-105744), so the fallback is the same
@@ -269,7 +269,7 @@ public sealed class CompileBusinessProcessService(
 		[JsonPropertyName("errorCount")]
 		public int ErrorCount { get; set; }
 
-		// Nullable: absent from the answer of a package older than 1.6.6.142, which is not the same as false.
+		// Nullable: absent from the answer of a package older than 1.6.6.143, which is not the same as false.
 		[JsonPropertyName("restartRequired")]
 		public bool? RestartRequired { get; set; }
 	}
@@ -302,6 +302,14 @@ public class CompileBusinessProcessCommand(
 	ICompileBusinessProcessService compileBusinessProcessService,
 	ILogger logger)
 	: Command<CompileBusinessProcessOptions> {
+
+	/// <summary>
+	/// The words of the compile warning that says a .NET (Core) host must restart before the compiled code runs.
+	/// The bundled package's compile demands, the run-process hint and the published guidance quote them, so
+	/// they change only together with those texts.
+	/// </summary>
+	internal const string RestartRequiredMarker = "does NOT run the compiled code yet";
+
 	/// <inheritdoc />
 	public override int Execute(CompileBusinessProcessOptions options) {
 		try {
@@ -341,16 +349,17 @@ public class CompileBusinessProcessCommand(
 			// loaded at startup. Measured on a 10.2.1024 .NET 8 stand (ENG-105744): a NEW process started by a signal
 			// before the restart was refused in the server log only and its instance was left Running (ENG-105872);
 			// after the restart the process completed. The platform's start check looks only for the wrapper type,
-			// so a process loaded at startup is not refused - it runs its previous code, which is why a run before
-			// the restart proves nothing. A warning, not an error: the compile did what it was asked to do.
-			logger.WriteWarning($"{compiled} The process does NOT run the compiled code yet: this .NET (Core) host "
+			// so a process loaded at startup is not refused: it runs its previous code, and one that gained a script
+			// task since it was loaded fails when the flow reaches that element (traced in source) - which is why a
+			// run before the restart proves nothing. A warning, not an error: the compile did what it was asked to do.
+			logger.WriteWarning($"{compiled} The process {RestartRequiredMarker}: this .NET (Core) host "
 				+ "keeps the configuration assembly it loaded at startup, so the code runs only after the application "
-				+ $"restarts. Ask the user, then run restart-by-environment-name for '{options.Environment}' - it drops "
-				+ $"every user's session. Until then process '{ServerName(result.ProcessName)}' runs its PREVIOUS code "
-				+ "if the application loaded it at startup, and otherwise refuses to start (\"Publish the ... process "
-				+ "before starting it\"; a signal start is left Running in the process log without running), so a run "
-				+ "before the restart proves nothing. After the restart, verify on a run that the process executes the "
-				+ "saved code.");
+				+ $"restarts. Ask the user, then run restart-by-environment-name for '{options.Environment}' - it "
+				+ $"reloads the application for every user. Until then process '{ServerName(result.ProcessName)}' runs "
+				+ "its PREVIOUS code if the application loaded it at startup (and fails at a script task added since), "
+				+ "and otherwise refuses to start (\"Publish the ... process before starting it\"; a signal start is "
+				+ "left Running in the process log without running), so a run before the restart proves nothing. "
+				+ "After the restart, verify on a run that the process executes the saved code.");
 			return 0;
 		} catch (Exception exception) {
 			logger.WriteError(exception.Message);
@@ -458,7 +467,7 @@ public sealed record CompileBusinessProcessError(string? FileName, int Line, int
 /// <param name="Errors">The compiler errors reported, the process's own first; capped by the server.</param>
 /// <param name="ErrorCount">The total number of errors, including any past the cap.</param>
 /// <param name="RestartRequired">True when the compile succeeded but the compiled code runs only after the
-/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.142+, and derived from the
+/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.143+, and derived from the
 /// environment's <c>IsNetCore</c> registration when the package does not say.</param>
 public sealed record CompileBusinessProcessResult(bool Success, string? ErrorMessage, string? ProcessName,
 	string? PackageName, string? PackageType, bool CompileRequired, bool Compiled, long DurationMs,
