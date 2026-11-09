@@ -33,6 +33,27 @@ public sealed record DataBindingLocalizationWrite(
 	IReadOnlyList<string> Columns);
 
 /// <summary>
+/// A localization write that failed or did not verify, with the rows and cultures already written before it stopped.
+/// </summary>
+public sealed class DataBindingLocalizationException : InvalidOperationException {
+
+	/// <summary>Initializes a new instance of the <see cref="DataBindingLocalizationException"/> class.</summary>
+	/// <param name="message">What failed.</param>
+	/// <param name="written">The rows and cultures written before the failure.</param>
+	/// <param name="innerException">The underlying failure, if any.</param>
+	public DataBindingLocalizationException(
+		string message,
+		IReadOnlyList<DataBindingLocalizationWrite> written,
+		Exception? innerException = null)
+		: base(message, innerException) {
+		Written = written;
+	}
+
+	/// <summary>The rows and cultures that were written before the failure.</summary>
+	public IReadOnlyList<DataBindingLocalizationWrite> Written { get; }
+}
+
+/// <summary>
 /// The context a localization write needs, resolved before any row of the binding is written.
 /// </summary>
 /// <param name="ProfileCulture">Culture of the connected user's profile: the culture plain inserts and updates
@@ -73,8 +94,9 @@ internal interface IDataBindingDbLocalizer {
 	/// <param name="schemaName">Entity schema of the binding.</param>
 	/// <param name="rows">Record identifier and requested translations of each row.</param>
 	/// <returns>One entry per row and culture written.</returns>
-	/// <exception cref="InvalidOperationException">A write failed, or a value read back differs from the request
-	/// (the message says the values were saved but not verified).</exception>
+	/// <exception cref="DataBindingLocalizationException">A write failed, or a value read back differs from the request
+	/// (the message says the values were saved but not verified); it carries the rows and cultures already written.
+	/// </exception>
 	IReadOnlyList<DataBindingLocalizationWrite> Write(
 		DataBindingLocalizationPlan plan,
 		string schemaName,
@@ -99,7 +121,6 @@ internal sealed class DataBindingDbLocalizer(
 	private static readonly IReadOnlyDictionary<int, int> TextLengthByDataValueType = new Dictionary<int, int> {
 		[27] = 50, // ShortText
 		[28] = 250, // MediumText
-		[26] = 500, // LongText (legacy id)
 		[30] = 500 // LongText
 	};
 
@@ -150,21 +171,37 @@ internal sealed class DataBindingDbLocalizer(
 				.SelectMany(cultureValues => cultureValues.Keys)
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.ToList();
-			IReadOnlyDictionary<string, string?> profileValues = ReadProfileValues(schemaName, rowId, columns);
-			WriteRow(plan, schemaName, rowId, localization, columns, profileValues);
-			mismatches.AddRange(VerifyRow(plan, schemaName, rowId, localization, columns));
-			written.AddRange(localization.Cultures.Select(culture => new DataBindingLocalizationWrite(
-				rowId, localization.RowLabel, culture.Key, culture.Value.Keys.ToList())));
+			try {
+				IReadOnlyDictionary<string, string?> profileValues = ReadProfileValues(schemaName, rowId, columns);
+				WriteRow(plan, schemaName, rowId, localization, columns, profileValues);
+				written.AddRange(localization.Cultures.Select(culture => new DataBindingLocalizationWrite(
+					rowId, localization.RowLabel, culture.Key, culture.Value.Keys.ToList())));
+				mismatches.AddRange(VerifyRow(plan, schemaName, rowId, localization, columns));
+			}
+			catch (Exception exception) when (exception is not OperationCanceledException) {
+				throw new DataBindingLocalizationException(
+					$"Localizing row '{localization.RowLabel}' ({rowId}) failed: {exception.Message}"
+					+ DescribeMismatches(mismatches),
+					written,
+					exception);
+			}
 		}
 
 		if (mismatches.Count > 0) {
-			throw new InvalidOperationException(
+			throw new DataBindingLocalizationException(
 				"Localizations were saved, but NOT verified: the values read back differ from the request for "
-				+ string.Join(", ", mismatches) + ". Check the records in Creatio before relying on them.");
+				+ string.Join(", ", mismatches) + ". Check the records in Creatio before relying on them.",
+				written);
 		}
 
 		return written;
 	}
+
+	private static string DescribeMismatches(IReadOnlyList<string> mismatches) =>
+		mismatches.Count == 0
+			? string.Empty
+			: " Earlier rows were saved, but NOT verified: the values read back differ from the request for "
+				+ string.Join(", ", mismatches) + ".";
 
 	private void ValidateCultures(IReadOnlyList<DataBindingRowLocalization> rows, List<string> failures) {
 		IReadOnlyList<CreatioCulture> siteCultures = cultureCatalog.GetCultures();

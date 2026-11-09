@@ -27,7 +27,9 @@ BEHAVIOR:
   lets you bind an existing keyed row (e.g. a SysSchemaAdminUnitRight grant) by passing its Id
   without creating a duplicate.
   Translations: a row may carry 'localizations' next to 'values' - an object keyed by
-  culture (for example uk-UA), then column name, with text values:
+  culture (for example uk-UA), then column name, with string values (other JSON values
+  are refused); a value in the connected user's own culture must equal the row's value
+  in 'values', or be left out:
     {"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}
   A plain insert writes a localizable column in the connected user's culture only; the
   other cultures are written per record (DataService UpdateLocalizationQuery) before the
@@ -36,7 +38,8 @@ BEHAVIOR:
   active on the site, a column is not localizable, or a value is longer than its column
   (ShortText 50, MediumText 250, LongText 500); the message names every failure. After the
   write it reads each culture back and fails with "saved, but NOT verified" on any
-  difference; the rows and the binding are saved even then, so re-run the call to retry. The output prints one "Localized row" line per record and culture.
+  difference; the rows and the binding are saved even then, so re-run the call to retry.
+  A failure partway lists the records and cultures already translated. The output prints one "Localized row" line per record and culture.
   To translate records that already exist, run the command again with the same rows: a row
   matched by Name or Id is not rewritten, only its translations are added. Pass the record's
   Id or its exact Name in the connected user's culture; a row that matches neither is inserted

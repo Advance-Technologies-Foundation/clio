@@ -166,18 +166,38 @@ internal sealed class DataBindingDbLocalizerTests {
 			.WithMessage($"*Column 'UsrTitle' is not a column of '{SchemaName}'*");
 	}
 
-	[Test]
-	[Description("Refuses a value longer than the column allows and names the row, the culture and the column (ENG-105291 TC-07).")]
-	public void Validate_Should_Refuse_Value_Longer_Than_Column() {
+	[TestCase(27, 50)]
+	[TestCase(28, 250)]
+	[TestCase(30, 500)]
+	[Description("Accepts a value at the column's length limit and refuses one character more, naming the row, the culture and the column (ENG-105291 TC-07).")]
+	public void Validate_Should_Refuse_Value_Longer_Than_Column(int dataValueType, int limit) {
 		// Arrange
-		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", new string('я', 251)));
+		IReadOnlyList<DataBindingSchemaColumn> runtimeColumns = [new(Guid.NewGuid(), "Name", dataValueType, null)];
+		DataBindingRowLocalization atLimit = Row("New", ("uk-UA", "Name", new string('я', limit)));
+		DataBindingRowLocalization overLimit = Row("New", ("uk-UA", "Name", new string('я', limit + 1)));
 
 		// Act
-		Action act = () => _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+		Action acceptAtLimit = () => _sut.Validate(SchemaName, PackageUId, runtimeColumns, [atLimit]);
+		Action refuseOverLimit = () => _sut.Validate(SchemaName, PackageUId, runtimeColumns, [overLimit]);
 
 		// Assert
-		act.Should().Throw<InvalidOperationException>(because: "the database would cut or reject the value")
-			.WithMessage("*Row 'New' [uk-UA] column 'Name': 251 characters, the column allows 250*");
+		acceptAtLimit.Should().NotThrow(because: "a value of exactly the column length fits");
+		refuseOverLimit.Should().Throw<InvalidOperationException>(because: "the database would cut or reject the value")
+			.WithMessage($"*Row 'New' [uk-UA] column 'Name': {limit + 1} characters, the column allows {limit}*");
+	}
+
+	[Test]
+	[Description("Does not limit a column whose runtime type has no fixed length, such as code 26 (Mapping).")]
+	public void Validate_Should_Not_Limit_Column_Without_Fixed_Length() {
+		// Arrange
+		IReadOnlyList<DataBindingSchemaColumn> runtimeColumns = [new(Guid.NewGuid(), "Name", 26, null)];
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", new string('я', 501)));
+
+		// Act
+		Action act = () => _sut.Validate(SchemaName, PackageUId, runtimeColumns, [row]);
+
+		// Assert
+		act.Should().NotThrow(because: "26 is Mapping, not a text type with a 500-character limit");
 	}
 
 	[Test]
@@ -215,6 +235,8 @@ internal sealed class DataBindingDbLocalizerTests {
 		JsonNode cultures = JsonNode.Parse(parameter["value"]!.GetValue<string>())!;
 		cultures["uk-UA"]!.GetValue<string>().Should().Be("Нове", because: "the requested translation is written");
 		cultures["en-US"]!.GetValue<string>().Should().Be("New", because: "the profile-culture value is kept");
+		request["columnValues"]!["items"]!.AsObject().Select(item => item.Key).Should().Equal(["Name"],
+			because: "only the localized columns are written, the other columns of the record stay as they are");
 		result.Should().ContainSingle(because: "one row was written in one culture")
 			.Which.Should().BeEquivalentTo(new { RowId, RowLabel = "New", Culture = "uk-UA" },
 				because: "the result names the record and the culture");
@@ -287,6 +309,51 @@ internal sealed class DataBindingDbLocalizerTests {
 	}
 
 	[Test]
+	[Description("Reports the rows already written when a later row's write fails, so the caller knows which records carry translations (ENG-105291 AC-6).")]
+	public void Write_Should_Report_Written_Rows_When_A_Later_Row_Fails() {
+		// Arrange
+		const string secondRowId = "6f1c2f5a-6a4f-4c1e-9d1b-2b3c4d5e6f71";
+		SetupReads(profileName: "New", localizedName: "Нове", failingUpdateRowId: secondRowId);
+		DataBindingRowLocalization first = Row("New", ("uk-UA", "Name", "Нове"));
+		DataBindingRowLocalization second = Row("Done", ("uk-UA", "Name", "Готово"));
+
+		// Act
+		Action act = () => _sut.Write(new DataBindingLocalizationPlan("en-US"), SchemaName,
+			[(RowId, first), (secondRowId, second)]);
+
+		// Assert
+		DataBindingLocalizationException failure = act.Should().Throw<DataBindingLocalizationException>(
+				because: "the second row's write was refused by the server")
+			.WithMessage("*'Done'*failed*").Which;
+		failure.Written.Should().ContainSingle(because: "only the first row landed before the failure")
+			.Which.Should().BeEquivalentTo(new { RowId, RowLabel = "New", Culture = "uk-UA" },
+				because: "the failure names the record and culture already written");
+		_posts.Count(post => post.Url == "route:UpdateLocalizationQuery").Should().Be(2,
+			because: "both rows were attempted, the second one failed");
+	}
+
+	[Test]
+	[Description("Sends no translation for a record that is not found and reports nothing as written.")]
+	public void Write_Should_Not_Write_When_Record_Is_Not_Found() {
+		// Arrange
+		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(callInfo => {
+			_posts.Add((callInfo.ArgAt<string>(0), callInfo.ArgAt<string>(1)));
+			return """{"success":true,"rows":[]}""";
+		});
+		DataBindingRowLocalization row = Row("New", ("uk-UA", "Name", "Нове"));
+
+		// Act
+		Action act = () => _sut.Write(new DataBindingLocalizationPlan("en-US"), SchemaName, [(RowId, row)]);
+
+		// Assert
+		act.Should().Throw<DataBindingLocalizationException>(because: "a missing record cannot carry a translation")
+			.WithMessage($"*Record '{RowId}' of '{SchemaName}' was not found*")
+			.Which.Written.Should().BeEmpty(because: "nothing was written");
+		_posts.Should().NotContain(post => post.Url == "route:UpdateLocalizationQuery",
+			because: "no write is sent for a record that does not exist");
+	}
+
+	[Test]
 	[Description("Refuses the localizations before any write when the connected user's culture cannot be read, because the profile-culture value could not be carried along.")]
 	public void Validate_Should_Refuse_When_Profile_Culture_Is_Unknown() {
 		// Arrange
@@ -302,10 +369,16 @@ internal sealed class DataBindingDbLocalizerTests {
 			.WithMessage("*nothing was written*culture of the connected user could not be read (endpoint unreachable)*");
 	}
 
-	private void SetupReads(string profileName, string? localizedName) {
+	private void SetupReads(string profileName, string? localizedName, string? failingUpdateRowId = null) {
 		_client.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>()).Returns(callInfo => {
 			string url = callInfo.ArgAt<string>(0);
-			_posts.Add((url, callInfo.ArgAt<string>(1)));
+			string body = callInfo.ArgAt<string>(1);
+			_posts.Add((url, body));
+			if (failingUpdateRowId is not null && url == "route:UpdateLocalizationQuery"
+				&& body.Contains(failingUpdateRowId, StringComparison.OrdinalIgnoreCase)) {
+				return """{"success":false,"errorInfo":{"message":"Update refused"}}""";
+			}
+
 			return url switch {
 				"route:Select" => $$"""{"success":true,"rows":[{"Name":"{{profileName}}"}]}""",
 				"route:SelectLocalizationQuery" => localizedName is null

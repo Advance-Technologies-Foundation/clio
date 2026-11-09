@@ -41,7 +41,9 @@ without creating a duplicate.
 ### Translations
 
 A row may carry `localizations` next to `values`: an object keyed by culture (for example `uk-UA`),
-then column name, with text values.
+then column name, with text values. Each translation must be a JSON string (create-data-binding
+also accepts other JSON values here; this command does not). A translation in the connected user's
+own culture must equal the row's value of the same column in `values`, or be left out.
 
 ```json
 [{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове","Description":"Новий ремонт"}}}]
@@ -52,8 +54,10 @@ are written per record through DataService `UpdateLocalizationQuery` before the 
 the package carries every culture and an install on another site brings them along.
 
 - Before any write the command refuses the whole call when a culture is not active on the site, a
-  column is not localizable, or a value is longer than its column (ShortText 50, MediumText 250,
-  LongText 500). The message names every failure.
+  column is not localizable, a value is longer than its column (ShortText 50, MediumText 250,
+  LongText 500), or a translation in the connected user's culture differs from the row's value in
+  `values`. The message names every failure.
+- When a write fails partway, the error lists the records and cultures already translated.
 - After the write it reads each culture back and fails with "saved, but NOT verified" on any difference.
   The rows and the binding are saved even then, so run the same call again to retry the translations.
 - The output prints one `Localized row` line per record and culture.

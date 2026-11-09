@@ -504,6 +504,9 @@ internal sealed class DataBindingDbService(
 		List<DataBindingRowLocalization> localizations = rowInputs?.Select(input => input.Localization).ToList() ?? [];
 		DataBindingLocalizationPlan? localizationPlan = localizer.Validate(
 			options.SchemaName, packageRef.UId, schema.SchemaColumns, localizations);
+		if (localizationPlan is not null) {
+			ValidateProfileCultureValues(rowInputs ?? [], localizationPlan.ProfileCulture);
+		}
 
 		Guid? existingBindingUId = bindingWriter.FindBinding(packageRef.UId, bindingName)?.UId;
 		List<Dictionary<string, JsonNode?>> existingBoundRows = existingBindingUId.HasValue
@@ -530,20 +533,77 @@ internal sealed class DataBindingDbService(
 				localizationFailure = exception;
 			}
 		}
-		DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(
-			schema, existingBoundRows, rows, LocalizedColumnRowSet(localizations));
-
-		bindingWriter.SaveBinding(
-			packageRef, bindingName, options.SchemaName, bindingSchema, boundRecordIds, existingBindingUId);
+		try {
+			DataBindingDbSchema bindingSchema = BuildBindingSchemaProjection(
+				schema, existingBoundRows, rows, LocalizedColumnRowSet(localizations));
+			bindingWriter.SaveBinding(
+				packageRef, bindingName, options.SchemaName, bindingSchema, boundRecordIds, existingBindingUId);
+		}
+		catch (Exception exception) when (localizationFailure is not null && exception is not OperationCanceledException) {
+			throw new InvalidOperationException(
+				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)} Saving binding "
+				+ $"'{bindingName}' of package '{options.PackageName}' then failed too, so the binding was NOT saved: "
+				+ exception.Message,
+				exception);
+		}
 
 		if (localizationFailure is not null) {
 			throw new InvalidOperationException(
-				$"{localizationFailure.Message} The rows and binding '{bindingName}' of package "
-				+ $"'{options.PackageName}' were saved; run the same call again to retry the translations.",
+				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)} The rows and binding "
+				+ $"'{bindingName}' of package '{options.PackageName}' were saved; run the same call again to retry the "
+				+ "translations.",
 				localizationFailure);
 		}
 
 		return new DataBindingResult(bindingName, createdRows, skippedRows, localizationWrites);
+	}
+
+	/// <summary>
+	/// Lists the rows and cultures a failed localization write had already written, so the caller knows which
+	/// records now carry translations.
+	/// </summary>
+	private static string DescribeWrittenLocalizations(Exception localizationFailure) {
+		if (localizationFailure is not DataBindingLocalizationException { Written.Count: > 0 } failure) {
+			return string.Empty;
+		}
+
+		return " Translations already written: "
+			+ string.Join("; ", failure.Written.Select(write =>
+				$"{write.RowId} ({write.RowLabel}) [{write.Culture}]: {string.Join(", ", write.Columns)}"))
+			+ ".";
+	}
+
+	/// <summary>
+	/// Refuses a profile-culture translation that differs from the row's own value of the same column. The insert
+	/// writes <c>values</c> in the profile culture, so a different translation would rename the record after the
+	/// insert, and a re-run of the same call - which matches existing rows by <c>Name</c> - would insert a duplicate.
+	/// </summary>
+	/// <exception cref="InvalidOperationException">A row's profile-culture translation differs from its value.</exception>
+	private static void ValidateProfileCultureValues(IEnumerable<DataBindingDbRowInput> rowInputs, string profileCulture) {
+		List<string> failures = [];
+		foreach (DataBindingDbRowInput input in rowInputs) {
+			KeyValuePair<string, IReadOnlyDictionary<string, string>> profileTranslations = input.Localization.Cultures
+				.FirstOrDefault(culture => string.Equals(culture.Key, profileCulture, StringComparison.OrdinalIgnoreCase));
+			if (profileTranslations.Value is null) {
+				continue;
+			}
+
+			foreach ((string column, string translation) in profileTranslations.Value) {
+				KeyValuePair<string, JsonNode?> value = input.Values.FirstOrDefault(pair =>
+					string.Equals(pair.Key, column, StringComparison.OrdinalIgnoreCase));
+				if (value.Key is not null && !string.Equals(value.Value?.ToString(), translation, StringComparison.Ordinal)) {
+					failures.Add(
+						$"Row '{input.Localization.RowLabel}' [{profileCulture}] column '{column}': the translation "
+						+ $"'{translation}' differs from the row value '{value.Value}'; the profile culture '{profileCulture}' "
+						+ "takes its value from 'values', so drop it from 'localizations' or make the two equal.");
+				}
+			}
+		}
+
+		if (failures.Count > 0) {
+			throw new InvalidOperationException(
+				"Localizations were refused and nothing was written: " + string.Join(" ", failures));
+		}
 	}
 
 	/// <summary>
@@ -1156,7 +1216,7 @@ internal sealed class DataBindingDbService(
 	private static string DescribeRow(Dictionary<string, JsonNode?> values, int index) {
 		foreach (string column in new[] { "Name", "Id" }) {
 			if (values.TryGetValue(column, out JsonNode? node) && !string.IsNullOrWhiteSpace(node?.ToString())) {
-				return node!.ToString();
+				return node.ToString();
 			}
 		}
 
