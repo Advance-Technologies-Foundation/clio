@@ -85,9 +85,14 @@ public sealed class CompileBusinessProcessService(
 		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.CompileProcess, environmentSettings);
 		// ProcessDesignService uses BodyStyle=Wrapped: the request is wrapped under a "request" property.
 		string requestBody = new JsonObject { ["request"] = requestObject }.ToJsonString();
-		logger.WriteInfo(
-			$"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile reloads the runtime "
-			+ "for every user of the environment and usually takes a few minutes...");
+		// The cost depends on the host: only .NET Framework reloads on a compile; a .NET (Core) host reloads nothing
+		// until the restart the compiled code then needs.
+		logger.WriteInfo(environmentSettings.IsNetCore
+			? $"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile usually takes a "
+				+ "few minutes; on this .NET (Core) host its code then runs only after an application restart, which "
+				+ "reloads the application for every user..."
+			: $"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile reloads the "
+				+ "runtime for every user of the environment and usually takes a few minutes...");
 
 		string responseBody;
 		try {
@@ -173,7 +178,7 @@ public sealed class CompileBusinessProcessService(
 			IsRestartRequired(result, environmentSettings));
 	}
 
-	// CrtProcessBuilder 1.6.6.143+ says it. A package that does not - rarely reached, since the package requirement
+	// CrtProcessBuilder 1.6.6.144+ says it. A package that does not - rarely reached, since the package requirement
 	// refuses one older than the bundled version before the compile runs, but possible for a cut of a parallel branch
 	// stamped at or above it - leaves the environment's registration to decide: on a .NET (Core) host the running application keeps the configuration assembly it loaded at startup
 	// whatever the package version (measured on a 10.2.1024 .NET 8 stand, ENG-105744), so the fallback is the same
@@ -269,7 +274,7 @@ public sealed class CompileBusinessProcessService(
 		[JsonPropertyName("errorCount")]
 		public int ErrorCount { get; set; }
 
-		// Nullable: absent from the answer of a package older than 1.6.6.143, which is not the same as false.
+		// Nullable: absent from the answer of a package older than 1.6.6.144, which is not the same as false.
 		[JsonPropertyName("restartRequired")]
 		public bool? RestartRequired { get; set; }
 	}
@@ -467,7 +472,7 @@ public sealed record CompileBusinessProcessError(string? FileName, int Line, int
 /// <param name="Errors">The compiler errors reported, the process's own first; capped by the server.</param>
 /// <param name="ErrorCount">The total number of errors, including any past the cap.</param>
 /// <param name="RestartRequired">True when the compile succeeded but the compiled code runs only after the
-/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.143+, and derived from the
+/// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.144+, and derived from the
 /// environment's <c>IsNetCore</c> registration when the package does not say.</param>
 public sealed record CompileBusinessProcessResult(bool Success, string? ErrorMessage, string? ProcessName,
 	string? PackageName, string? PackageType, bool CompileRequired, bool Compiled, long DurationMs,

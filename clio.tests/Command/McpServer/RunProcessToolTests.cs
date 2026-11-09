@@ -64,7 +64,7 @@ public sealed class RunProcessToolTests {
 	private static Harness BuildHarness(List<ProcessParameter> signature, string platformResponseJson = null,
 			IProcessRunLogReader processRunLogReader = null, IProcessVersionLibReader versionLibReader = null,
 			IProcessRunMonitor runMonitor = null, ICreatedRecordWatcher recordWatcher = null,
-			ICreatedRecordCleaner recordCleaner = null, IRunRecordProvenance provenance = null) {
+			ICreatedRecordCleaner recordCleaner = null, IRunRecordProvenance provenance = null, bool isNetCore = false) {
 		IProcessModelGenerator generator = Substitute.For<IProcessModelGenerator>();
 		generator.Generate(Arg.Any<GenerateProcessModelCommandOptions>())
 			.Returns(_ => new ProcessModelType(Guid.NewGuid(), ProcessCode) {
@@ -96,7 +96,8 @@ public sealed class RunProcessToolTests {
 			new RunVerificationServices(runMonitor ?? Substitute.For<IProcessRunMonitor>(),
 				recordWatcher ?? Substitute.For<ICreatedRecordWatcher>(),
 				recordCleaner ?? Substitute.For<ICreatedRecordCleaner>(),
-				provenance ?? TiesEverything())) { Sleep = _ => { } };
+				provenance ?? TiesEverything()),
+			new EnvironmentSettings { IsNetCore = isNetCore }) { Sleep = _ => { } };
 		return new Harness(command, applicationClient, serviceUrlBuilder, versionLibReader, bodies, timeouts, attempts);
 	}
 
@@ -394,7 +395,8 @@ public sealed class RunProcessToolTests {
 		IProcessVersionLibReader reader = ActiveVersion();
 		RunProcessCommand command = new(generator, applicationClient, Substitute.For<IServiceUrlBuilder>(),
 			NothingLogged(), reader, ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
-			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()));
+			Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()),
+			new EnvironmentSettings());
 
 		// Act
 		command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out _);
@@ -960,15 +962,35 @@ public sealed class RunProcessToolTests {
 		response.Error.Should().Contain("compile-creatio with process-name",
 				because: "a script task saved since the last compile is the usual cause")
 			.And.Contain("may already have run", "the elements before the failing one ran before it stopped")
-			.And.Contain("On .NET Framework, if that compile succeeded only minutes ago",
-				"only that host reloads after a compile, so only there can the runtime still be reloading")
 			.And.Contain("run again in about two minutes before compiling again",
 				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing")
-			.And.Contain(CompileBusinessProcessCommand.RestartRequiredMarker,
-				"the agent recognises the .NET case by the warning the compile gave it")
-			.And.Contain("do not compile again - ask the user, then run restart-by-environment-name",
-				"on a .NET (Core) host the compiled code runs only after a restart, and another compile changes nothing");
+			.And.NotContain("restart-by-environment-name",
+				"a .NET Framework host reloads on the compile itself, so the hint does not send it to a restart");
 		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("On an environment registered as .NET (Core) the missing-compiled-method hint sends the agent to a restart when a compile already succeeded with no restart since, and to a compile followed by a restart otherwise - never to the two-minute wait, which only a host that reloads on a compile can use.")]
+	public void TryRun_Should_Point_A_NetCore_Host_To_The_Restart_When_The_Compiled_Method_Is_Missing() {
+		// Arrange
+		Harness harness = BuildHarness(MigratorSignature(), """{"processId":"0f5e3a2a-2c8f-4f1e-9d0b-6d4b2f1a7c31","processStatus":3,"success":false,"errorInfo":{"errorCode":"KeyNotFoundException","message":"The given key was not present in the dictionary."}}""", isNetCore: true);
+
+		// Act
+		harness.Command.TryRun(new RunProcessOptions { ProcessName = ProcessCode }, out RunProcessResponse response);
+
+		// Assert
+		response.Error.Should().Contain("This .NET (Core) host runs the configuration assembly it loaded at startup",
+				because: "the host is read from the environment's registration, not from the agent's memory")
+			.And.Contain(CompileBusinessProcessCommand.RestartRequiredMarker,
+				because: "the agent recognises a compile with no restart since by the warning that compile gave")
+			.And.Contain("do not compile again: ask the user, then run restart-by-environment-name",
+				because: "another compile changes nothing until the application restarts")
+			.And.Contain("the application restarted since that compile, or the process changed after it",
+				because: "a script task added after a restart needs a new compile, not a second restart")
+			.And.Contain("and restart after it", because: "that compile too runs only after a restart on this host")
+			.And.NotContain("about two minutes",
+				because: "a .NET (Core) host reloads nothing on a compile, so no wait makes the new code run");
 	}
 
 	[Test]
@@ -1348,7 +1370,8 @@ public sealed class RunProcessToolTests {
 		ManualResetEventSlim finished)
 		: RunProcessCommand(generator, applicationClient, serviceUrlBuilder, processRunLogReader, ActiveVersion(),
 			ConsoleLogger.Instance, new RunVerificationServices(Substitute.For<IProcessRunMonitor>(),
-				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything())) {
+				Substitute.For<ICreatedRecordWatcher>(), Substitute.For<ICreatedRecordCleaner>(), TiesEverything()),
+			new EnvironmentSettings()) {
 
 		public override bool TryRun(RunProcessOptions options, out RunProcessResponse response) {
 			try {
