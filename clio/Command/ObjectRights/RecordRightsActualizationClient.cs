@@ -113,7 +113,9 @@ public sealed class RecordRightsActualizationClient : IRecordRightsActualization
 				Status = OutcomeUnknownStatus, Error = $"RunProcess returned a response clio could not read: {e.Message}"
 			};
 		}
-		return RunProcessCommand.BuildResponse(started, ProcessName);
+		// A shipped platform process, never one an agent saved a script task into, so the missing-compiled-method
+		// hint the host would change does not apply to it.
+		return RunProcessCommand.BuildResponse(started, ProcessName, isNetCore: false);
 	}
 
 	/// <inheritdoc />
