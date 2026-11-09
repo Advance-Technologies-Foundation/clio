@@ -39,8 +39,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		base.AdditionalRegistrations(containerBuilder);
 		_applicationClient = Substitute.For<IApplicationClient>();
 		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
-		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(true);
-		_backgroundWriter.Complete(default, default, default).ReturnsForAnyArgs(ThemeBackgroundOutcome.None);
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackground>(), out Arg.Any<string>()).Returns(true);
+		_backgroundWriter.Complete(default, default, default, default).ReturnsForAnyArgs(ThemeBackgroundOutcome.None);
 		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _backgroundWriter);
@@ -180,12 +180,13 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		exitCode.Should().Be(0, because: "an empty body is the contract default for a successful update");
 	}
 
-	[TestCase("#1A2B3C", false, null, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
-	[TestCase(null, true, null, "{}")]
-	[TestCase("#1A2B3C", false, "", "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[TestCase(null, "#1A2B3C", null, "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
+	[TestCase(null, "null", null, "{}")]
+	[TestCase("null", null, null, "{}")]
+	[TestCase(null, "#1A2B3C", "", "{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}")]
 	[Category("Unit")]
-	[Description("Sends only the id and the background when no content field is given or a given one is empty, so the stored caption, class name and CSS are kept; a removal sends an empty background.")]
-	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string color, bool remove,
+	[Description("Sends only the id and the background when no content field is given or a given one is empty, so the stored caption, class name and CSS are kept; null in either background argument sends an empty background, which removes it.")]
+	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string imageId, string color,
 		string content, string expectedBackground) {
 		string body = null;
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
@@ -196,7 +197,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 			});
 
 		_command.Execute(new UpdateThemeOptions {
-			Id = ThemeId, BackgroundColor = color, RemoveBackground = remove,
+			Id = ThemeId, BackgroundImageId = imageId, BackgroundColor = color,
 			Caption = content, CssClassName = content, CssContent = content
 		});
 
@@ -211,7 +212,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
 	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, bool imageFound,
 		int expectedCalls, int expectedMissingThemeErrors) {
-		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackgroundArguments>(), out Arg.Any<string>()).Returns(imageFound);
+		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackground>(), out Arg.Any<string>()).Returns(imageFound);
 		IReadOnlyList<ThemeDescriptor> themes = [
 			new ThemeDescriptor {
 				Id = catalogThemeId,
@@ -232,7 +233,7 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 
 		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
-		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
+		_backgroundWriter.Received(expectedCalls).Complete(Arg.Any<ThemeBackground>(), false, ThemeId, "UsrBranding");
 		_logger.Received(expectedMissingThemeErrors)
 			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
 	}
@@ -294,7 +295,50 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
 
 		exitCode.Should().Be(0, because: "the package is read from the catalog path with or without a leading slash");
-		_backgroundWriter.Received(1).Complete(Arg.Any<ThemeBackgroundArguments>(), ThemeId, "UsrBranding");
+		_backgroundWriter.Received(1).Complete(Arg.Any<ThemeBackground>(), false, ThemeId, "UsrBranding");
+	}
+
+	[TestCase("null", null)]
+	[TestCase(null, "null")]
+	[Category("Unit")]
+	[Description("Logs the removal and hands the empty background to the writer when either background argument is null, without reading the theme catalog.")]
+	public void Execute_ShouldReportTheRemoval_WhenABackgroundArgumentIsNull(string imageId, string color) {
+		StubUpdateThemeSuccess();
+
+		int exitCode = _command.Execute(new UpdateThemeOptions {
+			Id = ThemeId, BackgroundImageId = imageId, BackgroundColor = color, KeepIconBackground = true
+		});
+
+		exitCode.Should().Be(0, because: "null alone is a valid background update");
+		_logger.Received(1).WriteInfo("Removed the theme background.");
+		_backgroundWriter.Received(1).Complete(Arg.Is<ThemeBackground>(background => background.RemovesBackground), true,
+			ThemeId, null);
+		_themeCatalog.DidNotReceiveWithAnyArgs().TryGetAvailableThemes(default, out _, out _);
+	}
+
+	[Test, Category("Unit")]
+	[Description("Refuses null together with the other background argument before any HTTP call.")]
+	public void Execute_ShouldFailFastWithoutHttp_WhenNullIsCombinedWithAnotherBackgroundArgument() {
+		int exitCode = _command.Execute(new UpdateThemeOptions {
+			Id = ThemeId, BackgroundImageId = "null", BackgroundColor = "#1A2B3C"
+		});
+
+		exitCode.Should().Be(1, because: "a call carries at most one background argument, and null is one");
+		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
+		_logger.Received(1).WriteError(
+			"background-image-id and background-color cannot be combined: pass at most one background argument.");
+	}
+
+	[TestCase("null", null, true)]
+	[TestCase(null, "null", true)]
+	[TestCase(null, null, false)]
+	[Category("Unit")]
+	[Description("Puts a null background argument under the background version floor, because an older ThemeService drops the removal while reporting success.")]
+	public void HasBackgroundArgument_ShouldCountNull_WhenItRemovesTheBackground(string imageId, string color,
+		bool expected) {
+		new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = imageId, BackgroundColor = color }
+			.HasBackgroundArgument.Should().Be(expected,
+				because: "the version floor guards every background argument, a removal included");
 	}
 
 	private void StubCatalog(bool read, params ThemeDescriptor[] themes) {

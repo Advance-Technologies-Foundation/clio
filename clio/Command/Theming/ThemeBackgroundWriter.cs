@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using Clio.Command.Branding;
 using Clio.Common;
 using Clio.Package;
@@ -20,60 +18,57 @@ public sealed record ThemeBackgroundOutcome(IReadOnlyList<string> Warnings, stri
 
 public interface IThemeBackgroundWriter {
 
-	bool TryConfirmImage(ThemeBackgroundArguments background, out string error);
+	bool TryConfirmImage(ThemeBackground background, out string error);
 
-	ThemeBackgroundOutcome Complete(ThemeBackgroundArguments background, string themeId, string packageName);
+	ThemeBackgroundOutcome Complete(ThemeBackground background, bool keepIconBackground, string themeId,
+		string packageName);
 }
 
-internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, IPackageDataBinder packageDataBinder,
-	IApplicationClient applicationClient, IServiceUrlBuilder serviceUrlBuilder, ILogger logger) : IThemeBackgroundWriter {
+internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroundService,
+	IPackageDataBinder packageDataBinder, ILogger logger) : IThemeBackgroundWriter {
 
-	private const string PanelIconBackgroundFeatureCode = SetBackgroundImageCommand.PanelIconBackgroundFeatureCode;
+	private const string PanelIconBackgroundFeatureCode = BrandingBackgroundService.PanelIconBackgroundFeatureCode;
 
 	private static readonly IReadOnlyList<string> SysImageColumns = ["Id", "Name", "Data", "MimeType"];
 
-	public bool TryConfirmImage(ThemeBackgroundArguments background, out string error) {
+	public bool TryConfirmImage(ThemeBackground background, out string error) {
 		error = null;
-		if (!background.HasImageId) {
+		if (background?.ImageId is null) {
 			return true;
 		}
-		string imageId = background.ImageGuid.ToString();
-		try {
-			ImageRows found = SelectQueryHelper.ExecuteSelectQuery<ImageRows>(applicationClient, serviceUrlBuilder,
-				SelectQueryHelper.BuildSelectQuery("SysImage", [new SelectQueryHelper.SelectQueryColumnDefinition("Id", "Id")],
-					[new SelectQueryHelper.SelectQueryFilterDefinition("Id", imageId, SelectQueryHelper.GuidDataValueType)], 1));
-			if (found.Rows.Count > 0) {
-				return true;
-			}
+		Guid imageId = Guid.Parse(background.ImageId);
+		if (!backgroundService.TryFindUploadedImage(imageId, out bool exists, out string checkError)) {
+			error = $"Could not check image '{imageId}' in the environment, so nothing was changed: " +
+				SensitiveErrorTextRedactor.Redact(checkError);
+			return false;
+		}
+		if (!exists) {
 			error = $"No uploaded image with id '{imageId}' was found in the environment, so nothing was changed. " +
 				"Upload the file first with upload-image and pass the id it prints.";
-		} catch (Exception exception) when (exception is not OperationCanceledException) {
-			error = $"Could not check image '{imageId}' in the environment, so nothing was changed: " +
-				SensitiveErrorTextRedactor.Redact(exception.Message);
 		}
-		return false;
+		return exists;
 	}
 
-	public ThemeBackgroundOutcome Complete(ThemeBackgroundArguments background, string themeId, string packageName) {
+	public ThemeBackgroundOutcome Complete(ThemeBackground background, bool keepIconBackground, string themeId,
+		string packageName) {
+		if (background is null || background.RemovesBackground) {
+			return ThemeBackgroundOutcome.None;
+		}
 		List<string> warnings = [];
 		string panelIconBackground = null;
-		if (background.SetsBackground && background.KeepIconBackground) {
+		if (keepIconBackground) {
 			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} was left as it is (keep-icon-background).");
 			panelIconBackground = ThemeBackgroundOutcome.PanelIconKept;
-		} else if (background.SetsBackground) {
-			try {
-				featureState.SetFeatureState(PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
-				logger.WriteInfo($"{PanelIconBackgroundFeatureCode} is off for All employees.");
-				panelIconBackground = ThemeBackgroundOutcome.PanelIconOff;
-			} catch (Exception exception) when (exception is not OperationCanceledException) {
-				warnings.Add($"The theme background was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
-					$"feature failed, so the panel may still hide it: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
-			}
+		} else if (backgroundService.TryTurnOffPanelIconBackground("The theme background", out string warning)) {
+			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} is off for All employees.");
+			panelIconBackground = ThemeBackgroundOutcome.PanelIconOff;
+		} else {
+			warnings.Add(SensitiveErrorTextRedactor.Redact(warning));
 		}
-		if (!background.HasImageId) {
+		if (background.ImageId is null) {
 			return new ThemeBackgroundOutcome(warnings, PanelIconBackground: panelIconBackground);
 		}
-		Guid imageId = background.ImageGuid;
+		Guid imageId = Guid.Parse(background.ImageId);
 		string imagePackage = null;
 		try {
 			string boundPackage = packageDataBinder.UsePackage(packageName);
@@ -89,11 +84,5 @@ internal sealed class ThemeBackgroundWriter(IFeatureStateService featureState, I
 				$"theme's package failed: {SensitiveErrorTextRedactor.Redact(exception.Message)}");
 		}
 		return new ThemeBackgroundOutcome(warnings, imagePackage, panelIconBackground);
-	}
-
-	private sealed class ImageRows : SelectQueryHelper.SelectQueryResponseBaseDto {
-
-		[JsonPropertyName("rows")]
-		public List<JsonElement> Rows { get; init; } = [];
 	}
 }

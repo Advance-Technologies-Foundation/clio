@@ -1894,6 +1894,19 @@ public class CreateThemeToolTests {
 		}, because: "losing keep-icon-background would turn the panel icon background off against the caller's request");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("Binds a JSON null background argument of create-theme as an absent one with the real MCP serializer options, because create-theme has no background to remove.")]
+	public void CreateThemeArgs_ShouldBindAJsonNullBackgroundArgumentAsAbsent() {
+		CreateThemeArgs args = JsonSerializer.Deserialize<CreateThemeArgs>(
+			"""{"environment-name":"docker_fix2","css-content":".x{}","background-image-id":null,"background-color":null}""",
+			Clio.BindingsModule.CreateMcpSerializerOptions())!;
+
+		new { args.BackgroundImageId, args.BackgroundColor }.Should().BeEquivalentTo(
+			new { BackgroundImageId = (string)null, BackgroundColor = (string)null },
+			because: "a JSON null in create-theme means no background, exactly like an omitted argument");
+	}
+
 	private sealed class ThrowingCreateThemeCommand(string failureMessage) : CreateThemeCommand(
 		Substitute.For<IApplicationClient>(),
 		new EnvironmentSettings(),

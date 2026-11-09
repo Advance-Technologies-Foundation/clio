@@ -2,11 +2,14 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using Clio.Command;
 using Clio.Command.McpServer.Tools;
 using Clio.Command.Theming;
 using Clio.Common;
 using FluentAssertions;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using NSubstitute;
 using NUnit.Framework;
@@ -325,28 +328,75 @@ public class UpdateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
-	[Test]
-	[Description("Resolves the command for a remove-background call that has no caption, css-class-name or css-content, and leaves those fields unset so the stored ones are kept.")]
+	[TestCase("\"background-image-id\":null", "null", null)]
+	[TestCase("\"background-color\":null", null, "null")]
+	[TestCase("\"background-color\":\"null\"", null, "null")]
+	[TestCase("\"background-color\":\"#1A2B3C\"", null, "#1A2B3C")]
+	[Description("Binds the background arguments through the MCP SDK on the production serializer options and forwards a JSON null as the null value that removes the background, with caption, css-class-name and css-content left out so the stored ones are kept.")]
 	[Category("Unit")]
-	public void UpdateTheme_ShouldMapRemoveBackground_WhenNoContentFieldIsGiven() {
+	public async Task UpdateTheme_ShouldForwardJsonNullAsARemoval_WhenTheSdkBindsTheArguments(string background,
+		string expectedImageId, string expectedColor) {
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
 		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
-		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
-			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, RemoveBackground: true));
+		CallToolResult result = await InvokeThroughSdkAsync(tool,
+			$"{{\"environment-name\":\"docker_fix2\",\"id\":\"{BackgroundThemeId}\",{background}}}");
 
-		result.ExitCode.Should().Be(0, because: "a background argument makes caption, css-class-name and css-content optional");
+		result.IsError.Should().NotBe(true, because: "a background argument alone is a valid update");
 		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
 			options.Id == BackgroundThemeId &&
-			options.RemoveBackground &&
+			options.BackgroundImageId == expectedImageId &&
+			options.BackgroundColor == expectedColor &&
 			options.Caption == null &&
 			options.CssClassName == null &&
 			options.CssContent == null &&
-			options.BackgroundImageId == null &&
-			options.BackgroundColor == null &&
 			!options.KeepIconBackground));
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Binds a full overwrite without background arguments through the MCP SDK and leaves both background options unset, so the stored background is kept.")]
+	[Category("Unit")]
+	public async Task UpdateTheme_ShouldKeepTheBackground_WhenTheSdkBindsNoBackgroundArgument() {
+		ConsoleLogger.Instance.ClearMessages();
+		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
+		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
+
+		await InvokeThroughSdkAsync(tool,
+			$"{{\"environment-name\":\"docker_fix2\",\"id\":\"{BackgroundThemeId}\",\"caption\":\"Ocean\"," +
+			"\"css-class-name\":\"ocean-theme\",\"css-content\":\".ocean-theme{}\"}");
+
+		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
+			options.Caption == "Ocean" &&
+			options.BackgroundImageId == null &&
+			options.BackgroundColor == null));
+		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	[Test]
+	[Description("Advertises background-image-id and background-color in the emitted update-theme input schema with the same type as the other optional string arguments, and with their descriptions.")]
+	[Category("Unit")]
+	public void UpdateThemeTool_ShouldTypeTheBackgroundArgumentsAsStrings_InEmittedInputSchema() {
+		JsonElement properties = CreateSdkTool(new UpdateThemeTool(new FakeUpdateThemeCommand(), ConsoleLogger.Instance,
+				Substitute.For<IToolCommandResolver>()))
+			.ProtocolTool.InputSchema.GetProperty("properties").GetProperty("args").GetProperty("properties");
+
+		string[] TypesOf(string name) {
+			JsonElement type = properties.GetProperty(name).GetProperty("type");
+			return type.ValueKind == JsonValueKind.Array
+				? type.EnumerateArray().Select(item => item.GetString()).ToArray()
+				: [type.GetString()];
+		}
+
+		new {
+			ImageId = TypesOf("background-image-id"),
+			Color = TypesOf("background-color")
+		}.Should().BeEquivalentTo(new { ImageId = TypesOf("caption"), Color = TypesOf("caption") },
+			because: "a client sends a string, or null to remove the background, exactly as for any optional string argument");
+		properties.GetProperty("background-color").GetProperty("description").GetString().Should().Contain(
+			"null removes the theme's own background",
+			because: "the schema is where a client learns that null removes the background");
 	}
 
 	[Test]
@@ -358,14 +408,14 @@ public class UpdateThemeToolTests {
 		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
 
 		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
-			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, BackgroundImageId: BackgroundImageId,
-			KeepIconBackground: true));
+			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, KeepIconBackground: true) {
+			BackgroundImageId = BackgroundImageId
+		});
 
 		result.ExitCode.Should().Be(0, because: "an image background alone is a valid update");
 		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
 			options.BackgroundImageId == BackgroundImageId &&
 			options.KeepIconBackground &&
-			!options.RemoveBackground &&
 			options.BackgroundColor == null &&
 			options.Caption == null));
 		ConsoleLogger.Instance.ClearMessages();
@@ -390,6 +440,19 @@ public class UpdateThemeToolTests {
 			because: "without a background argument the call is a full overwrite, which needs a caption");
 		resolvedCommand.CapturedOptions.Should().BeNull(because: "a refused call must not run the command");
 		ConsoleLogger.Instance.ClearMessages();
+	}
+
+	private static McpServerTool CreateSdkTool(UpdateThemeTool tool) =>
+		McpServerTool.Create(typeof(UpdateThemeTool).GetMethod(nameof(UpdateThemeTool.UpdateTheme))!, target: tool,
+			new McpServerToolCreateOptions { SerializerOptions = Clio.BindingsModule.CreateMcpSerializerOptions() });
+
+	private static async Task<CallToolResult> InvokeThroughSdkAsync(UpdateThemeTool tool, string argsJson) {
+		McpServerTool sdkTool = CreateSdkTool(tool);
+		using JsonDocument args = JsonDocument.Parse(argsJson);
+		RequestContext<CallToolRequestParams> context = McpRequestContextTestFactory.CreateCallToolContext(
+			UpdateThemeTool.ToolName, new Dictionary<string, JsonElement> { ["args"] = args.RootElement.Clone() });
+		context.MatchedPrimitive = sdkTool;
+		return await sdkTool.InvokeAsync(context, CancellationToken.None);
 	}
 
 	private static IToolCommandResolver ResolverFor(UpdateThemeCommand resolvedCommand) {

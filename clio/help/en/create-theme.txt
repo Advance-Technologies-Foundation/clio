@@ -25,7 +25,8 @@ DESCRIPTION
     --background-color. It needs Creatio 10.2.96 or later, checked before any
     write. After the create, the UsePanelIconBackground feature is turned off
     for All employees unless --keep-icon-background is passed, and an image is
-    bound into the theme's package.
+    bound into the theme's package. A new theme has no background to remove,
+    so null is refused: update-theme removes a theme background.
 
 SYNOPSIS
     clio create-theme [options]

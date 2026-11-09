@@ -95,12 +95,13 @@ public sealed class ThemeBackgroundToolE2ETests {
 					because: "an omitted content field must be left out so the stored value is kept");
 			});
 
-	[Test]
+	[TestCase("background-image-id")]
+	[TestCase("background-color")]
 	[AllureTag(UpdateThemeTool.ToolName)]
-	[AllureName("update-theme removes the background")]
-	[AllureDescription("Calls update-theme with remove-background and no content fields through the real MCP server against a 10.2.96 stub, then checks the log reports the removal with no warning and the UpdateTheme body sends an empty background and no content field.")]
-	[Description("Removes the background of a theme through the real MCP server against a 10.2.96 stub, without caption, css-class-name or css-content.")]
-	public Task UpdateTheme_Should_Remove_The_Background() =>
+	[AllureName("update-theme removes the background when a background argument is null")]
+	[AllureDescription("Calls update-theme with a JSON null background-image-id or background-color and no content fields through the real MCP server against a 10.2.96 stub, then checks the log reports the removal with no warning and the UpdateTheme body sends an empty background and no content field.")]
+	[Description("Removes the background of a theme through the real MCP server against a 10.2.96 stub when a background argument is a JSON null, without caption, css-class-name or css-content.")]
+	public Task UpdateTheme_Should_Remove_The_Background_When_A_Background_Argument_Is_Null(string argument) =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
 			async (session, environmentName, stubServer, cancellationToken) => {
 				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
@@ -108,7 +109,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 						["args"] = new Dictionary<string, object?> {
 							["environment-name"] = environmentName,
 							["id"] = ThemeId,
-							["remove-background"] = true
+							[argument] = null
 						}
 					}, cancellationToken));
 				IReadOnlyList<RecordedStubRequest> requests = await stubServer.GetRecordedRequestsAsync(cancellationToken);

@@ -22,11 +22,12 @@ Provide the CSS through exactly one of `--css-content` (inline) or `--css-conten
 (a UTF-8 file, up to 1 MiB).
 
 Pass at most one background argument: `--background-image-id` (an image uploaded with
-[`upload-image`](upload-image.md)), `--background-color` or `--remove-background`. It needs Creatio 10.2.96 or
-later, checked before any write. With one, `--caption`, `--css-class-name` and the CSS are optional and the
-omitted ones are kept. After an image or a color is written, the `UsePanelIconBackground` feature is turned off for
-All employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package. The output says whether
-`UsePanelIconBackground` is off or was kept and names the package the image was bound into.
+[`upload-image`](upload-image.md)) or `--background-color`. The value `null` for either removes the theme's own
+background, so its users see the site background again; an image binding stays in the package. A background argument
+needs Creatio 10.2.96 or later, checked before any write. With one, `--caption`, `--css-class-name` and the CSS are
+optional and the omitted ones are kept. After an image or a color is written, the `UsePanelIconBackground` feature is
+turned off for All employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package.
+The output says whether `UsePanelIconBackground` is off or was kept and names the package the image was bound into.
 
 ## Synopsis
 
@@ -48,11 +49,9 @@ clio update-theme --id <id> --background-color <color> [options]
 
 --css-content-file              Path to a UTF-8 CSS file (mutually exclusive with --css-content)
 
---background-image-id           Id of an image uploaded with upload-image, set as the theme background
+--background-image-id           Id of an image uploaded with upload-image, set as the theme background; null removes it
 
---background-color              Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA
-
---remove-background             Remove the theme's own background; the image binding stays in the package
+--background-color              Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA; null removes it
 
 --keep-icon-background          Keep the UsePanelIconBackground feature as is
 
@@ -78,6 +77,9 @@ overwrite the theme reading the CSS from a file
 
 clio update-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 --background-image-id 6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81 -e myapp
 give the theme an image background and keep its caption, class name and CSS
+
+clio update-theme --id d53a816b-65ed-4b5b-ad3b-f739280add45 --background-color null -e myapp
+remove the theme's own background and keep its caption, class name and CSS
 ```
 
 ## Notes

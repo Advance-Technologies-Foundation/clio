@@ -103,7 +103,7 @@ public class ListThemesCommand : RemoteCommand<ListThemesOptions>, IThemeCatalog
 		}
 		themes = (parsed?.Values ?? new List<ThemeDescriptor>())
 			.Where(theme => theme is not null)
-			.Select(theme => theme with { Background = ThemeBackground.FromCatalog(theme.Background) })
+			.Select(theme => theme with { Background = theme.Background?.SanitizeForDisplay() })
 			.ToList();
 		return true;
 	}

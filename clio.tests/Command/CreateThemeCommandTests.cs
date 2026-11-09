@@ -58,9 +58,9 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 	}
 
 	private void StubImageLookup(bool found) {
-		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("SelectQuery")), Arg.Any<string>(),
+		_applicationClient.ExecuteGetRequest(Arg.Is<string>(u => u.Contains($"odata/SysImage?$filter=Id eq {ImageId}")),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns(found ? $"{{\"success\":true,\"rows\":[{{\"Id\":\"{ImageId}\"}}]}}" : "{\"success\":true,\"rows\":[]}");
+			.Returns(found ? $"{{\"value\":[{{\"Id\":\"{ImageId}\"}}]}}" : "{\"value\":[]}");
 	}
 
 	[Test, Category("Unit")]
@@ -403,5 +403,22 @@ public sealed class CreateThemeCommandTests : BaseCommandTests<CreateThemeOption
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_featureState.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created gets no follow-ups");
 		_binder.ReceivedCalls().Should().BeEmpty(because: "a theme that was not created has no package to bind into");
+	}
+
+	[TestCase("null", null, "background-image-id null removes a theme background, and only update-theme removes one")]
+	[TestCase(null, "null", "background-color null removes a theme background, and only update-theme removes one")]
+	[Category("Unit")]
+	[Description("Refuses null in a background argument before any HTTP call, because only update-theme removes a theme background.")]
+	public void TryCreateTheme_ShouldRefuseNull_WhenGivenAsABackgroundArgument(string imageId, string color,
+		string expectedError) {
+		CreateThemeOptions options = ValidOptions();
+		options.BackgroundImageId = imageId;
+		options.BackgroundColor = color;
+
+		bool succeeded = _command.TryCreateTheme(options, out _, out string errorMessage, out _);
+
+		succeeded.Should().BeFalse(because: "create-theme has no background to remove");
+		errorMessage.Should().StartWith(expectedError, because: "the caller must learn that update-theme removes a background");
+		_applicationClient.ReceivedCalls().Should().BeEmpty(because: "a refused argument must stop the command before any request");
 	}
 }

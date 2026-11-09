@@ -833,7 +833,7 @@ These tools manage custom themes — one part of branding a Creatio app: build a
   carries only a family name the build already validated against the font-family grammar.
   An optional background (`background-image-id` or `background-color`, Creatio 10.2.96+) is written by the same call.
 - `update-theme`
-  Full overwrite of an existing theme by id (caption, CSS class name, CSS content), or with a background argument (`background-image-id`, `background-color` or `remove-background`, Creatio 10.2.96+) a change of the background that keeps the omitted fields.
+  Full overwrite of an existing theme by id (caption, CSS class name, CSS content), or with a background argument (`background-image-id` or `background-color`, Creatio 10.2.96+) a change of the background that keeps the omitted fields; `null` for either removes the theme's own background.
 - `delete-theme`
   Delete a theme by id; deleting an unknown id is an error.
 - `list-themes`

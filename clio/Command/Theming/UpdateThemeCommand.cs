@@ -38,27 +38,21 @@ public class UpdateThemeOptions : RemoteCommandOptions
 	public string CssContentFile { get; set; }
 
 	[Option("background-image-id", Required = false,
-		HelpText = "Id of an image uploaded with upload-image, set as the theme background. Pass at most one of " +
-			"--background-image-id, --background-color and --remove-background; each needs Creatio " +
+		HelpText = "Id of an image uploaded with upload-image, set as the theme background; null removes the theme's " +
+			"own background. Pass at most one of --background-image-id and --background-color; each needs Creatio " +
 			ThemeServiceRequirement.BackgroundMinVersion + " or later.")]
 	public string BackgroundImageId { get; set; }
 
-	[Option("background-color", Required = false, HelpText = "Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA.")]
+	[Option("background-color", Required = false,
+		HelpText = "Solid theme background color: #RGB, #RRGGBB or #RRGGBBAA; null removes the theme's own background.")]
 	public string BackgroundColor { get; set; }
-
-	[Option("remove-background", Required = false,
-		HelpText = "Remove the theme's own background; the image binding stays in the package.")]
-	public bool RemoveBackground { get; set; }
 
 	[Option("keep-icon-background", Required = false,
 		HelpText = "Keep the UsePanelIconBackground feature as is; without it, a background turns it off for All employees.")]
 	public bool KeepIconBackground { get; set; }
 
 	[RequiresCreatioVersion(ThemeServiceRequirement.BackgroundMinVersion, Hint = ThemeServiceRequirement.BackgroundHint)]
-	public bool HasBackgroundArgument => GetBackgroundArguments().IsPresent;
-
-	internal ThemeBackgroundArguments GetBackgroundArguments() =>
-		new(BackgroundImageId, BackgroundColor, KeepIconBackground, RemoveBackground);
+	public bool HasBackgroundArgument => ThemeBackground.IsGiven(BackgroundImageId, BackgroundColor);
 }
 
 /// <summary>
@@ -96,8 +90,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 
 	/// <inheritdoc />
 	protected override void ExecuteRemoteCommand(UpdateThemeOptions options) {
-		ThemeBackgroundArguments background = options.GetBackgroundArguments();
-		if (!TryBuildRequest(options, background, out ThemeRequest request, out string packageName, out string error)) {
+		if (!TryBuildRequest(options, out ThemeRequest request, out string packageName, out string error)) {
 			Fail(error);
 			return;
 		}
@@ -108,24 +101,29 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Fail(ThemeServiceResponseParser.DescribeFailure("UpdateTheme", failure));
 			return;
 		}
-		if (background.IsPresent) {
-			Logger.WriteInfo(background.Remove
+		ThemeBackground background = request.Background;
+		if (background is not null) {
+			Logger.WriteInfo(background.RemovesBackground
 				? "Removed the theme background."
-				: $"Theme background: {request.Background.Describe()}.");
-			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.Id, packageName).Warnings);
+				: $"Theme background: {background.Describe()}.");
+			Logger.WriteWarnings(_backgroundWriter.Complete(background, options.KeepIconBackground, options.Id,
+				packageName).Warnings);
 		}
 	}
 
-	private bool TryBuildRequest(UpdateThemeOptions options, ThemeBackgroundArguments background,
-		out ThemeRequest request, out string packageName, out string error) {
+	private bool TryBuildRequest(UpdateThemeOptions options, out ThemeRequest request, out string packageName,
+		out string error) {
 		request = null;
 		packageName = null;
-		bool partial = background.IsPresent;
+		if (!ThemeBackground.TryParse(options.BackgroundImageId, options.BackgroundColor, allowRemoval: true,
+				out ThemeBackground background, out error)) {
+			return false;
+		}
+		bool partial = background is not null;
 		bool hasCss = !string.IsNullOrWhiteSpace(options.CssContent) || !string.IsNullOrWhiteSpace(options.CssContentFile);
 		string cssContent = null;
-		if (!background.TryValidate(out error)
-			|| ((!partial || hasCss) && !ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent,
-				options.CssContentFile, out cssContent, out error))) {
+		if ((!partial || hasCss) && !ThemeRequestBuilder.TryResolveCssContent(_fileSystem, options.CssContent,
+				options.CssContentFile, out cssContent, out error)) {
 			return false;
 		}
 		request = new ThemeRequest {
@@ -133,10 +131,10 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Caption = partial && string.IsNullOrWhiteSpace(options.Caption) ? null : options.Caption,
 			CssClassName = partial && string.IsNullOrWhiteSpace(options.CssClassName) ? null : options.CssClassName,
 			CssContent = cssContent,
-			Background = background.ToBackground()
+			Background = background
 		};
 		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			&& (!background.HasImageId || TryResolveThemePackage(options, out packageName, out error))
+			&& (background?.ImageId is null || TryResolveThemePackage(options, out packageName, out error))
 			&& _backgroundWriter.TryConfirmImage(background, out error);
 	}
 

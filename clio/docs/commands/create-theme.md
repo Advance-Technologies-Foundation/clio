@@ -29,7 +29,8 @@ The theme can carry its own background, written by the same `CreateTheme` call: 
 later, checked before any write. After the create, the `UsePanelIconBackground` feature is turned off for All
 employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package. The output says whether
 `UsePanelIconBackground` is off or was kept and names the package the image was bound into; the MCP tool returns
-them as `panel-icon-background` (`off` or `kept`) and `background-image-package`.
+them as `panel-icon-background` (`off` or `kept`) and `background-image-package`. A new theme has no background to
+remove, so `null` is refused: [`update-theme`](update-theme.md) removes a theme background.
 
 ## Synopsis
 

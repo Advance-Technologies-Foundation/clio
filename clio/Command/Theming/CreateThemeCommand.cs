@@ -58,10 +58,7 @@ public class CreateThemeOptions : RemoteCommandOptions
 	public bool KeepIconBackground { get; set; }
 
 	[RequiresCreatioVersion(ThemeServiceRequirement.BackgroundMinVersion, Hint = ThemeServiceRequirement.BackgroundHint)]
-	public bool HasBackgroundArgument => GetBackgroundArguments().IsPresent;
-
-	internal ThemeBackgroundArguments GetBackgroundArguments() =>
-		new(BackgroundImageId, BackgroundColor, KeepIconBackground);
+	public bool HasBackgroundArgument => ThemeBackground.IsGiven(BackgroundImageId, BackgroundColor);
 }
 
 /// <summary>
@@ -101,8 +98,8 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 		out ThemeBackgroundOutcome backgroundOutcome) {
 		createdId = null;
 		backgroundOutcome = ThemeBackgroundOutcome.None;
-		ThemeBackgroundArguments background = options.GetBackgroundArguments();
-		if (!background.TryValidate(out errorMessage)) {
+		if (!ThemeBackground.TryParse(options.BackgroundImageId, options.BackgroundColor, allowRemoval: false,
+				out ThemeBackground background, out errorMessage)) {
 			return false;
 		}
 		string id = string.IsNullOrWhiteSpace(options.Id) ? Guid.NewGuid().ToString("D") : options.Id;
@@ -130,7 +127,7 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		string requestData = JsonSerializer.Serialize(request with {
-			PackageUId = packageUId, Background = background.ToBackground()
+			PackageUId = packageUId, Background = background
 		});
 		string response = ApplicationClient.ExecutePostRequest(ServiceUri, requestData,
 			options.TimeOut, options.MaxAttempts, options.RetryDelay);
@@ -139,7 +136,7 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 			return false;
 		}
 		createdId = id;
-		backgroundOutcome = _backgroundWriter.Complete(background, id, options.PackageName);
+		backgroundOutcome = _backgroundWriter.Complete(background, options.KeepIconBackground, id, options.PackageName);
 		return true;
 	}
 
