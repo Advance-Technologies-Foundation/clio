@@ -53,7 +53,7 @@ public sealed class SendEmailAttachmentsToolE2ETests {
 
 	/// <summary>
 	/// The version the fixture runs against, read by the arrange and below it the whole fixture is Ignored: 1.6.6.140,
-	/// which is also the create and modify floor. 1.6.6.127 is the first that reads <c>email.attachments</c> and
+	/// the create and modify floor when it was set (that floor is now 1.6.6.149). 1.6.6.127 is the first that reads <c>email.attachments</c> and
 	/// 1.6.6.128 the first whose describe lists the rows in stored order, which TC-I-05 asserts; 1.6.6.140 is the first
 	/// released archive that reports a source running after the email, names the route of the same files through a
 	/// process parameter, expands a name in a performer contact, and stores a record id mapped onto a recipient that

@@ -70,13 +70,12 @@ public class BundledProcessBuilderPackageTests {
 
 	/// <summary>
 	/// SHA-256 of the committed archive at <see cref="ExpectedArchiveVersion"/>, cut from the <c>ProcessBuilder</c>
-	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>da1a7ee2</c>, to be tagged
-	/// <c>crtprocessbuilder-1.6.6.145</c>): branch <c>feature/ENG-105744-net8-restart-required</c> from <c>main</c> at 1.6.6.140
-	/// (<c>a3f58852</c>), so the cut carries everything 1.6.6.140 shipped. 1.6.6.141 is claimed by ENG-103990 and 1.6.6.143
-	/// by ENG-105558, and neither is in it; 1.6.6.142, an earlier 1.6.6.143 and 1.6.6.144 were cut on this branch and superseded
-	/// before release.
-	/// This cut is a SCRIPT cut (<c>rebundle-process-builder.ps1</c>): the producing commit is the one before the restamp,
-	/// so its descriptor reads 1.6.6.144 - one restamp behind the archive, by design (see the remarks below).
+	/// repository (<c>packages/CrtProcessBuilder</c>) at <see cref="ExpectedProducingCommit"/> (<c>29d173ea</c>, to be tagged
+	/// <c>crtprocessbuilder-1.6.6.149</c>): branch <c>feature/ENG-92710-call-web-service-element</c>, which merged <c>main</c> at
+	/// 1.6.6.145 (<c>cba8abac</c>), so the cut carries everything 1.6.6.145 shipped. 1.6.6.146, 1.6.6.147 and 1.6.6.148 were cut
+	/// on this branch and superseded before release.
+	/// This cut is a HAND cut from the stamp commit: the producing commit carries the restamped descriptor itself, so
+	/// its descriptor reads 1.6.6.149 and every archive entry is byte-identical to that commit's blob.
 	/// Many numbers below the current one are burned rather than reused — some because two branches drew
 	/// from one monotonic sequence on the same day, most because a cut was superseded before it left the machine
 	/// and abandoned rather than re-pointed. Two branches collide unless the number is claimed BEFORE it is cut,
@@ -89,18 +88,18 @@ public class BundledProcessBuilderPackageTests {
 	/// reaching a clio commit. Do not take one above the global maximum across all branches: another branch sitting
 	/// higher does not make its number yours to continue, and adopting it produces a version that looks newer than
 	/// work it does not contain. See docs/agent-instructions/bundled-packages.md for the commands.</para>
-	/// <para>What this cut carries over 1.6.6.140 (ENG-105744): <c>CompileProcess</c> answers <c>restartRequired</c> - true
-	/// after a clean compile on a host that keeps the configuration assembly it loaded at startup (a .NET (Core) host,
-	/// told by the core library's name) - and a <c>warnings</c> entry naming the three states a process is in until the
-	/// restart; every compile demand (a save with C#, the activation warnings, the not-interpretable version save) ends
-	/// with a notice that on such a host the compiled code runs only after a restart the user agrees to (once per answer), and names the
-	/// compile's cost per host. The service surface is unchanged (8 operations, 6 design-gate call sites and 1 compile
-	/// gate, counted in the archive). No <c>[RequiresPackage]</c> literal moves: for a package that does not answer
-	/// <c>restartRequired</c>, clio falls back to the environment's <c>IsNetCore</c> registration. What earlier cuts
-	/// carried is in this file's git history rather than here: it described archives that are no longer shipped.</para>
+	/// <para>What this cut carries over 1.6.6.145 (ENG-92710): the Call web service element - a <c>webService</c> element
+	/// type with its <c>webService</c> block (<c>service</c>, <c>method</c>, <c>timeoutSeconds</c>, <c>ignoreErrors</c>) on create,
+	/// <c>addElement</c> and <c>setElement</c>, a retarget on <c>setElement</c> that keeps the Success, Response and StatusCode
+	/// result parameters, a describe read-back (<c>DescribeWebServiceInfo</c>) with <c>serviceUId</c>, <c>serviceResolved</c>,
+	/// <c>methodResolved</c>, <c>parameters</c> and <c>issues</c>, SOAP services built as REST ones, and the refusals of the legacy
+	/// SOAP task route and of a multi-instance web service element. The service surface is unchanged (8 operations, 6
+	/// design-gate call sites, counted in the producing sources). The <c>[RequiresPackage]</c> floor of the webService
+	/// surface moves to 1.6.6.149. What earlier cuts carried is in this file's git history rather than here: it described
+	/// archives that are no longer shipped.</para>
 	/// <para>
 	/// This cut did NOT skip the package suite: it passed on the producing sources -
-	/// 5553 passed, 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
+	/// 5930 passed, 0 failed, on both <c>dev-nf</c> and <c>dev-n8</c> - measured on this cut, not carried over from a
 	/// previous one. That matters beyond hygiene, because skipping the suite (<c>-SkipTests</c> on the script; simply
 	/// not running it on a hand cut) is the ONE path that can reach the coarse failure the two security counts below
 	/// exist to catch.
@@ -182,7 +181,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"5A60B50965AADDD4A4E37B6E5AC538EC68CE34532B58AC05F24FA1A35AF47FC7";
+		"790D651A348942F8230E29B4F7738DAB74D30525CEB30CB01EBAD3EEEE4F5B1E";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -210,14 +209,14 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </para>
 	/// </remarks>
-	private const string ExpectedArchiveVersion = "1.6.6.145";
+	private const string ExpectedArchiveVersion = "1.6.6.149";
 
 	/// <summary>
 	/// The commit of the PRODUCING repository the archive was cut from, normally written by
 	/// <c>rebundle-process-builder.ps1</c> from <c>git rev-parse HEAD</c> rather than typed here. For 1.6.6.119 the
 	/// script wrote it (the tag <c>crtprocessbuilder-1.6.6.119</c> points at it; the descriptor restamp is the child
 	/// commit <c>b6105d45</c>). For 1.6.6.127 through 1.6.6.131 it was typed by hand for a hand cut; 1.6.6.136 was a script cut
-	/// again; 1.6.6.138, 1.6.6.139 and 1.6.6.140 are hand cuts from the stamp commit, so it names that commit and its descriptor
+	/// again; 1.6.6.138, 1.6.6.139, 1.6.6.140 and 1.6.6.149 are hand cuts from the stamp commit, so it names that commit and its descriptor
 	/// carries the pinned version and stamp.
 	/// <para>This does not PROVE the bytes came from that commit — nothing in this repository can, because the
 	/// producing checkout is not present. What it removes is the failure mode that has actually happened three
@@ -226,7 +225,7 @@ public class BundledProcessBuilderPackageTests {
 	/// corresponding to no commit" is unreachable rather than merely documented. Anyone with a checkout can
 	/// verify the rest with one `git checkout`.</para>
 	/// </summary>
-	private const string ExpectedProducingCommit = "da1a7ee228108e6d12728b571578497279967d16";
+	private const string ExpectedProducingCommit = "29d173ea2d4a91a78e7d0d99f1a84ecea072c40a";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped descriptor carries.
@@ -252,7 +251,7 @@ public class BundledProcessBuilderPackageTests {
 	/// command — the previous pin ended in <c>431</c>, which is how the hand edit was eventually noticed.
 	/// </para>
 	/// </remarks>
-	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794219274000)/";
+	private const string ExpectedDescriptorModifiedOnUtc = "/Date(1794249471000)/";
 
 	/// <summary>
 	/// The <c>ModifiedOnUtc</c> the shipped COMPILE-MARKER SCHEMA descriptor carries.
@@ -267,7 +266,7 @@ public class BundledProcessBuilderPackageTests {
 	/// fixed, but nothing re-stamps a descriptor written before the fix — so the field with the worst record
 	/// was the only one with no guard.
 	/// </remarks>
-	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1785919371000)/";
+	private const string ExpectedSchemaDescriptorModifiedOnUtc = "/Date(1794249450000)/";
 
 	/// <summary>
 	/// The authorization gate inside the shipped package. See

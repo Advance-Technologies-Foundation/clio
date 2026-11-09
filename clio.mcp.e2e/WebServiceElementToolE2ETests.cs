@@ -50,12 +50,12 @@ public sealed class WebServiceElementToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The CrtProcessBuilder the fixture runs against: the cut that ships the <c>webService</c> block, which is the
-	/// archive this clio bundles. Empty until that cut is claimed and bundled; while it is empty every case is
-	/// Ignored, because no released package declares the block and the server refuses it as an unknown key. Moves
-	/// with every rebundle.
+	/// The CrtProcessBuilder the fixture runs against: 1.6.6.149, the first cut that ships the <c>webService</c> block
+	/// and the create and modify floor (1.6.6.146-1.6.6.148 were cuts of this work that were never released). Below it
+	/// every case is Ignored, because an older package does not declare the block and refuses it as an unknown key.
+	/// Raise it when a case starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "";
+	private const string MinimumPackageVersion = "1.6.6.149";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Call web service element";
@@ -641,14 +641,10 @@ public sealed class WebServiceElementToolE2ETests {
 	#region Methods: Arrange and cleanup
 
 	/// <summary>
-	/// Opens a session, or ignores the test when the cut is not bundled yet, or the stand is missing, unreachable,
-	/// behind the cut, or lacks the service the case calls.
+	/// Opens a session, or ignores the test when the stand is missing, unreachable, behind the cut, or lacks the
+	/// service the case calls.
 	/// </summary>
 	private static async Task<ProcessDesignerArrangeContext> StartAsync(params string[] requiredServices) {
-		if (string.IsNullOrEmpty(MinimumPackageVersion)) {
-			Assert.Ignore($"{Subject} MCP E2E waits for the CrtProcessBuilder cut that ships the webService block: "
-				+ "set MinimumPackageVersion to the bundled cut when it is rebundled.");
-		}
 		ProcessDesignerArrangeContext context =
 			await ProcessDesignerE2EArrange.StartAsync(Subject, MinimumPackageVersion, TimeSpan.FromMinutes(8));
 		foreach (string service in requiredServices) {
