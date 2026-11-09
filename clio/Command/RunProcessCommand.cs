@@ -252,28 +252,30 @@ public class RunProcessCommand(
 			+ "compiled code does not have it yet: the run stops when it reaches that element, and the elements before "
 			+ "it may already have run.";
 		if (!isNetCore) {
-			// The marker sentence stays on this branch: an environment registered without IsNetCore can still be a
+			// The marker sentences stay on this branch: an environment registered without IsNetCore can still be a
 			// .NET (Core) host, and then only the compile's own warning tells - a real .NET Framework host never
-			// prints it, so the sentence is safe there.
+			// prints it, so they are safe there. The stop comes FIRST, as on the other branch.
 			return cause + " If that compile said the process "
-				+ $"{CompileBusinessProcessCommand.RestartRequiredMarker} and no restart followed it, the host is "
-				+ ".NET (Core) whatever its registration says: do not compile again - ask the user, then run "
+				+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}, the application already restarted after it "
+				+ "and the process has not changed since, do not compile or restart again: tell the user that the "
+				+ "restart did not make the compiled code run. If that compile said so and no restart followed it, the "
+				+ "host is .NET (Core) whatever its registration says: do not compile again - ask the user, then run "
 				+ "restart-by-environment-name. If a process-name compile of it succeeded only minutes ago, the runtime "
 				+ "may still be reloading: run again in about two minutes before compiling again. Otherwise ask the "
-				+ $"user, then run compile-creatio with process-name set to '{processCode}'. If the application "
-				+ "already restarted after a compile that said so and the process has not changed since, do not "
-				+ "compile or restart again: tell the user that the restart did not make the compiled code run.";
+				+ $"user, then run compile-creatio with process-name set to '{processCode}'.";
 		}
-		// The last sentence is the stop: a restart is necessary on this host but was not proven sufficient (two
-		// stands kept failing after one), and without it the hint would send the agent round compile and restart.
+		// The FIRST sentence is the stop: a restart is necessary on this host but was not proven sufficient (two
+		// stands kept failing after one), and an agent that acts on the first case that matches must meet the stop
+		// before the compile, or it compiles once more on the way.
 		return cause + " This .NET (Core) host runs the configuration assembly it loaded at startup, so a compile "
-			+ "takes effect only after the application restarts. If a process-name compile of it succeeded and no "
-			+ $"restart followed it (that compile said the process {CompileBusinessProcessCommand.RestartRequiredMarker}), "
-			+ "do not compile again: ask the user, then run restart-by-environment-name (it reloads the application for "
-			+ "every user). If the process changed after that compile, or it was never compiled, ask the user, then run "
-			+ $"compile-creatio with process-name set to '{processCode}', and restart after it. If the application "
-			+ "already restarted after a successful compile and the process has not changed since, do not compile or "
-			+ "restart again: tell the user that the restart did not make the compiled code run.";
+			+ "takes effect only after the application restarts. If the application already restarted after a "
+			+ "successful process-name compile of it and the process has not changed since, do not compile or "
+			+ "restart again: tell the user that the restart did not make the compiled code run. If a process-name "
+			+ "compile of it succeeded and no restart followed it (that compile said the process "
+			+ $"{CompileBusinessProcessCommand.RestartRequiredMarker}), do not compile again: ask the user, then run "
+			+ "restart-by-environment-name (it reloads the application for every user). If the process changed after "
+			+ "that compile, or it was never compiled, ask the user, then run compile-creatio with process-name set to "
+			+ $"'{processCode}', and restart after it.";
 	}
 
 	// ENG-101880: run-process launches exactly the version it is given, so a version that is not the active one

@@ -964,10 +964,13 @@ public sealed class RunProcessToolTests {
 			.And.Contain("may already have run", "the elements before the failing one ran before it stopped")
 			.And.Contain("run again in about two minutes before compiling again",
 				"right after a compile the runtime may still be reloading, and another compile reloads it for nothing")
-			.And.Contain($"If that compile said the process {CompileBusinessProcessCommand.RestartRequiredMarker} and no restart followed it, the host is .NET (Core) whatever its registration says",
+			.And.Contain("If that compile said so and no restart followed it, the host is .NET (Core) whatever its registration says",
 				"an environment registered without IsNetCore can still be a .NET (Core) host, and then only the compile's warning tells")
 			.And.Contain("do not compile or restart again: tell the user that the restart did not make the compiled code run",
 				"a restart was not proven sufficient, so this branch needs the same stop as the .NET (Core) one");
+		response.Error.IndexOf("do not compile or restart again", StringComparison.Ordinal).Should().BeLessThan(
+			response.Error.IndexOf("then run compile-creatio", StringComparison.Ordinal),
+			"an agent that acts on the first case that matches must meet the stop before the compile");
 		reader.DidNotReceive().ReadErrorSummary(Arg.Any<Guid>(), Arg.Any<int>());
 	}
 
@@ -994,7 +997,9 @@ public sealed class RunProcessToolTests {
 			.And.Contain("do not compile or restart again: tell the user that the restart did not make the compiled code run",
 				because: "a restart was not proven sufficient, and without a stop the hint loops the agent on restarts")
 			.And.NotContain("about two minutes",
-				because: "a .NET (Core) host reloads nothing on a compile, so no wait makes the new code run");
+				because: "a .NET (Core) host reloads nothing on a compile, so no wait makes the new code run");		response.Error.IndexOf("do not compile or restart again", StringComparison.Ordinal).Should().BeLessThan(
+			response.Error.IndexOf("then run compile-creatio", StringComparison.Ordinal),
+			because: "an agent that acts on the first case that matches must meet the stop before the compile");
 	}
 
 	[Test]
