@@ -43,9 +43,11 @@ preview never fails on a refused package: it shows the refusal and exits 0. A ca
 
 **D4 — A binding found elsewhere is reported, not duplicated.** Bindings of `SysEntitySchemaOperationRight` in
 editable packages are read; one that holds a row of this object (by `SubjectSchemaUId` or by row id) under another
-name or package is named in the result and no binding is written. Only bindings named outside the convention (made
-by hand) are read row by row, and locked packages are not searched: each read costs a request, and the caller's
-own bindings live in editable packages. Those reads share the call's request budget, and they are skipped once the
+name or package is named in the result and no binding is written. A binding named exactly
+`SysEntitySchemaOperationRight_<code>` for another entity schema that exists (one batched `SysSchema` read) belongs to
+that object and is not read row by row; every other name, a prefixed one whose suffix is no object included, is read
+row by row, and locked packages are not searched: each read costs a request, and the caller's own bindings live in
+editable packages. Those reads share the call's request budget, and they are skipped once the
 target package holds the object's own binding: the first bind already ran the check.
 
 **D5 — A failed binding after a saved change fails the call.** The rows stay saved; the error says they are not bound

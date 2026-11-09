@@ -47,17 +47,24 @@ public class ObjectRightsPackageBinderTests {
 		SchemaIn(("UsrApp", false));
 		StoredRows(RowA, RowB);
 		Bindings();
+		EntitySchemas();
 		_binder = new ObjectRightsPackageBinder(_client, urlBuilder, _writer, _resolver);
 	}
 
-	private void Select(string schema, string json) =>
-		_client.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains($"\"rootSchemaName\":\"{schema}\"")),
+	private void Select(string schema, string json, bool inFilter = false) =>
+		_client.ExecutePostRequest(SelectUrl, Arg.Is<string>(body => body.Contains($"\"rootSchemaName\":\"{schema}\"")
+				&& body.Contains("rightExpressions") == inFilter),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>()).Returns(json);
 
 	private void SchemaIn(params (string Package, bool ExtendParent)[] layers) =>
 		Select("SysSchema", "{\"success\":true,\"rows\":[" + string.Join(",", layers.Select(layer =>
 			$"{{\"ExtendParent\":{layer.ExtendParent.ToString().ToLowerInvariant()},\"PackageName\":\"{layer.Package}\"}}"))
 			+ "]}");
+
+	// The schemas the binding-name suffixes are looked up as: entity schemas exist under these names.
+	private void EntitySchemas(params string[] names) =>
+		Select("SysSchema", "{\"success\":true,\"rows\":[" + string.Join(",", names.Select(name =>
+			$"{{\"Name\":\"{name}\",\"ManagerName\":\"EntitySchemaManager\"}}")) + "]}", inFilter: true);
 
 	private void StoredRows(params Guid[] ids) =>
 		Select(ObjectRightsPackageBinder.RightsSchema, "{\"success\":true,\"rows\":["
@@ -361,10 +368,11 @@ public class ObjectRightsPackageBinderTests {
 	}
 
 	[Test]
-	[Description("Bindings named by the convention for other objects are not read row by row.")]
+	[Description("Bindings named by the convention for other objects that exist are not read row by row.")]
 	public void ResolveTarget_ShouldNotReadConventionalBindingsOfOtherObjects() {
 		// Arrange
 		Bindings((OtherBindingUId, "SysEntitySchemaOperationRight_UsrBar", "UsrApp"));
+		EntitySchemas("UsrBar");
 
 		// Act
 		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, null, null);
@@ -372,5 +380,38 @@ public class ObjectRightsPackageBinderTests {
 		// Assert
 		target.Existing.Should().BeNull(because: "the binding belongs to UsrBar by its name");
 		_writer.DidNotReceiveWithAnyArgs().FetchBoundRows(default, default);
+	}
+
+	[Test]
+	[Description("A binding named with the convention prefix whose suffix is no object (made by hand) is read row by row, and reported when it holds one of the object's rows.")]
+	public void ResolveTarget_ShouldReportPrefixedHandMadeBinding_WhenItsSuffixIsNoObject() {
+		// Arrange
+		Bindings((OtherBindingUId, "SysEntitySchemaOperationRight_App", "UsrApp"));
+		_writer.FetchBoundRows(OtherBindingUId, Arg.Any<CreatioRequestOptions>()).Returns(
+			new List<Dictionary<string, JsonNode>> { new() { ["Id"] = JsonValue.Create(RowA.ToString()) } });
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, null, null);
+
+		// Assert
+		target.Existing.Should().NotBeNull(because: "SysEntitySchemaOperationRight_App names no object, so it is a hand-made binding");
+		target.Existing.BindingName.Should().Be("SysEntitySchemaOperationRight_App",
+			because: "the binding that already ships the row is reported instead of writing a second one");
+	}
+
+	[Test]
+	[Description("Once the target package holds the object's own binding, a hand-made binding in the same package that holds one of its rows does not freeze it: the own binding is updated.")]
+	public void ResolveTarget_ShouldLetOwnBindingWin_WhenHandMadeBindingInTargetHoldsARow() {
+		// Arrange
+		Bindings((Guid.NewGuid(), "SysEntitySchemaOperationRight_UsrFoo", "UsrApp"), (OtherBindingUId, "MyRights", "UsrApp"));
+		_writer.FetchBoundRows(OtherBindingUId, Arg.Any<CreatioRequestOptions>()).Returns(
+			new List<Dictionary<string, JsonNode>> { new() { ["Id"] = JsonValue.Create(RowA.ToString()) } });
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, null, null);
+
+		// Assert
+		target.Existing.Should().BeNull(because: "the object's own binding in UsrApp is the target and is kept in step");
+		target.PackageName.Should().Be("UsrApp", because: "the own binding's package receives the rows");
 	}
 }

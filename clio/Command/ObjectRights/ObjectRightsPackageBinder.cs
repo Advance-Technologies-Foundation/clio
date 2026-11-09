@@ -130,6 +130,8 @@ internal sealed class ObjectRightsPackageBinder(
 		["Id"], [SubjectSchemaUIdColumn, "SysAdminUnit", "CanRead", "CanAppend", "CanEdit", "CanDelete", PositionColumn]);
 
 	private const int EditableInstallType = 0;
+	private const string EntitySchemaManager = "EntitySchemaManager";
+	private const string ManagerNameColumn = "ManagerName";
 
 	/// <summary>The binding name of an object's rows.</summary>
 	/// <param name="schemaName">The object's code.</param>
@@ -259,7 +261,7 @@ internal sealed class ObjectRightsPackageBinder(
 				[
 					new SelectQueryHelper.SelectQueryFilterDefinition("Name", schemaName,
 						SelectQueryHelper.TextDataValueType),
-					new SelectQueryHelper.SelectQueryFilterDefinition("ManagerName", "EntitySchemaManager",
+					new SelectQueryHelper.SelectQueryFilterDefinition(ManagerNameColumn, EntitySchemaManager,
 						SelectQueryHelper.TextDataValueType)
 				]), requestOptions);
 		return response.Rows ?? [];
@@ -299,9 +301,10 @@ internal sealed class ObjectRightsPackageBinder(
 	}
 
 	// A binding of this object's rows made by hand: by its rows' object, or by a row id this object holds. A binding
-	// under the naming convention belongs to the object its name says, so only bindings named otherwise are read row by
-	// row — the scan does not grow with the bindings this tool writes. Once the target package holds the object's own
-	// binding, an earlier bind already ran this check, so later calls skip the reads.
+	// named exactly SysEntitySchemaOperationRight_<code> for another object that exists belongs to that object, so it is
+	// not read row by row — the scan does not grow with the bindings this tool writes. Every other name, a prefixed one
+	// whose suffix is no object included (SysEntitySchemaOperationRight_App), is read. Once the target package holds
+	// the object's own binding, an earlier bind already ran this check, so later calls skip the reads.
 	private ExistingObjectRightsBinding FindOtherBinding(IReadOnlyList<BindingRow> bindings, Guid schemaUId,
 		string packageName, string bindingName, CreatioRequestOptions requestOptions) {
 		bool ownInTarget = bindings.Any(row =>
@@ -310,10 +313,11 @@ internal sealed class ObjectRightsPackageBinder(
 		if (ownInTarget) {
 			return null;
 		}
-		string conventionPrefix = BindingNameOf(string.Empty);
-		BindingRow[] byHand = bindings.Where(row => row.UId != Guid.Empty && row.Name is not null
-				&& !row.Name.StartsWith(conventionPrefix, StringComparison.OrdinalIgnoreCase))
+		BindingRow[] candidates = bindings.Where(row => row.UId != Guid.Empty && row.Name is not null
+				&& !string.Equals(row.Name, bindingName, StringComparison.OrdinalIgnoreCase))
 			.ToArray();
+		HashSet<string> otherObjectBindings = ReadOtherObjectBindingNames(candidates, requestOptions);
+		BindingRow[] byHand = candidates.Where(row => !otherObjectBindings.Contains(row.Name)).ToArray();
 		if (byHand.Length == 0) {
 			return null;
 		}
@@ -321,6 +325,36 @@ internal sealed class ObjectRightsPackageBinder(
 		BindingRow holder = byHand.FirstOrDefault(row => bindingWriter.FetchBoundRows(row.UId, requestOptions).Any(bound =>
 			ReadGuid(bound, SubjectSchemaUIdColumn) == schemaUId || rowIds.Contains(ReadGuid(bound, "Id"))));
 		return holder is null ? null : new ExistingObjectRightsBinding(holder.Name, holder.PackageName);
+	}
+
+	// The names among the candidates that follow the convention for an object that exists, read in one request: only
+	// those belong to another object by their name.
+	private HashSet<string> ReadOtherObjectBindingNames(IReadOnlyList<BindingRow> candidates,
+		CreatioRequestOptions requestOptions) {
+		string conventionPrefix = BindingNameOf(string.Empty);
+		Dictionary<string, string> bindingBySuffix = candidates
+			.Where(row => row.Name.Length > conventionPrefix.Length
+				&& row.Name.StartsWith(conventionPrefix, StringComparison.OrdinalIgnoreCase))
+			.GroupBy(row => row.Name.Substring(conventionPrefix.Length), StringComparer.OrdinalIgnoreCase)
+			.ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+		HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+		if (bindingBySuffix.Count == 0) {
+			return names;
+		}
+		EntitySchemaNameResponse response = Select<EntitySchemaNameResponse>(
+			SelectQueryHelper.BuildSelectQueryWithInFilter("SysSchema",
+				[
+					new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name"),
+					new SelectQueryHelper.SelectQueryColumnDefinition(ManagerNameColumn, ManagerNameColumn)
+				],
+				"Name", bindingBySuffix.Keys.ToArray(), SelectQueryHelper.TextDataValueType), requestOptions);
+		foreach (EntitySchemaNameRow row in response.Rows ?? []) {
+			if (string.Equals(row.ManagerName, EntitySchemaManager, StringComparison.OrdinalIgnoreCase)
+				&& row.Name is not null && bindingBySuffix.TryGetValue(row.Name, out string bindingName)) {
+				names.Add(bindingName);
+			}
+		}
+		return names;
 	}
 
 	// A bound value is a plain value, or a lookup object carrying it under "value".
@@ -346,6 +380,19 @@ internal sealed class ObjectRightsPackageBinder(
 
 		[JsonPropertyName("PackageName")]
 		public string PackageName { get; init; }
+	}
+
+	private sealed class EntitySchemaNameResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
+		[JsonPropertyName("rows")]
+		public List<EntitySchemaNameRow> Rows { get; init; }
+	}
+
+	private sealed class EntitySchemaNameRow {
+		[JsonPropertyName("Name")]
+		public string Name { get; init; }
+
+		[JsonPropertyName(ManagerNameColumn)]
+		public string ManagerName { get; init; }
 	}
 
 	private sealed class RightRowResponse : SelectQueryHelper.SelectQueryResponseBaseDto {
