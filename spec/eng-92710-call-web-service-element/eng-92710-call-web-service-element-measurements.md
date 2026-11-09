@@ -2,7 +2,7 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-44 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09). Every other expected result is a hypothesis until its EM runs.
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-46 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -65,7 +65,9 @@ compared under; "the oracle rule" below means WSCR) ·
   (package `UsrWscTestFixtures`). PASS: EM2 step 9, EM5 with step 7 (the STOP gate holds), EM6, EM6-B (by the trace;
   oracle A cannot be saved, M-39), EM7 step 3, EM10, EM11 (the refusal lists codes without captions), EM12. Against
   expectation: EM8 step 8 - the unrelated modify is refused by the platform because a reader of a pruned parameter
-  exists, nothing is written and N7 is not in the reply (M-41).
+  exists, nothing is written and N7 is not in the reply (M-41). KB-7 on the draft article: AR-2 PASS (M-46); AR-1
+  reaches the right service and method, builds in two steps and maps by stored names, but through two refusals where
+  the test plan allows one (M-45).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -198,6 +200,8 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-42 | EM10 builder half: a builder create in a new package with 0 dependencies, on `GeminiApiSearch` (`CrtGeminiApiIntegraion`), adds no `SysPackageDependency` and answers with the cross-package notice | measured 2026-11-09 | `CAP/em-final146/em10/` |
 | M-43 | EM11 builder half: `method: "USRWSCGET"` stores `IX2 = "UsrWscGet"` with a notice; `method: "nope"` is refused, nothing created, the refusal lists the method codes (no captions) | measured 2026-11-09 | `CAP/em-final146/em11/` |
 | M-44 | EM12 builder half: with both containers unmapped and two leaves bound, the answer carries N5 for `UsrWscOrders_In.UsrWscLines_In` only | measured 2026-11-09 | `CAP/em-final146/em12/` |
+| M-45 | KB-7 AR-1 (isolated headless agent, draft article kb92710 `9c85351`): the agent finds `CreatioMarketplaceApi` through a refused create naming a non-existent service, then `GetAppPublishedVersion` through a second refused create naming a non-existent method (the service refusal lists no methods), creates the element alone, then binds 4 inputs and 5 outputs in one modify by the stored names; no secret in the transcript; the stored schema carries the 9 bindings | measured 2026-11-09 | `CAP/em-final146/kb7/` |
+| M-46 | KB-7 AR-2: after one refused create naming `OpenWeather`, the agent stops, creates nothing, and tells the user to register the service in Studio > Web services with base URL, method, parameters and authentication (key in a system setting or the service default, never a process constant) | measured 2026-11-09 | `CAP/em-final146/kb7/` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
@@ -1298,6 +1302,7 @@ Created on stand `eng105744-web02` by the final-cut runs (2026-11-09, lead; `CAP
 | EM10 | package, process | `UsrWscEm10Proc2` (`cd63d31d-023c-4ac7-b2fb-50b950e8e658`); `UsrWscEm10Builder` (`afb60d5f-e211-4de3-ab48-b3a7766844f3`) | CU-1, then CU-3 | never run |
 | EM11 | process | `UsrWscEm11Builder` (`4f586752-0203-471f-96ac-a8e35589845a`, `Custom`) | CU-1 | never run |
 | EM12 | process | `UsrWscEm12Builder` (`bbbdd124-fb90-4918-83f7-4a68a371972e`, `Custom`) | CU-1 | never run |
+| KB-7 | process | `UsrMarketplaceApp_GetPublishedVersion` (`bb6a5adf-353d-46fa-be46-403b4529b9c1`, `Custom`) | CU-1 | created by the AR-1 agent; calls the shipped `CreatioMarketplaceApi`; never run |
 
 Planned (stand `Creatio`, superseded by the rows above where the same name appears):
 
