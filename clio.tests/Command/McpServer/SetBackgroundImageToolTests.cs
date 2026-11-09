@@ -426,7 +426,7 @@ public class SetBackgroundImageToolTests {
 		public FakeSetBackgroundImageCommand(SetBackgroundResult result = null)
 			: base(Substitute.For<IApplicationClient>(), new EnvironmentSettings(),
 				Substitute.For<IServiceUrlBuilder>(), Substitute.For<ISysSettingsManager>(),
-				Substitute.For<ISysImageUploader>(), Substitute.For<IFeatureStateService>(),
+				Substitute.For<ISysImageUploader>(), Substitute.For<IBrandingBackgroundService>(),
 				Substitute.For<IPackageDataBinder>()) {
 			_result = result ?? SetBackgroundResult.Successful(ImageId, BoundPackageName, []);
 		}

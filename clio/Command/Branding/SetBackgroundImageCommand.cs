@@ -117,7 +117,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	internal const string BackgroundConfigCode = "CrtBackgroundConfig";
 
 	/// <summary>The feature code that gates the panel's own icon background.</summary>
-	internal const string PanelIconBackgroundFeatureCode = "UsePanelIconBackground";
+	internal const string PanelIconBackgroundFeatureCode = BrandingBackgroundService.PanelIconBackgroundFeatureCode;
 
 	/// <summary>Error text shared by the CLI and MCP surfaces when both image sources are passed.</summary>
 	internal const string BothSourcesError = "Pass either a file or an image-id, not both.";
@@ -139,7 +139,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	private readonly IServiceUrlBuilder _serviceUrlBuilder;
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
-	private readonly IFeatureStateService _featureState;
+	private readonly IBrandingBackgroundService _backgroundService;
 	private readonly IPackageDataBinder _packageDataBinder;
 
 	/// <summary>
@@ -147,13 +147,13 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	/// </summary>
 	public SetBackgroundImageCommand(IApplicationClient applicationClient, EnvironmentSettings settings,
 		IServiceUrlBuilder serviceUrlBuilder, ISysSettingsManager sysSettingsManager,
-		ISysImageUploader sysImageUploader, IFeatureStateService featureState,
+		ISysImageUploader sysImageUploader, IBrandingBackgroundService backgroundService,
 		IPackageDataBinder packageDataBinder)
 		: base(applicationClient, settings) {
 		_serviceUrlBuilder = serviceUrlBuilder;
 		_sysSettingsManager = sysSettingsManager;
 		_sysImageUploader = sysImageUploader;
-		_featureState = featureState;
+		_backgroundService = backgroundService;
 		_packageDataBinder = packageDataBinder;
 	}
 
@@ -302,13 +302,8 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	}
 
 	private void DisablePanelIconBackground(List<string> warnings) {
-		try {
-			_featureState.SetFeatureState(
-				PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
-		} catch (Exception exception) {
-			warnings.Add(
-				$"The background image was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
-				$"feature failed, so the panel may still hide it: {exception.Message}");
+		if (!_backgroundService.TryTurnOffPanelIconBackground("The background image", out string warning)) {
+			warnings.Add(warning);
 		}
 	}
 
@@ -339,13 +334,11 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 			error = $"image-id '{options.ImageId}' is not a valid id. Pass the id printed by upload-image.";
 			return false;
 		}
-		if (!TryQuerySingleId(
-			$"{ODataKeyFormatter.CollectionPath(SysImageSchema)}?$filter=Id eq {imageId}&$select=Id&$top=1",
-			out Guid? existingImageId, out string imageCheckError)) {
+		if (!_backgroundService.TryFindUploadedImage(imageId, out bool imageExists, out string imageCheckError)) {
 			error = $"Could not check the image in the environment: {imageCheckError}";
 			return false;
 		}
-		if (existingImageId is null) {
+		if (!imageExists) {
 			error = $"No uploaded image with id '{imageId}' was found in the environment. " +
 				"Upload the file first with upload-image and pass the id it prints.";
 			return false;
@@ -424,44 +417,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	}
 
 	private bool TryQuerySingleId(string relativeUrl, out Guid? id, out string error) {
-		id = null;
-		error = null;
-		try {
-			string response = ApplicationClient.ExecuteGetRequest(_serviceUrlBuilder.Build(relativeUrl));
-			if (string.IsNullOrWhiteSpace(response)) {
-				error = "the environment returned an empty response.";
-				return false;
-			}
-			using JsonDocument document = JsonDocument.Parse(response);
-			//Every caller hands this an ODataKeyFormatter.CollectionPath URL and expects the standard OData
-			//"value" collection below, so the response has to be classified as OData. Under Service the
-			//BaseResponse heuristics run over entity data, and an entity carrying a business Success:false
-			//column was rejected as a service failure.
-			if (CreatioResponseError.TryDetect(document.RootElement, CreatioResponseContext.ODataPayload,
-				out string serverError)) {
-				error = serverError;
-				return false;
-			}
-			if (!document.RootElement.TryGetProperty("value", out JsonElement rows)
-				|| rows.ValueKind != JsonValueKind.Array) {
-				error = "the environment returned an unexpected response.";
-				return false;
-			}
-			if (rows.GetArrayLength() > 0
-				&& rows[0].TryGetProperty("Id", out JsonElement idElement)
-				&& idElement.ValueKind == JsonValueKind.String
-				&& Guid.TryParse(idElement.GetString(), out Guid parsed)
-				&& parsed != Guid.Empty) {
-				id = parsed;
-			}
-			return true;
-		} catch (JsonException) {
-			error = "the environment returned a non-JSON response.";
-			return false;
-		} catch (Exception ex) {
-			error = ex.Message;
-			return false;
-		}
+		return ODataSingleIdQuery.TryRead(ApplicationClient, _serviceUrlBuilder, relativeUrl, out id, out error);
 	}
 
 	private sealed record GalleryProbe(Guid? RowId, string HardError, string RegistrationError);
