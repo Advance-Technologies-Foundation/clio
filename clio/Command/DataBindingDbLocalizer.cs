@@ -58,7 +58,16 @@ public sealed class DataBindingLocalizationException : InvalidOperationException
 /// </summary>
 /// <param name="ProfileCulture">Culture of the connected user's profile: the culture plain inserts and updates
 /// write to.</param>
-internal sealed record DataBindingLocalizationPlan(string ProfileCulture);
+/// <param name="CultureNames">Requested culture name (any letter case) → the site's spelling of it; a culture
+/// missing from it is sent as requested.</param>
+internal sealed record DataBindingLocalizationPlan(
+	string ProfileCulture,
+	IReadOnlyDictionary<string, string>? CultureNames = null) {
+
+	/// <summary>Returns the site's spelling of <paramref name="culture"/> (<c>ru-ru</c> → <c>ru-RU</c>).</summary>
+	public string ToSiteCultureName(string culture) =>
+		CultureNames is not null && CultureNames.TryGetValue(culture, out string? siteName) ? siteName : culture;
+}
 
 /// <summary>
 /// Writes the per-culture values of localizable columns of DB-first data binding rows.
@@ -136,7 +145,7 @@ internal sealed class DataBindingDbLocalizer(
 		}
 
 		List<string> failures = [];
-		ValidateCultures(localizedRows, failures);
+		Dictionary<string, string> cultureNames = ValidateCultures(localizedRows, failures);
 		ValidateColumnsAndValues(schemaName, packageUId, runtimeColumns, localizedRows, failures);
 		if (failures.Count > 0) {
 			throw new InvalidOperationException(
@@ -151,7 +160,7 @@ internal sealed class DataBindingDbLocalizer(
 				+ $"be read ({profileCulture.FailureReason}).");
 		}
 
-		return new DataBindingLocalizationPlan(profileCulture.Culture);
+		return new DataBindingLocalizationPlan(profileCulture.Culture, cultureNames);
 	}
 
 	/// <inheritdoc />
@@ -175,7 +184,7 @@ internal sealed class DataBindingDbLocalizer(
 				IReadOnlyDictionary<string, string?> profileValues = ReadProfileValues(schemaName, rowId, columns);
 				WriteRow(plan, schemaName, rowId, localization, columns, profileValues);
 				written.AddRange(localization.Cultures.Select(culture => new DataBindingLocalizationWrite(
-					rowId, localization.RowLabel, culture.Key, culture.Value.Keys.ToList())));
+					rowId, localization.RowLabel, plan.ToSiteCultureName(culture.Key), culture.Value.Keys.ToList())));
 				mismatches.AddRange(VerifyRow(plan, schemaName, rowId, localization, columns));
 			}
 			catch (Exception exception) when (exception is not OperationCanceledException) {
@@ -203,19 +212,25 @@ internal sealed class DataBindingDbLocalizer(
 			: " Earlier rows were saved, but NOT verified: the values read back differ from the request for "
 				+ string.Join(", ", mismatches) + ".";
 
-	private void ValidateCultures(IReadOnlyList<DataBindingRowLocalization> rows, List<string> failures) {
+	/// <returns>Each requested culture that is active on the site → the site's spelling of its name.</returns>
+	private Dictionary<string, string> ValidateCultures(IReadOnlyList<DataBindingRowLocalization> rows, List<string> failures) {
 		IReadOnlyList<CreatioCulture> siteCultures = cultureCatalog.GetCultures();
 		string active = string.Join(", ", siteCultures.Where(culture => culture.Active).Select(culture => culture.Name));
 		IEnumerable<string> requested = rows
 			.SelectMany(row => row.Cultures.Keys)
 			.Distinct(StringComparer.OrdinalIgnoreCase);
+		Dictionary<string, string> cultureNames = new(StringComparer.OrdinalIgnoreCase);
 		foreach (string culture in requested) {
 			CreatioCulture? match = siteCultures.FirstOrDefault(candidate =>
 				string.Equals(candidate.Name, culture, StringComparison.OrdinalIgnoreCase));
 			if (match is null || !match.Active) {
 				failures.Add($"Culture '{culture}' is not active on the site (active cultures: {active}).");
+			} else {
+				cultureNames[culture] = match.Name;
 			}
 		}
+
+		return cultureNames;
 	}
 
 	private void ValidateColumnsAndValues(
@@ -307,7 +322,7 @@ internal sealed class DataBindingDbLocalizer(
 				string? value = values.FirstOrDefault(pair =>
 					string.Equals(pair.Key, column, StringComparison.OrdinalIgnoreCase)).Value;
 				if (value is not null) {
-					cultureValues[culture] = value;
+					cultureValues[plan.ToSiteCultureName(culture)] = value;
 				}
 			}
 

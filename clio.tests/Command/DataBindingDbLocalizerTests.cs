@@ -102,8 +102,7 @@ internal sealed class DataBindingDbLocalizerTests {
 		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
 
 		// Assert
-		plan.Should().Be(new DataBindingLocalizationPlan("en-US"),
-			because: "the write needs the culture a plain insert wrote to");
+		plan!.ProfileCulture.Should().Be("en-US", because: "the write needs the culture a plain insert wrote to");
 		_designerClient.Received(1).GetSchemaDesignItem(
 			Arg.Is<GetSchemaDesignItemRequestDto>(request =>
 				request.Name == SchemaName && request.PackageUId == PackageUId && request.UseFullHierarchy),
@@ -240,6 +239,41 @@ internal sealed class DataBindingDbLocalizerTests {
 		result.Should().ContainSingle(because: "one row was written in one culture")
 			.Which.Should().BeEquivalentTo(new { RowId, RowLabel = "New", Culture = "uk-UA" },
 				because: "the result names the record and the culture");
+	}
+
+	[Test]
+	[Description("Maps a culture typed in another letter case to the site's spelling, so the write and the result use the name the site catalog has.")]
+	public void Validate_Should_Map_Requested_Culture_To_Site_Spelling() {
+		// Arrange
+		DataBindingRowLocalization row = Row("New", ("uk-ua", "Name", "Нове"));
+
+		// Act
+		DataBindingLocalizationPlan? plan = _sut.Validate(SchemaName, PackageUId, RuntimeColumns, [row]);
+
+		// Assert
+		plan!.ToSiteCultureName("uk-ua").Should().Be("uk-UA", because: "the site catalog spells the culture uk-UA");
+	}
+
+	[Test]
+	[Description("Sends and reports a culture under the site's spelling even when the request typed it in another letter case.")]
+	public void Write_Should_Send_Site_Spelling_Of_Culture() {
+		// Arrange
+		SetupReads(profileName: "New", localizedName: "Нове");
+		DataBindingRowLocalization row = Row("New", ("uk-ua", "Name", "Нове"));
+		DataBindingLocalizationPlan plan = new("en-US",
+			new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["uk-ua"] = "uk-UA" });
+
+		// Act
+		IReadOnlyList<DataBindingLocalizationWrite> result = _sut.Write(plan, SchemaName, [(RowId, row)]);
+
+		// Assert
+		(string _, string body) = _posts.Single(post => post.Url == "route:UpdateLocalizationQuery");
+		JsonNode parameter = JsonNode.Parse(body)!["columnValues"]!["items"]!["Name"]!["parameter"]!;
+		JsonNode.Parse(parameter["value"]!.GetValue<string>())!.AsObject().Select(culture => culture.Key)
+			.Should().Contain("uk-UA", because: "the culture map carries the site's spelling")
+			.And.NotContain("uk-ua", because: "the caller's spelling is not sent");
+		result.Should().ContainSingle().Which.Culture.Should().Be("uk-UA",
+			because: "the result lists the culture as the site names it");
 	}
 
 	[Test]

@@ -541,7 +541,8 @@ internal sealed class DataBindingDbService(
 		}
 		catch (Exception exception) when (localizationFailure is not null && exception is not OperationCanceledException) {
 			throw new InvalidOperationException(
-				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)} Saving binding "
+				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)}"
+				+ $"{DescribeCreatedRows(createdRows)} Saving binding "
 				+ $"'{bindingName}' of package '{options.PackageName}' then failed too, so the binding was NOT saved: "
 				+ exception.Message,
 				exception);
@@ -549,14 +550,22 @@ internal sealed class DataBindingDbService(
 
 		if (localizationFailure is not null) {
 			throw new InvalidOperationException(
-				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)} The rows and binding "
-				+ $"'{bindingName}' of package '{options.PackageName}' were saved; run the same call again to retry the "
-				+ "translations.",
+				$"{localizationFailure.Message}{DescribeWrittenLocalizations(localizationFailure)}"
+				+ $"{DescribeCreatedRows(createdRows)} The rows and binding '{bindingName}' of package "
+				+ $"'{options.PackageName}' were saved; run the same call again to retry the translations.",
 				localizationFailure);
 		}
 
 		return new DataBindingResult(bindingName, createdRows, skippedRows, localizationWrites);
 	}
+
+	/// <summary>
+	/// Names the rows this call inserted, so a caller whose translation write failed knows which records are new.
+	/// </summary>
+	private static string DescribeCreatedRows(IReadOnlyList<DataBindingCreatedRow> createdRows) =>
+		createdRows.Count == 0
+			? string.Empty
+			: " Rows created by this call: " + string.Join(", ", createdRows.Select(row => row.Id)) + ".";
 
 	/// <summary>
 	/// Lists the rows and cultures a failed localization write had already written, so the caller knows which

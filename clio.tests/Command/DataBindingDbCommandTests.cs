@@ -1085,7 +1085,8 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 		_logger.Received(1).WriteError(Arg.Is<string>(message =>
 			message.Contains("NOT verified")
 			&& message.Contains("binding 'UsrRemoteBinding'")
-			&& message.Contains("were saved")));
+			&& message.Contains("were saved")
+			&& message.Contains("Rows created by this call: ")));
 	}
 
 	[Test]
@@ -1113,6 +1114,55 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 			"http://localhost/0/ServiceModel/SchemaDataDesignerService.svc/SaveSchema", Arg.Any<string>(),
 			Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains("connection reset")));
+	}
+
+	[TestCase("""{"values":{"Name":"New"},"localizations":[]}""",
+		"Row 'New': 'localizations' must be a JSON object keyed by culture, then column name.")]
+	[TestCase("""{"values":{"Name":"New"},"localizations":{"uk-UA":"text"}}""",
+		"Row 'New': 'localizations' entry 'uk-UA' must be a JSON object keyed by column name.")]
+	[TestCase("""{"values":{"Name":"New"},"localizations":{" ":{"Name":"x"}}}""",
+		"Row 'New': 'localizations' entry ' ' must be a JSON object keyed by column name.")]
+	[Description("ENG-105291: rejects a malformed localizations shape - not an object, a culture entry that is not an object, a blank culture key - before anything is written.")]
+	public void CreateDataBindingDb_Should_Reject_Malformed_Localizations(string row, string expectedMessage) {
+		// Arrange
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = $"[{row}]"
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(1, because: "the localizations shape is culture -> column -> text");
+		_logger.Received(1).WriteError(Arg.Is<string>(message => message.Contains(expectedMessage)));
+		_applicationClient.DidNotReceive().ExecutePostRequest(
+			Arg.Is<string>(url => url.Contains("InsertQuery") || url.Contains("SaveSchema")),
+			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
+	}
+
+	[Test]
+	[Description("ENG-105291: trims padding around a culture key, so ' uk-UA ' is validated and written as uk-UA.")]
+	public void CreateDataBindingDb_Should_Trim_Localization_Culture_Key() {
+		// Arrange
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "SysSettings",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{" uk-UA ":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		_createCommand.Execute(options);
+
+		// Assert
+		_localizer.Received(1).Validate(Arg.Any<string>(), Arg.Any<Guid>(),
+			Arg.Any<IReadOnlyList<DataBindingSchemaColumn>>(),
+			Arg.Is<IReadOnlyList<DataBindingRowLocalization>>(rows =>
+				rows.Single().Cultures.Keys.Single() == "uk-UA"));
 	}
 
 	[Test]
