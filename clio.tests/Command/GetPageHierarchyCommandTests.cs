@@ -653,6 +653,184 @@ public class GetPageHierarchyCommandTests {
 				because: "the warning must name the cause so the caller does not treat null as unlocked");
 	}
 
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy still returns the chain when the SysPackage lock read times out (TaskCanceledException from HttpClient).")]
+	public void TryGetHierarchy_Should_Return_Chain_When_Lock_Read_Times_Out() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.ArgAt<string>(1).Contains("\"rootSchemaName\":\"SysPackage\"")
+				? throw new System.Threading.Tasks.TaskCanceledException("The request was canceled due to the configured HttpClient.Timeout")
+				: ResolvedMetadataJson);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => EffectiveFirstChain());
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "a timed-out lock read is a failed lock read, which must not fail the chain read");
+		response.Schemas.Should().HaveCount(3, because: "the whole chain is still returned");
+		response.Schemas.Should().OnlyContain(s => s.PackageLocked == null,
+			because: "no lock answer means the lock state is unknown for every entry");
+		response.Warning.Should().Contain("Package lock state could not be read",
+			because: "the caller must learn why packageLocked is null");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("BuildResponse joins the body-size warning and the lock-read warning into one warning, size first.")]
+	public void BuildResponse_Should_Join_Size_And_Lock_Warnings() {
+		// Arrange
+		GetPageHierarchyOptions options = new() { SchemaName = "UsrLeaf_FormPage" };
+		string hugeBody = new('x', GetPageHierarchyCommand.DefaultBodySizeBudgetChars + 1);
+		List<PageDesignerHierarchySchema> chain = new() { Schema("UsrLeaf_FormPage", hugeBody) };
+
+		// Act
+		GetPageHierarchyResponse response = GetPageHierarchyCommand.BuildResponse(
+			options, chain, null, "Package lock state could not be read: boom");
+
+		// Assert
+		response.BodiesOmittedForSize.Should().BeTrue(because: "the single body exceeds the response budget");
+		response.Warning.Should().StartWith("Bodies omitted:",
+			because: "the size warning comes first in the joined warning");
+		response.Warning.Should().EndWith(" Package lock state could not be read: boom",
+			because: "the lock-read cause must survive next to the size warning, separated by one space");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy reports a SysPackage row without InstallType as unknown and names its package in warning.")]
+	public void TryGetHierarchy_Should_Warn_When_SysPackage_Row_Has_No_InstallType() {
+		// Arrange
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.ArgAt<string>(1).Contains("\"rootSchemaName\":\"SysPackage\"")
+				? "{\"success\":true,\"rows\":[{\"UId\":\"UsrLeaf_FormPage-pkg-uid\",\"InstallType\":0},"
+					+ "{\"UId\":\"MidBase_FormPage-pkg-uid\",\"InstallType\":1},"
+					+ "{\"UId\":\"RootBase_FormPage-pkg-uid\",\"InstallType\":null}]}"
+				: ResolvedMetadataJson);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => EffectiveFirstChain());
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the chain resolved");
+		response.Schemas.Single(s => s.SchemaName == "RootBase_FormPage").PackageLocked.Should().BeNull(
+			because: "a row without InstallType carries no lock state");
+		response.Warning.Should().Be(
+			"Package lock state is unknown (packageLocked is null) for packages: RootBase_FormPage-pkg-uid.",
+			because: "a null packageLocked from a row without InstallType must be named in warning like a missing row");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy names chain entries without a package UId in warning instead of leaving their null packageLocked silent.")]
+	public void TryGetHierarchy_Should_Warn_When_Chain_Entry_Has_No_PackageUId() {
+		// Arrange
+		List<PageDesignerHierarchySchema> chain = EffectiveFirstChain();
+		chain[1] = WithPackageUId(chain[1], " ");
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => callInfo.ArgAt<string>(1).Contains("\"rootSchemaName\":\"SysPackage\"")
+				? "{\"success\":true,\"rows\":[{\"UId\":\"UsrLeaf_FormPage-pkg-uid\",\"InstallType\":0},"
+					+ "{\"UId\":\"RootBase_FormPage-pkg-uid\",\"InstallType\":1}]}"
+				: ResolvedMetadataJson);
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => chain);
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the chain resolved");
+		response.Schemas.Single(s => s.SchemaName == "MidBase_FormPage").PackageLocked.Should().BeNull(
+			because: "an entry without a package UId has no lock state to read");
+		response.Warning.Should().Be(
+			"Package lock state is unknown (packageLocked is null) for schemas without a package UId: MidBase_FormPage.",
+			because: "every null packageLocked must come with a warning, so the caller never reads it as unlocked");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("TryGetHierarchy reads the lock state of the whole chain in one SysPackage request, each package UId once regardless of casing, even when only one entry is paged out.")]
+	public void TryGetHierarchy_Should_Read_Lock_State_For_Whole_Chain_Once_Before_Paging() {
+		// Arrange
+		List<PageDesignerHierarchySchema> chain = EffectiveFirstChain();
+		chain.Insert(1, WithPackageUId(Schema("UsrSecond_FormPage", "second-body"), chain[0].PackageUId.ToUpperInvariant()));
+		List<string> sysPackageBodies = new();
+		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		applicationClient.ExecutePostRequest(Arg.Any<string>(), Arg.Any<string>())
+			.Returns(callInfo => {
+				string body = callInfo.ArgAt<string>(1);
+				if (!body.Contains("\"rootSchemaName\":\"SysPackage\"")) {
+					return ResolvedMetadataJson;
+				}
+				sysPackageBodies.Add(body);
+				return "{\"success\":true,\"rows\":[{\"UId\":\"UsrLeaf_FormPage-pkg-uid\",\"InstallType\":0},"
+					+ "{\"UId\":\"MidBase_FormPage-pkg-uid\",\"InstallType\":1},"
+					+ "{\"UId\":\"RootBase_FormPage-pkg-uid\",\"InstallType\":1}]}";
+			});
+		IPageDesignerHierarchyClient hierarchyClient = Substitute.For<IPageDesignerHierarchyClient>();
+		hierarchyClient.GetDesignPackageUId("schema-uid").Returns("design-pkg-uid");
+		hierarchyClient.GetParentSchemas(Arg.Any<string>(), "design-pkg-uid").Returns(_ => chain);
+		GetPageHierarchyCommand sut = BuildCommand(applicationClient, hierarchyClient);
+
+		// Act
+		bool ok = sut.TryGetHierarchy(
+			new GetPageHierarchyOptions { SchemaName = "UsrLeaf_FormPage", MetadataOnly = true, Offset = 1, Limit = 1 },
+			out GetPageHierarchyResponse response);
+
+		// Assert
+		ok.Should().BeTrue(because: "the chain resolved");
+		response.Schemas.Should().ContainSingle(because: "the window holds one entry");
+		sysPackageBodies.Should().ContainSingle(because: "the lock state is read once for the whole chain");
+		string sysPackageBody = sysPackageBodies[0];
+		foreach (string packageUId in new[] {
+			"UsrLeaf_FormPage-pkg-uid", "MidBase_FormPage-pkg-uid", "RootBase_FormPage-pkg-uid" }) {
+			CountOccurrences(sysPackageBody, packageUId).Should().Be(1,
+				because: $"the IN filter must carry chain package '{packageUId}' exactly once, casing variants merged, "
+					+ "including packages outside the paged window");
+		}
+		response.Warning.Should().BeNull(because: "every package in the chain got a lock state");
+	}
+
+	private static PageDesignerHierarchySchema WithPackageUId(PageDesignerHierarchySchema schema, string packageUId) =>
+		new() {
+			UId = schema.UId,
+			Name = schema.Name,
+			PackageName = schema.PackageName,
+			PackageUId = packageUId,
+			SchemaVersion = schema.SchemaVersion,
+			SchemaType = schema.SchemaType,
+			Body = schema.Body
+		};
+
+	private static int CountOccurrences(string text, string value) {
+		int count = 0;
+		int index = text.IndexOf(value, StringComparison.OrdinalIgnoreCase);
+		while (index >= 0) {
+			count++;
+			index = text.IndexOf(value, index + value.Length, StringComparison.OrdinalIgnoreCase);
+		}
+		return count;
+	}
+
 	[TestCase(0, false)]
 	[TestCase(1, true)]
 	[TestCase(2, true)]

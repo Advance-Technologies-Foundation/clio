@@ -27,6 +27,5 @@ choice among several editable layers is the platform's, not the caller's.
 
 **What breaks if you ignore it** — an agent that only reads `designPackageName` from `get-page` believes the
 page is customized in one package, while another unlocked package also changes it. The change lands in one of
-them and the user does not learn that the page's customization is split. ENG-105680 adds `packageLocked` to
-every `get-page-hierarchy` entry so the guidance can detect the case and ask the user; reading the chain without
-it cannot tell an editable layer from a vendor one.
+them and the user does not learn that the page's customization is split. Detecting the case takes the whole chain
+plus each layer's `SysPackage.InstallType`: the chain alone cannot tell an editable layer from a vendor one.

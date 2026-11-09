@@ -337,8 +337,10 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 	/// </summary>
 	/// <param name="chain">The resolved chain.</param>
 	/// <returns>
-	/// Lock state by package UId, or <c>null</c> and the reason when the query failed. A failed read never fails the
-	/// hierarchy itself: the chain is still returned, with <c>packageLocked</c> unknown.
+	/// Lock state by package UId, or <c>null</c> when the query failed, plus a warning for every lock state left
+	/// unknown: a failed query, a package <c>SysPackage</c> did not return, or a chain entry without a package UId.
+	/// A failed read never fails the hierarchy itself: the chain is still returned, with <c>packageLocked</c> unknown.
+	/// A timeout (<see cref="OperationCanceledException"/>) is a failed read too: no cancellation token reaches it.
 	/// </returns>
 	private (IReadOnlyDictionary<string, bool?> locks, string error) ReadPackageLocks(
 		IReadOnlyList<PageDesignerHierarchySchema> chain) {
@@ -347,9 +349,17 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 			.Where(uId => !string.IsNullOrWhiteSpace(uId))
 			.Distinct(StringComparer.OrdinalIgnoreCase)
 			.ToList();
+		List<string> schemasWithoutPackage = chain
+			.Where(schema => string.IsNullOrWhiteSpace(schema.PackageUId))
+			.Select(schema => schema.Name)
+			.ToList();
+		string noPackageWarning = schemasWithoutPackage.Count == 0
+			? null
+			: "Package lock state is unknown (packageLocked is null) for schemas without a package UId: "
+				+ $"{string.Join(", ", schemasWithoutPackage)}.";
 		Dictionary<string, bool?> locks = new(StringComparer.OrdinalIgnoreCase);
 		if (packageUIds.Count == 0) {
-			return (locks, null);
+			return (locks, noPackageWarning);
 		}
 		try {
 			PackageLockSelectResponse answer = SelectQueryHelper.ExecuteSelectQuery<PackageLockSelectResponse>(
@@ -360,11 +370,13 @@ public class GetPageHierarchyCommand : Command<GetPageHierarchyOptions> {
 				locks[row.UId] = PackageTargetResolver.IsLockedInstallType(row.InstallType);
 			}
 			List<string> unknown = packageUIds.Where(uId => locks.GetValueOrDefault(uId) is null).ToList();
-			return (locks, unknown.Count == 0
-				? null
-				: $"Package lock state is unknown (packageLocked is null) for packages: {string.Join(", ", unknown)}.");
+			return (locks, JoinWarnings(
+				unknown.Count == 0
+					? null
+					: $"Package lock state is unknown (packageLocked is null) for packages: {string.Join(", ", unknown)}.",
+				noPackageWarning));
 		}
-		catch (Exception ex) when (ex is not OperationCanceledException) {
+		catch (Exception ex) {
 			return (null, $"Package lock state could not be read, so packageLocked is null for every schema: {ex.Message}");
 		}
 	}

@@ -114,10 +114,10 @@ public sealed class PageHierarchyGetToolE2ETests : McpContractFixtureBase {
 	[Test]
 	[Category("McpE2E.Sandbox")]
 	[Category("E2E")]
-	[Description("get-page-hierarchy metadata-only reports a known package lock state for every chain entry, with the platform root schema in a locked package (ENG-105680).")]
+	[Description("get-page-hierarchy metadata-only reports a known package lock state for every chain entry (ENG-105680).")]
 	[AllureTag(ToolName)]
 	[AllureName("get-page-hierarchy reports the package lock state of every layer")]
-	[AllureDescription("Resolves a seeded page, invokes get-page-hierarchy with metadata-only through clio-run, and verifies every entry carries packageLocked read from SysPackage.InstallType: no entry is left unknown, and the level-0 platform template sits in a locked package. The page-edit guidance relies on this flag to decide whether the agent must ask which package to change.")]
+	[AllureDescription("Resolves a seeded page, invokes get-page-hierarchy with metadata-only through clio-run, and verifies every entry carries packageLocked read from SysPackage.InstallType and no entry is left unknown. Which layers are locked depends on the stand, so the test does not pin individual values. The page-edit guidance relies on this flag to decide whether the agent must ask which package to change.")]
 	public async Task GetPageHierarchy_Should_Report_Package_Lock_State_Per_Entry() {
 		// Arrange
 		McpE2ESettings settings = TestConfiguration.Load();
@@ -149,8 +149,6 @@ public sealed class PageHierarchyGetToolE2ETests : McpContractFixtureBase {
 			because: "the SysPackage lock read must succeed for a user who can read the page chain");
 		response.Schemas.Should().OnlyContain(s => s.PackageLocked != null,
 			because: "every package in the chain exists in SysPackage, so no lock state may stay unknown");
-		response.Schemas[0].PackageLocked.Should().BeTrue(
-			because: "the level-0 platform template ships in a locked platform package");
 	}
 
 	[Test]

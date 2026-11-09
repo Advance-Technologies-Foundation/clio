@@ -15,10 +15,20 @@ DESCRIPTION
     name/UId, whether that package is locked, schema version, schema type, and
     its own raw body.
 
-    packageLocked is read from SysPackage.InstallType: true when the package
-    cannot receive design-time writes, false when it can, null when the lock
-    state could not be read (the response warning then names the cause). Use it
-    to see which layers of the page an edit could land in.
+    packageLocked is read from SysPackage.InstallType with one query for the
+    whole chain: 0 is editable (false), any other value is locked (true) - the
+    flag lock-package / unlock-package set. It is null when the lock state is
+    unknown, and the response warning then names the cause:
+      - the SysPackage query failed: the chain is still returned and every
+        packageLocked is null;
+      - SysPackage returned no row, or no InstallType, for a package: the
+        warning lists those package UIds;
+      - a chain entry has no package UId: the warning lists those schemas.
+    Treat null as unknown, never as unlocked.
+
+    The automatic save target of update-page (designPackageName in get-page) is
+    one of the unlocked layers. When the chain shows another unlocked layer of
+    the same page, the page is customized in more than one package.
 
     Use this instead of calling get-page / get-client-unit-schema once per schema
     when you need to inspect a whole chain (for example Classic->Freedom migration
