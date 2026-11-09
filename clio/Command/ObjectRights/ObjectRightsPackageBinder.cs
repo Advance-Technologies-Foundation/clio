@@ -83,15 +83,16 @@ public interface IObjectRightsPackageBinder {
 	/// <summary>
 	/// Decides where the object's rows are bound, before anything is written: the named package, or the package of the
 	/// object's base schema. A package that does not exist or is locked is refused, naming a package that can be used.
-	/// Also finds a binding of these rows in another editable package or under another name, which is then reported
-	/// instead of writing a second one. Reads only.
+	/// The object's own <c>SysEntitySchemaOperationRight_&lt;code&gt;</c> binding in an editable package other than the
+	/// target refuses the call too, so a change never leaves that binding stale. Also finds a binding of these rows made
+	/// by hand under another name, which is then reported instead of writing a second one. Reads only.
 	/// </summary>
 	/// <param name="schemaName">The object's code.</param>
 	/// <param name="schemaUId">The UId of the object's base schema, which the rows reference.</param>
 	/// <param name="packageName">The package the caller named; blank for the object's own package, or for the package
 	/// that already holds the object's <c>SysEntitySchemaOperationRight_&lt;code&gt;</c> binding when another one does.</param>
 	/// <param name="requestOptions">Timeout and deadline of the reads, so they share the call's budget; the package
-	/// lookups that go through <see cref="IPackageTargetResolver"/> and the bound-row reads are not bounded by it.</param>
+	/// lookups that go through <see cref="IPackageTargetResolver"/> are not bounded by it.</param>
 	/// <returns>The target, or a refused one.</returns>
 	ObjectRightsBindingTarget ResolveTarget(string schemaName, Guid schemaUId, string packageName,
 		CreatioRequestOptions requestOptions);
@@ -173,6 +174,17 @@ internal sealed class ObjectRightsPackageBinder(
 				.Where(name => !string.IsNullOrWhiteSpace(name))
 				.Distinct(StringComparer.OrdinalIgnoreCase)
 				.ToArray();
+			// The object's own binding in another package would keep the previous rows while this call changes them, so
+			// the call is refused before any write, naming the package that holds it.
+			BindingRow ownInOtherPackage = bindings.FirstOrDefault(row =>
+				string.Equals(row.Name, bindingName, StringComparison.OrdinalIgnoreCase)
+				&& !string.Equals(row.PackageName, package.PackageName, StringComparison.OrdinalIgnoreCase));
+			if (ownInOtherPackage is not null) {
+				return ObjectRightsBindingTarget.Refuse($"the operation permissions of '{schemaName}' are already bound "
+					+ $"in package '{ownInOtherPackage.PackageName}' (binding '{bindingName}'); binding them to "
+					+ $"'{package.PackageName}' would leave that binding with the previous rows. Pass "
+					+ $"package='{ownInOtherPackage.PackageName}', or remove that binding first. Nothing was changed.");
+			}
 			ExistingObjectRightsBinding existing = FindOtherBinding(bindings, schemaUId, package.PackageName, bindingName,
 				requestOptions);
 			return new ObjectRightsBindingTarget(package.PackageName, package.PackageUId, bindingName, schemaPackages,
@@ -286,16 +298,17 @@ internal sealed class ObjectRightsPackageBinder(
 		return response.Rows ?? [];
 	}
 
-	// A binding of this object's rows anywhere but the target: by its rows' object, or by a row id this object holds.
-	// A binding under the naming convention belongs to the object its name says, so only bindings named otherwise (made
-	// by hand) are read row by row — the scan does not grow with the bindings this tool writes.
+	// A binding of this object's rows made by hand: by its rows' object, or by a row id this object holds. A binding
+	// under the naming convention belongs to the object its name says, so only bindings named otherwise are read row by
+	// row — the scan does not grow with the bindings this tool writes. Once the target package holds the object's own
+	// binding, an earlier bind already ran this check, so later calls skip the reads.
 	private ExistingObjectRightsBinding FindOtherBinding(IReadOnlyList<BindingRow> bindings, Guid schemaUId,
 		string packageName, string bindingName, CreatioRequestOptions requestOptions) {
-		BindingRow sameName = bindings.FirstOrDefault(row =>
+		bool ownInTarget = bindings.Any(row =>
 			string.Equals(row.Name, bindingName, StringComparison.OrdinalIgnoreCase)
-			&& !string.Equals(row.PackageName, packageName, StringComparison.OrdinalIgnoreCase));
-		if (sameName is not null) {
-			return new ExistingObjectRightsBinding(sameName.Name, sameName.PackageName);
+			&& string.Equals(row.PackageName, packageName, StringComparison.OrdinalIgnoreCase));
+		if (ownInTarget) {
+			return null;
 		}
 		string conventionPrefix = BindingNameOf(string.Empty);
 		BindingRow[] byHand = bindings.Where(row => row.UId != Guid.Empty && row.Name is not null
@@ -305,7 +318,7 @@ internal sealed class ObjectRightsPackageBinder(
 			return null;
 		}
 		HashSet<Guid> rowIds = ReadStoredRowIds(schemaUId, requestOptions).ToHashSet();
-		BindingRow holder = byHand.FirstOrDefault(row => bindingWriter.FetchBoundRows(row.UId).Any(bound =>
+		BindingRow holder = byHand.FirstOrDefault(row => bindingWriter.FetchBoundRows(row.UId, requestOptions).Any(bound =>
 			ReadGuid(bound, SubjectSchemaUIdColumn) == schemaUId || rowIds.Contains(ReadGuid(bound, "Id"))));
 		return holder is null ? null : new ExistingObjectRightsBinding(holder.Name, holder.PackageName);
 	}

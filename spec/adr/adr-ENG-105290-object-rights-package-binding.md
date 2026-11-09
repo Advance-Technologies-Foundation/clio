@@ -36,14 +36,17 @@ one is editable.
 
 **D3a — The object's own binding stays where it is.** Without `--package`, a
 `SysEntitySchemaOperationRight_<code>` binding that an earlier call wrote into another editable package is the
-target, so a later change never leaves a stale copy behind. A preview never fails on a refused package: it shows
-the refusal and exits 0. A call that changes no row writes the binding only when it is confirmed.
+target, so a later change never leaves a stale copy behind. With `--package` naming another package, the call is
+refused before any write, naming the package that holds the binding (pass it, or remove that binding first): saving
+the rows while that binding keeps the previous ones would ship rights the site no longer has (PR #1908 review). A
+preview never fails on a refused package: it shows the refusal and exits 0. A call that changes no row writes the binding only when it is confirmed.
 
 **D4 — A binding found elsewhere is reported, not duplicated.** Bindings of `SysEntitySchemaOperationRight` in
 editable packages are read; one that holds a row of this object (by `SubjectSchemaUId` or by row id) under another
 name or package is named in the result and no binding is written. Only bindings named outside the convention (made
 by hand) are read row by row, and locked packages are not searched: each read costs a request, and the caller's
-own bindings live in editable packages.
+own bindings live in editable packages. Those reads share the call's request budget, and they are skipped once the
+target package holds the object's own binding: the first bind already ran the check.
 
 **D5 — A failed binding after a saved change fails the call.** The rows stay saved; the error says they are not bound
 and that re-running the same call binds them (D1). The binding requests are not under the MCP call budget.

@@ -40,7 +40,7 @@ public class ObjectRightsPackageBinderTests {
 		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
 		urlBuilder.Build(ServiceUrlBuilder.KnownRoute.Select).Returns(SelectUrl);
 		_writer = Substitute.For<IPackageDataBindingWriter>();
-		_writer.FetchBoundRows(Arg.Any<Guid>()).Returns(new List<Dictionary<string, JsonNode>>());
+		_writer.FetchBoundRows(Arg.Any<Guid>(), Arg.Any<CreatioRequestOptions>()).Returns(new List<Dictionary<string, JsonNode>>());
 		_resolver = Substitute.For<IPackageTargetResolver>();
 		_resolver.Resolve(Arg.Any<string>(), Arg.Any<bool>())
 			.Returns(call => PackageTargetResolution.Resolved((string)call[0] ?? "Custom", AppPackageUId));
@@ -140,7 +140,7 @@ public class ObjectRightsPackageBinderTests {
 	public void ResolveTarget_ShouldReportExistingBinding_WhenRowsBoundElsewhere() {
 		// Arrange
 		Bindings((OtherBindingUId, "ManualRights", "Custom"));
-		_writer.FetchBoundRows(OtherBindingUId).Returns(new List<Dictionary<string, JsonNode>> {
+		_writer.FetchBoundRows(OtherBindingUId, Arg.Any<CreatioRequestOptions>()).Returns(new List<Dictionary<string, JsonNode>> {
 			new() { ["Id"] = JsonValue.Create(RowB.ToString()) }
 		});
 
@@ -158,7 +158,7 @@ public class ObjectRightsPackageBinderTests {
 		// Arrange
 		Guid own = Guid.NewGuid();
 		Bindings((own, "SysEntitySchemaOperationRight_UsrFoo", "UsrApp"), (OtherBindingUId, "Other", "Custom"));
-		_writer.FetchBoundRows(OtherBindingUId).Returns(new List<Dictionary<string, JsonNode>> {
+		_writer.FetchBoundRows(OtherBindingUId, Arg.Any<CreatioRequestOptions>()).Returns(new List<Dictionary<string, JsonNode>> {
 			new() {
 				["Id"] = JsonValue.Create(Guid.NewGuid().ToString()),
 				["SubjectSchemaUId"] = JsonValue.Create(Guid.NewGuid().ToString())
@@ -170,7 +170,7 @@ public class ObjectRightsPackageBinderTests {
 
 		// Assert
 		target.Existing.Should().BeNull(because: "neither binding holds a row of this object elsewhere");
-		_writer.DidNotReceive().FetchBoundRows(own);
+		_writer.DidNotReceive().FetchBoundRows(own, Arg.Any<CreatioRequestOptions>());
 	}
 
 	[Test]
@@ -303,8 +303,8 @@ public class ObjectRightsPackageBinderTests {
 	}
 
 	[Test]
-	[Description("With a package argument, the object's own binding in another package is reported, not duplicated.")]
-	public void ResolveTarget_ShouldReportOwnBindingElsewhere_WhenAnotherPackageNamed() {
+	[Description("With a package argument other than the one holding the object's own binding, the call is refused before any write, naming that package, so the binding never keeps the previous rows.")]
+	public void ResolveTarget_ShouldRefuse_WhenOwnBindingIsInAnotherPackageThanTheNamedOne() {
 		// Arrange
 		Bindings((OtherBindingUId, "SysEntitySchemaOperationRight_UsrFoo", "UsrAppRights"));
 
@@ -312,8 +312,52 @@ public class ObjectRightsPackageBinderTests {
 		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, "UsrOther", null);
 
 		// Assert
-		target.Existing.Should().Be(new ExistingObjectRightsBinding("SysEntitySchemaOperationRight_UsrFoo", "UsrAppRights"),
-			because: "a second binding of the same rows would ship them twice");
+		target.Refused.Should().BeTrue(because: "saving the rows would leave the binding in UsrAppRights with the previous rows");
+		target.Refusal.Should().Contain("package='UsrAppRights'", because: "the caller learns which package to name instead");
+		target.Refusal.Should().Contain("Nothing was changed", because: "the refusal comes before any write");
+	}
+
+	[Test]
+	[Description("Naming the package that already holds the object's own binding is not a refusal: the binding is updated there.")]
+	public void ResolveTarget_ShouldTargetOwnBinding_WhenItsPackageIsNamed() {
+		// Arrange
+		Bindings((OtherBindingUId, "SysEntitySchemaOperationRight_UsrFoo", "UsrAppRights"));
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, "UsrAppRights", null);
+
+		// Assert
+		target.Refused.Should().BeFalse(because: $"the named package holds the binding. Refusal: {target.Refusal}");
+		target.PackageName.Should().Be("UsrAppRights", because: "the named package receives the binding");
+		target.Existing.Should().BeNull(because: "the binding is the target, not a second binding elsewhere");
+	}
+
+	[Test]
+	[Description("Once the target package holds the object's own binding, the bindings made by hand are not read again.")]
+	public void ResolveTarget_ShouldSkipHandMadeScan_WhenTargetHoldsOwnBinding() {
+		// Arrange
+		Bindings((Guid.NewGuid(), "SysEntitySchemaOperationRight_UsrFoo", "UsrApp"), (OtherBindingUId, "ManualRights", "Custom"));
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, null, null);
+
+		// Assert
+		target.Existing.Should().BeNull(because: "the first bind into UsrApp already checked the bindings made by hand");
+		_writer.DidNotReceiveWithAnyArgs().FetchBoundRows(default, default);
+	}
+
+	[Test]
+	[Description("The hand-made binding reads share the call's request options, so they are bounded by its budget.")]
+	public void ResolveTarget_ShouldPassRequestOptionsToBoundRowReads() {
+		// Arrange
+		CreatioRequestOptions options = new() { TimeOut = 5_000 };
+		Bindings((OtherBindingUId, "ManualRights", "Custom"));
+
+		// Act
+		_binder.ResolveTarget("UsrFoo", SchemaUId, null, options);
+
+		// Assert
+		_writer.Received(1).FetchBoundRows(OtherBindingUId, options);
 	}
 
 	[Test]
@@ -327,6 +371,6 @@ public class ObjectRightsPackageBinderTests {
 
 		// Assert
 		target.Existing.Should().BeNull(because: "the binding belongs to UsrBar by its name");
-		_writer.DidNotReceiveWithAnyArgs().FetchBoundRows(default);
+		_writer.DidNotReceiveWithAnyArgs().FetchBoundRows(default, default);
 	}
 }

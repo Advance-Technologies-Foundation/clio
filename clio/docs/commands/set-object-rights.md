@@ -78,8 +78,9 @@ are bound to a package, so they install with it on another site: the binding
 on `Id`, with every other column — the object, the role, the operations and the position — force-updated on install. A row removed with `--remove-row` leaves the
 binding; an object with no stored rows has its binding removed. `--package` names the package; without it, the
 package of the object's base schema is used. A package that does not exist or is locked is refused before any
-write, naming a package to use (the `CurrentPackageId` package when it is editable). Rows already bound in another
-editable package or under another name are reported, and no second binding is written. The "Use operation
+write, naming a package to use (the `CurrentPackageId` package when it is editable). A package other than the one
+that already holds the object's `SysEntitySchemaOperationRight_<code>` binding is refused before any write too,
+naming that package. Rows bound by hand under another name are reported, and no second binding is written. The "Use operation
 permissions" switch is part of the object's schema and travels with it; the result says whether the schema is in
 the binding's package. Package install adds and updates rows but never deletes them, so a site that already
 installed a removed row keeps it; and a row names its role by id, so it applies only where that role exists with

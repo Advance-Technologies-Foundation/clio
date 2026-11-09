@@ -152,6 +152,7 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.DisableOperationPermissions.Should().BeFalse(because: "disabling is an explicit opt-in only");
 		_capturedSet.Preview.Should().BeFalse(because: "a call without preview applies the change");
 		_capturedSet.Confirm.Should().BeTrue(because: "MCP cannot prompt; the host approval of the call is the confirmation");
+		_capturedSet.Package.Should().BeNull(because: "an omitted package leaves the choice to the object's own package");
 		_writer.ReceivedWithAnyArgs(1).Save(default, default, default);
 	}
 
@@ -190,6 +191,20 @@ public sealed class ObjectRightsToolBehaviourTests {
 		_capturedSet.DisableOperationPermissions.Should().BeTrue(because: "disable-operation-permissions maps through");
 		_capturedSet.Grantee.Should().BeNull(because: "a disable names no grantee");
 		_capturedSet.Operations.Should().BeNull(because: "a disable names no operation");
+	}
+
+	[Test]
+	[Description("package maps through, so it decides which package the object's rows are bound to.")]
+	public void SetObjectRights_ShouldMapPackage_WhenProvided() {
+		// Arrange
+		SetObjectRightsArgs args = new("dev", "UsrFoo", Grantee, "read", Package: "UsrAppRights");
+
+		// Act
+		SetTool().SetObjectRights(args);
+
+		// Assert
+		_capturedSet.Should().NotBeNull(because: "the command must have been resolved for the call");
+		_capturedSet.Package.Should().Be("UsrAppRights", because: "package maps onto the command's Package");
 	}
 
 	[Test]

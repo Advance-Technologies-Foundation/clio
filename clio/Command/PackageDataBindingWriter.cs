@@ -147,6 +147,17 @@ internal interface IPackageDataBindingWriter {
 	/// <param name="bindingUId">UId of the binding (<see cref="PackageDataBindingRef.UId"/>).</param>
 	/// <returns>The stored rows, each a column-name to value map; empty when the binding stores none.</returns>
 	List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId);
+
+	/// <summary>
+	/// Reads the rows a binding stores, like <see cref="FetchBoundRows(Guid)"/>, within the timeout and deadline of
+	/// <paramref name="requestOptions"/>, so the read shares the budget of the call that sends it.
+	/// </summary>
+	/// <param name="bindingUId">UId of the binding (<see cref="PackageDataBindingRef.UId"/>).</param>
+	/// <param name="requestOptions">Timeout, retries and deadline of the read; <see langword="null"/> for an
+	/// unbounded read.</param>
+	/// <returns>The stored rows, each a column-name to value map; empty when the binding stores none.</returns>
+	/// <exception cref="TimeoutException">The deadline is spent, so the read was not sent.</exception>
+	List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId, CreatioRequestOptions requestOptions);
 }
 
 /// <inheritdoc />
@@ -375,10 +386,16 @@ internal sealed class PackageDataBindingWriter(
 		$$"""{"uId":"{{bindingUId}}"}""";
 
 	/// <inheritdoc />
-	public List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId) {
-		string response = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData),
-			BuildGetBoundSchemaDataBody(bindingUId));
+	public List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId) => FetchBoundRows(bindingUId, null);
+
+	/// <inheritdoc />
+	public List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId, CreatioRequestOptions requestOptions) {
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData);
+		string body = BuildGetBoundSchemaDataBody(bindingUId);
+		CreatioRequestOptions send = requestOptions?.ForNextRequest();
+		string response = send is null
+			? applicationClient.ExecutePostRequest(url, body)
+			: applicationClient.ExecutePostRequest(url, body, send.TimeOut, send.MaxAttempts, send.RetryDelay);
 
 		using JsonDocument document = JsonDocument.Parse(response);
 		if (!document.RootElement.TryGetProperty("items", out JsonElement itemsElement)) {
