@@ -2,7 +2,8 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-46 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day). Every other expected result is a hypothesis until its EM runs.
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-46 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-50: the 1.6.6.147 / .148 re-run, on
+`eng105744-web02` and on stand `eng92710-web03`, same day). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -67,7 +68,10 @@ compared under; "the oracle rule" below means WSCR) ·
   expectation: EM8 step 8 - the unrelated modify is refused by the platform because a reader of a pruned parameter
   exists, nothing is written and N7 is not in the reply (M-41). KB-7 on the draft article: AR-2 PASS (M-46); AR-1
   reaches the right service and method, builds in two steps and maps by stored names, but through two refusals where
-  the test plan allows one (M-45).
+  the test plan allows one (M-45). On 1.6.6.148 (stand `eng92710-web03`) the unknown-service refusal lists the methods
+  (M-47) and AR-1 on the updated article passes with one refusal (M-48). The F-2 fix (N7 on the pre-save refusal) is
+  not measured yet: `eng105744-web02` kept running the .146 assembly (M-49), and EM8 on web03 needs a Studio rename
+  that an installed fixtures package does not allow (M-50).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -202,6 +206,10 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-44 | EM12 builder half: with both containers unmapped and two leaves bound, the answer carries N5 for `UsrWscOrders_In.UsrWscLines_In` only | measured 2026-11-09 | `CAP/em-final146/em12/` |
 | M-45 | KB-7 AR-1 (isolated headless agent, draft article kb92710 `9c85351`): the agent finds `CreatioMarketplaceApi` through a refused create naming a non-existent service, then `GetAppPublishedVersion` through a second refused create naming a non-existent method (the service refusal lists no methods), creates the element alone, then binds 4 inputs and 5 outputs in one modify by the stored names; no secret in the transcript; the stored schema carries the 9 bindings | measured 2026-11-09 | `CAP/em-final146/kb7/` |
 | M-46 | KB-7 AR-2: after one refused create naming `OpenWeather`, the agent stops, creates nothing, and tells the user to register the service in Studio > Web services with base URL, method, parameters and authentication (key in a system setting or the service default, never a process constant) | measured 2026-11-09 | `CAP/em-final146/kb7/` |
+| M-47 | CrtProcessBuilder 1.6.6.148: a create naming a non-existent web service is refused with every registered service as `Name (caption; methods: ...)`; nothing is created | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/0/probe-unknown-service-reply.txt` |
+| M-48 | KB-7 AR-1 on article kb92710 `9e5ec87` with 1.6.6.148: one refused create gives the agent service and method; it creates the element alone, then binds 4 inputs and 5 outputs in one modify by stored names, every new parameter typed with `typeFromElement`; no secret; stored schema carries the 9 bindings | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/kb7/` |
+| M-49 | On `eng105744-web02` the .147 install did not compile the package (compile marker with an unchanged `ModifiedOnUtc` is skipped); after the .148 install the build succeeded, yet the refusals kept the .146 form after `restart-web-app` and after `compile-configuration --all` | measured 2026-11-09 | `CAP/em-final146/rerun147/`, `CAP/em-final146/rerun148/` |
+| M-50 | A package installed by `push-pkg` (`InstallType` 1) is read-only in Studio > Web services also with `CurrentPackageId` set to it; `clio set-syssetting` updated the setting row but `QuerySysSettings` returned the old value until `PostSysSettingsValues` wrote it | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8/step2*` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
@@ -1303,6 +1311,15 @@ Created on stand `eng105744-web02` by the final-cut runs (2026-11-09, lead; `CAP
 | EM11 | process | `UsrWscEm11Builder` (`4f586752-0203-471f-96ac-a8e35589845a`, `Custom`) | CU-1 | never run |
 | EM12 | process | `UsrWscEm12Builder` (`bbbdd124-fb90-4918-83f7-4a68a371972e`, `Custom`) | CU-1 | never run |
 | KB-7 | process | `UsrMarketplaceApp_GetPublishedVersion` (`bb6a5adf-353d-46fa-be46-403b4529b9c1`, `Custom`) | CU-1 | created by the AR-1 agent; calls the shipped `CreatioMarketplaceApi`; never run |
+
+Created on stand `eng92710-web03` (2026-11-09, lead; `CAP/em-final146/em-final146-report.md`, "Re-run on eng92710-web03"):
+
+| EM | Kind | Name or id | Removal | Note |
+|---|---|---|---|---|
+| fixtures | package | `UsrWscTestFixtures` (UId `7905c74c-0a9d-965b-2696-435eb1664010`), 4 services + `UsrWscEm2CaptureA` | owner decides | installed by `push-pkg`; base URIs not re-pointed |
+| EM8 | process | `UsrWscEm8Drift2` (`d4a05aa9-9c59-4fff-a668-7fe3dc74db27`, `Custom`) | CU-1 | step 8 pending; never run |
+| KB-7 | process | `UsrMarketplaceApp_GetPublishedVersion` (`40097d4a-c030-4732-9f10-a35af97193a9`, `Custom`) | CU-1 | created by the AR-1 agent; never run |
+| EM8 | system setting | `CurrentPackageId` | none | set and restored to `Custom`; only `ModifiedOn` moved |
 
 Planned (stand `Creatio`, superseded by the rows above where the same name appears):
 
