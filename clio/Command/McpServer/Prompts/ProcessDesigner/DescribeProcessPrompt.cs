@@ -65,8 +65,9 @@ public static class DescribeProcessPrompt {
 		   `method`, `timeoutSeconds` and `ignoreErrors`, and
 		   `parameters` - every parameter the element stores, unbound inputs included, with its `tag` (the service
 		   parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags. Those
-		   names are what a mapping addresses. `serviceResolved: false` or `methodResolved: false` means the call
-		   fails at run time; read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
+		   names are what a mapping addresses. `serviceResolved: false` means the call fails at run time, and so does
+		   `methodResolved: false` - unless an issue says the service could not be read: then nothing was checked and
+		   the outcome is unknown. Read `issues` for the rest. To resubmit, send the block back unchanged: `serviceUId`,
 		   `serviceResolved`, `methodResolved`, `issues` and `parameters` are describe-only, and clio warns and
 		   ignores them.
 		   `get-guidance name=process-web-service` owns the block.

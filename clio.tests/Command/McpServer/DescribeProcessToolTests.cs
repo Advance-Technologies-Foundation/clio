@@ -483,7 +483,7 @@ public sealed class DescribeProcessToolTests {
 
 	[Test]
 	[Category("Unit")]
-	[Description("The describe contract and its prompt name the webService block a Call web service element reads back (Q14): every write member keeps its write shape, so the block is sent back unchanged, and serviceUId, serviceResolved, methodResolved, issues and parameters - the whole stored tree, unbound inputs included - are describe-only and draw a warning. A describe-then-modify round trip works only when the agent knows the block replays as is.")]
+	[Description("The describe contract and its prompt name the webService block a Call web service element reads back (Q14): every write member keeps its write shape, so the block is sent back unchanged, and serviceUId, serviceResolved, methodResolved, issues and parameters - the whole stored tree, unbound inputs included - are describe-only and draw a warning; methodResolved false over a service that could not be read means unchecked, not failing. A describe-then-modify round trip works only when the agent knows the block replays as is.")]
 	public void DescribeProcess_ShouldDocumentTheWebServiceBlock_WhenToolContractIsRead() {
 		// Arrange
 		string toolText = ReadDescribeToolDescription();
@@ -498,6 +498,8 @@ public sealed class DescribeProcessToolTests {
 			because: "the prompt lists every configuration block the tool reports");
 		prompt.Should().Contain("parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags.",
 			because: "the prompt must say what one node of the stored tree carries");
+		prompt.Should().Contain("unless an issue says the service could not be read: then nothing was checked and",
+			because: "methodResolved false over an unreadable service means unchecked, not a failing call");
 		prompt.Should().Contain("To resubmit, send the block back unchanged: `serviceUId`,",
 			because: "the prompt must match the tool contract on the resubmit rule");
 		prompt.Should().Contain("`get-guidance name=process-web-service` owns the block.",

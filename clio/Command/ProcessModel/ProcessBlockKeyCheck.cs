@@ -308,6 +308,12 @@ internal static class ProcessBlockKeyCheck {
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));
 
+	// The Call web service block. Describe reports every write member in its write shape ('service' is the name string
+	// on both sides, the raw UId sits in the describe-only 'serviceUId'), so a described block replays unchanged and its
+	// five describe-only members are warned about, never refused.
+	private static readonly KeySet WebServiceBlock = new("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
+		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
@@ -315,7 +321,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
 		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
-		FileProcessingBlock
+		FileProcessingBlock, WebServiceBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));

@@ -2664,11 +2664,18 @@ public sealed class DescribedWebService {
 	[JsonPropertyName("ignoreErrors")]
 	public bool? IgnoreErrors { get; set; }
 
-	/// <summary>Describe-only: whether the stored service UId resolves to a registered service.</summary>
+	/// <summary>
+	/// Describe-only: whether the stored service UId resolves to a registered service - also when that service cannot be
+	/// read, which an issue then says.
+	/// </summary>
 	[JsonPropertyName("serviceResolved")]
 	public bool? ServiceResolved { get; set; }
 
-	/// <summary>Describe-only: whether the stored method name is a method of that service, matched as run time matches it.</summary>
+	/// <summary>
+	/// Describe-only: whether the stored method name is a method of that service, matched as run time matches it;
+	/// <c>false</c> also when the service does not resolve or cannot be read, so with a could-not-be-read issue it
+	/// means unchecked, not failing.
+	/// </summary>
 	[JsonPropertyName("methodResolved")]
 	public bool? MethodResolved { get; set; }
 
