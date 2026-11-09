@@ -31,7 +31,7 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 		try {
 			featureState.SetFeatureState(PanelIconBackgroundFeatureCode, SysAdminUnitIds.AllEmployees, state: false);
 			return true;
-		} catch (Exception exception) {
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
 			warning = $"{appliedBackground} was applied, but turning off the {PanelIconBackgroundFeatureCode} " +
 				$"feature failed, so the panel may still hide it: {exception.Message}";
 			return false;

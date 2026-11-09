@@ -38,7 +38,8 @@ public sealed class ThemeBackgroundWriterTests {
 
 		service.Received(expectedTurnOffs).TryTurnOffPanelIconBackground("The theme background", out Arg.Any<string>());
 		logger.Received(1).WriteInfo(expectedLine);
-		outcome.PanelIconBackground.Should().Be(expectedState);
+		outcome.PanelIconBackground.Should().Be(expectedState,
+			because: "an MCP client reads the panel icon state only from the create-theme result");
 	}
 
 	[Test]
@@ -53,7 +54,8 @@ public sealed class ThemeBackgroundWriterTests {
 			.Complete(ImageBackground, true, ThemeId, "UsrThemes");
 
 		logger.Received(1).WriteInfo("Bound the background image into package 'UsrThemes'.");
-		outcome.ImagePackage.Should().Be("UsrThemes");
+		outcome.ImagePackage.Should().Be("UsrThemes",
+			because: "the caller must learn which package now ships the image");
 	}
 
 	[TestCase(true, true, null)]

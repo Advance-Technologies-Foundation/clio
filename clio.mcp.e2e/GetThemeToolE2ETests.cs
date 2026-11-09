@@ -231,6 +231,8 @@ public sealed class GetThemeHappyPathE2ETests : McpContractFixtureBase {
 
 	[Test]
 	[AllureTag(ListThemesTool.ToolName)]
+	[AllureName("list-themes returns a theme's background through the real MCP server")]
+	[AllureDescription("Serves a theme catalog whose theme declares an image background from a local stub inside an isolated CLIO_HOME, then calls list-themes through the real clio MCP server and verifies the theme carries that background.")]
 	[Description("Verifies list-themes carries a theme's declared background over the real MCP transport.")]
 	public async Task ListThemes_Should_Return_The_Background_When_Catalog_Declares_It() {
 		await using ArrangeContext context = Arrange(TimeSpan.FromMinutes(3));

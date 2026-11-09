@@ -97,4 +97,27 @@ public sealed class BrandingBackgroundServiceTests {
 			"failed, so the panel may still hide it: feature service unavailable",
 			because: "the background is already applied, so the failure is reported as a warning about it");
 	}
+
+	[Test]
+	[Description("Lets a cancelled image check through instead of reporting it as a check that failed.")]
+	public void TryFindUploadedImage_Should_Let_A_Cancellation_Through() {
+		_applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new OperationCanceledException());
+
+		Action check = () => _service.TryFindUploadedImage(ImageId, out _, out _);
+
+		check.Should().Throw<OperationCanceledException>(
+			because: "a cancelled call is the caller's decision, not a refusal of the image");
+	}
+
+	[Test]
+	[Description("Lets a cancelled feature write through instead of reporting it as a warning.")]
+	public void TryTurnOffPanelIconBackground_Should_Let_A_Cancellation_Through() {
+		_featureState.WhenForAnyArgs(service => service.SetFeatureState(default, default, default, default))
+			.Do(_ => throw new OperationCanceledException());
+
+		Action turnOff = () => _service.TryTurnOffPanelIconBackground("The theme background", out _);
+
+		turnOff.Should().Throw<OperationCanceledException>(
+			because: "a cancelled call is the caller's decision, not a failed turn-off to warn about");
+	}
 }

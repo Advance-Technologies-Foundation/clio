@@ -42,7 +42,7 @@ internal static class ODataSingleIdQuery
 		} catch (JsonException) {
 			error = "the environment returned a non-JSON response.";
 			return false;
-		} catch (Exception ex) {
+		} catch (Exception ex) when (ex is not OperationCanceledException) {
 			error = ex.Message;
 			return false;
 		}
