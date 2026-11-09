@@ -33,7 +33,10 @@ public sealed class PageHierarchyGetTool(
 		"Return the FULL Freedom UI page replacing-schema chain (root first, ordered by hierarchy level) with each " +
 		"schema's raw body in ONE call. Use this instead of calling get-page / get-client-unit-schema once per schema " +
 		"when you need to inspect a whole replacing chain (e.g. Classic->Freedom migration discovery): one round-trip " +
-		"returns every body the deterministic bundle merge consumes. For a single schema's editable body use get-page. " +
+		"returns every body the deterministic bundle merge consumes. Each entry also carries packageLocked " +
+		"(SysPackage.InstallType; null = unknown, see warning): call it with metadata-only before the first write to " +
+		"a page to see whether more than one unlocked package holds a layer of that page. " +
+		"For a single schema's editable body use get-page. " +
 		"Pass metadata-only for a lightweight chain listing, or offset/limit to page a very large chain. " +
 		"Prefer `environment-name`; keep direct connection args only for bootstrap or emergency fallback flows.")]
 	public GetPageHierarchyResponse GetHierarchy(
@@ -74,7 +77,7 @@ public sealed record GetPageHierarchyArgs(
 	string SchemaName,
 
 	[property: JsonPropertyName("metadata-only")]
-	[property: Description("Optional. When true, omit each schema's raw body and return chain metadata only.")]
+	[property: Description("Optional. When true, omit each schema's raw body and return chain metadata only (including packageLocked).")]
 	bool? MetadataOnly = null,
 
 	[property: JsonPropertyName("offset")]
