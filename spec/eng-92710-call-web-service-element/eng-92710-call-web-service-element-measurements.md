@@ -2,7 +2,7 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-35 (M-32 to M-35: EM2 S2-S4, 2026-11-05). Every other expected result is a hypothesis until its EM runs.
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-44 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -60,6 +60,12 @@ compared under; "the oracle rule" below means WSCR) ·
   rows (decisions Q12). Only EM8's claimed-cut half (the N7 notice) stays open.
 - **EM2 S2-S4 (SOAP): done 2026-11-05 (M-32..M-35).** Run on the owner's request: the designer builds a SOAP element
   with the REST shape, so decisions Q20 is D (SOAP built like REST, notice N10).
+- **Final cut 1.6.6.146: run 2026-11-09 on stand `eng105744-web02` (10.2.1024, .NET Core; M-36..M-44; `CAP/em-final146/`,
+  report `em-final146-report.md` there).** Stand `Creatio` is retired; the fixtures were recreated on the new stand
+  (package `UsrWscTestFixtures`). PASS: EM2 step 9, EM5 with step 7 (the STOP gate holds), EM6, EM6-B (by the trace;
+  oracle A cannot be saved, M-39), EM7 step 3, EM10, EM11 (the refusal lists codes without captions), EM12. Against
+  expectation: EM8 step 8 - the unrelated modify is refused by the platform because a reader of a pruned parameter
+  exists, nothing is written and N7 is not in the reply (M-41).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -183,6 +189,15 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-33 | EM2 S2 (OF-16): on `UsrWscSoapService` (SOAP 1.1, entered by hand: the WSDL wizard did not load, and the SOAP card forces every Object parameter to an array), the designer element on `UsrWscSoapEcho` has the same element keys as S1, the same tree (names, `L17` tags incl. `<code>ItemValue`, `L18` nesting, `L1` types, `L6` from `IU7`, `L12`), the same result params and 4 BK15 rows, caption "WSC SOAP service 1"; no `IQ7`, `IR5`, `IT1`, `IU1` or `IU8` value reaches the element. `BL11:false` comes from an unbound required input (AD10). A Boolean constant "True" is stored as Script `L8 {GS1: 3, GS2: "[#BooleanValue.True#]"}` with DisplayValue `[#Boolean value.True#]`; S1 never captured a Boolean constant (its `{GS2: "false"}` is the unbound default) | measured 2026-11-05 | EM2 S2-S4 block; `CAP/em2-soap/` |
 | M-34 | EM2 S3: a timeout-only designer save of the SOAP element changes only `IX3` (7000 -> 9000); every parameter, UId, value, BK15 row and resource byte-identical. Outside the element, the schema's `BK34` went `en-US` -> `null` on this first re-save | measured 2026-11-05 | EM2 S2-S4 block |
 | M-35 | EM2 S4: switching the SOAP element to `UsrWscEchoService.UsrWscEcho` ("Are you sure you want to change element schema? All parameters will be lost.") removes all 14 parameters (result params included) and creates the 32 of the REST tree with new UIds, re-creates the 4 BK15 rows with the same `GT5`, drops `IX3`, keeps `IX4` and the element UId and name, renames the caption to "WSC echo service 1"; no SOAP leftover (no SOAP service UId, key, parameter or resource); the new tree equals S1 apart from UIds | measured 2026-11-05 | EM2 S2-S4 block |
+| M-36 | EM2 step 9 (final cut 1.6.6.146, stand `eng105744-web02`, 10.2.1024): describe of `UsrWscEm2CaptureA` returns the `webService` block (`service`, `serviceUId`, `method`, `timeoutSeconds` 7.0, `ignoreErrors` true, `serviceResolved` / `methodResolved` true, `issues` []) and all 32 stored parameters with tags, nesting and `required` / `bound` / `result` flags; `wsc-probe` appears nowhere; the stored bytes are unchanged by the describe | measured 2026-11-09 | `CAP/em-final146/em2/` |
+| M-37 | EM5 on the final cut: the builder's element equals EM2 S1 under WSCR (known AD1 / AD3 / W12 differences only); a designer re-save and an unrelated builder modify leave the element node and the 4 BK15 rows byte-identical; step 7, `setElement` with the element's own describe `webService` block, answers `changes: {}` and the stored schema and resources stay byte-identical (the read-back members are ignored with a warning). The designer re-save added `SysPackageDependency` `Custom -> UsrWscTestFixtures` (the service's package), as M-17 | measured 2026-11-09 | `CAP/em-final146/em5/` |
+| M-38 | EM6: a builder-made element on `UsrWscEcho` runs (Completed); `OutOk` false, `OutCode` 404, `OutBody` "" (on 10.2.1024 the stand root answers an unauthenticated `POST /UsrWscEcho` with 404); the declared `Orders` binding equals EM3 route (b) | measured 2026-11-09 | `CAP/em-final146/em6/` |
+| M-39 | EM6-B: with tracing on, `SysPrcElementTraceLog` (readable by DataService ESQ on this stand) shows the element's values at run time: `UsrWscFlag_In = true` from the builder's ConstValue `{GS1: 1, GS2: "true"}`; `UsrWscOrders_In` one item `{UsrWscOrdNo_In: "A-1"}` from an item mapping; `UsrWscIds_In = [5]` from the item formula; an unmapped `RequestBody` is null (not ""); the header input `UsrWscProbe_In` is null (the service default is not an element value). The planned oracle A, a flow condition on the element INPUT `[#WebService1.UsrWscFlag_In#]`, is refused by the platform's pre-save validation ("cannot be used as a data source") | measured 2026-11-09 | `CAP/em-final146/em6/` |
+| M-40 | EM7 builder half: `ignoreErrors: true` stores `IX4` true, absent stores none; the twins run exactly as the designer half (M-28): 404 -> `ok=False code=404` either way; refused connection -> `ok=False code=0` and Completed with `IX4`, element and process Error (`WebException`) without | measured 2026-11-09 | `CAP/em-final146/em7/` |
+| M-41 | EM8 step 8: after the method rename, describe reports `methodResolved: false` with an issue on both elements (warm cache: parameters still listed); an unrelated `addParameter` through the feature build is REFUSED by the platform's pre-save validation (the Formula task reads `WebService1.UsrWscB_Out`, which the load pruned), nothing is written, and the reply carries no N7 notice: N7 is an end-of-request notice and the refused request never reaches it | measured 2026-11-09 | `CAP/em-final146/em8/` |
+| M-42 | EM10 builder half: a builder create in a new package with 0 dependencies, on `GeminiApiSearch` (`CrtGeminiApiIntegraion`), adds no `SysPackageDependency` and answers with the cross-package notice | measured 2026-11-09 | `CAP/em-final146/em10/` |
+| M-43 | EM11 builder half: `method: "USRWSCGET"` stores `IX2 = "UsrWscGet"` with a notice; `method: "nope"` is refused, nothing created, the refusal lists the method codes (no captions) | measured 2026-11-09 | `CAP/em-final146/em11/` |
+| M-44 | EM12 builder half: with both containers unmapped and two leaves bound, the answer carries N5 for `UsrWscOrders_In.UsrWscLines_In` only | measured 2026-11-09 | `CAP/em-final146/em12/` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
@@ -309,16 +324,16 @@ CU-5 (removing an E2 echo endpoint) is dropped with E2 (Q17, 2026-11-03); the id
 | EM0 | **done 2026-11-03** (M-22) | every EM; plan 0.5 | feature states the captures and runs stand on; versions recorded with every capture; whether the IX4 checkbox is visible (Q7) | r9 §4, §6; g2 (b); g5 open 1 |
 | EM9 | **done 2026-11-03** (local) | nothing now: P-B3 writes IX4 directly | Q7 / Q13: the package floor is already about 8.3.2, so a direct `IsIgnoreErrors` reference adds none (M-14) | g2 design consequence 1 |
 | EM1 | **done 2026-11-03** (M-19, M-23) | EM2-EM8, EM12's builder half | the service the captures use; what Studio stores for each shape (IU1-IU7) | r9 §6; r3 open 1 |
-| EM2 | **S1 done 2026-11-03** (M-24); **S2-S4 (SOAP) done 2026-11-05** (M-32..M-35); read-back re-run on the final cut | slice A shaper (P-A2), slice B (P-B3, P-B4); parity pattern B; AC5 | Q3 byte shape; Q4 BK15 rows on this service (shape measured on another, M-13); Q8 (IX3 = s x 1000, confirmation only); IX4 storage; caption suffix; constant/formula/item-level mapping bytes | r3 open 1; g1 port checklist; verdict r7-A3 |
+| EM2 | **S1 done 2026-11-03** (M-24); **S2-S4 (SOAP) done 2026-11-05** (M-32..M-35); final-cut read-back **done 2026-11-09** (M-36) | slice A shaper (P-A2), slice B (P-B3, P-B4); parity pattern B; AC5 | Q3 byte shape; Q4 BK15 rows on this service (shape measured on another, M-13); Q8 (IX3 = s x 1000, confirmation only); IX4 storage; caption suffix; constant/formula/item-level mapping bytes | r3 open 1; g1 port checklist; verdict r7-A3 |
 | EM3 | route (a) **done 2026-11-03** (M-15); route (b) **done 2026-11-03** (M-25) | describe of response mappings; parity pattern B | Q6 scope (settled by route (a)); a hand-made Collection's item mappings, route (b) on `UsrWscDriftService.UsrWscOrders2` | r9 §6; r2 §7; g3 §1, §4 |
 | EM4 | **done 2026-11-03** (M-20, M-26, M-27) | slice D replace semantics (P-D1) | Q11: what a method change clears and keeps; what a service change does to bindings, dependents and `IX3` | r2 §6 |
-| EM5 | STOP gate after slice B (experimental cut); re-run on the final cut | slice C start; AC5 "survives a designer re-save" | Q3 (platform sync a no-op), Q4 (rows not duplicated or rewritten), Success L8 kept; r3 open 4 (suffix overwritten by a server load?) | g1 (c) "verify once on a stand"; g4 Q3, M3 |
-| EM6 | claimed cut | AC4 run time (result params) | under E4: a builder-made element runs and Success / StatusCode / Response arrive in process parameters; the request bytes, the one-item list, RequestBody null vs "" and the declared-Collection read are not measurable on stand `Creatio` (section 3.2) | g3 §2, §4; r3 open 3 |
-| EM7 | designer half **done 2026-11-03** (M-28); builder half claimed cut | AC4; Q7 KB guidance | `ignoreErrors` true vs false on a 404 and on a failed connection | g2 (b); r3 §4.6 |
-| EM8 | current-builder half **done 2026-11-03** (M-18); service-save and designer halves **done 2026-11-03** (M-29, M-30); feature-build half claimed cut | P-D3 (the notice; Q12 = A, agreed) | the latent loss on `origin/main` (measured); whether a service save evicts the process cache; the dangling references | g4 M1, M3, Q2 |
-| EM10 | designer half **done 2026-11-03** (M-17); builder half claimed cut | Q9 cross-package notice | designer adds a package dependency (measured), the builder does not | g5 open 2 |
-| EM11 | designer half **done 2026-11-03** (M-16); builder half claimed cut | Q9 canonicalisation | a case-only method mismatch empties the params and fails the run (measured) | g5 (b); g4 §5 |
-| EM12 | run half not measurable under E4 (Q17); builder half claimed cut | Q13 notice N5 | the inner list is dropped on 10.1.37: rests on the core unit tests and the ENG-55920 comment | g2 (c); verdict r1-C7 |
+| EM5 | STOP gate after slice B (experimental cut); final-cut re-run with step 7 **done 2026-11-09** (M-37) | slice C start; AC5 "survives a designer re-save" | Q3 (platform sync a no-op), Q4 (rows not duplicated or rewritten), Success L8 kept; r3 open 4 (suffix overwritten by a server load?) | g1 (c) "verify once on a stand"; g4 Q3, M3 |
+| EM6 | **done 2026-11-09** on the final cut (M-38; EM6-B M-39) | AC4 run time (result params) | under E4: a builder-made element runs and Success / StatusCode / Response arrive in process parameters; the request bytes, the one-item list, RequestBody null vs "" and the declared-Collection read are not measurable on stand `Creatio` (section 3.2) | g3 §2, §4; r3 open 3 |
+| EM7 | designer half **done 2026-11-03** (M-28); builder half **done 2026-11-09** (M-40) | AC4; Q7 KB guidance | `ignoreErrors` true vs false on a 404 and on a failed connection | g2 (b); r3 §4.6 |
+| EM8 | current-builder half **done 2026-11-03** (M-18); service-save and designer halves **done 2026-11-03** (M-29, M-30); feature-build half **run 2026-11-09**, refused by the platform without N7 (M-41) | P-D3 (the notice; Q12 = A, agreed) | the latent loss on `origin/main` (measured); whether a service save evicts the process cache; the dangling references | g4 M1, M3, Q2 |
+| EM10 | designer half **done 2026-11-03** (M-17); builder half **done 2026-11-09** (M-42) | Q9 cross-package notice | designer adds a package dependency (measured), the builder does not | g5 open 2 |
+| EM11 | designer half **done 2026-11-03** (M-16); builder half **done 2026-11-09** (M-43) | Q9 canonicalisation | a case-only method mismatch empties the params and fails the run (measured) | g5 (b); g4 §5 |
+| EM12 | run half not measurable under E4 (Q17); builder half **done 2026-11-09** (M-44) | Q13 notice N5 | the inner list is dropped on 10.1.37: rests on the core unit tests and the ENG-55920 comment | g2 (c); verdict r1-C7 |
 
 ## 5. Measurements
 
@@ -1218,17 +1233,17 @@ estimate's as they stand.
 |---|---|---|---|
 | EM0 | 0.25 / 0.25 / 0.5 | **spent** 2026-11-03 | read-only |
 | EM1 | 1.5 / 2 / 3 | **spent** 2026-11-03 | three services by hand in Studio (Quick setup from JSON), plus `UsrWscOrders2` for EM3 and the `UsrWscMissing` address change for EM7 |
-| EM2 | 1 / 1.25 / 2 | S1 **spent** 2026-11-03 | the final-cut read-back (step 9) is left |
+| EM2 | 1 / 1.25 / 2 | **spent** (step 9 2026-11-09, M-36) | |
 | EM3 | 0.5 / 0.75 / 1.25 | **spent** 2026-11-03 | route (b) on `UsrWscDriftService.UsrWscOrders2` |
 | EM4 | 0.25 / 0.5 / 0.75 | **spent** 2026-11-03 | four saves (S1 twice, M-27) |
-| EM5 | 0.5 / 0.75 / 1.25 | experimental cut done 2026-11-04 (steps 1-3, 6; step 5 not run); final-cut re-run to do | install wait; the STOP decision if it fails; the designer copy of step 5 included |
-| EM6 | 0.75 / 1.25 / 2 | to do, reduced by E4 | one create and one run; no request half |
-| EM7 | 0.25 / 0.5 / 0.75 | designer half **spent** 2026-11-03 | two processes, two rounds of two runs (the first round had no 404, M-28) |
-| EM8 | 0.5 / 0.75 / 1.25 | day-0 halves **spent** 2026-11-03 | the feature-build half (step 8) is left |
+| EM5 | 0.5 / 0.75 / 1.25 | experimental cut done 2026-11-04; final cut **spent** 2026-11-09 (steps 1-3, 6, 7; steps 4, 5 not run) | install wait; the STOP decision if it fails; the designer copy of step 5 included |
+| EM6 | 0.75 / 1.25 / 2 | **spent** 2026-11-09 (with EM6-B) | one create and one run; the trace gave the element's request values |
+| EM7 | 0.25 / 0.5 / 0.75 | **spent** (builder half 2026-11-09) | two processes, two rounds of two runs (the first round had no 404, M-28) |
+| EM8 | 0.5 / 0.75 / 1.25 | **spent** (step 8 2026-11-09, M-41) | the no-reader N7 case is not measured |
 | EM9 | 0.5 / 0.75 / 1.5 | **spent** | zip copies dominate |
-| EM10 | 0.25 / 0.5 / 1 | partly spent | designer half done; one package creation left, and the deletions |
-| EM11 | 0.1 / 0.25 / 0.5 | partly spent | designer half done; the builder half is one create |
-| EM12 | 0.25 / 0.4 / 0.75 | to do, reduced by E4 | the builder half only (no run) |
+| EM10 | 0.25 / 0.5 / 1 | **spent** (builder half 2026-11-09) | the deletions are left |
+| EM11 | 0.1 / 0.25 / 0.5 | **spent** (builder half 2026-11-09) | |
+| EM12 | 0.25 / 0.4 / 0.75 | **spent** (builder half 2026-11-09) | no run |
 | **EM0-EM8, EM10-EM12 after batching** | **6.0 / 8.25 / 12.5** | | estimate 2.5 (EM9 spent and not counted): EM2-EM4 in one Chrome session, EM6/EM7/EM12 in one probe process |
 | cleanup | 0.75 / 0.9 / 1 | to do | about 20 deletes, one at a time; estimate 2.5 row "Stand cleanup" |
 | **with cleanup** | **6.75 / 9.15 / 13.5** | | |
@@ -1271,7 +1286,20 @@ Created so far (2026-11-03):
 | EM2 S2-S4 | stand state | "Compilation error" in the header after the owner-approved `clio compile-configuration --all` of 2026-11-05 (build result 1, CS0006 in `UsrSrvVisitA1` / `UsrSrvVisitA2`) | 2026-11-05, measurements session | not ours to fix; left as is on the owner's word | | pre-existing configuration errors, not ENG-92710 objects; do not attribute a later install or run failure to a package cut without checking it |
 | EM2 S2-S4 | process | `UsrWscEm2SoapS2` ("WSC EM2 SOAP S2", `dbc77d7c-8f37-446b-8a07-d77c767804e4`, `Custom`; element `WebService1` `c4c5c167-d18c-4f14-9402-502f55d21bed`) | 2026-11-05, lead | CU-1 | | saved three times (S2-S4); now on `UsrWscEchoService.UsrWscEcho`, `BL11:false`; never run |
 
-Planned:
+Created on stand `eng105744-web02` by the final-cut runs (2026-11-09, lead; `CAP/em-final146/em-final146-report.md`):
+
+| EM | Kind | Name or id | Removal | Note |
+|---|---|---|---|---|
+| EM5 | process | `UsrWscEm5Twin` (`0dbbd07f-7c67-4205-b45d-c8c0a4c0605e`, `Custom`) | CU-1 | never run; its designer save added `SysPackageDependency` `Custom -> UsrWscTestFixtures` (owner decides) |
+| EM6 | process | `UsrWscEm6Run` (`ce1dde0b-87ee-44eb-b085-4c2765e5ddfa`, `Custom`) | CU-1 | run `2f8f03c7-4947-4602-9f93-ced0d10827ff`; tracing switched off again (the property row stays, False) |
+| EM7 | processes | `UsrWscEm7IgnoreB` (`59cd4e41-f568-40cc-9a8c-773642614c73`), `UsrWscEm7StrictB` (`6b2d133d-d781-4c00-b9d4-d146fbf6ca23`), `Custom` | CU-1 | runs `ff2bef70-5566-47af-9ec7-de91bceddfac` (Completed), `62b5f486-f757-409a-ba35-bde1ada59dfa` (Error) |
+| EM8 | process | `UsrWscEm8Drift2` (`1315e802-b5ab-4a22-9922-6fc368e5acdb`, `Custom`) | CU-1 | drifted on purpose; never run |
+| EM8 | web service change | `UsrWscDriftService` method `UsrWscDriftGone` -> `UsrWscDriftGone2` | rename back or keep | the `UsrWscTestFixtures` archive no longer matches the stand |
+| EM10 | package, process | `UsrWscEm10Proc2` (`cd63d31d-023c-4ac7-b2fb-50b950e8e658`); `UsrWscEm10Builder` (`afb60d5f-e211-4de3-ab48-b3a7766844f3`) | CU-1, then CU-3 | never run |
+| EM11 | process | `UsrWscEm11Builder` (`4f586752-0203-471f-96ac-a8e35589845a`, `Custom`) | CU-1 | never run |
+| EM12 | process | `UsrWscEm12Builder` (`bbbdd124-fb90-4918-83f7-4a68a371972e`, `Custom`) | CU-1 | never run |
+
+Planned (stand `Creatio`, superseded by the rows above where the same name appears):
 
 | EM | Kind | Name or id | Created (date, by) | Removal | Removed (date) | Note |
 |---|---|---|---|---|---|---|
