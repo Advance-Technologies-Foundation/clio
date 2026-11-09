@@ -15,8 +15,9 @@ DESCRIPTION
     extra-large (XL). Any other value is refused with the accepted list and nothing is written.
 
     The result names the previous size (absent when none was set, so the window opened small), its raw
-    value, the package it came from, and the new size. When a package
-    above the given one still overrides the size, a warning says the window opens with that size.
+    value, the package it came from, and the new size. When a package above the given one sets the
+    size, the write is refused before anything is saved and the error names the size the window opens
+    with. When the window still shows another size after the save, a warning says so.
 
 SYNOPSIS
     clio set-page-modal-size -e ENVIRONMENT --page-schema-name NAME --package-name NAME --size SIZE

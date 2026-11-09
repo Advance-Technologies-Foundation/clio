@@ -28,8 +28,9 @@ Any other value is refused with the accepted list (`availableSizes`) and nothing
 modal page is refused.
 
 The response names `previousSize` (absent when none was set — the window opened `small`), `previousSizeValue`,
-`previousSourcePackageName` and `size`. When a package above the given one
-still overrides the size, `warning` says which size the window opens with.
+`previousSourcePackageName` and `size`. When a package above the given one sets the size, the write is refused
+before anything is saved and the error names the size the window opens with. When the window still shows another
+size after the save, `warning` says so.
 
 ## Synopsis
 

@@ -32,14 +32,12 @@ internal sealed class PageModalSizeService(
 		ArgumentNullException.ThrowIfNull(request);
 		PageTarget target = ResolveTarget(request.PackageName, request.PageSchemaName);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildGetRequest(target));
-		StoredSize stored = ReadStoredSize(schema);
+		StoredSize stored = ReadStoredSize(schema, target.PageSchemaName);
 		(int? runtimeValue, string runtimeWarning) = TryReadRuntimeValue(target.PageSchemaName);
 		int seenValue = stored.Value ?? RuntimeDefaultValue;
 		int effectiveValue = runtimeValue ?? seenValue;
-		string overrideWarning = runtimeValue.HasValue && runtimeValue != seenValue
-			? $"The window opens {NameValue(runtimeValue.Value)}, not {NameValue(seenValue)} as package "
-				+ $"'{target.PackageName}' sees it: a package above '{target.PackageName}' sets the size, so a write to "
-				+ $"'{target.PackageName}' would not change the window."
+		string overrideWarning = FindOverride(target, seenValue, runtimeValue) is string overrideText
+			? $"{overrideText}, so a write to '{target.PackageName}' would not change the window."
 			: null;
 		return new PageModalSizeReadResult(
 			target.PageSchemaName,
@@ -58,12 +56,22 @@ internal sealed class PageModalSizeService(
 		int newValue = PageModalSizeCatalog.Parse(request.Size);
 		PageTarget target = ResolveTarget(request.PackageName, request.PageSchemaName);
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildGetRequest(target));
-		StoredSize previous = ReadStoredSize(schema);
 
 		// Change only modalSettings.size: every other top-level field and every other modalSettings field is kept.
 		// Parsed strictly: a body that is not a JSON object would otherwise be replaced by {"modalSettings":...} and
 		// every other AppearanceSettings field would be lost without a word.
 		JsonObject metadata = ParseMetadataForWrite(schema.MetaData, target.PageSchemaName);
+		StoredSize previous = ReadStoredSize(schema, target.PageSchemaName);
+
+		// A package above package-name that sets the size wins at runtime, so a write here would report success and
+		// leave the window unchanged: refuse before anything is written. A failed check does not block the write;
+		// the runtime is read again after the save and reports the size the window opens with.
+		int? runtimeBefore = TryReadRuntimeValue(target.PageSchemaName).Value;
+		if (FindOverride(target, previous.Value ?? RuntimeDefaultValue, runtimeBefore) is string overrideText) {
+			throw new InvalidOperationException(
+				$"{overrideText}, so writing to '{target.PackageName}' would not change the window. Nothing was changed.");
+		}
+
 		if (metadata[ModalSettingsKey] is not JsonObject modalSettings) {
 			modalSettings = new JsonObject();
 			metadata[ModalSettingsKey] = modalSettings;
@@ -89,6 +97,14 @@ internal sealed class PageModalSizeService(
 			PageModalSizeCatalog.NameOf(newValue),
 			CombineWarnings(overrideWarning, runtimeWarning, previous.Warning, resetWarning, buildWarning));
 	}
+
+	// The runtime merges every layer the way the window opens; GetSchema shows the size as package-name sees it. When
+	// they differ, a package above package-name sets the size. Returns that finding, or null when there is none.
+	private static string FindOverride(PageTarget target, int seenValue, int? runtimeValue) =>
+		runtimeValue.HasValue && runtimeValue != seenValue
+			? $"The window opens {NameValue(runtimeValue.Value)}, not {NameValue(seenValue)} as package "
+				+ $"'{target.PackageName}' sees it: a package above '{target.PackageName}' sets the size"
+			: null;
 
 	private PageTarget ResolveTarget(string packageName, string pageSchemaName) {
 		if (string.IsNullOrWhiteSpace(pageSchemaName)) {
@@ -142,8 +158,13 @@ internal sealed class PageModalSizeService(
 	// as the source because a save (designer or clio) stores the merged metadata, size included; the platform offers
 	// no read of one layer alone (useFullHierarchy=false still merges). The source is informational, so a failed
 	// lookup is a warning and never blocks a write.
-	private StoredSize ReadStoredSize(AddonSchemaDto schema) {
-		int? value = ReadSize(ParseMetadata(schema.MetaData));
+	private StoredSize ReadStoredSize(AddonSchemaDto schema, string pageSchemaName) {
+		if (!TryParseMetadata(schema.MetaData, out JsonObject metadata)) {
+			return new StoredSize(null, null,
+				$"The AppearanceSettings metadata of '{pageSchemaName}' is not a JSON object, so the stored size could "
+				+ "not be read.");
+		}
+		int? value = ReadSize(metadata);
 		if (value is null) {
 			return new StoredSize(null, null, null);
 		}
@@ -168,7 +189,7 @@ internal sealed class PageModalSizeService(
 
 	// The runtime read merges every layer the way the window opens, so it shows a layer above the package that
 	// GetSchema (scoped to the package) cannot see. The value is null when the runtime reports no size. Never throws:
-	// on a write it runs after the save is committed, so a failed check is a warning, not a failed write.
+	// a failed check is a warning, never a failed read or write.
 	private (int? Value, string Warning) TryReadRuntimeValue(string pageSchemaName) {
 		string unverified = $"The size the window opens with could not be checked for '{pageSchemaName}'";
 		JsonObject root;
@@ -196,32 +217,26 @@ internal sealed class PageModalSizeService(
 		return size;
 	}
 
-	private static JsonObject ParseMetadata(string metaData) {
+	// Blank metadata is an empty object (the package has no add-on yet); anything else must parse to a JSON object.
+	private static bool TryParseMetadata(string metaData, out JsonObject metadata) {
 		if (string.IsNullOrWhiteSpace(metaData)) {
-			return new JsonObject();
+			metadata = new JsonObject();
+			return true;
 		}
 		try {
-			return JsonNode.Parse(metaData) as JsonObject ?? new JsonObject();
+			metadata = JsonNode.Parse(metaData) as JsonObject;
 		} catch (JsonException) {
-			return new JsonObject();
+			metadata = null;
 		}
+		return metadata is not null;
 	}
 
-	private static JsonObject ParseMetadataForWrite(string metaData, string pageSchemaName) {
-		if (string.IsNullOrWhiteSpace(metaData)) {
-			return new JsonObject();
-		}
-		try {
-			if (JsonNode.Parse(metaData) is JsonObject metadata) {
-				return metadata;
-			}
-		} catch (JsonException) {
-			// Reported below with the same message as a non-object body.
-		}
-		throw new InvalidOperationException(
-			$"The AppearanceSettings metadata of '{pageSchemaName}' is not a JSON object, so other settings could not be "
-			+ "kept. Nothing was changed.");
-	}
+	private static JsonObject ParseMetadataForWrite(string metaData, string pageSchemaName) =>
+		TryParseMetadata(metaData, out JsonObject metadata)
+			? metadata
+			: throw new InvalidOperationException(
+				$"The AppearanceSettings metadata of '{pageSchemaName}' is not a JSON object, so other settings could "
+				+ "not be kept. Nothing was changed.");
 
 	private static string ReadAdditionalString(AddonSchemaDto schema, string key) =>
 		schema.AdditionalData is not null
