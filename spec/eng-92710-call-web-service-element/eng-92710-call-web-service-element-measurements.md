@@ -2,7 +2,7 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-46 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-51: the 1.6.6.147 / .148 re-run, on
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-46 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-52: the 1.6.6.147 / .148 / .149 re-runs, on
 `eng105744-web02` and on stand `eng92710-web03`, same day). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
@@ -71,7 +71,8 @@ compared under; "the oracle rule" below means WSCR) ·
   the test plan allows one (M-45). On 1.6.6.148 (stand `eng92710-web03`) the unknown-service refusal lists the methods
   (M-47) and AR-1 on the updated article passes with one refusal (M-48). `eng105744-web02` kept running the .146
   assembly (M-49); on web03 an installed fixtures package cannot be edited in Studio (M-50), so EM8 step 8 ran on a
-  `Custom` copy of the drift service: the refused modify now carries N7 (M-51).
+  `Custom` copy of the drift service: the refused modify now carries N7 (M-51); on 1.6.6.149 the referenced element's
+  notice drops the re-select sentence (M-52).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -211,6 +212,7 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-49 | On `eng105744-web02` the .147 install did not compile the package (compile marker with an unchanged `ModifiedOnUtc` is skipped); after the .148 install the build succeeded, yet the refusals kept the .146 form after `restart-web-app` and after `compile-configuration --all` | measured 2026-11-09 | `CAP/em-final146/rerun147/`, `CAP/em-final146/rerun148/` |
 | M-50 | A package installed by `push-pkg` (`InstallType` 1) is read-only in Studio > Web services also with `CurrentPackageId` set to it; `clio set-syssetting` updated the setting row but `QuerySysSettings` returned the old value until `PostSysSettingsValues` wrote it | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8/step2*` |
 | M-51 | EM8 step 8 on 1.6.6.148 (drift service copied into `Custom`, method renamed in Studio): the unrelated modify is refused by the platform's pre-save check, nothing is written (RB-1 byte-identical), and the reply carries the platform text, then the N7 lead naming `WebService1` with the repair order, its notice, then `WebService2` | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8/b*` |
+| M-52 | EM8 step 8 on 1.6.6.149, same drifted `UsrWscEm8Drift3`: refused, nothing written; the reply equals the cut's expected text, and "Re-select the method ... setElement (webService.method)" appears only in `WebService2`'s notice, not in the referenced `WebService1`'s | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8-149/` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
