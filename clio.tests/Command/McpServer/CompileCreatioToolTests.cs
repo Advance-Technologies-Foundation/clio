@@ -844,6 +844,39 @@ public sealed class CompileCreatioToolTests
 
 	[Test]
 	[Category("Unit")]
+	[Description("compile-creatio's description, the process-name field of its contract and its process-name prompt all say that on a .NET (Core) host a successful process compile leaves the process unable to run until the application restarts, and name restart-by-environment-name as the step.")]
+	public void CompileCreatio_ProcessNameSurfaces_Should_Name_The_Restart_A_NetCore_Host_Needs()
+	{
+		// Arrange
+		System.Reflection.MethodInfo method = typeof(CompileCreatioTool)
+			.GetMethod(nameof(CompileCreatioTool.CompileCreatio))!;
+		ToolContractGetTool contractTool = new();
+
+		// Act
+		string description = ((System.ComponentModel.DescriptionAttribute)method
+			.GetCustomAttributes(typeof(System.ComponentModel.DescriptionAttribute), false).Single()).Description;
+		string field = contractTool
+			.GetToolContracts(new ToolContractGetArgs([CompileCreatioTool.CompileCreatioToolName]))
+			.Tools!.Single().InputSchema!.Properties!.Single(property => property.Name == CompileCreatioTool.ProcessNameArgument)
+			.Description!;
+		string prompt = FsmAndCompilePrompt.CompileCreatio("sandbox", null, "UsrProc");
+
+		// Assert
+		foreach (string text in new[] { description, field, prompt })
+		{
+			text.Should().Contain(".NET (Core) host",
+				because: "only that host keeps the assembly it loaded at startup after a compile");
+			text.Should().Contain(RestartTool.RestartByEnvironmentNameToolName,
+				because: "the agent must be told the step that makes the compiled code run");
+			text.Should().Contain("ask the user",
+				because: "a restart reloads the application for every user, so it needs consent like the compile");
+			text.Should().NotContain("drops every user",
+				because: "whether a restart ends the users' sessions was not measured, so the text does not claim it");
+		}
+	}
+
+	[Test]
+	[Category("Unit")]
 	[Description("Exposes destructive MCP metadata for compilation so hosts can prompt for confirmation before the long-running runtime reload.")]
 	public void CompileCreatio_Should_Expose_Expected_Mcp_Metadata()
 	{
