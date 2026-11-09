@@ -356,6 +356,25 @@ public sealed class CompileBusinessProcessServiceTests {
 		// Assert
 		result.RestartRequired.Should().Be(expected,
 			because: "only new compiled code on a .NET (Core) host waits for a restart");
+		result.RestartUnknown.Should().Be(success && compiled && !registeredAsNetCore,
+			because: "a host registered without IsNetCore may still be .NET (Core), so its 'no restart' is not known");
+	}
+
+	[Test]
+	[Description("When the package says whether a restart is needed, the answer is known even on an environment registered without IsNetCore.")]
+	public void Compile_ShouldNotCallTheRestartUnknown_WhenTheServerSays() {
+		// Arrange
+		IOwnedApplicationClient client = Substitute.For<IOwnedApplicationClient>();
+		client.ExecutePostRequest(CompileUrl, Arg.Any<string>(), Arg.Any<int>()).Returns(
+			"{\"CompileProcessResult\":{\"success\":true,\"compileRequired\":true,\"compiled\":true,"
+			+ "\"errorCount\":0,\"restartRequired\":false}}");
+		CompileBusinessProcessService service = CreateService(client, isNetCore: false);
+
+		// Act
+		CompileBusinessProcessResult result = service.Compile(Env, new CompileBusinessProcessRequest("UsrProc"));
+
+		// Assert
+		result.RestartUnknown.Should().BeFalse(because: "the package knows its host and said no restart is needed");
 	}
 }
 
@@ -386,9 +405,26 @@ public sealed class CompileBusinessProcessCommandTests {
 
 	private static CompileBusinessProcessResult Result(bool success, bool compileRequired = true,
 			IReadOnlyList<CompileBusinessProcessError> errors = null, int errorCount = 0,
-			string errorMessage = null, bool? compiled = null, bool restartRequired = false) =>
+			string errorMessage = null, bool? compiled = null, bool restartRequired = false,
+			bool restartUnknown = false) =>
 		new(success, errorMessage, "UsrProc", "Custom", "general", compileRequired, compiled ?? compileRequired,
-			201000, errors ?? [], errorCount, restartRequired);
+			201000, errors ?? [], errorCount, restartRequired, restartUnknown);
+
+	[Test]
+	[Description("When the package did not say whether a restart is needed and the environment is not registered as .NET (Core), the success line still asks to verify on a run but says that a .NET (Core) host would need a restart first.")]
+	public void Execute_ShouldHedgeTheRestart_WhenNobodyEstablishedTheHost() {
+		// Arrange
+		CompileBusinessProcessResult result = Result(success: true, restartUnknown: true);
+
+		// Act
+		int exitCode = Execute(result);
+
+		// Assert
+		exitCode.Should().Be(0, because: "the compile itself succeeded");
+		_logger.Received(1).WriteInfo(Arg.Is<string>(message => message.Contains("Verify on a run")
+			&& message.Contains("The package did not say whether this host must restart first")
+			&& message.Contains("restart-by-environment-name")));
+	}
 
 	[Test]
 	[Description("A failure where no compile ran - the process was not found, say - does not tell the caller to ask again before 'the next compile': no consent was spent, and the line would read as if a compile had happened.")]

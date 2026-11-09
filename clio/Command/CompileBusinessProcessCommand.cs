@@ -89,8 +89,8 @@ public sealed class CompileBusinessProcessService(
 		// until the restart the compiled code then needs.
 		logger.WriteInfo(environmentSettings.IsNetCore
 			? $"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile usually takes a "
-				+ "few minutes; on this .NET (Core) host its code then runs only after an application restart, which "
-				+ "reloads the application for every user..."
+				+ "few minutes; on this .NET (Core) host, if it compiles anything, that code then runs only after an "
+				+ "application restart, which reloads the application for every user..."
 			: $"Compiling the package of process '{request.ProcessName}' on '{environmentName}'. A compile reloads the "
 				+ "runtime for every user of the environment and usually takes a few minutes...");
 
@@ -175,8 +175,14 @@ public sealed class CompileBusinessProcessService(
 					error.Code, error.Message, error.InThisProcess))
 				.ToList(),
 			result.ErrorCount,
-			IsRestartRequired(result, environmentSettings));
+			IsRestartRequired(result, environmentSettings),
+			IsRestartUnknown(result, environmentSettings));
 	}
+
+	// The fallback above can only say "no restart" for an environment registered without IsNetCore, which may still
+	// be a .NET (Core) host. The answer then says that nobody established it, instead of a bare "verify on a run".
+	private static bool IsRestartUnknown(ResultDto result, EnvironmentSettings environmentSettings) =>
+		result.RestartRequired is null && result.Success && result.Compiled && !environmentSettings.IsNetCore;
 
 	// CrtProcessBuilder 1.6.6.144+ says it. A package that does not - rarely reached, since the package requirement
 	// refuses one older than the bundled version before the compile runs, but possible for a cut of a parallel branch
@@ -347,7 +353,12 @@ public class CompileBusinessProcessCommand(
 				// .NET Framework: the reload the package triggers after a clean compile makes the process run the new
 				// code with no restart (measured).
 				logger.WriteInfo($"{compiled} Verify on a run that process '{ServerName(result.ProcessName)}' "
-					+ "executes the saved code.");
+					+ "executes the saved code."
+					+ (result.RestartUnknown
+						? " The package did not say whether this host must restart first, and the environment is not "
+							+ "registered as .NET (Core): if it is a .NET (Core) host, the code runs only after an "
+							+ "application restart - ask the user, then run restart-by-environment-name - before that run."
+						: string.Empty));
 				return 0;
 			}
 			// .NET (Core): the compile succeeded, but the running application keeps the configuration assembly it
@@ -474,6 +485,9 @@ public sealed record CompileBusinessProcessError(string? FileName, int Line, int
 /// <param name="RestartRequired">True when the compile succeeded but the compiled code runs only after the
 /// application restarts - a .NET (Core) host. Reported by CrtProcessBuilder 1.6.6.144+, and derived from the
 /// environment's <c>IsNetCore</c> registration when the package does not say.</param>
+/// <param name="RestartUnknown">True when the package did not say whether a restart is needed and the
+/// environment is not registered as .NET (Core): the fallback answered "no restart" without knowing the host.</param>
 public sealed record CompileBusinessProcessResult(bool Success, string? ErrorMessage, string? ProcessName,
 	string? PackageName, string? PackageType, bool CompileRequired, bool Compiled, long DurationMs,
-	IReadOnlyList<CompileBusinessProcessError> Errors, int ErrorCount, bool RestartRequired = false);
+	IReadOnlyList<CompileBusinessProcessError> Errors, int ErrorCount, bool RestartRequired = false,
+	bool RestartUnknown = false);
