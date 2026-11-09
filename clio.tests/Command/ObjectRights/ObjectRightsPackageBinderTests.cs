@@ -361,9 +361,10 @@ public class ObjectRightsPackageBinderTests {
 		Bindings((OtherBindingUId, "ManualRights", "Custom"));
 
 		// Act
-		_binder.ResolveTarget("UsrFoo", SchemaUId, null, options);
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, null, options);
 
 		// Assert
+		target.Refused.Should().BeFalse(because: $"the object's package receives the binding. Refusal: {target.Refusal}");
 		_writer.Received(1).FetchBoundRows(OtherBindingUId, options);
 	}
 
