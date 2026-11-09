@@ -181,7 +181,7 @@ public class BundledProcessBuilderPackageTests {
 	/// </para>
 	/// </remarks>
 	private const string ExpectedArchiveSha256 =
-		"790D651A348942F8230E29B4F7738DAB74D30525CEB30CB01EBAD3EEEE4F5B1E";
+		"09AE6EA6866E846F28C1874CB975D09E21CF70A2FA41554D7CF2C04AA9B078E9";
 
 	/// <summary>
 	/// The <c>PackageVersion</c> the shipped descriptor carries.
@@ -630,6 +630,47 @@ public class BundledProcessBuilderPackageTests {
 				+ "rather than a diff line reading 'Bin N -> M bytes'. If this failed because you replaced "
 				+ "the archive on purpose, update ExpectedArchiveSha256 in the same commit and record where "
 				+ "the new bytes came from");
+	}
+
+	[Test]
+	[Description("Every text entry of the bundled archive must use LF line endings, because the SHA-256 pin is reproducible from the producing commit only when the entries are its blobs byte for byte - an export that let git convert to CRLF ships the same sources under a hash nobody can rebuild.")]
+	public void BundledArchive_ShouldCarryNoCrlfInAnyTextEntry() {
+		// Arrange
+		IFileSystem fileSystem = new FileSystem(new System.IO.Abstractions.FileSystem());
+		ICompressionUtilities compressionUtilities = new CompressionUtilities(fileSystem, new ZipFileWrapper());
+		IReadOnlyList<string> entryNames = ReadBundledArchiveEntryNames();
+
+		// Act
+		// A text entry is one without a NUL byte; the two reference assemblies under Files/Libs carry NULs and are
+		// compared as binaries by the SHA pin alone. Keyed on content, not on an extension list, so a new text file
+		// type cannot slip past. descriptor.json is exempt: on a SCRIPT cut it is the one entry not taken from the commit
+		// but written by set-pkg-version after the export (CRLF on Windows), and it is pinned separately by
+		// ExpectedArchiveVersion and ExpectedDescriptorModifiedOnUtc.
+		List<string> crlfEntries = [];
+		foreach (string entryName in entryNames) {
+			if (string.Equals(entryName, "descriptor.json", StringComparison.Ordinal)) {
+				continue;
+			}
+			compressionUtilities.TryReadFileFromGZip(BundledArchivePath, entryName, out byte[] content)
+				.Should().BeTrue(because: $"the entry '{entryName}' was listed by the same reader");
+			if (Array.IndexOf(content, (byte)0) >= 0) {
+				continue;
+			}
+			for (int index = 1; index < content.Length; index++) {
+				if (content[index] == (byte)10 && content[index - 1] == (byte)13) {
+					crlfEntries.Add(entryName);
+					break;
+				}
+			}
+		}
+
+		// Assert
+		entryNames.Should().NotBeEmpty(because: "an empty listing would pass this check vacuously");
+		crlfEntries.Should().BeEmpty(
+			because: "the producing commit's blobs are LF, so a CRLF entry means the export was made without "
+				+ "core.autocrlf=false / core.eol=lf (bundled-packages.md step 3b) and the pinned SHA-256 cannot be "
+				+ "rebuilt from ExpectedProducingCommit. Re-export the commit with both flags and re-pack; {0} of {1} "
+				+ "entries are affected", crlfEntries.Count, entryNames.Count);
 	}
 
 	[Test]
