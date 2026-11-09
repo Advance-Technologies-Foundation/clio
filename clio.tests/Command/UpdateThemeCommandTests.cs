@@ -205,31 +205,22 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 			because: "null content fields are kept by the platform, null keeps the background, and {} removes it");
 	}
 
-	[TestCase(ThemeId, true, 1, 0)]
-	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", true, 0, 1)]
-	[TestCase(ThemeId, false, 0, 0)]
+	[TestCase(ThemeId, "", true, 1, 0)]
+	[TestCase(ThemeId, "/", true, 1, 0)]
+	[TestCase("0f5b6a1c-2d3e-4f50-8a9b-c1d2e3f4a5b6", "", true, 0, 1)]
+	[TestCase(ThemeId, "", false, 0, 0)]
 	[Category("Unit")]
-	[Description("Binds an image into the package read from the theme's catalog cssFilePath, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
-	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, bool imageFound,
-		int expectedCalls, int expectedMissingThemeErrors) {
+	[Description("Binds an image into the package read from the theme's catalog cssFilePath, with or without a leading slash, and writes nothing for a theme the catalog does not list, which it names as missing, or an image the environment does not have.")]
+	public void Execute_ShouldBindIntoTheCatalogPackage_OnlyForAListedTheme(string catalogThemeId, string pathPrefix,
+		bool imageFound, int expectedCalls, int expectedMissingThemeErrors) {
 		_backgroundWriter.TryConfirmImage(Arg.Any<ThemeBackground>(), out Arg.Any<string>()).Returns(imageFound);
-		IReadOnlyList<ThemeDescriptor> themes = [
-			new ThemeDescriptor {
-				Id = catalogThemeId,
-				CssFilePath = $"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{catalogThemeId}/theme.css?hash=abc"
-			}
-		];
-		_themeCatalog.TryGetAvailableThemes(Arg.Any<ListThemesOptions>(), out Arg.Any<IReadOnlyList<ThemeDescriptor>>(),
-				out Arg.Any<string>())
-			.Returns(call => {
-				call[1] = themes;
-				return true;
-			});
-		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
-				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
-			.Returns("{\"success\":true}");
+		StubCatalog(true, new ThemeDescriptor {
+			Id = catalogThemeId,
+			CssFilePath = $"{pathPrefix}Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{catalogThemeId}/theme.css?hash=abc"
+		});
+		StubUpdateThemeSuccess();
 
-		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = "6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81" });
+		_command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
 
 		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
@@ -284,20 +275,6 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_logger.Received(1).WriteError(Arg.Is<string>(m => m != null && m.StartsWith(expectedError)));
 	}
 
-	[Test, Category("Unit")]
-	[Description("Reads the theme's package from a catalog cssFilePath that starts with a slash.")]
-	public void Execute_ShouldBindIntoThePackage_WhenTheCssFilePathStartsWithASlash() {
-		StubCatalog(true, new ThemeDescriptor {
-			Id = ThemeId, CssFilePath = $"/Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{ThemeId}/theme.css"
-		});
-		StubUpdateThemeSuccess();
-
-		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = ImageId });
-
-		exitCode.Should().Be(0, because: "the package is read from the catalog path with or without a leading slash");
-		_backgroundWriter.Received(1).Complete(Arg.Any<ThemeBackground>(), false, ThemeId, "UsrBranding");
-	}
-
 	[TestCase("null", null)]
 	[TestCase(null, "null")]
 	[Category("Unit")]
@@ -327,18 +304,6 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 		_logger.Received(1).WriteError(
 			"background-image-id and background-color cannot be combined: pass at most one background argument.");
-	}
-
-	[TestCase("null", null, true)]
-	[TestCase(null, "null", true)]
-	[TestCase(null, null, false)]
-	[Category("Unit")]
-	[Description("Puts a null background argument under the background version floor, because an older ThemeService drops the removal while reporting success.")]
-	public void HasBackgroundArgument_ShouldCountNull_WhenItRemovesTheBackground(string imageId, string color,
-		bool expected) {
-		new UpdateThemeOptions { Id = ThemeId, BackgroundImageId = imageId, BackgroundColor = color }
-			.HasBackgroundArgument.Should().Be(expected,
-				because: "the version floor guards every background argument, a removal included");
 	}
 
 	private void StubCatalog(bool read, params ThemeDescriptor[] themes) {

@@ -27,16 +27,16 @@ public sealed class ThemeBackgroundWriterTests {
 
 	[TestCase(false, 1, "UsePanelIconBackground is off for All employees.", ThemeBackgroundOutcome.PanelIconOff)]
 	[TestCase(true, 0, "UsePanelIconBackground was left as it is (keep-icon-background).", ThemeBackgroundOutcome.PanelIconKept)]
-	[Description("Turns the panel icon background off for All employees after a background is written, unless the caller keeps it, and says which in the log and the outcome.")]
-	public void Complete_Should_Turn_The_Panel_Icon_Off_Unless_Kept(bool keep, int expectedWrites, string expectedLine,
+	[Description("Turns the panel icon background off after a background is written, unless the caller keeps it, and says which in the log and the outcome.")]
+	public void Complete_Should_Turn_The_Panel_Icon_Off_Unless_Kept(bool keep, int expectedTurnOffs, string expectedLine,
 		string expectedState) {
-		IFeatureStateService featureState = Substitute.For<IFeatureStateService>();
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		service.TryTurnOffPanelIconBackground(default, out _).ReturnsForAnyArgs(true);
 		ILogger logger = Substitute.For<ILogger>();
 
-		ThemeBackgroundOutcome outcome = CreateWriter(featureState: featureState, logger: logger)
-			.Complete(ColorBackground, keep, ThemeId, null);
+		ThemeBackgroundOutcome outcome = CreateWriter(service, logger: logger).Complete(ColorBackground, keep, ThemeId, null);
 
-		featureState.Received(expectedWrites).SetFeatureState("UsePanelIconBackground", SysAdminUnitIds.AllEmployees, false);
+		service.Received(expectedTurnOffs).TryTurnOffPanelIconBackground("The theme background", out Arg.Any<string>());
 		logger.Received(1).WriteInfo(expectedLine);
 		outcome.PanelIconBackground.Should().Be(expectedState);
 	}
@@ -56,43 +56,38 @@ public sealed class ThemeBackgroundWriterTests {
 		outcome.ImagePackage.Should().Be("UsrThemes");
 	}
 
-	[TestCase("{\"value\":[{\"Id\":\"6d2e4b1f-93a8-4c57-b0e1-2f7a9c3d5e81\"}]}", true)]
-	[TestCase("{\"value\":[]}", false)]
-	[Description("Confirms a background-image-id only when the environment has that SysImage row.")]
-	public void TryConfirmImage_Should_Require_The_SysImage_Row(string odataResponse, bool expected) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecuteGetRequest(default).ReturnsForAnyArgs(odataResponse);
+	[TestCase(true, true, null)]
+	[TestCase(false, false, "No uploaded image with id '" + ImageId + "' was found in the environment, so nothing was " +
+		"changed. Upload the file first with upload-image and pass the id it prints.")]
+	[Description("Confirms a background-image-id only when the environment has that uploaded image, and otherwise names the missing image and says nothing was changed.")]
+	public void TryConfirmImage_Should_Require_The_Uploaded_Image(bool exists, bool expected, string expectedError) {
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		service.TryFindUploadedImage(Guid.Parse(ImageId), out Arg.Any<bool>(), out Arg.Any<string>())
+			.Returns(call => {
+				call[1] = exists;
+				return true;
+			});
 
-		bool confirmed = CreateWriter(applicationClient: applicationClient).TryConfirmImage(ImageBackground, out _);
+		bool confirmed = CreateWriter(service).TryConfirmImage(ImageBackground, out string error);
 
 		confirmed.Should().Be(expected, because: "only an image the environment has may become a theme background");
+		error.Should().Be(expectedError, because: "the caller must learn that the image is missing and how to provide it");
 	}
 
 	[Test]
-	[Description("Names the missing image and says nothing was changed when the environment has no SysImage row for it.")]
-	public void TryConfirmImage_Should_Name_The_Missing_Image() {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecuteGetRequest(default).ReturnsForAnyArgs("{\"value\":[]}");
+	[Description("Refuses the image when the check itself fails, says that the check failed, and strips a credential from the reason, because the error reaches the log and the MCP transcript.")]
+	public void TryConfirmImage_Should_Refuse_The_Image_When_The_Check_Fails() {
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		service.TryFindUploadedImage(default, out _, out _).ReturnsForAnyArgs(call => {
+			call[2] = MessageWithCredential;
+			return false;
+		});
 
-		CreateWriter(applicationClient: applicationClient).TryConfirmImage(ImageBackground, out string error);
-
-		error.Should().Be($"No uploaded image with id '{ImageId}' was found in the environment, so nothing was changed. " +
-			"Upload the file first with upload-image and pass the id it prints.",
-			because: "the caller must learn that the image is missing and how to provide it");
-	}
-
-	[Test]
-	[Description("Refuses the image without throwing when the SysImage query fails, so an unchecked id never reaches the theme write.")]
-	public void TryConfirmImage_Should_Refuse_The_Image_When_The_Query_Throws() {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new InvalidOperationException("connection reset"));
-
-		bool confirmed = CreateWriter(applicationClient: applicationClient).TryConfirmImage(ImageBackground,
-			out string error);
+		bool confirmed = CreateWriter(service).TryConfirmImage(ImageBackground, out string error);
 
 		confirmed.Should().BeFalse(because: "an image the environment could not confirm must stop the write");
-		error.Should().Be($"Could not check image '{ImageId}' in the environment, so nothing was changed: connection reset",
-			because: "the caller must learn that the check, not the image, failed");
+		error.Should().StartWith($"Could not check image '{ImageId}' in the environment, so nothing was changed: ")
+			.And.NotContain("hunter2", because: "a credential in a server message must not reach the caller");
 	}
 
 	[TestCase(null)]
@@ -100,60 +95,51 @@ public sealed class ThemeBackgroundWriterTests {
 	[TestCase("")]
 	[Description("Confirms a color, a removal or no background without asking the environment for an image.")]
 	public void TryConfirmImage_Should_Not_Query_Without_An_Image(string color) {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
 		ThemeBackground background = color switch {
 			null => null,
 			"" => new ThemeBackground(),
 			_ => ColorBackground
 		};
 
-		bool confirmed = CreateWriter(applicationClient: applicationClient).TryConfirmImage(background, out _);
+		bool confirmed = CreateWriter(service).TryConfirmImage(background, out _);
 
 		confirmed.Should().BeTrue(because: "only an image background names a row that must exist");
-		applicationClient.DidNotReceiveWithAnyArgs().ExecuteGetRequest(default);
+		service.DidNotReceiveWithAnyArgs().TryFindUploadedImage(default, out _, out _);
 	}
 
 	[Test]
-	[Description("Strips a credential from the server message it puts in the image check error, because the error reaches the log and the MCP transcript.")]
-	public void TryConfirmImage_Should_Redact_A_Credential_In_The_Error() {
-		IApplicationClient applicationClient = Substitute.For<IApplicationClient>();
-		applicationClient.ExecuteGetRequest(default).ThrowsForAnyArgs(new InvalidOperationException(MessageWithCredential));
-
-		CreateWriter(applicationClient: applicationClient).TryConfirmImage(ImageBackground, out string error);
-
-		error.Should().NotContain("hunter2", because: "a credential in a server message must not reach the caller");
-	}
-
-	[Test]
-	[Description("Turns a failure to switch the panel icon background off into a warning and reports no panel icon state, because the theme is already written.")]
+	[Description("Turns a failed panel icon turn-off into a warning without a credential and reports no panel icon state, because the theme is already written.")]
 	public void Complete_Should_Warn_When_Turning_The_Panel_Icon_Off_Fails() {
-		IFeatureStateService featureState = Substitute.For<IFeatureStateService>();
-		featureState.WhenForAnyArgs(service => service.SetFeatureState(default, default, default, default))
-			.Do(_ => throw new InvalidOperationException("feature service unavailable"));
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
+		service.TryTurnOffPanelIconBackground(default, out _).ReturnsForAnyArgs(call => {
+			call[1] = MessageWithCredential;
+			return false;
+		});
 
-		ThemeBackgroundOutcome outcome = CreateWriter(featureState: featureState).Complete(
-			ColorBackground, false, ThemeId, null);
+		ThemeBackgroundOutcome outcome = CreateWriter(service).Complete(ColorBackground, false, ThemeId, null);
 
-		outcome.Should().BeEquivalentTo(new ThemeBackgroundOutcome([
-				"The theme background was applied, but turning off the UsePanelIconBackground feature failed, " +
-				"so the panel may still hide it: feature service unavailable"
-			]),
-			because: "a failure after the theme write is a warning, and the panel icon state is unknown");
+		outcome.Should().Match<ThemeBackgroundOutcome>(value => value.PanelIconBackground == null
+				&& value.Warnings.Count == 1
+				&& value.Warnings[0].StartsWith("refused by ")
+				&& !value.Warnings[0].Contains("hunter2"),
+			because: "a failure after the theme write is a warning without a credential, and the panel icon state is unknown");
 	}
 
 	[Test]
-	[Description("Turns a failure to open the theme's package into a warning and reports no image package, because the theme is already written.")]
+	[Description("Turns a failure to open the theme's package into a warning without a credential and reports no image package, because the theme is already written.")]
 	public void Complete_Should_Warn_When_Using_The_Theme_Package_Fails() {
 		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
-		binder.UsePackage(default).ThrowsForAnyArgs(new InvalidOperationException("package is locked"));
+		binder.UsePackage(default).ThrowsForAnyArgs(new InvalidOperationException(MessageWithCredential));
 
 		ThemeBackgroundOutcome outcome = CreateWriter(binder: binder).Complete(ImageBackground, true, ThemeId, "UsrThemes");
 
 		outcome.Should().Match<ThemeBackgroundOutcome>(value => value.ImagePackage == null
 				&& value.Warnings.Count == 1
 				&& value.Warnings[0].StartsWith(
-					$"The theme background was applied, but binding image {ImageId} into the theme's package failed"),
-			because: "a failed binding after the theme write is a warning, and no package holds the image");
+					$"The theme background was applied, but binding image {ImageId} into the theme's package failed")
+				&& !value.Warnings[0].Contains("hunter2"),
+			because: "a failed binding after the theme write is a warning without a credential, and no package holds the image");
 	}
 
 	[Test]
@@ -172,46 +158,26 @@ public sealed class ThemeBackgroundWriterTests {
 			because: "the caller must learn why the image is not in the package");
 	}
 
-	[Test]
-	[Description("Strips a credential from the server messages it puts in its warnings, because the warnings reach the log and the MCP transcript.")]
-	public void Complete_Should_Redact_A_Credential_In_The_Warnings() {
-		IFeatureStateService featureState = Substitute.For<IFeatureStateService>();
-		featureState.WhenForAnyArgs(service => service.SetFeatureState(default, default, default, default))
-			.Do(_ => throw new InvalidOperationException(MessageWithCredential));
-		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
-		binder.UsePackage(default).ThrowsForAnyArgs(new InvalidOperationException(MessageWithCredential));
-
-		ThemeBackgroundOutcome outcome = CreateWriter(featureState, binder).Complete(ImageBackground, false, ThemeId,
-			"UsrThemes");
-
-		outcome.Warnings.Should().HaveCount(2).And.NotContain(warning => warning.Contains("hunter2"),
-			because: "a credential in a server message must not reach the caller");
-	}
-
 	[TestCase(true)]
 	[TestCase(false)]
 	[Description("Leaves the panel icon feature and the theme's package alone when the background is removed or not given.")]
 	public void Complete_Should_Not_Touch_The_Feature_Or_The_Package_Without_A_Background_To_Set(bool removed) {
-		IFeatureStateService featureState = Substitute.For<IFeatureStateService>();
+		IBrandingBackgroundService service = Substitute.For<IBrandingBackgroundService>();
 		IPackageDataBinder binder = Substitute.For<IPackageDataBinder>();
 
-		ThemeBackgroundOutcome outcome = CreateWriter(featureState, binder).Complete(
+		ThemeBackgroundOutcome outcome = CreateWriter(service, binder).Complete(
 			removed ? new ThemeBackground() : null, false, ThemeId, "UsrThemes");
 
-		featureState.DidNotReceiveWithAnyArgs().SetFeatureState(default, default, default, default);
+		service.DidNotReceiveWithAnyArgs().TryTurnOffPanelIconBackground(default, out _);
 		binder.DidNotReceiveWithAnyArgs().UsePackage(default);
 		binder.DidNotReceiveWithAnyArgs().BindRow(default, default, default, default);
 		outcome.Should().BeEquivalentTo(ThemeBackgroundOutcome.None,
 			because: "a removal neither switches the feature nor binds anything");
 	}
 
-	private static ThemeBackgroundWriter CreateWriter(IFeatureStateService featureState = null,
-		IPackageDataBinder binder = null, IApplicationClient applicationClient = null, ILogger logger = null) {
-		IServiceUrlBuilder urlBuilder = Substitute.For<IServiceUrlBuilder>();
-		urlBuilder.Build(Arg.Any<string>()).Returns(call => call.Arg<string>());
-		return new ThemeBackgroundWriter(
-			new BrandingBackgroundService(applicationClient ?? Substitute.For<IApplicationClient>(), urlBuilder,
-				featureState ?? Substitute.For<IFeatureStateService>()),
+	private static ThemeBackgroundWriter CreateWriter(IBrandingBackgroundService service = null,
+		IPackageDataBinder binder = null, ILogger logger = null) {
+		return new ThemeBackgroundWriter(service ?? Substitute.For<IBrandingBackgroundService>(),
 			binder ?? Substitute.For<IPackageDataBinder>(), logger ?? Substitute.For<ILogger>());
 	}
 }

@@ -328,14 +328,16 @@ public class UpdateThemeToolTests {
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
-	[TestCase("\"background-image-id\":null", "null", null)]
-	[TestCase("\"background-color\":null", null, "null")]
-	[TestCase("\"background-color\":\"null\"", null, "null")]
-	[TestCase("\"background-color\":\"#1A2B3C\"", null, "#1A2B3C")]
-	[Description("Binds the background arguments through the MCP SDK on the production serializer options and forwards a JSON null as the null value that removes the background, with caption, css-class-name and css-content left out so the stored ones are kept.")]
+	[TestCase("\"background-image-id\":null", "null", null, false)]
+	[TestCase("\"background-color\":null", null, "null", false)]
+	[TestCase("\"background-color\":\"null\"", null, "null", false)]
+	[TestCase("\"background-color\":\"#1A2B3C\"", null, "#1A2B3C", false)]
+	[TestCase("\"background-image-id\":\"" + BackgroundImageId + "\",\"keep-icon-background\":true", BackgroundImageId,
+		null, true)]
+	[Description("Binds the background arguments and keep-icon-background through the MCP SDK on the production serializer options and forwards a JSON null as the null value that removes the background, with caption, css-class-name and css-content left out so the stored ones are kept.")]
 	[Category("Unit")]
-	public async Task UpdateTheme_ShouldForwardJsonNullAsARemoval_WhenTheSdkBindsTheArguments(string background,
-		string expectedImageId, string expectedColor) {
+	public async Task UpdateTheme_ShouldMapTheBackgroundArguments_WhenTheSdkBindsThem(string background,
+		string expectedImageId, string expectedColor, bool expectedKeepIconBackground) {
 		ConsoleLogger.Instance.ClearMessages();
 		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
 		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
@@ -351,7 +353,7 @@ public class UpdateThemeToolTests {
 			options.Caption == null &&
 			options.CssClassName == null &&
 			options.CssContent == null &&
-			!options.KeepIconBackground));
+			options.KeepIconBackground == expectedKeepIconBackground));
 		ConsoleLogger.Instance.ClearMessages();
 	}
 
@@ -397,28 +399,6 @@ public class UpdateThemeToolTests {
 		properties.GetProperty("background-color").GetProperty("description").GetString().Should().Contain(
 			"null removes the theme's own background",
 			because: "the schema is where a client learns that null removes the background");
-	}
-
-	[Test]
-	[Description("Maps background-image-id and keep-icon-background into the update-theme options.")]
-	[Category("Unit")]
-	public void UpdateTheme_ShouldMapTheBackgroundImageAndKeepIconBackground() {
-		ConsoleLogger.Instance.ClearMessages();
-		IToolCommandResolver commandResolver = ResolverFor(new FakeUpdateThemeCommand());
-		UpdateThemeTool tool = new(new FakeUpdateThemeCommand(), ConsoleLogger.Instance, commandResolver);
-
-		CommandExecutionResult result = tool.UpdateTheme(new UpdateThemeArgs(
-			EnvironmentName: "docker_fix2", Id: BackgroundThemeId, KeepIconBackground: true) {
-			BackgroundImageId = BackgroundImageId
-		});
-
-		result.ExitCode.Should().Be(0, because: "an image background alone is a valid update");
-		commandResolver.Received(1).Resolve<UpdateThemeCommand>(Arg.Is<UpdateThemeOptions>(options =>
-			options.BackgroundImageId == BackgroundImageId &&
-			options.KeepIconBackground &&
-			options.BackgroundColor == null &&
-			options.Caption == null));
-		ConsoleLogger.Instance.ClearMessages();
 	}
 
 	[Test]

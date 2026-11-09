@@ -27,8 +27,6 @@ public interface IThemeBackgroundWriter {
 internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroundService,
 	IPackageDataBinder packageDataBinder, ILogger logger) : IThemeBackgroundWriter {
 
-	private const string PanelIconBackgroundFeatureCode = BrandingBackgroundService.PanelIconBackgroundFeatureCode;
-
 	private static readonly IReadOnlyList<string> SysImageColumns = ["Id", "Name", "Data", "MimeType"];
 
 	public bool TryConfirmImage(ThemeBackground background, out string error) {
@@ -57,10 +55,10 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 		List<string> warnings = [];
 		string panelIconBackground = null;
 		if (keepIconBackground) {
-			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} was left as it is (keep-icon-background).");
+			logger.WriteInfo($"{BrandingBackgroundService.PanelIconBackgroundFeatureCode} was left as it is (keep-icon-background).");
 			panelIconBackground = ThemeBackgroundOutcome.PanelIconKept;
 		} else if (backgroundService.TryTurnOffPanelIconBackground("The theme background", out string warning)) {
-			logger.WriteInfo($"{PanelIconBackgroundFeatureCode} is off for All employees.");
+			logger.WriteInfo($"{BrandingBackgroundService.PanelIconBackgroundFeatureCode} is off for All employees.");
 			panelIconBackground = ThemeBackgroundOutcome.PanelIconOff;
 		} else {
 			warnings.Add(SensitiveErrorTextRedactor.Redact(warning));

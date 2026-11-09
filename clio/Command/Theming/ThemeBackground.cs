@@ -47,15 +47,31 @@ public sealed record ThemeBackground
 		background = null;
 		error = null;
 		bool hasImageId = !string.IsNullOrWhiteSpace(imageId);
-		bool hasColor = !string.IsNullOrWhiteSpace(color);
-		if (hasImageId && hasColor) {
+		if (hasImageId && !string.IsNullOrWhiteSpace(color)) {
 			error = $"{ImageIdArgument} and {ColorArgument} cannot be combined: pass at most one background argument.";
 			return false;
 		}
-		if (hasImageId) {
-			return TryParseImage(imageId, allowRemoval, out background, out error);
+		if (!IsGiven(imageId, color)) {
+			return true;
 		}
-		return !hasColor || TryParseColor(color, allowRemoval, out background, out error);
+		(string argument, string given, string kind, string expected) = hasImageId
+			? (ImageIdArgument, imageId, "a valid id", "the id printed by upload-image")
+			: (ColorArgument, color, "a hex color", "#RGB, #RRGGBB or #RRGGBBAA");
+		string value = given.Trim();
+		if (string.Equals(value, RemovalValue, StringComparison.OrdinalIgnoreCase)) {
+			if (allowRemoval) {
+				background = new ThemeBackground();
+				return true;
+			}
+			error = $"{argument} {RemovalValue} removes a theme background, and only update-theme removes one: " +
+				$"pass {expected} or leave {argument} out.";
+			return false;
+		}
+		background = Parse(hasImageId, value);
+		if (background is null) {
+			error = $"{argument} '{TextUtilities.SanitizeForDisplay(given, MaxEchoLength)}' is not {kind}. Pass {expected}.";
+		}
+		return background is not null;
 	}
 
 	internal ThemeBackground SanitizeForDisplay() {
@@ -75,55 +91,13 @@ public sealed record ThemeBackground
 			: $"{Mode} {ImageId}";
 	}
 
-	private static bool TryParseImage(string imageId, bool allowRemoval, out ThemeBackground background,
-		out string error) {
-		background = null;
-		string value = imageId.Trim();
-		if (IsRemoval(value)) {
-			return TryRemove(ImageIdArgument, "the id printed by upload-image", allowRemoval, out background, out error);
+	private static ThemeBackground Parse(bool isImage, string value) {
+		if (isImage) {
+			return Guid.TryParse(value, out Guid id) && id != Guid.Empty
+				? new ThemeBackground { Mode = ImageMode, ImageId = id.ToString() }
+				: null;
 		}
-		if (!Guid.TryParse(value, out Guid id) || id == Guid.Empty) {
-			error = $"{ImageIdArgument} '{TextUtilities.SanitizeForDisplay(imageId, MaxEchoLength)}' is not a " +
-				"valid id. Pass the id printed by upload-image.";
-			return false;
-		}
-		error = null;
-		background = new ThemeBackground { Mode = ImageMode, ImageId = id.ToString() };
-		return true;
-	}
-
-	private static bool TryParseColor(string color, bool allowRemoval, out ThemeBackground background,
-		out string error) {
-		background = null;
-		string value = color.Trim();
-		if (IsRemoval(value)) {
-			return TryRemove(ColorArgument, "#RGB, #RRGGBB or #RRGGBBAA", allowRemoval, out background, out error);
-		}
-		if (!HexColorPattern.IsMatch(value)) {
-			error = $"{ColorArgument} '{TextUtilities.SanitizeForDisplay(color, MaxEchoLength)}' is not a hex color. " +
-				"Pass #RGB, #RRGGBB or #RRGGBBAA.";
-			return false;
-		}
-		error = null;
-		background = new ThemeBackground { Mode = ColorMode, Color = value };
-		return true;
-	}
-
-	private static bool TryRemove(string argument, string expected, bool allowRemoval, out ThemeBackground background,
-		out string error) {
-		if (allowRemoval) {
-			background = new ThemeBackground();
-			error = null;
-			return true;
-		}
-		background = null;
-		error = $"{argument} {RemovalValue} removes a theme background, and only update-theme removes one: " +
-			$"pass {expected} or leave {argument} out.";
-		return false;
-	}
-
-	private static bool IsRemoval(string value) {
-		return string.Equals(value, RemovalValue, StringComparison.OrdinalIgnoreCase);
+		return HexColorPattern.IsMatch(value) ? new ThemeBackground { Mode = ColorMode, Color = value } : null;
 	}
 
 	private static string Clean(string value, int maxLength) {

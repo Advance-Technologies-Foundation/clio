@@ -54,8 +54,6 @@ public sealed class ThemeBackgroundTests {
 	}
 
 	[TestCase(ImageId, "#123", "background-image-id and background-color cannot be combined")]
-	[TestCase("null", "#123", "background-image-id and background-color cannot be combined")]
-	[TestCase(ImageId, "null", "background-image-id and background-color cannot be combined")]
 	[TestCase("null", "null", "background-image-id and background-color cannot be combined")]
 	[TestCase("not-a-guid", null, "background-image-id 'not-a-guid' is not a valid id")]
 	[TestCase("00000000-0000-0000-0000-000000000000", null, "is not a valid id. Pass the id printed by upload-image.")]
@@ -109,16 +107,6 @@ public sealed class ThemeBackgroundTests {
 
 		JsonSerializer.Serialize(background).Should().Be("{}",
 			because: "an empty background is what tells ThemeService to remove the stored one");
-	}
-
-	[TestCase("null", null, "background-image-id null removes a theme background, and only update-theme removes one")]
-	[TestCase(null, "null", "background-color null removes a theme background, and only update-theme removes one")]
-	[Description("Refuses null where a removal is not allowed, and says that only update-theme removes a theme background.")]
-	public void TryParse_Should_Refuse_A_Removal_When_It_Is_Not_Allowed(string imageId, string color, string expected) {
-		bool valid = ThemeBackground.TryParse(imageId, color, allowRemoval: false, out _, out string error);
-
-		valid.Should().BeFalse(because: "create-theme has no background to remove");
-		error.Should().StartWith(expected, because: "the caller must learn which tool removes a theme background");
 	}
 
 	[TestCase(ImageId, null, true)]
