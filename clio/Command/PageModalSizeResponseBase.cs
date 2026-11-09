@@ -37,7 +37,11 @@ namespace Clio.Command {
 		[JsonPropertyName("availableSizes")]
 		public IReadOnlyList<string> AvailableSizes { get; set; }
 
-		/// <summary>Set when a layer above the package overrides the size the package sees.</summary>
+		/// <summary>
+		/// Non-fatal warnings: a layer above the package overrides the size, the add-on metadata is unreadable, the
+		/// size the window opens with or the package of the size could not be determined, or a post-save cache reset
+		/// or rebuild failed.
+		/// </summary>
 		[DataMember(Name = "warning")]
 		[JsonProperty("warning", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonPropertyName("warning")]

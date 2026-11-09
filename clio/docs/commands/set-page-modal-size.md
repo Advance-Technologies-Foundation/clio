@@ -30,7 +30,8 @@ modal page is refused.
 The response names `previousSize` (absent when none was set — the window opened `small`), `previousSizeValue`,
 `previousSourcePackageName` and `size`. When a package above the given one sets the size, the write is refused
 before anything is saved and the error names the size the window opens with. When the window still shows another
-size after the save, `warning` says so.
+size after the save, `warning` says so. When the size is already stored in the given package and the window opens
+with it, nothing is written.
 
 ## Synopsis
 

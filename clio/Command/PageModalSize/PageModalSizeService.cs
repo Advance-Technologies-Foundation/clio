@@ -34,11 +34,12 @@ internal sealed class PageModalSizeService(
 		AddonSchemaDto schema = addonSchemaDesignerClient.GetSchema(BuildGetRequest(target));
 		StoredSize stored = ReadStoredSize(schema, target.PageSchemaName);
 		(int? runtimeValue, string runtimeWarning) = TryReadRuntimeValue(target.PageSchemaName);
-		int seenValue = stored.Value ?? RuntimeDefaultValue;
-		int effectiveValue = runtimeValue ?? seenValue;
-		string overrideWarning = FindOverride(target, seenValue, runtimeValue) is string overrideText
-			? $"{overrideText}, so a write to '{target.PackageName}' would not change the window."
-			: null;
+		int effectiveValue = EffectiveValue(stored.Value, runtimeValue);
+		// An unreadable body has no size to compare with, so any runtime size would read as a false override.
+		string overrideWarning = stored.Warning is null
+			&& FindOverride(target, stored.Value, runtimeValue) is string overrideText
+				? $"{Capitalize(overrideText)}, so a write to '{target.PackageName}' would not change the window."
+				: null;
 		return new PageModalSizeReadResult(
 			target.PageSchemaName,
 			target.PackageName,
@@ -67,9 +68,24 @@ internal sealed class PageModalSizeService(
 		// leave the window unchanged: refuse before anything is written. A failed check does not block the write;
 		// the runtime is read again after the save and reports the size the window opens with.
 		int? runtimeBefore = TryReadRuntimeValue(target.PageSchemaName).Value;
-		if (FindOverride(target, previous.Value ?? RuntimeDefaultValue, runtimeBefore) is string overrideText) {
+		if (FindOverride(target, previous.Value, runtimeBefore) is string overrideText) {
 			throw new InvalidOperationException(
-				$"{overrideText}, so writing to '{target.PackageName}' would not change the window. Nothing was changed.");
+				$"{Capitalize(overrideText)}, so writing to '{target.PackageName}' would not change the window. "
+				+ "Nothing was changed.");
+		}
+
+		// The size is already stored in package-name's own layer and the window opens with it: a save, cache reset and
+		// rebuild would change nothing, and a rebuild notifies every online user. Nothing is written.
+		if (previous.Value == newValue && runtimeBefore == newValue
+			&& string.Equals(previous.SourcePackageName, target.PackageName, StringComparison.OrdinalIgnoreCase)) {
+			return new PageModalSizeWriteResult(
+				target.PageSchemaName,
+				target.PackageName,
+				PageModalSizeCatalog.NameOf(newValue),
+				previous.Value,
+				previous.SourcePackageName,
+				PageModalSizeCatalog.NameOf(newValue),
+				previous.Warning);
 		}
 
 		if (metadata[ModalSettingsKey] is not JsonObject modalSettings) {
@@ -81,11 +97,13 @@ internal sealed class PageModalSizeService(
 
 		addonSchemaDesignerClient.SaveSchema(schema);
 		string resetWarning = addonSchemaDesignerClient.ResetClientScriptCache();
+		// The same post-save sequence as the other add-on writers (RelatedPageAddonService, BusinessRuleAddonService).
+		// AppearanceSettingsService reflects a SaveSchema at once (measured on 10.2.1027); whether the client bundles
+		// pick the size up without a rebuild was not measured, so the rebuild is kept.
 		string buildWarning = addonSchemaDesignerClient.BuildConfiguration();
 		(int? runtimeValue, string runtimeWarning) = TryReadRuntimeValue(target.PageSchemaName);
-		string overrideWarning = runtimeValue.HasValue && runtimeValue != newValue
-			? $"The size is saved in package '{target.PackageName}', but the window still opens "
-				+ $"{NameValue(runtimeValue.Value)}: a package above '{target.PackageName}' sets the size."
+		string overrideWarning = FindOverride(target, newValue, runtimeValue) is string afterText
+			? $"The size is saved in package '{target.PackageName}', but {afterText}."
 			: null;
 
 		return new PageModalSizeWriteResult(
@@ -99,12 +117,29 @@ internal sealed class PageModalSizeService(
 	}
 
 	// The runtime merges every layer the way the window opens; GetSchema shows the size as package-name sees it. When
-	// they differ, a package above package-name sets the size. Returns that finding, or null when there is none.
-	private static string FindOverride(PageTarget target, int seenValue, int? runtimeValue) =>
-		runtimeValue.HasValue && runtimeValue != seenValue
-			? $"The window opens {NameValue(runtimeValue.Value)}, not {NameValue(seenValue)} as package "
-				+ $"'{target.PackageName}' sees it: a package above '{target.PackageName}' sets the size"
-			: null;
+	// they differ, a package above package-name sets the size. Compared as stored (null and None both mean "no size"),
+	// not after the default is applied: a higher layer that stores the default size (small) is an override too. A
+	// runtime answer with no size at all proves nothing and is never an override. Returns that finding, or null.
+	private static string FindOverride(PageTarget target, int? seenValue, int? runtimeValue) {
+		if (runtimeValue is null || ToStoredSize(runtimeValue) == ToStoredSize(seenValue)) {
+			return null;
+		}
+		string seen = ToStoredSize(seenValue) is int seenSize ? NameValue(seenSize) : "no size";
+		return $"the window opens {DescribeValue(ToStoredSize(runtimeValue))}, while package '{target.PackageName}' "
+			+ $"sees {seen}: a package above '{target.PackageName}' sets the size";
+	}
+
+	// The size the window opens with: the runtime's merged size when it reported one, else the package's view; a
+	// missing or None size opens with the modal default.
+	private static int EffectiveValue(int? storedValue, int? runtimeValue) =>
+		ToStoredSize(runtimeValue ?? storedValue) ?? RuntimeDefaultValue;
+
+	private static int? ToStoredSize(int? value) => value == PageModalSizeCatalog.NoneValue ? null : value;
+
+	private static string DescribeValue(int? value) =>
+		value is int size ? NameValue(size) : $"{NameValue(RuntimeDefaultValue)} (no size set)";
+
+	private static string Capitalize(string text) => char.ToUpperInvariant(text[0]) + text[1..];
 
 	private PageTarget ResolveTarget(string packageName, string pageSchemaName) {
 		if (string.IsNullOrWhiteSpace(pageSchemaName)) {
@@ -204,18 +239,18 @@ internal sealed class PageModalSizeService(
 		if (root is null || root["success"]?.GetValueKind() != JsonValueKind.True) {
 			return (null, $"{unverified}: AppearanceSettingsService.GetAppearanceSettings returned no result.");
 		}
-		return (root["value"] is JsonObject value ? ReadSize(value) : null, null);
+		// None (0) is kept here: a higher layer that clears the size is an override FindOverride must see.
+		return (root["value"] is JsonObject value ? ReadRawSize(value) : null, null);
 	}
 
-	private static int? ReadSize(JsonObject metadata) {
-		if (metadata[ModalSettingsKey] is not JsonObject modalSettings
-			|| modalSettings[SizeKey] is not JsonValue sizeNode
-			|| !sizeNode.TryGetValue(out int size)
-			|| size == PageModalSizeCatalog.NoneValue) {
-			return null;
-		}
-		return size;
-	}
+	private static int? ReadSize(JsonObject metadata) => ToStoredSize(ReadRawSize(metadata));
+
+	private static int? ReadRawSize(JsonObject metadata) =>
+		metadata[ModalSettingsKey] is JsonObject modalSettings
+		&& modalSettings[SizeKey] is JsonValue sizeNode
+		&& sizeNode.TryGetValue(out int size)
+			? size
+			: null;
 
 	// Blank metadata is an empty object (the package has no add-on yet); anything else must parse to a JSON object.
 	private static bool TryParseMetadata(string metaData, out JsonObject metadata) {

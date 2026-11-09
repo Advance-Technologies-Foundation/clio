@@ -17,7 +17,8 @@ DESCRIPTION
     The result names the previous size (absent when none was set, so the window opened small), its raw
     value, the package it came from, and the new size. When a package above the given one sets the
     size, the write is refused before anything is saved and the error names the size the window opens
-    with. When the window still shows another size after the save, a warning says so.
+    with. When the window still shows another size after the save, a warning says so. When the size
+    is already stored in the given package and the window opens with it, nothing is written.
 
 SYNOPSIS
     clio set-page-modal-size -e ENVIRONMENT --page-schema-name NAME --package-name NAME --size SIZE

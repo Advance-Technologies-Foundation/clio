@@ -35,7 +35,7 @@ public sealed class SetPageModalSizeCommandTests : BaseCommandTests<SetPageModal
 	public void Execute_ShouldReturnZero_WhenServiceWrites() {
 		// Arrange
 		_service.Set(Arg.Any<PageModalSizeWriteRequest>()).Returns(
-			new PageModalSizeWriteResult("UsrOrder_MiniPage", "Custom", "medium", 2, "Custom", "large", null));
+			new PageModalSizeWriteResult("UsrOrder_MiniPage", "Custom", "medium", 2, "Custom", "large", "rebuild failed"));
 
 		// Act
 		int exitCode = _command.Execute(Options());
@@ -48,6 +48,7 @@ public sealed class SetPageModalSizeCommandTests : BaseCommandTests<SetPageModal
 		response.PreviousSizeValue.Should().Be(2, because: "the raw old size is reported");
 		response.Size.Should().Be("large", because: "the new size is reported");
 		response.AvailableSizes.Should().BeNull(because: "the accepted sizes are listed only for a refused size");
+		response.Warning.Should().Be("rebuild failed", because: "a non-fatal warning of the write reaches the caller");
 	}
 
 	[Test]

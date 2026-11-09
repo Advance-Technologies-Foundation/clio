@@ -206,7 +206,7 @@ public sealed class PageModalSizeServiceTests {
 			new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
 
 		// Assert
-		result.Warning.Should().Contain("still opens small",
+		result.Warning.Should().Contain("but the window opens small, while package 'Custom' sees large",
 			because: "the caller must learn that the saved size does not reach the window");
 	}
 
@@ -224,7 +224,7 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "a write under an overriding layer would report success and leave the window unchanged")
-			.WithMessage("*opens extra-large, not medium*package above 'Custom'*Nothing was changed*");
+			.WithMessage("*opens extra-large, while package 'Custom' sees medium*package above 'Custom'*Nothing was changed*");
 		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonClient.DidNotReceive().ResetClientScriptCache();
 		_addonClient.DidNotReceive().BuildConfiguration();
@@ -410,5 +410,170 @@ public sealed class PageModalSizeServiceTests {
 		result.Size.Should().BeNull(because: "no size could be read from that body");
 		result.Warning.Should().Contain("is not a JSON object",
 			because: "an unreadable body must not be reported as 'no size set'");
+	}
+
+	[Test]
+	[Description("Refuses before writing when the package sees no size and a higher layer stores small, the default (EC-1).")]
+	public void Set_ShouldRefuseBeforeWriting_WhenHigherLayerStoresDefaultSize() {
+		// Arrange
+		StubSelects(PackageRow());
+		StubAddon("""{"modalSettings": null}""");
+		StubRuntime(1);
+
+		// Act
+		Action act = () => _service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(
+				because: "a higher layer storing the default size still wins over a write to package-name")
+			.WithMessage("*opens small, while package 'Custom' sees no size*package above 'Custom'*Nothing was changed*");
+		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Refuses before writing when a higher layer clears the size (None) that package-name sees.")]
+	public void Set_ShouldRefuseBeforeWriting_WhenHigherLayerClearsSize() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 3}}""");
+		StubRuntime(0);
+
+		// Act
+		Action act = () => _service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "medium"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "a layer storing None makes the window open small")
+			.WithMessage("*opens small (no size set), while package 'Custom' sees large*Nothing was changed*");
+		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Warns on a read when the package sees no size and a higher layer stores small.")]
+	public void Get_ShouldWarn_WhenHigherLayerStoresDefaultSize() {
+		// Arrange
+		StubSelects(PackageRow());
+		StubAddon("""{"modalSettings": null}""");
+		StubRuntime(1);
+
+		// Act
+		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "UsrOrder_MiniPage"));
+
+		// Assert
+		result.EffectiveSize.Should().Be("small", because: "the window opens with the higher layer's size");
+		result.Warning.Should().Contain("would not change the window",
+			because: "a write to package-name would not beat the higher layer");
+	}
+
+	[Test]
+	[Description("Does not add an override warning when the add-on metadata cannot be read.")]
+	public void Get_ShouldNotReportOverride_WhenMetadataIsNotAnObject() {
+		// Arrange
+		StubSelects(PackageRow());
+		StubAddon("not json");
+		StubRuntime(3);
+
+		// Act
+		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "UsrOrder_MiniPage"));
+
+		// Assert
+		result.Warning.Should().Contain("is not a JSON object", because: "the unreadable body is reported");
+		result.Warning.Should().NotContain("package above",
+			because: "with no stored size to compare, a runtime size is no evidence of an override");
+		result.EffectiveSize.Should().Be("large", because: "the runtime still reports the size the window opens with");
+	}
+
+	[Test]
+	[Description("Writes nothing when the size is already stored in package-name and the window opens with it.")]
+	public void Set_ShouldWriteNothing_WhenSizeIsAlreadyStoredInPackage() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 3}}""");
+		StubRuntime(3);
+
+		// Act
+		PageModalSizeWriteResult result = _service.Set(
+			new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "L"));
+
+		// Assert
+		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
+		_addonClient.DidNotReceive().ResetClientScriptCache();
+		_addonClient.DidNotReceive().BuildConfiguration();
+		result.PreviousSize.Should().Be("large", because: "the stored size is reported");
+		result.Size.Should().Be("large", because: "the requested size is already in place");
+	}
+
+	[Test]
+	[Description("Writes when the same size comes from a lower layer, so package-name gets its own layer.")]
+	public void Set_ShouldWrite_WhenSameSizeComesFromLowerLayer() {
+		// Arrange
+		StubSelects(PackageRow(), NoRows, LayerRow("CrtUIv2"));
+		StubAddon("""{"modalSettings": {"size": 3}}""");
+		StubRuntime(3);
+
+		// Act
+		_service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		_addonClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+	}
+
+	[Test]
+	[Description("Resets the cache and rebuilds after a save, and passes their warnings to the result.")]
+	public void Set_ShouldResetCacheRebuildAndReportWarnings_WhenSaved() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(2, 3);
+		_addonClient.ResetClientScriptCache().Returns("cache reset failed");
+		_addonClient.BuildConfiguration().Returns("rebuild failed");
+
+		// Act
+		PageModalSizeWriteResult result = _service.Set(
+			new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		Received.InOrder(() => {
+			_addonClient.SaveSchema(Arg.Any<AddonSchemaDto>());
+			_addonClient.ResetClientScriptCache();
+			_addonClient.BuildConfiguration();
+		});
+		result.Warning.Should().Contain("cache reset failed").And.Contain("rebuild failed",
+			because: "a failed post-save step is reported, not thrown");
+	}
+
+	[Test]
+	[Description("Still writes when the runtime check before the write reports no result.")]
+	public void Set_ShouldWrite_WhenRuntimeCheckBeforeWriteFails() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		_applicationClient.ExecutePostRequest(RuntimeUrl, Arg.Any<string>())
+			.Returns("""{"success": false}""", """{"success": true, "value": {"modalSettings": {"size": 3}}}""");
+
+		// Act
+		PageModalSizeWriteResult result = _service.Set(
+			new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		_addonClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		result.Warning.Should().BeNull(because: "the check after the save confirms the new size");
+	}
+
+	[Test]
+	[Description("Asks the runtime service for the page by name and looks the add-on layer up by its uId.")]
+	public void Get_ShouldSendPageNameAndLayerUId_InRequestBodies() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(2);
+
+		// Act
+		_service.Get(new PageModalSizeReadRequest("Custom", "UsrOrder_MiniPage"));
+
+		// Assert
+		_applicationClient.Received().ExecutePostRequest(RuntimeUrl,
+			Arg.Is<string>(body => JsonNode.Parse(body)!["schemaName"]!.GetValue<string>() == "UsrOrder_MiniPage"));
+		_applicationClient.Received().ExecutePostRequest(SelectQueryUrl,
+			Arg.Is<string>(body => body.Contains(OwnLayerUId) && body.Contains("AddonSchemaManager")));
 	}
 }

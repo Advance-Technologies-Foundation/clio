@@ -24,8 +24,10 @@ public sealed record PageModalSizeWriteRequest(string PackageName, string PageSc
 /// <param name="EffectiveSize">The size the window opens with: the stored size, or the runtime default when no
 /// size is set.</param>
 /// <param name="AvailableSizes">The size names a write accepts.</param>
-/// <param name="Warning">Set when the window opens with another size than the package sees — a layer above the
-/// package overrides it, so a write to this package would not change the window; otherwise <c>null</c>.</param>
+/// <param name="Warning">Non-fatal warnings, or <c>null</c>: a layer above the package overrides the size the
+/// package sees (a write to this package would not change the window), the add-on metadata is not a JSON object, the
+/// size the window opens with could not be checked, or the package the size comes from could not be
+/// determined.</param>
 public sealed record PageModalSizeReadResult(
 	string PageSchemaName,
 	string PackageName,
@@ -71,10 +73,12 @@ public interface IPageModalSizeService {
 
 	/// <summary>
 	/// Writes the size to the page's <c>AppearanceSettings</c> add-on in the requested package, keeping every other
-	/// field of the add-on metadata, then refreshes the client script cache and static content.
+	/// field of the add-on metadata, then refreshes the client script cache and static content. Writes nothing when the
+	/// size is already stored in the requested package and the window opens with it.
 	/// </summary>
 	/// <exception cref="System.ArgumentException">A required field is missing or the size is not supported.</exception>
-	/// <exception cref="System.InvalidOperationException">The page or package cannot be resolved, or the page is
-	/// not a modal page.</exception>
+	/// <exception cref="System.InvalidOperationException">The page or package cannot be resolved, the page is not a
+	/// modal page, the add-on metadata is not a JSON object, or a package above the requested one sets the
+	/// size.</exception>
 	PageModalSizeWriteResult Set(PageModalSizeWriteRequest request);
 }
