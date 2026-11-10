@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Clio.Command.ProcessModel;
 using Clio.Common;
@@ -138,6 +139,25 @@ internal interface IPackageDataBindingWriter {
 	/// <param name="rowId">Primary key of the row.</param>
 	/// <returns><see langword="true"/> when the row exists.</returns>
 	bool RowExists(string schemaName, Guid rowId);
+
+	/// <summary>
+	/// Reads the rows a binding stores, as the package will ship them — not the live rows of the entity
+	/// table, so a row whose live record is gone is still listed.
+	/// </summary>
+	/// <param name="bindingUId">UId of the binding (<see cref="PackageDataBindingRef.UId"/>).</param>
+	/// <returns>The stored rows, each a column-name to value map; empty when the binding stores none.</returns>
+	List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId);
+
+	/// <summary>
+	/// Reads the rows a binding stores, like <see cref="FetchBoundRows(Guid)"/>, within the timeout and deadline of
+	/// <paramref name="requestOptions"/>, so the read shares the budget of the call that sends it.
+	/// </summary>
+	/// <param name="bindingUId">UId of the binding (<see cref="PackageDataBindingRef.UId"/>).</param>
+	/// <param name="requestOptions">Timeout, retries and deadline of the read; <see langword="null"/> for an
+	/// unbounded read.</param>
+	/// <returns>The stored rows, each a column-name to value map; empty when the binding stores none.</returns>
+	/// <exception cref="TimeoutException">The deadline is spent, so the read was not sent.</exception>
+	List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId, CreatioRequestOptions requestOptions);
 }
 
 /// <inheritdoc />
@@ -360,6 +380,61 @@ internal sealed class PackageDataBindingWriter(
 
 		/// <summary>The binding registration was deleted.</summary>
 		Removed
+	}
+
+	private static string BuildGetBoundSchemaDataBody(Guid bindingUId) =>
+		$$"""{"uId":"{{bindingUId}}"}""";
+
+	/// <inheritdoc />
+	public List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId) => FetchBoundRows(bindingUId, null);
+
+	/// <inheritdoc />
+	public List<Dictionary<string, JsonNode>> FetchBoundRows(Guid bindingUId, CreatioRequestOptions requestOptions) {
+		string url = serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData);
+		string body = BuildGetBoundSchemaDataBody(bindingUId);
+		CreatioRequestOptions send = requestOptions?.ForNextRequest();
+		string response = send is null
+			? applicationClient.ExecutePostRequest(url, body)
+			: applicationClient.ExecutePostRequest(url, body, send.TimeOut, send.MaxAttempts, send.RetryDelay);
+
+		using JsonDocument document = JsonDocument.Parse(response);
+		if (!document.RootElement.TryGetProperty("items", out JsonElement itemsElement)) {
+			return [];
+		}
+
+		// items may be a JSON-encoded string (double-encoded) or an inline array/object
+		List<Dictionary<string, JsonNode>> result = [];
+		if (itemsElement.ValueKind == JsonValueKind.String) {
+			string itemsJson = itemsElement.GetString();
+			if (string.IsNullOrWhiteSpace(itemsJson)) {
+				return result;
+			}
+
+			using JsonDocument itemsDocument = JsonDocument.Parse(itemsJson);
+			ParseBoundRowsFromArray(itemsDocument.RootElement, result);
+		}
+		else if (itemsElement.ValueKind == JsonValueKind.Array) {
+			ParseBoundRowsFromArray(itemsElement, result);
+		}
+
+		return result;
+	}
+
+	private static void ParseBoundRowsFromArray(
+		JsonElement arrayElement,
+		List<Dictionary<string, JsonNode>> result) {
+		if (arrayElement.ValueKind != JsonValueKind.Array) {
+			return;
+		}
+
+		foreach (JsonElement item in arrayElement.EnumerateArray()) {
+			Dictionary<string, JsonNode> row = [];
+			foreach (JsonProperty property in item.EnumerateObject()) {
+				row[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+			}
+
+			result.Add(row);
+		}
 	}
 
 	/// <inheritdoc />

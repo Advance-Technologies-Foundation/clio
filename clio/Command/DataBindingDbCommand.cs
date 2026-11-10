@@ -517,7 +517,7 @@ internal sealed class DataBindingDbService(
 
 		Guid? existingBindingUId = bindingWriter.FindBinding(packageRef.UId, bindingName)?.UId;
 		List<Dictionary<string, JsonNode?>> existingBoundRows = existingBindingUId.HasValue
-			? FetchBoundRows(existingBindingUId.Value)
+			? bindingWriter.FetchBoundRows(existingBindingUId.Value)
 			: [];
 		List<string> boundRecordIds = ExtractBoundRecordIds(existingBoundRows);
 
@@ -736,7 +736,7 @@ internal sealed class DataBindingDbService(
 		ValidateRequestedBindingColumnsSupported(schema, [values]);
 
 		string rowId = EnsureRowId(values);
-		List<Dictionary<string, JsonNode?>> existingBoundRows = FetchBoundRows(bindingUId);
+		List<Dictionary<string, JsonNode?>> existingBoundRows = bindingWriter.FetchBoundRows(bindingUId);
 		List<string> existingIds = ExtractBoundRecordIds(existingBoundRows);
 		bool rowAlreadyBound = existingIds.Contains(rowId, StringComparer.OrdinalIgnoreCase);
 
@@ -763,7 +763,7 @@ internal sealed class DataBindingDbService(
 
 		PackageRef packageRef = bindingWriter.ResolvePackage(options.PackageName);
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
-		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
+		List<Dictionary<string, JsonNode?>> boundRows = bindingWriter.FetchBoundRows(bindingUId);
 		IReadOnlyList<IReadOnlyDictionary<string, string>> rows = boundRows
 			.Select(row => (IReadOnlyDictionary<string, string>)row.ToDictionary(
 				pair => pair.Key,
@@ -803,7 +803,7 @@ internal sealed class DataBindingDbService(
 
 		PackageRef packageRef = bindingWriter.ResolvePackage(options.PackageName);
 		(string entitySchemaName, Guid bindingUId) = LookupBindingInfo(packageRef.UId, options.BindingName);
-		List<Dictionary<string, JsonNode?>> boundRows = FetchBoundRows(bindingUId);
+		List<Dictionary<string, JsonNode?>> boundRows = bindingWriter.FetchBoundRows(bindingUId);
 		List<string> boundIds = ExtractBoundRecordIds(boundRows);
 
 		if (!boundIds.Contains(options.KeyValue, StringComparer.OrdinalIgnoreCase)) {
@@ -877,9 +877,6 @@ internal sealed class DataBindingDbService(
 			""";
 	}
 
-	private static string BuildGetBoundSchemaDataBody(Guid bindingUId) =>
-		$$"""{"uId":"{{bindingUId}}"}""";
-
 	private (string EntitySchemaName, Guid BindingUId) LookupBindingInfo(Guid packageUId, string bindingName) {
 		PackageDataBindingRef? binding = bindingWriter.FindBinding(packageUId, bindingName);
 		if (binding is null) {
@@ -889,51 +886,6 @@ internal sealed class DataBindingDbService(
 
 		return (string.IsNullOrWhiteSpace(binding.EntitySchemaName) ? bindingName : binding.EntitySchemaName,
 			binding.UId);
-	}
-
-	private List<Dictionary<string, JsonNode?>> FetchBoundRows(Guid bindingUId) {
-		string response = applicationClient.ExecutePostRequest(
-			serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetBoundSchemaData),
-			BuildGetBoundSchemaDataBody(bindingUId));
-
-		using JsonDocument document = JsonDocument.Parse(response);
-		if (!document.RootElement.TryGetProperty("items", out JsonElement itemsElement)) {
-			return [];
-		}
-
-		// items may be a JSON-encoded string (double-encoded) or an inline array/object
-		List<Dictionary<string, JsonNode?>> result = [];
-		if (itemsElement.ValueKind == JsonValueKind.String) {
-			string? itemsJson = itemsElement.GetString();
-			if (string.IsNullOrWhiteSpace(itemsJson)) {
-				return result;
-			}
-
-			using JsonDocument itemsDocument = JsonDocument.Parse(itemsJson);
-			ParseBoundRowsFromArray(itemsDocument.RootElement, result);
-		}
-		else if (itemsElement.ValueKind == JsonValueKind.Array) {
-			ParseBoundRowsFromArray(itemsElement, result);
-		}
-
-		return result;
-	}
-
-	private static void ParseBoundRowsFromArray(
-		JsonElement arrayElement,
-		List<Dictionary<string, JsonNode?>> result) {
-		if (arrayElement.ValueKind != JsonValueKind.Array) {
-			return;
-		}
-
-		foreach (JsonElement item in arrayElement.EnumerateArray()) {
-			Dictionary<string, JsonNode?> row = [];
-			foreach (JsonProperty property in item.EnumerateObject()) {
-				row[property.Name] = JsonNode.Parse(property.Value.GetRawText());
-			}
-
-			result.Add(row);
-		}
 	}
 
 	private void DeleteEntityRow(string schemaName, string keyValue) {

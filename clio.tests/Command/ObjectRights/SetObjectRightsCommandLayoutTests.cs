@@ -69,6 +69,7 @@ public class SetObjectRightsCommandLayoutTests : BaseCommandTests<SetObjectRight
 		containerBuilder.AddTransient(_ => _reader);
 		containerBuilder.AddTransient(_ => _writer);
 		containerBuilder.AddTransient(_ => _granteeLookup);
+		containerBuilder.AddTransient(_ => ObjectRightsBinderStub.Binding());
 		containerBuilder.AddTransient(_ => Substitute.For<IInteractiveConsole>());
 		containerBuilder.AddTransient(_ => _logger);
 	}
