@@ -18,7 +18,7 @@ decisions Q18); the checklist field was not touched. The SOAP lines of the draft
 D) were written to the issue on 2026-11-05 after the owner's yes and read back.
 **Created**: 2026-11-03
 **Size estimate**: two stories, delivered as one feature PR per repository (crt-process-builder, then clio-knowledge,
-then clio) after this docs-only clio PR. The /bmad-spec form is used because the ticket has fewer than 5 stories
+then clio) after the docs-only clio PR (clio #1890, merged 2026-11-04). The /bmad-spec form is used because the ticket has fewer than 5 stories
 (AGENTS.md); an ADR is added because Q1, Q2, Q3, Q4, Q6, Q7, Q10 and Q11 fix the element identity, the contract on
 the existing mapping surface, a package-owned parameter generator and the first package-authored mapping rows, each
 against rejected alternatives (plan section 2). Hours, lines, PRs and cuts: the
@@ -72,12 +72,12 @@ deletes every parameter of the element, result params included, and its BK15 row
   EM2), Value "false" on every Boolean, then the untagged `Success`, `Response`, `StatusCode`, `RequestBody` and one
   `ProcessSchemaMapping` (BK15) row per result parameter (Q4 probe and EM2, measured 2026-11-03).
 - **Every design-time load re-syncs by name, and looks methods up ordinally**: a wrong-case method saves green, the next
-  load prunes every tagged parameter and the run fails with `ItemNotFoundException` (EM11 designer half, measured).
+  load prunes every tagged parameter and the run fails with `ItemNotFoundException` (EM11 designer half, measured; builder half: canonical `IX2` stored, M-43).
 - **Services resolve workspace-wide**; the designer's save adds a package dependency, the builder's save adds none
-  (EM10 designer half measured; the builder half is traced).
+  (EM10 designer half measured; the builder half measured in the final-cut campaign, M-42).
 - **`ignoreErrors` matters only for transport failures**: an HTTP 404 completes the element with `Success` false and
   the process continues either way; a refused connection fails the element and the process unless `IX4` is set (EM7
-  designer half, measured 2026-11-03).
+  designer half, measured 2026-11-03; builder half measured in the final-cut campaign, M-40).
 - **Before the platform's nested-list fix ENG-55920 Unable to use array inside array in web-service business process
   element (core #1119, fixVersion 10.1), absent on 10.1.37**, an inner object
   list with no source of its own whose items are mapped is sent with no value (traced; not measurable on stand
@@ -97,14 +97,17 @@ In scope (the CrtProcessBuilder package, clio, clio-knowledge):
 - A `webService {service, method, timeoutSeconds?, ignoreErrors?}` block on create (`elements[]`), `addElement` and
   `setElement` that builds `ProcessSchemaWebService` for a service registered in Studio > Web services (Q1, Q2, Q8).
 - Resolution: service by UId, then code, then caption; method by code; case-insensitive, canonical spelling written,
-  ambiguity refused; refusals list codes and captions; a cross-package service saves with a notice (Q9, Q10).
+  ambiguity refused; service refusals list codes and captions (method refusals list codes only, F-3); the
+  unknown-service refusal also lists each service's methods, bounded, and the ambiguous one lists the matching names
+  with their methods, no caption (K-1, measurements section 0); a cross-package service saves with a notice (Q9, Q10).
 - A package-owned port of the designer's parameter generator, nested items always emitted, no feature gate; the 4
   BK15 rows written (Q3, Q4).
 - Request values, a composite request body and the raw `RequestBody` through the existing mapping surface, addressed by
   the stored names, in the same request (Q2, Q5, Q10); a composite response read into a declared Collection of at most
   two levels with item mappings (Q6).
 - `describe-business-process` returns a `webService` member and the stored parameter tree, unbound inputs included
-  (Q14); drift issues and a notice on a modify that lets the platform prune an unresolved element (Q12).
+  (Q14); drift issues and a notice on a modify that lets the platform prune an unresolved element, also carried by a
+  modify the platform's validation refuses, with the repair order (Q12; F-2, F-5, measurements section 0).
 - Modify: a service or method change replaces the generated parameters as the designer does, keeps the UIds of
   `Success` / `Response` / `StatusCode`, lists the dropped input bindings in the write shape with their values (notice
   N4) and is refused while anything (another element, a process parameter, a flow condition, a formula body) reads
@@ -231,43 +234,46 @@ AC -> design -> proof -> story (plan section 9 has one Definition of Done row pe
 | AC | Design | Proof | Story |
 |---|---|---|---|
 | AC1 | block (Q2, Q8), generator (Q3), same-request ordering (Q10), mapping surface (Q5) | TC-U-27..32, 56..62, 67, 87; TC-P-03, 09, 10; TC-I-01; EM2 | 1 |
-| AC2 | resolver C2 (Q9, Q10), canonical `IX1` / `IX2`; SOAP built like REST with N10 (Q20 D) | TC-U-15..26, 105, 110, 111; TC-I-03, 04; EM11 and EM10 builder halves | 1 |
+| AC2 | resolver C2 (Q9, Q10), canonical `IX1` / `IX2`; the unknown-service refusal lists methods (K-1); SOAP built like REST with N10 (Q20 D) | TC-U-15..26, 105, 110, 111, 125..127; TC-I-03, 04; EM11 and EM10 builder halves; M-47; AR-1 (M-48) | 1 |
 | AC3 | item mappings and `RequestBody` (Q5), declared Collection (Q6), C13 mirror refusals | TC-U-56..66, 101; TC-P-06, 10, 11; TC-I-02, 08; EM3, EM6 | 1 |
 | AC4 | `IX4` written directly (Q7), N3, result params as ordinary outputs | TC-U-29, 66, 96; TC-I-09; EM7 | 1 |
 | AC5 | shaper port (Q3), BK15 writer (Q4), WSCR rule | TC-U-01..14, 41..45, 106; TC-P-01..11, 13..15; EM2 (S1, S2), EM3, EM5 | 1 |
 | AC6 | replace, `Success` / `Response` / `StatusCode` UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108, 112, 113; TC-P-12, 16; TC-I-05; EM4 | 2 |
-| AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54, 114; TC-I-06, 07; EM8 | 1 (read back), 2 (issues, N7) |
+| AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12), also on a refused modify (F-2, F-5) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54, 114..124; TC-I-06, 07; EM8 (step 8: M-51, M-52) | 1 (read back), 2 (issues, N7) |
 | AC8 | catalog and describer never read defaults or auth (Q16, design 4.16) | TC-U-11, 25, 75; TC-U-35, 37, 53; TC-P-08; TC-I-07; TC-K-12 | 1, 2 |
 | AC9 | clio K1-K11, KB-1..KB-7, package docs C14 | TC-C-01..16; TC-K-01..13; all TC-I; AR-1, AR-2 | 1, 2 |
 
 ## Gates and measurements
 
-EM status as the measurements file records it on 2026-11-05 (its section 0 bullets "Status later on 2026-11-03",
-"EM8's service-save and designer halves: done 2026-11-03" and "EM2 S2-S4 (SOAP): done 2026-11-05", and the gate
-table, section 4).
+EM status 2026-11-10, as the measurements file records it (section 0 and the gate table, section 4).
 
 - **No package code before this SPEC and the ADR exist on the BMAD branch** (AGENTS.md); they need not be merged for
-  slice A. This docs PR merges before the package PR leaves draft (Q19).
+  slice A. This docs PR merges before the package PR leaves draft (Q19). Done: merged as clio #1890 on 2026-11-04.
 - **Done, 2026-11-03:** EM0 (M-22), EM1 (M-19, M-23: `UsrWscEchoService`, `UsrWscDriftService`, `UsrWscDeadService`),
   EM2 S1 (M-24, the AC5 oracle), EM3 routes (a) and (b) (M-15, M-25), EM4 (M-20, M-26, M-27), EM9 (local, M-14), and
   the designer halves of EM7 (M-28), EM10 (M-17) and EM11 (M-16); EM8's current-builder half (M-18) and its
   service-save and designer halves (M-29, M-30, M-31); the Q4 BK15 probe (M-13). **Done, 2026-11-05:** EM2 S2-S4, the
-  SOAP capture (M-32..M-35, decisions Q20 D). Measured facts M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05.
+  SOAP capture (M-32..M-35, decisions Q20 D). Measured facts M-01..M-52: M-01..M-31 on 2026-11-03, M-32..M-35 on
+  2026-11-05, M-36..M-52 on 2026-11-09.
 - **STOP gate (EM5)** right after slice B, on an experimental cut: the designer opens and re-saves a builder-made
   element with no byte change. On failure work stops, the diff goes to the owner, Q4 (and possibly Q3) is re-opened
-  and the estimate is redone before slice C. Re-run on the final cut.
+  and the estimate is redone before slice C. Passed on the experimental cut (2026-11-04) and in the final-cut campaign
+  (2026-11-09, M-37; steps 4 and 5 not run).
 - **Claimed cut, before the PRs leave draft:** EM6 (reduced by EP option E4: result params, StatusCode, Success), the
-  builder halves of EM7, EM10, EM11 and EM12, and EM8's claimed-cut half (the notice N7, the only EM8 half still
-  open). EM12's run half is not measurable on stand `Creatio` under E4 and rests on the core unit tests and the comment
-  on ENG-55920, the platform's nested-list fix (Q13, Q17).
-- **Final cut:** EM2's read-back step and the EM5 re-run against the final archive.
+  builder halves of EM7, EM10, EM11 and EM12, and EM8 step 8 (the notice N7). Run in the final-cut campaign on
+  2026-11-09: EM6 (M-38; EM6-B M-39), the builder halves of EM7 (M-40), EM10 (M-42), EM11 (M-43) and EM12 (M-44).
+  Re-measured on the claimed cut: EM8 step 8 is refused by the platform's validation and the refusal carries N7 (M-51,
+  M-52). EM12's run half is not measurable under E4 and rests on the core unit tests and the comment on ENG-55920,
+  the platform's nested-list fix (Q13, Q17).
+- **Final cut:** EM2's read-back step (done in the final-cut campaign, M-36) and the EM5 re-run against the final
+  archive (M-37). Owed: EM2 step 9, EM5, EM6, EM6-B, EM7, EM10, EM11 and EM12 ran on the earlier cut of the final-cut campaign only; the owner decides: re-run them on the claimed cut, or waive because the later changes touch only the refusal texts and the validator.
 - Every stand write, install, run and cleanup waits for the owner's explicit yes, one step at a time.
 
 ## Constraints
 
 - No future CrtProcessBuilder cut number appears in these documents; numbers live in the claim comment on ENG-92710 Call web service element
   (Q19), the tag and `descriptor.json`. Versions appear only as history ("measured on 1.6.6.131").
-- The stand is named only as `Creatio` (a registered clio environment); its address is not written here.
+- Stands are named only by clio environment name, never by address.
 - Budgets (Q15): full tool contracts at `6be5dde28` have create 39 B, modify 3 B and describe 43 B under the
   35,072 B ceiling; `process-modeling` about 13 B under its reply budget (measured r5, facts file). Every added
   clause is paid by a swap, no ceiling raise, ASCII only;
@@ -281,13 +287,13 @@ table, section 4).
 An agent asks for a process that calls a registered REST service: one `create-business-process` call builds the
 element with its request values mapped and its result read into process parameters; `describe-business-process`
 returns the `webService` member and the stored tree; sending the described block back through
-`modify-business-process` writes nothing; a designer re-save of the element changes no byte; on stand `Creatio` the
+`modify-business-process` writes nothing; a designer re-save of the element changes no byte; on a registered test stand the
 process runs and `Success` / `StatusCode` / `Response` arrive in process parameters.
 
 ## Risks
 
 See the plan section 10: the platform load re-sync that prunes an unresolved element (Q12), ENG-55920 (the platform's nested-list fix) absent on
-10.1.37 (N5), no echo endpoint under E4 (the request bytes rest on unit tests), EM5 failing (STOP gate), budgets at
+10.1.37 (N5), no echo endpoint under E4 (the request bytes rest on unit tests), EM5 failing (STOP gate; passed, M-37), budgets at
 the ceiling, scope creep from ENG-92730 Complex / structured parameter types, many review rounds for an external-schema element, secrets in service metadata
 (Q16), a foreign cut on `main` or a KB `libraryVersion` collision, and the local core-bin (10.1.37) being newer than
 CI's 8.3.4.

@@ -18,10 +18,11 @@ K-docs, and clio-knowledge KB-1..KB-7 less the story 2 lines; hours are the
 [estimate](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-estimate.md)'s and are not split
 per story
 **Repo**: crt-process-builder, then clio-knowledge, then clio (one feature PR each, titled
-`ENG-92710 Call web service element`, branch `feature/ENG-92710-call-web-service-element`), after this docs-only clio
-PR (branch `docs/ENG-92710-call-web-service-element-spec`). Story 2 ships in the same three PRs.
-**Depends on**: ENG-91843 Add and modify process parameters (Closed). This BMAD set merges before the package PR leaves
-draft (Q19).
+`ENG-92710 Call web service element`, branch `feature/ENG-92710-call-web-service-element`), after the docs-only clio
+PR (branch `docs/ENG-92710-call-web-service-element-spec`, merged as clio #1890 on 2026-11-04). Story 2 ships in the
+same three PRs.
+**Depends on**: ENG-91843 Add and modify process parameters (Closed). This BMAD set merged before the package PR
+leaves draft (Q19; clio #1890, 2026-11-04).
 **Blocks**: [story 2](story-eng-92710-call-web-service-element-2.md) (slice D follows slice C and the EM5 STOP gate).
 Related, not blocking: ENG-92730 Complex / structured parameter types (the deferred mirror, ObjectList and 3+ level
 scope) and ENG-105475 Register a REST web service through the AI Toolkit (registration).
@@ -52,8 +53,8 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
 - [ ] **AC1** - the `webService` block builds `ProcessSchemaWebService` on create, `addElement` and `setElement`;
   request values, a composite body and `RequestBody` are set through the existing mappings by the stored names, in the
   same request.
-- [ ] **AC2** - an unknown or ambiguous service or method fails with a list of codes and captions (or of the service's
-  methods); a missing service points to registration in Studio > Web services; an environment with no registered
+- [ ] **AC2** - an unknown or ambiguous service or method fails with a list of codes and captions, or of the service's
+  methods (the unknown-service refusal also gives each service's methods, bounded; K-1, measurements section 0); a missing service points to registration in Studio > Web services; an environment with no registered
   service gets its own refusal; names are matched case-insensitively and stored canonically.
 - [ ] **AC3** - inputs map in through the existing mappings; a composite response is read into a declared Collection
   (up to two levels) with item mappings; the web-service mirror cases refuse with a pointer to that route (Q6).
@@ -74,7 +75,9 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
 
 ## Gating
 
-EM status as the measurements file records it on 2026-11-03.
+EM status 2026-11-10, as the measurements file records it (section 0). The final-cut campaign ran on 2026-11-09
+(M-36..M-46); the EM rows below that ran there are owed a re-run on the claimed cut: the owner decides to re-run them
+or to waive the re-run, because the later changes touch only the refusal texts and the validator.
 
 | Gate | What | Who | Before |
 |---|---|---|---|
@@ -82,14 +85,14 @@ EM status as the measurements file records it on 2026-11-03.
 | Q18 | Jira description and the 9 AC written, checklist field untouched, read back | owner, then lead | done 2026-11-03 |
 | 0.3 / Q19 | claim comment on ENG-92710 Call web service element (empty claim table; every number claimed there after checking the tags of both repositories) | lead, on the owner's yes | the first cut, the experimental one included |
 | 0.4 | drift check against the basis (fetch first) | lead | slice A |
-| BMAD | this SPEC and the ADR on the docs branch | lead | any package code |
+| BMAD | this SPEC and the ADR on the docs branch | lead | any package code; done: merged as clio #1890 on 2026-11-04 |
 | EM0, EM1, EM9 | baseline; the test services `UsrWscEchoService`, `UsrWscDriftService`, `UsrWscDeadService`; compile floor | lead | done 2026-11-03 (M-22; M-19, M-23; M-14) |
-| EM2 | designer capture A, the AC5 oracle | lead in Claude in Chrome, owner logs in | S1 done 2026-11-03 (M-24); the read-back step runs on the final cut |
+| EM2 | designer capture A, the AC5 oracle | lead in Claude in Chrome, owner logs in | S1 done 2026-11-03 (M-24); step 9 read-back done in the final-cut campaign 2026-11-09 (M-36); re-run on the claimed cut owed (measurements section 0) |
 | EM3 | the designer's "Create from element" shape (route (a)) and a declared Collection with item mappings (route (b)) | lead | done 2026-11-03 (M-15, M-25) |
-| EM7 | `ignoreErrors` true vs false on a 404 and on a refused connection | lead, owner's yes per write | designer half done 2026-11-03 (M-28); builder half on the claimed cut, before the PRs leave draft |
-| STOP | EM5: a builder-made element re-saved by the designer and modified by an unrelated builder modify, stored bytes diffed; the row-less case only through a designer copy | lead, owner's yes per write | slice C; re-run on the final cut |
-| EM6 | a builder-made process runs and the result params arrive (reduced by EP option E4) | lead, owner's yes | the PRs leave draft |
-| EM10, EM11, EM12 | builder halves: no package dependency added (N6), canonical method name, N5 binding stored; EM12's run half is not measurable under E4 | lead, owner's yes | the PRs leave draft |
+| EM7 | `ignoreErrors` true vs false on a 404 and on a refused connection | lead, owner's yes per write | designer half done 2026-11-03 (M-28); builder half done in the final-cut campaign 2026-11-09 (M-40); re-run on the claimed cut owed (measurements section 0) |
+| STOP | EM5: a builder-made element re-saved by the designer and modified by an unrelated builder modify, stored bytes diffed; the row-less case only through a designer copy | lead, owner's yes per write | slice C: passed on the experimental cut 2026-11-04; final-cut campaign 2026-11-09 passed (M-37; steps 4, 5 not run); re-run on the claimed cut owed (measurements section 0) |
+| EM6 | a builder-made process runs and the result params arrive (reduced by EP option E4) | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-38; EM6-B M-39); re-run on the claimed cut owed (measurements section 0) |
+| EM10, EM11, EM12 | builder halves: no package dependency added (N6), canonical method name, N5 binding stored; EM12's run half is not measurable under E4 | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-42, M-43, M-44); re-run on the claimed cut owed (measurements section 0) |
 | gate 1 | full 3-lens fan-out over the package diff (shared sub-process code in P-A4, the build hook in P-B5, the parameter service in P-C6, Q16 as a security check) | lead | the draft package PR opens |
 | KB publish | the knowledge generation that publishes `process-web-service` | human merge | CL-8 re-pin; the clio PR leaves draft |
 
@@ -109,7 +112,9 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
 - [ ] **P-A1** C2 service catalog / resolver (Q9, Q10, Q16): service by UId, code, caption, case-insensitive,
   ambiguity refused; method by code within the service; canonical spelling and manager-item UId returned; refusals
   list codes with captions, the unknown-service refusal adds the registration pointer, an empty catalog has its own
-  refusal; no default, auth info or base URI in any text (TC-U-15..21, 25, 26, 105).
+  refusal; no default, auth info or base URI in any text (TC-U-15..21, 25, 26, 105). Claimed cut (K-1): the
+  unknown-service refusal also gives each listed service's methods, bounded (TC-U-125..127), and the ambiguous one the
+  matching names with their methods, no caption (TC-U-17).
 - [ ] **P-A2** C3 parameter shaper, a pure port of the designer client: names, tags, types, nested items always (no
   feature read), `ItemValue` children, IsRequired rule, captions with the top-level suffix rule (EM2), result params,
   Boolean "false" values, designer order (TC-U-01..14, 94, 100).
@@ -188,8 +193,9 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
   story 2).
 - [ ] **KB-6** fact-check gate: one refute-first agent per claim cluster, barred from citing `docs/knowledge/` or the
   analysis folder; every refutation re-checked by hand; a traced-only claim names its EM or is cut (TC-K-12).
-- [ ] **KB-7** agent runs AR-1 (service not named) and AR-2 (service not registered: the agent stops) on the draft
-  article; a failure is fed back before the KB PR leaves draft.
+- [x] **KB-7** agent runs AR-1 (service not named) and AR-2 (service not registered: the agent stops) on the draft
+  article; a failure is fed back before the KB PR leaves draft. Done 2026-11-09: AR-1 needed two refusals on the
+  first draft (M-45) and passes with one on the updated article (M-48); AR-2 passes (M-46).
 
 **clio** (read `docs/agent-instructions/bundled-packages.md` before CL-1 and CL-3, and `docs/knowledge/ProcessModel/`
 and `docs/knowledge/McpServer/` before any edit)
@@ -214,7 +220,7 @@ and `docs/knowledge/McpServer/` before any edit)
   `process-web-service`. The clio PR stays draft until that generation is published; if KB publishes after the clio PR
   is approved, the re-pin goes into a separate PR instead of a push (TC-C-14).
 - [ ] **CL-9** K9 e2e `WebServiceElementToolE2ETests`: create + describe, same-request mappings, refusals with nothing
-  created, the EM2 fixture read-only, run with result params and ignore-errors, `validate-process-graph`, N5; `MinimumPackageVersion` = the bundled version; strictly sequential; run on stand `Creatio` on net10 and net8,
+  created, the EM2 fixture read-only, run with result params and ignore-errors, `validate-process-graph`, N5; `MinimumPackageVersion` = the bundled version; strictly sequential; run on a registered test stand on net10 and net8,
   Ignored = 0 (TC-I-01..04, 06..09, 11, 12; TC-C-16; TC-I-05 and TC-I-10 are story 2's). TC-I-13 in the existing
   `ListUserTasksToolE2ETests`: the `list-user-tasks` contract text names `WebServiceUserTask` as refused on the
   generic route.
@@ -246,8 +252,8 @@ owns AC6 and the drift half of AC7). Ticked only when true.
   items) and `RequestBody` raw text (Q5), are configured through the existing mapping surface in the same request,
   addressed by the names describe returns; round trip writes nothing (its replay closes with story 2's P-D1); EM5
   passed.
-- [ ] **AC2** unknown or ambiguous service or method refused with the service list (codes and captions) or the
-  resolved service's methods; a missing service and an empty catalog point to Studio > Web services; names matched
+- [ ] **AC2** unknown or ambiguous service or method refused with the service list (codes and captions, and each
+  service's methods, bounded; K-1) or the resolved service's methods; a missing service and an empty catalog point to Studio > Web services; names matched
   case-insensitively and stored canonical (Q9, Q10; EM11's builder half on the claimed cut).
 - [ ] **AC3** constants, formulas, process parameters and element outputs map into `_In` params and dotted item paths;
   a composite response is read into a declared Collection (two levels) with item mappings, container bound
@@ -255,7 +261,7 @@ owns AC6 and the drift half of AC7). Ticked only when true.
   and the parity suite unless the owner adds a JSON source (Q17), and the PR body says so; the scope of ENG-92730
   Complex / structured parameter types recorded as the follow-up, not done here.
 - [ ] **AC4** `IX4` written and read back; Success / StatusCode / Response usable in conditions and mappings; run time
-  proven on stand `Creatio` by EM6 as far as EP option E4 shows (result params, StatusCode, Success) and by EM7's
+  proven on a registered test stand by EM6 as far as EP option E4 shows (result params, StatusCode, Success) and by EM7's
   builder half matching its designer half (M-28).
 - [ ] **AC5** parity patterns A (corpus pairs), B (EM2 S1 / EM2 S2 (SOAP, TC-P-15) / EM3 captures; the EM4 capture
   is story 2's TC-P-12 and the EM2 S4 capture is story 2's TC-P-16) and C (writer diff) green; the 4 BK15
@@ -268,7 +274,7 @@ owns AC6 and the drift half of AC7). Ticked only when true.
   describe's generic `parameters[]`; the corpus fixtures carry no credential (TC-P-08); Q16 tests and grep.
 - [ ] **AC9** package tests on dev-nf and dev-n8 plus the first CI run of the draft package PR; clio `TestCategory=Unit`
   full suite; KB test project; MCP surface (descriptions, prompts, key check, short form, typed describe, capability
-  map, curated re-pin) updated; e2e on stand `Creatio` on net10 and net8 with Ignored = 0; docs: capture doc,
+  map, curated re-pin) updated; e2e on a registered test stand on net10 and net8 with Ignored = 0; docs: capture doc,
   architecture doc, KB article, catalog flip.
 - [ ] **General** every TC row of the test plan that this story owns implemented and green (all rows except story 2's,
   TC-U-109 and TC-I-13 included; the rows whose replay or retarget half needs story 2's P-D1 close together with story
@@ -287,3 +293,19 @@ owns AC6 and the drift half of AC7). Ticked only when true.
 - 2026-11-03: analysis, decisions Q1-Q20 (all agreed), measurements EM0-EM4, EM9, the designer halves of EM7, EM10
   and EM11 and EM8's current-builder, service-save and designer halves (M-18, M-29..M-31) done; the description of
   ENG-92710 Call web service element written after the owner's yes; this BMAD set written. No product code yet.
+
+### Done so far (2026-11-10)
+
+The package slices are implemented and the stand runs of 2026-11-09 are recorded (measurements section 0,
+M-36..M-52). This story's runs passed in the final-cut campaign: EM2 step 9, the describe read-back (M-36); EM5, the
+STOP gate (M-37; steps 4 and 5 not run); EM6 and EM6-B (M-38, M-39); the builder halves of EM7 (M-40), EM10 (M-42),
+EM11 (M-43) and EM12 (M-44). Their re-run on the claimed cut is owed: the owner decides to re-run them or to waive
+the re-run, because the later changes touch only the refusal texts and the validator. Re-measured on the claimed cut:
+the unknown-service refusal now lists each registered service's methods, bounded (finding K-1, resolved; measured
+M-47; TC-U-125..127, TC-U-18 updated), and an ambiguous match lists the matching names with their methods, no caption
+(TC-U-17 updated). With it AR-1 passes: one refused create gives the agent service and method, and it types the new
+parameters with `typeFromElement` (M-48; K-2 resolved); AR-2 passes (M-46). EM8 step 8, the refused modify that now
+carries N7 (findings F-2 and F-5, resolved), is story 2's. Still open as Low / doc items: F-1 (EM6-B oracle A cannot be
+saved, a plan defect), F-3 (the unknown-method refusal lists codes without captions), F-4 (one describe -> `setElement`
+round trip warns twice about the same ignored read-back members). No pull request is open for this work yet, so no
+Definition of Done box is ticked and the status stays `in-progress`.

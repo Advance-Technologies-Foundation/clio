@@ -30,8 +30,9 @@ that settles it. Decision ids Q1-Q20 are the [decisions](eng-92710-call-web-serv
 agreed by the owner on 2026-11-03; EM ids are the [measurements](eng-92710-call-web-service-element-measurements.md)
 file's. Run as of 2026-11-03: EM0 (M-22), EM1 (M-23), EM2 S1 (M-24), EM3 routes (a) and (b) (M-15, M-25), EM4
 S1-S3 (M-26, M-27), EM9, the designer halves of EM7, EM10 and EM11, EM8's current-builder, service-save and designer
-halves (M-18, M-29..M-31) and the Q4 BK15 probe (M-13). Open: EM5 (the STOP gate), EM6, EM2's read-back on the
-final cut and every builder half on the claimed cut. EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
+halves (M-18, M-29..M-31) and the Q4 BK15 probe (M-13). Run since: EM5 on the experimental cut (2026-11-04), and in
+the final-cut campaign of 2026-11-09 EM2's read-back, EM5, EM6, EM6-B and the builder halves (M-36..M-46); their
+re-run on the claimed cut is owed (measurements section 0). EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
 endpoint), so EM6's request side and EM12 are not measurable on stand `Creatio`.
 
 Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-facts.md) ·
@@ -64,7 +65,7 @@ Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-fact
   designer writes the corpus key sets and the fresh order, the Boolean default on inputs as inferred (SQ5), and the
   caption suffix on TOP-LEVEL parameters only (SQ3, a generator rule). Two stay open: the wire rendering of a
   flattened request object (SQ8, not measurable on the stand under E4) and what a designer re-save does to a
-  builder-made element (SQ13, EM5).
+  builder-made element (SQ13, EM5); SQ13 is now settled by EM5 (measured: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09, M-37; a server load drops the top-level caption suffix and a designer save puts it back).
 
 ## 1. Element-level keys
 
@@ -291,7 +292,7 @@ writes `GS5` into Success `GT1`. A later `RequestBody` binding through `ProcessM
 `SourceValue`, so the setter keeps `GT1 == L8` for free, which is Gemini's stored shape. The package's
 `removeElement` already deletes every row whose `TargetMetaPath` contains the element UId
 (`PB/Graph/ProcessGraphBuilder.cs:1915-1922`). A designer re-save leaves designer-written rows as they are (Q4 probe);
-whether it duplicates or rewrites PACKAGE-written rows is EM5 (SQ13). [traced; measured for designer rows]
+it neither duplicates nor rewrites PACKAGE-written rows either (SQ13, EM5 (measured: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09, M-37; a server load drops the top-level caption suffix and a designer save puts it back)). [measured]
 
 Tagged parameters (297 top-level, 242 nested) never get a row; neither does any user binding. [corpus]
 
@@ -325,7 +326,7 @@ top-level pair `UsrWscStatusIn_In` / `UsrWscStatus_Out` is "Status - Input" / "S
 request item `UsrWscOrders_In.UsrWscOrdNo_In` and the top-level response `UsrWscEchoText_Out` both stay plain
 "Reference": the current designer counts TOP-LEVEL parameters only, so the corpus's nested `Id - Output` comes from an
 older designer. Its cost (EM4 S1, M-27): the designer's formula window resolves an output by caption and bound the
-nested INPUT "Reference" instead of the output. Whether a re-save strips the suffix is EM5 (SQ13).
+nested INPUT "Reference" instead of the output. A server load strips the suffix and a designer save puts it back, so the stored caption follows the last writer (SQ13, EM5 measured 2026-11-04; AD1).
 
 Culture: the client writes captions as plain strings, i.e. in the designing user's culture; the package writes
 localizable values in the request thread's culture (precedent ENG-95985 Send email attachments, serialization 2.3). Parity compares the
@@ -430,7 +431,7 @@ pruned, with no issue (EM8, M-29).
 
 Consequences for the bytes, not the design (the design file owns the notices): the generator's output must be a
 fixed point of the sync on its top-level fields (I1, I2, I6, I9); the parity rule tolerates the top-level caption
-suffix both ways until EM5 (AD1); a comparator must not require "result params last" for a capture that was
+suffix both ways, as EM5 measured it flips with the last writer (AD1); a comparator must not require "result params last" for a capture that was
 re-synced (8.2 W9).
 
 ## 8. Parity method (AC5)
@@ -542,7 +543,7 @@ committed pairs need W10, AD2 and AD5 only.
 |---|---|---|---|---|
 | SQ1 | Does the current designer write the corpus key sets (no `A5`, `BL11`, `L11`, `GS4` on params; row key set without `GT4`)? | W6 is built on 2020-2026 corpus saves | Settled by EM2 (M-24) | yes: every expected key set matched; the element's own `BL11:false` while a required input is unbound is AD10 (EM4 S2, M-26) |
 | SQ2 | Fresh `BP2` order with mixed Header/Body/Query request params: service request order or grouped by kind? | W9 | Settled by EM2 (M-24) and EM4 S2 (M-26) | service request order: header, URL segment, query as declared, then the four result params (2.7) |
-| SQ3 | Caption suffix: does it apply across nested items too (`ChangeId_Out` = `Id - Output` suggests yes), and does a server-side save strip it from top-level params? | generator rule and AD1 | Settled for a fresh save by EM2 (M-24); the re-save half by EM5 | top-level parameters only: "Status - Input" / "Status - Output", while the nested `UsrWscOrdNo_In` and the top-level `UsrWscEchoText_Out` stay plain "Reference" (4); whether a re-save strips it is open (SQ13) |
+| SQ3 | Caption suffix: does it apply across nested items too (`ChangeId_Out` = `Id - Output` suggests yes), and does a server-side save strip it from top-level params? | generator rule and AD1 | Settled for a fresh save by EM2 (M-24); the re-save half by EM5 (2026-11-04) | top-level parameters only: "Status - Input" / "Status - Output", while the nested `UsrWscOrdNo_In` and the top-level `UsrWscEchoText_Out` stay plain "Reference" (4); a server load strips it and a designer save puts it back (SQ13) |
 | SQ4 | Four `BK15` rows on a current designer save; `GT1` of an unset `RequestBody` = `{}` | Q4, W10 | Settled by the Q4 probe (M-13) and EM2 (M-24) | 4 rows in `BP2` result order, Success `GT1 {"GS2":"false"}`, the others `{}` (3.2) |
 | SQ5 | Boolean In default: `{"GS2":"false","GS5":<P>}` like the Out ones? | I7 on the In side | Settled by EM2 (M-24) | yes: `UsrWscFlag_In` `L8 {"GS2":"false","GS5":<P>}` (2.4) |
 | SQ6 | Required scalar array: parent without `L6`, `ItemValue_In` child with `L6: true` on a current save | 2.3 | Settled by EM2 (M-24) | yes: `UsrWscIds_In` none, `UsrWscIdsItemValue_In` `L6` true; the optional `UsrWscTagsItemValue_In` none |
@@ -552,7 +553,7 @@ committed pairs need W10, AD2 and AD5 only.
 | SQ10 | Item-level binding into an In collection with the parent unset (B5): does the current designer leave the parent `{}`? Constant (B3) and formula (B2) forms on a current save | 5.2 | Settled by EM2 (M-24) and EM4 S1 | parent `{}`; a Text constant `{GS1:1, GS5:<P>}` with the value in `.Value` / `.DisplayValue` only; an Integer constant `{GS1:1, GS2:"1", GS5:<P>}`; a formula `GS1` 3 with the text in `GS2` (5.2 B2, B3, B3b, B5) |
 | SQ11 | Response read into a Collection: designer mirror ("create parameter from element") type, item Tags (`<el>.<param>`?), and a hand-made Collection's bindings on all levels | Q6, B8 | Settled by EM3 route (a) (M-15) and route (b) on `UsrWscDriftService.UsrWscOrders2` (M-25) | the mirror is a CompositeObject wrapper with Tags `<el>.<param>` and first-level items only; a declared Collection is bound item-first, every level `GS1` 3 with an element-parameter token, items without Tag (5.2 B8) |
 | SQ12 | Element caption `<service caption> <N>` on a current save; does the builder set it (design) | parity of `BaseElements.<El>.Caption` | Settled by EM2 (M-24) and EM4 (M-26) | "WSC echo service 1"; kept on a method change, "WSC drift service 1" after a service change; the builder follows it (4) |
-| SQ13 | Designer re-save of a builder element (with and without `BK15` rows, with Success `L8`): rows duplicated or rewritten, Success rewritten, `RequestBody` added, captions re-suffixed, order changed? | the residual risk of Q3/Q4 | EM5 | open |
+| SQ13 | Designer re-save of a builder element (with and without `BK15` rows, with Success `L8`): rows duplicated or rewritten, Success rewritten, `RequestBody` added, captions re-suffixed, order changed? | the residual risk of Q3/Q4 | EM5 | settled: no rows duplicated or rewritten, Success kept, the element node byte-identical after a re-save; only the top-level caption suffix follows the last writer (experimental cut 2026-11-04; final-cut campaign 2026-11-09, M-37) |
 | SQ14 | Method change in the designer: params and rows regenerated with fresh UIds; result params re-created; `IX3` kept or reset; downstream references flagged `BL11`? | Q11 replace semantics | Settled by EM4 (M-26, decisions Q11) | method and service change both replace every parameter with fresh UIds, result params included; the 4 `BK15` rows are re-created (new row UIds, same `GT5`); `IX3` kept on a method change and reset on a service change, `IX4` kept; dependents are NOT flagged `BL11` and keep the removed UIds; the builder keeps the result params' UIds (Q11 A3) |
 
 EM6-EM12 measure run time, compile floor, dependencies and drift; they settle no stored-bytes question beyond I3,

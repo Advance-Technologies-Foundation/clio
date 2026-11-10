@@ -40,16 +40,16 @@ measurements in [measurements](eng-92710-call-web-service-element-measurements.m
 |---|---|---|---|
 | Q1 | Element identity | build `ProcessSchemaWebService`; refuse `userTask` = `WebServiceUserTask` with a pointer to `webService` | EM2 |
 | Q2 | Contract | `webService {service, method, timeoutSeconds?, ignoreErrors?}` on create / addElement / setElement; request values through the existing mapping surface on the element's own parameters by stored name; no aliases | EM2, EM6 |
-| Q3 | Parameter generation | package-owned pure generator (port of the designer algorithm), nested items always emitted (no `L18` feature gate, no N11); platform sync tolerated afterwards | EM2, EM5 |
-| Q4 | BK15 rows | emit the 4 result-param rows for byte parity | EM5 |
-| Q5 | Composite request body | nested item mappings (work today) + `RequestBody` raw text as escape hatch; no new parameter type; no JSON check or conflict notice in v1 | EM6, EM12 |
+| Q3 | Parameter generation | package-owned pure generator (port of the designer algorithm), nested items always emitted (no `L18` feature gate, no N11); platform sync tolerated afterwards | EM2, EM5 (passed, M-37) |
+| Q4 | BK15 rows | emit the 4 result-param rows for byte parity | EM5 (passed, M-37) |
+| Q5 | Composite request body | nested item mappings (work today) + `RequestBody` raw text as escape hatch; no new parameter type; no JSON check or conflict notice in v1 | EM6 (M-38), EM6-B trace (M-39), EM12 (builder half M-44) |
 | Q6 | Composite response | v1 declared Collection (<= 2 levels) + item mappings; mirror / ObjectList / 3+ levels to ENG-92730 "Complex / structured parameter types" | EM3, EM6 |
-| Q7 | Errors | `ignoreErrors` written to IX4 directly (EM9: package floor already ~8.3.2, no guard); Success / StatusCode / Response are ordinary outputs | EM0, EM7, EM9 (done) |
+| Q7 | Errors | `ignoreErrors` written to IX4 directly (EM9: package floor already ~8.3.2, no guard); Success / StatusCode / Response are ordinary outputs | EM0, EM7 (builder half M-40), EM9 (done) |
 | Q8 | Timeout | whole seconds in the contract, stored as ms; 0 / absent = unset | EM2 |
-| Q9 | Resolution | service by UId, name, caption, case-insensitive, ambiguity refused; method case-insensitive; canonical spelling written; refusals list valid names; cross-package notice | EM10, EM11 (designer halves done) |
-| Q10 | Discovery | no new package operation, no clio tool in v1; tree returned by create/modify and describe; same-request mappings; the unknown-service refusal points to registration; KB "task without details"; registration = ENG-105475 "Register a REST web service through the AI Toolkit" | agent runs AR-1, AR-2 |
+| Q9 | Resolution | service by UId, name, caption, case-insensitive, ambiguity refused; method case-insensitive; canonical spelling written; refusals list valid names (the unknown-service refusal with each service's methods, bounded, K-1 2026-11-09); cross-package notice | EM10, EM11 (designer halves done; builder halves M-42, M-43 in the final-cut campaign); M-47 |
+| Q10 | Discovery | no new package operation, no clio tool in v1; tree returned by create/modify and describe; same-request mappings; the unknown-service refusal points to registration; KB "task without details"; registration = ENG-105475 "Register a REST web service through the AI Toolkit" | agent runs AR-1 (passes with one refusal, M-48), AR-2 (passes, M-46) |
 | Q11 | Method/service change | A3: replace semantics, `Success` / `Response` / `StatusCode` keep their UIds, retarget guard over every other parameter of the element, notice lists dropped bindings | EM4 (done) |
-| Q12 | Drift / latent loss | describe issues `serviceResolved` / `methodResolved` / nested drift; notice on a modify that would prune | EM8 (current-builder half done: the loss is real) |
+| Q12 | Drift / latent loss | describe issues `serviceResolved` / `methodResolved` / nested drift; notice on a modify that would prune, also carried by a modify the platform's validation refuses (F-2, F-5, 2026-11-09) | EM8 (current-builder half done: the loss is real; step 8 re-measured on the claimed cut: refused with N7, M-51, M-52) |
 | Q13 | Platform floors | IX4 direct (Q7); warning N5 on a sourceless nested object list (ENG-55920 "Unable to use array inside array in web-service business process element") on every target | EM9 (done), EM12 |
 | Q14 | Describe read-back | `webService` member + stored parameter tree, never re-derived, never defaults | EM2, EM8 |
 | Q15 | Text budgets | swap, no ceiling raise; one pointer clause to KB `process-web-service`; flip catalog; routing disambiguation | - |
@@ -536,6 +536,14 @@ method by code, case-insensitive, within the service; canonical IX1/IX2 written;
 a service outside the process package's dependency closure saves with a notice and no dependency is added). Adding the
 dependency like the designer (C) is a separate ticket for every element, not this one.
 
+**Changed in the claimed cut, re-measured 2026-11-09 (finding K-1, measurements section 0; within A).** "A miss lists names and captions only" no longer
+holds for a service miss: the unknown-service refusal lists every registered service sorted by name, the first 30 as
+`Name (caption; methods: A, B)` (at most 8 methods each, then ", and N more"; "declares no methods"; "methods not
+readable" when the schema does not load), services 31-100 as `Name (caption)`, the rest counted ("and N more not
+shown"); an ambiguous match lists the matches with their methods (no caption). The methods are there because the block
+needs one, so one refusal finds service and method (measured M-47; AR-1 passes with one refusal, M-48). The
+unknown-method refusal still lists method codes without captions (finding F-3, open, Low).
+
 **Draft AC wording (now AC2).** "An unknown or ambiguous service or method fails with a message listing the
 available services, or the methods of the resolved service; names are matched case-insensitively and stored in their
 canonical spelling."
@@ -584,6 +592,12 @@ Registering a web service is a separate story: ENG-105475 "Register a REST web s
 +0.5 agent h (texts, a test, the article section) plus about +0.5 agent h for two agent scenario runs (test plan AR-1:
 service not named; AR-2: service not registered, the agent must stop). The isolated runs this section cites under
 "What changes it" did not exist in the test plan before; AR-1 and AR-2 are them.
+
+**Changed in the claimed cut, re-measured 2026-11-09 (finding K-1, addition 1).** The unknown-service refusal now also lists each
+service's methods, bounded (Q9). When services are left out of the list, the pointer says a service not shown is used
+by its exact name or UId, and "If the service you need is not registered" replaces "If the service you need is not
+listed", so a registered service left out of the list is not sent to registration. AR-1 passes with one refusal
+(M-48; the first run on the draft article needed two, M-45); AR-2 passes (M-46).
 
 ---
 
@@ -739,7 +753,7 @@ element's input and a Formula task); then the method's code was renamed (`UsrWsc
   Formula task's token left dangling (the save reported it as a schema error and stored the process).
 A stays as agreed (the notice is about the builder's modify, and its text names the tagged params the load removes).
 What it adds: the KB article says that a designer save of such a process deletes every parameter of the element and
-its BK15 rows, so the remedy (fix the service, or retarget the element) comes before any designer save; describe's
+its BK15 rows, so the remedy (restore the service or method in Studio > Web services, or first remove the reads of the missing parameters, then re-point the element) comes before any designer save; describe's
 `methodResolved: false` (Q14) is the signal, because the synced parameter list of a cold load already shows the prune
 and a warm cache shows the stored set.
 
@@ -752,10 +766,22 @@ service or method does not resolve, configured in the request or not: a `setElem
 not resolve the method, and the save still runs the platform's load sync. Package test
 `ModifyOfTheElement_ShouldNotice_OnlyWhenItStillDoesNotResolve` (TC-U-114).
 
+**Changed in the claimed cut, re-measured 2026-11-09 (findings F-2 and F-5, measurements section 0; within A).** N7 was an end-of-request notice only, so a
+modify the platform's validation refuses never carried it: when something reads a parameter the load pruned, the
+check refuses, nothing is written, and the reply said only what the platform said (EM8 step 8, M-41). The package's
+pre-save check (`ProcessSchemaValidator.EnsureValidForSave`, which runs the platform's validation) now appends N7 to such a refusal, after the platform's
+text: the elements a refused message names first, under a lead that gives the repair order (restore the service or
+method in Studio > Web services and repeat, unless the process was saved in the Process Designer since; otherwise
+first remove or replace every read of those parameters in a request of its own, then re-point the element and bind
+the reads to its new parameters, those two in one request), each in its refusal form, which gives the cause without
+the re-select advice (F-5: the advice contradicted the lead); then the other drifted elements with the ordinary
+notice; with no named element, the lead "This process also has a web service element that no longer resolves."; at
+most 3 notices, the rest counted. Still not refused by the package: the refusal is the platform's. Measured M-51,
+M-52; package tests TC-U-115..124.
+
 **Settled at gate 1 (2026-11-03), the lead's clarification within A.** KB-1 (its modify part) and TC-K-05 state
 that a designer save of a process whose web-service element no longer resolves deletes every parameter of the element
-(result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (fix the
-service, or retarget the element) comes before any designer save; describe's `methodResolved: false` is the signal.
+(result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so the remedy (restore the service or method in Studio > Web services, or first remove the reads of the missing parameters, then re-point the element) comes before any designer save; describe's `methodResolved: false` is the signal.
 
 ---
 
@@ -1091,6 +1117,13 @@ service elements of the PackageStore corpus (38 files) has a Boolean input param
   traced.
 - Only if A shows a value other than `true` do web service elements write the designer's Script form. No code change
   before that.
+
+**Measured 2026-11-09 (EM6-B, M-39), final-cut campaign.** By trace (oracle B) the builder's ConstValue holds
+`UsrWscFlag_In = true` at run time; the trace also shows a one-item list from an item mapping and an unmapped
+`RequestBody` as null (not ""). Oracle A cannot be saved: the platform refuses an element input as a condition data
+source (finding F-1, open, a plan defect). Outcome: the shared ConstValue encoding stays, no code change; the TC-P-15
+companion test pins the one-binding difference from the designer's Script form permanently. Re-run on the claimed cut
+owed (measurements section 0).
 
 ---
 

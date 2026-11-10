@@ -206,30 +206,31 @@ fan-out, 0.5-1 h of it).
 
 EM campaign per probe (the [measurements file](eng-92710-call-web-service-element-measurements.md) owns the content):
 
-| EM | What | Agent h low / likely / high | Settles | Status 2026-11-03 |
+| EM | What | Agent h low / likely / high | Settles | Status 2026-11-10 |
 |---|---|---|---|---|
 | EM0 | read-only baseline: four features, versions | 0.25 / 0.25 / 0.5 | Q7, Q13 preconditions | **done** (M-22) |
 | EM1 | the three test services in Chrome (plan 0.7), base URI = the stand root (EP option E4, Q17): `UsrWscEchoService` (nested POST body, 3-level response, header with a non-secret default), `UsrWscDriftService` (EM8, EM11), `UsrWscDeadService` (EM7); every parameter code `UsrWsc...` (Studio refuses a code without `Usr`) | 1.5 / 2 / 3 | test services for EM2-EM12 | **done** (M-19, M-23) |
-| EM2 | designer capture A, the AC5 oracle (MetaData + resources) | 1 / 1.25 / 2 | Q3, Q4, Q20 | S1 **done** (M-24); S2-S4 (SOAP) **done** 2026-11-05 (M-32..M-35); read-back on the final cut remains |
+| EM2 | designer capture A, the AC5 oracle (MetaData + resources) | 1 / 1.25 / 2 | Q3, Q4, Q20 | S1 **done** (M-24); S2-S4 (SOAP) **done** 2026-11-05 (M-32..M-35); step 9 read-back **spent** 2026-11-09 (M-36); re-run on the claimed cut owed (measurements section 0) |
 | EM3 | capture B: response into a process Collection (mirror + hand-made) | 0.5 / 0.75 / 1.25 | Q6 | **done**: route (a) (M-15), route (b) on `UsrWscDriftService.UsrWscOrders2` (M-25) |
 | EM4 | capture C: method and service change on an existing element | 0.25 / 0.5 / 0.75 | Q11 | **done** (M-20, M-26, M-27) |
-| EM5 | STOP gate: designer opens and re-saves a builder-made element (BK15 on/off, Success L8), diff; the builder modify of step 5 runs on a designer copy `UsrWscEm5OracleCopy`, `UsrWscEm2CaptureA` is only read; re-run on the final cut | 0.5 / 0.75 / 1.25 | Q3, Q4 residual risk | to do |
-| EM6 | run time: result params, StatusCode, Success; under E4 no request bytes and no `$.orders` response read unless the owner adds a JSON source | 0.75 / 1.25 / 2 | Q5, Q6, AC3, AC4 | to do, reduced by E4, row not re-sized (0.1) |
-| EM7 | run time ignoreErrors true vs false on a failing call | 0.25 / 0.5 / 0.75 | Q7 | designer half **done** (M-28); builder half on the claimed cut |
-| EM8 | modify latent loss on a disposable copy (g4 recipe) | 0.5 / 0.75 / 1.25 | Q12 | current-builder, service-save and designer halves **done** (M-18, M-29..M-31); the claimed-cut half (the notice) remains |
+| EM5 | STOP gate: designer opens and re-saves a builder-made element (BK15 on/off, Success L8), diff; the builder modify of step 5 runs on a designer copy `UsrWscEm5OracleCopy`, `UsrWscEm2CaptureA` is only read; re-run on the final cut | 0.5 / 0.75 / 1.25 | Q3, Q4 residual risk | **spent**: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09 (M-37; steps 4, 5 not run); re-run on the claimed cut owed (measurements section 0) |
+| EM6 | run time: result params, StatusCode, Success; under E4 no request bytes and no `$.orders` response read unless the owner adds a JSON source | 0.75 / 1.25 / 2 | Q5, Q6, AC3, AC4 | **spent** 2026-11-09, reduced by E4 (M-38; EM6-B M-39); re-run on the claimed cut owed (measurements section 0) |
+| EM7 | run time ignoreErrors true vs false on a failing call | 0.25 / 0.5 / 0.75 | Q7 | designer half **done** (M-28); builder half **spent** 2026-11-09 (M-40); re-run on the claimed cut owed (measurements section 0) |
+| EM8 | modify latent loss on a disposable copy (g4 recipe) | 0.5 / 0.75 / 1.25 | Q12 | current-builder, service-save and designer halves **done** (M-18, M-29..M-31); step 8 **spent** 2026-11-09 (M-41), re-measured on the claimed cut (refused with N7, M-51, M-52) |
 | EM9 | compile floor against 8.3.1 / 8.1.3 core binaries, local | spent (was 0.5 / 0.75 / 1.5) | Q7, Q13: outcome (a), IX4 written directly | **done** (decisions Q7) |
-| EM10 | cross-package service: designer vs builder `SysPackageDependency` | 0.25 / 0.5 / 1 | Q9 notice | designer half done (decisions Q9); builder half remains, row not split |
-| EM11 | wrong-case method through the platform | 0.1 / 0.25 / 0.5 | Q9 canonicalisation | designer half done (decisions Q9); builder half remains, row not split |
-| EM12 | nested array-in-array on 10.1.37 | 0.25 / 0.4 / 0.75 | Q13 notice | run half not measurable under E4 (Q17); the builder notice step remains, row not re-sized |
+| EM10 | cross-package service: designer vs builder `SysPackageDependency` | 0.25 / 0.5 / 1 | Q9 notice | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-42); re-run on the claimed cut owed (measurements section 0) |
+| EM11 | wrong-case method through the platform | 0.1 / 0.25 / 0.5 | Q9 canonicalisation | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-43; the refusal lists codes without captions, F-3); re-run on the claimed cut owed (measurements section 0) |
+| EM12 | nested array-in-array on 10.1.37 | 0.25 / 0.4 / 0.75 | Q13 notice | run half not measurable under E4 (Q17); builder notice step **spent** 2026-11-09 (M-44); re-run on the claimed cut owed (measurements section 0) |
 | | Sum before batching | 6.1 / 9.15 / 15.0 | | was 6.6 / 9.9 / 16.5, minus EM9 |
 | | After batching (EM2-EM4 one session; EM6/EM7/EM12 one probe process) | **6.0 / 8.25 / 12.5** | | was 6.5 / 9 / 14, minus EM9 (batching never covered EM9) |
 
 ENG-95985 ran 14 probes with two designer captures. This campaign planned 13 and is costed as planned, above
 ENG-95985's estimated 6-12 h at the likely end. On 2026-11-03 EM9, EM0-EM4 (the three test services and the three
-captures) and the designer halves of EM7, EM8, EM10 and EM11 ran. What remains is one designer re-save (EM5), the
-run-time probes as far as E4 lets them show (EM6 reduced; EM12's run half not on the stand), the builder halves on
-the claimed cut (EM7, EM8, EM10, EM11, EM12) and EM2's read-back on the final cut; the spent part is not taken out of
-the figures (0.1).
+captures) and the designer halves of EM7, EM8, EM10 and EM11 ran. EM5 ran on the experimental cut on 2026-11-04; the
+rest (EM2's read-back, EM5's final run, EM6 and EM6-B, the builder halves of EM7, EM8, EM10, EM11 and EM12) was spent in
+the final-cut campaign on 2026-11-09 (M-36..M-46), and EM8 step 8 was re-measured on the claimed cut (M-51, M-52).
+The re-run of the others on the claimed cut is owed (measurements section 0) and is not sized here; the spent part is
+not taken out of the figures (0.1).
 
 ### 2.6 Totals and arithmetic
 
@@ -364,7 +365,7 @@ review finds scope errors (section 6, row 5).
 | 3 | Refusal instead of a notice on drift (Q12 agreed A; option B is a follow-up) | a `ConfirmLayoutChange`-style confirm needs the pre-sync stored parameter list, i.e. a raw `SysSchema.MetaData` read (g4: helpers are candidates, unverified); a new contract key against modify's 3 B description headroom; figure as in decisions Q12 option B | +3-5 | +0.5 | +0.5 wd | |
 | 4 | Platform floor work (EM9 / EM12) | settled 2026-11-03: EM9 gave outcome (a) (decisions Q7), so IX4 is written directly and no floor is introduced; folded into 0.1. Left without a figure of its own: CI compiles against 8.3.4 while the local core-bin is 10.1.37 (g2, measured), so a post-8.3.4 member is green locally and red in CI (plan §10). EM12 changes notice wording only | 0 | 0 | 0 | |
 | 5 | **Review rounds typical of external-schema elements** | ENG-92707: 23+ numbered review rounds, 27 descriptor versions, 19 tags, 7 PRs (r10-C7, C8); the rule from there: narrow the claim instead of re-fixing | +8-15 | +2-5 | +2-3 wd | cuts to 10-25, +1-2 PRs |
-| 6 | EM5 STOP gate fails | the designer rewrites a builder-made element, duplicates BK15 rows or drops Success L8; Q3/Q4 re-opened, shaper and BK15 writer reworked against a second capture; if no stored shape survives a re-save, stop and re-plan | +4-8 | +1-2 | +1-3 wd | +1 cut |
+| 6 | EM5 STOP gate fails (did not happen: passed 2026-11-04 and 2026-11-09, M-37) | the designer rewrites a builder-made element, duplicates BK15 rows or drops Success L8; Q3/Q4 re-opened, shaper and BK15 writer reworked against a second capture; if no stored shape survives a re-save, stop and re-plan | +4-8 | +1-2 | +1-3 wd | +1 cut |
 | 7 | No on-stand echo endpoint (Q17) | settled 2026-11-03: EP option E4 (base URI = the stand root; E1-E3 not chosen). EM6's request bytes and `$.orders` response read and EM12's run half rest on the core unit tests and the ENG-55920 comment; no endpoint is written. A JSON source the owner adds later for EM6's response read is not sized here | 0 | 0 | 0 | |
 | 8 | Description swap disputed | modify has 3 B headroom (r5-C3, measured); a reviewer refuses the swapped text; fallback is a ceiling raise, which reopens Q15 | +0.5-1.5 | +0.3-0.5 | +0.5-1 wd | one more clio round |
 | 9 | Foreign cut on `main` after approval, or a KB `libraryVersion` collision | re-cut (a GHE push dismisses approvals) or restamp-only + rebundle-only PRs; re-bump, size-gate re-run, curated re-pin | +1-2 | +0.3-0.8 | +0.5-1 wd | +1 cut, +1-2 PRs |
