@@ -82,7 +82,7 @@ public class ProcessParameterBindingWarningsTests {
 	// refuses mergeFrom on one that already takes a value - and the Formula names the warned parameter itself.
 	private static bool RecommendsMergeFirst(string warning, string parameter) {
 		int merge = warning.IndexOf("give a NEW Guid parameter mergeFrom [", System.StringComparison.Ordinal);
-		int readInstead = warning.IndexOf($"read that parameter instead of '{parameter}'", System.StringComparison.Ordinal);
+		int readInstead = warning.IndexOf($"bind '{parameter}' once to that read's output", System.StringComparison.Ordinal);
 		int fallback = warning.IndexOf("Otherwise (signal starts on different objects, a timer or message start, "
 			+ "gateway branches)", System.StringComparison.Ordinal);
 		int formula = warning.IndexOf($"formula.resultProcessParameter is '{parameter}'", System.StringComparison.Ordinal);
@@ -275,6 +275,25 @@ public class ProcessParameterBindingWarningsTests {
 			because: "the SigB run never executes ReadA, whatever kind of start SigB is");
 		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
 			because: "mergeFrom merges only signal starts on one object, so a Formula per branch is the remedy here");
+	}
+
+	[Test]
+	[Description("On the modify path a described signal start with no signal block is a named signal, which the server describes without one and refuses to merge, so two of them earn the Formula remedy only - not the merge the server would refuse.")]
+	public void ForOperations_ShouldRecommendOnlyAFormula_WhenTheSignalStartsAreNotRecordSignals() {
+		// Arrange
+		DescribeProcessResult after = TwoStartProcess();
+		after.Elements[0].Signal = null;
+		after.Elements[1].Signal = null;
+
+		// Act
+		IReadOnlyList<string> warnings = ProcessParameterBindingWarnings.ForOperations($"[{AddMapping(ReadAName)}]",
+			null, after);
+
+		// Assert
+		warnings.Should().ContainSingle(w => w.Contains("started by 'SigB' does not reach"),
+			because: "the SigB run never executes ReadA");
+		RecommendsOnlyAFormula(warnings[0], "PName").Should().BeTrue(
+			because: "a start that is not on an object cannot be merged, so naming mergeFrom would send the caller to a refusal");
 	}
 
 	#endregion

@@ -17,7 +17,7 @@ namespace Clio.Command.ProcessModel;
 /// first start reads the parameter EMPTY, because the surviving binding points at the other branch's element,
 /// which never ran. A Formula element with <c>resultProcessParameter</c> on each branch assigns per run, and wins
 /// over a binding that is still stored.</para>
-/// <para>The remedy depends on the graph (ENG-103990, CrtProcessBuilder 1.6.6.141+). When it holds two signal starts
+/// <para>The remedy depends on the graph (ENG-103990, CrtProcessBuilder 1.6.6.146+). When it holds two signal starts
 /// on one object, the remedy names <c>mergeFrom</c> first: a NEW Guid parameter with <c>mergeFrom</c> takes the record
 /// Id of whichever start fired, so ONE shared chain reads the record and no branch needs its own binding or Formula.
 /// It must be a new parameter, because the server refuses <c>mergeFrom</c> on one that already takes a value and
@@ -204,9 +204,9 @@ public static class ProcessParameterBindingWarnings {
 			+ "its assignment wins over the stored binding (get-guidance name=process-parameters)";
 		return graph.HasMergeableSignalStarts
 			? "If the branches are signal starts on one object, merge them instead: give a NEW Guid parameter "
-				+ "mergeFrom [\"<Start>.RecordId\", ...] (omit direction: a merged parameter is Internal), let ONE "
-				+ $"shared chain read the record by it, and read that parameter instead of {Quote(parameter)} "
-				+ "(get-guidance name=process-multi-start). Otherwise (signal starts on different objects, a timer or "
+				+ "mergeFrom [\"<Start>.RecordId\", ...] (omit direction: a merged parameter is Internal), filter ONE "
+				+ $"shared Read data by it, and bind {Quote(parameter)} once to that read's output instead of one read per "
+				+ "start (get-guidance name=process-multi-start). Otherwise (signal starts on different objects, a timer or "
 				+ $"message start, gateway branches) set it with {perBranch}."
 			: $"To give each branch its own value, set it with {perBranch}.";
 	}
@@ -371,7 +371,10 @@ public static class ProcessParameterBindingWarnings {
 		internal static BindingGraph FromDescribed(DescribeProcessResult described) {
 			BindingGraph graph = new();
 			foreach (DescribedElement element in described.Elements ?? []) {
-				graph.AddElement(element?.Name, element?.Uid, element?.BuildType, element?.Signal?.Entity);
+				// A described signal start with no signal block is a named signal, not a record one: the server leaves
+				// the block out then, and such a start is not on any object, so it can never be merged.
+				graph.AddElement(element?.Name, element?.Uid, element?.BuildType, element?.Signal?.Entity,
+					mergeable: element?.Signal is not null);
 				graph.AddFormulaWriter(element?.Name, element?.Formula?.Target?.ResultProcessParameter);
 			}
 			foreach (DescribedFlow flow in described.Flows ?? []) {
@@ -402,7 +405,7 @@ public static class ProcessParameterBindingWarnings {
 		}
 
 		// The build token and the describe buildType resolve through the same table the graph validator uses.
-		private void AddElement(string? name, string? uid, string? type, string? signalObject) {
+		private void AddElement(string? name, string? uid, string? type, string? signalObject, bool mergeable = true) {
 			if (string.IsNullOrWhiteSpace(name)) {
 				return;
 			}
@@ -415,7 +418,7 @@ public static class ProcessParameterBindingWarnings {
 			if (ManagerMap.ResolveRole(kind) == ManagerMap.ProcessElementRole.Start) {
 				Starts.Add(trimmed);
 			}
-			if (kind == ManagerMap.EventType.StartSignalEvent) {
+			if (kind == ManagerMap.EventType.StartSignalEvent && mergeable) {
 				_signalStartObjects.Add(string.IsNullOrWhiteSpace(signalObject) ? null : signalObject.Trim());
 			}
 		}
