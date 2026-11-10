@@ -620,10 +620,13 @@ public sealed class PageBusinessRuleServiceTests {
 			because: "the persisted rule keeps the active-step condition path");
 		left.GetProperty("dataValueTypeName").GetString().Should().Be("Text",
 			because: "the active step is addressed by step name");
-		left.TryGetProperty("scopeId", out JsonElement scope).Should().BeFalse(
+		left.TryGetProperty("scopeId", out _).Should().BeFalse(
 			because: "the active-step attribute is unscoped");
-		condition.GetProperty("rightExpression").GetProperty("dataValueTypeName").GetString().Should().Be("Text",
+		JsonElement right = condition.GetProperty("rightExpression");
+		right.GetProperty("dataValueTypeName").GetString().Should().Be("Text",
 			because: "the constant takes its type from the left operand");
+		right.GetProperty("value").GetString().Should().Be("DeliveryStep",
+			because: "the persisted constant is the step name");
 	}
 
 	[Test]
@@ -649,6 +652,55 @@ public sealed class PageBusinessRuleServiceTests {
 		act.Should().Throw<ArgumentException>()
 			.WithMessage("*OtherStepper_ActiveStep*RequestStepper_ActiveStep*",
 				because: "an undeclared stepper is still rejected and the hint offers the real stepper attribute");
+	}
+
+	[Test]
+	[Category("Unit")]
+	[Description("Lists the stepper attribute in the 'Available condition attributes' hint even when more than 20 data source attributes sort before it.")]
+	public void Create_Should_List_Stepper_Attribute_In_Hint_On_Page_With_Many_Attributes() {
+		// Arrange
+		IBusinessRulePackageResolver packageResolver = Substitute.For<IBusinessRulePackageResolver>();
+		IPageBusinessRuleSchemaProvider schemaProvider = Substitute.For<IPageBusinessRuleSchemaProvider>();
+		IPageBusinessRuleAttributeProvider attributeProvider = Substitute.For<IPageBusinessRuleAttributeProvider>();
+		Guid packageUId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+		PageBundleInfo bundle = new();
+		packageResolver.ResolveUId("UsrPkg").Returns(packageUId);
+		schemaProvider.GetSchema("UsrPage", packageUId).Returns(new PageBusinessRuleSchemaContext(
+			"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+			Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+			bundle));
+		Dictionary<string, BusinessRuleAttributeDescriptor> attributes = Enumerable.Range(1, 25)
+			.ToDictionary(
+				index => $"PDS.Col{index:00}",
+				index => new BusinessRuleAttributeDescriptor($"Col{index:00}", "Text", null, "PDS"));
+		attributes["RequestStepper_ActiveStep"] =
+			new BusinessRuleAttributeDescriptor("RequestStepper_ActiveStep", "Text", null) { IsRuntimeGenerated = true };
+		attributeProvider.GetAttributes(bundle, packageUId).Returns(attributes);
+		PageBusinessRuleService service = new(
+			packageResolver,
+			schemaProvider,
+			attributeProvider,
+			new PageBusinessRuleElementProvider(),
+			Substitute.For<IBusinessRuleAddonService>(),
+			new PageBusinessRuleValidator(new BusinessRuleValidator(Substitute.For<IBusinessRuleLookupReferenceValidator>())),
+			Substitute.For<ISysSettingConditionOperandResolver>());
+		BusinessRule rule = new(
+			"Show input",
+			new BusinessRuleConditionGroup("AND", [
+				new BusinessRuleCondition(
+					new BusinessRuleExpression("AttributeValue", "Missing_ActiveStep", null),
+					"equal",
+					new BusinessRuleExpression("Const", null, JsonSerializer.Deserialize<JsonElement>("\"x\"")))
+			]),
+			[new ShowElementBusinessRuleAction(["Input_One"])]);
+
+		// Act
+		Action act = () => service.Create(new BusinessRuleCreateRequest("UsrPkg", "UsrPage", rule));
+
+		// Assert
+		act.Should().Throw<ArgumentException>()
+			.WithMessage("*Available condition attributes: RequestStepper_ActiveStep, PDS.Col01*",
+				because: "runtime-generated attributes are listed first so the 20-item cap never hides them");
 	}
 
 	private static BusinessRule CreateStepperRule() =>

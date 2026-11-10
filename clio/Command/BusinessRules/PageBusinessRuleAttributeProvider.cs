@@ -98,43 +98,19 @@ internal sealed class PageBusinessRuleAttributeProvider(
 	private static void AddComponentRuntimeAttributes(
 		IDictionary<string, BusinessRuleAttributeDescriptor> result,
 		PageBundleInfo bundle) {
-		foreach ((string componentType, string componentName) in FindNamedComponents(bundle.ViewConfig)) {
+		foreach ((string? componentType, string componentName) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
 			foreach (ComponentRuntimeAttribute rule in ComponentRuntimeAttributes) {
 				if (!string.Equals(rule.ComponentType, componentType, StringComparison.Ordinal)) {
 					continue;
 				}
+				// A declared attribute of the same name keeps its own scoped, typed descriptor.
 				string attributeName = componentName + rule.Suffix;
-				result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null);
+				result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null) {
+					IsRuntimeGenerated = true
+				});
 			}
 		}
 	}
-
-	private static IEnumerable<(string Type, string Name)> FindNamedComponents(JsonNode? viewConfig) {
-		Stack<JsonNode?> pending = new();
-		pending.Push(viewConfig);
-		while (pending.Count > 0) {
-			switch (pending.Pop()) {
-				case JsonArray array:
-					foreach (JsonNode? item in array) {
-						pending.Push(item);
-					}
-					break;
-				case JsonObject obj:
-					string? type = GetString(obj, "type");
-					string? name = GetString(obj, "name");
-					if (!string.IsNullOrWhiteSpace(type) && !string.IsNullOrWhiteSpace(name)) {
-						yield return (type, name);
-					}
-					foreach (KeyValuePair<string, JsonNode?> property in obj) {
-						pending.Push(property.Value);
-					}
-					break;
-			}
-		}
-	}
-
-	private static string? GetString(JsonObject obj, string propertyName) =>
-		obj[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
 	private static Dictionary<string, PageParameterInfo> BuildParameterMap(PageBundleInfo bundle) {
 		Dictionary<string, PageParameterInfo> map = new(StringComparer.Ordinal);
