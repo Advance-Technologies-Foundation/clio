@@ -88,7 +88,8 @@ public class SetObjectRightsOptions : RemoteCommandOptions {
 	/// <summary>The package the object's operation permission rows are bound to; blank for the object's own package.</summary>
 	[Option("package", Required = false, HelpText =
 		"Package the object's operation permission rows are bound to, so they install with it on another site. Default: "
-		+ "the package of the object's schema. A package that does not exist or is locked is refused before any write. "
+		+ "the package of the object's schema, or the CurrentPackageId package when that one is locked. A named package "
+		+ "that does not exist or is locked is refused before any write. "
 		+ "After every successful call the binding SysEntitySchemaOperationRight_<object code> holds exactly the rows "
 		+ "stored for the object, in priority order.")]
 	public string Package { get; set; }

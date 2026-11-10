@@ -127,19 +127,71 @@ public class ObjectRightsPackageBinderTests {
 	}
 
 	[Test]
-	[Description("An object whose own package is locked (a product object) is refused, naming that package.")]
-	public void ResolveTarget_ShouldRefuse_WhenSchemaPackageLocked() {
+	[Description("Without a package argument, an object whose base package is locked (a product object) is bound to the CurrentPackageId package; no other layer of its schema is tried.")]
+	public void ResolveTarget_ShouldFallBackToCurrentPackage_WhenSchemaPackageLocked() {
 		// Arrange
-		SchemaIn(("CrtBase", false));
+		SchemaIn(("CrtBase", false), ("UsrApp", true));
 		_resolver.Resolve("CrtBase", true).Returns(PackageTargetResolution.Unresolvable("Package 'CrtBase' is locked."));
+		_resolver.Resolve(null, true).Returns(PackageTargetResolution.Resolved("Custom", AppPackageUId));
 
 		// Act
 		ObjectRightsBindingTarget target = _binder.ResolveTarget("Contact", SchemaUId, null, null);
 
 		// Assert
-		target.Refused.Should().BeTrue(because: "the default package is locked");
+		target.Refused.Should().BeFalse(because: "the CurrentPackageId package is editable");
+		target.PackageName.Should().Be("Custom", because: "a locked base package falls back to the CurrentPackageId package");
+		target.SwitchInSamePackage.Should().BeFalse(
+			because: "Custom holds no layer of Contact, so the result reports that the switch ships elsewhere");
+		_resolver.DidNotReceive().Resolve("UsrApp", Arg.Any<bool>());
+	}
+
+	[Test]
+	[Description("Without a package argument, a product object is refused when the CurrentPackageId package is locked too, naming both reasons.")]
+	public void ResolveTarget_ShouldRefuse_WhenSchemaPackageAndCurrentPackageLocked() {
+		// Arrange
+		SchemaIn(("CrtBase", false));
+		_resolver.Resolve("CrtBase", true).Returns(PackageTargetResolution.Unresolvable("Package 'CrtBase' is locked."));
+		_resolver.Resolve(null, true).Returns(PackageTargetResolution.Unresolvable("Package 'Custom' is locked."));
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("Contact", SchemaUId, null, null);
+
+		// Assert
+		target.Refused.Should().BeTrue(because: "neither the base package nor the CurrentPackageId package is editable");
 		target.Refusal.Should().Contain("'Contact' is in package 'CrtBase'",
-			because: "the caller learns why the default package does not work");
+			because: "the caller learns why the default package does not work")
+			.And.Contain("CurrentPackageId package cannot receive them either",
+				because: "the caller learns the fallback was tried")
+			.And.Contain("Nothing was changed", because: "the refusal comes before any write");
+	}
+
+	[Test]
+	[Description("A named locked package is refused and never replaced by the CurrentPackageId package.")]
+	public void ResolveTarget_ShouldNotFallBack_WhenNamedPackageLocked() {
+		// Arrange
+		_resolver.Resolve("CrtBase", true).Returns(PackageTargetResolution.Unresolvable("Package 'CrtBase' is locked."));
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("UsrFoo", SchemaUId, "CrtBase", null);
+
+		// Assert
+		target.Refused.Should().BeTrue(because: "a package the caller named is never silently replaced");
+		target.PackageName.Should().BeNull(because: "no target is chosen for a refused call");
+	}
+
+	[Test]
+	[Description("An unreachable base package (service failure) is refused, not replaced by the CurrentPackageId package.")]
+	public void ResolveTarget_ShouldNotFallBack_WhenBasePackageUnavailable() {
+		// Arrange
+		SchemaIn(("CrtBase", false));
+		_resolver.Resolve("CrtBase", true).Returns(PackageTargetResolution.Unavailable("The environment did not answer."));
+
+		// Act
+		ObjectRightsBindingTarget target = _binder.ResolveTarget("Contact", SchemaUId, null, null);
+
+		// Assert
+		target.Refused.Should().BeTrue(because: "whether the base package accepts changes is unknown");
+		target.Refusal.Should().Contain("did not answer", because: "the resolver's reason is passed on");
 	}
 
 	[Test]

@@ -82,7 +82,9 @@ public interface IObjectRightsPackageBinder {
 
 	/// <summary>
 	/// Decides where the object's rows are bound, before anything is written: the named package, or the package of the
-	/// object's base schema. A package that does not exist or is locked is refused, naming a package that can be used.
+	/// object's base schema. When no package is named and the base schema's package is locked or missing (a product
+	/// object), the <c>CurrentPackageId</c> package is used instead; no other layer of the schema is tried. A package that
+	/// does not exist or is locked is refused, naming a package that can be used.
 	/// The object's own <c>SysEntitySchemaOperationRight_&lt;code&gt;</c> binding in an editable package other than the
 	/// target refuses the call too, so a change never leaves that binding stale. Also finds a binding of these rows made
 	/// by hand under another name, which is then reported instead of writing a second one. Reads only.
@@ -166,6 +168,18 @@ internal sealed class ObjectRightsPackageBinder(
 			}
 			PackageTargetResolution package = targetResolver.Resolve(named ? packageName : basePackage,
 				requireEditable: true);
+			if (!package.Success && !named && ownElsewhere is null && package.ResolutionFailed) {
+				// A product object's base package is locked: the rows go to the CurrentPackageId package instead,
+				// the package design-time writes land in. No other layer of the schema is tried.
+				PackageTargetResolution current = targetResolver.Resolve(null, requireEditable: true);
+				if (!current.Success) {
+					return ObjectRightsBindingTarget.Refuse($"'{schemaName}' is in package '{basePackage}', which "
+						+ $"cannot receive its operation permissions: {package.Error} The CurrentPackageId package "
+						+ $"cannot receive them either: {current.Error} Pass package naming an editable package "
+						+ "(unlocked, InstallType 0). Nothing was changed.");
+				}
+				package = current;
+			}
 			if (!package.Success) {
 				return ObjectRightsBindingTarget.Refuse(named
 					? $"{package.Error} {UsablePackageHint()}"

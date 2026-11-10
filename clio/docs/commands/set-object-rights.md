@@ -77,7 +77,10 @@ are bound to a package, so they install with it on another site: the binding
 `SysEntitySchemaOperationRight_<object code>` holds exactly the rows stored for the object, in priority order, keyed
 on `Id`, with every other column — the object, the role, the operations and the position — force-updated on install. A row removed with `--remove-row` leaves the
 binding; an object with no stored rows has its binding removed. `--package` names the package; without it, the
-package of the object's base schema is used. A package that does not exist or is locked is refused before any
+package of the object's base schema is used, and when that package is locked (a product object such as `Contact`)
+the `CurrentPackageId` package is used instead; no other layer of the schema is tried. A product object's binding
+carries every row stored for that object on this site, so check what it holds before shipping it. A named package
+that does not exist or is locked, or a locked `CurrentPackageId` package in the fallback, is refused before any
 write, naming a package to use (the `CurrentPackageId` package when it is editable). A package other than the one
 that already holds the object's `SysEntitySchemaOperationRight_<code>` binding is refused before any write too,
 naming that package. Rows bound by hand under another name are reported, and no second binding is written. The "Use operation
@@ -148,8 +151,8 @@ available to ALL internal users, and the rows apply again if operation permissio
 own: not valid with --grantee, --operations, --revoke or --enable-operation-permissions.
 
 --package NAME
-Package the object's operation permission rows are bound to. Default: the package of the object's base schema.
-Must exist and be editable; otherwise the call is refused before any write and names a package to use.
+Package the object's operation permission rows are bound to. Default: the package of the object's base schema, or
+the `CurrentPackageId` package when that one is locked. Must exist and be editable; otherwise the call is refused before any write and names a package to use.
 
 --confirm
 Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid with --preview.

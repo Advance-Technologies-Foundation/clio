@@ -1,6 +1,7 @@
 # ADR: set-object-rights binds the object's operation permission rows to a package
 
-- **Status:** accepted by the author (2026-11-08); to be confirmed by the PR's approver.
+- **Status:** accepted by the author (2026-11-08); D3's fallback for a locked base package decided with the operator
+  on 2026-11-10 (PR #1908 review).
   - Decided with the operator (2026-11-08): a removed row is deleted from the database and taken out of the binding,
     like the Object permissions designer deletes it; there is no install-time delete script. The ticket's
     "a removed row must not come back after the package is installed again" therefore holds for a clean install
@@ -30,9 +31,14 @@ has it. *Rejected:* a natural key (`SubjectSchemaUId` + `SysAdminUnit`) — a ro
 key could not tell apart.
 
 **D3 — The package is decided before any write.** `--package`, else the package of the object's base schema
-(`SysSchema`, `ExtendParent = false`). It is resolved through `IPackageTargetResolver` with `requireEditable`; a
-missing or locked package refuses the call with nothing written and names the `CurrentPackageId` package when that
-one is editable.
+(`SysSchema`, `ExtendParent = false`). It is resolved through `IPackageTargetResolver` with `requireEditable`. When
+no package is named and the base package is definitively unusable (locked or gone: a product object such as
+`Contact`), the `CurrentPackageId` package is the target instead, the package design-time writes land in; no other
+layer of the schema is tried, and the call is refused only when that package is locked too. The topmost editable
+layer was rejected: it is a guess among the caller's packages that the caller cannot see from the result, while
+`CurrentPackageId` is the same convention every other design-time write follows. A named package is never replaced:
+a missing or locked one refuses the call with nothing written and names the `CurrentPackageId` package when that one
+is editable. An unreachable package (the environment did not answer) refuses too, without the fallback.
 
 **D3a — The object's own binding stays where it is.** Without `--package`, a
 `SysEntitySchemaOperationRight_<code>` binding that an earlier call wrote into another editable package is the
@@ -60,6 +66,10 @@ that a site which already installed the row keeps it.
 
 ## Consequences
 
-- A product object in a locked package can no longer be changed without `--package` naming an editable package.
+- A product object in a locked package is bound to the `CurrentPackageId` package when no `--package` is passed. That
+  package usually holds no layer of the object's schema, so the switch and the rows ship separately, which the result
+  states (D6). The binding carries every row stored for the object on this site — other apps' rows, roles created
+  here, this site's positions — and install adds them next to the target's own rows.
+- The call is refused without `--package` only when the `CurrentPackageId` package is locked too.
 - In file system development mode the binding reaches the database only; `PackageDataBindingWriter` warns and names
   `pkg-to-file-system`.
