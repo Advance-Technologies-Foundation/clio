@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -308,6 +309,13 @@ internal static class ProcessBlockKeyCheck {
 				"object recordId linkColumn storage fileObject")
 			.With(RecordId, FileProcessingValueSource));
 
+	// The Call web service block. Describe reports every write member in its write shape ('service' is the name string
+	// on both sides, the raw UId sits in the describe-only 'serviceUId'), so a described block replays unchanged and its
+	// five describe-only members are warned about, never refused - except a fractional 'timeoutSeconds', which the
+	// server cannot read (RefuseFractionalTimeout).
+	private static readonly KeySet WebServiceBlock = new KeySet("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
+		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");
+
 	/// <summary>
 	/// The element's configuration blocks, each linked under its own label into both the create element and the
 	/// <c>setElement</c> update; the drift test catches a block the server gained on either side only.
@@ -315,7 +323,7 @@ internal static class ProcessBlockKeyCheck {
 	private static readonly KeySet[] Blocks = [
 		ReadDataBlock, ChangeDataBlock, AddDataBlock, DeleteDataBlock, EmailBlock, TaskPerformer, AccessRightsBlock,
 		ApprovalBlock, FormulaBlock, OpenEditPageBlock, PreconfiguredPageBlock, SubProcessBlock, ScriptTaskBlock,
-		FileProcessingBlock
+		FileProcessingBlock, WebServiceBlock
 	];
 
 	private static readonly string BlockKeys = string.Join(" ", Blocks.Select(block => block.Label));
@@ -547,6 +555,9 @@ internal static class ProcessBlockKeyCheck {
 			if (child == EmailAttachment && RefusesAttachmentsShape(value, where, prefix + key)) {
 				return;
 			}
+			if (child == WebServiceBlock && value is JsonObject webService) {
+				RefuseFractionalTimeout(webService, where, prefix + key);
+			}
 			if (value is JsonObject nested) {
 				Visit(nested, child, where, $"{prefix}{key}.", placement, depth + 1);
 				return;
@@ -592,6 +603,37 @@ internal static class ProcessBlockKeyCheck {
 				+ $"{entryShape}.");
 			// The object entries are still walked: a key the contract drops is reported in the same refusal.
 			return false;
+		}
+
+		// webService.timeoutSeconds is an Int32 on the server's write contract, while describe reports a timeout
+		// stored in milliseconds as fractional seconds (1500 ms reads back as 1.5) and a whole one as e.g. 7.0, which
+		// the server reads fine - so the VALUE is judged, not the spelling. A fraction or a value outside Int32 is not
+		// dropped: the serializer fails to read the WHOLE request, in a reply that does not name the member. Only a
+		// JSON number is judged here, and one too large for decimal (1e30) counts as beyond Int32; any other shape, and a
+		// whole value above the server's own maximum, is left to the server's refusal.
+		private void RefuseFractionalTimeout(JsonObject webService, string where, string path) {
+			JsonNode? timeout = null;
+			try {
+				if (!webService.TryGetPropertyValue("timeoutSeconds", out timeout)) {
+					return;
+				}
+			} catch (ArgumentException) {
+				return; // a repeated key, which the walk refuses on its own
+			}
+			if (timeout is not JsonValue number || number.GetValueKind() != JsonValueKind.Number) {
+				return;
+			}
+			string text = number.ToJsonString();
+			bool parsed = decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value);
+			if (parsed && value == decimal.Truncate(value) && value >= int.MinValue && value <= int.MaxValue) {
+				return;
+			}
+			string problem = !parsed || value == decimal.Truncate(value)
+				? "beyond what the server can read"
+				: "a fraction, and the server takes whole seconds";
+			RefuseShape($"{where}: '{path}.timeoutSeconds' is {text}, {problem}, so the server fails the whole request. "
+				+ "On setElement leave timeoutSeconds out to keep the stored timeout (describe reports a timeout stored in "
+				+ "milliseconds as a fraction); otherwise send whole seconds, at most 2147483 (0 clears the timeout).");
 		}
 
 		private static string Describe(KeySet set, int depth) =>
