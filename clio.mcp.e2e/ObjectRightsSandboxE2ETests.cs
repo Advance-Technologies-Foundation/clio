@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Allure.Net.Commons;
@@ -332,6 +333,91 @@ public sealed class ObjectRightsSandboxE2ETests : DataBindingDbFixtureBase {
 			lastRow.Success.Should().BeFalse(because: "no row would grant any operation on an administered object"));
 		AllureApi.Step("Assert the last-row refusal says why", () =>
 			lastRow.Error.Should().Contain("would leave no row", because: "the refusal says why"));
+	}
+
+	[Test]
+	[Description("On a real stand (ENG-105290): a grant binds the object's stored rows to the package of its schema, a removed row leaves the binding, a re-run that changes no row keeps one binding, and a locked package is refused before any write.")]
+	[AllureTag(SetObjectRightsTool.ToolName)]
+	[AllureTag(ReadDbToolName)]
+	[AllureName("object-rights rows are bound to the object's package on a real Creatio stand")]
+	[AllureDescription("Creates a disposable object in the fixture package, grants All employees and All external users, reads the SysEntitySchemaOperationRight_<code> binding back, removes the external row and reads the binding again, re-runs a grant that changes nothing, and proves a locked package (CrtBase) is refused with nothing written. The fixture package is deleted in teardown.")]
+	public async Task SetObjectRights_ShouldBindRowsToPackage_WhenRunOnARealStand() {
+		TeamCityRunGuard.IgnoreIfRunningUnderTeamCityOrGitHubActions(
+			"create-entity-schema publishes configuration and starts the global OData rebuild, which makes every "
+			+ "concurrent test on the shared stand fail. Run this scenario by hand against a leased sandbox.");
+		// Arrange
+		await using DataBindingDbArrangeContext arrangeContext = await ArrangeAsync(requireEnvironment: true);
+		string schemaName = $"UsrOrBind{Guid.NewGuid().ToString("N").Substring(0, 10)}";
+		string bindingName = $"SysEntitySchemaOperationRight_{schemaName}";
+		Dictionary<string, object?> Call(string grantee, params (string Key, object Value)[] arguments) {
+			Dictionary<string, object?> args = new() {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["entity-schema-name"] = schemaName,
+				["grantee"] = grantee
+			};
+			foreach ((string key, object value) in arguments) {
+				args[key] = value;
+			}
+			return args;
+		}
+		async Task<string> ReadBindingAsync() {
+			CommandExecutionActResult read = await ActCommandAsync(arrangeContext, ReadDbToolName,
+				new Dictionary<string, object?> {
+					["environment-name"] = arrangeContext.EnvironmentName,
+					["package-name"] = arrangeContext.PackageName,
+					["binding-name"] = bindingName
+				});
+			AssertCommandExitCode(read, 0, "the rights binding must exist in the object's package");
+			return string.Join("\n", read.Execution.Output?.Select(message => message.Value) ?? []);
+		}
+		CommandExecutionActResult created = await ActCommandAsync(arrangeContext, CreateEntitySchemaToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName,
+				["package-name"] = arrangeContext.PackageName,
+				["schema-name"] = schemaName,
+				["title-localizations"] = new Dictionary<string, string> { ["en-US"] = "Object rights binding e2e" },
+				["columns"] = new[] { new Dictionary<string, object?> { ["column-name"] = "UsrName", ["type"] = "Text" } }
+			});
+		AssertCommandExitCode(created, 0, "the disposable object must exist before its rows are bound");
+
+		// Act — two grants, each followed by a re-save of the one binding
+		ObjectRightsToolResponse first = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(AllEmployees, ("operations", "read,create,edit,delete"), ("enable-operation-permissions", true)));
+		ObjectRightsToolResponse second = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(ExternalUsers, ("operations", "read")));
+		string bound = await ReadBindingAsync();
+
+		// Assert — the binding is in the object's package and holds both rows
+		first.Success.Should().BeTrue(because: $"the first grant binds the rows. Error: {first.Error}");
+		second.Output.Should().Contain($"Bound to package '{arrangeContext.PackageName}'",
+			because: "without a package argument the rows go to the package of the object's schema");
+		second.Output.Should().Contain("holds the 2 stored row(s)", because: "the binding holds every stored row");
+		second.Output.Should().Contain("travels with the binding",
+			because: "the object's schema is in the same package, so the switch travels with it");
+		bound.Should().Contain(ExternalUsers, because: "the external row is bound");
+
+		// Act — remove the external row, re-run a grant that changes nothing, then name a locked package
+		ObjectRightsToolResponse removed = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(ExternalUsers, ("remove-row", true)));
+		string afterRemoval = await ReadBindingAsync();
+		ObjectRightsToolResponse rerun = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(AllEmployees, ("operations", "read")));
+		ObjectRightsToolResponse locked = await CallRightsAsync(arrangeContext, SetObjectRightsTool.ToolName,
+			Call(ExternalUsers, ("operations", "read"), ("package", "CrtBase")));
+		ObjectRightsToolResponse readBack = await CallRightsAsync(arrangeContext, GetObjectRightsTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = arrangeContext.EnvironmentName, ["entity-schema-name"] = schemaName
+			});
+
+		// Assert — the removed row left the binding, the re-run kept one binding, the locked package wrote nothing
+		removed.Success.Should().BeTrue(because: $"the removal is valid. Error: {removed.Error}");
+		removed.Output.Should().Contain("holds the 1 stored row(s)", because: "the removed row leaves the binding");
+		afterRemoval.Should().NotContain(ExternalUsers, because: "the binding holds exactly the stored rows");
+		rerun.Success.Should().BeTrue(because: $"a re-run that changes no row still binds. Error: {rerun.Error}");
+		rerun.Output.Should().Contain(bindingName, because: "the re-run updates the same binding, not a second one");
+		locked.Success.Should().BeFalse(because: "a locked package cannot receive the binding");
+		locked.Error.Should().Contain("Nothing was changed", because: "the refusal comes before any write");
+		readBack.Output.Should().NotContain($"({ExternalUsers})", because: "the refused grant wrote no row");
 	}
 
 	private static async Task<ObjectRightsToolResponse> CallRightsAsync(DataBindingDbArrangeContext arrangeContext,

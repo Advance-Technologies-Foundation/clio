@@ -5,9 +5,9 @@ NAME
     set-object-rights - Grant or revoke object operation permissions (read/create/edit/delete) for one role on one object, move or remove that role's row, or turn an object's operation permissions on or off
 
 SYNOPSIS
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--confirm | --preview] [OPTIONS]
-    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> (--position <n> | --above <SysAdminUnitId> | --remove-row) [--confirm | --preview] [OPTIONS]
-    set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--confirm | --preview] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> --operations <read,create,edit,delete> [--revoke] [--enable-operation-permissions] [--package <name>] [--confirm | --preview] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> --grantee <SysAdminUnitId> (--position <n> | --above <SysAdminUnitId> | --remove-row) [--package <name>] [--confirm | --preview] [OPTIONS]
+    set-object-rights --entity-schema-name <EntitySchemaName> (--enable-operation-permissions | --disable-operation-permissions) [--package <name>] [--confirm | --preview] [OPTIONS]
 
 DESCRIPTION
     Grants (or, with --revoke, revokes) object operation permissions for one role on ONE object — the
@@ -69,6 +69,28 @@ DESCRIPTION
     deleted - and any difference in the read-back fails the call. It does NOT change column or record
     permissions.
 
+    PACKAGE BINDING. After every successful call (a re-run that changes no row included) the object's
+    stored rows are bound to a package, so they install with it on another site: the binding
+    SysEntitySchemaOperationRight_<object code> holds exactly the rows stored for the object, in
+    priority order, keyed on Id, with every other column (the object, the role, the operations and the
+    position) force-updated on install. A row
+    removed by --remove-row leaves the binding; an object with no stored rows has its binding removed.
+    --package names the package; without it, the package of the object's base schema is used, and
+    when that package is locked (a product object such as Contact) the CurrentPackageId package is
+    used instead; no other layer of the schema is tried. A product object's binding carries every
+    row stored for that object on this site. A named package that does not exist or is locked, or a
+    locked CurrentPackageId package in the fallback, is refused before any write, naming a package
+    to use (the CurrentPackageId package when it is editable). A package other than the one that already
+    holds the object's SysEntitySchemaOperationRight_<code> binding is refused before any write too,
+    naming that package. Rows bound by hand under another name are reported, and no second binding is
+    written. The "Use operation
+    permissions" switch is part of the object's schema and travels with it; the result says whether
+    the schema is in the binding's package. Package install adds and updates rows but never deletes
+    them, so a site that already installed a removed row keeps it; and a row names its role by id, so
+    it applies only where that role exists with the same id (ship a role created on this site too).
+    In file system development mode the binding reaches the database only: run pkg-to-file-system
+    before committing the package.
+
     DESTRUCTIVE: this command changes access. In a non-interactive run it refuses to apply unless
     --confirm is passed; in an interactive run it shows the planned change and asks for a y/n
     confirmation. --preview writes nothing. On MCP the call applies the change: the host's approval of
@@ -120,6 +142,11 @@ OPTIONS
         permissions are turned back on. A call of its own: not valid with --grantee, --operations,
         --revoke or --enable-operation-permissions.
 
+    --package
+        Package the object's operation permission rows are bound to. Default: the package of the
+        object's base schema, or the CurrentPackageId package when that one is locked. Must exist
+        and be editable; otherwise the call is refused before any write and names a package to use.
+
     --confirm
         Confirm the destructive change without a prompt. Required in non-interactive runs. Not valid
         with --preview.
@@ -151,7 +178,8 @@ EXIT CODES
         rows that grant nothing, a revoke on an object that does not use operation permissions, a
         grantee with more than one row, a move or a removal for a grantee with no row, a move above a
         role with no row or several, a position past the last row, a removal that would leave no
-        granting row), the external roles among the rows could not be looked up, the save failed and the read-back does not show the plan, a successful save could not be read back (reported as saved but NOT verified),
+        granting row), the binding package does not exist, is locked or could not be read, the rights
+        were saved but could not be bound (run the same call again), the external roles among the rows could not be looked up, the save failed and the read-back does not show the plan, a successful save could not be read back (reported as saved but NOT verified),
         or the object read back does not show a row this call writes (the grantee's row, or the All
         employees row an enable stores) where it was planned, or the planned switch state, or - after a
         move or a removal - any row that differs from the plan.
@@ -180,6 +208,9 @@ EXAMPLES
 
     Remove a role's row (its members fall through to the next matching row):
         clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --remove-row --confirm -e production
+
+    Grant and bind the rows to a package other than the object's own:
+        clio set-object-rights --entity-schema-name UsrOrder --grantee <role-id> --operations read --package UsrOrderRights --confirm -e production
 
     Turn an object's operation permissions off (available to all internal users), keeping every row as it is:
         clio set-object-rights --entity-schema-name UsrOrder --disable-operation-permissions --confirm -e production
