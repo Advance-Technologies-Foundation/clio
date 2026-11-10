@@ -87,11 +87,12 @@ public sealed class GetPageModalSizeCommandTests : BaseCommandTests<GetPageModal
 	public void ClearCalls() => _service.ClearReceivedCalls();
 
 	[Test]
-	[Description("TryGet maps the stored size, its layer, the effective size and the override warning.")]
+	[Description("TryGet maps the stored size, its layer, the effective size, its package and the override warning.")]
 	public void TryGet_ShouldMapReadResult() {
 		// Arrange
 		_service.Get(Arg.Any<PageModalSizeReadRequest>()).Returns(new PageModalSizeReadResult(
-			"EmailMiniPage", "Custom", "large", 3, "CrtUIv2", "extra-large", PageModalSizeCatalog.Names, "overridden"));
+			"EmailMiniPage", "Custom", "large", 3, "CrtUIv2", "extra-large", "UsrVendor", PageModalSizeCatalog.Names,
+			"overridden"));
 
 		// Act
 		bool ok = _command.TryGet(
@@ -104,6 +105,8 @@ public sealed class GetPageModalSizeCommandTests : BaseCommandTests<GetPageModal
 		response.SizeValue.Should().Be(3, because: "the raw stored value is mapped");
 		response.SourcePackageName.Should().Be("CrtUIv2", because: "the layer the size comes from is mapped");
 		response.EffectiveSize.Should().Be("extra-large", because: "the size the window opens with is mapped");
+		response.EffectiveSourcePackageName.Should().Be("UsrVendor",
+			because: "the package that sets the size the window opens with is mapped");
 		response.Warning.Should().Be("overridden", because: "an override warning reaches the caller");
 	}
 }

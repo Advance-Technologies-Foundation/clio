@@ -19,13 +19,18 @@ public sealed record PageModalSizeWriteRequest(string PackageName, string PageSc
 /// <param name="Size">The stored size name, or <c>null</c> when no size is set or the value is not a designer
 /// size.</param>
 /// <param name="SizeValue">The stored <c>modalSettings.size</c> value, or <c>null</c> when no size is set.</param>
-/// <param name="SourcePackageName">The package of the add-on layer the size comes from, or <c>null</c> when no
-/// size is set.</param>
-/// <param name="EffectiveSize">The size the window opens with: the stored size, or the runtime default when no
-/// size is set.</param>
+/// <param name="SourcePackageName">The package of the add-on layer the size the package sees comes from, or
+/// <c>null</c> when no size is set or it could not be determined. It names the source of <paramref name="Size"/>, not
+/// of <paramref name="EffectiveSize"/>.</param>
+/// <param name="EffectiveSize">The size the window opens with: the runtime's merged size, or the runtime default
+/// when no size is set.</param>
+/// <param name="EffectiveSourcePackageName">The package whose layer sets <paramref name="EffectiveSize"/> when a
+/// package the requested one does not depend on overrides the size; <c>null</c> when there is no override or that
+/// package could not be told apart.</param>
 /// <param name="AvailableSizes">The size names a write accepts.</param>
-/// <param name="Warning">Non-fatal warnings, or <c>null</c>: a layer above the package overrides the size the
-/// package sees (a write to this package would not change the window), the add-on metadata is not a JSON object, the
+/// <param name="Warning">Non-fatal warnings, or <c>null</c>: a layer the package does not see overrides the size
+/// the package sees (a write to this package would not change the window; it names that layer's package and that a
+/// stale runtime cache looks the same), the add-on metadata is not a JSON object, the
 /// size the window opens with could not be checked, or the package the size comes from could not be
 /// determined.</param>
 public sealed record PageModalSizeReadResult(
@@ -35,6 +40,7 @@ public sealed record PageModalSizeReadResult(
 	int? SizeValue,
 	string SourcePackageName,
 	string EffectiveSize,
+	string EffectiveSourcePackageName,
 	IReadOnlyList<string> AvailableSizes,
 	string Warning = null);
 

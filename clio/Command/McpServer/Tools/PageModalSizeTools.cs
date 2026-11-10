@@ -33,7 +33,7 @@ public sealed class GetPageModalSizeTool(
 	[Description("Read a modal window's size. " +
 		"Applies to Freedom UI modal pages (pages inheriting BaseMiniPageTemplate). " +
 		"The size lives in the page's AppearanceSettings add-on, NOT in the page body: layoutConfig.width of the 'Main' container is not the window size. " +
-		"Returns size (small/medium/large/extra-large, absent when none is set), sourcePackageName (the add-on layer it comes from), effectiveSize (what the window opens with, including the runtime default) and availableSizes. " +
+		"Returns size (small/medium/large/extra-large, absent when none is set), sourcePackageName (the add-on layer size comes from), effectiveSize (what the window opens with, including the runtime default), effectiveSourcePackageName (on an override: the package that sets effectiveSize) and availableSizes. " +
 		"Refuses a page that is not a modal page. Read-only. Call it before set-page-modal-size to name the current size to the user. " +
 		"Call get-guidance with name page-modal-size to learn the full flow. Prefer environment-name; keep direct connection args for emergency fallback only.")]
 	public GetPageModalSizeResponse GetPageModalSize(
@@ -96,7 +96,7 @@ public sealed class SetPageModalSizeTool(
 		"Writes modalSettings.size to the page's AppearanceSettings add-on in package-name (creating the add-on when the page has none), keeps every other add-on field, and rebuilds static content. " +
 		"size accepts the Page Designer options: small (S), medium (M), large (L), extra-large (XL); any other value is refused with the accepted list. " +
 		"When the user's request is vague ('wider', 'bigger'), do NOT pick a size: read the current one with get-page-modal-size, offer the options, and write only the one the user chooses. " +
-		"Returns previousSize, previousSourcePackageName and size. Refuses a page that is not a modal page, and a write a package above package-name overrides. " +
+		"Returns previousSize, previousSourcePackageName and size. Refuses a page that is not a modal page, and a write another package overrides; the refusal names that package. " +
 		"Call get-guidance with name page-modal-size to learn the full flow. Prefer environment-name; keep direct connection args for emergency fallback only.")]
 	public SetPageModalSizeResponse SetPageModalSize(
 		[Description("Parameters: page-schema-name, package-name, size (required); environment-name preferred; uri/login/password emergency fallback only.")]

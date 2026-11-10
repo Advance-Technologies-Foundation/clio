@@ -28,8 +28,11 @@ Any other value is refused with the accepted list (`availableSizes`) and nothing
 modal page is refused.
 
 The response names `previousSize` (absent when none was set — the window opened `small`), `previousSizeValue`,
-`previousSourcePackageName` and `size`. When a package above the given one sets the size, the write is refused
-before anything is saved and the error names the size the window opens with. When the window still shows another
+`previousSourcePackageName` and `size`. When a package the given one does not depend on sets the size, the write is
+refused before anything is saved and the error names the size the window opens with and the package that sets it (or the candidates, when parallel
+packages cannot be told apart);
+it also says that a stale runtime cache looks the same (clear it with `clio clear-redis-db` or restart the
+application, then read again). When the window still shows another
 size after the save, `warning` says so. When the size is already stored in the given package and the window opens
 with it, nothing is written.
 

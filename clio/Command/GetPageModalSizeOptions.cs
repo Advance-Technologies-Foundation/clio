@@ -57,6 +57,7 @@ namespace Clio.Command {
 					SizeValue = result.SizeValue,
 					SourcePackageName = result.SourcePackageName,
 					EffectiveSize = result.EffectiveSize,
+					EffectiveSourcePackageName = result.EffectiveSourcePackageName,
 					AvailableSizes = result.AvailableSizes,
 					Warning = result.Warning
 				};
@@ -77,7 +78,10 @@ namespace Clio.Command {
 		[JsonPropertyName("sizeValue")]
 		public int? SizeValue { get; set; }
 
-		/// <summary>The package of the add-on layer the size comes from; absent when no size is set.</summary>
+		/// <summary>
+		/// The package of the add-on layer the size the package sees (<c>size</c>) comes from; absent when no size is
+		/// set. It is not the source of <c>effectiveSize</c> when another package overrides it.
+		/// </summary>
 		[DataMember(Name = "sourcePackageName")]
 		[JsonProperty("sourcePackageName", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonPropertyName("sourcePackageName")]
@@ -88,5 +92,14 @@ namespace Clio.Command {
 		[JsonProperty("effectiveSize", NullValueHandling = NullValueHandling.Ignore)]
 		[JsonPropertyName("effectiveSize")]
 		public string EffectiveSize { get; set; }
+
+		/// <summary>
+		/// The package whose layer sets <c>effectiveSize</c> when a package the requested one does not depend on
+		/// overrides the size; absent when there is no override or that package could not be told apart.
+		/// </summary>
+		[DataMember(Name = "effectiveSourcePackageName")]
+		[JsonProperty("effectiveSourcePackageName", NullValueHandling = NullValueHandling.Ignore)]
+		[JsonPropertyName("effectiveSourcePackageName")]
+		public string EffectiveSourcePackageName { get; set; }
 	}
 }

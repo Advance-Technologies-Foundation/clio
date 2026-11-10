@@ -28,6 +28,7 @@ public sealed class PageModalSizeServiceTests {
 	private IServiceUrlBuilder _serviceUrlBuilder;
 	private IAddonSchemaDesignerClient _addonClient;
 	private IPageSchemaResolver _pageSchemaResolver;
+	private IAppearanceSettingsLayerLocator _layerLocator;
 	private PageModalSizeService _service;
 	private AddonSchemaDto _savedSchema;
 	private AddonGetRequestDto _addonRequest;
@@ -38,12 +39,16 @@ public sealed class PageModalSizeServiceTests {
 		_serviceUrlBuilder = Substitute.For<IServiceUrlBuilder>();
 		_addonClient = Substitute.For<IAddonSchemaDesignerClient>();
 		_pageSchemaResolver = Substitute.For<IPageSchemaResolver>();
+		_layerLocator = Substitute.For<IAppearanceSettingsLayerLocator>();
+		_layerLocator.FindSource(Arg.Any<string>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<int?>())
+			.Returns(new AppearanceSettingsLayerSource(null, [], null));
 		_serviceUrlBuilder.Build("/DataService/json/SyncReply/SelectQuery").Returns(SelectQueryUrl);
 		_serviceUrlBuilder.Build(ServiceUrlBuilder.KnownRoute.GetAppearanceSettings).Returns(RuntimeUrl);
 		_pageSchemaResolver.ResolveHierarchy(Arg.Any<string>(), Arg.Any<Guid>()).Returns(ModalHierarchy());
 		_addonClient.When(client => client.SaveSchema(Arg.Any<AddonSchemaDto>()))
 			.Do(callInfo => _savedSchema = callInfo.Arg<AddonSchemaDto>());
-		_service = new PageModalSizeService(_applicationClient, _serviceUrlBuilder, _addonClient, _pageSchemaResolver);
+		_service = new PageModalSizeService(_applicationClient, _serviceUrlBuilder, _addonClient, _pageSchemaResolver,
+			_layerLocator);
 	}
 
 	private static IReadOnlyList<PageDesignerHierarchySchema> ModalHierarchy() => [
@@ -63,6 +68,12 @@ public sealed class PageModalSizeServiceTests {
 		$$"""{"success": true, "rows": [{"PackageName": "{{packageName}}"}]}""";
 
 	private const string NoRows = """{"success": true, "rows": []}""";
+
+	// The package of the topmost layer of the environment, which sets the size the window opens with.
+	private void StubWinner(string packageName) =>
+		_layerLocator.FindSource(
+				Arg.Any<string>(), Arg.Any<Guid>(), Arg.Is<string>(name => name == null), Arg.Any<int?>())
+			.Returns(new AppearanceSettingsLayerSource(packageName, [], null));
 
 	private void StubAddon(string metaData) =>
 		_addonClient.GetSchema(Arg.Do<AddonGetRequestDto>(request => _addonRequest = request))
@@ -106,12 +117,14 @@ public sealed class PageModalSizeServiceTests {
 	}
 
 	[Test]
-	[Description("Names the vendor package the size comes from when the requested package has no layer of its own.")]
-	public void Get_ShouldNameParentLayerPackage_WhenPackageHasNoOwnLayer() {
+	[Description("Names the topmost layer package-name sees when the requested package has no layer of its own.")]
+	public void Get_ShouldNameTopmostVisibleLayerPackage_WhenPackageHasNoOwnLayer() {
 		// Arrange
-		StubSelects(PackageRow(), NoRows, LayerRow("CrtUIv2"));
+		StubSelects(PackageRow(), NoRows);
 		StubAddon("""{"modalSettings": {"size": 3}}""");
 		StubRuntime(3);
+		_layerLocator.FindSource(Arg.Any<string>(), Guid.Parse(PageUId), "Custom", 3)
+			.Returns(new AppearanceSettingsLayerSource("CrtUIv2", [], null));
 
 		// Act
 		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "EmailMiniPage"));
@@ -119,17 +132,39 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		result.Size.Should().Be("large", because: "size 3 is the designer's L");
 		result.SourcePackageName.Should().Be("CrtUIv2",
-			because: "an unsaved add-on uId has no row, so the layer is the parent the add-on service resolved");
+			because: "an unsaved add-on uId has no row, so the source is the topmost layer the package sees");
 		result.EffectiveSize.Should().Be("large", because: "the runtime opens the window with the stored size");
+		result.EffectiveSourcePackageName.Should().BeNull(because: "nothing overrides the size the package sees");
+		_applicationClient.DidNotReceive().ExecutePostRequest(SelectQueryUrl,
+			Arg.Is<string>(body => body.Contains(ParentLayerUId)));
 	}
 
 	[Test]
-	[Description("Warns when a package above the requested one overrides the size the package sees.")]
+	[Description("Reports the source lookup's warning and no package when the topmost visible layer cannot be told apart.")]
+	public void Get_ShouldWarn_WhenVisibleSourceCannotBeDetermined() {
+		// Arrange
+		StubSelects(PackageRow(), NoRows);
+		StubAddon("""{"modalSettings": {"size": 3}}""");
+		StubRuntime(3);
+		_layerLocator.FindSource(Arg.Any<string>(), Arg.Any<Guid>(), "Custom", 3)
+			.Returns(new AppearanceSettingsLayerSource(null, ["UsrA", "UsrB"], "parallel packages"));
+
+		// Act
+		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "EmailMiniPage"));
+
+		// Assert
+		result.SourcePackageName.Should().BeNull(because: "the source must not be guessed");
+		result.Warning.Should().Contain("parallel packages", because: "the caller learns why the source is missing");
+	}
+
+	[Test]
+	[Description("Warns and names the overriding package when a package the requested one does not see sets the size (EC-1).")]
 	public void Get_ShouldWarn_WhenHigherLayerOverridesSize() {
 		// Arrange
 		StubSelects(PackageRow(), LayerRow("Custom"));
 		StubAddon("""{"modalSettings": {"size": 2}}""");
 		StubRuntime(4);
+		StubWinner("UsrVendor");
 
 		// Act
 		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "UsrOrder_MiniPage"));
@@ -137,6 +172,13 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		result.Size.Should().Be("medium", because: "the package sees its own layer");
 		result.EffectiveSize.Should().Be("extra-large", because: "the window opens with what the runtime merges");
+		result.EffectiveSourcePackageName.Should().Be("UsrVendor",
+			because: "EC-1: the read names the package whose layer the window size comes from");
+		result.Warning.Should().Contain("package 'UsrVendor' sets the size",
+			because: "the agent must be able to tell the user where the override lives");
+		result.Warning.Should().Contain("stale cached size",
+			because: "a stale runtime cache looks the same, and the caller learns how to rule it out");
+		_layerLocator.Received(1).FindSource("UsrOrder_MiniPage", Guid.Parse(PageUId), null, 4);
 		result.Warning.Should().Contain("would not change the window",
 			because: "a write to an overridden package would report success and change nothing the user sees");
 	}
@@ -191,6 +233,82 @@ public sealed class PageModalSizeServiceTests {
 		_addonRequest.TargetSchemaManagerName.Should().Be("ClientUnitSchemaManager",
 			because: "AppearanceSettings is a page add-on");
 		_addonRequest.AddonName.Should().Be("AppearanceSettings", because: "the size lives in AppearanceSettings");
+		_addonRequest.UseFullHierarchy.Should().BeFalse(
+			because: "a full-hierarchy read merges every package of the environment, not what package-name sees");
+	}
+
+	[Test]
+	[Description("Says the runtime is probably stale, and names no override, when the top layer is one package-name sees.")]
+	public void Set_ShouldReportStaleCache_WhenTopLayerIsSeenByPackage() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(4);
+		StubWinner("Custom");
+		_layerLocator.Sees("UsrOrder_MiniPage", "Custom", "Custom").Returns(true);
+
+		// Act
+		Action act = () => _service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the logic is unchanged: a difference is still refused")
+			.WithMessage("*the top layer is in package 'Custom', which 'Custom' sees*stale cached size*");
+	}
+
+	[Test]
+	[Description("Gives the overriding package no name on a read when the top layer is one package-name sees.")]
+	public void Get_ShouldNotNameOverride_WhenTopLayerIsSeenByPackage() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(4);
+		StubWinner("Custom");
+		_layerLocator.Sees("UsrOrder_MiniPage", "Custom", "Custom").Returns(true);
+
+		// Act
+		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "UsrOrder_MiniPage"));
+
+		// Assert
+		result.EffectiveSourcePackageName.Should().BeNull(because: "no package above package-name sets the size");
+		result.Warning.Should().Contain("probably serving a stale cached size",
+			because: "the caller learns the likely cause instead of a package that does not exist");
+	}
+
+	[Test]
+	[Description("Uses the page name as stored, not as typed, for the add-on layer lookup.")]
+	public void Get_ShouldUseResolvedPageName_WhenTypedInOtherCase() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(4);
+
+		// Act
+		PageModalSizeReadResult result = _service.Get(new PageModalSizeReadRequest("Custom", "usrorder_minipage"));
+
+		// Assert
+		result.PageSchemaName.Should().Be("UsrOrder_MiniPage", because: "the resolved name keeps the stored casing");
+		_layerLocator.Received().FindSource("UsrOrder_MiniPage", Guid.Parse(PageUId),
+			Arg.Is<string>(name => name == null), 4);
+	}
+
+	[Test]
+	[Description("Lists the parallel candidate packages in the refusal when the overriding package cannot be told apart.")]
+	public void Set_ShouldListCandidates_WhenOverridingPackageCannotBeToldApart() {
+		// Arrange
+		StubSelects(PackageRow(), LayerRow("Custom"));
+		StubAddon("""{"modalSettings": {"size": 2}}""");
+		StubRuntime(4);
+		_layerLocator.FindSource(
+				Arg.Any<string>(), Arg.Any<Guid>(), Arg.Is<string>(name => name == null), Arg.Any<int?>())
+			.Returns(new AppearanceSettingsLayerSource(null, ["UsrA", "UsrB"], "parallel"));
+
+		// Act
+		Action act = () => _service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+
+		// Assert
+		act.Should().Throw<InvalidOperationException>(because: "the override is real even when its package is unclear")
+			.WithMessage("*a package 'Custom' does not depend on sets the size (one of 'UsrA', 'UsrB')*");
+		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 
 	[Test]
@@ -208,15 +326,18 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		result.Warning.Should().Contain("but the window opens small, while package 'Custom' sees large",
 			because: "the caller must learn that the saved size does not reach the window");
+		result.Warning.Should().Contain("stale cached size",
+			because: "a stale runtime cache looks the same after a save, and the caller learns how to rule it out");
 	}
 
 	[Test]
-	[Description("Refuses before anything is written when a package above package-name sets the size (EC-1).")]
+	[Description("Refuses before anything is written and names the package that sets the size when package-name does not see it (EC-1).")]
 	public void Set_ShouldRefuseBeforeWriting_WhenHigherLayerOverridesSize() {
 		// Arrange
 		StubSelects(PackageRow(), LayerRow("Custom"));
 		StubAddon("""{"modalSettings": {"size": 2}}""");
 		StubRuntime(4);
+		StubWinner("UsrVendor");
 
 		// Act
 		Action act = () => _service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
@@ -224,7 +345,8 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "a write under an overriding layer would report success and leave the window unchanged")
-			.WithMessage("*opens extra-large, while package 'Custom' sees medium*package above 'Custom'*Nothing was changed*");
+			.WithMessage("*opens extra-large, while package 'Custom' sees medium: package 'UsrVendor' sets the size*"
+				+ "Nothing was changed*stale cached size*clio clear-redis-db*");
 		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
 		_addonClient.DidNotReceive().ResetClientScriptCache();
 		_addonClient.DidNotReceive().BuildConfiguration();
@@ -426,7 +548,8 @@ public sealed class PageModalSizeServiceTests {
 		// Assert
 		act.Should().Throw<InvalidOperationException>(
 				because: "a higher layer storing the default size still wins over a write to package-name")
-			.WithMessage("*opens small, while package 'Custom' sees no size*package above 'Custom'*Nothing was changed*");
+			.WithMessage("*opens small, while package 'Custom' sees no size: a package 'Custom' does not depend on sets the size*"
+				+ "Nothing was changed*");
 		_addonClient.DidNotReceive().SaveSchema(Arg.Any<AddonSchemaDto>());
 	}
 
@@ -477,7 +600,7 @@ public sealed class PageModalSizeServiceTests {
 
 		// Assert
 		result.Warning.Should().Contain("is not a JSON object", because: "the unreadable body is reported");
-		result.Warning.Should().NotContain("package above",
+		result.Warning.Should().NotContain("sets the size",
 			because: "with no stored size to compare, a runtime size is no evidence of an override");
 		result.EffectiveSize.Should().Be("large", because: "the runtime still reports the size the window opens with");
 	}

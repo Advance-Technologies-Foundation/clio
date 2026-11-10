@@ -35,6 +35,11 @@ reports success, and the window size in runtime does not change.
 - The read returns the size stored in the add-on as seen from the package, the package of the layer it comes
   from, and the runtime default when no size is set.
 - The write result names the old and the new size and the package of the add-on.
+- EC-1: when a package `package-name` does not depend on sets the size the window opens with, the read warns and
+  names that package (`effectiveSourcePackageName`), and the write is refused before anything is saved with the
+  same package named. That package is the top layer by package dependencies; parallel top layers are told apart
+  by the size each one sees on its own. The text also says that a stale runtime cache looks the same and how to
+  clear it.
 
 ## Out of scope
 
@@ -52,5 +57,5 @@ Jira QA cases TC-01..TC-07 map as follows:
 | TC-03 vague request | guidance only |
 | TC-04 unsupported size | unit (parser + tool) |
 | TC-05 window named by its opener | guidance only |
-| TC-06 size in a vendor layer | runtime check on the stand (`EmailMiniPage`) |
+| TC-06 size in a vendor layer | runtime check on the stand (`EmailMiniPage`); override and winner naming checked on 10.2.760 with stacked and parallel packages |
 | TC-07 not a modal page | unit (service refuses) |

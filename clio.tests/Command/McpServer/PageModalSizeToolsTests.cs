@@ -36,7 +36,7 @@ public sealed class PageModalSizeToolsTests {
 		_resolverOptions = null;
 		_service = Substitute.For<IPageModalSizeService>();
 		_service.Get(Arg.Any<PageModalSizeReadRequest>()).Returns(new PageModalSizeReadResult(
-			"UsrOrder_MiniPage", "Custom", "large", 3, "Custom", "large", PageModalSizeCatalog.Names));
+			"UsrOrder_MiniPage", "Custom", "large", 3, "Custom", "large", null, PageModalSizeCatalog.Names));
 		_service.Set(Arg.Any<PageModalSizeWriteRequest>()).Returns(call => {
 			_capturedWrite = call.Arg<PageModalSizeWriteRequest>();
 			PageModalSizeCatalog.Parse(_capturedWrite.Size);

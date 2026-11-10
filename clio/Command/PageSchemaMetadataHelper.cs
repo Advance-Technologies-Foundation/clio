@@ -1,5 +1,6 @@
 namespace Clio.Command {
 	using System;
+	using System.Collections.Generic;
 	using System.IO;
 	using System.Linq;
 	using System.Net;
@@ -504,6 +505,77 @@ namespace Clio.Command {
 			if (!success)
 				return (null, "Failed to query add-on schema metadata");
 			return (rows.Count == 0 ? null : rows[0]["PackageName"]?.ToString(), null);
+		}
+
+		/// <summary>
+		/// Returns every persisted layer of an add-on schema (<c>AddonSchemaManager</c>) with the name and UId of
+		/// the package that holds it.
+		/// </summary>
+		/// <param name="applicationClient">Client of the target environment.</param>
+		/// <param name="serviceUrlBuilder">URL builder of the target environment.</param>
+		/// <param name="addonSchemaName">The add-on schema name, for example <c>EmailMiniPageAppearanceSettings</c>.</param>
+		/// <returns>The layers, and a non-empty error when the query itself failed.</returns>
+		internal static (IReadOnlyList<(string packageName, string packageUId)> layers,
+			string error) QueryAddonSchemaLayers(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder,
+			string addonSchemaName) {
+			var query = new JObject {
+				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
+				[FiltersKey] = BuildFilterGroup(
+					("byName", BuildEqFilter("Name", 1, addonSchemaName)),
+					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
+				[ColumnsKey] = BuildColumnSelection(("PackageName", "SysPackage.Name"), ("PackageUId", "SysPackage.UId")),
+				[RowCountKey] = -1
+			};
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return ([], transportError);
+			if (!success)
+				return ([], "Failed to query add-on schema layers");
+			return (rows.Select(row => (packageName: row["PackageName"]?.ToString(),
+					packageUId: row["PackageUId"]?.ToString()))
+				.Where(layer => !string.IsNullOrWhiteSpace(layer.packageName))
+				.ToList(), null);
+		}
+
+		/// <summary>
+		/// Returns every direct package dependency of the environment as (package name, name of the package it
+		/// depends on).
+		/// </summary>
+		/// <param name="applicationClient">Client of the target environment.</param>
+		/// <param name="serviceUrlBuilder">URL builder of the target environment.</param>
+		/// <returns>The dependencies, and a non-empty error when the query itself failed.</returns>
+		internal static (IReadOnlyList<(string packageName, string dependsOnPackageName)>
+			dependencies, string error) QueryPackageDependencies(
+			IApplicationClient applicationClient,
+			IServiceUrlBuilder serviceUrlBuilder) {
+			var query = new JObject {
+				[RootSchemaNameKey] = "SysPackageDependency", [OperationTypeKey] = 0,
+				[ColumnsKey] = BuildColumnSelection(("PackageName", "SysPackage.Name"),
+					("DependsOnPackageName", "DependOnPackage.Name")),
+				[RowCountKey] = -1
+			};
+			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
+			if (transportError is not null)
+				return ([], transportError);
+			if (!success)
+				return ([], "Failed to query package dependencies");
+			return (rows.Select(row => (packageName: row["PackageName"]?.ToString(),
+					dependsOnPackageName: row["DependsOnPackageName"]?.ToString()))
+				.Where(dependency => !string.IsNullOrWhiteSpace(dependency.packageName)
+					&& !string.IsNullOrWhiteSpace(dependency.dependsOnPackageName))
+				.ToList(), null);
+		}
+
+		private static JObject BuildColumnSelection(params (string alias, string path)[] columns) {
+			var items = new JObject();
+			foreach ((string alias, string path) in columns) {
+				items[alias] = new JObject {
+					[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = path }
+				};
+			}
+			return new JObject { [ItemsKey] = items };
 		}
 
 		internal static (JToken row, string error) QuerySysSchemaRow(

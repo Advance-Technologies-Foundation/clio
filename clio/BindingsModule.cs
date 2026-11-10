@@ -509,6 +509,7 @@ public class BindingsModule {
 		services.AddTransient<IEntityAddonTargetResolver, EntityAddonTargetResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
 		services.AddTransient<IPageModalSizeService, PageModalSizeService>();
+		services.AddTransient<IAppearanceSettingsLayerLocator, AppearanceSettingsLayerLocator>();
 		services.AddTransient<IEntityConnectionsAddonMetadata, EntityConnectionsAddonMetadata>();
 		services.AddTransient<IEntityConnectionsReader, EntityConnectionsReader>();
 		services.AddTransient<IEntityConnectionsService, EntityConnectionsService>();

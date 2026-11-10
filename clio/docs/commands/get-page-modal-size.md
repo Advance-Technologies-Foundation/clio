@@ -20,10 +20,11 @@ The response reports:
 |---|---|
 | `size` | The size the package sees: `small`, `medium`, `large` or `extra-large`. Absent when no size is set. |
 | `sizeValue` | The raw stored `modalSettings.size` (1–4 for the designer sizes). |
-| `sourcePackageName` | The package of the add-on layer the size comes from. |
+| `sourcePackageName` | The package of the add-on layer the size the package sees (`size`) comes from. It is not the source of `effectiveSize` when another package overrides it. Absent, with a `warning`, when it cannot be determined. |
 | `effectiveSize` | The size the window opens with; the runtime default `small` when no size is set. |
+| `effectiveSourcePackageName` | Set on an override: the package whose layer sets `effectiveSize`. Absent when there is no override or that package could not be told apart. |
 | `availableSizes` | The sizes [`set-page-modal-size`](set-page-modal-size.md) accepts. |
-| `warning` | Set when a package above the requested one overrides the size: a write to the requested package would not change the window. |
+| `warning` | Set when a package the requested one does not depend on overrides the size: a write to the requested package would not change the window. It names that package and says that a stale runtime cache looks the same (clear it with `clio clear-redis-db` or restart the application, then read again). |
 
 **Read-only.** A page that is not a modal page is refused.
 

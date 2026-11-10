@@ -10,10 +10,12 @@ DESCRIPTION
     (modalSettings.size). layoutConfig.width of the 'Main' container is not the window size.
 
     Returns the size the package sees (small, medium, large or extra-large), the raw stored value,
-    the package of the add-on layer the size comes from, and the size the window opens with
-    (effectiveSize), which is the runtime default (small) when no size is set. When a package above
-    the requested one overrides the size, a warning says so: a write to the requested package would
-    not change the window.
+    the package of the add-on layer that size comes from, and the size the window opens with
+    (effectiveSize), which is the runtime default (small) when no size is set. When a package the
+    requested one does not depend on overrides the size, effectiveSourcePackageName names it and a
+    warning says that a write to the requested package would not change the window (a stale runtime
+    cache looks the same: clear it with clio clear-redis-db or restart the application, then read
+    again).
 
     Read-only. A page that is not a modal page is refused.
 

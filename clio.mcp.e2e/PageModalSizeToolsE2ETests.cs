@@ -41,6 +41,34 @@ public sealed class PageModalSizeToolsE2ETests : McpContractFixtureBase {
 	}
 
 	[Test]
+	[Description("The get-page-modal-size contract names effectiveSourcePackageName, the package that overrides the size (EC-1).")]
+	[AllureTag(GetPageModalSizeTool.ToolName)]
+	[AllureName("get-page-modal-size contract names the overriding package field")]
+	[AllureDescription("Starts the real clio MCP server, reads the get-page-modal-size contract through get-tool-contract and verifies its description names effectiveSourcePackageName.")]
+	public async Task GetPageModalSizeContract_ShouldNameEffectiveSourcePackage() {
+		// Arrange
+		await using ArrangeContext arrangeContext = await ArrangeAsync(TimeSpan.FromMinutes(3));
+
+		// Act
+		CallToolResult contractResult = await arrangeContext.Session.CallToolAsync(
+			ToolContractGetTool.ToolName,
+			new Dictionary<string, object?> {
+				["args"] = new Dictionary<string, object?> {
+					["tool-names"] = new[] { GetPageModalSizeTool.ToolName }
+				}
+			},
+			arrangeContext.CancellationTokenSource.Token);
+		ToolContractGetResponse contracts =
+			EntitySchemaStructuredResultParser.Extract<ToolContractGetResponse>(contractResult);
+
+		// Assert
+		ToolContractDefinition contract = contracts.Tools!.Single(definition =>
+			definition.Name == GetPageModalSizeTool.ToolName);
+		contract.Description.Should().Contain("effectiveSourcePackageName",
+			because: "the agent must learn which field names the package that overrides the size");
+	}
+
+	[Test]
 	[Description("get-page-modal-size reports an invalid environment inside the structured response rather than an MCP binding error.")]
 	[AllureTag(GetPageModalSizeTool.ToolName)]
 	[AllureName("get-page-modal-size reports an invalid environment")]
