@@ -13,7 +13,7 @@ Evidence tags as in the design: `[traced path:line]`, `[traced, judge]` (re-read
 section; `(C R16)` = design C risk register row; `S7`, `W3`, `V1`, `C7` = steps of the design's server algorithm
 (section 5) and clio orchestration (section 6); `N1..N8` = result notes (design 3.4); `M1..M10` = stand measurements
 (design 14.5). Path aliases: `CORE` = `<core>/Src/Lib/`; `PB` =
-`<crt-process-builder>/packages/CrtProcessBuilder/Files/src/cs/`; `CLIO` = `<clio>/`;
+`<package repository>/packages/CrtProcessBuilder/Files/src/cs/`; `CLIO` = `<clio>/`;
 `KB` = `<clio-knowledge>/`; `PS` = `<PackageStore>/<Package>/branches/7.8.0/`; `UI` =
 `<creatio-ui>/`.
 

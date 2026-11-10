@@ -19,8 +19,8 @@ Path aliases:
 | Alias | Path |
 |---|---|
 | CORE | `<core>/Src/Lib/` |
-| PB | `<crt-process-builder>/packages/CrtProcessBuilder/Files/src/cs/` |
-| PBT | `<crt-process-builder>/tests/UnitTests/CrtProcessBuilder.Tests/` |
+| PB | `<package repository>/packages/CrtProcessBuilder/Files/src/cs/` |
+| PBT | `<package repository>/tests/UnitTests/CrtProcessBuilder.Tests/` |
 | CLIO | `<clio>/` |
 | KB | `<clio-knowledge>/` |
 | PS | `<PackageStore>/<Package>/branches/7.8.0/` |
@@ -748,7 +748,7 @@ provisioned stand (the scheduler matrix has no runtime field, g5 §5).
 ## 15. Delivery order
 
 1. Owner decisions Q1..Q29; BMAD artifacts in this folder (PRD/ADR/stories/test plan per the repository pipeline).
-2. **crt-process-builder** (main): contracts, handler, planner, reader, composer, repository, settings writer,
+2. **the package repository** (main): contracts, handler, planner, reader, composer, repository, settings writer,
    dependency planner, verifier, gate, op, composition, tests; version raised above every deployed build (Q22).
 3. **clio-knowledge**: article, routing rows, `process-modeling` fix, test class, `libraryVersion` bump; merged before
    the clio release that ships the tool.

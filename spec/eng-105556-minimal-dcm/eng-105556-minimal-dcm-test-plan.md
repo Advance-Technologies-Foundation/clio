@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | ENG-105556 "AI Toolkit: create a minimal DCM (stages from a lookup) and add a progress bar to the record page" (Task; epic ENG-92704 "Create BP via AI Toolkit") |
-| Status | Proposal, 2026-11-08. Local, untracked. Nothing here was built or run; nothing was written to Jira, GitHub, GHE, SVN or a stand. Every Q1..Q29 in [decisions](eng-105556-minimal-dcm-decisions.md) is still "open - owner decides"; a row that names a Q tests the RECOMMENDED option and changes when the owner picks another one |
+| Status | Proposal, 2026-11-08. Nothing here was built or run; nothing was written to Jira, GitHub, GHE, SVN or a stand. Every Q1..Q29 in [decisions](eng-105556-minimal-dcm-decisions.md) is still "open - owner decides"; a row that names a Q tests the RECOMMENDED option and changes when the owner picks another one |
 | Basis | the chosen design [design](eng-105556-minimal-dcm-design.md) (sections cited as "design §n"); research notes `<research-dir>/` r1..r10, g1..g6 and `_verdicts.md` (a verdict overrides its note; `(v rX-CY)` = verdict row); CrtProcessBuilder `main` a3f58852 (1.6.6.140); clio `master` 69788ccd5; clio-knowledge `master` 622134b (`libraryVersion` 1.15.180); core TSBpm a95349820; creatio-ui 7ca9210bd0e; PackageStore `*/branches/7.8.0`; platform unit-test harness `<UnitTests>` |
 | Stands | `Creatio` (.NET Framework 4.8.1, CrtProcessBuilder 1.6.6.142 = an unmerged feature build, not `main`, v r10-C1, v r10-C2) is READ-ONLY during research; no row targets it by default, and it becomes a write target only on the owner's explicit word (plan D0.6, the one rule for this stand across the folder). No reachable .NET 8 stand exists [measured g5 §1: 8 registered `isNetCore` environments refuse the TCP connection]. Every write row needs a disposable read-write stand the owner provides (plan D0.6); the .NET 8 stand per Q24 |
 
@@ -15,8 +15,8 @@ decides; the fallback is named in the row).
 | Path alias | Root |
 |---|---|
 | `CORE/` | `<core>/Src/Lib/` |
-| `PB/` | `<crt-process-builder>/packages/CrtProcessBuilder/Files/src/cs/` |
-| `PBT/` | `<crt-process-builder>/tests/UnitTests/CrtProcessBuilder.Tests/` |
+| `PB/` | `<package repository>/packages/CrtProcessBuilder/Files/src/cs/` |
+| `PBT/` | `<package repository>/tests/UnitTests/CrtProcessBuilder.Tests/` |
 | `UT/` | `<UnitTests>/` (platform harness, compiled into `PBT/Libs/UnitTest.dll`) |
 | `CLIO/` | `<clio>/` (`clio/`, `clio.tests/`, `clio.mcp.e2e/`) |
 | `KB/` | `<clio-knowledge>/` (`guidance/`, `automation/Clio.Knowledge.Bundle.Tests/`) |

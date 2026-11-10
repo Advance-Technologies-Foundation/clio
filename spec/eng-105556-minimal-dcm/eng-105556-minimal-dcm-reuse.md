@@ -8,7 +8,7 @@ pattern, avoid) and what new code is left over. The design is
 question in [eng-105556-minimal-dcm-decisions.md](eng-105556-minimal-dcm-decisions.md) (Q1..Q29, all "open - owner
 decides"). This file states the recommended option of each Q and changes nothing about them.
 
-Basis: CrtProcessBuilder `origin/main` `a3f58852` (1.6.6.140) at `<crt-process-builder>`; clio `origin/master`
+Basis: CrtProcessBuilder `origin/main` `a3f58852` (1.6.6.140) at `<package repository>`; clio `origin/master`
 `69788ccd5`; clio-knowledge `origin/master` `622134b` (libraryVersion 1.15.180); core TSBpm `a95349820`; creatio-ui
 `7ca9210bd0e`; PackageStore `*/branches/7.8.0`; stand `Creatio` (.NET Framework, read-only, runs an unmerged
 CrtProcessBuilder 1.6.6.142 build, v r10-C2). Research notes r1..r10, g1..g6 and `_verdicts.md` in
@@ -19,9 +19,9 @@ Path aliases:
 | Alias | Path |
 |---|---|
 | CORE | `<core>/Src/Lib/` |
-| PB | `<crt-process-builder>/packages/CrtProcessBuilder/Files/src/cs/` |
-| PBF | `<crt-process-builder>/packages/CrtProcessBuilder/Files/` |
-| PBT | `<crt-process-builder>/tests/UnitTests/CrtProcessBuilder.Tests/` |
+| PB | `<package repository>/packages/CrtProcessBuilder/Files/src/cs/` |
+| PBF | `<package repository>/packages/CrtProcessBuilder/Files/` |
+| PBT | `<package repository>/tests/UnitTests/CrtProcessBuilder.Tests/` |
 | CLIO | `<clio>/` |
 | E2E | `CLIO/clio.mcp.e2e/` |
 | KB | `<clio-knowledge>/` |
@@ -97,7 +97,7 @@ now, reason given.
 
 ---
 
-## 3. (B) crt-process-builder components
+## 3. (B) the package repository components
 
 Verdict key: **as-is** no change; **extend** an edit to an existing file; **pattern-only** the shape is copied into new
 code, the file is not touched; **avoid**; **later** reused by the steps task (Q27), not now.

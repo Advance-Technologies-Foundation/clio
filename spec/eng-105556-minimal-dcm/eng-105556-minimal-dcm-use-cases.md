@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Issue | ENG-105556 "AI Toolkit: create a minimal DCM (stages from a lookup) and add a progress bar to the record page" (Task; epic ENG-92704 "Create BP via AI Toolkit") |
-| Written | 2026-11-08. Local, untracked. Read-only: nothing was saved, installed or run against any stand for this file |
+| Written | 2026-11-08. Read-only: nothing was saved, installed or run against any stand for this file |
 | Purpose | Why products and users build a dynamic case (DCM), what a Freedom UI (8.x) user sees, what the shipped corpus does with DCMs, which minimal real shape the tool mirrors, and which AI Toolkit scenarios this task enables or leaves to later tasks |
 | Companions | [design](eng-105556-minimal-dcm-design.md) (chosen design, sections cited as "design §N") · [decisions](eng-105556-minimal-dcm-decisions.md) (Q1..Q29, all open, owner decides) |
 | Basis | Academy pages read 2026-11-08 (r9 §9); owner's DCM overview note (33 slides); PackageStore `*/branches/7.8.0` corpus (1,040 packages, 61 DCM schemas); core TSBpm a95349820; creatio-ui 7ca9210bd0e; read-only inventory of stand `Creatio` (r10). Research notes r1..r10, g1..g6 and `_verdicts.md` in `<research-dir>/` (local) |

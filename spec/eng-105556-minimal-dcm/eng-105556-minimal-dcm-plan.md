@@ -3,17 +3,17 @@
 | | |
 |---|---|
 | Issue | ENG-105556 "AI Toolkit: create a minimal DCM (stages from a lookup) and add a progress bar to the record page" (Task; epic ENG-92704 "Create BP via AI Toolkit"; component bpms tools) |
-| Status | Proposal, 2026-11-08. Local, untracked. Written BEFORE the owner has answered Q1..Q29: every step that depends on an answer names its Q and follows the recommended option of the [decisions file](eng-105556-minimal-dcm-decisions.md); a different answer re-opens only the steps that cite that Q |
+| Status | Proposal, 2026-11-08. Written BEFORE the owner has answered Q1..Q29: every step that depends on an answer names its Q and follows the recommended option of the [decisions file](eng-105556-minimal-dcm-decisions.md); a different answer re-opens only the steps that cite that Q |
 | Inputs | [design file](eng-105556-minimal-dcm-design.md) (what each component does; authoritative for names and contracts); [decisions file](eng-105556-minimal-dcm-decisions.md) (Q1..Q29); research notes `<research-dir>/` (`_verdicts.md` and g1..g6 override r1..r10) |
 | Owns | the order of work, the work packages per repository, the PR split and merge order, the cut/rebundle procedure, the policy gates of clio `AGENTS.md`, stand use, cleanup and the definition of done. It does NOT own hours ([estimate file](eng-105556-minimal-dcm-estimate.md)) or test ids ([test plan](eng-105556-minimal-dcm-test-plan.md): its id families and their BMAD names, section 2). It OWNS the AC1..AC6 numbering (section 12); the test plan's coverage matrix follows it |
 | Written so far | nothing: no product code, no branch, no Jira, GitHub, GHE or SVN write, no stand write. Stand `Creatio` was only read during research |
-| Baselines | crt-process-builder `origin/main` `a3f58852`, clio `origin/master` `69788ccd5`, clio-knowledge `origin/master` `622134b`, core TSBpm `a95349820`, creatio-ui `7ca9210bd0e`, PackageStore `*/branches/7.8.0`, stand `Creatio` (.NET Framework 4.8, MSSql, read-only) [measured r10 §1, v r10-C1] |
+| Baselines | the package repository `origin/main` `a3f58852`, clio `origin/master` `69788ccd5`, clio-knowledge `origin/master` `622134b`, core TSBpm `a95349820`, creatio-ui `7ca9210bd0e`, PackageStore `*/branches/7.8.0`, stand `Creatio` (.NET Framework 4.8, MSSql, read-only) [measured r10 §1, v r10-C1] |
 
 Evidence tags as in the design file: `[traced path:line]`, `[traced, judge]` (re-read by the design judge),
 `[corpus N/M]`, `[measured]` (query in the cited note), `[academy URL]`, `[note]`, `[inferred]`; `(v rX-CY)` = row of
 `_verdicts.md`; `(g3)`, `(r7 §1.4)` = research note section; `(D §n)` = section n of the design file; `M1..M10` = the
 stand measurements of D §14.5. Path aliases: `PB/` = `packages/CrtProcessBuilder/Files/src/cs/`, `PBT/` =
-`tests/UnitTests/CrtProcessBuilder.Tests/` (both in crt-process-builder), `CLIO/`, `KB/` = repository roots. No
+`tests/UnitTests/CrtProcessBuilder.Tests/` (both in the package repository), `CLIO/`, `KB/` = repository roots. No
 package version number, `libraryVersion` value or archive size is forecast anywhere in this file: every cut takes
 the first free number at the moment it is cut (section 7).
 
@@ -63,7 +63,7 @@ development pipeline": no code until the ADR exists); they need not be merged fo
 | D0.1 | Answer Q1..Q29 | owner | each Q carries an "Agreed by the owner" line in the decisions file; every answer that differs from the recommendation is carried into the design file and into this plan by one sweep (grep of all spec files for the replaced wording) before slice A starts |
 | D0.2 | Drift check, after `git fetch` in every repository (a stale ref is not evidence of absence): `git log a3f58852..origin/main -- PB/EntryPoints PB/Design PB/Schema PB/EntitySchemaResolver.cs PBT/EntryPoints`; `git log 69788ccd5..origin/master -- clio/Common/ServiceUrlBuilder.cs clio/Command/McpServer clio/Command/ProcessModel clio/Command/PageUpdateOptions.cs clio/Command/RelatedPages clio.tests/Common/BundledProcessBuilderPackageTests.cs clio.tests/Command/McpServer`; `git log 622134b..origin/master -- guidance/mcp/guides/processes guidance/mcp/guides/routing.md bundle-source.json`; `svn log -l 20` on `PS/AutoTestClioMcp`; `git ls-remote` for open clio branches that claim `KnownRoute` values (two remote branches already claim 122, `_verdicts.md` conflict 4) | lead | a dated drift note at the top of this file; every moved file re-read; the next free `KnownRoute` value and the operation-count / gate-count pins re-read from master [traced, judge CLIO/clio.tests/Common/BundledProcessBuilderPackageTests.cs:292,361,373,384] |
 | D0.3 | **CI-platform API check.** The design traced core trunk `a95349820`; the package CI compiles against Creatio 8.3.4, `net472` [traced pb `AGENTS.md:74`], and the research snapshot carries no `.application` reference binaries. Build a throw-away spike (never committed) on `-c dev-nf` against the 8.3.4 core-bin (`clio dconf --build <8.3.4 zip>`, pb `AGENTS.md:96-98`) that references every public member of the reuse map (D §11 core rows): `DcmSchemaManager.CreateSchema/SaveSchema/GetProcessValidationResult/RemoveItemByUId`, `DcmEntityUtilities` ctor + `FindEnabledDcmSchemas`, `BaseProcessSchemaManager.GetIsActiveVersion(Guid)`, `IBaseProcessSchemaManagerItem.GetIsEnabled()`, `IPackageSchemaDataCreator`, `PackageElementUtilities.DeletePackageSchemaData`, `DBSecurityEngine.GetCanExecuteOperation/GetCanModifyPackageElement/GetEntitySchemaOperationsRightLevel`, `WorkspaceUtilities.GetPackageIdByUId/GetPackageHierarchyIdsById`, `EntitySchemaColumn.CreatedInSchemaUId` | lead | a table "member / present on 8.3.4 / present on trunk" in this file; any member missing on 8.3.4 goes to the owner as a new decision (fallback named, e.g. an own scan with the public `GetIsActiveVersion(Guid)` instead of `FindEnabledDcmSchemas`) BEFORE slice A. **The same spike under `-c dev-n8` is MANDATORY** (CrtProcessBuilder ships source-only and is compiled by the target, clio `AGENTS.md` "Bundled Creatio packages"; CI compiles net472 only; no .NET 8 stand exists, g5 §1): the net-core core-bin comes from `clio dconf --build` over the existing `StudioNet8` 10.0.0.942 zip (estimate §9) or a net-core 8.3.4 zip, named in the table with its source; a compile error that occurs only on the netstandard2.0 target would otherwise first appear at install on a .NET 8 environment and break every process-designer tool there. The table gets a third column "present on net-core" |
-| D0.4 | Read the internal records before code (clio `AGENTS.md` "Knowledge base"): `CLIO/docs/knowledge/ProcessModel/`, `McpServer/`, `platform/`, `Package/`; `grep -rli dcm CLIO/docs/knowledge` = 0 files, `grep -rli "dcm\|stage\|progress"` = 22 files at `69788ccd5` [measured locally 2026-11-08: `git rev-parse --short HEAD` = 69788ccd5]; must-read before CL-5/CL-6: `McpServer/grid-containers-position-by-layoutconfig-not-item-order.md`, `Command/section-page-schemas-ignore-entity-schema-name.md` (page placement and record-page path), and `platform/a-freedom-ui-page-is-ready-when-its-outlet-is-quiet.md` (browser checks); crt-process-builder `docs/process-builder-architecture.md`, `docs/bundling-into-clio.md`, `.ai/specs/template.md` | lead | the records that touch the changed paths listed in the drift note |
+| D0.4 | Read the internal records before code (clio `AGENTS.md` "Knowledge base"): `CLIO/docs/knowledge/ProcessModel/`, `McpServer/`, `platform/`, `Package/`; `grep -rli dcm CLIO/docs/knowledge` = 0 files, `grep -rli "dcm\|stage\|progress"` = 22 files at `69788ccd5` [measured locally 2026-11-08: `git rev-parse --short HEAD` = 69788ccd5]; must-read before CL-5/CL-6: `McpServer/grid-containers-position-by-layoutconfig-not-item-order.md`, `Command/section-page-schemas-ignore-entity-schema-name.md` (page placement and record-page path), and `platform/a-freedom-ui-page-is-ready-when-its-outlet-is-quiet.md` (browser checks); the package repository `docs/process-builder-architecture.md`, `docs/bundling-into-clio.md`, `.ai/specs/template.md` | lead | the records that touch the changed paths listed in the drift note |
 | D0.5 | **.NET 8 stand request** (Q24): no registered `isNetCore` environment is reachable (8/8 refuse TCP) and the ProcessDesigner lane deploys .NET Framework only (g5 §0-2) [measured g5 §1]. Request: `DeployApplicationCommon` with a `StudioNet8` PostgreSQL zip (a trunk one needs `BuildProductNet8`; an older 10.0.0 one exists, g5 §2.3), then `install-process-builder` from the branch build, then `reg-web-app` (IsNetCore auto-detected) | owner (provisions); lead prepares the exact request text | the stand is registered, `describe-environment` answers `frameworkKind` = .NET (Core), `list-packages` shows CrtProcessBuilder; until then every .NET 8 statement in code comments, results and guidance says "expected", never "measured" (D §8) |
 | D0.6 | **Read-write stand for the STOP gate and E2E development.** Stand `Creatio` runs an unmerged CrtProcessBuilder feature build of another branch, not main (v r10-C2): installing this task's cut replaces it for its owner. Options: a disposable ProcessDesigner-lane stand or a personal stand; stand `Creatio` only if the owner says so explicitly | owner | the stand named here with its runtime; every write on it needs the owner's yes, one step at a time (section 10) |
 | D0.7 | **Where cut numbers are claimed.** Not covered by Q1..Q29; the epic's precedent is a claim comment on the Jira issue (spec/eng-92710-call-web-service-element plan §6) | owner decides; the lead writes to Jira only on an explicit yes and reads the comment back | the claim place is named here; no number is stamped before it is claimed (section 7) |
@@ -98,10 +98,10 @@ Gate 2 skips docs-only commits. Pushing the branch and opening the PR wait for t
 
 ---
 
-## 3. Phase 2: package (crt-process-builder)
+## 3. Phase 2: package (the package repository)
 
 Fresh worktree at a short path (net472 MAX_PATH), branch `feature/ENG-105556-minimal-dcm` from a fresh `origin/main`;
-not the read-only research snapshot `<crt-process-builder>`. Package-side spec
+not the read-only research snapshot `<package repository>`. Package-side spec
 `.ai/specs/ENG-105556-minimal-dcm.md` from `.ai/specs/template.md` [traced ls pb105556/.ai/specs].
 
 Validation for every commit: `dotnet test tests/UnitTests/CrtProcessBuilder.Tests/CrtProcessBuilder.Tests.csproj -c dev-nf`
@@ -169,7 +169,7 @@ and the `failed-leftover` cleanup list in the guidance, not a stop.
 
 ### 3.6 Package PR
 
-the internal `crt-process-builder` repository, base `main`, title as the BMAD PR. Body: what changed, the D0.3 API table, the
+the internal `the package repository` repository, base `main`, title as the BMAD PR. Body: what changed, the D0.3 API table, the
 STOP-gate results with dates, the claimed cut, test counts on dev-nf and dev-n8, the security surface stated
 explicitly (operations 8 -> 9; `EnsureCanManageProcessDesign` call sites unchanged; one new `EnsureCanManageDcm` call
 site), "draft until the BMAD PR merges". Gate 1 (full fan-out: rights code and shared repository interface change)
@@ -248,7 +248,7 @@ is approved, the re-pin goes into a separate PR instead of a push (approvals are
 
 ## 7. Cuts, rebundle, merge order
 
-- **Claim before stamping:** `git ls-remote --tags` of crt-process-builder and the version in clio's committed
+- **Claim before stamping:** `git ls-remote --tags` of the package repository and the version in clio's committed
   `clio/CrtProcessBuilder/CrtProcessBuilder.gz`; take the first number above both AND above every build deployed on
   the stands this work touches (Q22: the stand already runs a feature build above main, v r10-C2); claim it at the
   D0.7 place. Each claim edit, tag push and branch push happens only on the owner's explicit yes.

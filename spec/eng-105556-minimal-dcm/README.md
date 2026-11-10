@@ -9,7 +9,7 @@ every other file is written against the recommended options and names the Q a di
 Jira: ENG-105556 "AI Toolkit: create a minimal DCM (stages from a lookup) and add a progress bar to the record page"
 (Task, component bpms tools, epic ENG-92704 "Create BP via AI Toolkit"; no comments, no links).
 
-Basis: crt-process-builder `origin/main` `a3f58852` (CrtProcessBuilder 1.6.6.140), clio `origin/master` `69788ccd5`,
+Basis: the package repository `origin/main` `a3f58852` (CrtProcessBuilder 1.6.6.140), clio `origin/master` `69788ccd5`,
 clio-knowledge `origin/master` `622134b` (libraryVersion 1.15.180), core TSBpm `a95349820`, creatio-ui `7ca9210bd0e`,
 PackageStore `*/branches/7.8.0` (1,040 packages scanned, 61 DCM schemas), the owner's DCM overview note, the Academy,
 and a read-only inventory of stand `Creatio` taken 2026-11-08 (.NET Framework 4.8.1, MSSql, runs CrtProcessBuilder

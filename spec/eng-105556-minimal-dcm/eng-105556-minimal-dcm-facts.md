@@ -1,6 +1,6 @@
 # ENG-105556 AI Toolkit: create a minimal DCM (stages from a lookup) and add a progress bar to the record page - platform facts
 
-Written 2026-11-08. Local, untracked. Nothing was built, saved or run; the only stand reads are the read-only ones
+Written 2026-11-08. Nothing was built, saved or run; the only stand reads are the read-only ones
 recorded in the research notes. Epic: ENG-92704 "Create BP via AI Toolkit".
 
 **Summary.** What is true today, before any code, about the platform pieces the task touches: the DCM object model
@@ -14,7 +14,7 @@ adversarial verdict or a later gap note wins, and the difference is listed under
 
 **Basis.**
 - Core TSBpm `<core>/Src/Lib` at a95349820 (the stand `Creatio` runs from this checkout, v r10-C1).
-- crt-process-builder `origin/main` a3f58852 (CrtProcessBuilder 1.6.6.140) at `<crt-process-builder>`.
+- the package repository `origin/main` a3f58852 (CrtProcessBuilder 1.6.6.140) at `<package repository>`.
 - clio `origin/master` 69788ccd5 at `<clio>`; clio-knowledge `origin/master` 622134b
   (libraryVersion 1.15.180) at `<clio-knowledge>`.
 - creatio-ui master 7ca9210bd0e; PackageStore `*/branches/7.8.0` (1040 packages scanned).
@@ -30,7 +30,7 @@ adversarial verdict or a later gap note wins, and the difference is listed under
 | Prefix | Path |
 |---|---|
 | `CORE` | `<core>/Src/Lib/` |
-| `PB` | `<crt-process-builder>/packages/CrtProcessBuilder/Files/src/cs/` |
+| `PB` | `<package repository>/packages/CrtProcessBuilder/Files/src/cs/` |
 | `CLIO` | `<clio>/` |
 | `KB` | `<clio-knowledge>/` |
 | `PS` | `<PackageStore>/<Package>/branches/7.8.0/` |

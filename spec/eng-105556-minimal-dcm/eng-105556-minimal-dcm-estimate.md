@@ -137,7 +137,7 @@ end, because the high end carries 2.1x growth AND the two-runtime run set; the l
 
 | Repository / place | AI h | Human h | Lines (grown) |
 |---|---|---|---|
-| crt-process-builder (WI-3 incl. harness spike and P-D3, share of WI-8, WI-11) | ~11.25 | ~3 | ~5.0k |
+| the package repository (WI-3 incl. harness spike and P-D3, share of WI-8, WI-11) | ~11.25 | ~3 | ~5.0k |
 | clio (WI-2, WI-6, WI-7, share of WI-8, WI-11) | ~11.5 | ~4 | ~3.8k |
 | clio-knowledge (WI-5, WI-12) | ~3.25 | ~1.25 | ~0.5k |
 | CAADT, two GHE repos (WI-9) | ~1.5 | ~0.6 | ~0.2k |
@@ -232,7 +232,7 @@ Realistic compound buffer (R2 + R4 + R10 + R11 + half of R13, the events most li
 | # | Repository | PR | Order |
 |---|---|---|---|
 | 1 | clio | BMAD docs (PRD via the full `/bmad` pipeline, ADR, stories, test plan, tracker rows, this folder + the evidence companion) | first; before code |
-| 2 | crt-process-builder (GHE) | `BuildCase` feature | merges first, tag on the remote |
+| 2 | the package repository | `BuildCase` feature | merges first, tag on the remote |
 | 3 | clio-knowledge | article, routing, `process-modeling` fix, test class, `libraryVersion` | after the final cut; merges second (publishes) |
 | 4 | clio | tool, route, service, resolver, fragment, rebundle with both pins, floor, docs, unit + E2E | draft beside 2; leaves draft after the KB publishes; merges last |
 | 5 | `creatio-adaclio-testing` (GHE) | CAADT prompt | after 4 is usable on a stand |
