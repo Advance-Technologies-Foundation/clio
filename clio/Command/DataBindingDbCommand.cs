@@ -1211,13 +1211,13 @@ internal sealed class DataBindingDbService(
 			return cultures;
 		}
 
-		if (node is not JsonObject cultureObject) {
-			throw new InvalidOperationException(
+		JsonObject cultureObject = node as JsonObject
+			?? throw new InvalidOperationException(
 				$"Row '{rowLabel}': 'localizations' must be a JSON object keyed by culture, then column name.");
-		}
 
 		foreach ((string culture, JsonNode? columnsNode) in cultureObject) {
-			if (string.IsNullOrWhiteSpace(culture) || columnsNode is not JsonObject columnObject) {
+			JsonObject? columnObject = string.IsNullOrWhiteSpace(culture) ? null : columnsNode as JsonObject;
+			if (columnObject is null) {
 				throw new InvalidOperationException(
 					$"Row '{rowLabel}': 'localizations' entry '{culture}' must be a JSON object keyed by column name.");
 			}
