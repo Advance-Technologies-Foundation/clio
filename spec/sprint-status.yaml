@@ -5006,7 +5006,7 @@ stories:
     repo: "crt-process-builder + clio-knowledge + clio"
     size: L
     # in-progress set in the BMAD PR: implementation starts before it merges, so ready-for-dev is never true.
-    status: in-progress
+    status: review
     jira: ENG-92710
     file: spec/stories/story-eng-92710-call-web-service-element-1.md
     prd: spec/prd/spec-eng-92710-call-web-service-element.md
@@ -5018,7 +5018,7 @@ stories:
     note: >-
       ENG-92710 Call web service element. Owner questions Q1-Q20 were agreed on 2026-11-03 (Q11 re-agreed as A3 after
       the EM4 measurement the same day); the analysis is spec/eng-92710-call-web-service-element/. Registered REST
-      services only: registering a service is ENG-105475 Register a REST web service through the AI Toolkit, and the
+      and SOAP services only (Q20 D): registering a service is ENG-105475 Register a REST web service through the AI Toolkit, and the
       mirror, ObjectList and three-level shapes are ENG-92730 Complex / structured parameter types; neither has a
       story row here. blocks names story 2: slice D follows slice C and the EM5 STOP gate. Story 1's rows whose
       replay or retarget half needs story 2's P-D1 (TC-U-19, 23, 68, 78, 95, 98 and TC-I-06) close together with
@@ -5032,7 +5032,7 @@ stories:
     repo: "crt-process-builder + clio-knowledge + clio"
     size: M
     # in-progress set in the BMAD PR, same convention as story 1.
-    status: in-progress
+    status: review
     jira: ENG-92710
     file: spec/stories/story-eng-92710-call-web-service-element-2.md
     prd: spec/prd/spec-eng-92710-call-web-service-element.md
