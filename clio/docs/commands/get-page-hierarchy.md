@@ -15,8 +15,8 @@ get-page-hierarchy - Read the full Freedom UI page replacing-schema chain (root 
 The get-page-hierarchy command resolves the requested Freedom UI page and returns
 EVERY schema in its replacing (designer) chain in a single response, ordered root
 first (by hierarchy level) — the same order the deterministic page-bundle merge
-consumes. Each entry carries the schema name, UId, package name/UId, schema
-version, schema type, and its own raw body.
+consumes. Each entry carries the schema name, UId, package name/UId, whether that
+package is locked, schema version, schema type, and its own raw body.
 
 Use this instead of calling `get-page` / `get-client-unit-schema` once per schema
 when you need to inspect a whole chain (for example Classic→Freedom migration
@@ -38,7 +38,7 @@ This command is read-only and does not write any files.
   "returnedCount": 5,
   "hasMore": false,
   "bodiesOmittedForSize": false,            // true when bodies were auto-dropped (see Paging & Size)
-  "warning": null,                          // advisory hint set alongside bodiesOmittedForSize
+  "warning": null,                          // advisory hint: bodies omitted for size, or package lock state unknown
   "schemas": [
     {
       "hierarchyLevel": 0,                  // 0 = root/base, ascending to the effective leaf
@@ -46,6 +46,7 @@ This command is read-only and does not write any files.
       "schemaUId": "…",
       "packageName": "…",
       "packageUId": "…",
+      "packageLocked": true,                // SysPackage.InstallType != 0; null = unknown (see Package lock state)
       "schemaVersion": 1,
       "schemaType": "web",                  // web | mobile
       "hasBody": true,
@@ -56,6 +57,26 @@ This command is read-only and does not write any files.
   ]
 }
 ```
+
+## Package lock state
+
+`packageLocked` tells whether the package that owns each layer can receive
+design-time writes. It is read from `SysPackage.InstallType` with one query for
+the whole chain: `0` is editable (`false`), any other value is locked (`true`),
+the flag `lock-package` / `unlock-package` set. It is `null` when the lock state
+is unknown, and `warning` then names the cause:
+
+- the `SysPackage` query failed: the chain is still returned and every
+  `packageLocked` is `null`;
+- `SysPackage` returned no row, or no `InstallType`, for a package: the warning
+  lists those package UIds;
+- a chain entry has no package UId: the warning lists those schemas.
+
+Treat `null` as unknown, never as unlocked.
+
+The automatic save target of `update-page` (`designPackageName` in `get-page`) is
+one of the unlocked layers. When the chain shows another unlocked layer of the
+same page, the page is customized in more than one package.
 
 ## Paging & Size
 
@@ -89,7 +110,7 @@ clio get-page-hierarchy [options]
 --limit                            Maximum number of chain entries to return; 0
                                    (default) returns the whole chain from --offset
 
---metadata-only                    Return chain metadata only (names, UIds,
+--metadata-only                    Return chain metadata only (names, UIds, package lock state,
                                    versions) without the raw bodies
 
 --uri                    -u       Application uri
