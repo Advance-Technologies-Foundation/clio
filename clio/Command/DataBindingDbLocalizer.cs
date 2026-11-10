@@ -400,6 +400,8 @@ internal sealed class DataBindingDbLocalizer(
 	/// answers in the connected user's culture (falling back to the entity table where that culture has no value);
 	/// without it, a DataService select reads the entity table itself, which holds the site's default culture.
 	/// </summary>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Minor Code Smell", "S2325:Methods and properties that don't access instance data should be static",
+		Justification = "False positive: ReadRows reads the primary-constructor parameters serviceUrlBuilder and applicationClient.")]
 	private IReadOnlyDictionary<string, string?> ReadValues(
 		string schemaName,
 		string rowId,

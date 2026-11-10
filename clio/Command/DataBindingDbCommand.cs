@@ -1203,6 +1203,8 @@ internal sealed class DataBindingDbService(
 	/// Parses a row's <c>localizations</c>: culture → column → text value, the shape <c>create-data-binding</c>
 	/// takes for its single row.
 	/// </summary>
+	[System.Diagnostics.CodeAnalysis.SuppressMessage("Minor Code Smell", "S1481:Unused local variables should be removed",
+		Justification = "False positive: cultureObject is enumerated by the deconstructing foreach below.")]
 	private static IReadOnlyDictionary<string, IReadOnlyDictionary<string, string>> ParseRowLocalizations(
 		JsonNode? node,
 		string rowLabel) {
