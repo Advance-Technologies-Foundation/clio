@@ -26,10 +26,10 @@ Provide the CSS through exactly one of `--css-content` (inline) or `--css-conten
 
 The theme can carry its own background, written by the same `CreateTheme` call: `--background-image-id`
 (an image uploaded with [`upload-image`](upload-image.md)) or `--background-color`. It needs Creatio 10.2.96 or
-later, checked before any write. Before the create, an image is added to the background gallery that
-[`set-background-image`](set-background-image.md) uses. After the create, the `UsePanelIconBackground` feature is
-turned off for All employees unless `--keep-icon-background` is passed, and an image is bound into the theme's package
-together with its gallery membership. The output says whether
+later, checked before any write. Before the create, an image is added to the shell background gallery. After the
+create, the `UsePanelIconBackground` feature is turned off for All employees unless `--keep-icon-background` is
+passed. The background is bound into the theme's package: an image with its gallery membership, and the
+`UsePanelIconBackground` off state for an image or a color. The output says whether
 `UsePanelIconBackground` is off or was kept and names the package the image was bound into; the MCP tool returns
 them as `panel-icon-background` (`off` or `kept`) and `background-image-package`. A new theme has no background to
 remove, so `null` is refused: [`update-theme`](update-theme.md) removes a theme background.

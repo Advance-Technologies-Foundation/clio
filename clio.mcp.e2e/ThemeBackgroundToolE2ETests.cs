@@ -28,7 +28,9 @@ public sealed class ThemeBackgroundToolE2ETests {
 
 	private const string ColorBackground = "\"background\":{\"mode\":\"Color\",\"color\":\"#1A2B3C\"}";
 
-	private const string ImageBackground = "\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}";
+	private const string PackageDeliveryWarning = "The theme background was applied, but binding it into ";
+
+	private const string ImageBackground ="\"background\":{\"mode\":\"Image\",\"imageId\":\"" + ImageId + "\"}";
 
 	private const string CatalogJson = "{\"success\":true,\"values\":[{\"id\":\"" + ThemeId + "\",\"caption\":\"Gallery\"," +
 		"\"cssClassName\":\"gallery\",\"cssFilePath\":\"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/" + ThemeId +
@@ -44,7 +46,7 @@ public sealed class ThemeBackgroundToolE2ETests {
 	[Test]
 	[AllureTag(CreateThemeTool.ToolName)]
 	[AllureName("create-theme writes a background color in the same CreateTheme call")]
-	[AllureDescription("Calls create-theme with background-color and keep-icon-background through the real MCP server against a 10.2.96 stub, then checks the result reports the panel icon background as kept with no warnings and the CreateTheme body carries the background.")]
+	[AllureDescription("Calls create-theme with background-color and keep-icon-background through the real MCP server against a 10.2.96 stub, then checks the result reports the panel icon background as kept, the only warning is the package delivery the stub does not serve, and the CreateTheme body carries the background.")]
 	[Description("Creates a theme with a background color through the real MCP server against a 10.2.96 stub.")]
 	public Task CreateTheme_Should_Write_The_Background() =>
 		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
@@ -65,7 +67,9 @@ public sealed class ThemeBackgroundToolE2ETests {
 					because: $"a theme and its background are written by one call (error: {result.Error})");
 				result.PanelIconBackground.Should().Be(ThemeBackgroundOutcome.PanelIconKept,
 					because: "keep-icon-background leaves the UsePanelIconBackground feature as it is");
-				result.Warnings.Should().BeNull(because: "nothing failed after the theme write");
+				result.Warnings.Should().ContainSingle(because: "a color background is delivered into the theme's package too")
+					.Which.Should().StartWith(PackageDeliveryWarning,
+						because: "the stub serves no package delivery, so only that step can fail after the theme write");
 				ThemeWriteBody(requests, "CreateTheme").Should().Contain(ColorBackground,
 					because: "the background must reach ThemeService in the CreateTheme call itself");
 			});
@@ -144,10 +148,10 @@ public sealed class ThemeBackgroundToolE2ETests {
 	[Test]
 	[AllureTag(UpdateThemeTool.ToolName)]
 	[AllureName("update-theme writes only the background")]
-	[AllureDescription("Calls update-theme with background-color and keep-icon-background and no content fields through the real MCP server against a 10.2.96 stub, then checks the log reports the background and the kept feature with no warning, and the UpdateTheme body carries the background and no content field.")]
+	[AllureDescription("Calls update-theme with background-color and keep-icon-background and no content fields through the real MCP server against a 10.2.96 stub that lists the theme in its catalog, then checks the log reports the background and the kept feature, the only warning is the package delivery the stub does not serve, and the UpdateTheme body carries the background and no content field.")]
 	[Description("Changes only the background of a theme through the real MCP server against a 10.2.96 stub, without caption, css-class-name or css-content.")]
 	public Task UpdateTheme_Should_Write_Only_The_Background() =>
-		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0"),
+		StubEnvironmentStand.RunAsync("clio-theme-background-e2e", Stub("10.2.96.0") with { ThemeCatalogJson = CatalogJson },
 			async (session, environmentName, stubServer, cancellationToken) => {
 				CommandExecutionEnvelope result = McpCommandExecutionParser.Extract(
 					await session.CallToolAsync(UpdateThemeTool.ToolName, new Dictionary<string, object?> {
@@ -168,8 +172,10 @@ public sealed class ThemeBackgroundToolE2ETests {
 				result.Output.Should().Contain(message => message.MessageType == LogDecoratorType.Info
 						&& message.Value == "UsePanelIconBackground was left as it is (keep-icon-background).",
 					because: "the log must say the panel icon feature was kept as the caller asked");
-				result.Output.Should().NotContain(message => message.MessageType == LogDecoratorType.Warning,
-					because: "nothing failed after the theme write");
+				result.Output.Where(message => message.MessageType == LogDecoratorType.Warning).Should()
+					.ContainSingle(because: "a color background is delivered into the theme's package too")
+					.Which.Value.Should().StartWith(PackageDeliveryWarning,
+						because: "the stub serves no package delivery, so only that step can fail after the theme write");
 				body.Should().Contain(ColorBackground,
 					because: "the background must reach ThemeService in the UpdateTheme call itself");
 				body.Should().NotContainAny(ContentKeys,

@@ -46,8 +46,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_backgroundWriter = Substitute.For<IThemeBackgroundWriter>();
 		ArrangeGallery(added: true);
 		_backgroundWriter.TurnOffPanelIconBackground(default, default).ReturnsForAnyArgs(PanelIconBackgroundOutcome.None);
-		_backgroundWriter.BindImageIntoThemePackage(default, default, default)
-			.ReturnsForAnyArgs(ThemeImageBindingOutcome.None);
+		_backgroundWriter.BindBackgroundIntoThemePackage(default, default, default, default)
+			.ReturnsForAnyArgs(ThemeBackgroundBindingOutcome.None);
 		_themeCatalog = Substitute.For<IThemeCatalog>();
 		containerBuilder.AddTransient<IApplicationClient>(_ => _applicationClient);
 		containerBuilder.AddTransient(_ => _backgroundWriter);
@@ -205,6 +205,9 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 	public void Execute_ShouldSendOnlyTheIdAndTheBackground_WhenNoContentFieldIsGiven(string imageId, string color,
 		string content, string expectedBackground) {
 		string body = null;
+		StubCatalog(true, new ThemeDescriptor {
+			Id = ThemeId, CssFilePath = $"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{ThemeId}/theme.css"
+		});
 		_applicationClient.ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")), Arg.Any<string>(),
 				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>())
 			.Returns(call => {
@@ -241,7 +244,8 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_applicationClient.Received(expectedCalls).ExecutePostRequest(Arg.Is<string>(u => u.Contains("UpdateTheme")),
 			Arg.Any<string>(), Arg.Any<int>(), Arg.Any<int>(), Arg.Any<int>());
 		_backgroundWriter.Received(expectedCalls).TurnOffPanelIconBackground(Arg.Any<ThemeBackground>(), false);
-		_backgroundWriter.Received(expectedCalls).BindImageIntoThemePackage(GalleryImage, ThemeId, "UsrBranding");
+		_backgroundWriter.Received(expectedCalls).BindBackgroundIntoThemePackage(Arg.Any<ThemeBackground>(), GalleryImage,
+			ThemeId, "UsrBranding");
 		_logger.Received(expectedMissingThemeErrors)
 			.WriteError(Arg.Is<string>(m => m != null && m.StartsWith($"No theme with id '{ThemeId}'")));
 	}
@@ -321,6 +325,25 @@ public sealed class UpdateThemeCommandTests : BaseCommandTests<UpdateThemeOption
 		_applicationClient.DidNotReceiveWithAnyArgs().ExecutePostRequest(default, default, default, default, default);
 		_logger.Received(1).WriteError(
 			"background-image-id and background-color cannot be combined: pass at most one background argument.");
+	}
+
+	[Test, Category("Unit")]
+	[Description("Reads the theme's package from the catalog for a color background too and binds the background into it, because the panel icon off state ships with every background.")]
+	public void Execute_ShouldBindAColorBackgroundIntoTheCatalogPackage() {
+		// Arrange
+		StubCatalog(true, new ThemeDescriptor {
+			Id = ThemeId, CssFilePath = $"Terrasoft.Configuration/Pkg/UsrBranding/Files/themes/{ThemeId}/theme.css"
+		});
+		StubUpdateThemeSuccess();
+
+		// Act
+		int exitCode = _command.Execute(new UpdateThemeOptions { Id = ThemeId, BackgroundColor = "#1A2B3C" });
+
+		// Assert
+		exitCode.Should().Be(0, because: "a color background update is a valid call");
+		_backgroundWriter.Received(1).BindBackgroundIntoThemePackage(
+			Arg.Is<ThemeBackground>(background => background.Color == "#1A2B3C"), Arg.Any<BackgroundGalleryImage>(),
+			ThemeId, "UsrBranding");
 	}
 
 	private void StubCatalog(bool read, params ThemeDescriptor[] themes) {

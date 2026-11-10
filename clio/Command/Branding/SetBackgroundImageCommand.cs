@@ -123,7 +123,6 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 	private const string ShellBackgroundBindingSuffix = "ShellBackground";
 
 	private const string BackgroundConfigPart = "background-config";
-	private const string PanelIconOffStatePart = "panel-icon-off-state";
 
 	private readonly ISysSettingsManager _sysSettingsManager;
 	private readonly ISysImageUploader _sysImageUploader;
@@ -251,7 +250,7 @@ public class SetBackgroundImageCommand : RemoteCommand<SetBackgroundImageOptions
 		try {
 			BindBackgroundConfig(imageBound).RecordInto(BackgroundConfigPart, bound, warnings);
 			_packageDataBinder.BindFeatureOffState(BrandingBackgroundService.PanelIconBackgroundFeatureCode)
-				.RecordInto(PanelIconOffStatePart, bound, warnings);
+				.RecordInto(BrandingBackgroundService.PanelIconOffStatePart, bound, warnings);
 			return true;
 		} catch (Exception exception) when (exception is not OperationCanceledException) {
 			error = exception.Message;

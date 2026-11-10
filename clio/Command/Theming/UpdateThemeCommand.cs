@@ -111,8 +111,8 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 				: $"Theme background: {background.Describe()}.");
 			PanelIconBackgroundOutcome panelIcon =
 				_backgroundWriter.TurnOffPanelIconBackground(background, options.KeepIconBackground);
-			ThemeImageBindingOutcome binding =
-				_backgroundWriter.BindImageIntoThemePackage(galleryImage, options.Id, packageName);
+			ThemeBackgroundBindingOutcome binding = _backgroundWriter.BindBackgroundIntoThemePackage(background,
+				galleryImage, options.Id, packageName);
 			Logger.WriteWarnings(ThemeBackgroundOutcome.From(panelIcon, binding).Warnings);
 		}
 	}
@@ -140,7 +140,8 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			Background = background
 		};
 		return ThemeRequestBuilder.TryValidateRequest(request, out error, partial)
-			&& (background?.ImageId is null || TryResolveThemePackage(options, out packageName, out error));
+			&& (background is null || background.RemovesBackground
+				|| TryResolveThemePackage(options, out packageName, out error));
 	}
 
 	private void Fail(string error) {
@@ -158,7 +159,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 		List<ThemeDescriptor> matchingThemes = ThemeCatalogLookup.FindById(themes, options.Id);
 		if (matchingThemes.Count > 1) {
 			error = $"Theme id '{options.Id}' matches more than one theme on the environment, so the package to bind " +
-				"its background image into is ambiguous; nothing was changed. Run 'clio list-themes' to inspect it.";
+				"its background into is ambiguous; nothing was changed. Run 'clio list-themes' to inspect it.";
 			return false;
 		}
 		if (matchingThemes.Count == 0) {
@@ -172,7 +173,7 @@ public class UpdateThemeCommand : RemoteCommand<UpdateThemeOptions>
 			error = null;
 			return true;
 		}
-		error = $"Theme '{options.Id}' has no package in its cssFilePath, so its background image cannot be bound; " +
+		error = $"Theme '{options.Id}' has no package in its cssFilePath, so its background cannot be bound; " +
 			"nothing was changed.";
 		return false;
 	}

@@ -140,8 +140,8 @@ public class CreateThemeCommand : RemoteCommand<CreateThemeOptions>
 		createdId = id;
 		PanelIconBackgroundOutcome panelIcon =
 			_backgroundWriter.TurnOffPanelIconBackground(background, options.KeepIconBackground);
-		ThemeImageBindingOutcome binding =
-			_backgroundWriter.BindImageIntoThemePackage(galleryImage, id, options.PackageName);
+		ThemeBackgroundBindingOutcome binding = _backgroundWriter.BindBackgroundIntoThemePackage(background,
+			galleryImage, id, options.PackageName);
 		backgroundOutcome = ThemeBackgroundOutcome.From(panelIcon, binding);
 		return true;
 	}

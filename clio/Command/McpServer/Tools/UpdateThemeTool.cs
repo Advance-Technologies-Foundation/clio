@@ -47,8 +47,9 @@ public class UpdateThemeTool(
 		"checked before any write. Without one, caption, css-class-name and css-content are all required; with one, " +
 		"they are optional and the omitted ones are kept. An image or a color turns the environment-wide " +
 		"UsePanelIconBackground feature off for All employees unless keep-icon-background is true, and an image joins " +
-		"the background gallery before the update and is bound into the theme's package with its gallery membership; " +
-		"problems after the write come back as warnings in the log. " +
+		"the shell background gallery before the update. The background is bound into the theme's package: an image " +
+		"with its gallery membership, and the UsePanelIconBackground off state for an image or a color; problems " +
+		"after the write come back as warnings in the log. " +
 		"For the theme workflow, read get-guidance theming first.")]
 	public CommandExecutionResult UpdateTheme(
 		[Description("Parameters: environment-name (required), id (required), caption, css-class-name, css-content, " +

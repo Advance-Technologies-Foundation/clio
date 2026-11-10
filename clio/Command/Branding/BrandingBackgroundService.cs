@@ -33,6 +33,7 @@ internal sealed class BrandingBackgroundService(IApplicationClient applicationCl
 
 	internal const string ImagePart = "image";
 	internal const string GalleryMembershipPart = "gallery-membership";
+	internal const string PanelIconOffStatePart = "panel-icon-off-state";
 
 	private const string ShellBackgroundTagName = "shell_background";
 

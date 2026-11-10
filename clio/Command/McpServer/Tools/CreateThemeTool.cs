@@ -80,8 +80,9 @@ public class CreateThemeTool(
 		"An optional theme background is at most one of background-image-id (an image from upload-image) or " +
 		"background-color, and needs Creatio " + ThemeServiceRequirement.BackgroundMinVersion + " or later, checked " +
 		"before any write. It turns the environment-wide UsePanelIconBackground feature off for All employees " +
-		"unless keep-icon-background is true, and an image joins the background gallery before the create and is " +
-		"bound into the theme's package with its gallery membership. " +
+		"unless keep-icon-background is true, and an image joins the shell background gallery before the create. " +
+		"The background is bound into the theme's package: an image with its gallery membership, and the " +
+		"UsePanelIconBackground off state for an image or a color. " +
 		"background-image-package names the package the image was bound into, and panel-icon-background is off or " +
 		"kept when a background was set; problems after the create come back in warnings. " +
 		"This description is authoritative for create-theme's CSS sources, font-name contract, and error codes; " +

@@ -10,9 +10,9 @@ public sealed record PanelIconBackgroundOutcome(string State, IReadOnlyList<stri
 	public static PanelIconBackgroundOutcome None { get; } = new(null, []);
 }
 
-public sealed record ThemeImageBindingOutcome(string Package, IReadOnlyList<string> Warnings) {
+public sealed record ThemeBackgroundBindingOutcome(string ImagePackage, IReadOnlyList<string> Warnings) {
 
-	public static ThemeImageBindingOutcome None { get; } = new(null, []);
+	public static ThemeBackgroundBindingOutcome None { get; } = new(null, []);
 }
 
 public sealed record ThemeBackgroundOutcome(IReadOnlyList<string> Warnings, string ImagePackage = null,
@@ -24,8 +24,10 @@ public sealed record ThemeBackgroundOutcome(IReadOnlyList<string> Warnings, stri
 
 	public static ThemeBackgroundOutcome None { get; } = new([]);
 
-	public static ThemeBackgroundOutcome From(PanelIconBackgroundOutcome panelIcon, ThemeImageBindingOutcome binding) {
-		return new ThemeBackgroundOutcome([.. panelIcon.Warnings, .. binding.Warnings], binding.Package, panelIcon.State);
+	public static ThemeBackgroundOutcome From(PanelIconBackgroundOutcome panelIcon,
+		ThemeBackgroundBindingOutcome binding) {
+		return new ThemeBackgroundOutcome([.. panelIcon.Warnings, .. binding.Warnings], binding.ImagePackage,
+			panelIcon.State);
 	}
 }
 
@@ -36,8 +38,8 @@ public interface IThemeBackgroundWriter {
 
 	PanelIconBackgroundOutcome TurnOffPanelIconBackground(ThemeBackground background, bool keepIconBackground);
 
-	ThemeImageBindingOutcome BindImageIntoThemePackage(BackgroundGalleryImage image, string themeId,
-		string packageName);
+	ThemeBackgroundBindingOutcome BindBackgroundIntoThemePackage(ThemeBackground background,
+		BackgroundGalleryImage image, string themeId, string packageName);
 }
 
 internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroundService,
@@ -74,24 +76,24 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 		return new PanelIconBackgroundOutcome(null, [SensitiveErrorTextRedactor.Redact(warning)]);
 	}
 
-	public ThemeImageBindingOutcome BindImageIntoThemePackage(BackgroundGalleryImage image, string themeId,
-		string packageName) {
-		if (image is null) {
-			return ThemeImageBindingOutcome.None;
+	public ThemeBackgroundBindingOutcome BindBackgroundIntoThemePackage(ThemeBackground background,
+		BackgroundGalleryImage image, string themeId, string packageName) {
+		if (background is null || background.RemovesBackground) {
+			return ThemeBackgroundBindingOutcome.None;
 		}
-		if (!TryUsePackage(packageName, out string package, out string packageError)) {
-			return new ThemeImageBindingOutcome(null, [DescribeBindingFailure(null, [], packageError)]);
+		List<string> bound = [];
+		List<string> warnings = [];
+		if (!TryUsePackage(packageName, out string package, out string error)
+			|| !TryBindGalleryImage(image, themeId, bound, warnings, out bool imageBound, out error)
+			|| !TryBindPanelIconOffState(bound, warnings, out error)) {
+			warnings.Add(DescribeBindingFailure(package, bound, error));
+			imageBound = bound.Contains(BrandingBackgroundService.ImagePart);
 		}
-		GalleryImageBindingOutcome binding = backgroundService.BindGalleryImage(packageDataBinder, image,
-			"ThemeBackground_" + Guid.Parse(themeId).ToString("N"));
-		List<string> warnings = [.. SensitiveErrorTextRedactor.RedactAll(binding.Warnings)];
-		if (binding.Error is not null) {
-			warnings.Add(DescribeBindingFailure(package, binding.Bound, binding.Error));
+		if (bound.Count > 0) {
+			logger.WriteInfo($"Bound the background into package '{package}': {string.Join(", ", bound)}.");
 		}
-		if (binding.Bound.Count > 0) {
-			logger.WriteInfo($"Bound the background into package '{package}': {string.Join(", ", binding.Bound)}.");
-		}
-		return new ThemeImageBindingOutcome(binding.ImageBound ? package : null, warnings);
+		return new ThemeBackgroundBindingOutcome(imageBound ? package : null,
+			SensitiveErrorTextRedactor.RedactAll(warnings));
 	}
 
 	private bool TryUsePackage(string packageName, out string package, out string error) {
@@ -106,10 +108,37 @@ internal sealed class ThemeBackgroundWriter(IBrandingBackgroundService backgroun
 		}
 	}
 
+	private bool TryBindGalleryImage(BackgroundGalleryImage image, string themeId, List<string> bound,
+		List<string> warnings, out bool imageBound, out string error) {
+		imageBound = false;
+		error = null;
+		if (image is null) {
+			return true;
+		}
+		GalleryImageBindingOutcome binding = backgroundService.BindGalleryImage(packageDataBinder, image,
+			"ThemeBackground_" + Guid.Parse(themeId).ToString("N"));
+		bound.AddRange(binding.Bound);
+		warnings.AddRange(binding.Warnings);
+		imageBound = binding.ImageBound;
+		error = binding.Error;
+		return error is null;
+	}
+
+	private bool TryBindPanelIconOffState(List<string> bound, List<string> warnings, out string error) {
+		error = null;
+		try {
+			packageDataBinder.BindFeatureOffState(BrandingBackgroundService.PanelIconBackgroundFeatureCode)
+				.RecordInto(BrandingBackgroundService.PanelIconOffStatePart, bound, warnings);
+			return true;
+		} catch (Exception exception) when (exception is not OperationCanceledException) {
+			error = exception.Message;
+			return false;
+		}
+	}
+
 	private static string DescribeBindingFailure(string package, IReadOnlyList<string> bound, string error) {
 		string into = package is null ? "the theme's package" : $"package '{package}'";
 		string kept = bound.Count == 0 ? string.Empty : $" Already bound and left in place: {string.Join(", ", bound)}.";
-		return $"The theme background was applied, but binding it into {into} failed: " +
-			$"{SensitiveErrorTextRedactor.Redact(error)}{kept}";
+		return $"The theme background was applied, but binding it into {into} failed: {error}{kept}";
 	}
 }
