@@ -76,8 +76,7 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
 ## Gating
 
 EM status 2026-11-10, as the measurements file records it (section 0). The final-cut campaign ran on 2026-11-09
-(M-36..M-46); the EM rows below that ran there are owed a re-run on the claimed cut: the owner decides to re-run them
-or to waive the re-run, because the later changes touch only the refusal texts and the validator.
+(M-36..M-46). The plan's late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator).
 
 | Gate | What | Who | Before |
 |---|---|---|---|
@@ -87,12 +86,12 @@ or to waive the re-run, because the later changes touch only the refusal texts a
 | 0.4 | drift check against the basis (fetch first) | lead | slice A |
 | BMAD | this SPEC and the ADR on the docs branch | lead | any package code; done: merged as clio #1890 on 2026-11-04 |
 | EM0, EM1, EM9 | baseline; the test services `UsrWscEchoService`, `UsrWscDriftService`, `UsrWscDeadService`; compile floor | lead | done 2026-11-03 (M-22; M-19, M-23; M-14) |
-| EM2 | designer capture A, the AC5 oracle | lead in Claude in Chrome, owner logs in | S1 done 2026-11-03 (M-24); step 9 read-back done in the final-cut campaign 2026-11-09 (M-36); re-run on the claimed cut owed (measurements section 0) |
+| EM2 | designer capture A, the AC5 oracle | lead in Claude in Chrome, owner logs in | S1 done 2026-11-03 (M-24); step 9 read-back done in the final-cut campaign 2026-11-09 (M-36); not repeated on the shipping build (the later changes touch only refusal texts and the validator) |
 | EM3 | the designer's "Create from element" shape (route (a)) and a declared Collection with item mappings (route (b)) | lead | done 2026-11-03 (M-15, M-25) |
-| EM7 | `ignoreErrors` true vs false on a 404 and on a refused connection | lead, owner's yes per write | designer half done 2026-11-03 (M-28); builder half done in the final-cut campaign 2026-11-09 (M-40); re-run on the claimed cut owed (measurements section 0) |
-| STOP | EM5: a builder-made element re-saved by the designer and modified by an unrelated builder modify, stored bytes diffed; the row-less case only through a designer copy | lead, owner's yes per write | slice C: passed on the experimental cut 2026-11-04; final-cut campaign 2026-11-09 passed (M-37; steps 4, 5 not run); re-run on the claimed cut owed (measurements section 0) |
-| EM6 | a builder-made process runs and the result params arrive (reduced by EP option E4) | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-38; EM6-B M-39); re-run on the claimed cut owed (measurements section 0) |
-| EM10, EM11, EM12 | builder halves: no package dependency added (N6), canonical method name, N5 binding stored; EM12's run half is not measurable under E4 | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-42, M-43, M-44); re-run on the claimed cut owed (measurements section 0) |
+| EM7 | `ignoreErrors` true vs false on a 404 and on a refused connection | lead, owner's yes per write | designer half done 2026-11-03 (M-28); builder half done in the final-cut campaign 2026-11-09 (M-40); re-run on the shipping build 2026-11-10 (M-56) |
+| STOP | EM5: a builder-made element re-saved by the designer and modified by an unrelated builder modify, stored bytes diffed; the row-less case only through a designer copy | lead, owner's yes per write | slice C: passed on the experimental cut 2026-11-04; final-cut campaign 2026-11-09 passed (M-37; steps 4, 5 not run); not repeated on the shipping build (the later changes touch only refusal texts and the validator) |
+| EM6 | a builder-made process runs and the result params arrive (reduced by EP option E4) | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-38; EM6-B M-39); re-run on the shipping build 2026-11-10 (M-55) |
+| EM10, EM11, EM12 | builder halves: no package dependency added (N6), canonical method name, N5 binding stored; EM12's run half is not measurable under E4 | lead, owner's yes | the PRs leave draft; done in the final-cut campaign 2026-11-09 (M-42, M-43, M-44); re-run on the shipping build 2026-11-10 (M-57) |
 | gate 1 | full 3-lens fan-out over the package diff (shared sub-process code in P-A4, the build hook in P-B5, the parameter service in P-C6, Q16 as a security check) | lead | the draft package PR opens |
 | KB publish | the knowledge generation that publishes `process-web-service` | human merge | CL-8 re-pin; the clio PR leaves draft |
 
@@ -297,10 +296,10 @@ owns AC6 and the drift half of AC7). Ticked only when true.
 ### Done so far (2026-11-10)
 
 The package slices are implemented and the stand runs of 2026-11-09 are recorded (measurements section 0,
-M-36..M-52). This story's runs passed in the final-cut campaign: EM2 step 9, the describe read-back (M-36); EM5, the
+M-36..M-58). This story's runs passed in the final-cut campaign: EM2 step 9, the describe read-back (M-36); EM5, the
 STOP gate (M-37; steps 4 and 5 not run); EM6 and EM6-B (M-38, M-39); the builder halves of EM7 (M-40), EM10 (M-42),
-EM11 (M-43) and EM12 (M-44). Their re-run on the claimed cut is owed: the owner decides to re-run them or to waive
-the re-run, because the later changes touch only the refusal texts and the validator. Re-measured on the claimed cut:
+EM11 (M-43) and EM12 (M-44). The plan's late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator): EM6 and EM6-B (M-55), EM7 (M-56),
+the EM10, EM11 and EM12 builder halves (M-57) and AR-1 (M-58) gave the same results on the shipping build. Re-measured on the claimed cut:
 the unknown-service refusal now lists each registered service's methods, bounded (finding K-1, resolved; measured
 M-47; TC-U-125..127, TC-U-18 updated), and an ambiguous match lists the matching names with their methods, no caption
 (TC-U-17 updated). With it AR-1 passes: one refused create gives the agent service and method, and it types the new

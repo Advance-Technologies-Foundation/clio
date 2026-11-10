@@ -1122,8 +1122,8 @@ service elements of the PackageStore corpus (38 files) has a Boolean input param
 `UsrWscFlag_In = true` at run time; the trace also shows a one-item list from an item mapping and an unmapped
 `RequestBody` as null (not ""). Oracle A cannot be saved: the platform refuses an element input as a condition data
 source (finding F-1, open, a plan defect). Outcome: the shared ConstValue encoding stays, no code change; the TC-P-15
-companion test pins the one-binding difference from the designer's Script form permanently. Re-run on the claimed cut
-owed (measurements section 0).
+companion test pins the one-binding difference from the designer's Script form permanently. Re-run on the shipping build
+2026-11-10 with the same trace (M-55).
 
 ---
 

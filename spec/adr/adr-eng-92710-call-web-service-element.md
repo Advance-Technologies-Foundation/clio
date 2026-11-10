@@ -110,7 +110,7 @@ rules do not change (P-B6 pins the three corpus shapes, TC-U-56..64, 66, 67).
 
 Evidence: M-24 (EM2: element keys, `IX3` 7000 for 7 s, the stored bytes of a constant); M-23 (EM1: what Studio
 stores for every request shape, including a single object flattened into scalars, C-08); EM6 ran a builder-made
-binding in the final-cut campaign (M-38; its re-run on the claimed cut is owed, measurements section 0), reduced under the agreed endpoint option E4 (no echo) to the
+binding in the final-cut campaign (M-38; re-run on the shipping build 2026-11-10, M-55), reduced under the agreed endpoint option E4 (no echo) to the
 result parameters, so the request wire bytes rest on the core unit tests and the parity suite (decisions Q17); EM6-B's
 trace measured the one-item list and an unmapped `RequestBody` as null (M-39).
 
@@ -306,8 +306,7 @@ nested input of the same caption).
   outside the process package's dependency closure saves with notice N6 and no dependency added; adding it like the
   designer is a separate ticket for every element. Evidence: M-16 (EM11: a case-only slip saves green, is pruned on
   load and fails the run), M-17 (EM10: the designer adds the dependency); M-42 and M-43 (the EM10 and EM11 builder halves in the
-  final-cut campaign: no dependency added, canonical `IX2`; their re-run on the claimed cut is owed, measurements
-  section 0).
+  final-cut campaign: no dependency added, canonical `IX2`; re-run on the shipping build 2026-11-10, M-57).
 - **Q12 - drift and latent loss: notice, no refusal.** Describe reports `serviceResolved`, `methodResolved` and nested
   drift as issues; at the end of every modify, each web-service element whose service or method does not resolve,
   configured in the request or not (owner, 2026-11-05), gets notice N7 saying the platform load prunes its parameters.
@@ -372,4 +371,5 @@ nested input of the same caption).
   the final-cut campaign (2026-11-09, M-37): the designer opens and re-saves a builder-made element without a rewrite,
   a duplicate BK15 row or a lost Success value, and an unrelated builder modify leaves the element node and rows
   byte-identical; only the top-level caption suffix follows the last writer (a server load drops it, a designer save
-  puts it back; excluded from the oracle rule, AD1). Its re-run on the claimed cut is owed (measurements section 0).
+  puts it back; excluded from the oracle rule, AD1). EM5 was not repeated on the shipping build (the later changes touch only
+  refusal texts and the validator).

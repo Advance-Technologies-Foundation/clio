@@ -31,8 +31,8 @@ agreed by the owner on 2026-11-03; EM ids are the [measurements](eng-92710-call-
 file's. Run as of 2026-11-03: EM0 (M-22), EM1 (M-23), EM2 S1 (M-24), EM3 routes (a) and (b) (M-15, M-25), EM4
 S1-S3 (M-26, M-27), EM9, the designer halves of EM7, EM10 and EM11, EM8's current-builder, service-save and designer
 halves (M-18, M-29..M-31) and the Q4 BK15 probe (M-13). Run since: EM5 on the experimental cut (2026-11-04), and in
-the final-cut campaign of 2026-11-09 EM2's read-back, EM5, EM6, EM6-B and the builder halves (M-36..M-46); their
-re-run on the claimed cut is owed (measurements section 0). EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
+the final-cut campaign of 2026-11-09 EM2's read-back, EM5, EM6, EM6-B and the builder halves (M-36..M-46); the plan's
+late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator). EP option E4 is chosen (Q17: the test services' base URI is the stand root, no echo
 endpoint), so EM6's request side and EM12 are not measurable on stand `Creatio`.
 
 Siblings: [README](README.md) · [facts](eng-92710-call-web-service-element-facts.md) ·

@@ -210,17 +210,17 @@ EM campaign per probe (the [measurements file](eng-92710-call-web-service-elemen
 |---|---|---|---|---|
 | EM0 | read-only baseline: four features, versions | 0.25 / 0.25 / 0.5 | Q7, Q13 preconditions | **done** (M-22) |
 | EM1 | the three test services in Chrome (plan 0.7), base URI = the stand root (EP option E4, Q17): `UsrWscEchoService` (nested POST body, 3-level response, header with a non-secret default), `UsrWscDriftService` (EM8, EM11), `UsrWscDeadService` (EM7); every parameter code `UsrWsc...` (Studio refuses a code without `Usr`) | 1.5 / 2 / 3 | test services for EM2-EM12 | **done** (M-19, M-23) |
-| EM2 | designer capture A, the AC5 oracle (MetaData + resources) | 1 / 1.25 / 2 | Q3, Q4, Q20 | S1 **done** (M-24); S2-S4 (SOAP) **done** 2026-11-05 (M-32..M-35); step 9 read-back **spent** 2026-11-09 (M-36); re-run on the claimed cut owed (measurements section 0) |
+| EM2 | designer capture A, the AC5 oracle (MetaData + resources) | 1 / 1.25 / 2 | Q3, Q4, Q20 | S1 **done** (M-24); S2-S4 (SOAP) **done** 2026-11-05 (M-32..M-35); step 9 read-back **spent** 2026-11-09 (M-36); not repeated on the shipping build (the later changes touch only refusal texts and the validator) |
 | EM3 | capture B: response into a process Collection (mirror + hand-made) | 0.5 / 0.75 / 1.25 | Q6 | **done**: route (a) (M-15), route (b) on `UsrWscDriftService.UsrWscOrders2` (M-25) |
 | EM4 | capture C: method and service change on an existing element | 0.25 / 0.5 / 0.75 | Q11 | **done** (M-20, M-26, M-27) |
-| EM5 | STOP gate: designer opens and re-saves a builder-made element (BK15 on/off, Success L8), diff; the builder modify of step 5 runs on a designer copy `UsrWscEm5OracleCopy`, `UsrWscEm2CaptureA` is only read; re-run on the final cut | 0.5 / 0.75 / 1.25 | Q3, Q4 residual risk | **spent**: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09 (M-37; steps 4, 5 not run); re-run on the claimed cut owed (measurements section 0) |
-| EM6 | run time: result params, StatusCode, Success; under E4 no request bytes and no `$.orders` response read unless the owner adds a JSON source | 0.75 / 1.25 / 2 | Q5, Q6, AC3, AC4 | **spent** 2026-11-09, reduced by E4 (M-38; EM6-B M-39); re-run on the claimed cut owed (measurements section 0) |
-| EM7 | run time ignoreErrors true vs false on a failing call | 0.25 / 0.5 / 0.75 | Q7 | designer half **done** (M-28); builder half **spent** 2026-11-09 (M-40); re-run on the claimed cut owed (measurements section 0) |
+| EM5 | STOP gate: designer opens and re-saves a builder-made element (BK15 on/off, Success L8), diff; the builder modify of step 5 runs on a designer copy `UsrWscEm5OracleCopy`, `UsrWscEm2CaptureA` is only read; re-run on the final cut | 0.5 / 0.75 / 1.25 | Q3, Q4 residual risk | **spent**: passed on the experimental cut 2026-11-04 and in the final-cut campaign 2026-11-09 (M-37; steps 4, 5 not run); not repeated on the shipping build (the later changes touch only refusal texts and the validator) |
+| EM6 | run time: result params, StatusCode, Success; under E4 no request bytes and no `$.orders` response read unless the owner adds a JSON source | 0.75 / 1.25 / 2 | Q5, Q6, AC3, AC4 | **spent** 2026-11-09, reduced by E4 (M-38; EM6-B M-39); re-run on the shipping build 2026-11-10 (M-55) |
+| EM7 | run time ignoreErrors true vs false on a failing call | 0.25 / 0.5 / 0.75 | Q7 | designer half **done** (M-28); builder half **spent** 2026-11-09 (M-40); re-run on the shipping build 2026-11-10 (M-56) |
 | EM8 | modify latent loss on a disposable copy (g4 recipe) | 0.5 / 0.75 / 1.25 | Q12 | current-builder, service-save and designer halves **done** (M-18, M-29..M-31); step 8 **spent** 2026-11-09 (M-41), re-measured on the claimed cut (refused with N7, M-51, M-52) |
 | EM9 | compile floor against 8.3.1 / 8.1.3 core binaries, local | spent (was 0.5 / 0.75 / 1.5) | Q7, Q13: outcome (a), IX4 written directly | **done** (decisions Q7) |
-| EM10 | cross-package service: designer vs builder `SysPackageDependency` | 0.25 / 0.5 / 1 | Q9 notice | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-42); re-run on the claimed cut owed (measurements section 0) |
-| EM11 | wrong-case method through the platform | 0.1 / 0.25 / 0.5 | Q9 canonicalisation | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-43; the refusal lists codes without captions, F-3); re-run on the claimed cut owed (measurements section 0) |
-| EM12 | nested array-in-array on 10.1.37 | 0.25 / 0.4 / 0.75 | Q13 notice | run half not measurable under E4 (Q17); builder notice step **spent** 2026-11-09 (M-44); re-run on the claimed cut owed (measurements section 0) |
+| EM10 | cross-package service: designer vs builder `SysPackageDependency` | 0.25 / 0.5 / 1 | Q9 notice | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-42); re-run on the shipping build 2026-11-10 (M-57) |
+| EM11 | wrong-case method through the platform | 0.1 / 0.25 / 0.5 | Q9 canonicalisation | designer half done (decisions Q9); builder half **spent** 2026-11-09 (M-43; the refusal lists codes without captions, F-3); re-run on the shipping build 2026-11-10 (M-57) |
+| EM12 | nested array-in-array on 10.1.37 | 0.25 / 0.4 / 0.75 | Q13 notice | run half not measurable under E4 (Q17); builder notice step **spent** 2026-11-09 (M-44); re-run on the shipping build 2026-11-10 (M-57) |
 | | Sum before batching | 6.1 / 9.15 / 15.0 | | was 6.6 / 9.9 / 16.5, minus EM9 |
 | | After batching (EM2-EM4 one session; EM6/EM7/EM12 one probe process) | **6.0 / 8.25 / 12.5** | | was 6.5 / 9 / 14, minus EM9 (batching never covered EM9) |
 
@@ -229,7 +229,7 @@ ENG-95985's estimated 6-12 h at the likely end. On 2026-11-03 EM9, EM0-EM4 (the 
 captures) and the designer halves of EM7, EM8, EM10 and EM11 ran. EM5 ran on the experimental cut on 2026-11-04; the
 rest (EM2's read-back, EM5's final run, EM6 and EM6-B, the builder halves of EM7, EM8, EM10, EM11 and EM12) was spent in
 the final-cut campaign on 2026-11-09 (M-36..M-46), and EM8 step 8 was re-measured on the claimed cut (M-51, M-52).
-The re-run of the others on the claimed cut is owed (measurements section 0) and is not sized here; the spent part is
+The gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); not sized here; the spent part is
 not taken out of the figures (0.1).
 
 ### 2.6 Totals and arithmetic

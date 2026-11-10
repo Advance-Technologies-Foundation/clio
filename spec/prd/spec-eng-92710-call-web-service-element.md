@@ -266,7 +266,7 @@ EM status 2026-11-10, as the measurements file records it (section 0 and the gat
   M-52). EM12's run half is not measurable under E4 and rests on the core unit tests and the comment on ENG-55920,
   the platform's nested-list fix (Q13, Q17).
 - **Final cut:** EM2's read-back step (done in the final-cut campaign, M-36) and the EM5 re-run against the final
-  archive (M-37). Owed: EM2 step 9, EM5, EM6, EM6-B, EM7, EM10, EM11 and EM12 ran on the earlier cut of the final-cut campaign only; the owner decides: re-run them on the claimed cut, or waive because the later changes touch only the refusal texts and the validator.
+  archive (M-37). The late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator).
 - Every stand write, install, run and cleanup waits for the owner's explicit yes, one step at a time.
 
 ## Constraints

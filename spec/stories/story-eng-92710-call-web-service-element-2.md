@@ -78,7 +78,7 @@ EM status 2026-11-10, as the measurements file records it (section 0).
 | Q11, Q12 | A3 (replace, `Success` / `Response` / `StatusCode` keep their UIds, guard over every other parameter of the element) and A (issues + notice, no refusal) | owner | done 2026-11-03 |
 | EM4 | designer capture C: a method change and a service change (what is cleared and kept, dependents, `IX3` / `IX4`) | lead in Claude in Chrome, owner logs in | done 2026-11-03 (M-20, M-26, M-27): the P-D1 oracle and parity row TC-P-12 |
 | STOP | EM5 passed on the experimental cut (story 1) | lead, owner's yes | slice C, so slice D |
-| EM8 | the latent loss: current-builder half done 2026-11-03 (M-18, the loss is real and silent); service-save and designer halves done 2026-11-03 (M-29..M-31: a service save writes nothing and evicts no cached process, a cold load prunes, a designer save deletes every parameter of the element and its BK15 rows); step 8 ran in the final-cut campaign 2026-11-09 (M-41) and was re-measured on the claimed cut: refused by the platform's validation, nothing written, the refusal carries N7 (M-51, M-52) | lead, owner's yes per write | the P-D3 notice is confirmed before the PRs leave draft |
+| EM8 | the latent loss: current-builder half done 2026-11-03 (M-18, the loss is real and silent); service-save and designer halves done 2026-11-03 (M-29..M-31: a service save writes nothing and evicts no cached process, a cold load prunes, a designer save deletes every parameter of the element and its BK15 rows); step 8 ran in the final-cut campaign 2026-11-09 (M-41) and was re-measured on the claimed cut: refused by the platform's validation, nothing written, the refusal carries N7 (M-51, M-52; on the shipping build 2026-11-10, M-54) | lead, owner's yes per write | the P-D3 notice is confirmed before the PRs leave draft |
 | gate 1 | full 3-lens fan-out over the package diff, shared with story 1 | lead | the draft package PR opens |
 | KB publish | the knowledge generation that publishes the article with the modify section | human merge | the clio PR leaves draft |
 
@@ -122,7 +122,7 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   A modify the platform's validation refuses never reaches the end of the request, so `ProcessSchemaValidator.EnsureValidForSave`
   appends N7 to that refusal: the named elements first, under the repair-order lead, in the refusal form without the
   re-select advice; the others with the ordinary notice; at most 3, the rest counted (F-2, F-5, measurements section 0; TC-U-115..124).
-  EM8 step 8 confirmed N7 on the refusal path (M-51, M-52); the no-reader end-of-request case is not measured on a
+  EM8 step 8 confirmed N7 on the refusal path (M-51, M-52; shipping build M-54); the no-reader end-of-request case is not measured on a
   stand.
 - [ ] **P-D4** `modify-business-process-as-new-version`: the clone keeps the element, its params and its BK15 rows owned
   by the new version; no code expected, a clone round-trip test pins it (TC-U-92).
@@ -202,7 +202,7 @@ Slice D is implemented and the stand runs of 2026-11-09 are recorded (measuremen
 step 8, re-measured on the claimed cut, passes: the unrelated modify of the drifted process is refused by the platform's validation because a
 Formula task reads a pruned parameter, nothing is written, and the refusal now carries N7 after the platform's text,
 the referenced element first under the repair-order lead and the other drifted element with its ordinary notice
-(finding F-2, resolved; M-51). The referenced element's notice no longer ends with the re-select advice that the lead
+(finding F-2, resolved; M-51; re-run on the shipping build 2026-11-10, M-54). The referenced element's notice no longer ends with the re-select advice that the lead
 rules out (finding F-5, resolved; M-52, whose reply equals the expected text). Package tests TC-U-115..124. From story
 1's side, the unknown-service refusal lists methods (K-1) and AR-1 passes with one refusal (M-47, M-48). Not measured:
 the no-reader case of EM8 (the end-of-request N7 on a saved modify). Still open as Low / doc items: F-1, F-3, F-4

@@ -2,8 +2,9 @@
 
 Written 2026-11-02; updated 2026-11-03 with the owner's agreed decisions (decisions Q1-Q20, "Agreed" lines) and the
 first stand runs: EM9 is done; EM1, EM3, EM4, EM8, EM10 and EM11 are partly done; the Q4 BK15 probe is done (M-13 to
-M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-52 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-52: the 1.6.6.147 / .148 / .149 re-runs, on
-`eng105744-web02` and on stand `eng92710-web03`, same day). Every other expected result is a hypothesis until its EM runs.
+M-21, and the "Measured" block of each EM); later the same day M-22 to M-31 (section 0). Measured facts: M-01 to M-58 (M-32 to M-35: EM2 S2-S4, 2026-11-05; M-36 to M-44: the final-cut runs on stand `eng105744-web02`, 2026-11-09; M-45, M-46: the KB-7 agent runs AR-1 / AR-2, same day; M-47 to M-52: the 1.6.6.147 / .148 / .149 re-runs, on
+`eng105744-web02` and on stand `eng92710-web03`, same day; M-53 to M-58: the 1.6.6.150 shipping-build re-run on
+`eng92710-web03`, 2026-11-10). Every other expected result is a hypothesis until its EM runs.
 
 Basis:
 - crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history only): PB.
@@ -77,12 +78,14 @@ compared under; "the oracle rule" below means WSCR) ·
   `eng105744-web02`: EM2 step 9 (M-36), EM5 steps 1-3, 6, 7 (M-37), EM6 (M-38), EM6-B (M-39), EM7 builder half (M-40),
   EM8 step 8 first run (M-41), EM10 builder half (M-42), EM11 builder half (M-43), EM12 builder half (M-44), AR-1 and
   AR-2 on the draft article (M-45, M-46). On 1.6.6.148 (`eng92710-web03`): the unknown-service refusal (M-47), AR-1 on
-  the updated article (M-48), EM8 step 8 (M-51). On 1.6.6.149, the cut that ships (`eng92710-web03`): EM8 step 8
-  (M-52). M-49 and M-50 are stand episodes, not results.
-- **Owed: re-run on the claimed cut.** The plan's gate ("No tag is pushed before the late measurements (EM6-EM12) of
-  that cut have run") is not met for EM2 step 9, EM5, EM6, EM6-B, EM7, EM10, EM11 and EM12, which ran on the .146 cut
-  only. The owner decides: re-run them on the claimed cut, or waive the re-run because the later changes touch only
-  the refusal texts and the validator. No waiver is recorded.
+  the updated article (M-48), EM8 step 8 (M-51). On 1.6.6.149 (`eng92710-web03`): EM8 step 8 (M-52). On 1.6.6.150, the
+  shipping build (`eng92710-web03`, 2026-11-10): the unknown-service refusal (M-53), EM8 step 8 (M-54), EM6 and EM6-B
+  (M-55), EM7 (M-56), the EM10, EM11 and EM12 builder halves (M-57), KB-7 AR-1 on the final article (M-58). M-49 and
+  M-50 are stand episodes, not results.
+- **Plan gate ("No tag is pushed before the late measurements (EM6-EM12) of that cut have run"):** met 2026-11-10:
+  EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build 1.6.6.150 (M-53..M-58),
+  each with the result of its earlier run; EM5 not repeated (the later changes touch only refusal texts and the
+  validator); EM2 step 9 not repeated either. The owner chose the re-run.
 - **Findings of the final-cut runs, status 2026-11-10.** Resolved: F-2 (N7 missing from a refused modify; the pre-save
   refusal now carries it, M-51, M-52), K-1 (the unknown-service refusal listed no methods; it now lists them, bounded,
   M-47), F-5 (the referenced element's notice ended with the re-select advice right after the lead said re-pointing
@@ -93,7 +96,10 @@ compared under; "the oracle rule" below means WSCR) ·
   method codes without captions, M-43), F-4 (one describe -> `setElement` round trip gives two warnings about the same
   ignored read-back members, one from clio and one from the package; final-cut run report, EM5 step 7). Notes, unchanged: O-1 (the EM5 designer
   save added the dependency `Custom -> UsrWscTestFixtures`, M-37), O-2 (`versionReadWarning` once), O-3 (the fixtures
-  archive is stale after the web02 rename).
+  archive is stale after the web02 rename). Added 2026-11-10: K-3 (Low, KB article): the AR-1 agent on the final
+  article typed parameters as `Text` and needed three refused modifies before re-typing them; the article could repeat
+  "create parameters with typeFromElement" (M-58). O-7 (note): a build under a taken process name is refused before
+  the service lookup (M-58).
 - Four groups by gate (section 4):
   - **Before any package code (day 0):** EM0, EM1 (the test service), EM2/EM3/EM4 (the designer captures, the AC5
     oracle). EM7 and EM8 have a designer half that may also run on day 0, as session 2 (section 6; plan step 0.9,
@@ -235,6 +241,12 @@ compared under; "the oracle rule" below means WSCR) ·
 | M-50 | A package installed by `push-pkg` (`InstallType` 1) is read-only in Studio > Web services also with `CurrentPackageId` set to it; `clio set-syssetting` updated the setting row but `QuerySysSettings` returned the old value until `PostSysSettingsValues` wrote it | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8/step2*` |
 | M-51 | EM8 step 8 on 1.6.6.148 (drift service copied into `Custom`, method renamed in Studio): the unrelated modify is refused by the platform's pre-save check, nothing is written (RB-1 byte-identical), and the reply carries the platform text, then the N7 lead naming `WebService1` with the repair order, its notice, then `WebService2` | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8/b*` |
 | M-52 | EM8 step 8 on 1.6.6.149, same drifted `UsrWscEm8Drift3`: refused, nothing written; the reply equals the cut's expected text, and "Re-select the method ... setElement (webService.method)" appears only in `WebService2`'s notice, not in the referenced `WebService1`'s | measured 2026-11-09, stand `eng92710-web03` | `CAP/em-web03/em8-149/` |
+| M-53 | 1.6.6.150 liveness: the unknown-service refusal lists the methods; nothing created | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/0/` |
+| M-54 | EM8 step 8 on 1.6.6.150, drifted `UsrWscEm8Drift3`: refused, nothing written; the reply equals the cut's expected text character for character (elements named "Element '<name>'"; `WebService2`'s remedy "Point the element at a method ... with setElement") | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em8/` |
+| M-55 | EM6 and EM6-B on 1.6.6.150, on a `Custom` copy of the echo service with this stand's root: run completed, `OutOk` false, `OutCode` 404, `OutBody` ""; trace `UsrWscFlag_In = true`, `UsrWscIds_In = [5]`, the one-item orders list, `RequestBody = null` (equal to M-38, M-39) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em6/` |
+| M-56 | EM7 on 1.6.6.150: `ignoreErrors` true stores `IX4` and the run completes ("ok=False code=404", "ok=False code=0"); without it the run fails on the dead service with `System.Net.WebException` (equal to M-28, M-40) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em7/` |
+| M-57 | EM10, EM11, EM12 builder halves on 1.6.6.150: no `SysPackageDependency` added, cross-package notice; `USRWSCGET` stored as `UsrWscGet` with a notice, `nope` refused with the method codes (F-3); one N5 notice for the inner list only (equal to M-42..M-44) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/em10/`, `em11/`, `em12/` |
+| M-58 | KB-7 AR-1 on article kb92710 `e3a0231` with 1.6.6.150: with a free process name, one refused create gives service and method; create with the element alone, then binding by stored names; no secret. The agent typed parameters as `Text` and needed three refused modifies before re-typing them as Long text (K-3). A first run under the taken name was refused on the name before any service lookup (O-7) | measured 2026-11-10, stand `eng92710-web03` | `CAP/em-web03/r150/kb7/` |
 
 Corpus facts the expected results lean on (PS 7.8.0, 38 process schemas, 66 elements, 25 product):
 
@@ -365,12 +377,12 @@ CU-5 (removing an E2 echo endpoint) is dropped with E2 (Q17, 2026-11-03); the id
 | EM3 | route (a) **done 2026-11-03** (M-15); route (b) **done 2026-11-03** (M-25) | describe of response mappings; parity pattern B | Q6 scope (settled by route (a)); a hand-made Collection's item mappings, route (b) on `UsrWscDriftService.UsrWscOrders2` | r9 §6; r2 §7; g3 §1, §4 |
 | EM4 | **done 2026-11-03** (M-20, M-26, M-27) | slice D replace semantics (P-D1) | Q11: what a method change clears and keeps; what a service change does to bindings, dependents and `IX3` | r2 §6 |
 | EM5 | STOP gate after slice B (experimental cut); final-cut re-run with step 7 **done 2026-11-09** (M-37) | slice C start; AC5 "survives a designer re-save" | Q3 (platform sync a no-op), Q4 (rows not duplicated or rewritten), Success L8 kept; r3 open 4 (suffix overwritten by a server load?) | g1 (c) "verify once on a stand"; g4 Q3, M3 |
-| EM6 | **done 2026-11-09** in the final-cut campaign (M-38; EM6-B M-39); re-run on the claimed cut owed | AC4 run time (result params) | under E4: a builder-made element runs and Success / StatusCode / Response arrive in process parameters; the request wire bytes and the declared-Collection read are not measurable under E4 (section 3.2); the one-item list from an item mapping and the unmapped `RequestBody` null (not "") are measured by EM6-B's trace (M-39) | g3 §2, §4; r3 open 3 |
-| EM7 | designer half **done 2026-11-03** (M-28); builder half **done 2026-11-09** (M-40) | AC4; Q7 KB guidance | `ignoreErrors` true vs false on a 404 and on a failed connection | g2 (b); r3 §4.6 |
-| EM8 | current-builder half **done 2026-11-03** (M-18); service-save and designer halves **done 2026-11-03** (M-29, M-30); feature-build half **run 2026-11-09**, refused by the platform without N7 (M-41); re-measured on the claimed cut **2026-11-09**: refused, nothing written, the refusal carries N7 (M-51, M-52) | P-D3 (the notice; Q12 = A, agreed) | the latent loss on `origin/main` (measured); whether a service save evicts the process cache; the dangling references | g4 M1, M3, Q2 |
-| EM10 | designer half **done 2026-11-03** (M-17); builder half **done 2026-11-09** (M-42) | Q9 cross-package notice | designer adds a package dependency (measured), the builder does not | g5 open 2 |
-| EM11 | designer half **done 2026-11-03** (M-16); builder half **done 2026-11-09** (M-43) | Q9 canonicalisation | a case-only method mismatch empties the params and fails the run (measured) | g5 (b); g4 §5 |
-| EM12 | run half not measurable under E4 (Q17); builder half **done 2026-11-09** (M-44) | Q13 notice N5 | the inner list is dropped on 10.1.37: rests on the core unit tests and the ENG-55920 comment | g2 (c); verdict r1-C7 |
+| EM6 | **done 2026-11-09** in the final-cut campaign (M-38; EM6-B M-39); re-run on the shipping build **done 2026-11-10** (M-55) | AC4 run time (result params) | under E4: a builder-made element runs and Success / StatusCode / Response arrive in process parameters; the request wire bytes and the declared-Collection read are not measurable under E4 (section 3.2); the one-item list from an item mapping and the unmapped `RequestBody` null (not "") are measured by EM6-B's trace (M-39) | g3 §2, §4; r3 open 3 |
+| EM7 | designer half **done 2026-11-03** (M-28); builder half **done 2026-11-09** (M-40); shipping build **2026-11-10** (M-56) | AC4; Q7 KB guidance | `ignoreErrors` true vs false on a 404 and on a failed connection | g2 (b); r3 §4.6 |
+| EM8 | current-builder half **done 2026-11-03** (M-18); service-save and designer halves **done 2026-11-03** (M-29, M-30); feature-build half **run 2026-11-09**, refused by the platform without N7 (M-41); re-measured **2026-11-09** (M-51, M-52) and on the shipping build **2026-11-10** (M-54): refused, nothing written, the refusal carries N7 | P-D3 (the notice; Q12 = A, agreed) | the latent loss on `origin/main` (measured); whether a service save evicts the process cache; the dangling references | g4 M1, M3, Q2 |
+| EM10 | designer half **done 2026-11-03** (M-17); builder half **done 2026-11-09** (M-42); shipping build **2026-11-10** (M-57) | Q9 cross-package notice | designer adds a package dependency (measured), the builder does not | g5 open 2 |
+| EM11 | designer half **done 2026-11-03** (M-16); builder half **done 2026-11-09** (M-43); shipping build **2026-11-10** (M-57) | Q9 canonicalisation | a case-only method mismatch empties the params and fails the run (measured) | g5 (b); g4 §5 |
+| EM12 | run half not measurable under E4 (Q17); builder half **done 2026-11-09** (M-44); shipping build **2026-11-10** (M-57) | Q13 notice N5 | the inner list is dropped on 10.1.37: rests on the core unit tests and the ENG-55920 comment | g2 (c); verdict r1-C7 |
 
 ## 5. Measurements
 
@@ -650,7 +662,7 @@ longer need it; then CU-1.
   these captures in its parity suite (test plan TC-P-15, TC-P-16).
 
 **Measured 2026-11-09 (M-36), step 9 in the final-cut campaign:** describe returns the `webService` block and all 32
-stored parameters; `wsc-probe` appears nowhere; the stored bytes are unchanged. Re-run on the claimed cut owed (section 0).
+stored parameters; `wsc-probe` appears nowhere; the stored bytes are unchanged. Not repeated on the shipping build (section 0).
 
 ### EM3 Designer capture B: the response read into a process Collection
 
@@ -894,7 +906,7 @@ stand captures too); the shaper keeps writing the designer's suffixed form, so a
 designer save.
 
 **Measured 2026-11-09 (M-37), final-cut campaign:** steps 1-3, 6 and 7 passed (element node and BK15 rows byte-identical
-after a designer re-save and an unrelated builder modify; step 7 answers `changes: {}`); steps 4 and 5 not run. Re-run on the claimed cut owed (section 0).
+after a designer re-save and an unrelated builder modify; step 7 answers `changes: {}`); steps 4 and 5 not run. Not repeated on the shipping build (section 0).
 
 ### EM6 Run time: a builder-made process calling `UsrWscEcho`
 
@@ -938,7 +950,7 @@ RB-5/RB-6 reads). **Cleanup:** CU-1 for the process; logs stay (CU-6).
 
 **Measured 2026-11-09 (M-38), final-cut campaign:** the element runs, `OutOk` false, `OutCode` 404, `OutBody` ""; the
 `Orders` binding equals EM3 route (b). The one-item list and the unmapped `RequestBody` were then read by EM6-B's
-trace (M-39); the wire bytes stay unmeasured. Re-run on the claimed cut owed (section 0).
+trace (M-39); the wire bytes stay unmeasured. Re-run on the shipping build 2026-11-10 with the same result (M-55).
 
 ### EM6-B Final cut: a Boolean constant at run time (owner, 2026-11-05)
 
@@ -975,7 +987,7 @@ Boolean constant; until then there is no code change (package test TC-P-15 pins 
 **Measured 2026-11-09 (M-39), final-cut campaign:** by trace (oracle B) the builder's ConstValue holds
 `UsrWscFlag_In = true` at run time; an item mapping gives a one-item list; an unmapped `RequestBody` is null (not "").
 Oracle A (a flow condition on the element input) cannot be saved: the platform refuses an element input as a condition
-data source (F-1, open, a plan defect). No code change; TC-P-15's companion test pins the difference permanently. Re-run on the claimed cut owed (section 0).
+data source (F-1, open, a plan defect). No code change; TC-P-15's companion test pins the difference permanently. Re-run on the shipping build 2026-11-10 with the same trace (M-55).
 
 ### EM7 Run time: `ignoreErrors` true vs false
 
@@ -1039,7 +1051,7 @@ fails the element, and Success / StatusCode are usable in conditions with or wit
 **Artifacts:** `CAP/em7/`. **Cleanup:** CU-1 for the four processes.
 
 **Measured 2026-11-09 (M-40), builder half in the final-cut campaign:** `IX4` stored only when true; the twins run as
-the designer half (M-28). Re-run on the claimed cut owed (section 0).
+the designer half (M-28). Re-run on the shipping build 2026-11-10 (M-56).
 
 ### EM8 Modify of an unrelated element: the latent loss
 
@@ -1116,7 +1128,7 @@ element and its BK15 rows (M-30). Step 8 (feature build) stays on the claimed cu
 | 5 | describe already shows `WebService1`'s and `WebService2`'s tagged params pruned (an interpretable process is re-synced on every load; describe reads the synced view, M-21), unless the cache was filled before step 3 | g4 §2 | [traced] |
 | 6 | measured: the tagged params removed, Success/Response/StatusCode/RequestBody kept, the answer silent | M-18 | [measured 2026-11-03] |
 | 7 | the same prune as M-18 (the designer goes through the same server load and its own client sync) | g4 §3 | [traced, client parity unknown] |
-| 8 | refused by the platform's validation, run by the package's `EnsureValidForSave`, because the Formula task reads `WebService1.UsrWscB_Out`, which the load pruned; nothing is written (RB-1 byte-identical). The reply is the platform's text ("The "FormulaTask1" element has an invalid value for the parameter "Body". It references the parameter <UId> of the element 'WebService1', which that element does not have. ..."), then N7 (F-2): the lead naming `WebService1` with the repair order (restore the service or method in Studio > Web services and repeat, unless the process was saved in the Process Designer since; otherwise first remove or replace every read of the missing parameters in a request of its own, then re-point the element and bind the reads; those two in one request); `WebService1`'s notice in its refusal form, cause only, no re-select sentence (F-5); then "Another web service element that no longer resolves:" and `WebService2`'s ordinary notice, ending "Re-select the method in the Process Designer, or change it here with setElement (webService.method)."; RB-9 shows `methodResolved: false` on both elements. The exact text is the M-52 capture (`CAP/em-web03/em8-149/modify-reply.txt`) | M-41 (the refusal), F-2, F-5; Q12 = A | [measured 2026-11-09, M-51, M-52] |
+| 8 | refused by the platform's validation, run by the package's `EnsureValidForSave`, because the Formula task reads `WebService1.UsrWscB_Out`, which the load pruned; nothing is written (RB-1 byte-identical). The reply is the platform's text ("The "FormulaTask1" element has an invalid value for the parameter "Body". It references the parameter <UId> of the element 'WebService1', which that element does not have. ..."), then N7 (F-2): the lead naming `WebService1` with the repair order (restore the service or method in Studio > Web services and repeat, unless the process was saved in the Process Designer since; otherwise first remove or replace every read of the missing parameters in a request of its own, then re-point the element and bind the reads; those two in one request); `WebService1`'s notice in its refusal form, cause only, no re-select sentence (F-5); then "Another web service element that no longer resolves:" and `WebService2`'s ordinary notice, ending "Re-select the method in the Process Designer, or change it here with setElement (webService.method)."; RB-9 shows `methodResolved: false` on both elements. The exact text was the M-52 capture (`CAP/em-web03/em8-149/modify-reply.txt`). On the shipping build the expected text changed in wording only, and the reply equals it character for character (M-54, `CAP/em-web03/r150/em8/`): each element is named "Element '<name>'", and `WebService2`'s remedy reads "Point the element at a method that service '<service>' has, with setElement (webService.method); ..." | M-41 (the refusal), F-2, F-5; Q12 = A | [measured 2026-11-09, M-51, M-52; 2026-11-10, M-54] |
 
 **If not:**
 
@@ -1192,7 +1204,7 @@ the dependency. The element was later switched to `UsrWscEchoService` (M-19, M-2
 `UsrWscEm10Proc` and `UsrWscEm10Proc2`, in that order.
 
 **Measured 2026-11-09 (M-42), builder half in the final-cut campaign:** no `SysPackageDependency` row added; the answer
-carries the cross-package notice. Re-run on the claimed cut owed (section 0).
+carries the cross-package notice. Re-run on the shipping build 2026-11-10 (M-57).
 
 ### EM11 A wrong-case method name through the platform
 
@@ -1235,7 +1247,7 @@ no `UsrWscCase` method are needed any more.
 `UsrWscBk15Probe` with the Q4 probe (section 7).
 
 **Measured 2026-11-09 (M-43), builder half in the final-cut campaign:** `USRWSCGET` stored as `IX2 = "UsrWscGet"` with a
-notice; `nope` refused, nothing created; the refusal lists the method codes without captions (F-3, open). Re-run on the claimed cut owed (section 0).
+notice; `nope` refused, nothing created; the refusal lists the method codes without captions (F-3, open). Re-run on the shipping build 2026-11-10 (M-57).
 
 ### EM12 A nested array-in-array request body on 10.1.37
 
@@ -1270,7 +1282,7 @@ builds) therefore has no stand evidence from this campaign.
 
 **Artifacts:** `CAP/em12/`. **Cleanup:** CU-1 on `UsrWscEm12Builder`.
 
-**Measured 2026-11-09 (M-44), builder half in the final-cut campaign:** N5 for `UsrWscOrders_In.UsrWscLines_In` only. Re-run on the claimed cut owed (section 0).
+**Measured 2026-11-09 (M-44), builder half in the final-cut campaign:** N5 for `UsrWscOrders_In.UsrWscLines_In` only. Re-run on the shipping build 2026-11-10 (M-57).
 
 ## 6. Campaign order and time
 
@@ -1300,13 +1312,13 @@ estimate's as they stand.
 | EM3 | 0.5 / 0.75 / 1.25 | **spent** 2026-11-03 | route (b) on `UsrWscDriftService.UsrWscOrders2` |
 | EM4 | 0.25 / 0.5 / 0.75 | **spent** 2026-11-03 | four saves (S1 twice, M-27) |
 | EM5 | 0.5 / 0.75 / 1.25 | experimental cut done 2026-11-04; final cut **spent** 2026-11-09 (steps 1-3, 6, 7; steps 4, 5 not run) | install wait; the STOP decision if it fails; the designer copy of step 5 included |
-| EM6 | 0.75 / 1.25 / 2 | **spent** 2026-11-09 (with EM6-B) | one create and one run; the trace gave the element's request values |
-| EM7 | 0.25 / 0.5 / 0.75 | **spent** (builder half 2026-11-09) | two processes, two rounds of two runs (the first round had no 404, M-28) |
-| EM8 | 0.5 / 0.75 / 1.25 | **spent** (step 8 2026-11-09, M-41; re-runs M-51, M-52) | the no-reader N7 case is not measured |
+| EM6 | 0.75 / 1.25 / 2 | **spent** 2026-11-09 (with EM6-B); shipping build 2026-11-10 (M-55) | one create and one run; the trace gave the element's request values |
+| EM7 | 0.25 / 0.5 / 0.75 | **spent** (builder half 2026-11-09; shipping build 2026-11-10, M-56) | two processes, two rounds of two runs (the first round had no 404, M-28) |
+| EM8 | 0.5 / 0.75 / 1.25 | **spent** (step 8 2026-11-09, M-41; re-runs M-51, M-52; shipping build 2026-11-10, M-54) | the no-reader N7 case is not measured |
 | EM9 | 0.5 / 0.75 / 1.5 | **spent** | zip copies dominate |
-| EM10 | 0.25 / 0.5 / 1 | **spent** (builder half 2026-11-09) | the deletions are left |
-| EM11 | 0.1 / 0.25 / 0.5 | **spent** (builder half 2026-11-09) | |
-| EM12 | 0.25 / 0.4 / 0.75 | **spent** (builder half 2026-11-09) | no run |
+| EM10 | 0.25 / 0.5 / 1 | **spent** (builder half 2026-11-09; shipping build 2026-11-10, M-57) | the deletions are left |
+| EM11 | 0.1 / 0.25 / 0.5 | **spent** (builder half 2026-11-09; shipping build 2026-11-10, M-57) | |
+| EM12 | 0.25 / 0.4 / 0.75 | **spent** (builder half 2026-11-09; shipping build 2026-11-10, M-57) | no run |
 | **EM0-EM8, EM10-EM12 after batching** | **6.0 / 8.25 / 12.5** | | estimate 2.5 (EM9 spent and not counted): EM2-EM4 in one Chrome session, EM6/EM7/EM12 in one probe process |
 | cleanup | 0.75 / 0.9 / 1 | to do | about 20 deletes, one at a time; estimate 2.5 row "Stand cleanup" |
 | **with cleanup** | **6.75 / 9.15 / 13.5** | | |
@@ -1373,6 +1385,9 @@ Created on stand `eng92710-web03` (2026-11-09, lead; `CAP/em-final146/em-final14
 | EM8 | process | `UsrWscEm8Drift3` (`5f263d60-a38a-476e-98cb-e7d0101f899a`, `Custom`) | CU-1 | drifted on purpose; never run |
 | KB-7 | process | `UsrMarketplaceApp_GetPublishedVersion` (`40097d4a-c030-4732-9f10-a35af97193a9`, `Custom`) | CU-1 | created by the AR-1 agent; never run |
 | EM8 | system setting | `CurrentPackageId` | none | set and restored to `Custom`; only `ModifiedOn` moved |
+| .150 re-run | web service | `UsrWscEchoCopy` (`7f2bb9ae-02a7-42c3-af76-5e8c789b9cd5`, `Custom`) | CU-2 after the processes on it | base URI this stand's root |
+| .150 re-run | processes | `UsrWscEm6Run` (`cc4ebda2-...`), `UsrWscEm7IgnoreB` (`553cd9bf-...`), `UsrWscEm7StrictB` (`0bc3c4ae-...`), `UsrWscEm11Builder` (`8198c4d3-...`), `UsrWscEm12Builder` (`c9de3450-...`), `UsrWscAr1R150` (`cc7678b9-...`), `Custom` | CU-1 | runs `15ebed6d-...`, `7594513b-...`, `6377a9dc-...` stay (CU-6) |
+| .150 re-run | package, process | `UsrWscEm10Proc2` (`72b27eac-...`); `UsrWscEm10Builder` (`b7f890f5-...`) | CU-1, then CU-3 | never run |
 
 Planned (stand `Creatio`, superseded by the rows above where the same name appears):
 

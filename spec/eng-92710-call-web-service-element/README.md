@@ -1,9 +1,8 @@
 # ENG-92710 Call web service element: implementation plan
 
 Written 2026-11-02, updated 2026-11-03, 2026-11-05 and 2026-11-10. Status 2026-11-10: slices A-D implemented;
-final-cut campaign measured (M-36..M-52); EM re-run on the claimed cut owed (EM2 step 9, EM5, EM6, EM6-B, EM7, EM10,
-EM11, EM12: the owner decides to re-run them or to waive, because the later changes touch only the refusal texts and
-the validator; measurements section 0); no pull request open; stories in progress. Decisions changed on
+final-cut campaign measured (M-36..M-52); late-measurement gate met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); no pull request open; stories in
+progress. Decisions changed on
 2026-11-05 by the owner: Q20 is D (SOAP built like REST, notice N10, after the SOAP capture EM2 S2-S4), N7 covers
 every unresolved web service element, configured in the request or not, and a Boolean constant is checked on a stand
 on the final cut (plan section 6). The text below was written in Phase 1: research,
@@ -93,12 +92,12 @@ one GET method and a header default, the Q16 part); EM4 partial (a service chang
 Q14 read of today's describe. Later the same day: EM0, EM1 (three services), EM2, EM3 route (b), EM4's method and
 service change and EM7's designer half (measurements M-22 to M-28; decisions Q4, Q6, Q7, Q8, Q11); then EM8's
 service-save and designer halves (M-29 to M-31: a designer save of an element whose method is gone deletes all its
-params and BK15 rows, decisions Q12). EM2 S2-S4 (SOAP) on 2026-11-05 (M-32 to M-35, decisions Q20). Measured facts: M-01 to M-52. Run on 2026-11-09 in the final-cut campaign (M-36 to M-46): EM2's
+params and BK15 rows, decisions Q12). EM2 S2-S4 (SOAP) on 2026-11-05 (M-32 to M-35, decisions Q20). Measured facts: M-01 to M-58. Run on 2026-11-09 in the final-cut campaign (M-36 to M-46): EM2's
 read-back (M-36), EM5 (M-37), EM6 and EM6-B (M-38, M-39), the builder halves of EM7, EM10, EM11 and EM12 (M-40,
 M-42..M-44), EM8 step 8 (M-41) and the agent runs AR-1 / AR-2 (M-45, M-46); EM12's run half is not measurable on the
 stand (Q17). Re-measured on the claimed cut: the unknown-service refusal lists methods (M-47), so AR-1 passes with one
 refusal (M-48); EM8 step 8 is refused by the platform's validation and the refusal carries N7 with the repair order
-(M-51, M-52). Owed: the re-run of the others on the claimed cut (status line above). Q11 settled as A3 after EM4: the
+(M-51, M-52). On 2026-11-10 the late measurements were re-run on the shipping build (M-53..M-58, status line above). Q11 settled as A3 after EM4: the
 `Success` / `Response` / `StatusCode` keep their UIds (`RequestBody`, the fourth result parameter, is regenerated), and the guard refuses while anything reads a parameter of the element other than
 `Success` / `Response` / `StatusCode`. Stand objects created: processes
 `UsrWscBk15Probe`, `UsrWscEm3Probe`, `UsrProcess_3389428`, `UsrWscEm2CaptureA`, `UsrWscEm3CaptureB`,

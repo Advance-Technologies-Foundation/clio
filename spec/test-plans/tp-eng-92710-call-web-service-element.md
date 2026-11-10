@@ -20,7 +20,7 @@ not duplicated here. A row changes there first.
 status as the measurements file records it on 2026-11-05, measured facts M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, EM8's service-save and designer
 halves included. Status 2026-11-10: the final-cut campaign ran on 2026-11-09 (M-36..M-46); the unknown-service
 refusal, AR-1 and EM8 step 8 were re-measured on the claimed cut (M-47, M-48, M-51, M-52): EM8 step 8 refused with N7;
-the unknown-service refusal lists methods; AR-1 passes with one refusal. The other EM runs: re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator))
+the unknown-service refusal lists methods; AR-1 passes with one refusal. Plan gate met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator))
 **Created**: 2026-11-03
 
 `KB/` = the clio-knowledge repository root; clio paths are relative to the clio repository root. Sources outside the
@@ -387,7 +387,7 @@ into the article before the KB PR leaves draft.
 
 | Id | Task | Pass |
 |---|---|---|
-| AR-1 | "Build a process that gets the published version of a Marketplace application" (no service named) | reaches `CreatioMarketplaceApi.GetAppPublishedVersion` through at most one refusal, builds in two steps, maps by stored names; no credential in the transcript. Met 2026-11-09 (M-48): one refused create gave service and method (K-1) |
+| AR-1 | "Build a process that gets the published version of a Marketplace application" (no service named) | reaches `CreatioMarketplaceApi.GetAppPublishedVersion` through at most one refusal, builds in two steps, maps by stored names; no credential in the transcript. Met 2026-11-09 (M-48): one refused create gave service and method (K-1); re-run on the shipping build 2026-11-10 (M-58) |
 | AR-2 | "Build a process that pulls today's weather from OpenWeather" (not registered) | stops without creating a process, placeholder or Script task; tells the user what registration needs. Met 2026-11-09 (M-46) |
 
 ## Manual Jira cases (TC-01..TC-12)
@@ -414,26 +414,24 @@ owner to paste. Under E4 the run-time bullets marked "(not run)" there are not c
 
 Procedures, gates and cleanup: the measurements file. Every stand write waits for the owner's yes. The final-cut
 campaign ran on 2026-11-09 (M-36..M-46); the unknown-service refusal, AR-1 and EM8 step 8 were re-measured on the
-claimed cut (M-47, M-48, M-51, M-52). Owed: EM2 step 9, EM5, EM6, EM6-B, EM7, EM10, EM11 and EM12 were not re-run on
-the claimed cut; the owner decides: re-run on the claimed cut, or waive because the later changes touch only the
-refusal texts and the validator.
+claimed cut (M-47, M-48, M-51, M-52). The plan's late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator).
 
 | EM | Status 2026-11-10 | Feeds |
 |---|---|---|
 | EM0 | done (M-22) | PROVENANCE of TC-P-09..13; preconditions of TC-I-08/09, TC-06 |
 | EM1 | done (M-19, M-23): `UsrWscEchoService`, `UsrWscDriftService`, `UsrWscDeadService` | every TC-I; TC-P-09; manual conditions |
-| EM2 | S1 done (M-24); S2-S4 (SOAP) done (M-32..M-35); step 9 read-back done in the final-cut campaign (M-36); re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-P-05, 09, 10, 14, 15, 16; TC-U-04, 10, 11, 24, 57, 110..113; `UsrWscEm2CaptureA` for TC-I-07, TC-11 |
+| EM2 | S1 done (M-24); S2-S4 (SOAP) done (M-32..M-35); step 9 read-back done in the final-cut campaign (M-36); not repeated on the shipping build (the later changes touch only refusal texts and the validator) | TC-P-05, 09, 10, 14, 15, 16; TC-U-04, 10, 11, 24, 57, 110..113; `UsrWscEm2CaptureA` for TC-I-07, TC-11 |
 | EM3 | routes (a) and (b) done (M-15, M-25) | TC-P-05, 11; ENG-92730 "Complex / structured parameter types" input |
 | EM4 | done (M-20, M-26, M-27) | TC-P-12; TC-U-35, 36, 107 |
-| EM5 | STOP gate passed on the experimental cut (2026-11-04); final-cut campaign steps 1-3, 6, 7 passed (M-37), steps 4, 5 not run; re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-P-13; final Q4; fallback of TC-U-81..86 |
-| EM6 | done in the final-cut campaign, reduced under E4 (M-38: runs, `OutOk` false, `OutCode` 404, the declared `Orders` binding equals EM3 route (b)); the wire bytes stay unmeasured; re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-I-08; TC-K-03, 06 |
-| EM6-B | done in the final-cut campaign (M-39): by trace (oracle B) the builder's ConstValue holds `UsrWscFlag_In = true` at run time, a one-item list arrives from an item mapping, an unmapped `RequestBody` is null (not ""); oracle A (a flow condition on the element input) cannot be saved (F-1, open); no code change, TC-P-15's companion test pins the difference permanently; re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-P-15 |
-| EM7 | designer half done (M-28); builder half done in the final-cut campaign (M-40); re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-I-09; TC-K-06; TC-06 |
-| EM8 | current-builder half done (M-18); service-save and designer halves done (M-29..M-31); step 8 re-measured on the claimed cut: the unrelated modify is refused by the pre-save validation, nothing is written, and the refusal carries N7 with the repair order (M-41, M-51, M-52); the no-reader case is not measured | TC-U-53, 72, 115, 124; TC-K-05; TC-12 |
+| EM5 | STOP gate passed on the experimental cut (2026-11-04); final-cut campaign steps 1-3, 6, 7 passed (M-37), steps 4, 5 not run; not repeated on the shipping build (the later changes touch only refusal texts and the validator) | TC-P-13; final Q4; fallback of TC-U-81..86 |
+| EM6 | done in the final-cut campaign, reduced under E4 (M-38: runs, `OutOk` false, `OutCode` 404, the declared `Orders` binding equals EM3 route (b)); the wire bytes stay unmeasured; re-run on the shipping build 2026-11-10 (M-55) | TC-I-08; TC-K-03, 06 |
+| EM6-B | done in the final-cut campaign (M-39): by trace (oracle B) the builder's ConstValue holds `UsrWscFlag_In = true` at run time, a one-item list arrives from an item mapping, an unmapped `RequestBody` is null (not ""); oracle A (a flow condition on the element input) cannot be saved (F-1, open); no code change, TC-P-15's companion test pins the difference permanently; re-run on the shipping build 2026-11-10 with the same trace (M-55) | TC-P-15 |
+| EM7 | designer half done (M-28); builder half done in the final-cut campaign (M-40); re-run on the shipping build 2026-11-10 (M-56) | TC-I-09; TC-K-06; TC-06 |
+| EM8 | current-builder half done (M-18); service-save and designer halves done (M-29..M-31); step 8 re-measured on the claimed cut: the unrelated modify is refused by the pre-save validation, nothing is written, and the refusal carries N7 with the repair order (M-41, M-51, M-52); re-run on the shipping build 2026-11-10 (M-54); the no-reader case is not measured | TC-U-53, 72, 115, 124; TC-K-05; TC-12 |
 | EM9 | done (local, M-14) | TC-U-29; TC-U-49, 50, 51, 76 dropped |
-| EM10 | designer half done (M-17); builder half done in the final-cut campaign (M-42: no dependency added, notice given); re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-U-23 |
-| EM11 | designer half done (M-16); builder half done in the final-cut campaign (M-43: canonical `IX2` with a notice; the unknown-method refusal lists codes without captions, F-3, open); re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-U-19, 83, 102; TC-I-04 |
-| EM12 | run half not measurable under E4; builder half done in the final-cut campaign (M-44); re-run on the claimed cut owed (owner decides: re-run, or waive because the later changes touch only the refusal texts and the validator) | TC-U-52, TC-I-12, TC-K-06 |
+| EM10 | designer half done (M-17); builder half done in the final-cut campaign (M-42: no dependency added, notice given); re-run on the shipping build 2026-11-10 (M-57) | TC-U-23 |
+| EM11 | designer half done (M-16); builder half done in the final-cut campaign (M-43: canonical `IX2` with a notice; the unknown-method refusal lists codes without captions, F-3, open); re-run on the shipping build 2026-11-10 (M-57) | TC-U-19, 83, 102; TC-I-04 |
+| EM12 | run half not measurable under E4; builder half done in the final-cut campaign (M-44); re-run on the shipping build 2026-11-10 (M-57) | TC-U-52, TC-I-12, TC-K-06 |
 
 ## Targeted test filters
 
