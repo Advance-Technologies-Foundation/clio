@@ -1,16 +1,16 @@
-<!-- Written to ENG-92710 "Call web service element" description on 2026-11-03 after the owner's yes; read back the same day.  AC6 and AC8 rewritten at gate 1 on 2026-11-03 after the owner's yes; read back the same day. -->
+<!-- Written to ENG-92710 "Call web service element" description on 2026-11-03 after the owner's yes; read back the same day.  AC6 and AC8 rewritten at gate 1 on 2026-11-03 after the owner's yes; read back the same day. The 2026-11-05 SOAP lines (Scope, Not in scope) follow decisions Q20 D; written to the issue on 2026-11-05 after the owner's yes, read back the same day (only those two lines changed). -->
 
 **Goal:** Support the **Call web service** element: call a web service registered in Studio > Web services, pass a request, receive the response. The element is the core `ProcessSchemaWebService` (manager item `652b598d-cdd5-49d5-a86d-aafac88213f3`), not a user task; the legacy `WebServiceUserTask` is an unused SOAP stub and is not built.
 
 **Status:** Not implemented. Plan agreed with the owner on 2026-11-03 (20 decisions).
 
-**Scope:** select the registered service and method; request parameters, including a composite request body; map inputs; read the response into parameters, including a composite response read into a declared Collection (up to two levels). REST only.
+**Scope:** select the registered service and method; request parameters, including a composite request body; map inputs; read the response into parameters, including a composite response read into a declared Collection (up to two levels). REST and SOAP services; a SOAP service is built by the REST rules, with a notice.
 
 **Not in scope:**
 
 * Registering a web service (base URI, methods, authentication): ENG-105475 "Register a REST web service through the AI Toolkit". The Process Designer also works only with registered services.
 * Mirroring a web-service output into a new parameter, scalar-array (ObjectList) parameters, three or more nesting levels and the designer's "Create from element" grouping: ENG-92730 "Complex / structured parameter types".
-* SOAP services and multi-instance Call web service elements: refused with a message.
+* Multi-instance Call web service elements: refused with a message.
 
 **Technical:** the builder generates the element's parameters the way the Process Designer does (nested items always) and writes the designer's mapping rows; server serialization is verified against designer-built captures; values are mapped through the existing mapping surface (Task 6); composite types beyond two levels are ENG-92730 (this replaces the earlier reference to Task 5).
 
