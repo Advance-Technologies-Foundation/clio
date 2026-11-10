@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -287,7 +288,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but named in the read-back warning.")]
+	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but listed as ignored read-backs.")]
 	public void Check_Should_WarnButNotRefuse_FileProcessingDescribeOnlyFields() {
 		// Arrange
 		string element = """
@@ -303,7 +304,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Error.Should().BeNull(because: "describe-only members are derived and harmless to ignore");
-		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
 			.Which.Should().Contain("fileProcessing.actionStored", because: "the block's describe-only flag is named")
 			.And.Contain("fileProcessing.outputs", because: "the derived outputs are named")
 			.And.Contain("fileProcessing.issues", because: "the derived issues are named")
@@ -339,7 +340,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("Described Generated report and Process parameter elements fed back keep building: report.caption, report.convertToPdf, bindingLevels and the display of files are named in the read-back warning, never refused.")]
+	[Description("Described Generated report and Process parameter elements fed back keep building: report.caption, report.convertToPdf, bindingLevels and the display of files are listed as ignored read-backs, never refused.")]
 	public void Check_Should_WarnButNotRefuse_ReportAndFilesDescribeOnlyFields() {
 		// Arrange
 		string elements = """
@@ -359,7 +360,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Error.Should().BeNull(because: "the two variants' describe-only members are derived and harmless to ignore");
-		result.Warnings.Should().ContainSingle(
+		result.IgnoredReadBacks.Should().ContainSingle(
 				because: "the ignored fields of both elements are reported in one warning, and their seven stay below the cap that would shorten it")
 			.Which.Should().NotContain("more)", because: "every ignored field is listed, none folded into a count")
 			.And.Contain("fileProcessing.actionStored", because: "the block's describe-only flag is named")
@@ -439,7 +440,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A described element fed back keeps building: the derived read-back fields describe-business-process emits (position, uid, sourceSchemaUId, outputs, ...) are not refused, but they are named in a warning rather than dropped in silence.")]
+	[Description("A described element fed back keeps building: the derived read-back fields describe-business-process emits (position, uid, sourceSchemaUId, outputs, ...) are not refused but listed as ignored read-backs.")]
 	public void Check_Should_WarnButNotRefuse_DescribeReadBackFields() {
 		// Arrange
 		string element = """
@@ -453,7 +454,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Error.Should().BeNull(because: "read-back fields are derived and harmless to ignore");
-		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
 			.Which.Should().Contain("readData.sourceSchemaUId", because: "the block's ignored field is named")
 			.And.Contain("position", because: "the element's ignored field is named")
 			.And.Contain("readData.outputs", because: "every ignored field is named");
@@ -611,7 +612,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A described attachment entry fed back verbatim - the modify recipe is describe, edit the list, send it back - keeps building: its slot, bindingLevels and issues are named in the read-back warning, never refused.")]
+	[Description("A described attachment entry fed back verbatim - the modify recipe is describe, edit the list, send it back - keeps building: its slot, bindingLevels and issues are listed as ignored read-backs, never refused.")]
 	public void Check_Should_TolerateTheReadBackFields_OfADescribedEntry() {
 		// Arrange
 		string operations = """
@@ -626,7 +627,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
-		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
 			.Which.Should().Contain("email.attachments[0].slot", because: "the stored row name is describe-only")
 			.And.Contain("email.attachments[0].bindingLevels", because: "the bound levels are describe-only")
 			.And.Contain("email.attachments[1].issues", because: "the issues are describe-only");
@@ -694,6 +695,8 @@ public sealed class ProcessBlockKeyCheckTests {
 			because: "the refusal names the member and the value sent");
 		create.Error.Should().Contain("leave timeoutSeconds out to keep the stored timeout",
 			because: "the refusal carries the remedy that keeps the stored value");
+		create.Error.Should().Contain("the server refuses more than 2147483",
+			because: "the whole-seconds bound is the server's, which clio does not check, so the text says whose it is");
 		modify.Error.Should().Contain("'elementUpdate.webService.timeoutSeconds'",
 			because: "a setElement sending only the timeout is checked the same way");
 	}
@@ -701,7 +704,8 @@ public sealed class ProcessBlockKeyCheckTests {
 	[TestCase("30")]
 	[TestCase("0")]
 	[TestCase("7.0")]
-	[Description("A whole-seconds webService.timeoutSeconds passes the check - 0 included, which clears a stored timeout, and 7.0, the spelling describe uses for a whole timeout, which the server reads.")]
+	[TestCase("2147484")]
+	[Description("A whole-seconds webService.timeoutSeconds passes the check - 0 included, which clears a stored timeout, 7.0, the spelling describe uses for a whole timeout, which the server reads, and a whole value above the server's own 2147483-second maximum, which the server refuses naming that bound.")]
 	public void Check_Should_AcceptAWholeSecondsTimeout(string timeout) {
 		// Arrange
 		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
@@ -714,7 +718,7 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("A described webService block fed back unchanged - the replay rule describe states (Q14), service being the name string on both sides - keeps building: serviceUId, serviceResolved, methodResolved, issues and parameters are describe-only, so they are named in the read-back warning, never refused.")]
+	[Description("A described webService block fed back unchanged - the replay rule describe states (Q14), service being the name string on both sides - keeps building: serviceUId, serviceResolved, methodResolved, issues and parameters are describe-only, so they are listed as ignored read-backs, never refused.")]
 	public void Check_Should_TolerateTheReadBackFields_OfADescribedBlock() {
 		// Arrange
 		string operations = """
@@ -729,12 +733,31 @@ public sealed class ProcessBlockKeyCheckTests {
 
 		// Assert
 		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
-		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+		result.IgnoredReadBacks.Should().ContainSingle(because: "the ignored fields are listed in one summary line")
 			.Which.Should().Contain("webService.serviceUId", because: "the stored service UId is describe-only")
 			.And.Contain("webService.serviceResolved", because: "the service flag is describe-only")
 			.And.Contain("webService.methodResolved", because: "the method flag is describe-only")
 			.And.Contain("webService.issues", because: "the issues are describe-only")
 			.And.Contain("webService.parameters", because: "the stored parameter tree is describe-only");
+	}
+
+	[Test]
+	[Description("Enforcing a described webService block fed back unchanged sends it on without a refusal and without a warning of clio's own: the server the request reaches ignores the same describe-only members and names them in its own warning, so one describe -> setElement round trip carries one warning, not two.")]
+	public void Enforce_Should_PassADescribedBlock_WithoutAWarningOfItsOwn() {
+		// Arrange
+		JsonNode operations = JsonNode.Parse("""
+			[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": {
+			    "service": "UsrWscEchoService", "serviceUId": "2ac0b905-591d-4623-a8bf-990846cea7d3", "method": "UsrWscEcho",
+			    "serviceResolved": true, "methodResolved": true, "issues": [] } } } ]
+			""");
+
+		// Act
+		Action act = () => ProcessBlockKeyCheck.Enforce(operations);
+
+		// Assert
+		act.Should().NotThrow(because: "describe-only members are tolerated, never refused");
+		ProcessBlockKeyCheck.Check(operations).IgnoredReadBacks.Should().ContainSingle(
+			because: "the check still knows which members it tolerated, though Enforce no longer writes them anywhere");
 	}
 
 	[Test]

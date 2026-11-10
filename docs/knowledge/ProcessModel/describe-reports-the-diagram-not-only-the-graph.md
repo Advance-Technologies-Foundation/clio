@@ -28,6 +28,7 @@ designer and looking, which is the situation ENG-95890/ENG-98448 exist to end.
 **One trap** — a field an agent can SEE is a field it will try to set. The tool description and the
 prompt both say the three are read-only for that reason. Echoed back, they never change the diagram, but how
 the echo ends depends on where it lands: in a `setElement` elementUpdate clio's `ProcessBlockKeyCheck` refuses
-`position` / `size` before anything is sent; in a create element they are ignored with clio's warning; a payload
-that reaches CrtProcessBuilder 1.6.6.136+ has them ignored and named in its "Read-only fields copied from describe
-were ignored" warning (ENG-95244), where an older package ignored them in silence.
+`position` / `size` before anything is sent; in a create element clio lets them through without a word of its own;
+a payload that reaches CrtProcessBuilder 1.6.6.136+ has them ignored and named in its "Read-only fields copied from
+describe were ignored" warning (ENG-95244), where an older package ignored them in silence. That server warning is
+the only one: clio's own read-back warning was dropped once every caller required a package that warns.
