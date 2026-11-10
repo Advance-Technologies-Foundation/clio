@@ -610,8 +610,20 @@ public sealed class PageBusinessRuleServiceTests {
 		// Assert
 		results.Should().ContainSingle().Which.Success.Should().BeTrue(
 			because: "the stepper's active-step attribute is a valid condition attribute on update too");
-		saved!.MetaData.Should().Contain("RequestStepper_ActiveStep",
+		using JsonDocument metaData = JsonDocument.Parse(saved!.MetaData);
+		JsonElement condition = metaData.RootElement.GetProperty("rules")[0].GetProperty("cases")[0]
+			.GetProperty("condition").GetProperty("conditions")[0];
+		JsonElement left = condition.GetProperty("leftExpression");
+		left.GetProperty("type").GetString().Should().Be("AttributeValue",
+			because: "the condition addresses an attribute");
+		left.GetProperty("path").GetString().Should().Be("RequestStepper_ActiveStep",
 			because: "the persisted rule keeps the active-step condition path");
+		left.GetProperty("dataValueTypeName").GetString().Should().Be("Text",
+			because: "the active step is addressed by step name");
+		left.TryGetProperty("scopeId", out JsonElement scope).Should().BeFalse(
+			because: "the active-step attribute is unscoped");
+		condition.GetProperty("rightExpression").GetProperty("dataValueTypeName").GetString().Should().Be("Text",
+			because: "the constant takes its type from the left operand");
 	}
 
 	[Test]
