@@ -91,8 +91,9 @@ compared under; "the oracle rule" below means WSCR) ·
   M-47), F-5 (the referenced element's notice ended with the re-select advice right after the lead said re-pointing
   alone does not repair; the refusal form drops it, M-52), K-2 (the first AR-1 agent typed the four inputs as `Text`
   (50 characters) while the element inputs are `MaxSizeText`; on the updated article AR-1 typed every new parameter
-  with `typeFromElement`, M-48). Open, Low / doc items unless the owner decides otherwise: F-1 (EM6-B oracle A cannot be saved: the platform
-  refuses an element input as a flow-condition data source; a plan defect, M-39), F-3 (the unknown-method refusal lists
+  with `typeFromElement`, M-48). Resolved in the docs: F-1 (EM6-B oracle A cannot be saved: the platform refuses an element input as a
+  flow-condition data source; the plan defect is corrected in the EM6-B block, M-39). Open, Low items, deferred to a
+  follow-up pull request after these merge (owner 2026-11-10): F-3 (the unknown-method refusal lists
   method codes without captions, M-43), F-4 (one describe -> `setElement` round trip gives two warnings about the same
   ignored read-back members, one from clio and one from the package; final-cut run report, EM5 step 7). Notes, unchanged: O-1 (the EM5 designer
   save added the dependency `Custom -> UsrWscTestFixtures`, M-37), O-2 (`versionReadWarning` once), O-3 (the fixtures
@@ -969,26 +970,28 @@ parameter, so the corpus cannot answer it [measured: corpus]; under EP option E4
 request bytes are not read directly.
 
 **Steps:**
-1. (A) Builder create `UsrWscEm6Bool`: element `WebService1` on `UsrWscEchoService.UsrWscEcho` with
-   `UsrWscFlag_In` <- `value: "true"`; after it a conditional flow on `[#WebService1.UsrWscFlag_In#] == true` to a
-   marker element, and a default flow to another marker element. RB-1: `UsrWscFlag_In` `L8` is `{GS1: 1, GS2: "true"}`.
-2. (B) Tracing on for the run's user (`IsTracing`) in the same session.
+1. Builder create `UsrWscEm6Bool`: element `WebService1` on `UsrWscEchoService.UsrWscEcho` with
+   `UsrWscFlag_In` <- `value: "true"`. RB-1: `UsrWscFlag_In` `L8` is `{GS1: 1, GS2: "true"}`.
+2. Tracing on for the run's user (`IsTracing`) in the same session.
 3. Run once (RB-5, RB-6).
 
-**Oracle:**
-- A: `SysProcessElementLog` shows which marker completed: the conditional one means the element held `true` at run time.
-- B: the trace shows the element's parameter values and, if it records one, the request body. If the trace shows no
-  body, the value-to-JSON step (`JsonRequestBodyRenderer`) is closed by a source trace and labelled [traced].
+**Oracle:** the trace (`SysPrcElementTraceLog`) shows the element's parameter values and, if it records one, the
+request body. If the trace shows no body, the value-to-JSON step (`JsonRequestBodyRenderer`) is closed by a source
+trace and labelled [traced].
 
-**If not:** only if A shows a value other than `true` do web service elements write the designer's Script form for a
-Boolean constant; until then there is no code change (package test TC-P-15 pins the one-binding difference).
+A flow condition on the element INPUT (`[#WebService1.UsrWscFlag_In#] == true`, the first plan's oracle A) is not an
+oracle: the platform's pre-save validation refuses an element input as a condition data source (M-39, finding F-1,
+resolved 2026-11-10 by this correction).
+
+**If not:** only if the trace shows a value other than `true` do web service elements write the designer's Script form
+for a Boolean constant; until then there is no code change (package test TC-P-15 pins the one-binding difference).
 
 **Artifacts:** `CAP/em6b/`. **Cleanup:** CU-1 for the process; tracing switched back off; logs stay (CU-6).
 
 **Measured 2026-11-09 (M-39), final-cut campaign:** by trace (oracle B) the builder's ConstValue holds
 `UsrWscFlag_In = true` at run time; an item mapping gives a one-item list; an unmapped `RequestBody` is null (not "").
 Oracle A (a flow condition on the element input) cannot be saved: the platform refuses an element input as a condition
-data source (F-1, open, a plan defect). No code change; TC-P-15's companion test pins the difference permanently. Re-run on the shipping build 2026-11-10 with the same trace (M-55).
+data source (F-1, resolved 2026-11-10: the oracle was dropped from the steps above). No code change; TC-P-15's companion test pins the difference permanently. Re-run on the shipping build 2026-11-10 with the same trace (M-55).
 
 ### EM7 Run time: `ignoreErrors` true vs false
 

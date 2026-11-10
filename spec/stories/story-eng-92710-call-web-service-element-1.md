@@ -304,7 +304,7 @@ the unknown-service refusal now lists each registered service's methods, bounded
 M-47; TC-U-125..127, TC-U-18 updated), and an ambiguous match lists the matching names with their methods, no caption
 (TC-U-17 updated). With it AR-1 passes: one refused create gives the agent service and method, and it types the new
 parameters with `typeFromElement` (M-48; K-2 resolved); AR-2 passes (M-46). EM8 step 8, the refused modify that now
-carries N7 (findings F-2 and F-5, resolved), is story 2's. Still open as Low / doc items: F-1 (EM6-B oracle A cannot be
-saved, a plan defect), F-3 (the unknown-method refusal lists codes without captions), F-4 (one describe -> `setElement`
+carries N7 (findings F-2 and F-5, resolved), is story 2's. F-1 (EM6-B oracle A cannot be saved, a plan defect) is corrected in
+the plan. Still open as Low items, for a follow-up pull request: F-3 (the unknown-method refusal lists codes without captions), F-4 (one describe -> `setElement`
 round trip warns twice about the same ignored read-back members). The pull requests are open and the status is `review`; no
 Definition of Done box is ticked until they merge.

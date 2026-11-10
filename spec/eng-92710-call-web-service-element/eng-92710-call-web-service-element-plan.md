@@ -246,7 +246,7 @@ x64 NativeAOT publish commands with their results; the re-measured budgets; the 
 - Final-cut check (with the EM2 / EM5 re-run): the Boolean constant, measurements EM6-B (decisions, "Boolean constant at
   run time"; owner 2026-11-05: A + B in one run). Measured 2026-11-09 (M-39): by trace (oracle B) the builder's
   ConstValue holds `UsrWscFlag_In = true` at run time; oracle A (a flow condition on the element input) cannot be saved
-  (F-1, open); no code change, and the TC-P-15 companion test pins the difference permanently.
+  (F-1, resolved 2026-11-10: the oracle is dropped from the EM6-B steps); no code change, and the TC-P-15 companion test pins the difference permanently.
 - Every install on a registered test stand needs the owner's explicit yes: it restarts the site for every user. A reviewer
   whose clio bundles a cut newer than the stand is refused by convergence until the stand is brought up.
 - Merge order (human merges only): BMAD docs PR first; then package (tag on the remote) -> knowledge (publishes) ->

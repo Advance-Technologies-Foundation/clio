@@ -205,6 +205,6 @@ the referenced element first under the repair-order lead and the other drifted e
 (finding F-2, resolved; M-51; re-run on the shipping build 2026-11-10, M-54). The referenced element's notice no longer ends with the re-select advice that the lead
 rules out (finding F-5, resolved; M-52, whose reply equals the expected text). Package tests TC-U-115..124. From story
 1's side, the unknown-service refusal lists methods (K-1) and AR-1 passes with one refusal (M-47, M-48). Not measured:
-the no-reader case of EM8 (the end-of-request N7 on a saved modify). Still open as Low / doc items: F-1, F-3, F-4
+the no-reader case of EM8 (the end-of-request N7 on a saved modify). F-1 is corrected in the plan; still open as Low items, for a follow-up pull request: F-3, F-4
 (measurements section 0). The pull requests are open and the status is `review`; no Definition of Done box is ticked until they
 merge.
