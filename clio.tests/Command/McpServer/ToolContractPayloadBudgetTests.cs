@@ -340,7 +340,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 34979, describe 35006 - 73, 93 and 66 bytes of headroom. Each contract's pointer to process-web-service waits for
 	// the knowledge generation that publishes it (curated-knowledge-names.json); with the three pointers in place,
 	// measured on the branch, create 35053, modify 35026, describe 35060 - 19, 46 and 12 bytes of headroom.
-	// After merging master (ENG-105549 above) and raising the floor to 1.6.6.149 - each of create's and modify's
+	// After merging master (ENG-105549 above) and raising the floor to 1.6.6.149 (later 1.6.6.150, the same length) - each of create's and modify's
 	// 'this clio requires' clauses now starts its list with 'webService, ' (+12 bytes) - re-measured by lowering the
 	// ceiling: create 35034, modify 34973, describe 35006 - 38, 99 and 66 bytes of headroom. With the three pointers
 	// applied on top, create 35088, modify 35020, describe 35060: create's pointer no longer fits by 16 bytes, so it has
@@ -374,7 +374,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// additions carry no safety marker, so no short form keeps them - 168 bytes under this guard.
 	//
 	// ENG-92710 (2026-11-04) re-measured by lowering this guard: 18832 bytes with its description text, which carries no
-	// safety marker; "webService" in the create call shape's block list landed with the 1.6.6.149 rebundle that declares
+	// safety marker; "webService" in the create call shape's block list landed with the rebundle that declares
 	// the block: re-measured then, 18845 bytes - 155 under this guard.
 	private const int MaxInlineWireReplyBytes = 19_000;
 
