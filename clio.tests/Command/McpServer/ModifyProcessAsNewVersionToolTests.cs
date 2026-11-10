@@ -313,8 +313,8 @@ public class ModifyProcessAsNewVersionToolTests {
 			because: "the contract must state the refusal before the server does");
 		description.Should().Contain("send it to modify-business-process",
 			because: "the refusal is only useful with the route that does switch tracing");
-		description.Should().Contain("CrtProcessBuilder 1.6.6.140 or newer",
-			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal)");
+		description.Should().Contain("CrtProcessBuilder 1.6.6.150 or newer",
+			because: "the stated floor must match the [RequiresPackage] literal (raised by setTracing, then by the File types, then by the fileProcessing element and its report and files groups, then by itemProperties, then by email.attachments, then by the tightened unscoped-files refusal, then by the webService block)");
 	}
 
 	private sealed class FakeCommand : ModifyProcessAsNewVersionCommand {

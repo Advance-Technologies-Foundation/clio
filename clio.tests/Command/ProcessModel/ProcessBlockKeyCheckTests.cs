@@ -633,6 +633,111 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
+	[Description("A Call web service element carrying a valid webService block - service, method, timeoutSeconds and ignoreErrors - passes clean on every route the block travels: a create element, an addElement element and a setElement update, a partial one included (Q2), so clio does not refuse the block before the server reads it.")]
+	public void Check_Should_AcceptTheWebServiceBlock_OnEveryRoute() {
+		// Arrange
+		const string block = """{ "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": 30, "ignoreErrors": true }""";
+		string element = $$"""{ "name": "WS1", "type": "webService", "webService": {{block}} }""";
+		string operations = $$"""
+			[ { "op": "addElement", "element": { "name": "WS2", "type": "webService", "webService": {{block}} } },
+			  { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": {{block}} } },
+			  { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "method": "UsrWscGet", "timeoutSeconds": 0 } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "every key of the block is a WebServiceDescriptor member");
+		modify.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean,
+			because: "addElement and setElement carry the same block, and a setElement may send only the members it changes");
+	}
+
+	[TestCase("multiInstanceOptions")]
+	[TestCase("timeout")]
+	[TestCase("Method")]
+	[Description("An unknown key in the webService block is refused before sending, naming the element, the key path and the block's accepted keys - webService.multiInstanceOptions included, because a Call web service element is never multi-instance on this route (Q20) - instead of the server refusing it, or an older one dropping it and saving a different call than the caller described.")]
+	public void Check_Should_RefuseAnUnknownWebServiceKey_NamingItsPath(string key) {
+		// Arrange
+		string element = $$"""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "{{key}}": 1 } }""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckElements(element);
+
+		// Assert
+		result.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		result.Error.Should().Contain("'WS1'", because: "the refusal names the element");
+		result.Error.Should().Contain($"'webService.{key}'", because: "the refusal names the key path inside the block");
+		result.Error.Should().Contain("Accepted webService keys: service, method, timeoutSeconds, ignoreErrors",
+			because: "the refusal says what the block accepts");
+	}
+
+	[TestCase("1.5")]
+	[TestCase("0.4")]
+	[TestCase("3000000000")]
+	[TestCase("1e30")]
+	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, or a number beyond Int32, one too large even for decimal included - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
+	public void Check_Should_RefuseATimeoutThatIsNotWholeSeconds(string timeout) {
+		// Arrange
+		string element = $$"""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": {{timeout}} } }""";
+		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult create = CheckElements(element);
+		ProcessBlockKeyCheckResult modify = CheckOperations(operations);
+
+		// Assert
+		create.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
+		create.Error.Should().Contain($"'webService.timeoutSeconds' is {timeout}",
+			because: "the refusal names the member and the value sent");
+		create.Error.Should().Contain("leave timeoutSeconds out to keep the stored timeout",
+			because: "the refusal carries the remedy that keeps the stored value");
+		modify.Error.Should().Contain("'elementUpdate.webService.timeoutSeconds'",
+			because: "a setElement sending only the timeout is checked the same way");
+	}
+
+	[TestCase("30")]
+	[TestCase("0")]
+	[TestCase("7.0")]
+	[Description("A whole-seconds webService.timeoutSeconds passes the check - 0 included, which clears a stored timeout, and 7.0, the spelling describe uses for a whole timeout, which the server reads.")]
+	public void Check_Should_AcceptAWholeSecondsTimeout(string timeout) {
+		// Arrange
+		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Should().BeSameAs(ProcessBlockKeyCheckResult.Clean, because: "a whole number of seconds is what the server reads");
+	}
+
+	[Test]
+	[Description("A described webService block fed back unchanged - the replay rule describe states (Q14), service being the name string on both sides - keeps building: serviceUId, serviceResolved, methodResolved, issues and parameters are describe-only, so they are named in the read-back warning, never refused.")]
+	public void Check_Should_TolerateTheReadBackFields_OfADescribedBlock() {
+		// Arrange
+		string operations = """
+			[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": {
+			    "service": "UsrWscEchoService", "serviceUId": "2ac0b905-591d-4623-a8bf-990846cea7d3", "method": "UsrWscEcho",
+			    "timeoutSeconds": 30, "ignoreErrors": true, "serviceResolved": true, "methodResolved": true, "issues": [],
+			    "parameters": [ { "name": "UsrWscText_In", "tag": "UsrWscText", "direction": "in", "type": "MaxSizeText", "bound": true } ] } } } ]
+			""";
+
+		// Act
+		ProcessBlockKeyCheckResult result = CheckOperations(operations);
+
+		// Assert
+		result.Error.Should().BeNull(because: "the read-back members are derived on describe and harmless to ignore");
+		result.Warnings.Should().ContainSingle(because: "the ignored fields are reported in one warning")
+			.Which.Should().Contain("webService.serviceUId", because: "the stored service UId is describe-only")
+			.And.Contain("webService.serviceResolved", because: "the service flag is describe-only")
+			.And.Contain("webService.methodResolved", because: "the method flag is describe-only")
+			.And.Contain("webService.issues", because: "the issues are describe-only")
+			.And.Contain("webService.parameters", because: "the stored parameter tree is describe-only");
+	}
+
+	[Test]
 	[Description("Every key set mirrors its server request contract in the bundled CrtProcessBuilder exactly, so a new server member is never refused here by a stale list and a key the server lacks is never accepted.")]
 	public void KeySets_Should_EqualTheMembersOfTheBundledServerContracts() {
 		// Arrange
