@@ -507,6 +507,12 @@ Use `clio help` for the terminal overview and `clio <command> --help` for comman
 <a id="related-page-addon-get"></a>
 <a id="get-related-pages"></a>
 - [`get-related-page-addon`](docs/commands/get-related-page-addon.md) - Read an object's current RelatedPage configuration (bound default/add pages per role and type), `related-page-addon-get`, `get-related-pages`
+<a id="get-page-modal-size"></a>
+<a id="page-modal-size-get"></a>
+- [`get-page-modal-size`](docs/commands/get-page-modal-size.md) - Read the modal window size of a Freedom UI modal page (AppearanceSettings add-on), `page-modal-size-get`
+<a id="set-page-modal-size"></a>
+<a id="page-modal-size"></a>
+- [`set-page-modal-size`](docs/commands/set-page-modal-size.md) - Set the modal window size of a Freedom UI modal page (AppearanceSettings add-on), `page-modal-size`
 <a id="run"></a>
 <a id="run-scenario"></a>
 <a id="scenario"></a>

@@ -101,7 +101,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// Measured 48990 bytes with them registered (350 over 48640); next 256-byte step is 49152 (192).
 	// Re-pinned for ENG-104665: upload-file is one more long-tail tool. Measured 49214 bytes with it registered
 	// (62 over 49152); next 256-byte step is 49408 (193).
-	private const int MaxCompactIndexSerializedBytes = 193 * 256;
+	// Re-pinned for ENG-105681: get-page-modal-size and set-page-modal-size are two more long-tail tools. Measured
+	// 49486 bytes with them registered (78 over 49408), after shortening their first sentences so the line index
+	// below still fits; next 256-byte step is 49664 (194).
+	private const int MaxCompactIndexSerializedBytes = 194 * 256;
 
 	// Line-index ceiling (ENG-102796). The default no-names reply renders each index entry as ONE line,
 	// "name (R)(D) [aka ...]: purpose" with the purpose cut to 48 characters, plus a legend - because the object
