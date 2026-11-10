@@ -15,6 +15,16 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 	private const string PageParametersScopeName = "PageParameters";
 
+	// Attributes a view-config component generates at runtime. The page body never declares them, so
+	// they are absent from the view-model attributes; each rule exposes "<component name><suffix>" as an
+	// unscoped attribute of the given type for every named component of that type. Add a row to support
+	// another component that behaves the same way.
+	private static readonly ComponentRuntimeAttribute[] ComponentRuntimeAttributes = [
+		new("crt.Stepper", "_ActiveStep", "Text") // the open step's name, compared with a step name
+	];
+
+	private sealed record ComponentRuntimeAttribute(string ComponentType, string Suffix, string DataValueTypeName);
+
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
 
@@ -61,6 +71,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
+		AddComponentRuntimeAttributes(result, bundle);
 		return result;
 	}
 
@@ -81,6 +92,23 @@ internal sealed class PageBusinessRuleAttributeProvider(
 				dataValueTypeName,
 				referenceSchemaName,
 				PageParametersScopeName);
+		}
+	}
+
+	private static void AddComponentRuntimeAttributes(
+		IDictionary<string, BusinessRuleAttributeDescriptor> result,
+		PageBundleInfo bundle) {
+		foreach ((string? componentType, string componentName) in ViewConfigTraversal.EnumerateNamedElements(bundle.ViewConfig)) {
+			foreach (ComponentRuntimeAttribute rule in ComponentRuntimeAttributes) {
+				if (!string.Equals(rule.ComponentType, componentType, StringComparison.Ordinal)) {
+					continue;
+				}
+				// A declared attribute of the same name keeps its own scoped, typed descriptor.
+				string attributeName = componentName + rule.Suffix;
+				result.TryAdd(attributeName, new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null) {
+					IsRuntimeGenerated = true
+				});
+			}
 		}
 	}
 

@@ -193,7 +193,17 @@ internal sealed class PackageTargetResolver(
 	}
 
 	private static bool IsLocked(PackageRowDto row) {
-		return row.InstallType is not null && row.InstallType != EditableInstallType;
+		return IsLockedInstallType(row.InstallType) == true;
+	}
+
+	/// <summary>
+	/// Whether a package with this <c>SysPackage.InstallType</c> is locked against design-time writes: any value
+	/// other than the editable one (0). This is the flag cliogate <c>LockPackages</c> / <c>UnlockPackages</c> set.
+	/// </summary>
+	/// <param name="installType">The package's <c>InstallType</c>; null when the row did not carry it.</param>
+	/// <returns>Whether the package is locked, or null when <paramref name="installType"/> is unknown.</returns>
+	internal static bool? IsLockedInstallType(int? installType) {
+		return installType is null ? null : installType != EditableInstallType;
 	}
 
 	private static string DescribeUnavailable(Exception exception) {
