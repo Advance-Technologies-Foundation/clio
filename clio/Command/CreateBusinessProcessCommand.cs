@@ -294,13 +294,13 @@ namespace Clio.Command;
 // answers success. A server-side change with a security character takes a literal rather than being left to
 // convergence, which warns and proceeds when it cannot read the archive. 1.6.6.138 and 1.6.6.139 were cuts of this
 // work that were never released.
-// Raised to 1.6.6.149 by ENG-92710 for the Call web service element: the `webService` element type and its
+// Raised to 1.6.6.150 by ENG-92710 for the Call web service element: the `webService` element type and its
 // `webService` block (service, method, timeoutSeconds, ignoreErrors). An older server knows neither, so it refuses the
 // type and the block as unknown, in a message that does not say the package is behind; the literal turns that into
-// the install hint before anything is sent. 1.6.6.146-1.6.6.148 were cuts of this work that were never released.
+// the install hint before anything is sent. 1.6.6.146-1.6.6.149 were cuts of this work that were never released.
 // ModifyBusinessProcessOptions and ModifyProcessAsNewVersionOptions take the same floor for these same reasons and
 // point here instead of repeating them.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.149",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.150",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class CreateBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Inline JSON process descriptor (name, caption, packageName, elements[], flows[], parameters[], mappings[], usings[], methods).</summary>

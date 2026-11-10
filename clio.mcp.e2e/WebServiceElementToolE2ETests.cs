@@ -50,12 +50,12 @@ public sealed class WebServiceElementToolE2ETests {
 	private const string NewVersionToolName = ModifyProcessAsNewVersionTool.ModifyProcessAsNewVersionToolName;
 
 	/// <summary>
-	/// The CrtProcessBuilder the fixture runs against: 1.6.6.149, the first cut that ships the <c>webService</c> block
-	/// and the create and modify floor when it was set (1.6.6.146-1.6.6.148 were cuts of this work that were never released). Below it
+	/// The CrtProcessBuilder the fixture runs against: 1.6.6.150, the first cut that ships the <c>webService</c> block
+	/// and the create and modify floor when it was set (1.6.6.146-1.6.6.149 were cuts of this work that were never released). Below it
 	/// every case is Ignored, because an older package does not declare the block and refuses it as an unknown key.
 	/// Raise it when a case starts asserting newer package behaviour, not on every rebundle.
 	/// </summary>
-	private const string MinimumPackageVersion = "1.6.6.149";
+	private const string MinimumPackageVersion = "1.6.6.150";
 
 	/// <summary>What the skip message calls these tests.</summary>
 	private const string Subject = "Call web service element";
