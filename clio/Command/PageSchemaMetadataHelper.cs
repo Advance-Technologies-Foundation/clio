@@ -45,6 +45,8 @@ namespace Clio.Command {
 		private const string ClientUnitSchemaManagerName = "ClientUnitSchemaManager";
 		private const string AddonSchemaManagerName = "AddonSchemaManager";
 		private const string ByManagerFilterKey = "byManager";
+		private const string ByNameFilterKey = "byName";
+		private const string PackageNameColumn = "PackageName";
 		private const int ComparisonTypeEqual = 3;
 
 		/// <summary>
@@ -238,7 +240,7 @@ namespace Clio.Command {
 			var query = new JObject {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
-					("byName", BuildEqFilter("Name", 1, schemaName)),
+					(ByNameFilterKey, BuildEqFilter("Name", 1, schemaName)),
 					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, ClientUnitSchemaManagerName)),
 					("byPackage", BuildEqFilter("SysPackage.UId", 0, packageUId))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
@@ -299,7 +301,7 @@ namespace Clio.Command {
 			string packageName) {
 			var query = new JObject {
 				[RootSchemaNameKey] = "SysPackage", [OperationTypeKey] = 0,
-				[FiltersKey] = BuildFilterGroup(("byName", BuildEqFilter("Name", 1, packageName))),
+				[FiltersKey] = BuildFilterGroup((ByNameFilterKey, BuildEqFilter("Name", 1, packageName))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
 			};
@@ -350,7 +352,7 @@ namespace Clio.Command {
 			var query = new JObject {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
-					("byName", BuildEqFilter("Name", 1, entitySchemaName)),
+					(ByNameFilterKey, BuildEqFilter("Name", 1, entitySchemaName)),
 					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, "EntitySchemaManager"))),
 				[ColumnsKey] = BuildUIdColumnSelection(),
 				[RowCountKey] = 1
@@ -492,7 +494,7 @@ namespace Clio.Command {
 					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
 				[ColumnsKey] = new JObject {
 					[ItemsKey] = new JObject {
-						["PackageName"] = new JObject {
+						[PackageNameColumn] = new JObject {
 							[ExpressionKey] = new JObject { [ExpressionTypeKey] = 0, [ColumnPathKey] = "SysPackage.Name" }
 						}
 					}
@@ -504,7 +506,7 @@ namespace Clio.Command {
 				return (null, transportError);
 			if (!success)
 				return (null, "Failed to query add-on schema metadata");
-			return (rows.Count == 0 ? null : rows[0]["PackageName"]?.ToString(), null);
+			return (rows.Count == 0 ? null : rows[0][PackageNameColumn]?.ToString(), null);
 		}
 
 		/// <summary>
@@ -523,9 +525,9 @@ namespace Clio.Command {
 			var query = new JObject {
 				[RootSchemaNameKey] = SysSchemaName, [OperationTypeKey] = 0,
 				[FiltersKey] = BuildFilterGroup(
-					("byName", BuildEqFilter("Name", 1, addonSchemaName)),
+					(ByNameFilterKey, BuildEqFilter("Name", 1, addonSchemaName)),
 					(ByManagerFilterKey, BuildEqFilter(ManagerNameColumnPath, 1, AddonSchemaManagerName))),
-				[ColumnsKey] = BuildColumnSelection(("PackageName", "SysPackage.Name"), ("PackageUId", "SysPackage.UId")),
+				[ColumnsKey] = BuildColumnSelection((PackageNameColumn, "SysPackage.Name"), ("PackageUId", "SysPackage.UId")),
 				[RowCountKey] = -1
 			};
 			var (rows, success, transportError) = ExecuteSelectQuery(applicationClient, serviceUrlBuilder, query);
@@ -533,7 +535,7 @@ namespace Clio.Command {
 				return ([], transportError);
 			if (!success)
 				return ([], "Failed to query add-on schema layers");
-			return (rows.Select(row => (packageName: row["PackageName"]?.ToString(),
+			return (rows.Select(row => (packageName: row[PackageNameColumn]?.ToString(),
 					packageUId: row["PackageUId"]?.ToString()))
 				.Where(layer => !string.IsNullOrWhiteSpace(layer.packageName))
 				.ToList(), null);
@@ -552,7 +554,7 @@ namespace Clio.Command {
 			IServiceUrlBuilder serviceUrlBuilder) {
 			var query = new JObject {
 				[RootSchemaNameKey] = "SysPackageDependency", [OperationTypeKey] = 0,
-				[ColumnsKey] = BuildColumnSelection(("PackageName", "SysPackage.Name"),
+				[ColumnsKey] = BuildColumnSelection((PackageNameColumn, "SysPackage.Name"),
 					("DependsOnPackageName", "DependOnPackage.Name")),
 				[RowCountKey] = -1
 			};
@@ -561,7 +563,7 @@ namespace Clio.Command {
 				return ([], transportError);
 			if (!success)
 				return ([], "Failed to query package dependencies");
-			return (rows.Select(row => (packageName: row["PackageName"]?.ToString(),
+			return (rows.Select(row => (packageName: row[PackageNameColumn]?.ToString(),
 					dependsOnPackageName: row["DependsOnPackageName"]?.ToString()))
 				.Where(dependency => !string.IsNullOrWhiteSpace(dependency.packageName)
 					&& !string.IsNullOrWhiteSpace(dependency.dependsOnPackageName))

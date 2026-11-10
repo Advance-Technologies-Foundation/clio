@@ -105,6 +105,8 @@ internal sealed class PageModalSizeService(
 		schema.MetaData = metadata.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
 
 		addonSchemaDesignerClient.SaveSchema(schema);
+		// The save may have created package-name's own layer, which the layers read before it do not hold.
+		layerLocator.Forget();
 		string resetWarning = addonSchemaDesignerClient.ResetClientScriptCache();
 		// The same post-save sequence as the other add-on writers (RelatedPageAddonService, BusinessRuleAddonService).
 		// AppearanceSettingsService reflects a SaveSchema at once (measured on 10.2.1027); whether the client bundles

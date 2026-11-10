@@ -634,10 +634,16 @@ public sealed class PageModalSizeServiceTests {
 		StubRuntime(3);
 
 		// Act
-		_service.Set(new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
+		PageModalSizeWriteResult result = _service.Set(
+			new PageModalSizeWriteRequest("Custom", "UsrOrder_MiniPage", "large"));
 
 		// Assert
 		_addonClient.Received(1).SaveSchema(Arg.Any<AddonSchemaDto>());
+		result.Size.Should().Be("large", because: "the size is written to package-name's own layer");
+		Received.InOrder(() => {
+			_addonClient.SaveSchema(Arg.Any<AddonSchemaDto>());
+			_layerLocator.Forget();
+		});
 	}
 
 	[Test]

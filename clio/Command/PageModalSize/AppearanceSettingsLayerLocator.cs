@@ -25,7 +25,7 @@ public interface IAppearanceSettingsLayerLocator {
 	/// <summary>
 	/// Returns the package of the topmost layer that sets <paramref name="size"/>: among the layers the scope holds,
 	/// the one no other layer's package depends on; when several are parallel, the one whose own view holds the size.
-	/// The layers and the package dependencies are read once per instance. Never throws: a failed lookup is reported
+	/// The layers and the package dependencies are read once per instance, until <see cref="Forget"/>. Never throws: a failed lookup is reported
 	/// in <see cref="AppearanceSettingsLayerSource.Warning"/>.
 	/// </summary>
 	/// <param name="pageSchemaName">The modal page schema name.</param>
@@ -44,6 +44,12 @@ public interface IAppearanceSettingsLayerLocator {
 	/// <param name="packageName">The package that looks.</param>
 	/// <param name="layerPackageName">The package holding the layer.</param>
 	bool Sees(string pageSchemaName, string packageName, string layerPackageName);
+
+	/// <summary>
+	/// Drops the layers and package dependencies read so far, so the next call reads them again. Call it after a
+	/// write that may have created a layer.
+	/// </summary>
+	void Forget();
 }
 
 /// <inheritdoc cref="IAppearanceSettingsLayerLocator" />
@@ -87,6 +93,11 @@ internal sealed class AppearanceSettingsLayerLocator(
 		} catch (Exception) {
 			return false;
 		}
+	}
+
+	public void Forget() {
+		_environments.Clear();
+		_reach.Clear();
 	}
 
 	private static AppearanceSettingsLayerSource Unknown(string warning) => new(null, [], warning);
@@ -157,10 +168,9 @@ internal sealed class AppearanceSettingsLayerLocator(
 		HashSet<string> reached = new(StringComparer.OrdinalIgnoreCase) { packageName };
 		Queue<string> pending = new([packageName]);
 		while (pending.Count > 0) {
-			foreach (string dependency in dependsOn[pending.Dequeue()]) {
-				if (reached.Add(dependency)) {
-					pending.Enqueue(dependency);
-				}
+			foreach (string dependency in dependsOn[pending.Dequeue()].Where(name => !reached.Contains(name))) {
+				reached.Add(dependency);
+				pending.Enqueue(dependency);
 			}
 		}
 		_reach[packageName] = reached;

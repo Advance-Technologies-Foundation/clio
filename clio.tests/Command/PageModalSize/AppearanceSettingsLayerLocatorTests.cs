@@ -55,6 +55,22 @@ public sealed class AppearanceSettingsLayerLocatorTests {
 			});
 
 	[Test]
+	[Description("Reads the layers again after Forget, so a layer created by a write is seen.")]
+	public void FindSource_ShouldSeeNewLayer_WhenForgetIsCalledAfterWrite() {
+		// Arrange
+		StubEnvironment(["CrtUIv2"]);
+		_locator.FindSource("EmailMiniPage", PageUId, null, 3);
+		StubEnvironment(["CrtUIv2", "Custom"], "Custom>CrtUIv2");
+
+		// Act
+		_locator.Forget();
+		AppearanceSettingsLayerSource source = _locator.FindSource("EmailMiniPage", PageUId, null, 3);
+
+		// Assert
+		source.PackageName.Should().Be("Custom", because: "the layer created after the first read is read again");
+	}
+
+	[Test]
 	[Description("Names the layer no other layer's package depends on, without reading any layer's size.")]
 	public void FindSource_ShouldNameTopLayer_WhenOneLayerIsOnTop() {
 		// Arrange
