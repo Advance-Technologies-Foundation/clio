@@ -204,7 +204,7 @@ public class ModifyBusinessProcessTool(
 		 + "element and its flows; partial update: omit on to keep the current change type, omit entity to keep the "
 		 + "current one (retargeting it clears any old-entity filter), omit changedColumns to clear column tracking; "
 		 + "changedColumns is valid only for on:modified), setElement (elementName + an 'elementUpdate':"
-		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, scriptTask?, performer?, openEditPage?, preconfiguredPage?, subProcess?, fileProcessing?, webService? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process the subProcess block, name=process-files the fileProcessing block)} — changes element-level fields IN PLACE, preserving the element and its "
+		 + "{useBackgroundMode?, readData?, changeData?, addData?, deleteData?, accessRights?, email?, approval?, formula?, scriptTask?, performer?, openEditPage?, preconfiguredPage?, subProcess?, fileProcessing?, webService? (get-guidance name=process-element-catalog owns the formula block, name=process-sub-process the subProcess block, name=process-files the fileProcessing block, name=process-web-service the webService block)} — changes element-level fields IN PLACE, preserving the element and its "
 		 + "flows; only the fields you pass change. readData "
 		 + "{source?, mode?:first|collection|count|aggregation, columns?, numberOfRecords? (collection only), "
 		 + "sort?:{column, direction?:asc|desc}, "

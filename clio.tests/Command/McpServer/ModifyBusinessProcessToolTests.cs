@@ -892,6 +892,8 @@ public class ModifyBusinessProcessToolTests {
 			because: "the Call web service task is refused on the generic route (Q1)");
 		description.Should().Contain("fileProcessing?, webService? (get-guidance",
 			because: "setElement reconfigures a Call web service element in place through the same block");
+		description.Should().Contain("name=process-web-service the webService block",
+			because: "the contract must route the block to the guide that owns it");
 		prompt.Should().Contain("never a generic `userTask` naming `WebServiceUserTask`;",
 			because: "the prompt must match its tool's generic-route refusal");
 		prompt.Should().Contain("and a `webService` element's `webService` block: an omitted member keeps its stored value, `method`",

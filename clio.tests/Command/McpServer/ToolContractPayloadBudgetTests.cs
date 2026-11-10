@@ -344,7 +344,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// 'this clio requires' clauses now starts its list with 'webService, ' (+12 bytes) - re-measured by lowering the
 	// ceiling: create 35034, modify 34973, describe 35006 - 38, 99 and 66 bytes of headroom. With the three pointers
 	// applied on top, create 35088, modify 35020, describe 35060: create's pointer no longer fits by 16 bytes, so it has
-	// to be paid by a trim when it lands.
+	// to be paid by a trim when it lands. The pointers landed with clio-knowledge 1.15.189, which publishes
+	// process-web-service; create paid by dropping 'usings[], methods' from its floor clause (they shipped with
+	// scriptTask, which the clause still names; -19 bytes). Re-measured by lowering the ceiling: create 35069, modify
+	// 35020, describe 35060 - 3, 52 and 12 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result

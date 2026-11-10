@@ -628,8 +628,8 @@ public class CreateBusinessProcessToolTests {
 		// Assert
 		toolDescription.Should().Contain("|fileProcessing|webService (aliases ",
 			because: "the element type list is where an agent learns which type tokens a build accepts");
-		toolDescription.Should().Contain("webService? (webService elements only - a registered REST/SOAP service and its method",
-			because: "the block clause names what the block selects and that the service must already be registered");
+		toolDescription.Should().Contain("webService? (webService elements only - a registered REST/SOAP service and its method; get-guidance name=process-web-service owns the block)",
+			because: "the block clause names what the block selects, that the service must already be registered, and the guide that owns the block");
 		prompt.Should().Contain("and except `WebServiceUserTask` (Call web service), which is built as a `webService` element;",
 			because: "the list-user-tasks step must not hand the agent the Call web service task for a generic userTask");
 		prompt.Should().Contain("`userTask` naming `WebServiceUserTask`, which is refused.",

@@ -1,7 +1,7 @@
 {
   "library": "com.creatio.clio",
-  "libraryVersion": "1.15.176",
-  "sequence": 1015176000,
+  "libraryVersion": "1.15.189",
+  "sequence": 1015189000,
   "availableNames": [
     "administration",
     "agent-execution",
@@ -156,6 +156,7 @@
     "creatio.process-version-writes",
     "creatio.process-versions",
     "creatio.process-versions-details",
+    "creatio.process-web-service",
     "creatio.product-telemetry",
     "creatio.record-permission-extensions",
     "creatio.record-permissions",
@@ -283,6 +284,7 @@
     "process-version-writes",
     "process-versions",
     "process-versions-details",
+    "process-web-service",
     "product-telemetry",
     "record-permission-extensions",
     "record-permissions",

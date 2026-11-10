@@ -494,6 +494,8 @@ public sealed class DescribeProcessToolTests {
 		// Assert
 		toolText.Should().Contain("a webService element's webService block (the describe-only serviceUId, serviceResolved, methodResolved, issues and parameters - the stored tree, unbound inputs included - draw a warning when it is sent back unchanged",
 			because: "the read-back members are describe-only and the block replays in its write shape");
+		toolText.Should().Contain("sent back unchanged; get-guidance name=process-web-service owns the block)",
+			because: "the contract must route the block to the guide that owns it");
 		prompt.Should().Contain("A `webService` element (the designer's \"Call web service\") carries its `webService` block",
 			because: "the prompt lists every configuration block the tool reports");
 		prompt.Should().Contain("parameter), `direction`, `type`, nested `items` and the `required`, `bound` and `result` flags.",
