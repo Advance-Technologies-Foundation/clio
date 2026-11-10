@@ -29,12 +29,37 @@ public sealed class WebServiceDesigner(
 	private const string CaptionColumn = "Caption";
 	private const string PackageNameColumn = "SysPackage.Name";
 
+	private const string MetaDataColumn = "MetaData";
+	private static readonly string[] ServiceColumns =
+		["UId", "Name", CaptionColumn, "TypeName", "PackageUId", PackageNameColumn];
+
 	private sealed record ServiceRow(Guid UId, Guid PackageUId, string Name, string Caption, string Type, string Package);
 
 	public IReadOnlyList<WebServiceListItem> List() =>
-		ReadServiceRows(null)
-			.Select(row => new WebServiceListItem(row.UId, row.Name, row.Caption, row.Type, row.Package))
+		client.Select("VwWebServiceV2", [.. ServiceColumns, MetaDataColumn], null, orderColumn: "Name")
+			.Select(row => (Row: ToServiceRow(row), BaseUri: BaseUriFromMetadata(Text(row, MetaDataColumn))))
+			.Select(item => new WebServiceListItem(item.Row.UId, item.Row.Name, item.Row.Caption, item.Row.Type,
+				item.Row.Package, item.BaseUri))
 			.ToList();
+
+	/// <summary>
+	/// The base URI out of a service's stored metadata, without credentials. The metadata itself is never
+	/// returned: it carries constant credential values. <c>IQ1</c> is the key the platform serializes the base
+	/// URI under (read on 10.2.565); a schema without it yields null rather than a guess.
+	/// </summary>
+	internal static string BaseUriFromMetadata(string metadata) {
+		if (string.IsNullOrWhiteSpace(metadata)) {
+			return null;
+		}
+		try {
+			JsonNode root = JsonNode.Parse(metadata.TrimStart('\uFEFF'));
+			return root?["MetaData"]?["Schema"]?["IQ1"] is JsonValue value && value.TryGetValue(out string uri)
+				? WebServiceSchemaView.StripUserInfo(uri)
+				: null;
+		} catch (JsonException) {
+			return null;
+		}
+	}
 
 	public WebServiceToolResult Describe(string code, bool includeUsages) {
 		RequireManageSolution();
@@ -274,13 +299,15 @@ public sealed class WebServiceDesigner(
 	}
 
 	private IReadOnlyList<ServiceRow> ReadServiceRows(string code) {
-		string[] columns = ["UId", "Name", CaptionColumn, "TypeName", "PackageUId", PackageNameColumn];
 		Dictionary<string, string> filter = code is null ? null : new() { ["Name"] = code };
-		return client.Select("VwWebServiceV2", columns, filter, orderColumn: "Name")
-			.Select(row => new ServiceRow(Guid.Parse(Text(row, "UId")), Guid.Parse(Text(row, "PackageUId")),
-				Text(row, "Name"), Text(row, CaptionColumn), Text(row, "TypeName"), Text(row, PackageNameColumn)))
+		return client.Select("VwWebServiceV2", ServiceColumns, filter, orderColumn: "Name")
+			.Select(ToServiceRow)
 			.ToList();
 	}
+
+	private static ServiceRow ToServiceRow(JsonObject row) =>
+		new(Guid.Parse(Text(row, "UId")), Guid.Parse(Text(row, "PackageUId")),
+			Text(row, "Name"), Text(row, CaptionColumn), Text(row, "TypeName"), Text(row, PackageNameColumn));
 
 	private Guid? FindPackageUId(string packageName, WebServiceDefinitionBuilder.Errors errors) {
 		if (string.IsNullOrWhiteSpace(packageName)) {

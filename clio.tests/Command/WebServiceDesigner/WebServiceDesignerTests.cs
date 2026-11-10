@@ -156,6 +156,70 @@ public sealed class WebServiceDesignerTests {
 	}
 
 	[Test]
+	[Description("Registering with oauth20 resolves the OAuth application by name and saves its id.")]
+	public void Register_Should_Resolve_OAuth_Application_By_Name() {
+		// Arrange
+		Guid applicationId = Guid.Parse("0201998c-ecc9-4c78-a8ed-ead83fc1afbb");
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		_client.Select("OAuthApplications", Arg.Any<IReadOnlyList<string>>(),
+				Arg.Is<IReadOnlyDictionary<string, string>>(f => f["Name"] == "Test1"),
+				Arg.Any<int>(), Arg.Any<int>(), Arg.Any<string>())
+			.Returns([new JsonObject { ["Id"] = applicationId.ToString() }]);
+		ServiceSchemaDto saved = null;
+		_client.When(c => c.SaveSchema(Arg.Any<ServiceSchemaDto>())).Do(call => saved = call.Arg<ServiceSchemaDto>());
+		_client.ReadSchema(Arg.Any<Guid>(), PackageUId).Returns(_ => saved);
+
+		// Act
+		WebServiceToolResult result = _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
+			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), [new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+
+		// Assert
+		result.Success.Should().BeTrue(because: "the application exists");
+		saved.AuthInfo.Values.Items["applicationId"].Value.Should().Be(applicationId.ToString(),
+			because: "the platform stores the application by id, not by name");
+		saved.Methods.Items.Values.Single().UseAuthInfo.Should().BeTrue(
+			because: "a method of a service with authentication sends it by default");
+		result.Service.Auth.OAuthAppId.Should().Be(applicationId.ToString(), because: "the read-back shows the reference");
+	}
+
+	[Test]
+	[Description("Registering with an OAuth application that does not exist is refused before anything is saved.")]
+	public void Register_Should_Refuse_Unknown_OAuth_Application() {
+		// Arrange
+		_client.IsSchemaNameUnique(ServiceSchemaCodes.ManagerName, "UsrErp").Returns(true);
+		GivenSelect("SysPackage", new JsonObject { ["UId"] = PackageUId.ToString() });
+		GivenSelect("OAuthApplications");
+
+		// Act
+		Action act = () => _sut.Register("Custom", "UsrErp", null, "https://erp.example/", null,
+			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), [new WebServiceMethodArg("GetOrders", "GET", "orders")]);
+
+		// Assert
+		act.Should().Throw<ArgumentException>(because: "a service cannot authenticate with a missing application")
+			.WithMessage("*NoSuchApp*", because: "the message names the application");
+		_client.DidNotReceive().SaveSchema(Arg.Any<ServiceSchemaDto>());
+	}
+
+	[Test]
+	[Description("list-web-services returns each base URI from the stored metadata, without credentials and without the metadata itself.")]
+	public void List_Should_Return_Base_Uri_Without_Credentials() {
+		// Arrange
+		GivenSelect("VwWebServiceV2", new JsonObject {
+			["UId"] = ServiceUId.ToString(), ["PackageUId"] = PackageUId.ToString(), ["Name"] = "UsrErp",
+			["Caption"] = "ERP", ["TypeName"] = "REST", ["SysPackageName"] = "Custom",
+			["MetaData"] = "﻿{\"MetaData\":{\"Schema\":{\"IQ1\":\"https://admin:hunter2@erp.example/api/\",\"IQ7\":{\"x\":\"hunter2\"}}}}"
+		});
+
+		// Act
+		WebServiceListItem item = _sut.List().Single();
+
+		// Assert
+		item.BaseUri.Should().Be("https://[redacted]@erp.example/api/", because: "the list must not leak base-URI credentials");
+		JsonSerializer.Serialize(item).Should().NotContain("hunter2", because: "no part of the metadata is returned");
+	}
+
+	[Test]
 	[Description("A test call never hands back a key the platform filled in from a system setting, even when the API echoes it.")]
 	public void TestMethod_Should_Mask_A_Setting_Value_The_Api_Echoes() {
 		// Arrange

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Clio.Command.WebServiceDesigner;
 using FluentAssertions;
@@ -175,6 +176,43 @@ public sealed class WebServiceDefinitionBuilderTests {
 		errors.Should().BeEmpty(because: "both codes were given");
 		auth.Values.Items.Values.Should().OnlyContain(v => v.Source == ServiceSchemaCodes.ValueSourceSysSetting,
 			because: "the agent never supplies a credential value");
+	}
+
+	[Test]
+	[Description("OAuth 2.0 stores the resolved application id as a constant applicationId, the shape a designer-made service has.")]
+	public void BuildAuth_Should_Store_OAuth_Application_Id() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+		Guid applicationId = Guid.Parse("0201998c-ecc9-4c78-a8ed-ead83fc1afbb");
+
+		// Act
+		ServiceAuthInfoDto auth = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("oauth20", OAuthApp: "Test1"), applicationId, errors);
+
+		// Assert
+		errors.Should().BeEmpty(because: "the application was found");
+		auth.AuthType.Should().Be(ServiceSchemaCodes.AuthOAuth20, because: "oauth20 maps to the platform's OAuth 2.0 type");
+		auth.Values.Items.Should().ContainSingle(because: "OAuth 2.0 carries only the application reference")
+			.Which.Should().Match<KeyValuePair<string, ServiceParameterValueDto>>(item =>
+				item.Key == "applicationId" && item.Value.Value == applicationId.ToString()
+				&& item.Value.Source == ServiceSchemaCodes.ValueSourceConst,
+				because: "Studio reads the application from a constant applicationId (measured on 10.2.565)");
+	}
+
+	[Test]
+	[Description("OAuth 2.0 without a resolved application is refused and names the application that was not found.")]
+	public void BuildAuth_Should_Refuse_OAuth_Without_Application() {
+		// Arrange
+		var errors = new WebServiceDefinitionBuilder.Errors();
+
+		// Act
+		ServiceAuthInfoDto auth = WebServiceDefinitionBuilder.BuildAuth(
+			new WebServiceAuthArg("oauth20", OAuthApp: "NoSuchApp"), null, errors);
+
+		// Assert
+		auth.Should().BeNull(because: "nothing valid can be stored without the application");
+		errors.Should().ContainSingle(because: "the missing application is the only problem")
+			.Which.Should().Contain("NoSuchApp", because: "the refusal names what the caller passed");
 	}
 
 	[Test]

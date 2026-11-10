@@ -109,6 +109,8 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the designer joins base and method URI verbatim, so the tool stores the base with a trailing slash");
 		listed.Services.Should().Contain(s => s.Code == _serviceCode,
 			because: "the registered service must appear where the Process Designer's picker reads services from");
+		listed.Services!.Single(s => s.Code == _serviceCode).BaseUri.Should().Be("https://example.invalid/api/",
+			because: "the list carries each base URI so an agent can find a service for the same API before registering");
 		described.Success.Should().BeTrue(because: $"describe must read the service back; error: {described.Error}");
 		WebServiceMethodView method = described.Service!.Methods.Should().ContainSingle(
 			because: "one method was registered").Subject;
@@ -169,6 +171,111 @@ public sealed class WebServiceToolsE2ETests : McpContractFixtureBase {
 			because: "the refusal must name the processes the user has to approve breaking");
 		after.Service!.Methods.Should().Contain(m => m.Code == usage.Method,
 			because: "a refused modify must not have saved anything");
+	}
+
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureName("register-web-service links an existing OAuth 2.0 application")]
+	[Description("Registers a REST service with auth oauth20 naming an OAuth application that exists on the stand, and expects the application's id in the read-back, the method sending the authentication, and describe returning the same reference.")]
+	public async Task RegisterWebService_Should_Link_An_Existing_OAuth_Application() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		if (!settings.AllowDestructiveMcpTests) {
+			Assert.Ignore(DestructiveStandAuthorization.MissingOptInMessage);
+		}
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		(string Id, string Name)? application = await FindOAuthApplicationAsync(settings, _environmentName, cts.Token);
+		if (application is null) {
+			Assert.Ignore("No named OAuth application exists on this stand; the tools only link an existing one.");
+		}
+		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+
+		// Act
+		WebServiceToolResult registered = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName,
+				["package-name"] = PackageName,
+				["code"] = _serviceCode,
+				["base-uri"] = "https://example.invalid/api",
+				["auth"] = new Dictionary<string, object?> { ["type"] = "oauth20", ["oauth-app"] = application.Value.Name },
+				["methods"] = new[] {
+					new Dictionary<string, object?> { ["code"] = MethodCode, ["http-method"] = "GET", ["uri"] = "orders" }
+				}
+			}, cts.Token);
+		WebServiceToolResult described = await CallAsync<WebServiceToolResult>(DescribeWebServiceTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName, ["code"] = _serviceCode },
+			cts.Token);
+
+		// Assert
+		registered.Success.Should().BeTrue(because: $"an existing OAuth application must be accepted; error: {registered.Error}");
+		registered.Service!.Auth!.Type.Should().Be("oauth20", because: "the service authenticates with OAuth 2.0");
+		registered.Service.Auth.OAuthAppId.Should().BeEquivalentTo(application.Value.Id,
+			because: "the platform stores the application by id, which Studio shows as the Application lookup");
+		registered.Service.Methods.Single().UseAuth.Should().BeTrue(
+			because: "a method of a service with authentication sends it by default, as the designer does");
+		described.Service!.Auth!.OAuthAppId.Should().BeEquivalentTo(application.Value.Id,
+			because: "the reference survives a read through the platform's own contract");
+	}
+
+	[Test]
+	[AllureTag(RegisterWebServiceTool.ToolName)]
+	[AllureName("register-web-service refuses an OAuth 2.0 application that does not exist")]
+	[Description("Asks for auth oauth20 with an application name no row carries, expects a refusal that names it, and expects no service to be created.")]
+	public async Task RegisterWebService_Should_Refuse_An_Unknown_OAuth_Application() {
+		// Arrange
+		McpE2ESettings settings = TestConfiguration.Load();
+		_environmentName = await ReachableSandboxEnvironment.ResolveOrIgnoreAsync(settings,
+			"Configure McpE2E:Sandbox:EnvironmentName to run the web service tool E2E tests.");
+		using CancellationTokenSource cts = new(TimeSpan.FromMinutes(5));
+		_serviceCode = $"UsrE2eWs{Guid.NewGuid():N}"[..20];
+		string missingApplication = $"E2eMissingOAuth{Guid.NewGuid():N}";
+
+		// Act
+		WebServiceToolResult refused = await CallAsync<WebServiceToolResult>(RegisterWebServiceTool.ToolName,
+			new Dictionary<string, object?> {
+				["environment-name"] = _environmentName,
+				["package-name"] = PackageName,
+				["code"] = _serviceCode,
+				["base-uri"] = "https://example.invalid/api",
+				["auth"] = new Dictionary<string, object?> { ["type"] = "oauth20", ["oauth-app"] = missingApplication },
+				["methods"] = new[] {
+					new Dictionary<string, object?> { ["code"] = MethodCode, ["http-method"] = "GET", ["uri"] = "orders" }
+				}
+			}, cts.Token);
+		WebServiceListResult listed = await CallAsync<WebServiceListResult>(ListWebServicesTool.ToolName,
+			new Dictionary<string, object?> { ["environment-name"] = _environmentName }, cts.Token);
+
+		// Assert
+		refused.Success.Should().BeFalse(because: "a service cannot authenticate with an application that does not exist");
+		refused.Error.Should().Contain(missingApplication, because: "the refusal names the application the caller passed");
+		listed.Services.Should().NotContain(s => s.Code == _serviceCode, because: "a refused registration saves nothing");
+	}
+
+	private static async Task<(string Id, string Name)?> FindOAuthApplicationAsync(McpE2ESettings settings,
+		string environmentName, CancellationToken token) {
+		ClioCliCommandResult select = await ClioCliCommandRunner.RunAsync(settings, [
+			"call-service", "-e", environmentName, "--service-path", "DataService/json/SyncReply/SelectQuery",
+			"-b", JsonSerializer.Serialize(new {
+				rootSchemaName = "OAuthApplications",
+				operationType = 0,
+				columns = new {
+					items = new {
+						Id = new { expression = new { expressionType = 0, columnPath = "Id" } },
+						Name = new { expression = new { expressionType = 0, columnPath = "Name" } }
+					}
+				}
+			})
+		], cancellationToken: token);
+		using JsonDocument rows = JsonDocument.Parse(select.StandardOutput[select.StandardOutput.IndexOf('{')..]);
+		foreach (JsonElement row in rows.RootElement.GetProperty("rows").EnumerateArray()) {
+			string? name = row.GetProperty("Name").GetString();
+			if (!string.IsNullOrWhiteSpace(name)) {
+				return (row.GetProperty("Id").GetString()!, name);
+			}
+		}
+		return null;
 	}
 
 	private async Task<T> CallAsync<T>(string toolName, Dictionary<string, object?> args, CancellationToken token) {

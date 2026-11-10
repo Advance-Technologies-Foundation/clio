@@ -189,7 +189,8 @@ public sealed record WebServiceListItem(
 	[property: JsonPropertyName("code")] string Code,
 	[property: JsonPropertyName("caption")] string Caption,
 	[property: JsonPropertyName("type")] string Type,
-	[property: JsonPropertyName("package")] string Package);
+	[property: JsonPropertyName("package")] string Package,
+	[property: JsonPropertyName("base-uri")] string BaseUri = null);
 
 public sealed record WebServiceUsage(
 	[property: JsonPropertyName("process")] string Process,

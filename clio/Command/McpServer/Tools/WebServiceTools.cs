@@ -53,7 +53,7 @@ public sealed class ListWebServicesTool(IToolCommandResolver commandResolver) {
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Lists the web services registered in Studio > Web services (code, caption, REST or SOAP, package). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
+	[Description("Lists the web services registered in Studio > Web services (code, caption, REST or SOAP, package, base URI). Use it before register-web-service to reuse an existing service, and before a Call web service element to find the service code.")]
 	public WebServiceListResult ListWebServices(
 		[Description("Parameters: environment-name (required)")] [Required] WebServiceEnvironmentArgs args) {
 		try {
