@@ -4,13 +4,13 @@ Written 2026-11-02; updated 2026-11-03 for the agreed decisions (section 0.1).
 
 Basis: crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history), clio `origin/master`
 `6be5dde28`, clio-knowledge `origin/master` `5f14ceb` (libraryVersion 1.15.176), CrtProcessDesigner 7.8.0 and the
-PackageStore corpus, core TSBpm trunk and `<core>` `468c4c71b` (8.3.3.1722), a read-only inventory of
+PackageStore corpus, core platform trunk at `468c4c71b` (8.3.3.1722), a read-only inventory of
 stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken 2026-11-02 and the day-0 probes
 of 2026-11-03. Inputs: the answers Q1-Q20 of the [decisions file](eng-92710-call-web-service-element-decisions.md),
 agreed by the owner on 2026-11-03 (its "Agreed by the owner" lines override the PROPOSED text), the slices,
 tasks and gates of the [plan](eng-92710-call-web-service-element-plan.md) (P-A1..P-D4, KB-1..KB-6, CL-1..CL-10), the
 measurement ids EM0-EM12 of the [measurements file](eng-92710-call-web-service-element-measurements.md), and the
-calibration in research note r10 (`<research notes, local>/r10-calibration.md`) as corrected by the
+calibration in research note r10 (local research notes) as corrected by the
 fact-check verdicts in `_workflow-result.json` (r10-C1, C2, C3, C4, C7, C8, C14). Where a verdict corrected r10, the
 corrected figure is used and the verdict is cited.
 

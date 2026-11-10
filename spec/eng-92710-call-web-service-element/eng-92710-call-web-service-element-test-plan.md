@@ -1,12 +1,12 @@
 # ENG-92710 Call web service element: test plan
 
 Written 2026-11-02 as a plan; swept 2026-11-03 for the owner's decisions; status updated 2026-11-10. The package rows
-are implemented; the stand campaign was measured on 2026-11-09 (M-36..M-52, measurements section 0); no pull request
-is open for this work yet. The stand writes are the measurements file's (EM status below).
+are implemented; the stand campaign was measured on 2026-11-09 and 2026-11-10 (M-36..M-59, measurements section 0);
+the pull requests (package, knowledge, clio, docs) are open and in review, and both stories are `review` in `spec/sprint-status.yaml`. The stand writes are the measurements file's (EM status below).
 
 Basis: crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131, history), clio `origin/master`
 `6be5dde28`, clio-knowledge `origin/master` `5f14ceb` (`libraryVersion` 1.15.176), CrtProcessDesigner 7.8.0 + the
-PackageStore corpus, core `TSBpm` trunk and `<core>` `468c4c71b` (8.3.3.1722), Creatio Academy, the
+PackageStore corpus, core platform trunk at `468c4c71b` (8.3.3.1722), Creatio Academy, the
 read-only inventory of stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken
 2026-11-02, and the stand measurements of 2026-11-03 and 2026-11-05 (measurements file M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, and the "Measured" blocks of the
 decisions file). Research notes are cited as rN /
@@ -43,17 +43,13 @@ Sibling files: [README](README.md) · [facts](eng-92710-call-web-service-element
 
 | Path alias | Root |
 |---|---|
-| `PB/` | crt-process-builder `packages/CrtProcessBuilder/Files/src/cs/` (worktree `<package worktree>`, plan §3) |
-| `PBT/` | crt-process-builder `tests/UnitTests/CrtProcessBuilder.Tests/` |
 | `CLIO/` | clio repository (`clio/`, `clio.tests/`, `clio.mcp.e2e/`) |
 | `KB/` | clio-knowledge (`guidance/`, `automation/Clio.Knowledge.Bundle.Tests/`) |
-| `PD/` | `<PackageStore>/CrtProcessDesigner/branches/7.8.0/Schemas/` |
-| `PS/` | `<PackageStore>/` (shipped corpus) |
-| `CORE/` | `<core>/TSBpm/Src/Lib/` (current core; has IX4) |
-| `JS/` | `CORE/Terrasoft.Nui/Resources/Terrasoft/manager/process-flow-element-schema-manager/` (designer client) |
-| `TS/` | `<Creatio2>/TSBpm/Src/Lib/` (stale 2025-07 checkout, lacks IX4; used only for the platform test case tables) |
 
-Test ids: **TC-U-nn** package unit (PBT), **TC-P-nn** package parity (PBT), **TC-C-nn** clio unit (`clio.tests`),
+Sources outside the public repositories (the CrtProcessBuilder package and its tests, CrtProcessDesigner and the other
+shipped packages, the core platform) are cited by schema, class, file or view name only, never by repository path; the platform test case tables come from an older core checkout (2025-07).
+
+Test ids: **TC-U-nn** package unit (package tests), **TC-P-nn** package parity (package tests), **TC-C-nn** clio unit (`clio.tests`),
 **TC-I-nn** clio MCP e2e (`clio.mcp.e2e`, on a registered test stand), **TC-K-nn** clio-knowledge tests and gates,
 **TC-01..TC-12** manual Jira cases (section 8). "Existing" means the test is already in the tree and only re-runs or
 gains rows. Tags: **traced** = read in source (a hypothesis about run time), **measured** = observed in data, corpus
@@ -68,7 +64,7 @@ or stand; the EM that settles a traced row is named in it.
 | **AC1** the `webService` configuration (service, method, timeout in whole seconds, ignore-errors) accepted on create, `addElement`, `setElement`; request params incl. a composite body and the raw request body set through the existing mappings by the names describe returns | the block builds the core element on every route; values through the mapping surface by stored names, no aliases | TC-U-27..34, 56..62, 67, 87, 97 | TC-P-06, 10 | TC-C-01..05, 09 | TC-I-01, 06 | TC-K-01, 03 | EM1, EM2 (measured) | TC-01, 02, 04 |
 | **AC2** an unknown or ambiguous service or method refused with the services (codes, captions) or the methods listed; a missing service pointed to registration; case-insensitive match, canonical spelling stored | resolver case tables, refusal texts, the no-service refusal; the unknown-service refusal also gives each listed service's methods, bounded (first 30 services with at most 8 methods each, 31-100 by name and caption, the rest counted; K-1, measurements section 0; M-47), and an ambiguous match lists the matching names with their methods, no caption (TC-U-17) | TC-U-15..22, 26, 105, 110, 111, 125..127 | - | - | TC-I-03, 04 | TC-K-05, 13 | EM10, EM11 (designer halves measured) | TC-09, 10 |
 | **AC3** inputs mapped in; response read into process params; a composite response through a declared Collection (<= 2 levels) with item mappings | scalar, constant, formula, process-parameter and item-level bindings into `_In` params; response read into a declared `Collection`, container and items bound (M-25); mirror, ObjectList and 3+ levels refused | TC-U-56..65, 67, 68, 101 | TC-P-06, 10, 11 | - | TC-I-01, 02, 08 | TC-K-03, 04 | EM2, EM3 (measured), EM6 | TC-01..04 |
-| **AC4** ignore-errors stored on the element; Success, Http status code, Response body available as outputs | IX4 written when true; result params as ordinary outputs | TC-U-29, 66, 96 | - | - | TC-I-01, 09 | TC-K-06 | EM0, EM7 (designer half measured) | TC-05, 06 |
+| **AC4** ignore-errors stored on the element; Success, Http status code, Response body available as outputs | IX4 written when true; result params as ordinary outputs | TC-U-29, 66, 96 | - | - | TC-I-01, 09 | TC-K-06 | EM0, EM7 (designer half M-28, builder half M-40, M-56); EM6 failure path (M-38, M-55); success path M-59 (TC-01: Success true, 200, Response the JSON body; TC-02: 5 rows, 200; TC-03: 201, total quantity 96) | TC-05, 06 |
 | **AC5** server serialization = a designer-built capture, incl. the mapping rows | element keys, BP2 order and key sets, L18, ItemValue, captions, result params, BK15 rows equal under the comparison rule (section 3) | TC-U-01..14, 41..46, 91, 94, 106 | TC-P-01..15 | - | TC-I-01 (stored bytes), 07 | - | EM2, EM3, EM4 (measured), EM5 | TC-11 |
 | **AC6** a service or method change replaces the params as the designer does, Success / Http status code / Response body keep their identity, the dropped bindings are listed with their values, refused while another element or a process parameter reads a parameter that would be regenerated | replace; dropped bindings listed with their values; `Success` / `Response` / `StatusCode` keep their UIds (Q11 A3); the guard refuses while anything (another element, a process parameter, a flow condition, a formula) reads any other parameter of the element, tagged inputs, nested items and `RequestBody` included; `service` without `method` refused | TC-U-35..39, 46, 107, 108, 112, 113 | TC-P-12, 16 | - | TC-I-05 | TC-K-05 | EM4 (measured) | TC-07, 08 |
 | **AC7** describe returns service, method, timeout, ignore-errors and the param tree incl. unbound inputs; an unresolved service or method is an issue; a modify that lets the platform prune says so | `webService` member, stored tree, issues, notice N7; a modify the pre-save validation refuses carries N7 too, after the platform's text: named elements first in the refusal form (no re-select advice) under the repair-order lead, the others with the ordinary notice, at most 3 notices, nothing written (F-2, F-5); the described block passes the server key check | TC-U-53, 54, 68..75, 77..80, 99, 102..104, 109, 114..124 | TC-P-03 | TC-C-03, 10 | TC-I-01, 06, 07 | TC-K-02, 05 | EM2, EM8 (current-builder, service-save and designer halves measured; step 8 re-measured on the claimed cut: refused with N7, M-51, M-52) | TC-11, 12 |
@@ -97,7 +93,7 @@ or stand; the EM that settles a traced row is named in it.
 
 ---
 
-## 2. Package unit tests (PBT)
+## 2. Package unit tests (package tests)
 
 ### 2.1 Harness rules
 
@@ -106,9 +102,9 @@ or stand; the EM that settles a traced row is named in it.
 | Every new fixture is `[TestFixture(Category = "UnitTests"), Category("PreCommit")]` and inherits `BaseComposableAppTestFixture` | CI selects by category; `CiContractGuardTests.EveryFixture_CarriesACategoryTheCiFilterSelects` fails an uncategorised fixture | r8 §4 |
 | Each test has `[Description]`, explicit AAA comments, `because:` on every assertion | house rule | r8 §4 (`PreconfiguredPageParameterSyncTests.cs`) |
 | The process schema comes from `UserConnection.CreateSchema()` (a real `UId`); every stamp test starts with `schema.UId.Should().NotBe(Guid.Empty, ...)` | A3 = A4 = process UId is asserted on every level; an empty schema UId makes it vacuous | g1 (b): 751/751 params A3 = A4 = process UId, measured |
-| A service schema is built in code by a `WebServiceSchemaFixtures` builder: `new ServiceSchema(Substitute.For<ISchemaManager>()) { ServiceMethods = { new ServiceMethod { Request = { Parameters = {...} }, Response = {...} } } }`, nested shapes through `ServiceParameter.ItemProperties` | `ServiceSchema` is constructible over any `ISchemaManager`; the package and its tests already reference `Terrasoft.Services.dll` | r8 B2, §2.1, §2.4 (model: TS `Terrasoft.Services.Tests/PetstoreServiceSchema.cs`, internal, so copied) |
+| A service schema is built in code by a `WebServiceSchemaFixtures` builder: `new ServiceSchema(Substitute.For<ISchemaManager>()) { ServiceMethods = { new ServiceMethod { Request = { Parameters = {...} }, Response = {...} } } }`, nested shapes through `ServiceParameter.ItemProperties` | `ServiceSchema` is constructible over any `ISchemaManager`; the package and its tests already reference `Terrasoft.Services.dll` | r8 B2, §2.1, §2.4 (model: TS `PetstoreServiceSchema`, internal, so copied) |
 | The service manager is `Substitute.ForPartsOf<ServiceSchemaManager>()` answering BOTH `FindItemByUId` and `GetInstanceByUId` (and `FindItemByName`), with misses answering `null` explicitly | the platform checks the item before the instance; an auto-substituted miss would hide dangling-reference tests | r8 §2.1, §4 (`SubProcessTestSupport.SetupSchemaManager`) |
-| `SchemaManagerProvider.GetManager` is routed BY NAME: `"ServiceSchemaManager"` -> the service substitute, `"ProcessSchemaManager"` -> the process one; never `Arg.Any<string>()` for both; `manager.AppConnection.Returns(userConnection.AppConnection)` | the platform sync and `AnalyzePackageDependencies` resolve the service manager by string | r8 §4; `PBT/SubProcessTestSupport.cs:84-104` (r4 §4) |
+| `SchemaManagerProvider.GetManager` is routed BY NAME: `"ServiceSchemaManager"` -> the service substitute, `"ProcessSchemaManager"` -> the process one; never `Arg.Any<string>()` for both; `manager.AppConnection.Returns(userConnection.AppConnection)` | the platform sync and `AnalyzePackageDependencies` resolve the service manager by string | r8 §4; `SubProcessTestSupport` (r4 §4) |
 | Resolver and describe tests go through `FakeWebServiceCatalog.Standard()` (a `Reads` counter, pattern `FakeReportTemplateReader`); only `WebServiceCatalogTests` touches the substituted manager | one class touches `ServiceSchemaManager`; the rest stays platform-free | r8 §5 |
 | `new ProcessSchemaWebService()` (no `(ProcessSchema)` ctor), then attach; its parameter provider is `null` in the harness (`CoreApiContainer.Resolve` swallows and returns null) | constructing never throws; `SynchronizeParameters()` NREs unless a probe binds the provider (section 2.10) | r8 C2 verdict; r4 §3 |
 | The DataValueTypeManager is `UserConnection.DataValueTypeManager` from the base fixture, not a bare `new DataValueTypeManager()` | known-good path in the package harness | r8 §6 |
@@ -121,7 +117,7 @@ hide a CI (8.3.4) difference (g2 (a), measured): ManagerItemUId `652b598d-cdd5-4
 `C0F04627-4620-4bc0-84E5-9419DC8516B1`, Text `8B3F29BB-EA14-4ce5-A5C5-293A929B6BA2`, Boolean
 `90B65BF8-0FFC-4141-8779-2420877AF907`, Integer `6B6B74E2-820D-490E-A017-2B73D4CCF2B0`, ObjectList
 `4B51A8B5-1EE9-4437-9D58-F35E083CBCDF`, CompositeObjectList `651EC16F-D140-46DB-B9E2-825C985A8AC2`, Object
-`84ED6865-9692-4c98-AAED-4D15B96A95C2` (`CORE/Terrasoft.Core/DataValueType.cs:104, 124, 129, 175, 287, 292, 2594`).
+`84ED6865-9692-4c98-AAED-4D15B96A95C2` (`DataValueType`).
 
 **probe marker.** The row calls a platform member whose behaviour in the harness is not yet measured (provider
 binding by reflection; `ServiceSchemaManager` substitution under dev-n8, where a core test carries
@@ -151,7 +147,7 @@ both configurations.
 ### 2.3 Parameter shaper (Q3) - `WebServiceParameterShaperTests`
 
 The shaper is pure: a service method in, an element parameter tree, caption resources and result params out. It ports
-the client algorithm (`JS/process-webservice-schema.js`), because the platform provider builds flat top-level params
+the client algorithm (`process-webservice-schema`), because the platform provider builds flat top-level params
 only (r8 B4, r2 C5 verdict).
 
 | TC | Test | Proves | CI |
@@ -168,7 +164,7 @@ only (r8 B4, r2 C5 verdict).
 | TC-U-10 | `Shape_ShouldWriteCaptionResources` | key `BaseElements.<El>.Parameters.<A2 path joined by '.'>.Caption`, nested path by NAMES; service captions; result captions "Success", "Response body", "Http status code", "Request body"; ItemValue "Item value"; the " - Input"/" - Output" suffix only where the same caption occurs more than once among the TOP-LEVEL params across the method's request and response; a nested item never gets it and is not counted (design C3, serialization §4, SQ3; measured by EM2, M-24: `UsrWscStatusIn_In` / `UsrWscStatus_Out` are "Status - Input" / "Status - Output", while the nested `UsrWscOrders_In.UsrWscOrdNo_In` and the top-level `UsrWscEchoText_Out` both stay plain "Reference") | - |
 | TC-U-11 | `Shape_ShouldLeaveEveryServiceParameterUnbound_AndCopyNoDefault` [service params with a Const `Authorization: Bearer <sentinel>` default, a SysSetting default, a Const non-secret header; a top-level Boolean Out (`UsrWscEchoOk`), a nested Boolean Out, a Boolean In (`UsrWscFlag`)] | tagged and nested non-Boolean L8 = `{}`; tagged and nested Boolean L8 = `{GS2:"false", GS5:<process>}` (14/14 corpus: 3 top-level Out, 11 nested Out, e.g. BingSearchProcess `VIFFriendly_Out`, `VNCache_Out`, measured; serialization §2.4, I7); an unbound Boolean In is `L8 {"GS2":"false","GS5":<P>}` as well (SQ5, no corpus instance; measured by EM2 on `UsrWscFlag_In`, M-24); no service `DefValue` reaches L8 or a resource (Q16) | - |
 | TC-U-12 | `Shape_ShouldMarkEveryParameterValueSerializable` | `IsValueSerializable = true`: the platform sync forces it on every matched param, so anything else is rewritten on the next load (g4 §1 step 4, §5) | - |
-| TC-U-13 | `Shape_ShouldAgreeWithThePlatformProvider_AtTopLevel` | the provider's own case tables (TS `Terrasoft.Services.Tests/ProcessSchemaWebServiceParametersProvider.Tests.cs:46-70, 316-371`: types, IsRequired, empty-result guards) copied as rows: names, tags, types and required flags of the top level equal the provider's; nested and result params are outside it | - |
+| TC-U-13 | `Shape_ShouldAgreeWithThePlatformProvider_AtTopLevel` | the provider's own case tables (TS `ProcessSchemaWebServiceParametersProvider.Tests`: types, IsRequired, empty-result guards) copied as rows: names, tags, types and required flags of the top level equal the provider's; nested and result params are outside it | - |
 | TC-U-14 | `Shape_ShouldBeDeterministic_ExceptForUIds` | two shapes of one method are equal with UIds normalised; every UId is fresh | - |
 | TC-U-94 | `Shape_ShouldRefuseANonArrayObjectParameter` [a service method with a non-array `Object` request param; the same on the response side] | refused with the design §5.1 text ("... has an object parameter 'p' that is not an array; such parameters are not supported"), nothing shaped or written (design C3 type rule, C11). 0 in the corpus and unreachable through the service designer (57/57 Object params are arrays, r1 C8 verdict, measured); the server provider would map it to Object `84ED6865` (r2 C5 verdict, traced), which the design does not follow | lit |
 | TC-U-100 | `Shape_ShouldAlwaysGenerateNestedItems` [an object array, a nested object array and a scalar array get L18 / the `ItemValue` child as TC-U-05, 06; the shaper has no feature input, and no notice is raised on any shape] | Q3 as agreed 2026-11-03: nested items on every target, no `ProcessParameterCollections` gate and no N11. The builder does not copy the designer's client gate, which reads a DB feature row that a clean 8.2.1+ database lacks (an open designer bug; decisions Q3); the run-time re-keying reads the config value, on in every checked build from 7.13 to 10.2.931 (decisions Q3, measured in build configs). A regression guard against reintroducing the gate | - |
@@ -211,7 +207,7 @@ only (r8 B4, r2 C5 verdict).
 | TC-U-38 | `SetElement_ShouldRefuseAChange_WhenADependentReadsASameNamedOutput` [the new method also has `Version_Out`, same type; a formula reads `WS1.Version_Out`] | refused like TC-U-37, naming the formula; bytes unchanged. References are by param UId, and design §3.2 regenerates every parameter other than `Success` / `Response` / `StatusCode` with a fresh UId, so a same-named same-type tagged output does not keep its readers (Q11's edge, answered by the design). Only those three keep their UIds (Q11 A3, TC-U-107) | - |
 | TC-U-39 | `Apply_ShouldWriteNothing_WhenAnyMemberIsRefused` [unknown method with a valid timeout; a negative `timeoutSeconds` with a valid method and `ignoreErrors: true`] | validate-all-before-write (the sub-case "`ignoreErrors` on a platform without IX4" is dropped with the guard, Q7, 2026-11-03) | - |
 | TC-U-108 | `SetElement_ShouldRefuseAServiceWithoutAMethod_ListingItsMethods` [`setElement` with `webService {service}` naming another service and no `method`] | story 2 (P-D1): refused with the new service's method list; nothing written (element bytes and BK15 rows before == after) | - |
-| TC-U-40 | `RemoveElement_ShouldRemoveTheElementAndItsMappingRows` | existing `ProcessGraphBuilder.RemoveElement` deletes rows whose `TargetMetaPath` contains the element UId (`PB/Graph/ProcessGraphBuilder.cs:1915-1922`, g1 (c)) | - |
+| TC-U-40 | `RemoveElement_ShouldRemoveTheElementAndItsMappingRows` | existing `ProcessGraphBuilder.RemoveElement` deletes rows whose `TargetMetaPath` contains the element UId (`ProcessGraphBuilder`, g1 (c)) | - |
 
 ### 2.6 BK15 rows (Q4) - `WebServiceResultMappingRowTests`
 
@@ -239,7 +235,7 @@ takes BK15 rows as optional on the builder side, serialization §8.2).
 
 | TC | Test | Proves |
 |---|---|---|
-| TC-U-47 | `UserTaskRoute_ShouldRefuseWebServiceUserTask_PointingToTheBlock` [create `userTask` `userTaskName: WebServiceUserTask`; `addElement`; by its UId e7acb2e5-...] | Q1: keyed on the resolved schema UId (pattern `RefuseUnconfigurablePageTask`, `PB/Elements/UserTaskElementHandler.cs:382-398`); today it builds (r4 H2); other user tasks unaffected |
+| TC-U-47 | `UserTaskRoute_ShouldRefuseWebServiceUserTask_PointingToTheBlock` [create `userTask` `userTaskName: WebServiceUserTask`; `addElement`; by its UId e7acb2e5-...] | Q1: keyed on the resolved schema UId (pattern `RefuseUnconfigurablePageTask`, `UserTaskElementHandler`); today it builds (r4 H2); other user tasks unaffected |
 | TC-U-48 | `MultiInstance_ShouldBeRefused_OnAWebServiceElement` [`setElement webService` on a designer-built element carrying `BP6`] | Q20: refused, element bytes unchanged; describe of the same element reports it as found with an issue (TC-U-79). `webService.multiInstanceOptions` on create never reaches the package: clio's key check refuses it before sending (TC-C-02, TC-I-03) |
 | TC-U-49 | dropped (Q7, 2026-11-03) | the capability guard and its "`ignoreErrors: true` refused where IX4 is absent" refusal are gone: EM9 showed the package already fails to compile below 8.3.2 |
 | TC-U-50 | dropped (Q7, 2026-11-03) | the direct write is TC-U-29 |
@@ -280,7 +276,7 @@ element, which no test uses today (g3 M8).
 | TC-U-62 | `Map_ShouldSetTheRequestBody_FromAConstantAFormulaOrAParameter` [constant JSON text; `string.Format(...)` formula (the Gemini shape); a Text process parameter] | Q5 escape hatch; stored as the mapping service writes it, with no JSON check of the constant and no notice when Body parameters are bound too (Q5, 2026-11-03); the generated params are untouched (the run time replaces the generated body when RequestBody is non-null, traced, core unit tests r3 §4; not measurable on stand `Creatio` under E4) |
 | TC-U-63 | `Map_ShouldReadTheResponseIntoADeclaredCollection` [declare `Candidates` Collection [`ContentParts` Collection [`Text` LongText]]; map `Candidates.ContentParts.Text` <- `WS1.Candidates_Out.CParts_Out.PText_Out`] | g3 case (c): P1 binds both parents innermost first; equal to the stored Gemini mapping under the role rule; Tag is read nowhere on the mapping path |
 | TC-U-64 | `Map_ShouldRefuseAThirdLevelOrScalarListResponse` [`...GSGCIndices_Out.GSGCIndicesItemValue_Out` into any declarable target; a declared Collection <- an ObjectList output] | Q6: depth and type refusals; Complex / structured parameter types follow-up |
-| TC-U-65 | `TypeFromElement_ShouldRefuseAWebServiceCollectionMirror_PointingToADeclaredCollection` [mirror of `WS1.rows_Out` (CompositeObjectList); the same mirror from a non-WS collection source -> the existing message unchanged] | C13 (design 4.14, plan P-C6): the mirror still refuses non-GUID item Tags (`PB/Parameters/ProcessParameterService.cs:972-1012`), and for a WS source the message carries the design §5.1 C13 text verbatim ("... cannot be mirrored: its items carry service names, not column identities. Declare a Collection with itemProperties and map the items from '<el>.<param>'."); nothing written |
+| TC-U-65 | `TypeFromElement_ShouldRefuseAWebServiceCollectionMirror_PointingToADeclaredCollection` [mirror of `WS1.rows_Out` (CompositeObjectList); the same mirror from a non-WS collection source -> the existing message unchanged] | C13 (design 4.14, plan P-C6): the mirror still refuses non-GUID item Tags (`ProcessParameterService`), and for a WS source the message carries the design §5.1 C13 text verbatim ("... cannot be mirrored: its items carry service names, not column identities. Declare a Collection with itemProperties and map the items from '<el>.<param>'."); nothing written |
 | TC-U-101 | `TypeFromElement_ShouldRefuseAWebServiceObjectListMirror` [mirror of a WS ObjectList output, e.g. `WS1.UsrWscEchoIds_Out`] | C13: today such a mirror silently creates a parameter with no shape and no binding (r5 C6 verdict (1), traced); now refused with the same pointer text as TC-U-65; process bytes before == after |
 | TC-U-66 | `Map_ShouldReadResultParametersAsOrdinaryOutputs` [`WS1.Success` -> Boolean param; `StatusCode` -> Integer; `Response` -> Text; a conditional flow on `StatusCode == 200`] | Q7 |
 | TC-U-67 | `Map_ShouldAddressParametersByTheirStoredNames_Only` [`query_In` resolves; `query` (the Tag) refused with the locator's not-found text] | Q2: no alias |
@@ -335,9 +331,9 @@ Fallback: if the reflection binding fails on a configuration, the row is replace
 
 | TC | Test | Proves |
 |---|---|---|
-| TC-U-87 | `WebServiceMembers_ShouldKeepTheirWireNames` (new method in `PBT/EntryPoints/WebService/ProcessDesignServiceWireContractTests.cs`) [`ProcessElementDescriptor.WebService` and `ProcessElementUpdateDescriptor.WebService` -> `webService`; `service`, `method`, `timeoutSeconds`, `ignoreErrors`; describe type members incl. `serviceResolved`, `methodResolved`, `issues`] | a renamed `DataMember` compiles and is then dropped silently by the serializer |
+| TC-U-87 | `WebServiceMembers_ShouldKeepTheirWireNames` (new method in `ProcessDesignServiceWireContractTests`) [`ProcessElementDescriptor.WebService` and `ProcessElementUpdateDescriptor.WebService` -> `webService`; `service`, `method`, `timeoutSeconds`, `ignoreErrors`; describe type members incl. `serviceResolved`, `methodResolved`, `issues`] | a renamed `DataMember` compiles and is then dropped silently by the serializer |
 | TC-U-88 | `OperationContractCount_MustStayPinned` (existing) | Q10: no new operation |
-| TC-U-89 | `CompositionRoot_RegistersEveryElementHandler` and `..._ResolvesEveryCollaborator_FromScope` (existing, `PBT/CrtProcessBuilderAppTests.cs`) | the handler, catalog, shaper, row writer and the guards (multi-instance refusal, Q20; no capability or nesting-feature seam) resolve in a scope; `CreateGraphBuilder` and `CreateProcessOperations` carry the new applier (r8 §4) |
+| TC-U-89 | `CompositionRoot_RegistersEveryElementHandler` and `..._ResolvesEveryCollaborator_FromScope` (existing, `CrtProcessBuilderAppTests`) | the handler, catalog, shaper, row writer and the guards (multi-instance refusal, Q20; no capability or nesting-feature seam) resolve in a scope; `CreateGraphBuilder` and `CreateProcessOperations` carry the new applier (r8 §4) |
 | TC-U-90 | `SupportedTypes_ShouldNameWebService` (factory) | the token list derives from handlers; `webService` is accepted, `callWebService` is not (clio validates `webservice` already, r5 §1.3) |
 | TC-U-91 | `MetaData_ShouldRoundTripTheElementKeys` | IX1-IX4, BO2/BO3, BP2 survive write/read (TS `ProcessSchemaWebService.Tests.cs:107` pattern) |
 | TC-U-92 | `CreateVersionClone_ShouldKeepTheWebServiceElementOwnedByTheNewVersion` (`ProcessVersionCloneFactoryTests`) | A3/A4/GS5 of every param and BK15 row = the clone's UId (P-D4) |
@@ -345,7 +341,7 @@ Fallback: if the reflection binding fails on a configuration, the row is replace
 
 ---
 
-## 3. Parity tests (PBT)
+## 3. Parity tests (package tests)
 
 Comparison rule: WSCR, [serialization](eng-92710-call-web-service-element-serialization.md) §8.2 (W1-W14), with the
 allowed differences of §8.3 (AD1-AD5 and AD10 for committed tests; AD6 dropped by EM0). That file owns the rule; this
@@ -372,12 +368,12 @@ apply to the corpus sweep.
 ### 3.1 Pattern A: corpus pairs, committed verbatim
 
 The set is serialization §8.1's: three pairs, six files, about 295 KB; resource files are not committed (W13).
-Committed under `PBT/Fixtures/WebService/` with a `PROVENANCE.md` (source path, size, copy date, SHA-256 as the LAST
+Committed under `WebService` with a `PROVENANCE.md` (source path, size, copy date, SHA-256 as the LAST
 cell, the layout the existing oracle's hash reader expects) and one `.gitattributes` line
 `tests/UnitTests/CrtProcessBuilder.Tests/Fixtures/WebService/* -text`. Measured here 2026-11-02: process captures are
 CRLF without a BOM (first bytes `7b 0d 0a`); service files carry a BOM (`ef bb bf`). PROVENANCE says so.
 
-| File (relative to `PS/`) | Role | Size | SHA-256 |
+| File (shipped corpus) | Role | Size | SHA-256 |
 |---|---|---|---|
 | CrtBase/branches/7.8.0/Schemas/CheckMarketplaceAppNeedUpdateSubProcess/metadata.json | process: 4 In (Query, Const/SysSetting defaults), 4 Out scalars, Success L8 false, 4 rows | 109,079 B | d79f889800f948e017e725055a673dc87ebb36b85dfbbf5a295a855c94e92358 |
 | CrtBase/branches/7.8.0/Schemas/CreatioMarketplaceApi/metadata.json | its service | 4,355 B | a06df74e0d9e54ecac35a52db74b1211f247f9f94f166f48960e5066df36eb18 |
@@ -386,7 +382,7 @@ CRLF without a BOM (first bytes `7b 0d 0a`); service files carry a BOM (`ef bb b
 | StudioFreeUpdate/branches/7.8.0/Schemas/ExecuteUpgradeBsf/metadata.json | process: composite REQUEST `PropertiesProperty_In`, item-level bound | 100,336 B | ae3b9d32a194c659039e51556d48da1867ffd7a94025e3b0120489f154a1cef9 |
 | StudioFreeUpdate/branches/7.8.0/Schemas/teamcitybpmonline_BSF/metadata.json | its service (auth block `IQ5` with SysSetting references, `IV2` 2, measured here) | 36,553 B | 75bd4318f266f7e706c85f7d09a036a8b68105b777894bf40540bcd9fea5c187 |
 
-Oracle: extend `PBT/FileProcessingCaptureOracle.cs` (fixture folder as a parameter; `L1`, `L6`, `L12`, `L17`, recursive
+Oracle: extend `FileProcessingCaptureOracle` (fixture folder as a parameter; `L1`, `L6`, `L12`, `L17`, recursive
 `L18`; BK15 rows; roles) rather than fork it. No resource oracle over committed XML: captions are compared on the
 stand (TC-P-05, W13).
 
@@ -415,7 +411,7 @@ The corpus has no product composite request body bound from a process collection
 only on 2 BusinessRulesTest elements, saved 2025-11-20, verdicts r2-C2, r3-C2), no timeout set by
 this designer version, and it is from older designers. EM2/EM3/EM4 captured these on stand `Creatio` (designer 7.8.0,
 platform 10.1.37) on 2026-11-03 (M-24..M-27); EM2 S2-S4 captured a SOAP element and its switch to REST on 2026-11-05
-(M-33..M-35). Their reads are committed REDACTED, not byte-verbatim, under `PBT/Fixtures/WebService/Stand/`
+(M-33..M-35). Their reads are committed REDACTED, not byte-verbatim, under `Stand`
 (serialization §8.1): the stand address is replaced by `<stand>` before saving (measurements rule 11), in the service
 `IQ1` and any value that carries it. `PROVENANCE.md` records per file the capture date, the platform and package
 versions from EM0, the redacted keys and the SHA-256 of the committed (redacted) bytes; under WSCR the redacted keys
@@ -424,7 +420,7 @@ The `[Description]` names the captures. TC-P-13 is written only after EM5 ran.
 
 | TC | Test | Proves | Source |
 |---|---|---|---|
-| TC-P-05 | `Captions_ShouldEqualTheStandCapture` [EM2 resources; EM3 resources] | W13 with AD3 (until the source re-check) and AD4: the builder element's `SysLocalizableValue` rows equal the capture's, keyed by the full resource key, values exact in the authoring culture; the suffix rule of TC-U-10. Resources are compared on the stand only (serialization §8.1), so this row is not a PBT test: its evidence is TC-I-01's `SysLocalizableValue` rows (and TC-I-02's for EM3) diffed against the EM2/EM3 capture with the section 5 stored-bytes helpers | EM2, EM3 |
+| TC-P-05 | `Captions_ShouldEqualTheStandCapture` [EM2 resources; EM3 resources] | W13 with AD3 (until the source re-check) and AD4: the builder element's `SysLocalizableValue` rows equal the capture's, keyed by the full resource key, values exact in the authoring culture; the suffix rule of TC-U-10. Resources are compared on the stand only (serialization §8.1), so this row is not a package test: its evidence is TC-I-01's `SysLocalizableValue` rows (and TC-I-02's for EM3) diffed against the EM2/EM3 capture with the section 5 stored-bytes helpers | EM2, EM3 |
 | TC-P-09 | `Element_ShouldEqualTheStandCapture` | AC5 on the current designer, under WSCR incl. W14: IX1-IX4 (`IX3` 7000, `IX4` true), BP2 of `UsrWscEchoService.UsrWscEcho` with every service-param kind of EM1 (`UsrWscEm2CaptureA.WebService1`, M-24) | EM2 |
 | TC-P-10 | `Bindings_ShouldEqualTheStandCapture` [scalar from a process param; constant; formula; item-level mapping into an IN collection] | AC1/AC3; the constant bytes of TC-U-57 (value in the resources only) | EM2 |
 | TC-P-11 | `ResponseCollection_ShouldEqualTheStandCapture` [declared Collection `Orders {OrdNo, Lines {Sku}}` + item mappings on `UsrWscDriftService.UsrWscOrders2`] | Q6 v1 shape (the declared-Collection route, the shipped `ActionGeminiSearch` shape). Oracle: EM3 route (b), process `UsrWscEm3CaptureB` (M-25): the designer binds item-first, and binding an item binds the container to `UsrWscOrd2_Out` and the nested collection to `UsrWscOrd2Lines_Out`; the container is type 651ec16f, every level `GS1` 3 with an `[Element:{ws}].[Parameter:{uid}]` token; the builder binds the container as well as the items. The designer's "Create from element" shape is measured (EM3 route (a), `UsrWscEm3Probe`, M-15: a CompositeObject wrapper `WebService1Results1` holding a Collection whose items are only the first-level scalars, Tags `<Element>.<Param>`, nested lists dropped) and is ENG-92730 scope, not built | EM3 |
@@ -481,7 +477,7 @@ dotnet test clio.tests/clio.tests.csproj --filter "TestCategory=Unit" < /dev/nul
 
 ---
 
-## 5. clio MCP e2e (`CLIO/clio.mcp.e2e/WebServiceElementToolE2ETests.cs`)
+## 5. clio MCP e2e (`WebServiceElementToolE2ETests`)
 
 Fixture shape copied from `SendEmailAttachmentsToolE2ETests` / `ProcessFileElementToolE2ETests`:
 `[TestFixture][AllureNUnit][AllureFeature(CreateBusinessProcessTool.CreateBusinessProcessToolName)][NonParallelizable][Category(McpE2ECategories.ProcessDesigner)]`
@@ -535,7 +531,7 @@ writes).
 | TC-K-02 | `WebServiceGuidanceTests.Guide_ShouldStateTheReadBack` | the describe member, the stored tree, `serviceUId`/`serviceResolved`/`methodResolved`/`issues`, the replay recipe (send the described block back unchanged); describe never shows service defaults |
 | TC-K-03 | `WebServiceGuidanceTests.Guide_ShouldStateTheRequestBodyRules` | nested items through the mapping surface; map the container explicitly when the items are formulas (g3 §3: nothing warns); when to use `RequestBody` (a method without a Body parameter such as `GeminiApiSearch`, the nested-list workaround, shapes mappings cannot express) and that a non-null value replaces the generated body (from the core unit tests, r3 §4: not measurable on stand `Creatio` under E4); no JSON check of a constant body and no notice when both `RequestBody` and Body parameters are bound (Q5, 2026-11-03), so the article states the rule instead |
 | TC-K-04 | `WebServiceGuidanceTests.Guide_ShouldStateTheResponseRules` | declare a Collection (<= 2 levels) and map items, which binds the container too; in the designer, map an item first, because the container picker offers no web-service object array (M-25); mirror of a web-service output, scalar lists and a third level are not buildable yet |
-| TC-K-05 | `WebServiceGuidanceTests.Guide_ShouldStateResolutionReplaceAndRefusals` | resolution order and case; refusals list names; a method change replaces every generated param, keeps `Success` / `Response` / `StatusCode` readable, and is refused while something reads any other parameter of the element (tagged inputs, nested items and `RequestBody` included); `WebServiceUserTask` refused on the generic route; multi-instance refused; a SOAP service built like REST with notice N10; the drift issues and the notice on any modify that leaves an element unresolved; a designer save of a process whose web-service element no longer resolves deletes every parameter of the element (result params included) and its BK15 rows and leaves the element `BL11:false`, so the remedy (restore the service or method in Studio > Web services, or first remove the reads of the missing parameters, then re-point the element) comes before any designer save, and describe's `methodResolved: false` is the signal (M-30) |
+| TC-K-05 | `WebServiceGuidanceTests.Guide_ShouldStateResolutionReplaceAndRefusals` | resolution order and case; refusals list names; a method change replaces every generated param, keeps `Success` / `Response` / `StatusCode` readable, and is refused while something reads any other parameter of the element (tagged inputs, nested items and `RequestBody` included); `WebServiceUserTask` refused on the generic route; multi-instance refused; a SOAP service built like REST with notice N10; the drift issues and the notice on any modify that leaves an element unresolved; a designer save of a process whose web-service element no longer resolves deletes every parameter of the element (result params included) and its BK15 rows and leaves the element `BL11:false`, so the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service that is no longer registered is restored by installing the package that carries it, not by registering it again in Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the missing parameters, then re-point the element) comes before any designer save, and describe's `methodResolved: false` is the signal (M-30) |
 | TC-K-06 | `WebServiceGuidanceTests.Guide_ShouldStateTheRunTimeFacts` | Success/StatusCode/Response as outputs; the timeout covers retries (r7 A3 verdict); ignoreErrors works only where feature `DisableIgnoreErrorsInWebServiceUserTask` is off (no platform-property caveat: the package floor is already about 8.3.2, Q7); an HTTP error answer completes the element with Success false and its status whatever ignoreErrors is, and a call with no HTTP answer fails the element and the process unless ignoreErrors is on, when Success is false and StatusCode 0 (EM7 designer half, M-28); on platforms without the core fix (the version line N5 names), a request list nested in a list whose container has no source of its own while its items are mapped is sent without that inner list, and the remedy is to map the container (the fix's issue comment and the core unit tests, stated as such: EM12 is not measurable on stand `Creatio` under E4; no version promise beyond the measured builds) |
 | TC-K-07 | `ProcessGuideContentPreservationTests` (existing, `:191`) | the `webService ... READ-ONLY here` pin is replaced with the VERSION FLOOR pin (formulaTask/scriptTask precedent `:181-197`) |
 | TC-K-08 | `WebServiceGuidanceTests.NoProcessArticleOrManifestDescription_ShouldClaimWebServiceIsUnbuildable` | `element-catalog.md:136-141`, `element-catalog-details.md:70-71`, `process-modeling.md:182-185` and the `process-element-catalog` manifest description no longer say read-only (whitespace-insensitive) |
@@ -550,8 +546,8 @@ Run: `dotnet test automation/Clio.Knowledge.Bundle.Tests/Clio.Knowledge.Bundle.T
 **Fact-check gate (TC-K-12, not a unit test).** Before the KB PR leaves draft, every factual claim of the new article
 and the edited sentences is checked by independent agents told to REFUTE it, one per cluster: (1) contract,
 resolution, refusals, replace rule; (2) parameter shape and read-back; (3) run time: result params, timeout,
-ignoreErrors, nested lists, response re-keying; (4) mapping rules. Each agent gets the source trees (`PB/`, `CORE/`,
-`JS/`, `PD/`) and the EM results as dated measurements, and may NOT cite `CLIO/docs/knowledge/`, this spec folder,
+ignoreErrors, nested lists, response re-keying; (4) mapping rules. Each agent gets the source trees (the package, the core
+platform, the designer client, CrtProcessDesigner) and the EM results as dated measurements, and may NOT cite `CLIO/docs/knowledge/`, this spec folder,
 the research folder, or another agent's output. Verdict per claim: confirmed / refuted / unverifiable with
 `file:line` or the EM id; every refuted or unverifiable claim is fixed or removed; the verdict table goes into the KB
 PR body.
@@ -828,16 +824,16 @@ Build a process with a Call web service element on `UsrWscTc12` of `UsrWscDriftS
 
 | Repository | Suite | Why it is at risk |
 |---|---|---|
-| PBT | `UserTaskElementHandler*Tests` | the new `WebServiceUserTask` refusal on the generic route |
-| PBT | `ProcessElementFactoryTests`, `ProcessBuildHandlerTests`, `ProcessGraphBuilderTests` | new supported token, strict block gate, the `afterElementsPlaced` selection, `RemoveElement` row cleanup |
-| PBT | `SubProcess*Tests`, `SubProcessPlatformProbeTests` | P-A4 generalises `Snapshot`/`Diff` and the drift report (TC-U-93 proof rule) |
-| PBT | `ProcessMappingServiceTests`, `FileCollectionMappingTests`, `MultiInstanceMappingTests`, `ElementSourceDecodeTests` | the Q13 notice sits on the mapping path; P1 now runs on a new element kind |
-| PBT | `ProcessParameterService*Tests`, `ParameterTypeCompatibilityTests` | the mirror refusal message changes for WS sources and the WS ObjectList mirror is newly refused (C13, TC-U-65, 101); non-WS mirrors keep today's message |
-| PBT | `ProcessModifyHandlerTests`, `Operations/*ElementOperation*Tests`, `ElementConfigurationLedgerTests` | the Q12 notice on modify; `addElement` / `setElement` branches; the ledger |
-| PBT | `ProcessSchemaValidatorTests` | the pre-save gate now appends N7 to a platform refusal (F-2, TC-U-115..122); other refusals keep their current composition |
-| PBT | `ProcessDescriberTests`, `ProcessVersionCloneFactoryTests` | the new describe member; clone of the element and its rows |
-| PBT | `ProcessDesignServiceWireContractTests`, `CrtProcessBuilderAppTests`, `CiContractGuardTests` | wire names, DI graph, categories |
-| PBT | the whole project on dev-nf and dev-n8 | before every commit |
+| package tests | `UserTaskElementHandler*Tests` | the new `WebServiceUserTask` refusal on the generic route |
+| package tests | `ProcessElementFactoryTests`, `ProcessBuildHandlerTests`, `ProcessGraphBuilderTests` | new supported token, strict block gate, the `afterElementsPlaced` selection, `RemoveElement` row cleanup |
+| package tests | `SubProcess*Tests`, `SubProcessPlatformProbeTests` | P-A4 generalises `Snapshot`/`Diff` and the drift report (TC-U-93 proof rule) |
+| package tests | `ProcessMappingServiceTests`, `FileCollectionMappingTests`, `MultiInstanceMappingTests`, `ElementSourceDecodeTests` | the Q13 notice sits on the mapping path; P1 now runs on a new element kind |
+| package tests | `ProcessParameterService*Tests`, `ParameterTypeCompatibilityTests` | the mirror refusal message changes for WS sources and the WS ObjectList mirror is newly refused (C13, TC-U-65, 101); non-WS mirrors keep today's message |
+| package tests | `ProcessModifyHandlerTests`, `Operations/*ElementOperation*Tests`, `ElementConfigurationLedgerTests` | the Q12 notice on modify; `addElement` / `setElement` branches; the ledger |
+| package tests | `ProcessSchemaValidatorTests` | the pre-save gate now appends N7 to a platform refusal (F-2, TC-U-115..122); other refusals keep their current composition |
+| package tests | `ProcessDescriberTests`, `ProcessVersionCloneFactoryTests` | the new describe member; clone of the element and its rows |
+| package tests | `ProcessDesignServiceWireContractTests`, `CrtProcessBuilderAppTests`, `CiContractGuardTests` | wire names, DI graph, categories |
+| package tests | the whole project on dev-nf and dev-n8 | before every commit |
 | clio | `TestCategory=Unit` (full suite) | ProcessModel + McpServer + Command + Common (test-side pins) + Core |
 | clio e2e | `WebServiceElementToolE2ETests` (new); `SubProcessElementToolE2ETests`; `CreateBusinessProcessToolE2ETests`; `ModifyBusinessProcessToolE2ETests`; `ProcessFileElementToolE2ETests`; `ListUserTasksToolE2ETests` (TC-I-13) | the shared build/modify path and the sub-process sync after the rebundle and the floor move; stand run, Ignored = 0, both frameworks |
 | KB | the whole `Clio.Knowledge.Bundle.Tests` project | new article, catalog flip, routing row, `process-modeling` swap |
@@ -851,8 +847,8 @@ Build a process with a Call web service element on `UsrWscTc12` of `UsrWscDriftS
 | AAA | explicit `// Arrange`, `// Act`, `// Assert`; a precondition assert in Arrange wherever the arrange could make the test vacuous (empty schema UId, an element that starts with params) |
 | `because` | on every assertion: what breaks for the user, not what the code does |
 | `[Description("...")]` | the behaviour and why it matters, with the decision id (Q-number) where one applies; no Jira key in a test name, a `[Description]` or an `AllureName` |
-| Categories | PBT `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`; clio `[Category("Unit")]` where the host fixture places it + the host's `[Property("Module", ...)]`; e2e `[Category(McpE2ECategories.ProcessDesigner)]` |
-| Cross-platform | no OS paths (fixtures and source scans found by ancestor search); PBT runs on dev-nf and dev-n8 |
+| Categories | package tests `[TestFixture(Category = "UnitTests"), Category("PreCommit")]`; clio `[Category("Unit")]` where the host fixture places it + the host's `[Property("Module", ...)]`; e2e `[Category(McpE2ECategories.ProcessDesigner)]` |
+| Cross-platform | no OS paths (fixtures and source scans found by ancestor search); package tests runs on dev-nf and dev-n8 |
 | Secrets | the only credential-like strings in any test are planted sentinels, asserted absent; no real token, password or header value from a stand in a fixture, snapshot or log, and no builder-output snapshot carries a service default (Q16); the pattern-A corpus fixtures are verbatim and may carry the shipped services' non-credential defaults, never a credential (TC-P-08) |
 
 A sketch of a package test in the house style:

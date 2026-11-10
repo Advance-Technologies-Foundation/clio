@@ -23,11 +23,11 @@ Sibling documents: [README](README.md) · [facts](eng-92710-call-web-service-ele
 [estimate](eng-92710-call-web-service-element-estimate.md).
 
 **Basis.** Creatio Academy and community pages read 2026-11-02; the PackageStore corpus (CrtProcessDesigner 7.8.0
-branch rule, below) scanned 2026-11-02; core TSBpm trunk and `<core>` `468c4c71b` (8.3.3.1722) for
+branch rule, below) scanned 2026-11-02; core platform trunk at `468c4c71b` (8.3.3.1722) for
 traces; crt-process-builder `origin/main` `da719366` (CrtProcessBuilder 1.6.6.131) for what describe returns today;
 a read-only inventory of stand `Creatio` (Creatio 10.1.37, .NET Framework, CrtProcessBuilder 1.6.6.131) taken
 2026-11-02. Research notes r6 (corpus), r7 (Academy), r9 (stand), g2-g5 (gap notes) in
-`<research notes, local>/` (local), cited as rN/gN §section. Where the adversarial fact-check
+the local research notes, cited as rN/gN §section. Where the adversarial fact-check
 (`_workflow-result.json`, "verdicts") corrected a note, the correction is used here and the claim id is cited
 (e.g. r6-C5).
 
@@ -126,7 +126,7 @@ same fallbacks in product code (section 2.4): composite outputs read in C# scrip
 Branch rule: one branch per package, `branches/7.8.0` when present, else the highest branch or trunk; test split by
 `is_test()` copied from `spec/sub-process-decomposition/corpus-scan/analyze.py:8-13` (regex
 `test|demo|sandbox|sample|example|^DevPkg$` plus `EXTRA_TEST`, `KEEP={'RealtyDevelopers'}`). Scan scripts and raw
-output: `<research notes, local>/scripts/` (`scan_ws.py`, `product.txt`, `test.txt`, `agg.txt`,
+output: the local research scripts (`scan_ws.py`, `product.txt`, `test.txt`, `agg.txt`,
 `crosscheck.txt`) (r6 §0) [measured: corpus].
 
 | | Product | Test | Total |

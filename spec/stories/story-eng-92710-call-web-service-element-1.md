@@ -154,7 +154,7 @@ lens for P-A1..P-A3, full lens for P-A4 if its diff exceeds ~50 lines)
   `setElement` with a `webService` block on a designer-built element that carries `BP6` refused (Q20; a
   `webService.multiInstanceOptions` key on create is clio's key-check refusal, TC-C-02); nothing written after a
   refusal (TC-U-47, 48). Not a guard: a SOAP service is built like REST, with notice N10 naming the element (Q20 D;
-  build and notice tests TC-U-24, 110, 111).
+  build and notice tests TC-U-24, 110, 111). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35).
 - [ ] **P-C3** C12 notices: N1 generated names, N2 canonicalised method name, N3 feature gate (one single-purpose
   reader of `DisableIgnoreErrorsInWebServiceUserTask` with a test fake, as `FileProcessingFeatureReader`), N5 nested
   array-in-array on every target (Q13), N6 cross-package service (Q9), N8 required input without a source, N9
@@ -259,9 +259,8 @@ owns AC6 and the drift half of AC7). Ticked only when true.
   as well (Q6, EM3 route (b) parity); the request bytes and the composite response read rest on the core unit tests
   and the parity suite unless the owner adds a JSON source (Q17), and the PR body says so; the scope of ENG-92730
   Complex / structured parameter types recorded as the follow-up, not done here.
-- [ ] **AC4** `IX4` written and read back; Success / StatusCode / Response usable in conditions and mappings; run time
-  proven on a registered test stand by EM6 as far as EP option E4 shows (result params, StatusCode, Success) and by EM7's
-  builder half matching its designer half (M-28).
+- [ ] **AC4** `IX4` written and read back; Success / StatusCode / Response usable in conditions and mappings; run time:
+  the success path proven by the manual cases on the shipping build (M-59): TC-01 Success true, StatusCode 200, Response the JSON body, the outputs filled; TC-02 5 rows read into a Collection, Success true, 200; TC-03 StatusCode 201, total quantity 96; the failure path by EM6 (M-38, M-55) and EM7's builder half matching its designer half (M-28, M-40, M-56).
 - [ ] **AC5** parity patterns A (corpus pairs), B (EM2 S1 / EM2 S2 (SOAP, TC-P-15) / EM3 captures; the EM4 capture
   is story 2's TC-P-12 and the EM2 S4 capture is story 2's TC-P-16) and C (writer diff) green; the 4 BK15
   rows written (Q4); a builder-made element survives a designer re-save with no diff (EM5, re-run on the final cut).
@@ -295,8 +294,8 @@ owns AC6 and the drift half of AC7). Ticked only when true.
 
 ### Done so far (2026-11-10)
 
-The package slices are implemented and the stand runs of 2026-11-09 are recorded (measurements section 0,
-M-36..M-58). This story's runs passed in the final-cut campaign: EM2 step 9, the describe read-back (M-36); EM5, the
+The package slices are implemented and the stand runs of 2026-11-09 and 2026-11-10 are recorded (measurements section 0,
+M-36..M-59; M-36..M-52 on 2026-11-09, M-53..M-59 on 2026-11-10). This story's runs passed in the final-cut campaign: EM2 step 9, the describe read-back (M-36); EM5, the
 STOP gate (M-37; steps 4 and 5 not run); EM6 and EM6-B (M-38, M-39); the builder halves of EM7 (M-40), EM10 (M-42),
 EM11 (M-43) and EM12 (M-44). The plan's late-measurement gate is met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator): EM6 and EM6-B (M-55), EM7 (M-56),
 the EM10, EM11 and EM12 builder halves (M-57) and AR-1 (M-58) gave the same results on the shipping build. Re-measured on the claimed cut:

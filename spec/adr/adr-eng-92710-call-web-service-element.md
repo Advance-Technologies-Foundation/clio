@@ -14,8 +14,7 @@ Q9, Q12, Q13, Q14, Q16 and Q20.
 question below with its sources, the [design file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-design.md)
 holds the package components C1-C14 and the clio changes K1-K11, the
 [measurements file](../eng-92710-call-web-service-element/eng-92710-call-web-service-element-measurements.md) owns
-EM0-EM12 and the measured facts M-01..M-52 (M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, M-36..M-52 on
-2026-11-09), and C-01..C-09.
+EM0-EM12 and the measured facts M-01..M-59 (M-01..M-31 on 2026-11-03, M-32..M-35 on 2026-11-05, M-36..M-52 on 2026-11-09, M-53..M-59 on 2026-11-10), and C-01..C-09.
 
 `CLIO/` = the clio repository root. Sources outside the public repositories (the
 CrtProcessBuilder package and its tests, CrtProcessDesigner and the other shipped packages, the core platform) are
@@ -24,7 +23,8 @@ are compared on clean-slate cost and platform constraints; existing prototype or
 against any option (owner rule). Every stand measurement below was taken on stand `Creatio` (Creatio 10.1.37, .NET
 Framework, CrtProcessBuilder 1.6.6.131) on 2026-11-02 or 2026-11-03, except the SOAP capture EM2 S2-S4 (M-32..M-35),
 taken on 2026-11-05 with an experimental stand-only cut installed (designer saves; the builder was not involved), and
-M-36..M-52 on 2026-11-09 on stands `eng105744-web02` and `eng92710-web03` (the final-cut campaign, and the re-measure
+M-36..M-52 on 2026-11-09 on stands `eng105744-web02` and `eng92710-web03`, and M-53..M-59 on 2026-11-10 on stands
+`eng92710-web03` (M-53..M-58) and `eng92710-web04` (M-59) (the final-cut campaign, and the re-measure
 of the service refusal, AR-1 and EM8 step 8 on the claimed cut).
 
 ---
@@ -311,7 +311,9 @@ nested input of the same caption).
   drift as issues; at the end of every modify, each web-service element whose service or method does not resolve,
   configured in the request or not (owner, 2026-11-05), gets notice N7 saying the platform load prunes its parameters.
   When something reads a pruned parameter, the platform's validation refuses the modify before the end of the
-  request; that refusal carries N7 after the platform's text, the named element first with the repair order and
+  request; that refusal carries N7 after the platform's text, the named element first with the repair order (a missing method
+  is restored in Studio > Web services and the request repeated; a missing, unregistered service is restored by
+  installing the package that carries it, not by registering it again in Studio, which would give it another UId) and
   without the re-select advice, at most 3 notices, nothing written (findings F-2, F-5, measurements section 0; M-51, M-52). A refusal with a confirm
   flag (Q12 B) is a follow-up. Evidence: M-18 (EM8 current-builder half: the loss is real and silent); M-29, M-30
   (EM8 service-save and designer halves: a service save writes nothing and evicts no cached process; a designer save
@@ -343,7 +345,7 @@ nested input of the same caption).
 - **Q20 - multi-instance refused; SOAP built like REST (D, 2026-11-05).** 0 multi-instance and 0 SOAP calls in the
   corpus (C-09). The owner-requested SOAP capture (EM2 S2-S4) showed the designer builds a SOAP element with the REST
   shape and no SOAP-only field, so SOAP services take every path as REST does, with notice N10 naming the element
-  (evidence: M-33..M-35; a non-array complex type is unmeasured and the shaper refuses it anyway). The package
+  (evidence: M-33..M-35; a non-array complex type is unmeasured and the shaper refuses it anyway). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35). The package
   refuses `setElement` with a `webService` block on a designer-built element that carries `BP6` and describes such
   an element with an issue; a `webService.multiInstanceOptions` key on create never reaches the server, because
   clio's key check refuses it.

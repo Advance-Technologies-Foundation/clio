@@ -58,7 +58,9 @@ The full text is the SPEC's AC1-AC9 (written to ENG-92710 Call web service eleme
   ignoring case, nested drift, a missing result param and an element marked invalid as issues; a modify that lets the
   platform prune an unresolved element carries a notice naming the element and the method; the modify is not refused
   (Q12 A). A modify the platform's validation refuses (a pruned parameter is read) carries the notice in the
-  refusal, after the platform's text, with the repair order (F-2, F-5).
+  refusal, after the platform's text, with the repair order (F-2, F-5): a missing method is restored in Studio > Web
+  services and the request repeated; a missing (unregistered) service is restored by installing the package that
+  carries it, not by registering it again in Studio (TC-U-124).
 - [ ] **AC8 (this story's outputs)** - the retarget refusal, notice N4, notice N7 and the describe issues carry no
   service-side data (service parameter default, `authInfo`, base-URI credential); the values N4 lists are the
   element's stored bindings (process data the caller can already read through describe, M-31), not service data
@@ -105,7 +107,7 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   dangling Formula token is outside the comparison, and the designer's `BL11:false` on the S2 element (unbound
   required `UsrWscId`) is the named allowed difference AD10 (serialization §8.3); the package never writes `IsValid`
   (TC-U-33..36, 46, 108, 112, 113; TC-P-12, 16; a retarget onto or away from a SOAP service as for REST, N10 only
-  onto SOAP, Q20 D).
+  onto SOAP, Q20 D). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35).
 - [ ] **P-D2** C7 retarget guard: `IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds:
   {Success, Response, StatusCode UIds}, includeOwner: false)`; the change is refused when anything (another element,
   a process parameter, a flow condition, a formula body) reads ANY parameter of the element other than `Success` /
@@ -134,8 +136,10 @@ section 3 holds the modify semantics). TC ids are the test plan's.
   element other than `Success` / `Response` / `StatusCode`; unresolved elements, the load-time prune and notice N7;
   the refused unrelated modify that carries N7 and the repair order; describe issues. It states that a designer save of a process whose web-service element no longer resolves deletes every
   parameter of the element (result params included) and its BK15 rows and leaves the element `BL11:false` (M-30), so
-  the remedy (restore the service or method in Studio > Web services, or first remove the reads of the missing
-  parameters, then re-point the element) comes before any designer save; describe's
+  the remedy (a renamed or removed method is restored in Studio > Web services and the request repeated; a service
+  that is no longer registered is restored by installing the package that carries it, not by registering it again in
+  Studio, which would give it another UId and leave the element unresolved; otherwise first remove the reads of the
+  missing parameters, then re-point the element) comes before any designer save; describe's
   `methodResolved: false` is the signal.
 - [ ] **KB-5 / KB-6 (modify part)** `WebServiceGuidanceTests` covers the replace and drift claims (TC-K-05, shared
   with story 1); the fact-check gate covers this section.
@@ -198,7 +202,7 @@ true.
 
 ### Done so far (2026-11-10)
 
-Slice D is implemented and the stand runs of 2026-11-09 are recorded (measurements section 0, M-36..M-52). EM8
+Slice D is implemented and the stand runs of 2026-11-09 and 2026-11-10 are recorded (measurements section 0, M-36..M-59). EM8
 step 8, re-measured on the claimed cut, passes: the unrelated modify of the drifted process is refused by the platform's validation because a
 Formula task reads a pruned parameter, nothing is written, and the refusal now carries N7 after the platform's text,
 the referenced element first under the repair-order lead and the other drifted element with its ordinary notice

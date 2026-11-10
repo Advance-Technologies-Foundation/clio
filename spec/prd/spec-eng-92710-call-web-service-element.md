@@ -115,7 +115,7 @@ In scope (the CrtProcessBuilder package, clio, clio-knowledge):
   regenerated with new UIds (`IProcessDependencySnapshot.FindDependents(element, survivingParameterUIds: {Success,
   Response, StatusCode UIds}, includeOwner: false)`; Q11 A3).
 - SOAP services: built exactly like REST, with notice N10 naming the element (Q20 D, 2026-11-05; the SOAP capture EM2
-  S2-S4 showed the designer's REST shape).
+  S2-S4 showed the designer's REST shape). Known gap: no builder-made SOAP element has been saved, re-opened in the Process Designer or run on a stand; the only evidence is offline parity against the designer capture (EM2 S2-S4, M-32..M-35).
 - Refusals and notices of design section 5; no service-side data (service parameter default, `authInfo`, base-URI
   credential) in builder output; the element's stored bindings are returned by design (Q16).
 - clio: key check, short-form block, floors, descriptions and prompts (paid by swaps, Q15), typed describe, capability
@@ -236,7 +236,7 @@ AC -> design -> proof -> story (plan section 9 has one Definition of Done row pe
 | AC1 | block (Q2, Q8), generator (Q3), same-request ordering (Q10), mapping surface (Q5) | TC-U-27..32, 56..62, 67, 87; TC-P-03, 09, 10; TC-I-01; EM2 | 1 |
 | AC2 | resolver C2 (Q9, Q10), canonical `IX1` / `IX2`; the unknown-service refusal lists methods (K-1); SOAP built like REST with N10 (Q20 D) | TC-U-15..26, 105, 110, 111, 125..127; TC-I-03, 04; EM11 and EM10 builder halves; M-47; AR-1 (M-48) | 1 |
 | AC3 | item mappings and `RequestBody` (Q5), declared Collection (Q6), C13 mirror refusals | TC-U-56..66, 101; TC-P-06, 10, 11; TC-I-02, 08; EM3, EM6 | 1 |
-| AC4 | `IX4` written directly (Q7), N3, result params as ordinary outputs | TC-U-29, 66, 96; TC-I-09; EM7 | 1 |
+| AC4 | `IX4` written directly (Q7), N3, result params as ordinary outputs | TC-U-29, 66, 96; TC-I-09; EM7; failure path EM6 (M-38, M-55); success path M-59 (TC-01: Success true, 200, Response the JSON body; TC-02: 5 rows, 200; TC-03: 201, total quantity 96) | 1 |
 | AC5 | shaper port (Q3), BK15 writer (Q4), WSCR rule | TC-U-01..14, 41..45, 106; TC-P-01..11, 13..15; EM2 (S1, S2), EM3, EM5 | 1 |
 | AC6 | replace, `Success` / `Response` / `StatusCode` UIds kept, retarget guard, N4 (Q11 A3) | TC-U-33..39, 46, 107, 108, 112, 113; TC-P-12, 16; TC-I-05; EM4 | 2 |
 | AC7 | describe member and stored tree (Q14); issues and notice N7 (Q12), also on a refused modify (F-2, F-5) | TC-U-69..75, 77..80, 99, 102..104, 109; TC-U-53, 54, 114..124; TC-I-06, 07; EM8 (step 8: M-51, M-52) | 1 (read back), 2 (issues, N7) |
@@ -253,8 +253,9 @@ EM status 2026-11-10, as the measurements file records it (section 0 and the gat
   EM2 S1 (M-24, the AC5 oracle), EM3 routes (a) and (b) (M-15, M-25), EM4 (M-20, M-26, M-27), EM9 (local, M-14), and
   the designer halves of EM7 (M-28), EM10 (M-17) and EM11 (M-16); EM8's current-builder half (M-18) and its
   service-save and designer halves (M-29, M-30, M-31); the Q4 BK15 probe (M-13). **Done, 2026-11-05:** EM2 S2-S4, the
-  SOAP capture (M-32..M-35, decisions Q20 D). Measured facts M-01..M-52: M-01..M-31 on 2026-11-03, M-32..M-35 on
-  2026-11-05, M-36..M-52 on 2026-11-09.
+  SOAP capture (M-32..M-35, decisions Q20 D). Measured facts M-01..M-59: M-01..M-31 on 2026-11-03, M-32..M-35 on
+  2026-11-05, M-36..M-52 on 2026-11-09, M-53..M-59 on 2026-11-10 (M-53..M-58 on stand `eng92710-web03`, M-59 on
+  `eng92710-web04`).
 - **STOP gate (EM5)** right after slice B, on an experimental cut: the designer opens and re-saves a builder-made
   element with no byte change. On failure work stops, the diff goes to the owner, Q4 (and possibly Q3) is re-opened
   and the estimate is redone before slice C. Passed on the experimental cut (2026-11-04) and in the final-cut campaign
