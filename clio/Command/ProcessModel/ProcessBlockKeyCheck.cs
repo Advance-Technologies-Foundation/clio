@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Clio.Common;
 
 namespace Clio.Command.ProcessModel;
 
@@ -44,8 +43,9 @@ public sealed record ProcessBlockKeyCheckResult(string Error, IReadOnlyList<stri
 /// back keeps building. clio tolerates them and says nothing: the server they reach (every caller requires
 /// CrtProcessBuilder 1.6.6.150) ignores them and names them in its own "Read-only fields copied from describe were
 /// ignored" warning, which says how to change each one. A second warning from clio about the same fields only doubled
-/// the noise of a describe -> setElement round trip; on a host whose server check reports itself unavailable the
-/// server's own warning says the request was not checked.</para>
+/// the noise of a describe -> setElement round trip. The accepted cost: on a host whose server check reports itself
+/// unavailable, the server's warning only says the request was not checked and names none of these fields, where
+/// clio used to name them.</para>
 /// </remarks>
 internal static class ProcessBlockKeyCheck {
 
@@ -67,7 +67,7 @@ internal static class ProcessBlockKeyCheck {
 		/// <param name="label">The caller-facing name of the block.</param>
 		/// <param name="describeType">The describe type whose extra members <paramref name="readBack"/> names.</param>
 		/// <param name="keys">The contract's keys, space-separated.</param>
-		/// <param name="readBack">Describe-only keys tolerated with a warning, space-separated.</param>
+		/// <param name="readBack">Describe-only keys tolerated (the server names them), space-separated.</param>
 		/// <param name="pointers">Where a commonly misplaced or misspelled key belongs.</param>
 		internal KeySet(string contractType, string label, string describeType, string keys, string readBack = null,
 				IReadOnlyDictionary<string, string> pointers = null) {
@@ -94,7 +94,7 @@ internal static class ProcessBlockKeyCheck {
 		/// <summary>Every key the server's contract declares.</summary>
 		internal IReadOnlyCollection<string> Keys => _keys;
 
-		/// <summary>Describe-only, derived keys: ignored by the write path, warned about, never refused.</summary>
+		/// <summary>Describe-only, derived keys: ignored by the write path, never refused; the server names them.</summary>
 		internal IReadOnlySet<string> ReadBack { get; }
 
 		/// <summary>Where a commonly misplaced or misspelled key belongs, keyed by that key.</summary>
@@ -193,7 +193,7 @@ internal static class ProcessBlockKeyCheck {
 		"DescribeUserTaskPerformerInfo", "type contact role showPage", "roleDisplay");
 
 	// One entry per attachment row. A described entry carries its stored row (slot), the levels bound and any
-	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are warned about.
+	// issues; fed back verbatim (the modify recipe: describe, edit the list, send it back) they are tolerated.
 	// Named on its own because email.attachments is the one LIST of this walk whose wrong shape is refused before
 	// sending (see Walk.RefusesAttachmentsShape).
 	private static readonly KeySet EmailAttachment = new("SendEmailAttachmentDescriptor", "attachment",
@@ -318,7 +318,7 @@ internal static class ProcessBlockKeyCheck {
 
 	// The Call web service block. Describe reports every write member in its write shape ('service' is the name string
 	// on both sides, the raw UId sits in the describe-only 'serviceUId'), so a described block replays unchanged and its
-	// five describe-only members are warned about, never refused - except a fractional 'timeoutSeconds', which the
+	// five describe-only members are tolerated, never refused - except a fractional 'timeoutSeconds', which the
 	// server cannot read (RefuseFractionalTimeout).
 	private static readonly KeySet WebServiceBlock = new KeySet("WebServiceDescriptor", "webService", "DescribeWebServiceInfo",
 		"service method timeoutSeconds ignoreErrors", "serviceUId serviceResolved methodResolved issues parameters");

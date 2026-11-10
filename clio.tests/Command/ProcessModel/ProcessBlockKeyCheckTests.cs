@@ -289,7 +289,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[Test]
 	[Description("A described Process file element fed back keeps building: the describe-only members (actionStored, outputs, issues on the block, display on every value source) are not refused but listed as ignored read-backs.")]
-	public void Check_Should_WarnButNotRefuse_FileProcessingDescribeOnlyFields() {
+	public void Check_Should_TolerateNotRefuse_FileProcessingDescribeOnlyFields() {
 		// Arrange
 		string element = """
 			{ "name": "ReadFiles", "type": "fileProcessing",
@@ -341,7 +341,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[Test]
 	[Description("Described Generated report and Process parameter elements fed back keep building: report.caption, report.convertToPdf, bindingLevels and the display of files are listed as ignored read-backs, never refused.")]
-	public void Check_Should_WarnButNotRefuse_ReportAndFilesDescribeOnlyFields() {
+	public void Check_Should_TolerateNotRefuse_ReportAndFilesDescribeOnlyFields() {
 		// Arrange
 		string elements = """
 			{ "name": "Report1", "type": "fileProcessing",
@@ -441,7 +441,7 @@ public sealed class ProcessBlockKeyCheckTests {
 
 	[Test]
 	[Description("A described element fed back keeps building: the derived read-back fields describe-business-process emits (position, uid, sourceSchemaUId, outputs, ...) are not refused but listed as ignored read-backs.")]
-	public void Check_Should_WarnButNotRefuse_DescribeReadBackFields() {
+	public void Check_Should_TolerateNotRefuse_DescribeReadBackFields() {
 		// Arrange
 		string element = """
 			{ "name": "R", "uid": "u", "type": "readData", "buildType": "readData", "position": { "x": 1, "y": 2 },
@@ -742,8 +742,8 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[Test]
-	[Description("Enforcing a described webService block fed back unchanged sends it on without a refusal and without a warning of clio's own: the server the request reaches ignores the same describe-only members and names them in its own warning, so one describe -> setElement round trip carries one warning, not two.")]
-	public void Enforce_Should_PassADescribedBlock_WithoutAWarningOfItsOwn() {
+	[Description("Enforcing a described webService block fed back unchanged does not refuse it: the describe-only members are tolerated, and the check still lists them as ignored. clio writes no warning of its own about them - Enforce takes no logger - because the server names the same members in its own warning.")]
+	public void Enforce_Should_NotRefuseADescribedBlock() {
 		// Arrange
 		JsonNode operations = JsonNode.Parse("""
 			[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": {
