@@ -23,6 +23,7 @@ using Clio.Command.McpServer.Resources;
 using Clio.Command.McpServer.Tools.MobilePageConverter;
 using Clio.Command.PackageCommand;
 using Clio.Command.ProcessModel;
+using Clio.Command.PageModalSize;
 using Clio.Command.RelatedPages;
 using Clio.Command.EntityConnections;
 using Clio.Command.RuntimeVerification;
@@ -508,6 +509,8 @@ public class BindingsModule {
 		services.AddTransient<IPageSchemaResolver, PageSchemaResolver>();
 		services.AddTransient<IEntityAddonTargetResolver, EntityAddonTargetResolver>();
 		services.AddTransient<IRelatedPageAddonService, RelatedPageAddonService>();
+		services.AddTransient<IPageModalSizeService, PageModalSizeService>();
+		services.AddTransient<IAppearanceSettingsLayerLocator, AppearanceSettingsLayerLocator>();
 		services.AddTransient<IEntityConnectionsAddonMetadata, EntityConnectionsAddonMetadata>();
 		services.AddTransient<IEntityConnectionsReader, EntityConnectionsReader>();
 		services.AddTransient<IEntityConnectionsService, EntityConnectionsService>();
@@ -586,6 +589,8 @@ public class BindingsModule {
 		services.AddTransient<PageCreateCommand>();
 		services.AddTransient<CreateRelatedPageAddonCommand>();
 		services.AddTransient<GetRelatedPageAddonCommand>();
+		services.AddTransient<GetPageModalSizeCommand>();
+		services.AddTransient<SetPageModalSizeCommand>();
 		services.AddTransient<GetEntityConnectionsCommand>();
 		services.AddTransient<UpdateEntityConnectionsCommand>();
 		services.AddTransient<PageTemplatesListCommand>();
@@ -749,6 +754,8 @@ public class BindingsModule {
 		services.AddTransient<PageCreateTool>();
 		services.AddTransient<CreateRelatedPageAddonTool>();
 		services.AddTransient<GetRelatedPageAddonTool>();
+		services.AddTransient<GetPageModalSizeTool>();
+		services.AddTransient<SetPageModalSizeTool>();
 		services.AddTransient<GetEntityConnectionsTool>();
 		services.AddTransient<UpdateEntityConnectionsTool>();
 		services.AddTransient<PageTemplatesListTool>();
