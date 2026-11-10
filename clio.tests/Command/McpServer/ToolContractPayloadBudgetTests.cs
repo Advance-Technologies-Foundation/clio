@@ -357,7 +357,7 @@ public sealed class ToolContractPayloadBudgetTests {
 	// stated the decision on both (signal starts on one object use mergeFrom, other branches a formulaTask each) and the
 	// direction hint (omit direction: a merged parameter is always Internal), and paid by SWAP, no ceiling raise: create
 	// dropped "Below .41 a refused formula still fails, with the package's own wording." and modify "(from CrtProcessBuilder
-	// 1.3.1.1)" - provenance for servers the 1.6.6.141 floor refuses up front - and modify turned ten em dashes of its
+	// 1.3.1.1)" - provenance for servers the 1.6.6.151 floor refuses up front - and modify turned ten em dashes of its
 	// parameter, filter and retarget clauses into ' - ' (five bytes each). Re-measured by lowering the ceiling: create
 	// 35062, describe 35056, modify 35054 - 10, 16 and 18 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;

@@ -2215,7 +2215,7 @@ public sealed class DescribedParameter {
 	/// <see cref="Value"/> are then null, so the list feeds straight back into <c>addParameter</c> /
 	/// <c>setParameter</c>. Declared here because this type carries no extension-data bag - without the property the
 	/// field is dropped on the way to the caller. Omitted when the server (a <c>CrtProcessBuilder</c> older than
-	/// 1.6.6.141) does not report it; such a server describes the merge as its raw formula.
+	/// 1.6.6.151) does not report it; such a server describes the merge as its raw formula.
 	/// </summary>
 	[JsonPropertyName("mergeFrom")]
 	public List<string> MergeFrom { get; set; }
