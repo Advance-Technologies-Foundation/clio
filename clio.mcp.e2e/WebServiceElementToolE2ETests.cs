@@ -204,7 +204,7 @@ public sealed class WebServiceElementToolE2ETests {
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "WebServiceUserTask" }""",
 		new[] { "'WebServiceUserTask' is a legacy SOAP task", "with type webService" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "userTask", "userTaskName": "EmailTemplateUserTask", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho" } }""",
-		new[] { "carries a 'webService' configuration, which is only valid on a 'webService' element" }, false)]
+		new[] { "carries a 'webService' configuration, which is only valid on a 'webservice' element" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "multiInstanceOptions": { "enabled": true } } }""",
 		new[] { "Nothing was sent", "'webService.multiInstanceOptions'" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": 1.5 } }""",
