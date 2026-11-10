@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -187,9 +188,15 @@ public sealed class WebServiceElementToolE2ETests {
 			ShouldHaveBuilt(callResult, "a declared two-level Collection read from a two-level response is the supported route");
 			CallToolResult described = await ProcessDesignerE2EArrange.DescribeAsync(context, processName);
 			ShouldCarryNoServiceData(described);
-			string json = JsonSerializer.Serialize(DescribedProcessGraph.Read(described));
-			json.Should().Contain("UsrWscOrd2_Out", because: "the declared Collection is bound to the element's response");
-			json.Should().Contain("UsrWscOrd2Lines_Out", because: "the second level is bound as well");
+			JsonObject orders = ProcessParameter(DescribedProcessGraph.Read(described), "Orders");
+			Text(orders, "sourceElement").Should().Be("WS1",
+				because: "the declared Collection itself is bound to the element: an item mapping binds the collections above it");
+			(Text(orders, "sourceElementParameter") ?? string.Empty).Should().Contain("UsrWscOrd2_Out",
+				because: "the declared Collection reads the element's response list, not the element's own parameter tree");
+			JsonObject lines = ItemProperty(orders, "Lines");
+			Text(lines, "sourceElement").Should().Be("WS1", because: "the second level is bound to the element as well");
+			(Text(lines, "sourceElementParameter") ?? string.Empty).Should().Contain("UsrWscOrd2Lines_Out",
+				because: "the nested collection reads the nested response list");
 		} finally {
 			await DeleteProcessesAsync(context, created);
 		}
@@ -526,6 +533,11 @@ public sealed class WebServiceElementToolE2ETests {
 			run.Status.Should().Be("completed", because: "a Call web service element runs straight through");
 			(run.ResultParameterValues ?? []).Should().ContainKeys(["CallSucceeded", "CallStatus", "CallResponse"],
 				because: "Success, StatusCode and Response land in the process parameters mapped from them");
+			int.TryParse(Convert.ToString(run.ResultParameterValues!["CallStatus"], CultureInfo.InvariantCulture),
+					NumberStyles.Integer, CultureInfo.InvariantCulture, out int statusCode)
+				.Should().BeTrue(because: "StatusCode lands as an integer");
+			statusCode.Should().BePositive(
+				because: "an HTTP status code is written only when the call reached a web server; with ignoreErrors a call with no answer still completes, so the run's status alone proves nothing");
 			JsonSerializer.Serialize(run).Should().NotContain(HeaderDefault,
 				because: "the header default stored in the service never reaches builder output");
 		} finally {
@@ -866,6 +878,12 @@ public sealed class WebServiceElementToolE2ETests {
 				break;
 		}
 	}
+
+	private static JsonObject ProcessParameter(JsonObject graph, string name) =>
+		(graph["parameters"]?.AsArray() ?? []).OfType<JsonObject>().Single(parameter => Text(parameter, "name") == name);
+
+	private static JsonObject ItemProperty(JsonObject parameter, string name) =>
+		(parameter["itemProperties"]?.AsArray() ?? []).OfType<JsonObject>().Single(item => Text(item, "name") == name);
 
 	private static JsonObject Element(JsonObject graph, string name) =>
 		(graph["elements"] as JsonArray ?? []).OfType<JsonObject>()
