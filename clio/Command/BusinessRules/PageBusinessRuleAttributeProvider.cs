@@ -111,9 +111,8 @@ internal sealed class PageBusinessRuleAttributeProvider(
 					}
 					break;
 				case JsonObject obj:
-					string? name = obj["name"] is JsonValue nameValue && nameValue.TryGetValue(out string? text) ? text : null;
-					string? type = obj["type"] is JsonValue typeValue && typeValue.TryGetValue(out string? typeText) ? typeText : null;
-					if (string.Equals(type, StepperComponentType, StringComparison.Ordinal)
+					string? name = GetString(obj, "name");
+					if (string.Equals(GetString(obj, "type"), StepperComponentType, StringComparison.Ordinal)
 						&& !string.IsNullOrWhiteSpace(name)) {
 						yield return name;
 					}
@@ -124,6 +123,9 @@ internal sealed class PageBusinessRuleAttributeProvider(
 			}
 		}
 	}
+
+	private static string? GetString(JsonObject obj, string propertyName) =>
+		obj[propertyName] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
 
 	private static Dictionary<string, PageParameterInfo> BuildParameterMap(PageBundleInfo bundle) {
 		Dictionary<string, PageParameterInfo> map = new(StringComparer.Ordinal);
