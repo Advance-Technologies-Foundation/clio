@@ -228,9 +228,9 @@ namespace Clio.Command;
 // security-character change, which takes a literal); the rationale is on CreateBusinessProcessOptions.
 // Raised to 1.6.6.150 by ENG-92710 for the webService element type and block on addElement / setElement; the
 // rationale is on CreateBusinessProcessOptions.
-// Raised to 1.6.6.151 by ENG-103990 for mergeFrom on addParameter / setParameter; the rationale is on
+// Raised to 1.6.6.153 by ENG-103990 for mergeFrom on addParameter / setParameter; the rationale is on
 // CreateBusinessProcessOptions.
-[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.151",
+[RequiresPackage(BundledPackages.ProcessBuilderPackageName, "1.6.6.153",
 	Hint = BundledPackages.ProcessBuilderInstallHint)]
 public sealed class ModifyBusinessProcessOptions : EnvironmentOptions {
 	/// <summary>Process code (schema Name) to edit. Provide exactly one of <see cref="ProcessName"/> or <see cref="ProcessUid"/>.</summary>

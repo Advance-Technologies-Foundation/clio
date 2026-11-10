@@ -17,7 +17,7 @@ namespace Clio.Command.ProcessModel;
 /// first start reads the parameter EMPTY, because the surviving binding points at the other branch's element,
 /// which never ran. A Formula element with <c>resultProcessParameter</c> on each branch assigns per run, and wins
 /// over a binding that is still stored.</para>
-/// <para>The remedy depends on the graph (ENG-103990, CrtProcessBuilder 1.6.6.146+). When it holds two signal starts
+/// <para>The remedy depends on the graph (ENG-103990, CrtProcessBuilder 1.6.6.153+). When it holds two signal starts
 /// on one object, the remedy names <c>mergeFrom</c> first: a NEW Guid parameter with <c>mergeFrom</c> takes the record
 /// Id of whichever start fired, so ONE shared chain reads the record and no branch needs its own binding or Formula.
 /// It must be a new parameter, because the server refuses <c>mergeFrom</c> on one that already takes a value and

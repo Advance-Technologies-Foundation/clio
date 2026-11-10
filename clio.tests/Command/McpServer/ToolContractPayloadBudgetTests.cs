@@ -352,14 +352,21 @@ public sealed class ToolContractPayloadBudgetTests {
 	// scriptTask, which the clause still names; -19 bytes). Re-measured by lowering the ceiling: create 35069, modify
 	// 35020, describe 35060 - 3, 52 and 12 bytes of headroom.
 	//
-	// ENG-103990 (2026-11-06, mergeFrom) re-measured first by lowering the ceiling: create 35067, modify 35063, describe
+	// ENG-103990 (2026-11-06, mergeFrom; the figures up to the rebase below predate ENG-92710) re-measured first by
+	// lowering the ceiling: create 35067, modify 35063, describe
 	// 35056 - 5, 9 and 16 bytes of headroom after the first cut named mergeFrom in both write contracts. Review fixes then
 	// stated the decision on both (signal starts on one object use mergeFrom, other branches a formulaTask each) and the
 	// direction hint (omit direction: a merged parameter is always Internal), and paid by SWAP, no ceiling raise: create
 	// dropped "Below .41 a refused formula still fails, with the package's own wording." and modify "(from CrtProcessBuilder
-	// 1.3.1.1)" - provenance for servers the 1.6.6.151 floor refuses up front - and modify turned ten em dashes of its
+	// 1.3.1.1)" - provenance for servers the 1.6.6.153 floor refuses up front - and modify turned ten em dashes of its
 	// parameter, filter and retarget clauses into ' - ' (five bytes each). Re-measured by lowering the ceiling: create
-	// 35062, describe 35056, modify 35054 - 10, 16 and 18 bytes of headroom.
+	// 35062, describe 35056, modify 35054 - 10, 16 and 18 bytes of headroom. Rebased onto ENG-92710 (2026-11-10), the two
+	// features together measured create 35075, modify 35037 and describe 35087, so create was 3 bytes and describe 15
+	// bytes over. Paid by SWAP again, no ceiling raise: two em dashes of create's parameter clauses and four of
+	// describe's became ' - ' (five bytes each). Re-measured by lowering the ceiling: create 35065, modify 35037,
+	// describe 35067 - 7, 35 and 5 bytes of headroom. Rebased again onto ENG-92710's 1.6.6.152 follow-up (2026-11-11)
+	// and moved to the 1.6.6.153 floor (same length): re-measured by lowering the ceiling, create 35065, modify 35037,
+	// describe 35069 - 7, 35 and 3 bytes of headroom.
 	private const int MaxToolContractSerializedBytes = 137 * 256;
 
 	// The seven-process-contract bundle is measured as it goes ON THE WIRE - serialized with the MCP result
@@ -388,6 +395,10 @@ public sealed class ToolContractPayloadBudgetTests {
 	// ENG-92710 (2026-11-04) re-measured by lowering this guard: 18832 bytes with its description text, which carries no
 	// safety marker; "webService" in the create call shape's block list landed with the rebundle that declares
 	// the block: re-measured then, 18845 bytes - 155 under this guard.
+	//
+	// ENG-103990 (2026-11-10, rebased onto ENG-92710) re-measured by lowering this guard: "mergeFrom?" in the create
+	// call shape's parameter shape, which is never cut, brings the bundle to 18855 bytes - 145 under this guard. Its
+	// description text carries no safety marker, so no short form keeps it. Unchanged on the 1.6.6.152 base (2026-11-11).
 	private const int MaxInlineWireReplyBytes = 19_000;
 
 	[Test]
