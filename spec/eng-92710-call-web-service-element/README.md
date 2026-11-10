@@ -1,8 +1,8 @@
 # ENG-92710 Call web service element: implementation plan
 
 Written 2026-11-02, updated 2026-11-03, 2026-11-05 and 2026-11-10. Status 2026-11-10: slices A-D implemented;
-final-cut campaign measured (M-36..M-52); late-measurement gate met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); no pull request open; stories in
-progress. Decisions changed on
+final-cut campaign measured (M-36..M-52); late-measurement gate met 2026-11-10: EM6, EM6-B, EM7, EM8 step 8, EM10, EM11, EM12 and KB-7 AR-1 re-run on the shipping build (M-53..M-58); EM5 not repeated (the later changes touch only refusal texts and the validator); pull requests open for review (package, knowledge, clio, docs); stories in
+review. Decisions changed on
 2026-11-05 by the owner: Q20 is D (SOAP built like REST, notice N10, after the SOAP capture EM2 S2-S4), N7 covers
 every unresolved web service element, configured in the request or not, and a Boolean constant is checked on a stand
 on the final cut (plan section 6). The text below was written in Phase 1: research,

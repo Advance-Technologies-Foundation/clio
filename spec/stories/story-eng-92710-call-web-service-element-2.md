@@ -10,8 +10,8 @@ Q12, Q14, Q16
 **Analysis**: [`spec/eng-92710-call-web-service-element/`](../eng-92710-call-web-service-element/README.md) (plan
 section 3.4 holds slice D; sections 4 and 5 the KB and clio tasks; section 9's AC6 and AC7 (drift) rows are the
 Definition of Done)
-**Status**: in-progress (set in this docs-only BMAD PR because implementation starts before it merges, so
-`ready-for-dev` is never true; plan section 2). The clio feature PR moves it to `review` when it opens; `done` is
+**Status**: review (the four ENG-92710 pull requests are open; in-progress was set in the docs-only BMAD PR because implementation starts before it merges, so
+`ready-for-dev` is never true; plan section 2). The docs-sync PR moved it to `review` when the PRs opened; `done` is
 flipped in the next clio PR that touches `spec/sprint-status.yaml` after the last merge, with only the really ticked
 Definition of Done boxes.
 **Size**: the estimate's package work package D and the modify lines of the clio and clio-knowledge rows; hours are
@@ -206,5 +206,5 @@ the referenced element first under the repair-order lead and the other drifted e
 rules out (finding F-5, resolved; M-52, whose reply equals the expected text). Package tests TC-U-115..124. From story
 1's side, the unknown-service refusal lists methods (K-1) and AR-1 passes with one refusal (M-47, M-48). Not measured:
 the no-reader case of EM8 (the end-of-request N7 on a saved modify). Still open as Low / doc items: F-1, F-3, F-4
-(measurements section 0). No pull request is open for this work yet, so no Definition of Done box is ticked and the
-status stays `in-progress`.
+(measurements section 0). The pull requests are open and the status is `review`; no Definition of Done box is ticked until they
+merge.

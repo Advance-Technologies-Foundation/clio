@@ -9,8 +9,8 @@ Q4, Q6, Q7, Q10; related Q5, Q8, Q9, Q13, Q14, Q16, Q20
 **Test plan**: [tp-eng-92710-call-web-service-element.md](../test-plans/tp-eng-92710-call-web-service-element.md)
 **Analysis**: [`spec/eng-92710-call-web-service-element/`](../eng-92710-call-web-service-element/README.md) (plan
 sections 3.1-3.3, 4 and 5 hold the task tables this story restates; section 9 is the Definition of Done)
-**Status**: in-progress (set in this docs-only BMAD PR because implementation starts before it merges, so
-`ready-for-dev` is never true; plan section 2). The clio feature PR moves it to `review` when it opens; `done` is
+**Status**: review (the four ENG-92710 pull requests are open; in-progress was set in the docs-only BMAD PR because implementation starts before it merges, so
+`ready-for-dev` is never true; plan section 2). The docs-sync PR moved it to `review` when the PRs opened; `done` is
 flipped in the next clio PR that touches `spec/sprint-status.yaml` after the last merge, with only the really ticked
 Definition of Done boxes.
 **Size**: the estimate's package work packages A, B, C and M (with H, G and Docs), clio K-src, K-tests, K-e2e and
@@ -306,5 +306,5 @@ M-47; TC-U-125..127, TC-U-18 updated), and an ambiguous match lists the matching
 parameters with `typeFromElement` (M-48; K-2 resolved); AR-2 passes (M-46). EM8 step 8, the refused modify that now
 carries N7 (findings F-2 and F-5, resolved), is story 2's. Still open as Low / doc items: F-1 (EM6-B oracle A cannot be
 saved, a plan defect), F-3 (the unknown-method refusal lists codes without captions), F-4 (one describe -> `setElement`
-round trip warns twice about the same ignored read-back members). No pull request is open for this work yet, so no
-Definition of Done box is ticked and the status stays `in-progress`.
+round trip warns twice about the same ignored read-back members). The pull requests are open and the status is `review`; no
+Definition of Done box is ticked until they merge.
