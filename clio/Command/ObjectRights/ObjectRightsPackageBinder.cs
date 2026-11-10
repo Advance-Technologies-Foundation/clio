@@ -166,25 +166,10 @@ internal sealed class ObjectRightsPackageBinder(
 				return ObjectRightsBindingTarget.Refuse($"the package of '{schemaName}' could not be found, so there is "
 					+ $"no package to bind its operation permissions to. {UsablePackageHint()}");
 			}
-			PackageTargetResolution package = targetResolver.Resolve(named ? packageName : basePackage,
-				requireEditable: true);
-			if (!package.Success && !named && ownElsewhere is null && package.ResolutionFailed) {
-				// A product object's base package is locked: the rows go to the CurrentPackageId package instead,
-				// the package design-time writes land in. No other layer of the schema is tried.
-				PackageTargetResolution current = targetResolver.Resolve(null, requireEditable: true);
-				if (!current.Success) {
-					return ObjectRightsBindingTarget.Refuse($"'{schemaName}' is in package '{basePackage}', which "
-						+ $"cannot receive its operation permissions: {package.Error} The CurrentPackageId package "
-						+ $"cannot receive them either: {current.Error} Pass package naming an editable package "
-						+ "(unlocked, InstallType 0). Nothing was changed.");
-				}
-				package = current;
-			}
-			if (!package.Success) {
-				return ObjectRightsBindingTarget.Refuse(named
-					? $"{package.Error} {UsablePackageHint()}"
-					: $"'{schemaName}' is in package '{basePackage}', which cannot receive its operation permissions: "
-						+ $"{package.Error} {UsablePackageHint()}");
+			PackageTargetResolution package = ResolveBindingPackage(schemaName, packageName, basePackage,
+				ownElsewhere is not null, out ObjectRightsBindingTarget refusal);
+			if (refusal is not null) {
+				return refusal;
 			}
 			IReadOnlyList<string> schemaPackages = layers.Select(layer => layer.PackageName)
 				.Where(name => !string.IsNullOrWhiteSpace(name))
@@ -243,6 +228,35 @@ internal sealed class ObjectRightsPackageBinder(
 			return new ObjectRightsBindingResult(ObjectRightsBindingStatus.Failed,
 				Error: ObjectRightsSupport.DisplayFailure(ex));
 		}
+	}
+
+	// The editable package the binding goes to, or a refusal. A locked base package of a product object falls back to
+	// the CurrentPackageId package; a named package or an existing own binding is never replaced.
+	private PackageTargetResolution ResolveBindingPackage(string schemaName, string packageName, string basePackage,
+		bool hasOwnBindingElsewhere, out ObjectRightsBindingTarget refusal) {
+		refusal = null;
+		bool named = !string.IsNullOrWhiteSpace(packageName);
+		PackageTargetResolution package = targetResolver.Resolve(named ? packageName : basePackage,
+			requireEditable: true);
+		if (!package.Success && !named && !hasOwnBindingElsewhere && package.ResolutionFailed) {
+			// A product object's base package is locked: the rows go to the CurrentPackageId package instead,
+			// the package design-time writes land in. No other layer of the schema is tried.
+			PackageTargetResolution current = targetResolver.Resolve(null, requireEditable: true);
+			if (!current.Success) {
+				refusal = ObjectRightsBindingTarget.Refuse($"'{schemaName}' is in package '{basePackage}', which "
+					+ $"cannot receive its operation permissions: {package.Error} The CurrentPackageId package "
+					+ $"cannot receive them either: {current.Error} Pass package naming an editable package "
+					+ "(unlocked, InstallType 0). Nothing was changed.");
+			}
+			return current;
+		}
+		if (!package.Success) {
+			refusal = ObjectRightsBindingTarget.Refuse(named
+				? $"{package.Error} {UsablePackageHint()}"
+				: $"'{schemaName}' is in package '{basePackage}', which cannot receive its operation permissions: "
+					+ $"{package.Error} {UsablePackageHint()}");
+		}
+		return package;
 	}
 
 	// The package a caller can name instead: the CurrentPackageId package when it accepts changes.
