@@ -12,7 +12,23 @@ DESCRIPTION
     returns EVERY schema in its replacing (designer) chain in a single response,
     ordered root first (by hierarchy level) — the same order the deterministic
     page-bundle merge consumes. Each entry carries the schema name, UId, package
-    name/UId, schema version, schema type, and its own raw body.
+    name/UId, whether that package is locked, schema version, schema type, and
+    its own raw body.
+
+    packageLocked is read from SysPackage.InstallType with one query for the
+    whole chain: 0 is editable (false), any other value is locked (true) - the
+    flag lock-package / unlock-package set. It is null when the lock state is
+    unknown, and the response warning then names the cause:
+      - the SysPackage query failed: the chain is still returned and every
+        packageLocked is null;
+      - SysPackage returned no row, or no InstallType, for a package: the
+        warning lists those package UIds;
+      - a chain entry has no package UId: the warning lists those schemas.
+    Treat null as unknown, never as unlocked.
+
+    The automatic save target of update-page (designPackageName in get-page) is
+    one of the unlocked layers. When the chain shows another unlocked layer of
+    the same page, the page is customized in more than one package.
 
     Use this instead of calling get-page / get-client-unit-schema once per schema
     when you need to inspect a whole chain (for example Classic->Freedom migration
@@ -41,7 +57,8 @@ OPTIONS
                                        --offset onward
 
     --metadata-only                    Return chain metadata only (names, UIds,
-                                       versions) without the raw bodies
+                                       package lock state, versions) without the
+                                       raw bodies
 
     --uri                    -u       Application uri
 
