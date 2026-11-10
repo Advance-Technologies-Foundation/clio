@@ -14,9 +14,16 @@ internal sealed class PageBusinessRuleAttributeProvider(
 	: IPageBusinessRuleAttributeProvider {
 
 	private const string PageParametersScopeName = "PageParameters";
-	private const string StepperComponentType = "crt.Stepper";
-	private const string ActiveStepAttributeSuffix = "_ActiveStep";
-	private const string ActiveStepDataValueTypeName = "Text";
+
+	// Attributes a view-config component generates at runtime. The page body never declares them, so
+	// they are absent from the view-model attributes; each rule exposes "<component name><suffix>" as an
+	// unscoped attribute of the given type for every named component of that type. Add a row to support
+	// another component that behaves the same way.
+	private static readonly ComponentRuntimeAttribute[] ComponentRuntimeAttributes = [
+		new("crt.Stepper", "_ActiveStep", "Text") // the open step's name, compared with a step name
+	];
+
+	private sealed record ComponentRuntimeAttribute(string ComponentType, string Suffix, string DataValueTypeName);
 
 	public IReadOnlyDictionary<string, BusinessRuleAttributeDescriptor> GetAttributes(PageBundleInfo bundle, Guid packageUId) {
 		ArgumentNullException.ThrowIfNull(bundle);
@@ -64,7 +71,7 @@ internal sealed class PageBusinessRuleAttributeProvider(
 
 		AddDatasourceScopedAttributes(result, dataSources, entityAttributeMaps, packageUId);
 		AddPageParameterAttributes(result, parametersByName);
-		AddStepperActiveStepAttributes(result, bundle);
+		AddComponentRuntimeAttributes(result, bundle);
 		return result;
 	}
 
@@ -88,19 +95,21 @@ internal sealed class PageBusinessRuleAttributeProvider(
 		}
 	}
 
-	// A crt.Stepper generates "<name>_ActiveStep" at runtime; the page body never declares it, so it
-	// is not among the view-model attributes. Expose it as an unscoped Text attribute (the active step
-	// is compared with a step name) keyed and addressed by the generated name, as the Designer saves it.
-	private static void AddStepperActiveStepAttributes(
+	private static void AddComponentRuntimeAttributes(
 		IDictionary<string, BusinessRuleAttributeDescriptor> result,
 		PageBundleInfo bundle) {
-		foreach (string stepperName in FindStepperNames(bundle.ViewConfig)) {
-			string attributeName = stepperName + ActiveStepAttributeSuffix;
-			result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, ActiveStepDataValueTypeName, null);
+		foreach ((string componentType, string componentName) in FindNamedComponents(bundle.ViewConfig)) {
+			foreach (ComponentRuntimeAttribute rule in ComponentRuntimeAttributes) {
+				if (!string.Equals(rule.ComponentType, componentType, StringComparison.Ordinal)) {
+					continue;
+				}
+				string attributeName = componentName + rule.Suffix;
+				result[attributeName] = new BusinessRuleAttributeDescriptor(attributeName, rule.DataValueTypeName, null);
+			}
 		}
 	}
 
-	private static IEnumerable<string> FindStepperNames(JsonNode? viewConfig) {
+	private static IEnumerable<(string Type, string Name)> FindNamedComponents(JsonNode? viewConfig) {
 		Stack<JsonNode?> pending = new();
 		pending.Push(viewConfig);
 		while (pending.Count > 0) {
@@ -111,10 +120,10 @@ internal sealed class PageBusinessRuleAttributeProvider(
 					}
 					break;
 				case JsonObject obj:
+					string? type = GetString(obj, "type");
 					string? name = GetString(obj, "name");
-					if (string.Equals(GetString(obj, "type"), StepperComponentType, StringComparison.Ordinal)
-						&& !string.IsNullOrWhiteSpace(name)) {
-						yield return name;
+					if (!string.IsNullOrWhiteSpace(type) && !string.IsNullOrWhiteSpace(name)) {
+						yield return (type, name);
 					}
 					foreach (KeyValuePair<string, JsonNode?> property in obj) {
 						pending.Push(property.Value);
