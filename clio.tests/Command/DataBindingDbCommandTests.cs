@@ -1034,6 +1034,37 @@ internal sealed class DataBindingDbCommandTests : BaseClioModuleTests {
 	}
 
 	[Test]
+	[Description("ENG-105291: warns about a translation that was written but could not be read back, and names why the site's default culture could not be read.")]
+	public void CreateDataBindingDb_Should_Warn_With_Reason_When_Localization_Is_Not_Verified() {
+		// Arrange
+		_schemaResponseJson = BuildSchemaResponseJson(
+			"UsrRepairStatus",
+			(Guid.Parse("ae0e45ca-c495-4fe7-a39d-3ab7278e1617"), "Id", 0),
+			(Guid.Parse("736c30a7-c0ec-4fa9-b034-2552b319b633"), "Name", 28));
+		_bindingLookupResponseJson = """{"rows":[],"success":true}""";
+		_localizer.Validate(default!, default, default!, default!).ReturnsForAnyArgs(new DataBindingLocalizationPlan("en-US"));
+		_localizer.Write(default!, default!, default!).ReturnsForAnyArgs([
+			new DataBindingLocalizationWrite("new-id", "New", "uk-UA", ["Name"], Verified: false,
+				UnverifiedReason: "Access denied")
+		]);
+		CreateDataBindingDbOptions options = new() {
+			Environment = "dev",
+			PackageName = PackageName,
+			SchemaName = "UsrRepairStatus",
+			RowsJson = """[{"values":{"Name":"New"},"localizations":{"uk-UA":{"Name":"Нове"}}}]"""
+		};
+
+		// Act
+		int result = _createCommand.Execute(options);
+
+		// Assert
+		result.Should().Be(0, because: "an unverified translation is a warning, not a failure");
+		_logger.Received(1).WriteWarning(Arg.Is<string>(message =>
+			message.Contains("[uk-UA] was written, but not verified")
+			&& message.Contains("default culture could not be read (Access denied)")));
+	}
+
+	[Test]
 	[Description("ENG-105291: writes nothing - no row, no translation, no binding - when the localizations are refused (ENG-105291 TC-04, TC-05, TC-07).")]
 	public void CreateDataBindingDb_Should_Write_Nothing_When_Localizations_Are_Refused() {
 		// Arrange

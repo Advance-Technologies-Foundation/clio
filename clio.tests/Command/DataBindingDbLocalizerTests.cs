@@ -449,6 +449,8 @@ internal sealed class DataBindingDbLocalizerTests {
 
 		// Assert
 		plan!.SiteDefaultCulture.Should().BeNull(because: "the setting has a value whose culture could not be read");
+		plan.DefaultCultureFailureReason.Should().Contain("cannot read",
+			because: "the warning must say why the default culture is unknown");
 	}
 
 	[Test]
@@ -464,6 +466,8 @@ internal sealed class DataBindingDbLocalizerTests {
 		// Assert
 		plan.Should().NotBeNull(because: "an unreadable default culture only weakens verification");
 		plan!.SiteDefaultCulture.Should().BeNull(because: "the default culture could not be read");
+		plan.DefaultCultureFailureReason.Should().Contain("Access denied",
+			because: "the reason of the failed read is carried to the warning");
 	}
 
 	[Test]
@@ -509,14 +513,15 @@ internal sealed class DataBindingDbLocalizerTests {
 		// Arrange
 		SetupReads(profileName: "Новый", localizedName: null);
 		DataBindingRowLocalization row = Row("New", ("en-US", "Name", "New"));
-		DataBindingLocalizationPlan plan = new("ru-RU", null, DataBindingLocalizationPlan.UnknownDefaultCulture);
+		DataBindingLocalizationPlan plan = new("ru-RU", null, DataBindingLocalizationPlan.UnknownDefaultCulture, "Access denied");
 
 		// Act
 		IReadOnlyList<DataBindingLocalizationWrite> result = _sut.Write(plan, SchemaName, [(RowId, row)]);
 
 		// Assert
-		result.Should().ContainSingle(because: "the value was written")
-			.Which.Verified.Should().BeFalse(because: "without the default culture the value cannot be read back");
+		DataBindingLocalizationWrite write = result.Should().ContainSingle(because: "the value was written").Subject;
+		write.Verified.Should().BeFalse(because: "without the default culture the value cannot be read back");
+		write.UnverifiedReason.Should().Be("Access denied", because: "the reason the default culture is unknown is reported");
 	}
 
 	[Test]

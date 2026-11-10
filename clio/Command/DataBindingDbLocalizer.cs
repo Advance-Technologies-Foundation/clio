@@ -29,12 +29,15 @@ public sealed record DataBindingRowLocalization(
 /// <param name="Verified"><see langword="false"/> when the value was written but could not be read back: the culture
 /// has no localization row and the site's default culture could not be read, so it is unknown whether the value
 /// lives in the entity table.</param>
+/// <param name="UnverifiedReason">Why the site's default culture could not be read, when <paramref name="Verified"/>
+/// is <see langword="false"/> and the reason is known.</param>
 public sealed record DataBindingLocalizationWrite(
 	string RowId,
 	string RowLabel,
 	string Culture,
 	IReadOnlyList<string> Columns,
-	bool Verified = true);
+	bool Verified = true,
+	string? UnverifiedReason = null);
 
 /// <summary>
 /// A localization write that failed or did not verify, with the rows and cultures already written before it stopped.
@@ -67,18 +70,22 @@ public sealed class DataBindingLocalizationException : InvalidOperationException
 /// <param name="DefaultCulture">The site's default culture (system setting <c>PrimaryCulture</c>): the culture whose
 /// value lives in the entity table and has no localization row. <see langword="null"/> means the same as
 /// <paramref name="ProfileCulture"/>; use <see cref="UnknownDefaultCulture"/> when it could not be read.</param>
+/// <param name="DefaultCultureFailureReason">Why the site's default culture could not be read, when it could not.</param>
 internal sealed record DataBindingLocalizationPlan(
 	string ProfileCulture,
 	IReadOnlyDictionary<string, string>? CultureNames = null,
-	string? DefaultCulture = null) {
+	string? DefaultCulture = null,
+	string? DefaultCultureFailureReason = null) {
 
 	/// <summary>Marks a plan whose site default culture could not be read.</summary>
 	public const string UnknownDefaultCulture = "";
 
 	/// <summary>The site's default culture, or <see langword="null"/> when it could not be read.</summary>
-	public string? SiteDefaultCulture => DefaultCulture is null
-		? ProfileCulture
-		: DefaultCulture.Length == 0 ? null : DefaultCulture;
+	public string? SiteDefaultCulture => DefaultCulture switch {
+		null => ProfileCulture,
+		{ Length: 0 } => null,
+		_ => DefaultCulture
+	};
 
 	/// <summary>Whether <paramref name="culture"/> is the profile culture.</summary>
 	public bool IsProfileCulture(string culture) =>
@@ -189,17 +196,22 @@ internal sealed class DataBindingDbLocalizer(
 				+ $"be read ({profileCulture.FailureReason}).");
 		}
 
+		(string? defaultCulture, string? defaultCultureFailureReason) = ReadDefaultCulture();
 		return new DataBindingLocalizationPlan(
-			profileCulture.Culture, cultureNames, ReadDefaultCulture() ?? DataBindingLocalizationPlan.UnknownDefaultCulture);
+			profileCulture.Culture,
+			cultureNames,
+			defaultCulture ?? DataBindingLocalizationPlan.UnknownDefaultCulture,
+			defaultCultureFailureReason);
 	}
 
 	/// <summary>
 	/// Reads the site's default culture the way the platform resolves it: the All-employees value of the
 	/// <c>PrimaryCulture</c> system setting, or <c>en-US</c> when the setting has no value.
 	/// </summary>
-	/// <returns>The culture name, or <see langword="null"/> when it could not be read (for example no read access to
-	/// system settings); verification then reports a culture without a localization row as not verifiable.</returns>
-	private string? ReadDefaultCulture() {
+	/// <returns>The culture name, or <see langword="null"/> with the reason when it could not be read (for example no
+	/// read access to system settings); verification then reports a culture without a localization row as not
+	/// verifiable.</returns>
+	private (string? Culture, string? FailureReason) ReadDefaultCulture() {
 		try {
 			JsonArray settingRows = ReadRows(
 				ServiceUrlBuilder.KnownRoute.Select,
@@ -215,7 +227,7 @@ internal sealed class DataBindingDbLocalizer(
 					]));
 			string? cultureId = settingRows.FirstOrDefault()?["GuidValue"]?.GetValue<string>();
 			if (string.IsNullOrEmpty(cultureId) || (Guid.TryParse(cultureId, out Guid id) && id == Guid.Empty)) {
-				return PlatformFallbackCulture;
+				return (PlatformFallbackCulture, null);
 			}
 
 			JsonArray cultureRows = ReadRows(
@@ -226,10 +238,13 @@ internal sealed class DataBindingDbLocalizer(
 					[new SelectQueryHelper.SelectQueryColumnDefinition("Name", "Name")],
 					[new SelectQueryHelper.SelectQueryFilterDefinition("Id", cultureId, SelectQueryHelper.GuidDataValueType)]));
 			// A setting that points at a culture this user cannot read leaves the default unknown, not en-US.
-			return cultureRows.FirstOrDefault()?["Name"]?.GetValue<string>();
+			string? cultureName = cultureRows.FirstOrDefault()?["Name"]?.GetValue<string>();
+			return cultureName is null
+				? (null, $"{PrimaryCultureSettingCode} points at culture '{cultureId}', which the connected user cannot read")
+				: (cultureName, null);
 		}
 		catch (Exception exception) when (exception is not OperationCanceledException) {
-			return null;
+			return (null, exception.Message);
 		}
 	}
 
@@ -293,7 +308,7 @@ internal sealed class DataBindingDbLocalizer(
 		for (int index = firstWrite; index < written.Count; index++) {
 			DataBindingLocalizationWrite write = written[index];
 			if (cultures.Contains(write.Culture)) {
-				written[index] = write with { Verified = false };
+				written[index] = write with { Verified = false, UnverifiedReason = plan.DefaultCultureFailureReason };
 			}
 		}
 	}
@@ -393,7 +408,7 @@ internal sealed class DataBindingDbLocalizer(
 		JsonObject query = JsonSerializer.SerializeToNode(SelectQueryHelper.BuildSelectQuery(
 			schemaName,
 			columns.Select(column => new SelectQueryHelper.SelectQueryColumnDefinition(column, column)).ToList(),
-			[new SelectQueryHelper.SelectQueryFilterDefinition("Id", rowId, SelectQueryHelper.GuidDataValueType)]))!.AsObject();
+			[new SelectQueryHelper.SelectQueryFilterDefinition("Id", rowId, SelectQueryHelper.GuidDataValueType)])).AsObject();
 		query["useLocalization"] = useLocalization;
 		JsonArray rows = ReadRows(ServiceUrlBuilder.KnownRoute.Select, "SelectQuery", query);
 		JsonObject? row = rows.FirstOrDefault() as JsonObject

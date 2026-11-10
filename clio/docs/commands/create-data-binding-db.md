@@ -63,7 +63,11 @@ the package carries every culture and an install on another site brings them alo
   The rows and the binding are saved even then, so run the same call again to retry the translations.
   The site's default culture (system setting `PrimaryCulture`) is stored in the entity table and is read
   from there; when the default culture cannot be read, a culture with no stored translation row is
-  reported as a "written, but not verified" warning instead of an error.
+  reported as a "written, but not verified" warning (with the reason) instead of an error.
+  A required column such as `Name` must carry the connected user's culture in every translation write. So when
+  that culture is not the site's default and has no stored translation yet, translating any culture also stores
+  the value the user currently sees as that culture's own translation: a later change of the default-culture value
+  no longer reaches users of that culture.
 - The output prints one `Localized row` line per record and culture.
 - To translate records that already exist, run the command again with the same rows. Pass the record's
   `Id` or its exact `Name` in the connected user's culture; a row that matches neither is inserted as a new

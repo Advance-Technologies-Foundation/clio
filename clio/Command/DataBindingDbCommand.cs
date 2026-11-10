@@ -105,8 +105,9 @@ public class CreateDataBindingDbCommand(IDataBindingDbService dataBindingDbServi
 			foreach (DataBindingLocalizationWrite localization in result.Localizations.Where(write => !write.Verified)) {
 				logger.WriteWarning(
 					$"Row {localization.RowId} ({localization.RowLabel}) [{localization.Culture}] was written, but not "
-					+ "verified: the site's default culture could not be read, so the value could not be read back. "
-					+ "Check the record in Creatio.");
+					+ "verified: the site's default culture could not be read"
+					+ (string.IsNullOrWhiteSpace(localization.UnverifiedReason) ? "" : $" ({localization.UnverifiedReason})")
+					+ ", so the value could not be read back. Check the record in Creatio.");
 			}
 			if (result.Localizations.Count > 0) {
 				logger.WriteInfo(

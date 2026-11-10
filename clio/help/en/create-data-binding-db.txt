@@ -42,7 +42,11 @@ BEHAVIOR:
   difference; the rows and the binding are saved even then, so re-run the call to retry.
   The site's default culture (PrimaryCulture) is read back from the entity table; when it
   cannot be read, a culture without a stored translation row is a "written, but not
-  verified" warning, not an error.
+  verified" warning (with the reason), not an error. A required column such as Name must
+  carry the connected user's culture in every translation write, so when that culture is
+  not the site's default and has no stored translation yet, translating any culture also
+  stores the value the user currently sees as that culture's own translation: a later
+  change of the default-culture value no longer reaches users of that culture.
   A failure partway lists the records and cultures already translated. The output prints one "Localized row" line per record and culture.
   To translate records that already exist, run the command again with the same rows: a row
   matched by Name or Id is not rewritten, only its translations are added. Pass the record's
