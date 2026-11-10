@@ -207,7 +207,9 @@ public sealed class WebServiceElementToolE2ETests {
 		new[] { "webService" }, false)]
 	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "multiInstanceOptions": { "enabled": true } } }""",
 		new[] { "Nothing was sent", "'webService.multiInstanceOptions'" }, false)]
-	[Description("TC-I-03: an unknown service (refused with the registered services), an unknown method (refused with the service's methods), a generic userTask naming WebServiceUserTask (refused with a pointer to the block) and a webService block on another element type are refused by the server; webService.multiInstanceOptions is refused by clio's key check before anything is sent. Nothing is created in any case: describe of the process name answers that it was not found. Only the two cases that name a real service need it on the stand.")]
+	[TestCase("""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": 1.5 } }""",
+		new[] { "Nothing was sent", "'webService.timeoutSeconds' is 1.5" }, false)]
+	[Description("TC-I-03: an unknown service (refused with the registered services), an unknown method (refused with the service's methods), a generic userTask naming WebServiceUserTask (refused with a pointer to the block) and a webService block on another element type are refused by the server; webService.multiInstanceOptions and a fractional timeoutSeconds are refused by clio's key check before anything is sent. Nothing is created in any case: describe of the process name answers that it was not found. Only the two cases that name a real service need it on the stand.")]
 	[AllureTag(CreateToolName)]
 	[AllureName("create-business-process refuses an unusable web service element and creates nothing")]
 	public async Task CreateBusinessProcess_Should_RefuseAndCreateNothing(string elementJson, string[] expectedFragments,
@@ -440,6 +442,7 @@ public sealed class WebServiceElementToolE2ETests {
 				created.Add(createdVersion);
 			}
 			ShouldHaveLanded(saved, "a version of a process with a web service element is an ordinary clone");
+			ShouldCarryNoServiceData(saved);
 			string versionName = ProcessDesignerE2EArrange.CreatedVersionName(saved);
 			JsonObject version = await DescribeGraphAsync(context, versionName);
 			JsonObject element = Element(version, "WS1");
@@ -780,16 +783,16 @@ public sealed class WebServiceElementToolE2ETests {
 		return EntitySchemaStructuredResultParser.Extract<RunProcessEnvelope>(result);
 	}
 
-	/// <summary>
-	/// Parses a stored element node. The platform stores process metadata indented, so a member is compared by value,
-	/// never by searching the text for its compact form.
-	/// </summary>
 	/// <summary>A member of a stored element node; a missing one fails the test rather than skipping the check.</summary>
 	private static JsonNode StoredMember(JsonObject stored, string key) {
 		stored[key].Should().NotBeNull(because: $"the stored element node carries {key}");
 		return stored[key]!;
 	}
 
+	/// <summary>
+	/// Parses a stored element node. The platform stores process metadata indented, so a member is compared by value,
+	/// never by searching the text for its compact form.
+	/// </summary>
 	private static JsonObject StoredNode(string node) =>
 		JsonNode.Parse(node) as JsonObject
 		?? throw new InvalidOperationException("A stored element node is a JSON object.");

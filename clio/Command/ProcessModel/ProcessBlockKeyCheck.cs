@@ -606,9 +606,11 @@ internal static class ProcessBlockKeyCheck {
 		}
 
 		// webService.timeoutSeconds is an Int32 on the server's write contract, while describe reports a timeout
-		// stored in milliseconds as fractional seconds (1500 ms reads back as 1.5). A fraction, an exponent or a
-		// value outside Int32 is not dropped: the serializer fails to read the WHOLE request, in a reply that does
-		// not name the member. Only a JSON number is judged here; any other shape is left to the server's own refusal.
+		// stored in milliseconds as fractional seconds (1500 ms reads back as 1.5) and a whole one as e.g. 7.0, which
+		// the server reads fine - so the VALUE is judged, not the spelling. A fraction or a value outside Int32 is not
+		// dropped: the serializer fails to read the WHOLE request, in a reply that does not name the member. Only a
+		// JSON number is judged here; any other shape, and a whole value above the server's own maximum, is left to the
+		// server's refusal.
 		private void RefuseFractionalTimeout(JsonObject webService, string where, string path) {
 			JsonNode? timeout = null;
 			try {
@@ -622,12 +624,16 @@ internal static class ProcessBlockKeyCheck {
 				return;
 			}
 			string text = number.ToJsonString();
-			if (int.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out _)) {
+			if (!decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out decimal value)
+					|| (value == decimal.Truncate(value) && value >= int.MinValue && value <= int.MaxValue)) {
 				return;
 			}
-			RefuseShape($"{where}: '{path}.timeoutSeconds' is {text}, but the server takes whole seconds, so that value "
-				+ "makes it fail the whole request. Send a whole number of seconds - describe reports a fraction only for a "
-				+ "timeout stored in milliseconds, which cannot be written back exactly.");
+			string problem = value == decimal.Truncate(value)
+				? "beyond what the server can read"
+				: "a fraction, and the server takes whole seconds";
+			RefuseShape($"{where}: '{path}.timeoutSeconds' is {text}, {problem}, so the server fails the whole request. "
+				+ "On setElement leave timeoutSeconds out to keep the stored timeout (describe reports a timeout stored in "
+				+ "milliseconds as a fraction); otherwise send whole seconds, at most 2147483 (0 clears the timeout).");
 		}
 
 		private static string Describe(KeySet set, int depth) =>

@@ -847,8 +847,10 @@ public sealed class DescribedElement {
 	/// every other element and on a server that predates the element.
 	/// <para>Every write member keeps its write shape, so the block is sent back unchanged; the describe-only members -
 	/// <c>serviceUId</c>, <c>serviceResolved</c>, <c>methodResolved</c>, <c>parameters</c> and <c>issues</c> - draw a
-	/// warning there. Two exceptions: a fractional <c>timeoutSeconds</c> (a timeout stored in milliseconds) is refused
-	/// before sending until rounded to whole seconds, and <c>service: null</c> needs a registered service named again.
+	/// warning there. Exceptions: a fractional <c>timeoutSeconds</c> (a timeout stored in milliseconds) is refused before
+	/// sending - leave it out to keep the stored value, or send whole seconds; a block with no <c>service</c> (the stored
+	/// service no longer resolves, so it is omitted) needs a registered service named again; and a block of
+	/// <c>service</c> alone is refused by the server as changing nothing.
 	/// See <see cref="DescribedWebService"/>.</para>
 	/// </summary>
 	[JsonPropertyName("webService")]

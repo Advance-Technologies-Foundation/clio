@@ -30,8 +30,9 @@ public static class ModifyBusinessProcessPrompt {
 		 openEditPage or fileProcessing block can carry describe fields clio refuses before sending (the email's
 		 templateObject and its recipients' described fields, subProcess.process, completionMode, files.sourceColumn) -
 		 remove them. A described `webService` block re-applies unchanged: its `serviceUId`, `serviceResolved`,
-		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning; only a
-		 fractional `timeoutSeconds` must be rounded to whole seconds, and `service: null` replaced by a registered service. A filter, signal or
+		 `methodResolved`, `issues` and `parameters` are describe-only, ignored and named in a warning; a
+		 fractional `timeoutSeconds` is refused (leave it out to keep the stored value, or send whole seconds), and a
+		 block with no `service` needs a registered service named again. A filter, signal or
 		 connections goes in its own operation (setFilter, setSignal, setConnections), and flat approval fields are
 		 written nested in the same block (approver.type, notifyApprover.emailTemplate); (2) read `get-guidance name=process-modeling` for the operation and field contract, plus
 		 `get-guidance name=process-parameters` for parameters, mappings and type compatibility;

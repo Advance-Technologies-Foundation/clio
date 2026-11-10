@@ -675,10 +675,9 @@ public sealed class ProcessBlockKeyCheckTests {
 	}
 
 	[TestCase("1.5")]
-	[TestCase("7.0")]
-	[TestCase("1e3")]
+	[TestCase("0.4")]
 	[TestCase("3000000000")]
-	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, a decimal point, an exponent or an out-of-range number - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
+	[Description("A webService.timeoutSeconds that is not a whole Int32 - the fractional seconds describe reports for a timeout stored in milliseconds, or a number beyond Int32 - is refused before sending with the remedy, because the server's serializer cannot read it and fails the whole request in a reply that does not name the member.")]
 	public void Check_Should_RefuseATimeoutThatIsNotWholeSeconds(string timeout) {
 		// Arrange
 		string element = $$"""{ "name": "WS1", "type": "webService", "webService": { "service": "UsrWscEchoService", "method": "UsrWscEcho", "timeoutSeconds": {{timeout}} } }""";
@@ -692,14 +691,16 @@ public sealed class ProcessBlockKeyCheckTests {
 		create.Error.Should().StartWith("Nothing was sent", because: "the refusal is clio's own, before anything is posted");
 		create.Error.Should().Contain($"'webService.timeoutSeconds' is {timeout}",
 			because: "the refusal names the member and the value sent");
-		create.Error.Should().Contain("Send a whole number of seconds", because: "the refusal carries the remedy");
+		create.Error.Should().Contain("leave timeoutSeconds out to keep the stored timeout",
+			because: "the refusal carries the remedy that keeps the stored value");
 		modify.Error.Should().Contain("'elementUpdate.webService.timeoutSeconds'",
 			because: "a setElement sending only the timeout is checked the same way");
 	}
 
 	[TestCase("30")]
 	[TestCase("0")]
-	[Description("A whole-seconds webService.timeoutSeconds passes the check, 0 included, which clears a stored timeout.")]
+	[TestCase("7.0")]
+	[Description("A whole-seconds webService.timeoutSeconds passes the check - 0 included, which clears a stored timeout, and 7.0, the spelling describe uses for a whole timeout, which the server reads.")]
 	public void Check_Should_AcceptAWholeSecondsTimeout(string timeout) {
 		// Arrange
 		string operations = $$"""[ { "op": "setElement", "elementName": "WS1", "elementUpdate": { "webService": { "timeoutSeconds": {{timeout}} } } } ]""";
