@@ -355,6 +355,7 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				await TestContext.Error.WriteLineAsync($"Could not remove binding row {binding}: {LogText(removed)}");
 			}
 		} catch (Exception exception) {
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			await TestContext.Error.WriteLineAsync($"Removing binding row {binding} failed: {exception.Message}");
 		}
 	}
@@ -386,6 +387,9 @@ public sealed class CreateDynamicCaseToolE2ETests {
 				await TestContext.Error.WriteLineAsync($"Could not restore '{pageName}': {response.Error}");
 			}
 		} catch (Exception exception) {
+			// A failed restore is reported, not thrown, so the parser's payload dump would otherwise ship with a
+			// green run.
+			PayloadDumpReader.DeleteIfPresent(exception.Message);
 			await TestContext.Error.WriteLineAsync($"Restoring '{pageName}' failed: {exception.Message}");
 		}
 	}
