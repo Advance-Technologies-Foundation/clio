@@ -25,7 +25,9 @@ public class CreateDataBindingDbTool(
 		BudgetPolicy = McpToolBudgetPolicy.ParentKillDefault,
 		RequiresClientRequests = McpToolClientRequests.None,
 		SharedFileResource = McpToolSharedFileResource.None)]
-	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database.")]
+	[Description("Creates a DB-first package data binding by saving data directly to the remote Creatio database. "
+		+ "A row may carry 'localizations' (culture -> column -> text) to store lookup values in other cultures; "
+		+ "re-running it with existing rows adds translations without rewriting the rows.")]
 	public CommandExecutionResult CreateDataBindingDb(
 		[Description("Parameters: environment-name, package-name, schema-name (all required); binding-name, rows (optional)")]
 		[Required]
@@ -195,7 +197,9 @@ public sealed record CreateDataBindingDbArgs(
 	string? BindingName = null,
 
 	[property: JsonPropertyName("rows")]
-	[property: Description("Optional JSON array of row objects, each with a 'values' key containing column name-value pairs")]
+	[property: Description("Optional JSON array of row objects, each with a 'values' key containing column name-value pairs "
+		+ "and an optional 'localizations' key keyed by culture, then column, with text values, e.g. "
+		+ "[{\"values\":{\"Name\":\"New\"},\"localizations\":{\"uk-UA\":{\"Name\":\"Нове\"}}}]")]
 	string? RowsJson = null
 );
 

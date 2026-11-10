@@ -1569,7 +1569,13 @@ public sealed record SchemaSyncSeedRow(
 	[property: JsonPropertyName("values")]
 	[property: Description("Column name-value pairs for the seed row")]
 	[property: Required]
-	Dictionary<string, JsonElement> Values
+	Dictionary<string, JsonElement> Values,
+
+	[property: JsonPropertyName("localizations")]
+	[property: Description("Optional translations of the row's localizable columns, keyed by culture, then column, with "
+		+ "text values, e.g. {\"uk-UA\":{\"Name\":\"Нове\"}}. Only active cultures and localizable columns are accepted.")]
+	[property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+	Dictionary<string, Dictionary<string, string>>? Localizations = null
 );
 
 /// <summary>
